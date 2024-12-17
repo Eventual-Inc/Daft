@@ -103,44 +103,6 @@ impl AggStrategy {
     }
 }
 
-fn determine_agg_strategy(
-    input: &Arc<MicroPartition>,
-    params: &GroupedAggregateParams,
-    high_cardinality_threshold_ratio: f64,
-    partial_agg_threshold: usize,
-    global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
-) -> DaftResult<AggStrategy> {
-    let mut global_strategy = global_strategy_lock.lock().unwrap();
-    // If some other worker has determined a strategy, use that.
-    if let Some(global_strat) = global_strategy.as_ref() {
-        return Ok(global_strat.clone());
-    }
-
-    // Else determine the strategy.
-    let groupby = input.eval_expression_list(params.group_by.as_slice())?;
-
-    let groupkey_hashes = groupby
-        .get_tables()?
-        .iter()
-        .map(|t| t.hash_rows())
-        .collect::<DaftResult<Vec<_>>>()?;
-    let estimated_num_groups = groupkey_hashes
-        .iter()
-        .flatten()
-        .collect::<HashSet<_>>()
-        .len();
-
-    let decided_strategy =
-        if estimated_num_groups as f64 / input.len() as f64 >= high_cardinality_threshold_ratio {
-            AggStrategy::PartitionThenAgg(partial_agg_threshold)
-        } else {
-            AggStrategy::AggThenPartition
-        };
-
-    *global_strategy = Some(decided_strategy.clone());
-    Ok(decided_strategy)
-}
-
 #[derive(Default)]
 struct SinglePartitionAggregateState {
     partially_aggregated: Vec<MicroPartition>,
@@ -192,21 +154,61 @@ impl GroupedAggregateState {
         // If we have determined a strategy, execute it.
         if let Some(strategy) = strategy {
             strategy.execute_strategy(inner_states, input, params)?;
-            return Ok(());
+        } else {
+            // Otherwise, determine the strategy and execute
+            let decided_strategy = Self::determine_agg_strategy(
+                &input,
+                params,
+                *high_cardinality_threshold_ratio,
+                *partial_agg_threshold,
+                strategy,
+                global_strategy_lock,
+            )?;
+            decided_strategy.execute_strategy(inner_states, input, params)?;
+        }
+        Ok(())
+    }
+
+    fn determine_agg_strategy(
+        input: &Arc<MicroPartition>,
+        params: &GroupedAggregateParams,
+        high_cardinality_threshold_ratio: f64,
+        partial_agg_threshold: usize,
+        local_strategy_cache: &mut Option<AggStrategy>,
+        global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
+    ) -> DaftResult<AggStrategy> {
+        let mut global_strategy = global_strategy_lock.lock().unwrap();
+        // If some other worker has determined a strategy, use that.
+        if let Some(global_strat) = global_strategy.as_ref() {
+            *local_strategy_cache = Some(global_strat.clone());
+            return Ok(global_strat.clone());
         }
 
-        // Otherwise, determine the strategy and execute
-        let decided_strategy = determine_agg_strategy(
-            &input,
-            params,
-            *high_cardinality_threshold_ratio,
-            *partial_agg_threshold,
-            global_strategy_lock,
-        )?;
+        // Else determine the strategy.
+        let groupby = input.eval_expression_list(params.group_by.as_slice())?;
 
-        decided_strategy.execute_strategy(inner_states, input, params)?;
-        *strategy = Some(decided_strategy);
-        Ok(())
+        let groupkey_hashes = groupby
+            .get_tables()?
+            .iter()
+            .map(|t| t.hash_rows())
+            .collect::<DaftResult<Vec<_>>>()?;
+        let estimated_num_groups = groupkey_hashes
+            .iter()
+            .flatten()
+            .collect::<HashSet<_>>()
+            .len();
+
+        let decided_strategy = if estimated_num_groups as f64 / input.len() as f64
+            >= high_cardinality_threshold_ratio
+        {
+            AggStrategy::PartitionThenAgg(partial_agg_threshold)
+        } else {
+            AggStrategy::AggThenPartition
+        };
+
+        *local_strategy_cache = Some(decided_strategy.clone());
+        *global_strategy = Some(decided_strategy.clone());
+        Ok(decided_strategy)
     }
 
     fn finalize(&mut self) -> Vec<Option<SinglePartitionAggregateState>> {
