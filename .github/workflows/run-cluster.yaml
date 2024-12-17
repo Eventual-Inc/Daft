@@ -34,7 +34,7 @@ on:
         type: string
         required: true
       entrypoint_args:
-        description: Entry-point arguments
+        description: Entry-point arguments (either a simple string or a JSON list)
         type: string
         required: false
         default: ""
