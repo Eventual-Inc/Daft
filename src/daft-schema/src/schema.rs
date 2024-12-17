@@ -13,7 +13,7 @@ use derive_more::Display;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::field::Field;
+use crate::{field::Field, prelude::DataType};
 
 pub type SchemaRef = Arc<Schema>;
 
@@ -46,6 +46,11 @@ impl Schema {
         }
 
         Ok(Self { fields: map })
+    }
+
+    pub fn to_struct(&self) -> DataType {
+        let fields = self.fields.values().cloned().collect();
+        DataType::Struct(fields)
     }
 
     pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
