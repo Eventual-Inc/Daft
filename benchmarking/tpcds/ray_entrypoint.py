@@ -24,7 +24,6 @@ TABLE_NAMES = [
     "store_returns",
     "store_sales",
     "time_dim",
-    "tpcds",
     "warehouse",
     "web_page",
     "web_returns",
@@ -37,7 +36,7 @@ def register_catalog() -> SQLCatalog:
     return SQLCatalog(
         tables={
             table: daft.read_parquet(
-                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/2/{table}.parquet"
+                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/2/{table}.parquet/"
             )
             for table in TABLE_NAMES
         }
