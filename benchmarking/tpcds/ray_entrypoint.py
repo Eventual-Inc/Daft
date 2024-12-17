@@ -1,16 +1,54 @@
 import argparse
 from pathlib import Path
 
-import helpers
-
 import daft
+from daft.sql.sql import SQLCatalog
+
+TABLE_NAMES = [
+    "call_center",
+    "catalog_page",
+    "catalog_returns",
+    "catalog_sales",
+    "customer",
+    "customer_address",
+    "customer_demographics",
+    "date_dim",
+    "household_demographics",
+    "income_band",
+    "inventory",
+    "item",
+    "promotion",
+    "reason",
+    "ship_mode",
+    "store",
+    "store_returns",
+    "store_sales",
+    "time_dim",
+    "tpcds",
+    "warehouse",
+    "web_page",
+    "web_returns",
+    "web_sales",
+    "web_site",
+]
+
+
+def register_catalog() -> SQLCatalog:
+    return SQLCatalog(
+        tables={
+            table: daft.read_parquet(
+                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/2/{table}.parquet"
+            )
+            for table in TABLE_NAMES
+        }
+    )
 
 
 def run(
     question: int,
     dry_run: bool,
 ):
-    catalog = helpers.generate_catalog("s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/2/")
+    catalog = register_catalog()
     query_file = Path(__file__).parent / "queries" / f"{question:02}.sql"
     with open(query_file) as f:
         query = f.read()
