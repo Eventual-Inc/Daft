@@ -71,7 +71,7 @@ jobs:
       run: |
         uv v
         source .venv/bin/activate
-        uv pip install ray[default] boto3 duckdb
+        uv pip install ray[default] boto3
     - name: Dynamically update ray config file
       run: |
         source .venv/bin/activate
