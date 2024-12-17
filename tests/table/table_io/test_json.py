@@ -30,10 +30,6 @@ def test_read_input(tmpdir):
     assert table_io.read_json(tmpdir / "file.json", schema=schema).to_pydict() == data
     assert table_io.read_json(str(tmpdir / "file.json"), schema=schema).to_pydict() == data
 
-    with open(tmpdir / "file.json", "rb") as f:
-        f = tmpdir / "file.json"
-        assert table_io.read_json(f, schema=schema).to_pydict() == data
-
 
 @contextlib.contextmanager
 def _json_write_helper(data: dict[str, list[Any]]):

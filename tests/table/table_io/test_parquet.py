@@ -39,9 +39,6 @@ def test_read_input(tmpdir):
     assert table_io.read_parquet(tmpdir / "file.parquet", schema=schema).to_arrow() == data
     assert table_io.read_parquet(str(tmpdir / "file.parquet"), schema=schema).to_arrow() == data
 
-    with open(tmpdir / "file.parquet", "rb") as f:
-        assert table_io.read_parquet(f, schema=schema).to_arrow() == data
-
 
 @contextlib.contextmanager
 def _parquet_write_helper(data: pa.Table, row_group_size: int | None = None, papq_write_table_kwargs: dict = {}):

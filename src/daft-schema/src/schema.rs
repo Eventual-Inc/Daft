@@ -17,7 +17,7 @@ use crate::field::Field;
 
 pub type SchemaRef = Arc<Schema>;
 
-#[derive(Debug, Display, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Display, Serialize, Deserialize)]
 #[serde(transparent)]
 #[display("{}\n", make_schema_vertical_table(
     fields.iter().map(|(name, field)| (name.clone(), field.dtype.to_string()))
@@ -329,3 +329,17 @@ impl TryFrom<&arrow2::datatypes::Schema> for Schema {
         Self::new(daft_fields)
     }
 }
+
+/// Custom impl of PartialEq because IndexMap PartialEq does not check for ordering
+impl PartialEq for Schema {
+    fn eq(&self, other: &Self) -> bool {
+        self.fields.len() == other.fields.len()
+            && self
+                .fields
+                .iter()
+                .zip(other.fields.iter())
+                .all(|(s, o)| s == o)
+    }
+}
+
+impl Eq for Schema {}

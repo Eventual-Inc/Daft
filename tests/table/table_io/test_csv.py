@@ -32,9 +32,6 @@ def test_read_input(tmpdir):
     assert table_io.read_csv(tmpdir / "file.csv", schema=schema).to_pydict() == data
     assert table_io.read_csv(str(tmpdir / "file.csv"), schema=schema).to_pydict() == data
 
-    with open(tmpdir / "file.csv", "rb") as f:
-        assert table_io.read_csv(f, schema=schema).to_pydict() == data
-
 
 @contextlib.contextmanager
 def _csv_write_helper(header: list[str] | None, data: list[list[str | None]], **kwargs):

@@ -6,6 +6,8 @@ use std::{
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
+#[cfg(feature = "python")]
+use common_file_formats::DatabaseSourceConfig;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
 use common_scan_info::Pushdowns;
@@ -265,18 +267,35 @@ fn materialize_scan_task(
                     .context(DaftCoreComputeSnafu)?
                 }
                 #[cfg(feature = "python")]
-                FileFormatConfig::Database(_) => {
-                    return Err(common_error::DaftError::TypeError(
-                        "Native reads for Database file format not implemented".to_string(),
-                    ))
-                    .context(DaftCoreComputeSnafu);
+                FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {
+                    let predicate = scan_task
+                        .pushdowns
+                        .filters
+                        .as_ref()
+                        .map(|p| (*p.as_ref()).clone().into());
+                    pyo3::Python::with_gil(|py| {
+                        let table = crate::python::read_sql_into_py_table(
+                            py,
+                            sql,
+                            conn,
+                            predicate.clone(),
+                            scan_task.schema.clone().into(),
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
+                        )
+                        .map(std::convert::Into::into)
+                        .context(crate::PyIOSnafu)?;
+                        Ok(vec![table])
+                    })?
                 }
                 #[cfg(feature = "python")]
                 FileFormatConfig::PythonFunction => {
-                    return Err(common_error::DaftError::TypeError(
-                        "Native reads for PythonFunction file format not implemented".to_string(),
-                    ))
-                    .context(DaftCoreComputeSnafu);
+                    let tables = crate::python::read_pyfunc_into_table_iter(&scan_task)?;
+                    tables.collect::<crate::Result<Vec<_>>>()?
                 }
             }
         }

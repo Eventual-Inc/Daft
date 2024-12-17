@@ -495,6 +495,7 @@ def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
             writer = csv.writer(f)
+            writer.writerow(header)
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
@@ -594,6 +595,7 @@ def test_create_dataframe_csv_schema_hints_partial(valid_data: list[dict[str, fl
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
             writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
@@ -618,6 +620,7 @@ def test_create_dataframe_csv_schema_hints_override_types(valid_data: list[dict[
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
             writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
@@ -644,6 +647,7 @@ def test_create_dataframe_csv_schema_hints_ignore_random_hint(valid_data: list[d
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
             writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
@@ -667,6 +671,7 @@ def test_create_dataframe_csv_without_schema_or_inference(valid_data: list[dict[
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
             writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 

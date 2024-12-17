@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import contextlib
 import math
 import pathlib
 import random
 import time
-from typing import IO, TYPE_CHECKING, Any, Iterator, Union
+from typing import TYPE_CHECKING, Any, Iterator, Union
 from uuid import uuid4
 
 from daft.context import get_context
@@ -40,32 +39,16 @@ from daft.sql.sql_connection import SQLConnection
 from .micropartition import MicroPartition
 from .partitioning import PartitionedTable, partition_strings_to_path
 
-FileInput = Union[pathlib.Path, str, IO[bytes]]
+FileInput = Union[pathlib.Path, str]
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import Callable
 
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.expressions.expressions import Expression
     from daft.sql.sql_connection import SQLConnection
-
-
-@contextlib.contextmanager
-def _open_stream(
-    file: FileInput,
-    io_config: IOConfig | None,
-) -> Generator[pa.NativeFile, None, None]:
-    """Opens the provided file for reading, yield a pyarrow file handle."""
-    if isinstance(file, (pathlib.Path, str)):
-        paths, fs = _resolve_paths_and_filesystem(file, io_config=io_config)
-        assert len(paths) == 1
-        path = paths[0]
-        with fs.open_input_stream(path) as f:
-            yield f
-    else:
-        yield file
 
 
 def _cast_table_to_schema(table: MicroPartition, read_options: TableReadOptions, schema: Schema) -> pa.Table:
