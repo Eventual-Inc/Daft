@@ -71,7 +71,6 @@ pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
     fn set_partition(&self, idx: PartitionId, part: &dyn PartitionBatch<T>) -> DaftResult<()>;
     /// Get a partition
     fn get_partition(&self, idx: &PartitionId) -> DaftResult<PartitionBatchRef<T>>;
-
     /// Consume the partition set and return a stream of partitions
     fn into_partition_stream(self: Arc<Self>) -> BoxStream<'static, DaftResult<Arc<T>>>;
 }
@@ -85,6 +84,9 @@ pub enum PartitionCacheEntry {
         deserialize_with = "deserialize_py_object"
     )]
     #[cfg(feature = "python")]
+    /// in python, the partition cache is a weakvalue dictionary, so it will store the entry as long as this reference exists.
     Python(PyObject),
-    Rust(String),
+
+    /// in the future we may want to have an actual value here, but for now it's just a placeholder
+    Rust(()),
 }

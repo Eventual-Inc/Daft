@@ -152,11 +152,9 @@ impl SparkAnalyzer<'_> {
         } = batch.metadata();
         let num_partitions = batch.partition.len();
 
-        let cache_entry = PartitionCacheEntry::Rust(partition_key.to_string());
-
         Ok(LogicalPlanBuilder::in_memory_scan(
             &partition_key,
-            cache_entry,
+            PartitionCacheEntry::Rust(()),
             daft_schema,
             num_partitions,
             size_bytes,
