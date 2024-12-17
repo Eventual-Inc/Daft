@@ -19,10 +19,9 @@ from daft.daft import (
     JsonParseOptions,
     JsonReadOptions,
     NativeStorageConfig,
-    PythonStorageConfig,
     StorageConfig,
 )
-from daft.dependencies import pa, pacsv, pads, pajson, pq
+from daft.dependencies import pa, pacsv, pads, pq
 from daft.expressions import ExpressionsProjection, col
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
@@ -108,40 +107,22 @@ def read_json(
     Returns:
         MicroPartition: Parsed MicroPartition from JSON
     """
-    io_config = None
-    if storage_config is not None:
-        config = storage_config.config
-        if isinstance(config, NativeStorageConfig):
-            assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_json"
-            json_convert_options = JsonConvertOptions(
-                limit=read_options.num_rows,
-                include_columns=read_options.column_names,
-                schema=schema._schema if schema is not None else None,
-            )
-            json_parse_options = JsonParseOptions()
-            tbl = MicroPartition.read_json(
-                str(file),
-                convert_options=json_convert_options,
-                parse_options=json_parse_options,
-                read_options=json_read_options,
-                io_config=config.io_config,
-            )
-            return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
-        else:
-            assert isinstance(config, PythonStorageConfig)
-            io_config = config.io_config
-
-    with _open_stream(file, io_config) as f:
-        table = pajson.read_json(f)
-
-    if read_options.column_names is not None:
-        table = table.select(read_options.column_names)
-
-    # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
-    if read_options.num_rows is not None:
-        table = table[: read_options.num_rows]
-
-    return _cast_table_to_schema(MicroPartition.from_arrow(table), read_options=read_options, schema=schema)
+    config = storage_config.config if storage_config is not None else NativeStorageConfig(True, IOConfig())
+    assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_json"
+    json_convert_options = JsonConvertOptions(
+        limit=read_options.num_rows,
+        include_columns=read_options.column_names,
+        schema=schema._schema if schema is not None else None,
+    )
+    json_parse_options = JsonParseOptions()
+    tbl = MicroPartition.read_json(
+        str(file),
+        convert_options=json_convert_options,
+        parse_options=json_parse_options,
+        read_options=json_read_options,
+        io_config=config.io_config,
+    )
+    return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 
 
 def read_parquet(
@@ -162,70 +143,19 @@ def read_parquet(
     Returns:
         MicroPartition: Parsed MicroPartition from Parquet
     """
-    io_config = None
-    if storage_config is not None:
-        config = storage_config.config
-        if isinstance(config, NativeStorageConfig):
-            assert isinstance(
-                file, (str, pathlib.Path)
-            ), "Native downloader only works on string or Path inputs to read_parquet"
-            tbl = MicroPartition.read_parquet(
-                str(file),
-                columns=read_options.column_names,
-                num_rows=read_options.num_rows,
-                io_config=config.io_config,
-                coerce_int96_timestamp_unit=parquet_options.coerce_int96_timestamp_unit,
-                multithreaded_io=config.multithreaded_io,
-            )
-            return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
-
-        assert isinstance(config, PythonStorageConfig)
-        io_config = config.io_config
-
-    f: IO
-    if not isinstance(file, (str, pathlib.Path)):
-        f = file
-    else:
-        paths, fs = _resolve_paths_and_filesystem(file, io_config=io_config)
-        assert len(paths) == 1
-        path = paths[0]
-        f = fs.open_input_file(path)
-
-    # If no rows required, we manually construct an empty table with the right schema
-    if read_options.num_rows == 0:
-        pqf = pq.ParquetFile(
-            f,
-            coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
-        )
-        arrow_schema = pqf.metadata.schema.to_arrow_schema()
-        table = pa.Table.from_arrays(
-            [pa.array([], type=field.type) for field in arrow_schema],
-            schema=arrow_schema,
-        )
-    elif read_options.num_rows is not None:
-        pqf = pq.ParquetFile(
-            f,
-            coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
-        )
-        # Only read the required row groups.
-        rows_needed = read_options.num_rows
-        for i in range(pqf.metadata.num_row_groups):
-            row_group_meta = pqf.metadata.row_group(i)
-            rows_needed -= row_group_meta.num_rows
-            if rows_needed <= 0:
-                break
-        table = pqf.read_row_groups(list(range(i + 1)), columns=read_options.column_names)
-        if rows_needed < 0:
-            # Need to truncate the table to the row limit.
-            table = table.slice(length=read_options.num_rows)
-    else:
-        table = pq.read_table(
-            f,
-            columns=read_options.column_names,
-            coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
-        )
-
-    return _cast_table_to_schema(MicroPartition.from_arrow(table), read_options=read_options, schema=schema)
+    config = storage_config.config if storage_config is not None else NativeStorageConfig(True, IOConfig())
+    assert isinstance(
+        file, (str, pathlib.Path)
+    ), "Native downloader only works on string or Path inputs to read_parquet"
+    tbl = MicroPartition.read_parquet(
+        str(file),
+        columns=read_options.column_names,
+        num_rows=read_options.num_rows,
+        io_config=config.io_config,
+        coerce_int96_timestamp_unit=parquet_options.coerce_int96_timestamp_unit,
+        multithreaded_io=config.multithreaded_io,
+    )
+    return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 
 
 def read_sql(
@@ -298,104 +228,33 @@ def read_csv(
     Returns:
         MicroPartition: Parsed MicroPartition from CSV
     """
-    io_config = None
-    if storage_config is not None:
-        config = storage_config.config
-        if isinstance(config, NativeStorageConfig):
-            assert isinstance(
-                file, (str, pathlib.Path)
-            ), "Native downloader only works on string or Path inputs to read_csv"
-            has_header = csv_options.header_index is not None
-            csv_convert_options = CsvConvertOptions(
-                limit=read_options.num_rows,
-                include_columns=read_options.column_names,
-                column_names=schema.column_names() if not has_header else None,
-                schema=schema._schema if schema is not None else None,
-            )
-            csv_parse_options = CsvParseOptions(
-                has_header=has_header,
-                delimiter=csv_options.delimiter,
-                double_quote=csv_options.double_quote,
-                quote=csv_options.quote,
-                allow_variable_columns=csv_options.allow_variable_columns,
-                escape_char=csv_options.escape_char,
-                comment=csv_options.comment,
-            )
-            csv_read_options = CsvReadOptions(buffer_size=csv_options.buffer_size, chunk_size=csv_options.chunk_size)
-            tbl = MicroPartition.read_csv(
-                str(file),
-                convert_options=csv_convert_options,
-                parse_options=csv_parse_options,
-                read_options=csv_read_options,
-                io_config=config.io_config,
-            )
-            return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
-        else:
-            assert isinstance(config, PythonStorageConfig)
-            io_config = config.io_config
-
-    with _open_stream(file, io_config) as f:
-        from daft.utils import get_arrow_version
-
-        arrow_version = get_arrow_version()
-
-        if csv_options.comment is not None and arrow_version < (7, 0, 0):
-            raise ValueError(
-                "pyarrow < 7.0.0 doesn't support handling comments in CSVs, please upgrade pyarrow to 7.0.0+."
-            )
-
-        parse_options = pacsv.ParseOptions(
-            delimiter=csv_options.delimiter,
-            quote_char=csv_options.quote,
-            escape_char=csv_options.escape_char,
-        )
-
-        if arrow_version >= (7, 0, 0):
-            parse_options.invalid_row_handler = skip_comment(csv_options.comment)
-
-        pacsv_stream = pacsv.open_csv(
-            f,
-            parse_options=parse_options,
-            read_options=pacsv.ReadOptions(
-                # If no header, we use the schema's column names. Otherwise we use the headers in the CSV file.
-                column_names=(schema.column_names() if csv_options.header_index is None else None),
-            ),
-            convert_options=pacsv.ConvertOptions(
-                # Column pruning
-                include_columns=read_options.column_names,
-                # If any columns are missing, parse as null array
-                include_missing_columns=True,
-            ),
-        )
-
-        if read_options.num_rows is not None:
-            rows_left = read_options.num_rows
-            pa_batches = []
-            pa_schema = None
-            for record_batch in PACSVStreamHelper(pacsv_stream):
-                if pa_schema is None:
-                    pa_schema = record_batch.schema
-                if record_batch.num_rows > rows_left:
-                    record_batch = record_batch.slice(0, rows_left)
-                pa_batches.append(record_batch)
-                rows_left -= record_batch.num_rows
-
-                # Break needs to be here; always need to process at least one record batch
-                if rows_left <= 0:
-                    break
-
-            # If source schema isn't determined, then the file was truly empty; set an empty source schema
-            if pa_schema is None:
-                pa_schema = pa.schema([])
-
-            daft_table = MicroPartition.from_arrow_record_batches(pa_batches, pa_schema)
-            assert len(daft_table) <= read_options.num_rows
-
-        else:
-            pa_table = pacsv_stream.read_all()
-            daft_table = MicroPartition.from_arrow(pa_table)
-
-    return _cast_table_to_schema(daft_table, read_options=read_options, schema=schema)
+    config = storage_config.config if storage_config is not None else NativeStorageConfig(True, IOConfig())
+    assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string or Path inputs to read_csv"
+    has_header = csv_options.header_index is not None
+    csv_convert_options = CsvConvertOptions(
+        limit=read_options.num_rows,
+        include_columns=read_options.column_names,
+        column_names=schema.column_names() if not has_header else None,
+        schema=schema._schema if schema is not None else None,
+    )
+    csv_parse_options = CsvParseOptions(
+        has_header=has_header,
+        delimiter=csv_options.delimiter,
+        double_quote=csv_options.double_quote,
+        quote=csv_options.quote,
+        allow_variable_columns=csv_options.allow_variable_columns,
+        escape_char=csv_options.escape_char,
+        comment=csv_options.comment,
+    )
+    csv_read_options = CsvReadOptions(buffer_size=csv_options.buffer_size, chunk_size=csv_options.chunk_size)
+    tbl = MicroPartition.read_csv(
+        str(file),
+        convert_options=csv_convert_options,
+        parse_options=csv_parse_options,
+        read_options=csv_read_options,
+        io_config=config.io_config,
+    )
+    return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 
 
 def partitioned_table_to_hive_iter(partitioned: PartitionedTable, root_path: str) -> Iterator[tuple[pa.Table, str]]:

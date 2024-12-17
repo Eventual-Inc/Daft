@@ -769,8 +769,7 @@ impl ScanTask {
         let storage_config = self.storage_config.multiline_display();
         if !storage_config.is_empty() {
             res.push(format!(
-                "{} storage config = {{ {} }}",
-                self.storage_config.var_name(),
+                "storage config = {{ {} }}",
                 storage_config.join(", ")
             ));
         }

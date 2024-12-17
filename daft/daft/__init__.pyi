@@ -595,13 +595,6 @@ class NativeStorageConfig:
 
     def __init__(self, multithreaded_io: bool, io_config: IOConfig): ...
 
-class PythonStorageConfig:
-    """Storage configuration for the legacy Python I/O layer."""
-
-    io_config: IOConfig
-
-    def __init__(self, io_config: IOConfig): ...
-
 class StorageConfig:
     """Configuration for interacting with a particular storage backend, using a particular I/O layer implementation."""
 
@@ -610,13 +603,8 @@ class StorageConfig:
         """Create from a native storage config."""
         ...
 
-    @staticmethod
-    def python(config: PythonStorageConfig) -> StorageConfig:
-        """Create from a Python storage config."""
-        ...
-
     @property
-    def config(self) -> NativeStorageConfig | PythonStorageConfig: ...
+    def config(self) -> NativeStorageConfig: ...
 
 class ScanTask:
     """A batch of scan tasks for reading data from an external source."""
@@ -651,7 +639,6 @@ class ScanTask:
         file_format: FileFormatConfig,
         schema: PySchema,
         num_rows: int | None,
-        storage_config: StorageConfig,
         size_bytes: int | None,
         pushdowns: Pushdowns | None,
         stats: PyTable | None,

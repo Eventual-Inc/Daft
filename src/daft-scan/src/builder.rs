@@ -144,7 +144,6 @@ pub struct CsvScanBuilder {
     pub allow_variable_columns: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
-    pub use_native_downloader: bool,
     pub schema_hints: Option<SchemaRef>,
 }
 
@@ -172,7 +171,6 @@ impl CsvScanBuilder {
             allow_variable_columns: false,
             buffer_size: None,
             chunk_size: None,
-            use_native_downloader: true,
             schema_hints: None,
         }
     }
@@ -234,10 +232,6 @@ impl CsvScanBuilder {
     }
     pub fn schema_hints(mut self, schema_hints: SchemaRef) -> Self {
         self.schema_hints = Some(schema_hints);
-        self
-    }
-    pub fn use_native_downloader(mut self, use_native_downloader: bool) -> Self {
-        self.use_native_downloader = use_native_downloader;
         self
     }
 

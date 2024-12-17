@@ -51,7 +51,6 @@ def test_read_csv_other_options(
     allow_variable_columns=True,
     file_path_column="filepath",
     hive_partitioning=False,
-    use_native_downloader=True,
 ):
     df1 = daft.read_csv(
         sample_csv_path,
@@ -61,9 +60,8 @@ def test_read_csv_other_options(
         allow_variable_columns=allow_variable_columns,
         file_path_column=file_path_column,
         hive_partitioning=hive_partitioning,
-        use_native_downloader=use_native_downloader,
     )
     df2 = daft.sql(
-        f"SELECT * FROM read_csv('{sample_csv_path}', delimiter {op} '{delimiter}', escape_char {op} '{escape_char}', comment {op} '{comment}', allow_variable_columns {op} {str(allow_variable_columns).lower()}, file_path_column {op} '{file_path_column}', hive_partitioning {op} {str(hive_partitioning).lower()}, use_native_downloader {op} {str(use_native_downloader).lower()})"
+        f"SELECT * FROM read_csv('{sample_csv_path}', delimiter {op} '{delimiter}', escape_char {op} '{escape_char}', comment {op} '{comment}', allow_variable_columns {op} {str(allow_variable_columns).lower()}, file_path_column {op} '{file_path_column}', hive_partitioning {op} {str(hive_partitioning).lower()})"
     ).collect()
     assert df1.to_pydict() == df2.to_pydict()

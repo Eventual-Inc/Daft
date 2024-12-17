@@ -4,7 +4,7 @@ use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
-use crate::storage_config::{NativeStorageConfig, PyStorageConfig, PythonStorageConfig};
+use crate::storage_config::{NativeStorageConfig, PyStorageConfig};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(
@@ -89,7 +89,7 @@ pub mod pylib {
     use crate::{
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
-        storage_config::{PyStorageConfig, PythonStorageConfig},
+        storage_config::{PyStorageConfig, StorageConfig},
         DataSource, ScanTask,
     };
     #[pyclass(module = "daft.daft", frozen)]
@@ -410,7 +410,6 @@ pub mod pylib {
             url: String,
             file_format: PyFileFormatConfig,
             schema: PySchema,
-            storage_config: PyStorageConfig,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
@@ -430,7 +429,7 @@ pub mod pylib {
                 vec![data_source],
                 file_format.into(),
                 schema.schema,
-                storage_config.into(),
+                Arc::new(StorageConfig::Native(Arc::new(Default::default()))), // read SQL doesn't actually use the storage config
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
             );
@@ -473,8 +472,8 @@ pub mod pylib {
                 schema.schema,
                 // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
                 // ScanTask creation, so we just put in a placeholder here
-                Arc::new(crate::storage_config::StorageConfig::Python(Arc::new(
-                    PythonStorageConfig { io_config: None },
+                Arc::new(crate::storage_config::StorageConfig::Native(Arc::new(
+                    Default::default(),
                 ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
@@ -576,7 +575,6 @@ pub mod pylib {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyStorageConfig>()?;
     parent.add_class::<NativeStorageConfig>()?;
-    parent.add_class::<PythonStorageConfig>()?;
 
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;

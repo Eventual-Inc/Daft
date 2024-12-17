@@ -9,7 +9,6 @@ from daft.daft import (
     IOConfig,
     NativeStorageConfig,
     ParquetSourceConfig,
-    PythonStorageConfig,
     StorageConfig,
 )
 from daft.dataframe import DataFrame
@@ -26,7 +25,6 @@ def read_parquet(
     io_config: Optional["IOConfig"] = None,
     file_path_column: Optional[str] = None,
     hive_partitioning: bool = False,
-    use_native_downloader: bool = True,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
     schema_hints: Optional[Dict[str, DataType]] = None,
     _multithreaded_io: Optional[bool] = None,
@@ -49,7 +47,6 @@ def read_parquet(
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
-        use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
@@ -87,10 +84,7 @@ def read_parquet(
     file_format_config = FileFormatConfig.from_parquet_config(
         ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups, chunk_size=_chunk_size)
     )
-    if use_native_downloader:
-        storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
-    else:
-        storage_config = StorageConfig.python(PythonStorageConfig(io_config=io_config))
+    storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
 
     builder = get_tabular_files_scan(
         path=path,

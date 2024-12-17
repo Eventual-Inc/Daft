@@ -3,9 +3,9 @@
 
 from typing import TYPE_CHECKING, Callable, Dict, Optional, Union
 
-from daft import context, from_pydict
+from daft import from_pydict
 from daft.api_annotations import PublicAPI
-from daft.daft import PythonStorageConfig, ScanOperatorHandle, StorageConfig
+from daft.daft import ScanOperatorHandle
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
@@ -93,14 +93,10 @@ def read_sql(
             "Cannot read DataFrame with infer_schema=False and schema=None, please provide a schema or set infer_schema=True"
         )
 
-    io_config = context.get_context().daft_planning_config.default_io_config
-    storage_config = StorageConfig.python(PythonStorageConfig(io_config))
-
     sql_conn = SQLConnection.from_url(conn) if isinstance(conn, str) else SQLConnection.from_connection_factory(conn)
     sql_operator = SQLScanOperator(
         sql,
         sql_conn,
-        storage_config,
         disable_pushdowns_to_sql,
         infer_schema,
         infer_schema_length,

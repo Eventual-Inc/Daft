@@ -1333,7 +1333,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
-        use_native_downloader: bool = True,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column.
 
@@ -1351,37 +1350,26 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 the error but fallback to a Null value. Defaults to "raise".
             io_config: IOConfig to use when accessing remote storage. Note that the S3Config's `max_connections` parameter will be overridden
                 with `max_connections` that is passed in as a kwarg.
-            use_native_downloader (bool): Use the native downloader rather than python based one.
-                Defaults to True.
 
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occurred during download
         """
-        if use_native_downloader:
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
             raise_on_error = False
-            if on_error == "raise":
-                raise_on_error = True
-            elif on_error == "null":
-                raise_on_error = False
-            else:
-                raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-
-            if not (isinstance(max_connections, int) and max_connections > 0):
-                raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
-
-            multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
-            io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-            return Expression._from_pyexpr(
-                _url_download(self._expr, max_connections, raise_on_error, multi_thread, io_config)
-            )
         else:
-            from daft.udf_library import url_udfs
+            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
-            return url_udfs.download_udf(
-                Expression._from_pyexpr(self._expr),
-                max_worker_threads=max_connections,
-                on_error=on_error,
-            )
+        if not (isinstance(max_connections, int) and max_connections > 0):
+            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
+
+        multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
+        io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
+        return Expression._from_pyexpr(
+            _url_download(self._expr, max_connections, raise_on_error, multi_thread, io_config)
+        )
 
     def upload(
         self,

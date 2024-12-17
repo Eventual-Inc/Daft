@@ -246,11 +246,6 @@ async fn stream_scan_task(
             native_storage_config.io_config.as_ref(),
             native_storage_config.multithreaded_io,
         ),
-
-        #[cfg(feature = "python")]
-        StorageConfig::Python(python_storage_config) => {
-            (python_storage_config.io_config.as_ref(), true)
-        }
     };
     let io_config = Arc::new(io_config.cloned().unwrap_or_default());
     let io_client = daft_io::get_io_client(multi_threaded_io, io_config)?;
