@@ -152,7 +152,7 @@ def find_wheel(commit_hash: str) -> Optional[str]:
     return wheel_urls[0] if wheel_urls else None
 
 
-def build(branch_name: str, commit_hash: str, force: bool) -> str:
+def build(branch_name: str, commit_hash: str) -> str:
     """Runs a build on the given branch.
 
     If the branch has already been built, it will reuse the already built wheel.
@@ -161,12 +161,10 @@ def build(branch_name: str, commit_hash: str, force: bool) -> str:
 
     wheel_url = find_wheel(commit_hash)
 
-    should_build = force or wheel_url is None
-    if should_build:
-        wheel_url = run_build(branch_name, commit_hash)
-    else:
-        # wheel_url must be non-None if this branch is executed
+    if wheel_url:
         print(f"Wheel already found at url {wheel_url}; re-using")
+    else:
+        wheel_url = run_build(branch_name, commit_hash)
 
     return wheel_url
 
@@ -199,17 +197,15 @@ def run(
 
 def main(
     branch_name: Optional[str],
-    force: bool,
 ):
     branch_name, commit_hash = get_name_and_commit_hash(branch_name)
-    wheel_url = build(branch_name=branch_name, commit_hash=commit_hash, force=force)
+    wheel_url = build(branch_name=branch_name, commit_hash=commit_hash)
     run(wheel_url=wheel_url, branch_name=branch_name, commit_hash=commit_hash)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref", type=str, required=False, help="The branch name to run on")
-    parser.add_argument("--force", action="store_true", help="Force a rebuild")
     parser.add_argument("--verbose", action="store_true", help="Verbose debugging")
     args = parser.parse_args()
 
@@ -218,5 +214,4 @@ if __name__ == "__main__":
 
     main(
         branch_name=args.ref,
-        force=args.force,
     )
