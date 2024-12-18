@@ -383,42 +383,55 @@ def test_parquet_limits_across_row_groups(tmpdir, minio_io_config):
     daft.set_execution_config(parquet_target_row_group_size=default_row_group_size)
 
 
-@pytest.mark.parametrize("optional_struct", [True, False])
-def test_parquet_nested_optional_or_required_fields(tmpdir, optional_struct):
+@pytest.mark.parametrize("optional_outer_struct", [True, False])
+@pytest.mark.parametrize("optional_inner_struct", [True, False])
+def test_parquet_nested_optional_or_required_fields(tmpdir, optional_outer_struct, optional_inner_struct):
     schema = pa.schema(
         [
             pa.field(
-                "struct_field",
+                "outer_struct_field",
                 pa.struct(
                     [
-                        pa.field("optional_field_str", pa.string()),
-                        pa.field("optional_field_binary", pa.binary()),
-                        pa.field("optional_field_int", pa.int32()),
-                        pa.field("optional_field_bool", pa.bool_()),
-                        pa.field("required_field_str", pa.string(), nullable=False),
-                        pa.field("required_field_binary", pa.binary(), nullable=False),
-                        pa.field("required_field_int", pa.int32(), nullable=False),
-                        pa.field("required_field_bool", pa.bool_(), nullable=False),
+                        pa.field(
+                            "inner_struct_field",
+                            pa.struct(
+                                [
+                                    pa.field("optional_field_str", pa.string()),
+                                    pa.field("optional_field_binary", pa.binary()),
+                                    pa.field("optional_field_int", pa.int32()),
+                                    pa.field("optional_field_bool", pa.bool_()),
+                                    pa.field("required_field_str", pa.string(), nullable=False),
+                                    pa.field("required_field_binary", pa.binary(), nullable=False),
+                                    pa.field("required_field_int", pa.int32(), nullable=False),
+                                    pa.field("required_field_bool", pa.bool_(), nullable=False),
+                                ]
+                            ),
+                            nullable=optional_inner_struct,
+                        )
                     ]
                 ),
-                nullable=optional_struct,
+                nullable=optional_outer_struct,
             )
         ]
     )
     num_records = 8192
     data = [
         {
-            "struct_field": None
-            if optional_struct and i % 4 == 0
+            "outer_struct_field": None
+            if optional_outer_struct and i % 4 == 0
             else {
-                "optional_field_str": f"string_{i}" if i % 3 != 0 else None,
-                "optional_field_binary": f"binary_{i}".encode() if i % 5 != 0 else None,
-                "optional_field_int": i if i % 7 != 0 else None,
-                "optional_field_bool": bool(i % 3) if i % 11 != 0 else None,
-                "required_field_str": f"string_{i}",
-                "required_field_binary": f"binary_{i}".encode(),
-                "required_field_int": i,
-                "required_field_bool": bool(i % 3),
+                "inner_struct_field": None
+                if optional_inner_struct and i % 5 == 0
+                else {
+                    "optional_field_str": f"string_{i}" if i % 3 != 0 else None,
+                    "optional_field_binary": f"binary_{i}".encode() if i % 5 != 0 else None,
+                    "optional_field_int": i if i % 7 != 0 else None,
+                    "optional_field_bool": bool(i % 3) if i % 11 != 0 else None,
+                    "required_field_str": f"string_{i}",
+                    "required_field_binary": f"binary_{i}".encode(),
+                    "required_field_int": i,
+                    "required_field_bool": bool(i % 3),
+                }
             }
         }
         for i in range(num_records)
