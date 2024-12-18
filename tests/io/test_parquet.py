@@ -12,7 +12,6 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
-from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col
 from daft.logical.schema import Schema
@@ -37,16 +36,8 @@ def _parquet_write_helper(data: pa.Table, row_group_size: int | None = None, pap
         yield file
 
 
-def storage_config_from_use_native_downloader(use_native_downloader: bool) -> StorageConfig:
-    if use_native_downloader:
-        return StorageConfig.native(NativeStorageConfig(True, None))
-    else:
-        return StorageConfig.python(PythonStorageConfig(None))
-
-
-@pytest.mark.parametrize("use_native_downloader", [True, False])
 @pytest.mark.parametrize("use_deprecated_int96_timestamps", [True, False])
-def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_native_downloader):
+def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps):
     data = {
         "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
         "timestamp_us": pa.array([1, 2, 3], pa.timestamp("us")),
@@ -72,13 +63,12 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_nati
         papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
         expected = MicroPartition.from_pydict(data)
-        df = daft.read_parquet(f, schema={k: v for k, v in schema}, use_native_downloader=use_native_downloader)
+        df = daft.read_parquet(f, schema={k: v for k, v in schema})
         assert df.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{df.to_arrow()}"
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
 @pytest.mark.parametrize("coerce_to", [TimeUnit.ms(), TimeUnit.us()])
-def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader):
+def test_parquet_read_int96_timestamps_overflow(coerce_to):
     # NOTE: datetime.datetime(3000, 1, 1) and datetime.datetime(1000, 1, 1) cannot be represented by our timestamp64(nanosecond)
     # type. However they can be written to Parquet's INT96 type. Here we test that a round-trip is possible if provided with
     # the appropriate flags.
@@ -100,7 +90,7 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
         papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
         expected = MicroPartition.from_pydict(data)
-        df = daft.read_parquet(f, coerce_int96_timestamp_unit=coerce_to, use_native_downloader=use_native_downloader)
+        df = daft.read_parquet(f, coerce_int96_timestamp_unit=coerce_to)
 
         assert df.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{df}"
 
