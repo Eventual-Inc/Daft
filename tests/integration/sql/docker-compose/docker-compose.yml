@@ -1,7 +1,7 @@
 version: '3.7'
 services:
   trino:
-    image: trinodb/trino
+    image: trinodb/trino:467
     container_name: trino
     ports:
     - 8080:8080
