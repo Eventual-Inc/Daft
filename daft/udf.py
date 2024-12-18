@@ -85,17 +85,6 @@ def run_udf(
 ) -> PySeries:
     """API to call from Rust code that will call an UDF (initialized, in the case of actor pool UDFs) on the inputs."""
     return_dtype = DataType._from_pydatatype(py_return_dtype)
-
-    # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
-    # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
-    # and is quite error prone! If our Series naming logic here is wrong, things will break when the UDF is run on a table.
-    name = evaluated_expressions[0].name()
-
-    # Don't call UDF with empty tables
-    # TODO: fix assumption that all input lengths are the same
-    if len(evaluated_expressions[0]) == 0:
-        return Series.empty(return_dtype, name)._series
-
     kwarg_keys = list(bound_args.bound_args.kwargs.keys())
     arg_keys = bound_args.arg_keys()
     pyvalues = {key: val for key, val in bound_args.bound_args.arguments.items() if not isinstance(val, Expression)}
@@ -136,7 +125,7 @@ def run_udf(
 
         return args, kwargs
 
-    if batch_size is None:
+    if batch_size is None or len(evaluated_expressions[0]) <= batch_size:
         args, kwargs = get_args_for_slice(0, len(evaluated_expressions[0]))
         try:
             results = [func(*args, **kwargs)]
@@ -162,6 +151,11 @@ def run_udf(
                 raise RuntimeError(
                     f"User-defined function `{func}` failed when executing on inputs with lengths: {tuple(cur_batch_size for _ in evaluated_expressions)}"
                 ) from user_function_exception
+
+    # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
+    # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
+    # and is quite error prone! If our Series naming logic here is wrong, things will break when the UDF is run on a table.
+    name = evaluated_expressions[0].name()
 
     # Post-processing of results into a Series of the appropriate dtype
     if isinstance(results[0], Series):

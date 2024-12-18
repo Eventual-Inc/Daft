@@ -64,11 +64,6 @@ impl PySeries {
         Ok(series.into())
     }
 
-    #[staticmethod]
-    pub fn empty(field_name: &str, dtype: PyDataType) -> Self {
-        series::Series::empty(field_name, &dtype.dtype).into()
-    }
-
     // This is for PythonArrays only,
     // to convert the Rust PythonArray to a Python list[object].
     pub fn to_pylist(&self) -> PyResult<PyObject> {

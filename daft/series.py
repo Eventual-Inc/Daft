@@ -153,10 +153,6 @@ class Series:
         # a Pandas scalar object will be returned.
         return cls.from_pylist(data.to_list(), name=name, pyobj="force")
 
-    @staticmethod
-    def empty(dtype: DataType, name: str = "empty_series") -> Series:
-        return Series._from_pyseries(PySeries.empty(name, dtype._dtype))
-
     def cast(self, dtype: DataType) -> Series:
         return Series._from_pyseries(self._series.cast(dtype._dtype))
 
