@@ -1394,6 +1394,10 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         Example:
             >>> col("data").url.upload("s3://my-bucket/my-folder")  # doctest: +SKIP
 
+            Upload to row-specific URLs
+
+            >>> col("data").url.upload(col("paths"))  # doctest: +SKIP
+
         Args:
             location: a folder location or column of folder locations to upload data into
             max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
