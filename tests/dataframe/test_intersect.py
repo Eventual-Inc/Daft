@@ -37,7 +37,7 @@ def test_intersect_with_nulls(make_df):
     df2 = make_df({"bar": [2, 3, None]})
     df2_without_null = make_df({"bar": [2, 3]})
 
-    result = df1.intersect(df2)
+    result = df1.intersect(df2).sort(by="foo")
     assert result.to_pydict() == {"foo": [2, None]}
 
     result = df1_without_mull.intersect(df2)
