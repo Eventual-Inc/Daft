@@ -205,6 +205,38 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
 }
 
 #[derive(Debug, Default, Clone)]
+/// An in-memory cache for partition sets
+///
+/// Note: this holds weak references to the partition sets
+///
+/// This means that if the partition set is dropped, it will be removed from the cache.
+/// So the partition set must outlive the cache.
+///
+/// ex:
+/// ```rust,no_run
+/// {
+///   let pset = Arc::new(MicroPartitionSet::empty());
+///   {
+///      let cache = InMemoryPartitionSetCache::new(vec![("key", pset.clone())]);
+///     // cache is dropped here
+///
+///   }
+/// // pset is still alive
+/// }
+/// ```
+/// if the partition set is dropped before the cache, it will be removed from the cache
+/// ```rust,no_run
+///
+///  let cache = InMemoryPartitionSetCache::empty();
+/// {
+///   let pset = Arc::new(MicroPartitionSet::empty());
+///   cache.put_partition_set("key", &pset);
+///   cache.get_partition_set("key"); // Some(pset)
+///   // pset is dropped here
+/// }
+///
+/// cache.get_partition_set("key"); // None
+///```
 pub struct InMemoryPartitionSetCache {
     pub partition_sets: DashMap<String, Weak<MicroPartitionSet>>,
 }
@@ -258,5 +290,23 @@ impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> for InMemoryPa
 
     fn clear(&self) {
         self.partition_sets.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cache_drops_pset() {
+        let cache = InMemoryPartitionSetCache::empty();
+
+        {
+            let pset = Arc::new(MicroPartitionSet::empty());
+            cache.put_partition_set("key", &pset);
+            assert!(cache.get_partition_set("key").is_some());
+        }
+
+        assert!(cache.get_partition_set("key").is_none());
     }
 }
