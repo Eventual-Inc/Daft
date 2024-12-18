@@ -1,7 +1,7 @@
 fix = true
 indent-width = 4
 line-length = 120
-target-version = "py38"
+target-version = "py39"
 
 [format]
 docstring-code-format = true
