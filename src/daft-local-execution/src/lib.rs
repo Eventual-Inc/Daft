@@ -187,7 +187,7 @@ impl ExecutionRuntimeContext {
 impl Drop for ExecutionRuntimeContext {
     fn drop(&mut self) {
         if let Some(pbm) = self.progress_bar_manager.take() {
-            pbm.close();
+            let _ = pbm.close_all();
         }
     }
 }

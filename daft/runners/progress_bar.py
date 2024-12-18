@@ -108,6 +108,7 @@ class ProgressBar:
             del p
 
 
+# Progress Bar for local execution, should only be used in the native executor
 class SwordfishProgressBar:
     def __init__(self) -> None:
         self._maxinterval = 5.0
@@ -117,7 +118,6 @@ class SwordfishProgressBar:
     def make_new_bar(self, bar_format: str, initial_message: str) -> int:
         pbar_id = len(self.pbars)
         self.pbars[pbar_id] = self.tqdm_mod(
-            # bar_format=f"{name}: {{elapsed}} {{desc}}",
             bar_format=bar_format,
             desc=initial_message,
             position=pbar_id,
