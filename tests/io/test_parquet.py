@@ -381,3 +381,51 @@ def test_parquet_limits_across_row_groups(tmpdir, minio_io_config):
         )
     # Reset the target row group size.
     daft.set_execution_config(parquet_target_row_group_size=default_row_group_size)
+
+
+@pytest.mark.parametrize("optional_struct", [True, False])
+def test_parquet_nested_optional_or_required_fields(tmpdir, optional_struct):
+    schema = pa.schema(
+        [
+            pa.field(
+                "struct_field",
+                pa.struct(
+                    [
+                        pa.field("optional_field_str", pa.string()),
+                        pa.field("optional_field_binary", pa.binary()),
+                        pa.field("optional_field_int", pa.int32()),
+                        pa.field("optional_field_bool", pa.bool_()),
+                        pa.field("required_field_str", pa.string(), nullable=False),
+                        pa.field("required_field_binary", pa.binary(), nullable=False),
+                        pa.field("required_field_int", pa.int32(), nullable=False),
+                        pa.field("required_field_bool", pa.bool_(), nullable=False),
+                    ]
+                ),
+                nullable=optional_struct,
+            )
+        ]
+    )
+    num_records = 8192
+    data = [
+        {
+            "struct_field": None
+            if optional_struct and i % 4 == 0
+            else {
+                "optional_field_str": f"string_{i}" if i % 3 != 0 else None,
+                "optional_field_binary": f"binary_{i}".encode() if i % 5 != 0 else None,
+                "optional_field_int": i if i % 7 != 0 else None,
+                "optional_field_bool": bool(i % 3) if i % 11 != 0 else None,
+                "required_field_str": f"string_{i}",
+                "required_field_binary": f"binary_{i}".encode(),
+                "required_field_int": i,
+                "required_field_bool": bool(i % 3),
+            }
+        }
+        for i in range(num_records)
+    ]
+    expected = pa.Table.from_pylist(data, schema=schema)
+    output_file = f"{tmpdir}/{uuid.uuid4()!s}.parquet"
+    papq.write_table(expected, output_file)
+    expected = MicroPartition.from_arrow(expected)
+    df = daft.read_parquet(output_file)
+    assert df.to_arrow() == expected.to_arrow(), f"Expected:\n{expected.to_arrow()}\n\nReceived:\n{df.to_arrow()}"
