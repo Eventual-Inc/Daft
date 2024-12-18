@@ -8,7 +8,7 @@ pub mod ops;
 pub mod pseudo_arrow;
 mod serdes;
 mod struct_array;
-use arrow2::bitmap::Bitmap;
+use arrow2::{bitmap::Bitmap, compute::cast::utf8_to_large_utf8};
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
@@ -53,12 +53,30 @@ impl<T> DataArray<T> {
         );
 
         if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
+            // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
+            // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
+            if expected_arrow_physical_type == arrow2::datatypes::DataType::LargeUtf8
+                && arrow_array.data_type() == &arrow2::datatypes::DataType::Utf8
+            {
+                let utf8_arr = arrow_array
+                    .as_any()
+                    .downcast_ref::<arrow2::array::Utf8Array<i32>>()
+                    .unwrap();
+
+                let arr = Box::new(utf8_to_large_utf8(utf8_arr));
+
+                return Ok(Self {
+                    field: physical_field,
+                    data: arr,
+                    marker_: PhantomData,
+                });
+            }
             let arrow_data_type = arrow_array.data_type();
 
             assert!(
                 !(&expected_arrow_physical_type != arrow_data_type),
                 "Mismatch between expected and actual Arrow types for DataArray.\n\
-                Field name: {}\n\
+                Field name: {}\n
                 Logical type: {}\n\
                 Physical type: {}\n\
                 Expected Arrow physical type: {:?}\n\
@@ -165,5 +183,24 @@ where
 {
     pub fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_schema::{dtype::DataType, field::Field};
+
+    use crate::series::Series;
+
+    #[test]
+    fn from_small_utf8_arrow() {
+        let data = vec![Some("hello"), Some("world")];
+        let data = Box::new(arrow2::array::Utf8Array::<i32>::from(data.as_slice()));
+        let daft_fld = Arc::new(Field::new("test", DataType::Utf8));
+
+        let s = Series::from_arrow(daft_fld, data);
+        assert!(s.is_ok())
     }
 }
