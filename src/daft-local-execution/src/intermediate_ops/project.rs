@@ -14,11 +14,7 @@ use crate::NUM_CPUS;
 
 fn num_parallel_exprs(projection: &[ExprRef]) -> usize {
     max(
-        projection
-            .iter()
-            .map(|expr| expr.has_compute())
-            .filter(|x| *x)
-            .count(),
+        projection.iter().filter(|expr| expr.has_compute()).count(),
         1,
     )
 }

@@ -1,9 +1,7 @@
 use std::{
     collections::HashMap,
     fs::File,
-    future::Future,
     io::Write,
-    pin::pin,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -188,42 +186,6 @@ impl Iterator for ExecutionEngineReceiverIterator {
     }
 }
 
-pub struct ExecutionEngineReceiverStream {
-    receiver: kanal::AsyncReceiver<Arc<MicroPartition>>,
-    handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
-}
-
-impl Stream for ExecutionEngineReceiverStream {
-    type Item = DaftResult<Arc<MicroPartition>>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let x = pin!(self.receiver.recv()).poll(cx);
-        match x {
-            std::task::Poll::Ready(Ok(part)) => std::task::Poll::Ready(Some(Ok(part))),
-            std::task::Poll::Ready(Err(_)) => {
-                if self.handle.is_some() {
-                    let join_result = self
-                        .handle
-                        .take()
-                        .unwrap()
-                        .join()
-                        .expect("Execution engine thread panicked");
-                    match join_result {
-                        Ok(()) => std::task::Poll::Ready(None),
-                        Err(e) => std::task::Poll::Ready(Some(Err(e))),
-                    }
-                } else {
-                    std::task::Poll::Ready(None)
-                }
-            }
-            std::task::Poll::Pending => std::task::Poll::Pending,
-        }
-    }
-}
-
 pub struct ExecutionEngineResult {
     handle: std::thread::JoinHandle<DaftResult<()>>,
     receiver: Receiver<Arc<MicroPartition>>,
@@ -231,11 +193,37 @@ pub struct ExecutionEngineResult {
 
 impl ExecutionEngineResult {
     pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
-        let receiver = self.receiver.into_inner();
-        ExecutionEngineReceiverStream {
-            receiver,
-            handle: Some(self.handle),
+        struct StreamState {
+            receiver: Receiver<Arc<MicroPartition>>,
+            handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
         }
+
+        let state = StreamState {
+            receiver: self.receiver,
+            handle: Some(self.handle),
+        };
+
+        futures::stream::unfold(state, |mut state| async {
+            match state.receiver.recv().await {
+                Some(part) => Some((Ok(part), state)),
+                None => {
+                    if state.handle.is_some() {
+                        let join_result = state
+                            .handle
+                            .take()
+                            .unwrap()
+                            .join()
+                            .expect("Execution engine thread panicked");
+                        match join_result {
+                            Ok(()) => None,
+                            Err(e) => Some((Err(e), state)),
+                        }
+                    } else {
+                        None
+                    }
+                }
+            }
+        })
     }
 }
 

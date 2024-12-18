@@ -1,4 +1,4 @@
-use std::future::ready;
+use std::{future::ready, pin::pin};
 
 use common_daft_config::DaftExecutionConfig;
 use common_file_formats::FileFormat;
@@ -119,9 +119,9 @@ impl Session {
             let optimized_plan = plan.builder.optimize()?;
             let cfg = DaftExecutionConfig::default();
             let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-            let mut result_stream = native_executor
+            let mut result_stream = pin!(native_executor
                 .run(plan.psets, cfg.into(), None)?
-                .into_stream();
+                .into_stream());
 
             // this is so we make sure the operation is actually done
             // before we return
