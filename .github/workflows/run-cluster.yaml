@@ -46,6 +46,8 @@ jobs:
     with:
       arch: x86
       python_version: ${{ inputs.python_version }}
+    secrets:
+      ACTIONS_AWS_ROLE_ARN: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
 
   run-command:
     runs-on: [self-hosted, linux, x64, ci-dev]

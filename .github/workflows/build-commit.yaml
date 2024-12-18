@@ -11,6 +11,8 @@ on:
         description: The version of Python to use
         required: true
         type: string
+    secrets:
+      ACTIONS_AWS_ROLE_ARN: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
     outputs:
       wheel_url:
         description: The name of the built wheel
