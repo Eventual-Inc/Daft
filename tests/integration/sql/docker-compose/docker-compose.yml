@@ -1,4 +1,3 @@
-version: '3.7'
 services:
   trino:
     image: trinodb/trino:467
@@ -7,7 +6,7 @@ services:
     - 8080:8080
 
   postgres:
-    image: postgres:latest
+    image: postgres:17.2
     container_name: postgres
     environment:
       POSTGRES_DB: postgres
@@ -19,7 +18,7 @@ services:
     - postgres_data:/var/lib/postgresql/data
 
   mysql:
-    image: mysql:latest
+    image: mysql:9.1
     container_name: mysql
     environment:
       MYSQL_DATABASE: mysql
