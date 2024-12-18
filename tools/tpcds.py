@@ -59,7 +59,7 @@ auth = Auth.Token(gha_run_cluster_job.get_oauth_token())
 g = Github(auth=auth)
 
 
-def build(branch_name: Optional[str]):
+def build(branch_name: Optional[str], force: bool):
     """Runs a build on the given branch.
 
     If the branch has already been built, it will reuse the already built wheel.
@@ -85,7 +85,7 @@ def build(branch_name: Optional[str]):
 
     print(f"Checking if a build exists for the branch '{branch_name}' (commit-hash: {commit_hash})")
 
-    if length == 0:
+    def run_build():
         user_wants_to_build_commit = inquirer.confirm(message="No build found; would you like to build this branch?")
         if not user_wants_to_build_commit:
             print("Workflow aborted")
@@ -144,32 +144,27 @@ def build(branch_name: Optional[str]):
             raise RuntimeError(
                 f"The 'build-commit' workflow failed; view the results here: {post_creation_latest_run.url}"
             )
-    elif length == 1:
-        print("Build found; re-using build")
 
-    # repo = g.get_repo("Eventual-Inc/Daft")
-    # workflow = repo.get_workflow("build-commit.yaml")
-    #
-    # created = workflow.create_dispatch(
-    #     ref=branch,
-    #     inputs={
-    #         "arch": "x86",
-    #     },
-    # )
-    #
-    # if not created:
-    #     raise RuntimeError("Could not create workflow, suggestion: run again with --verbose")
-    #
-    # print("Workflow created, view it at: https://github.com/Eventual-Inc/Daft/actions/workflows/run-cluster.yaml")
+    if length == 0:
+        run_build()
+    elif length == 1:
+        if force:
+            run_build()
+        else:
+            print("Build found; re-using build")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref", type=str, required=False, help="The branch name to run on")
+    parser.add_argument("--force", action="store_true", help="Force a rebuild")
     parser.add_argument("--verbose", action="store_true", help="Verbose debugging")
     args = parser.parse_args()
 
     if args.verbose:
         enable_console_debug_logging()
 
-    build(branch_name=args.ref)
+    build(
+        branch_name=args.ref,
+        force=args.force,
+    )
