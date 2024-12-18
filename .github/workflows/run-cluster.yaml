@@ -3,10 +3,6 @@ name: run-cluster
 on:
   workflow_dispatch:
     inputs:
-      daft_wheel_url:
-        description: Daft python-wheel URL
-        type: string
-        required: false
       daft_version:
         description: Daft version (errors if both this and "Daft python-wheel URL" are provided)
         type: string
@@ -45,12 +41,18 @@ on:
         default: ""
 
 jobs:
+  build-commit:
+    uses: ./.github/workflows/build-commit.yaml
+    with:
+      arch: x86
+      python_version: ${{ inputs.python_version }}
+
   run-command:
     runs-on: [self-hosted, linux, x64, ci-dev]
-    timeout-minutes: 15 # Remove for ssh debugging
     permissions:
       id-token: write
       contents: read
+    needs: build-commit
     steps:
     - name: Log workflow inputs
       run: echo "${{ toJson(github.event.inputs) }}"
@@ -80,7 +82,7 @@ jobs:
             --python 3.12 \
             .github/ci-scripts/templatize_ray_config.py \
             --cluster-name="ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}" \
-            --daft-wheel-url='${{ inputs.daft_wheel_url }}' \
+            --daft-wheel-url='${{ needs.build-commit.outputs.wheel_url }}' \
             --daft-version='${{ inputs.daft_version }}' \
             --python-version='${{ inputs.python_version }}' \
             --cluster-profile='${{ inputs.cluster_profile }}' \
