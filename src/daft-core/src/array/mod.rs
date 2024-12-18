@@ -76,7 +76,7 @@ impl<T> DataArray<T> {
             assert!(
                 !(&expected_arrow_physical_type != arrow_data_type),
                 "Mismatch between expected and actual Arrow types for DataArray.\n\
-                Field name: {}\n
+                Field name: {}\n\
                 Logical type: {}\n\
                 Physical type: {}\n\
                 Expected Arrow physical type: {:?}\n\
