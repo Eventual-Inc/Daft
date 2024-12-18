@@ -117,53 +117,216 @@ pub fn to_spark_datatype(datatype: &DataType) -> spark_connect::DataType {
     }
 }
 
+const TYPE_VARIATION_ERROR: &str = "Custom type variation reference not supported";
+
+pub fn to_arrow_datatype(
+    datatype: &spark_connect::DataType,
+) -> eyre::Result<arrow2::datatypes::DataType> {
+    let Some(kind) = &datatype.kind else {
+        bail!("Datatype is required");
+    };
+
+    match kind {
+        Kind::Null(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Null)
+        }
+        Kind::Binary(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Binary)
+        }
+        Kind::Boolean(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Boolean)
+        }
+        Kind::Byte(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Int8)
+        }
+        Kind::Short(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Int16)
+        }
+        Kind::Integer(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Int32)
+        }
+        Kind::Long(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Int64)
+        }
+        Kind::Float(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Float32)
+        }
+        Kind::Double(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Float64)
+        }
+        Kind::Decimal(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            let precision = value.precision.unwrap_or(10) as u8;
+            let scale = value.scale.unwrap_or(0) as i8;
+
+            let precision = usize::try_from(precision).wrap_err("precision is not a usize")?;
+
+            let scale = usize::try_from(scale).wrap_err("scale is not a usize")?;
+
+            Ok(arrow2::datatypes::DataType::Decimal(precision, scale))
+        }
+        Kind::String(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Utf8)
+        }
+        Kind::Char(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Utf8)
+        }
+        Kind::VarChar(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Utf8)
+        }
+        Kind::Date(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Date32)
+        }
+        Kind::Timestamp(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Timestamp(
+                arrow2::datatypes::TimeUnit::Microsecond,
+                None,
+            ))
+        }
+        Kind::TimestampNtz(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            Ok(arrow2::datatypes::DataType::Timestamp(
+                arrow2::datatypes::TimeUnit::Microsecond,
+                None,
+            ))
+        }
+        Kind::CalendarInterval(_) => {
+            bail!("Calendar interval type not supported")
+        }
+        Kind::YearMonthInterval(_) => {
+            bail!("Year-month interval type not supported")
+        }
+        Kind::DayTimeInterval(_) => {
+            bail!("Day-time interval type not supported")
+        }
+        Kind::Array(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            let element_type = value
+                .element_type
+                .as_ref()
+                .ok_or_else(|| eyre::eyre!("Array element type is required"))?;
+            let inner = to_arrow_datatype(element_type)?;
+            let field = arrow2::datatypes::Field::new("item", inner, true);
+            Ok(arrow2::datatypes::DataType::List(Box::new(field)))
+        }
+        Kind::Struct(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            let fields = value
+                .fields
+                .iter()
+                .map(|f| {
+                    Ok(arrow2::datatypes::Field::new(
+                        &f.name,
+                        to_arrow_datatype(
+                            f.data_type
+                                .as_ref()
+                                .ok_or_else(|| eyre::eyre!("Field data type is required"))?,
+                        )?,
+                        f.nullable,
+                    ))
+                })
+                .collect::<eyre::Result<Vec<_>>>()?;
+            Ok(arrow2::datatypes::DataType::Struct(fields))
+        }
+        Kind::Map(value) => {
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
+            let key_type = value
+                .key_type
+                .as_ref()
+                .ok_or_else(|| eyre::eyre!("Map key type is required"))?;
+            let value_type = value
+                .value_type
+                .as_ref()
+                .ok_or_else(|| eyre::eyre!("Map value type is required"))?;
+
+            let key = to_arrow_datatype(key_type)?;
+            let value = to_arrow_datatype(value_type)?;
+
+            let key = arrow2::datatypes::Field::new("key", key, true);
+            let value = arrow2::datatypes::Field::new("value", value, true);
+
+            let struct_field = arrow2::datatypes::Field::new(
+                "entries",
+                arrow2::datatypes::DataType::Struct(vec![key, value]),
+                false,
+            );
+
+            Ok(arrow2::datatypes::DataType::Map(
+                Box::new(struct_field),
+                false,
+            ))
+        }
+        Kind::Variant(_) => {
+            bail!("Variant type not supported")
+        }
+        Kind::Udt(_) => {
+            bail!("UDT type not supported")
+        }
+        Kind::Unparsed(_) => {
+            bail!("Unparsed type not supported")
+        }
+    }
+}
+
 // todo(test): add tests for this esp in Python
 pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<DataType> {
     let Some(kind) = &datatype.kind else {
         bail!("Datatype is required");
     };
 
-    let type_variation_err = "Custom type variation reference not supported";
-
     match kind {
         Kind::Null(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Null)
         }
         Kind::Binary(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Binary)
         }
         Kind::Boolean(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Boolean)
         }
         Kind::Byte(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Int8)
         }
         Kind::Short(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Int16)
         }
         Kind::Integer(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Int32)
         }
         Kind::Long(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Int64)
         }
         Kind::Float(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Float32)
         }
         Kind::Double(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Float64)
         }
         Kind::Decimal(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
 
             let Some(precision) = value.precision else {
                 bail!("Decimal precision is required");
@@ -182,37 +345,37 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
             Ok(DataType::Decimal128(precision, scale))
         }
         Kind::String(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Utf8)
         }
         Kind::Char(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Utf8)
         }
         Kind::VarChar(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Utf8)
         }
         Kind::Date(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Date)
         }
         Kind::Timestamp(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             // Using microseconds precision with no timezone info matches Spark's behavior.
             // Spark handles timezones at the session level rather than in the type itself.
             // See: https://www.databricks.com/blog/2020/07/22/a-comprehensive-look-at-dates-and-timestamps-in-apache-spark-3-0.html
             Ok(DataType::Timestamp(TimeUnit::Microseconds, None))
         }
         Kind::TimestampNtz(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             Ok(DataType::Timestamp(TimeUnit::Microseconds, None))
         }
         Kind::CalendarInterval(_) => bail!("Calendar interval type not supported"),
         Kind::YearMonthInterval(_) => bail!("Year-month interval type not supported"),
         Kind::DayTimeInterval(_) => bail!("Day-time interval type not supported"),
         Kind::Array(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             let element_type = to_daft_datatype(
                 value
                     .element_type
@@ -222,7 +385,7 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
             Ok(DataType::List(Box::new(element_type)))
         }
         Kind::Struct(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             let fields = value
                 .fields
                 .iter()
@@ -238,7 +401,7 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
             Ok(DataType::Struct(fields))
         }
         Kind::Map(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
+            ensure!(value.type_variation_reference == 0, TYPE_VARIATION_ERROR);
             let key_type = to_daft_datatype(
                 value
                     .key_type

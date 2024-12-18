@@ -27,9 +27,20 @@ def test_create_df(spark_session):
     assert list(df_two_pandas["num2"]) == [10, 20, 30], "Second number column should contain expected values"
 
     # now do boolean
-    print("now testing boolean")
     boolean_data = [(True,), (False,), (True,)]
     df_boolean = spark_session.createDataFrame(boolean_data, ["value"])
     df_boolean_pandas = df_boolean.toPandas()
     assert len(df_boolean_pandas) == 3, "Boolean DataFrame should have 3 rows"
     assert list(df_boolean_pandas["value"]) == [True, False, True], "Boolean DataFrame should contain expected values"
+
+    string_data = [("Hello",), ("World",), ("Spark",)]
+    df_string = spark_session.createDataFrame(string_data, ["value"])
+
+    # Convert to pandas and verify
+    df_string_pandas = df_string.toPandas()
+    assert len(df_string_pandas) == 3, "String DataFrame should have 3 rows"
+    assert list(df_string_pandas["value"]) == [
+        "Hello",
+        "World",
+        "Spark",
+    ], "String DataFrame should contain expected values"

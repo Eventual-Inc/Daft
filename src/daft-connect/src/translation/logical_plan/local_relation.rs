@@ -1,8 +1,11 @@
 use std::{collections::HashMap, io::Cursor, sync::Arc};
 
-use arrow2::io::ipc::{
-    read::{StreamMetadata, StreamReader, StreamState, Version},
-    IpcField, IpcSchema,
+use arrow2::{
+    compute::cast::CastOptions,
+    io::ipc::{
+        read::{StreamMetadata, StreamReader, StreamState, Version},
+        IpcField, IpcSchema,
+    },
 };
 use daft_core::series::Series;
 use daft_logical_plan::{
@@ -10,12 +13,11 @@ use daft_logical_plan::{
     SourceInfo,
 };
 use daft_micropartition::partitioning::InMemoryPartitionSet;
-use daft_schema::dtype::DaftDataType;
 use daft_table::Table;
 use eyre::{bail, ensure, WrapErr};
 use itertools::Itertools;
 
-use crate::translation::{deser_spark_datatype, logical_plan::Plan, to_daft_datatype};
+use crate::translation::{datatype::to_arrow_datatype, deser_spark_datatype, logical_plan::Plan};
 
 pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> {
     #[cfg(not(feature = "python"))]
@@ -45,29 +47,25 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
         let schema = deser_spark_datatype(schema)?;
 
         // daft schema
-        let schema = to_daft_datatype(&schema)?;
+        let schema = to_arrow_datatype(&schema)?;
 
         // should be of type struct
-        let daft_schema::dtype::DataType::Struct(daft_fields) = &schema else {
+        let arrow2::datatypes::DataType::Struct(arrow_fields) = &schema else {
             bail!("schema must be struct")
         };
 
-        let daft_schema = daft_schema::schema::Schema::new(daft_fields.clone())
-            .wrap_err("Could not create schema")?;
-
-        let daft_schema = Arc::new(daft_schema);
-
-        let arrow_fields: Vec<_> = daft_fields
-            .iter()
-            .map(|daft_field| daft_field.to_arrow())
-            .try_collect()?;
+        //
+        // let arrow_fields: Vec<_> = daft_fields
+        //     .iter()
+        //     .map(|daft_field| daft_field.to_arrow())
+        //     .try_collect()?;
 
         let mut dict_idx = 0;
 
-        let ipc_fields: Vec<_> = daft_fields
+        let ipc_fields: Vec<_> = arrow_fields
             .iter()
             .map(|field| {
-                let required_dictionary = field.dtype == DaftDataType::Utf8;
+                let required_dictionary = require_dictionary(field);
 
                 let dictionary_id = match required_dictionary {
                     true => {
@@ -86,14 +84,24 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
             })
             .collect();
 
-        let schema = arrow2::datatypes::Schema::from(arrow_fields);
+        let daft_fields: Vec<_> = arrow_fields
+            .iter()
+            .map(|arrow_field| daft_schema::field::Field::from(arrow_field))
+            .collect();
+
+        let daft_schema = daft_schema::schema::Schema::new(daft_fields.clone())
+            .wrap_err("Could not create schema")?;
+
+        let daft_schema = Arc::new(daft_schema);
+
+        let arrow_schema = arrow2::datatypes::Schema::from(arrow_fields.clone());
 
         let little_endian = true;
         let version = Version::V5;
 
         let tables = {
             let metadata = StreamMetadata {
-                schema,
+                schema: arrow_schema,
                 version,
                 ipc_schema: IpcSchema {
                     fields: ipc_fields,
@@ -124,6 +132,20 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
                 let mut num_rows = Vec::with_capacity(daft_schema.fields.len());
 
                 for (array, (_, daft_field)) in itertools::zip_eq(chunk, &daft_schema.fields) {
+                    // casting is needed in scenarios like where Daft only has Utf8 (arrow equivalent LargeUtf8)
+                    // and we need to make sure the underlying data is the same as what Daft expects
+                    let target_datatype = daft_field
+                        .dtype
+                        .to_arrow()
+                        .wrap_err("could not convert to arrow field")?;
+
+                    let array = arrow2::compute::cast::cast(
+                        &*array,
+                        &target_datatype,
+                        CastOptions::default(),
+                    )
+                    .wrap_err("could not cast")?;
+
                     // Note: Cloning field and array; consider optimizing to avoid unnecessary clones.
                     let field = daft_field.clone();
                     let field_ref = Arc::new(field);
@@ -202,4 +224,12 @@ fn grab_singular_cache_key(plan: &LogicalPlanBuilder) -> eyre::Result<String> {
     };
 
     Ok(cache_key.clone())
+}
+
+fn require_dictionary(field: &arrow2::datatypes::Field) -> bool {
+    let datatype = field.data_type();
+    matches!(
+        datatype,
+        arrow2::datatypes::DataType::Utf8 | arrow2::datatypes::DataType::LargeUtf8
+    )
 }
