@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    any::Any,
+    sync::{Arc, Weak},
+};
 
 use common_error::{DaftError, DaftResult};
 pub use common_partitioning::*;
@@ -6,113 +9,129 @@ use daft_table::Table;
 use dashmap::DashMap;
 use futures::stream::BoxStream;
 
-use crate::MicroPartition;
+use crate::{micropartition::MicroPartitionRef, MicroPartition};
 
 impl Partition for MicroPartition {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
     fn size_bytes(&self) -> DaftResult<Option<usize>> {
         self.size_bytes()
-    }
-}
-
-/// an in memory batch of [`MicroPartition`]'s
-#[derive(Debug, Clone)]
-pub struct MicroPartitionBatch {
-    pub partition: Vec<Arc<MicroPartition>>,
-    pub metadata: Option<PartitionMetadata>,
-}
-
-impl MicroPartitionBatch {
-    pub fn new(partition: Vec<Arc<MicroPartition>>, metadata: Option<PartitionMetadata>) -> Self {
-        Self {
-            partition,
-            metadata,
-        }
-    }
-}
-
-impl TryFrom<Vec<Table>> for MicroPartitionBatch {
-    type Error = DaftError;
-
-    fn try_from(tables: Vec<Table>) -> Result<Self, Self::Error> {
-        if tables.is_empty() {
-            return Ok(Self {
-                partition: vec![],
-                metadata: None,
-            });
-        }
-
-        let schema = &tables[0].schema;
-        let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(tables), None);
-        Ok(Self {
-            partition: vec![Arc::new(mp)],
-            metadata: None,
-        })
-    }
-}
-
-impl PartitionBatch<MicroPartition> for MicroPartitionBatch {
-    fn partitions(&self) -> Vec<Arc<MicroPartition>> {
-        self.partition.clone()
-    }
-
-    fn metadata(&self) -> PartitionMetadata {
-        if let Some(metadata) = &self.metadata {
-            metadata.clone()
-        } else if self.partition.is_empty() {
-            PartitionMetadata {
-                num_rows: 0,
-                size_bytes: 0,
-            }
-        } else {
-            let mp = &self.partition[0];
-            let num_rows = mp.len();
-            let size_bytes = mp.size_bytes().unwrap_or(None).unwrap_or(0);
-            PartitionMetadata {
-                num_rows,
-                size_bytes,
-            }
-        }
-    }
-
-    fn into_partition_stream(
-        self: Arc<Self>,
-    ) -> BoxStream<'static, DaftResult<Arc<MicroPartition>>> {
-        Box::pin(futures::stream::iter(
-            self.partition.clone().into_iter().map(Ok),
-        ))
     }
 }
 
 // An in memory partition set
 #[derive(Debug, Default, Clone)]
 pub struct MicroPartitionSet {
-    pub partitions: DashMap<PartitionId, Vec<Arc<MicroPartition>>>,
+    pub partitions: DashMap<PartitionId, MicroPartitionRef>,
 }
-
+impl From<Vec<MicroPartitionRef>> for MicroPartitionSet {
+    fn from(value: Vec<MicroPartitionRef>) -> Self {
+        let partitions = value
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| (i as PartitionId, v))
+            .collect();
+        Self { partitions }
+    }
+}
 impl MicroPartitionSet {
-    pub fn new<T: IntoIterator<Item = (PartitionId, Vec<Arc<MicroPartition>>)>>(psets: T) -> Self {
+    pub fn new<T: IntoIterator<Item = (PartitionId, MicroPartitionRef)>>(psets: T) -> Self {
         Self {
             partitions: psets.into_iter().collect(),
         }
     }
+
     pub fn empty() -> Self {
         Self::default()
     }
+
+    pub fn from_tables(id: PartitionId, tables: Vec<Table>) -> DaftResult<Self> {
+        if tables.is_empty() {
+            return Ok(Self::empty());
+        }
+
+        let schema = &tables[0].schema;
+        let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(tables), None);
+        Ok(Self::new(vec![(id, Arc::new(mp))]))
+    }
+
+    pub fn as_any_arc(self: Arc<Self>) -> Arc<dyn PartitionSet<Arc<dyn Partition>>> {
+        #[derive(Debug, Clone)]
+        struct Wrapper<T>(T);
+
+        // this is implemented solely for casting to Arc<dyn PartitionSet<Arc<dyn Partition>>>
+        // The values are not actually used, but needed to satisfy the trait, and is used to hold a reference to the actual partition set, but with the original types erased.
+        // the trait methods are intentionally unimplemented
+        impl PartitionSet<Arc<dyn Partition>> for Wrapper<Arc<MicroPartitionSet>> {
+            fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
+                self.0.get_merged_partitions()
+            }
+
+            fn get_preview_partitions(
+                &self,
+                num_rows: usize,
+            ) -> DaftResult<Vec<Arc<dyn Partition>>> {
+                self.0
+                    .get_preview_partitions(num_rows)
+                    .map(|v| v.into_iter().map(|v| v as _).collect())
+            }
+
+            fn num_partitions(&self) -> usize {
+                self.0.num_partitions()
+            }
+
+            fn len(&self) -> usize {
+                self.0.len()
+            }
+
+            fn size_bytes(&self) -> DaftResult<usize> {
+                self.0.size_bytes()
+            }
+
+            fn has_partition(&self, idx: &PartitionId) -> bool {
+                self.0.has_partition(idx)
+            }
+
+            fn delete_partition(&self, idx: &PartitionId) -> DaftResult<()> {
+                self.0.delete_partition(idx)
+            }
+
+            fn set_partition(
+                &self,
+                _idx: PartitionId,
+                _part: &Arc<dyn Partition>,
+            ) -> DaftResult<()> {
+                unimplemented!()
+            }
+
+            fn get_partition(&self, _idx: &PartitionId) -> DaftResult<Arc<dyn Partition>> {
+                unimplemented!()
+            }
+
+            fn to_partition_stream(&self) -> BoxStream<'static, DaftResult<Arc<dyn Partition>>> {
+                unimplemented!()
+            }
+
+            fn metadata(&self) -> PartitionMetadata {
+                self.0.metadata()
+            }
+        }
+
+        Arc::new(Wrapper(self)) as _
+    }
 }
 
-impl PartitionSet<MicroPartition> for MicroPartitionSet {
+impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
     fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
-        let parts = self.partitions.iter().flat_map(|v| v.value().clone());
+        let parts = self.partitions.iter().map(|v| v.value().clone());
         MicroPartition::concat(parts).map(|mp| Arc::new(mp) as _)
     }
 
-    fn get_preview_partitions(
-        &self,
-        mut num_rows: usize,
-    ) -> DaftResult<PartitionBatchRef<MicroPartition>> {
+    fn get_preview_partitions(&self, mut num_rows: usize) -> DaftResult<Vec<MicroPartitionRef>> {
         let mut preview_parts = vec![];
 
-        for part in self.partitions.iter().flat_map(|v| v.value().clone()) {
+        for part in self.partitions.iter().map(|v| v.value().clone()) {
             let part_len = part.len();
             if part_len >= num_rows {
                 let mp = part.slice(0, num_rows)?;
@@ -125,11 +144,7 @@ impl PartitionSet<MicroPartition> for MicroPartitionSet {
                 preview_parts.push(part.clone());
             }
         }
-        let preview_parts = MicroPartitionBatch {
-            partition: preview_parts,
-            metadata: None,
-        };
-        Ok(Arc::new(preview_parts))
+        Ok(preview_parts)
     }
 
     fn num_partitions(&self) -> usize {
@@ -145,52 +160,103 @@ impl PartitionSet<MicroPartition> for MicroPartitionSet {
     }
 
     fn size_bytes(&self) -> DaftResult<usize> {
-        let mut parts = self.partitions.iter().flat_map(|v| v.value().clone());
+        let mut parts = self.partitions.iter().map(|v| v.value().clone());
 
         parts.try_fold(0, |acc, mp| Ok(acc + mp.size_bytes()?.unwrap_or(0)))
     }
 
     fn has_partition(&self, partition_id: &PartitionId) -> bool {
-        self.partitions.contains_key(partition_id.as_ref())
+        self.partitions.contains_key(partition_id)
     }
 
     fn delete_partition(&self, partition_id: &PartitionId) -> DaftResult<()> {
-        self.partitions.remove(partition_id.as_ref());
+        self.partitions.remove(partition_id);
         Ok(())
     }
 
-    fn set_partition(
-        &self,
-        partition_id: PartitionId,
-        part: &dyn PartitionBatch<MicroPartition>,
-    ) -> DaftResult<()> {
-        let part = part.partitions();
-
-        self.partitions.insert(partition_id, part);
+    fn set_partition(&self, partition_id: PartitionId, part: &MicroPartitionRef) -> DaftResult<()> {
+        self.partitions.insert(partition_id, part.clone());
         Ok(())
     }
 
-    fn get_partition(&self, idx: &PartitionId) -> DaftResult<PartitionBatchRef<MicroPartition>> {
+    fn get_partition(&self, idx: &PartitionId) -> DaftResult<MicroPartitionRef> {
         let part = self
             .partitions
             .get(idx)
             .ok_or(DaftError::ValueError("Partition not found".to_string()))?;
 
-        Ok(Arc::new(MicroPartitionBatch {
-            partition: part.clone(),
-            metadata: None,
-        }))
+        Ok(part.clone())
     }
 
-    fn into_partition_stream(
-        self: Arc<Self>,
-    ) -> BoxStream<'static, DaftResult<Arc<MicroPartition>>> {
-        let partitions = self.partitions.clone();
-        Box::pin(futures::stream::iter(
-            partitions
+    fn to_partition_stream(&self) -> BoxStream<'static, DaftResult<MicroPartitionRef>> {
+        let partitions = self.partitions.clone().into_iter().map(|(_, v)| v).map(Ok);
+
+        Box::pin(futures::stream::iter(partitions))
+    }
+
+    fn metadata(&self) -> PartitionMetadata {
+        let size_bytes = self.size_bytes().unwrap_or(0);
+        let num_rows = self.partitions.iter().map(|v| v.value().len()).sum();
+        PartitionMetadata {
+            num_rows,
+            size_bytes,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct InMemoryPartitionSetCache {
+    pub partition_sets: DashMap<String, Weak<MicroPartitionSet>>,
+}
+
+impl InMemoryPartitionSetCache {
+    pub fn new<'a, T: IntoIterator<Item = (&'a String, &'a Arc<MicroPartitionSet>)>>(
+        psets: T,
+    ) -> Self {
+        Self {
+            partition_sets: psets
                 .into_iter()
-                .flat_map(|(_, v)| v.into_iter())
-                .map(Ok),
-        ))
+                .map(|(k, v)| (k.clone(), Arc::downgrade(v)))
+                .collect(),
+        }
+    }
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> for InMemoryPartitionSetCache {
+    fn get_partition_set(&self, key: &str) -> Option<PartitionSetRef<MicroPartitionRef>> {
+        let weak_pset = self.partition_sets.get(key).map(|v| v.value().clone())?;
+        // if the partition set has been dropped, remove it from the cache
+        let Some(pset) = weak_pset.upgrade() else {
+            tracing::trace!("Removing dropped partition set from cache: {}", key);
+            self.partition_sets.remove(key);
+            return None;
+        };
+
+        Some(pset as _)
+    }
+
+    fn get_all_partition_sets(&self) -> Vec<PartitionSetRef<MicroPartitionRef>> {
+        let psets = self.partition_sets.iter().filter_map(|v| {
+            let pset = v.value().upgrade()?;
+            Some(pset as _)
+        });
+
+        psets.collect()
+    }
+
+    fn put_partition_set(&self, key: &str, partition_set: &Arc<MicroPartitionSet>) {
+        self.partition_sets
+            .insert(key.to_string(), Arc::downgrade(partition_set));
+    }
+
+    fn rm_partition_set(&self, key: &str) {
+        self.partition_sets.remove(key);
+    }
+
+    fn clear(&self) {
+        self.partition_sets.clear();
     }
 }

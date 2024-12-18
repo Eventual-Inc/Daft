@@ -1,5 +1,5 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::MicroPartitionSet;
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use eyre::{bail, Context};
 use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
@@ -15,20 +15,22 @@ mod to_df;
 mod with_columns;
 
 pub struct SparkAnalyzer<'a> {
-    pub pset: &'a MicroPartitionSet,
+    pub psets: &'a InMemoryPartitionSetCache,
 }
 
 impl SparkAnalyzer<'_> {
-    pub fn new(pset: &MicroPartitionSet) -> SparkAnalyzer {
-        SparkAnalyzer { pset }
+    pub fn new(pset: &InMemoryPartitionSetCache) -> SparkAnalyzer {
+        SparkAnalyzer { psets: pset }
     }
 
     pub async fn to_logical_plan(&self, relation: Relation) -> eyre::Result<LogicalPlanBuilder> {
-        if let Some(common) = relation.common {
-            if common.origin.is_some() {
-                warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
-            }
+        let Some(common) = relation.common else {
+            bail!("Common metadata is required");
         };
+
+        if common.origin.is_some() {
+            warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        }
 
         let Some(rel_type) = relation.rel_type else {
             bail!("Relation type is required");
@@ -58,9 +60,13 @@ impl SparkAnalyzer<'_> {
                 .to_df(*t)
                 .await
                 .wrap_err("Failed to apply to_df to logical plan"),
-            RelType::LocalRelation(l) => self
-                .local_relation(l)
-                .wrap_err("Failed to apply local_relation to logical plan"),
+            RelType::LocalRelation(l) => {
+                let Some(plan_id) = common.plan_id else {
+                    bail!("Plan ID is required for LocalRelation");
+                };
+                self.local_relation(plan_id, l)
+                    .wrap_err("Failed to apply local_relation to logical plan")
+            }
             RelType::Read(r) => read::read(r)
                 .await
                 .wrap_err("Failed to apply read to logical plan"),

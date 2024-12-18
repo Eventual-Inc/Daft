@@ -32,7 +32,7 @@ impl Session {
         };
 
         let finished = context.finished();
-        let pset = self.pset.clone();
+        let pset = self.psets.clone();
 
         let result = async move {
             let WriteOperation {
@@ -122,9 +122,7 @@ impl Session {
             let cfg = DaftExecutionConfig::default();
             let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
 
-            let mut result_stream = native_executor
-                .run(pset.as_ref(), cfg.into(), None)?
-                .into_stream();
+            let mut result_stream = native_executor.run(&pset, cfg.into(), None)?.into_stream();
 
             // this is so we make sure the operation is actually done
             // before we return

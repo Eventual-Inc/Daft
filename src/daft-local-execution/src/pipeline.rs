@@ -17,7 +17,10 @@ use daft_local_plan::{
     Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
-use daft_micropartition::{partitioning::PartitionSet, MicroPartition};
+use daft_micropartition::{
+    partitioning::{MicroPartitionSet, PartitionSetCache},
+    MicroPartition, MicroPartitionRef,
+};
 use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
@@ -78,7 +81,7 @@ pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &(impl PartitionSet<MicroPartition> + ?Sized),
+    psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;
@@ -108,8 +111,9 @@ pub fn physical_plan_to_pipeline(
             let cache_key: Arc<str> = info.cache_key.clone().into();
 
             let materialized_pset = psets
-                .get_partition(&cache_key)
-                .unwrap_or_else(|_| panic!("Cache key not found: {:?}", info.cache_key));
+                .get_partition_set(&cache_key)
+                .unwrap_or_else(|| panic!("Cache key not found: {:?}", info.cache_key));
+
             InMemorySource::new(materialized_pset, info.source_schema.clone())
                 .arced()
                 .into()

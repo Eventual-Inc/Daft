@@ -7,7 +7,7 @@ use arrow2::io::ipc::{
 use daft_core::series::Series;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::partitioning::{
-    MicroPartitionBatch, PartitionBatch, PartitionCacheEntry, PartitionMetadata, PartitionSet,
+    MicroPartitionSet, PartitionCacheEntry, PartitionMetadata, PartitionSet, PartitionSetCache,
 };
 use daft_schema::dtype::DaftDataType;
 use daft_table::Table;
@@ -20,6 +20,7 @@ use crate::translation::{deser_spark_datatype, to_daft_datatype};
 impl SparkAnalyzer<'_> {
     pub fn local_relation(
         &self,
+        plan_id: i64,
         plan: spark_connect::LocalRelation,
     ) -> eyre::Result<LogicalPlanBuilder> {
         let spark_connect::LocalRelation { data, schema } = plan;
@@ -141,24 +142,26 @@ impl SparkAnalyzer<'_> {
             tables
         };
 
-        let batch: MicroPartitionBatch = tables.try_into()?;
-
-        let partition_key: Arc<str> = uuid::Uuid::new_v4().to_string().into();
-        self.pset.set_partition(partition_key.clone(), &batch)?;
-
+        let pset = MicroPartitionSet::from_tables(plan_id as usize, tables)?;
         let PartitionMetadata {
             size_bytes,
             num_rows,
-        } = batch.metadata();
-        let num_partitions = batch.partition.len();
+        } = pset.metadata();
+        let num_partitions = pset.num_partitions();
 
-        Ok(LogicalPlanBuilder::in_memory_scan(
+        let partition_key: Arc<str> = uuid::Uuid::new_v4().to_string().into();
+        let pset = Arc::new(pset);
+        self.psets.put_partition_set(&partition_key, &pset);
+
+        let lp = LogicalPlanBuilder::in_memory_scan(
             &partition_key,
-            PartitionCacheEntry::Rust(()),
+            PartitionCacheEntry::new_rust(partition_key.to_string(), pset.as_any_arc()),
             daft_schema,
             num_partitions,
             size_bytes,
             num_rows,
-        )?)
+        )?;
+
+        Ok(lp)
     }
 }

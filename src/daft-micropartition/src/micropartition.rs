@@ -60,6 +60,7 @@ impl Display for TableState {
         }
     }
 }
+pub type MicroPartitionRef = Arc<MicroPartition>;
 
 #[derive(Debug)]
 pub struct MicroPartition {

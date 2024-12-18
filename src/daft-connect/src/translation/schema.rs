@@ -1,4 +1,4 @@
-use daft_micropartition::partitioning::MicroPartitionSet;
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use spark_connect::{
     data_type::{Kind, Struct, StructField},
     DataType, Relation,
@@ -17,7 +17,7 @@ pub async fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
     }
 
     // We're just checking the schema here, so we don't need to use a persistent cache as it won't be used
-    let pset = MicroPartitionSet::empty();
+    let pset = InMemoryPartitionSetCache::empty();
     let translator = SparkAnalyzer::new(&pset);
     let plan = Box::pin(translator.to_logical_plan(input)).await?;
 

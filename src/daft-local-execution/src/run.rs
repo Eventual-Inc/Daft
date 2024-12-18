@@ -12,8 +12,8 @@ use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
-    partitioning::{MicroPartitionSet, PartitionSet},
-    MicroPartition,
+    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
+    MicroPartition, MicroPartitionRef,
 };
 use futures::{FutureExt, Stream};
 use loole::RecvFuture;
@@ -80,19 +80,22 @@ impl PyNativeExecutor {
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<PyObject> {
-        let native_psets: HashMap<Arc<str>, Vec<Arc<MicroPartition>>> = psets
+        let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
                 (
-                    part_id.into(),
-                    parts
-                        .into_iter()
-                        .map(std::convert::Into::into)
-                        .collect::<Vec<Arc<MicroPartition>>>(),
+                    part_id,
+                    Arc::new(
+                        parts
+                            .into_iter()
+                            .map(std::convert::Into::into)
+                            .collect::<Vec<Arc<MicroPartition>>>()
+                            .into(),
+                    ),
                 )
             })
             .collect();
-        let psets = MicroPartitionSet::new(native_psets);
+        let psets = InMemoryPartitionSetCache::new(&native_psets);
         let out = py.allow_threads(|| {
             self.executor
                 .run(&psets, cfg.config, results_buffer_size)
@@ -117,6 +120,7 @@ impl NativeExecutor {
     ) -> DaftResult<Self> {
         let logical_plan = logical_plan_builder.build();
         let local_physical_plan = translate(&logical_plan)?;
+
         Ok(Self {
             local_physical_plan,
             cancel: CancellationToken::new(),
@@ -125,7 +129,7 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        psets: &(impl PartitionSet<MicroPartition> + ?Sized),
+        psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
@@ -250,7 +254,7 @@ impl IntoIterator for ExecutionEngineResult {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    psets: &(impl PartitionSet<MicroPartition> + ?Sized),
+    psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,
