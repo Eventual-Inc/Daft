@@ -28,15 +28,6 @@ where
     }
 }
 
-impl Partition for Arc<dyn Partition> {
-    fn as_any(&self) -> &dyn Any {
-        (**self).as_any()
-    }
-    fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        (**self).size_bytes()
-    }
-}
-
 /// An Arc'd reference to a [`Partition`]
 pub type PartitionRef = Arc<dyn Partition>;
 
