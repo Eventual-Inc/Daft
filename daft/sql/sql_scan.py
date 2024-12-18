@@ -13,6 +13,7 @@ from daft.daft import (
     Pushdowns,
     PyTable,
     ScanTask,
+    StorageConfig,
 )
 from daft.expressions.expressions import lit
 from daft.io.common import _get_schema_from_dict
@@ -46,6 +47,7 @@ class SQLScanOperator(ScanOperator):
         self,
         sql: str,
         conn: SQLConnection,
+        storage_config: StorageConfig,
         disable_pushdowns_to_sql: bool,
         infer_schema: bool,
         infer_schema_length: int,
@@ -57,6 +59,7 @@ class SQLScanOperator(ScanOperator):
         super().__init__()
         self.sql = sql
         self.conn = conn
+        self.storage_config = storage_config
         self._disable_pushdowns_to_sql = disable_pushdowns_to_sql
         self._partition_col = partition_col
         self._num_partitions = num_partitions
@@ -268,6 +271,7 @@ class SQLScanOperator(ScanOperator):
             url=self.conn.url,
             file_format=file_format_config,
             schema=self._schema._schema,
+            storage_config=self.storage_config,
             num_rows=num_rows,
             size_bytes=size_bytes,
             pushdowns=pushdowns if not apply_pushdowns_to_sql else None,

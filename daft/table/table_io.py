@@ -89,6 +89,7 @@ def read_json(
     Returns:
         MicroPartition: Parsed MicroPartition from JSON
     """
+    # TODO: move this logic into Rust
     config = storage_config if storage_config is not None else StorageConfig(True, IOConfig())
     assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_json"
     json_convert_options = JsonConvertOptions(
@@ -125,6 +126,7 @@ def read_parquet(
     Returns:
         MicroPartition: Parsed MicroPartition from Parquet
     """
+    # TODO: move this logic into Rust
     config = storage_config if storage_config is not None else StorageConfig(True, IOConfig())
     assert isinstance(
         file, (str, pathlib.Path)
@@ -192,6 +194,7 @@ def read_csv(
     Returns:
         MicroPartition: Parsed MicroPartition from CSV
     """
+    # TODO: move this logic into Rust
     config = storage_config if storage_config is not None else StorageConfig(True, IOConfig())
     assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string or Path inputs to read_csv"
     has_header = csv_options.header_index is not None

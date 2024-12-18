@@ -408,6 +408,7 @@ pub mod pylib {
             url: String,
             file_format: PyFileFormatConfig,
             schema: PySchema,
+            storage_config: StorageConfig,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
@@ -427,7 +428,7 @@ pub mod pylib {
                 vec![data_source],
                 file_format.into(),
                 schema.schema,
-                Arc::new(Default::default()), // read SQL doesn't actually use the storage config
+                storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
             );

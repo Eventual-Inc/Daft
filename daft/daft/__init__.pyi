@@ -593,7 +593,7 @@ class StorageConfig:
     multithreaded_io: bool
     io_config: IOConfig
 
-    def __init__(self, multithreaded_io: bool, io_config: IOConfig): ...
+    def __init__(self, multithreaded_io: bool, io_config: IOConfig | None): ...
 
 class ScanTask:
     """A batch of scan tasks for reading data from an external source."""
@@ -627,6 +627,7 @@ class ScanTask:
         url: str,
         file_format: FileFormatConfig,
         schema: PySchema,
+        storage_config: StorageConfig,
         num_rows: int | None,
         size_bytes: int | None,
         pushdowns: Pushdowns | None,

@@ -18,6 +18,7 @@ use {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct StorageConfig {
+    // TODO: store Arc<IOConfig> instead
     pub io_config: Option<IOConfig>,
     pub multithreaded_io: bool,
 }
