@@ -204,7 +204,6 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
     }
 }
 
-#[derive(Debug, Default, Clone)]
 /// An in-memory cache for partition sets
 ///
 /// Note: this holds weak references to the partition sets. It's structurally similar to a WeakValueHashMap
@@ -237,6 +236,7 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
 ///
 /// cache.get_partition_set("key"); // None
 ///```
+#[derive(Debug, Default, Clone)]
 pub struct InMemoryPartitionSetCache {
     pub partition_sets: DashMap<String, Weak<MicroPartitionSet>>,
 }
