@@ -159,15 +159,15 @@ pub enum PartitionCacheEntry {
     Rust {
         key: String,
         #[serde(skip)]
-        /// We don't ever actually reference the value, we're just holding it to ensure it doesn't get dropped in the partition cache
+        /// We don't ever actually reference the value, we're just holding it to ensure the partition set is kept alive.
         ///
-        /// It's only wrapped in an `Option` for (de)serialization purposes
-        value: Option<Arc<dyn PartitionSet<Arc<dyn Partition>>>>,
+        /// It's only wrapped in an `Option` to satisfy serde Deserialize. We skip (de)serializing, but serde still complains if it's not an Option.
+        value: Option<Arc<dyn Any + Send + Sync + 'static>>,
     },
 }
 
 impl PartitionCacheEntry {
-    pub fn new_rust(key: String, value: Arc<dyn PartitionSet<Arc<dyn Partition>>>) -> Self {
+    pub fn new_rust<T: Any + Send + Sync + 'static>(key: String, value: Arc<T>) -> Self {
         Self::Rust {
             key,
             value: Some(value),

@@ -35,6 +35,7 @@ impl From<Vec<MicroPartitionRef>> for MicroPartitionSet {
         Self { partitions }
     }
 }
+
 impl MicroPartitionSet {
     pub fn new<T: IntoIterator<Item = (PartitionId, MicroPartitionRef)>>(psets: T) -> Self {
         Self {
@@ -54,71 +55,6 @@ impl MicroPartitionSet {
         let schema = &tables[0].schema;
         let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(tables), None);
         Ok(Self::new(vec![(id, Arc::new(mp))]))
-    }
-
-    pub fn as_any_arc(self: Arc<Self>) -> Arc<dyn PartitionSet<Arc<dyn Partition>>> {
-        #[derive(Debug, Clone)]
-        struct Wrapper<T>(T);
-
-        // this is implemented solely for casting to Arc<dyn PartitionSet<Arc<dyn Partition>>>
-        // The values are not actually used, but needed to satisfy the trait, and is used to hold a reference to the actual partition set, but with the original types erased.
-        // the trait methods are intentionally unimplemented
-        impl PartitionSet<Arc<dyn Partition>> for Wrapper<Arc<MicroPartitionSet>> {
-            fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
-                self.0.get_merged_partitions()
-            }
-
-            fn get_preview_partitions(
-                &self,
-                num_rows: usize,
-            ) -> DaftResult<Vec<Arc<dyn Partition>>> {
-                self.0
-                    .get_preview_partitions(num_rows)
-                    .map(|v| v.into_iter().map(|v| v as _).collect())
-            }
-
-            fn num_partitions(&self) -> usize {
-                self.0.num_partitions()
-            }
-
-            fn len(&self) -> usize {
-                self.0.len()
-            }
-
-            fn size_bytes(&self) -> DaftResult<usize> {
-                self.0.size_bytes()
-            }
-
-            fn has_partition(&self, idx: &PartitionId) -> bool {
-                self.0.has_partition(idx)
-            }
-
-            fn delete_partition(&self, idx: &PartitionId) -> DaftResult<()> {
-                self.0.delete_partition(idx)
-            }
-
-            fn set_partition(
-                &self,
-                _idx: PartitionId,
-                _part: &Arc<dyn Partition>,
-            ) -> DaftResult<()> {
-                unimplemented!()
-            }
-
-            fn get_partition(&self, _idx: &PartitionId) -> DaftResult<Arc<dyn Partition>> {
-                unimplemented!()
-            }
-
-            fn to_partition_stream(&self) -> BoxStream<'static, DaftResult<Arc<dyn Partition>>> {
-                unimplemented!()
-            }
-
-            fn metadata(&self) -> PartitionMetadata {
-                self.0.metadata()
-            }
-        }
-
-        Arc::new(Wrapper(self)) as _
     }
 }
 

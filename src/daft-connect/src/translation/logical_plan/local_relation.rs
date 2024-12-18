@@ -155,7 +155,7 @@ impl SparkAnalyzer<'_> {
 
         let lp = LogicalPlanBuilder::in_memory_scan(
             &partition_key,
-            PartitionCacheEntry::new_rust(partition_key.to_string(), pset.as_any_arc()),
+            PartitionCacheEntry::new_rust(partition_key.to_string(), pset),
             daft_schema,
             num_partitions,
             size_bytes,
