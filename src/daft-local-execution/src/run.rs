@@ -29,6 +29,7 @@ use {
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
+    progress_bar::make_progress_bar_manager,
     Error, ExecutionRuntimeContext,
 };
 
@@ -268,14 +269,14 @@ pub fn run_local(
     let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
-        let multi_progress_bar = should_enable_progress_bar().then(indicatif::MultiProgress::new);
+        let pb_manager = should_enable_progress_bar().then(make_progress_bar_manager);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("Failed to create tokio runtime");
         let execution_task = async {
             let mut runtime_handle =
-                ExecutionRuntimeContext::new(cfg.default_morsel_size, multi_progress_bar);
+                ExecutionRuntimeContext::new(cfg.default_morsel_size, pb_manager);
             let receiver = pipeline.start(true, &mut runtime_handle)?;
 
             while let Some(val) = receiver.recv().await {

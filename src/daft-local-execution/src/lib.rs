@@ -14,7 +14,6 @@ mod sources;
 mod state_bridge;
 
 use std::{
-    borrow::Cow,
     future::Future,
     pin::Pin,
     sync::Arc,
@@ -23,9 +22,8 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
-use indicatif::MultiProgress;
 use lazy_static::lazy_static;
-use progress_bar::{OperatorProgressBar, ProgressBarColor};
+use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
 pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
 use runtime_stats::RuntimeStatsContext;
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
@@ -122,16 +120,19 @@ impl RuntimeHandle {
 pub struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
-    multi_progress_bar: Option<MultiProgress>,
+    progress_bar_manager: Option<Box<dyn ProgressBarManager>>,
 }
 
 impl ExecutionRuntimeContext {
     #[must_use]
-    pub fn new(default_morsel_size: usize, multi_progress_bar: Option<MultiProgress>) -> Self {
+    pub fn new(
+        default_morsel_size: usize,
+        progress_bar_manager: Option<Box<dyn ProgressBarManager>>,
+    ) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
-            multi_progress_bar,
+            progress_bar_manager,
         }
     }
     pub fn spawn(
@@ -159,17 +160,23 @@ impl ExecutionRuntimeContext {
 
     pub fn make_progress_bar(
         &self,
-        prefix: impl Into<Cow<'static, str>>,
+        prefix: &str,
         color: ProgressBarColor,
         show_received: bool,
         runtime_stats: Arc<RuntimeStatsContext>,
     ) -> Option<Arc<OperatorProgressBar>> {
-        self.multi_progress_bar.as_ref().map(|mpb| {
-            let pb = OperatorProgressBar::new(prefix, color, show_received, runtime_stats);
-            let inner = pb.inner();
-            mpb.add(inner.clone());
-            Arc::new(pb)
-        })
+        if let Some(ref pb_manager) = self.progress_bar_manager {
+            let pb = pb_manager
+                .make_new_bar(color, prefix, show_received)
+                .unwrap();
+            Some(Arc::new(OperatorProgressBar::new(
+                pb,
+                runtime_stats,
+                show_received,
+            )))
+        } else {
+            None
+        }
     }
 
     pub(crate) fn handle(&self) -> RuntimeHandle {
@@ -179,7 +186,9 @@ impl ExecutionRuntimeContext {
 
 impl Drop for ExecutionRuntimeContext {
     fn drop(&mut self) {
-        self.multi_progress_bar.take().map(|mpb| mpb.clear());
+        if let Some(pbm) = self.progress_bar_manager.take() {
+            pbm.close();
+        }
     }
 }
 

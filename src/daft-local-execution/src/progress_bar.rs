@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -7,7 +6,8 @@ use std::{
     time::Instant,
 };
 
-use indicatif::{HumanCount, ProgressBar, ProgressStyle};
+use common_error::DaftResult;
+use indicatif::{HumanCount, ProgressStyle};
 
 use crate::runtime_stats::RuntimeStatsContext;
 
@@ -28,7 +28,7 @@ impl ProgressBarColor {
 }
 
 pub struct OperatorProgressBar {
-    inner_progress_bar: ProgressBar,
+    inner_progress_bar: Box<dyn ProgressBar>,
     runtime_stats: Arc<RuntimeStatsContext>,
     show_received: bool,
     start_time: Instant,
@@ -40,33 +40,12 @@ impl OperatorProgressBar {
     const UPDATE_INTERVAL: u64 = 100_000_000;
 
     pub fn new(
-        prefix: impl Into<Cow<'static, str>>,
-        color: ProgressBarColor,
-        show_received: bool,
+        progress_bar: Box<dyn ProgressBar>,
         runtime_stats: Arc<RuntimeStatsContext>,
+        show_received: bool,
     ) -> Self {
-        let template_str = format!(
-            "🗡️ 🐟 {{spinner:.green}} {{prefix:.{color}/bold}} | [{{elapsed_precise}}] {{msg}}",
-            color = color.to_str(),
-        );
-
-        let initial_message = if show_received {
-            "0 rows received, 0 rows emitted".to_string()
-        } else {
-            "0 rows emitted".to_string()
-        };
-
-        let pb = ProgressBar::new_spinner()
-            .with_style(
-                ProgressStyle::default_spinner()
-                    .template(template_str.as_str())
-                    .unwrap(),
-            )
-            .with_prefix(prefix)
-            .with_message(initial_message);
-
         Self {
-            inner_progress_bar: pb,
+            inner_progress_bar: progress_bar,
             runtime_stats,
             show_received,
             start_time: Instant::now(),
@@ -113,14 +92,207 @@ impl OperatorProgressBar {
             self.inner_progress_bar.set_message(msg);
         }
     }
-
-    pub fn inner(&self) -> &ProgressBar {
-        &self.inner_progress_bar
-    }
 }
 
 impl Drop for OperatorProgressBar {
     fn drop(&mut self) {
-        self.inner_progress_bar.finish_and_clear();
+        self.inner_progress_bar.close();
+    }
+}
+
+struct IndicatifProgressBar(indicatif::ProgressBar);
+
+impl ProgressBar for IndicatifProgressBar {
+    fn set_message(&self, message: String) {
+        self.0.set_message(message);
+    }
+
+    fn close(&self) {
+        self.0.finish_and_clear();
+    }
+}
+
+#[cfg(feature = "python")]
+struct TqdmProgressBar {
+    pb_id: usize,
+    manager: TqdmProgressBarManager,
+}
+
+#[cfg(feature = "python")]
+impl ProgressBar for TqdmProgressBar {
+    fn set_message(&self, message: String) {
+        self.manager.update_bar(self.pb_id, message.as_str());
+    }
+
+    fn close(&self) {
+        self.manager.close_bar(self.pb_id);
+    }
+}
+
+pub trait ProgressBar: Send + Sync {
+    fn set_message(&self, message: String);
+    fn close(&self);
+}
+
+pub trait ProgressBarManager {
+    fn make_new_bar(
+        &self,
+        color: ProgressBarColor,
+        prefix: &str,
+        show_received: bool,
+    ) -> DaftResult<Box<dyn ProgressBar>>;
+
+    fn close(&self);
+}
+
+struct IndicatifProgressBarManager {
+    multi_progress: indicatif::MultiProgress,
+}
+
+impl IndicatifProgressBarManager {
+    fn new() -> Self {
+        Self {
+            multi_progress: indicatif::MultiProgress::new(),
+        }
+    }
+}
+
+impl ProgressBarManager for IndicatifProgressBarManager {
+    fn make_new_bar(
+        &self,
+        color: ProgressBarColor,
+        prefix: &str,
+        show_received: bool,
+    ) -> DaftResult<Box<dyn ProgressBar>> {
+        let template_str = format!(
+            "🗡️ 🐟 {{spinner:.green}} {{prefix:.{color}/bold}} | [{{elapsed_precise}}] {{msg}}",
+            color = color.to_str(),
+        );
+
+        let initial_message = if show_received {
+            "0 rows received, 0 rows emitted".to_string()
+        } else {
+            "0 rows emitted".to_string()
+        };
+
+        let pb = indicatif::ProgressBar::new_spinner()
+            .with_style(
+                ProgressStyle::default_spinner()
+                    .template(template_str.as_str())
+                    .unwrap(),
+            )
+            .with_prefix(prefix.to_string())
+            .with_message(initial_message);
+
+        self.multi_progress.add(pb.clone());
+        DaftResult::Ok(Box::new(IndicatifProgressBar(pb)))
+    }
+
+    fn close(&self) {
+        let _ = self.multi_progress.clear();
+    }
+}
+
+pub fn make_progress_bar_manager() -> Box<dyn ProgressBarManager> {
+    #[cfg(feature = "python")]
+    {
+        if in_notebook() {
+            Box::new(TqdmProgressBarManager::new())
+        } else {
+            Box::new(IndicatifProgressBarManager::new())
+        }
+    }
+
+    #[cfg(not(feature = "python"))]
+    {
+        Box::new(IndicatifProgressBarManager::new())
+    }
+}
+
+#[cfg(feature = "python")]
+fn in_notebook() -> bool {
+    pyo3::Python::with_gil(|py| {
+        py.import_bound(pyo3::intern!(py, "daft.utils"))
+            .and_then(|m| m.getattr(pyo3::intern!(py, "in_notebook")))
+            .and_then(|m| m.call0())
+            .and_then(|m| m.extract())
+            .expect("Failed to determine if running in notebook")
+    })
+}
+
+#[cfg(feature = "python")]
+use pyo3::types::PyAnyMethods;
+
+#[cfg(feature = "python")]
+#[derive(Clone)]
+struct TqdmProgressBarManager {
+    inner: pyo3::PyObject,
+}
+
+#[cfg(feature = "python")]
+impl TqdmProgressBarManager {
+    fn new() -> Self {
+        pyo3::Python::with_gil(|py| {
+            let module = py.import_bound("daft.runners.progress_bar")?;
+            let progress_bar_class = module.getattr("SwordfishProgressBar")?;
+            let pb_object = progress_bar_class.call0()?;
+            DaftResult::Ok(Self {
+                inner: pb_object.into(),
+            })
+        })
+        .expect("Failed to create progress bar")
+    }
+
+    fn update_bar(&self, pb_id: usize, message: &str) {
+        pyo3::Python::with_gil(|py| {
+            self.inner
+                .call_method1(py, "update_bar", (pb_id, message))
+                .expect("Failed to update progress bar");
+        });
+    }
+
+    fn close_bar(&self, pb_id: usize) {
+        pyo3::Python::with_gil(|py| {
+            self.inner
+                .call_method1(py, "close_bar", (pb_id,))
+                .expect("Failed to close progress bar");
+        });
+    }
+}
+
+#[cfg(feature = "python")]
+impl ProgressBarManager for TqdmProgressBarManager {
+    fn make_new_bar(
+        &self,
+        _color: ProgressBarColor,
+        prefix: &str,
+        show_received: bool,
+    ) -> DaftResult<Box<dyn ProgressBar>> {
+        let bar_format = format!("🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}", prefix = prefix);
+        let initial_message = if show_received {
+            "0 rows received, 0 rows emitted".to_string()
+        } else {
+            "0 rows emitted".to_string()
+        };
+        let pb_id = pyo3::Python::with_gil(|py| {
+            let pb_id =
+                self.inner
+                    .call_method1(py, "make_new_bar", (bar_format, initial_message))?;
+            let pb_id = pb_id.extract::<usize>(py)?;
+            DaftResult::Ok(pb_id)
+        })?;
+
+        DaftResult::Ok(Box::new(TqdmProgressBar {
+            pb_id,
+            manager: self.clone(),
+        }))
+    }
+
+    fn close(&self) {
+        pyo3::Python::with_gil(|py| {
+            self.inner
+                .call_method0(py, "close")
+                .expect("Failed to close progress bars");
+        });
     }
 }
