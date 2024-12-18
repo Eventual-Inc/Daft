@@ -2,7 +2,6 @@ use color_eyre::Help;
 use eyre::{bail, ensure, eyre};
 use serde_json::Value;
 use spark_connect::data_type::Kind;
-use tracing::warn;
 
 #[derive(Debug)]
 enum TypeTag {
@@ -211,11 +210,9 @@ fn deser_struct_field(
         bail!("expected object");
     };
 
-    let Some(metadata) = object.remove("metadata") else {
+    let Some(_metadata) = object.remove("metadata") else {
         bail!("missing metadata");
     };
-
-    warn!("ignoring metadata: {metadata:?}");
 
     let Some(name) = object.remove("name") else {
         bail!("missing name");
