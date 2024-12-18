@@ -209,33 +209,27 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
 /// Note: this holds weak references to the partition sets. It's structurally similar to a WeakValueHashMap
 ///
 /// This means that if the partition set is dropped, it will be removed from the cache.
-/// So the partition set must outlive the cache.
+/// So the partition set must outlive the lifetime of the value in the cache.
 ///
+/// if the partition set is dropped before the cache, it will be removed
 /// ex:
-/// ```rust,no_run
-/// {
-///   let pset = Arc::new(MicroPartitionSet::empty());
-///   {
-///      let cache = InMemoryPartitionSetCache::new(vec![("key", pset.clone())]);
-///     // cache is dropped here
-///
-///   }
-/// // pset is still alive
-/// }
-/// ```
-/// if the partition set is dropped before the cache, it will be removed from the cache
 /// ```rust,no_run
 ///
 ///  let cache = InMemoryPartitionSetCache::empty();
+///  let outer =Arc::new(MicroPartitionSet::empty());
+///  cache.put_partition_set("outer", &outer);
 /// {
-///   let pset = Arc::new(MicroPartitionSet::empty());
-///   cache.put_partition_set("key", &pset);
-///   cache.get_partition_set("key"); // Some(pset)
+///   let inner = Arc::new(MicroPartitionSet::empty());
+///   cache.put_partition_set("inner", &pset);
+///   cache.get_partition_set("inner"); // Some(pset)
 ///   // pset is dropped here
 /// }
 ///
-/// cache.get_partition_set("key"); // None
-///```
+/// cache.get_partition_set("inner"); // None
+/// cache.get_partition_set("outer"); // Some(outer)
+/// drop(outer);
+/// cache.get_partition_set("outer"); // None
+/// ```
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryPartitionSetCache {
     pub partition_sets: DashMap<String, Weak<MicroPartitionSet>>,
