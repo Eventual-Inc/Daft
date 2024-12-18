@@ -174,7 +174,16 @@ def build(branch_name: str, commit_hash: str, force: bool) -> str:
 def run(
     wheel_url: str,
     branch_name: str,
+    commit_hash: str,
 ):
+    user_wants_to_run_tpcds_benchmarking = inquirer.confirm(
+        message=f"Going to run the 'run-cluster' workflow on the branch '{branch_name}' (commit-hash: {commit_hash}); proceed?"
+    )
+
+    if not user_wants_to_run_tpcds_benchmarking:
+        print("Workflow aborted")
+        exit(1)
+
     workflow = repo.get_workflow("run-cluster.yaml")
     dispatch(
         workflow=workflow,
@@ -194,7 +203,7 @@ def main(
 ):
     branch_name, commit_hash = get_name_and_commit_hash(branch_name)
     wheel_url = build(branch_name=branch_name, commit_hash=commit_hash, force=force)
-    run(wheel_url=wheel_url, branch_name=branch_name)
+    run(wheel_url=wheel_url, branch_name=branch_name, commit_hash=commit_hash)
 
 
 if __name__ == "__main__":
