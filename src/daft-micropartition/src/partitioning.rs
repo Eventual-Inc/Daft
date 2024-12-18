@@ -207,7 +207,7 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
 #[derive(Debug, Default, Clone)]
 /// An in-memory cache for partition sets
 ///
-/// Note: this holds weak references to the partition sets
+/// Note: this holds weak references to the partition sets. It's structurally similar to a WeakValueHashMap
 ///
 /// This means that if the partition set is dropped, it will be removed from the cache.
 /// So the partition set must outlive the cache.
