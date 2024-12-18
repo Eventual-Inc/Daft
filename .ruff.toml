@@ -1,7 +1,8 @@
 fix = true
 indent-width = 4
 line-length = 120
-target-version = "py39"
+# TODO: clean up typing code and update to py39
+target-version = "py38"
 
 [format]
 docstring-code-format = true
