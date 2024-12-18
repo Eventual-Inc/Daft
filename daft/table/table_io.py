@@ -172,24 +172,6 @@ def read_sql(
     return _cast_table_to_schema(mp, read_options=read_options, schema=schema)
 
 
-class PACSVStreamHelper:
-    def __init__(self, stream: pa.CSVStreamReader) -> None:
-        self.stream = stream
-
-    def __next__(self) -> pa.RecordBatch:
-        return self.stream.read_next_batch()
-
-    def __iter__(self) -> PACSVStreamHelper:
-        return self
-
-
-def skip_comment(comment: str | None) -> Callable | None:
-    if comment is None:
-        return None
-    else:
-        return lambda row: "skip" if row.text.startswith(comment) else "error"
-
-
 def read_csv(
     file: FileInput,
     schema: Schema,
