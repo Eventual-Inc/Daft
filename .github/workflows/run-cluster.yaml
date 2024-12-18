@@ -47,7 +47,7 @@ on:
 jobs:
   run-command:
     runs-on: [self-hosted, linux, x64, ci-dev]
-    timeout-minutes: 15 # Remove for ssh debugging
+    # timeout-minutes: 15 # Remove for ssh debugging
     permissions:
       id-token: write
       contents: read
