@@ -6,6 +6,7 @@ mod channel;
 mod dispatcher;
 mod intermediate_ops;
 mod pipeline;
+mod resource_manager;
 mod run;
 mod runtime_stats;
 mod sinks;
@@ -15,12 +16,14 @@ mod state_bridge;
 use std::{
     future::Future,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use lazy_static::lazy_static;
+use resource_manager::MemoryManager;
 pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 
@@ -116,14 +119,16 @@ impl RuntimeHandle {
 pub struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
+    memory_manager: Arc<MemoryManager>,
 }
 
 impl ExecutionRuntimeContext {
     #[must_use]
-    pub fn new(default_morsel_size: usize) -> Self {
+    pub fn new(default_morsel_size: usize, memory_manager: Arc<MemoryManager>) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
+            memory_manager,
         }
     }
     pub fn spawn(
@@ -151,6 +156,11 @@ impl ExecutionRuntimeContext {
 
     pub(crate) fn handle(&self) -> RuntimeHandle {
         RuntimeHandle(tokio::runtime::Handle::current())
+    }
+
+    #[must_use]
+    pub fn memory_manager(&self) -> Arc<MemoryManager> {
+        self.memory_manager.clone()
     }
 }
 

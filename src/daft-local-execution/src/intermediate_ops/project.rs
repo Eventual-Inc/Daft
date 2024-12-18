@@ -71,4 +71,13 @@ impl IntermediateOperator for ProjectOperator {
             _ => Ok(*NUM_CPUS),
         }
     }
+
+    fn memory_request(&self) -> Option<u64> {
+        let resource_request = get_resource_request(&self.projection);
+        if let Some(resource_request) = resource_request {
+            resource_request.memory_bytes().map(|m| m as u64)
+        } else {
+            None
+        }
+    }
 }

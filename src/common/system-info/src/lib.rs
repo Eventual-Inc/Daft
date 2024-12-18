@@ -2,12 +2,11 @@
 use pyo3::prelude::*;
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind};
 
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
-pub struct SystemInfo {
+pub struct SystemInfoInternal {
     info: sysinfo::System,
 }
 
-impl Default for SystemInfo {
+impl Default for SystemInfoInternal {
     fn default() -> Self {
         Self {
             info: sysinfo::System::new_with_specifics(
@@ -17,6 +16,26 @@ impl Default for SystemInfo {
             ),
         }
     }
+}
+
+impl SystemInfoInternal {
+    pub fn cpu_count(&self) -> Option<u64> {
+        self.info.physical_core_count().map(|x| x as u64)
+    }
+
+    pub fn total_memory(&self) -> u64 {
+        if let Some(cgroup) = self.info.cgroup_limits() {
+            cgroup.total_memory
+        } else {
+            self.info.total_memory()
+        }
+    }
+}
+
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
+#[derive(Default)]
+pub struct SystemInfo {
+    info: SystemInfoInternal,
 }
 
 #[cfg(feature = "python")]
@@ -30,16 +49,12 @@ impl SystemInfo {
 
     #[must_use]
     pub fn cpu_count(&self) -> Option<u64> {
-        self.info.physical_core_count().map(|x| x as u64)
+        self.info.cpu_count()
     }
 
     #[must_use]
     pub fn total_memory(&self) -> u64 {
-        if let Some(cgroup) = self.info.cgroup_limits() {
-            cgroup.total_memory
-        } else {
-            self.info.total_memory()
-        }
+        self.info.total_memory()
     }
 }
 
