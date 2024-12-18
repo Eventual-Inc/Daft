@@ -12,7 +12,9 @@ on:
         required: true
         type: string
     secrets:
-      ACTIONS_AWS_ROLE_ARN: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+      ACTIONS_AWS_ROLE_ARN:
+        description: The AWS Role ARN for secrets access
+        required: true
     outputs:
       wheel_url:
         description: The name of the built wheel
