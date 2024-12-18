@@ -59,14 +59,79 @@ auth = Auth.Token(gha_run_cluster_job.get_oauth_token())
 g = Github(auth=auth)
 
 
-def build(branch_name: Optional[str], force: bool):
-    """Runs a build on the given branch.
+def run_build(
+    branch_name: str,
+    commit_hash: str,
+):
+    user_wants_to_build_commit = inquirer.confirm(
+        message=f"You are requesting to build '{branch_name}' (commit-hash: {commit_hash}) using the 'build-commit' workflow; proceed?"
+    )
+    if not user_wants_to_build_commit:
+        print("Workflow aborted")
+        exit(1)
 
-    If the branch has already been built, it will reuse the already built wheel.
-    """
+    repo = g.get_repo("Eventual-Inc/Daft")
+    workflow = repo.get_workflow("build-commit.yaml")
+
+    pre_creation_latest_run = get_latest_run(workflow)
+
+    inputs = {"arch": "x86"}
+    print(f"Launching new 'build-commit' workflow with the following inputs: {inputs}")
+    created = workflow.create_dispatch(
+        ref=branch_name,
+        inputs=inputs,
+    )
+    if not created:
+        raise RuntimeError("Could not create workflow, suggestion: run again with --verbose")
+
+    post_creation_latest_run = None
+    for _ in range(RETRY_ATTEMPTS):
+        post_creation_latest_run = get_latest_run(workflow)
+        if pre_creation_latest_run.run_number == post_creation_latest_run.run_number:
+            sleep_and_then_retry()
+        elif pre_creation_latest_run.run_number < post_creation_latest_run.run_number:
+            break
+        else:
+            typing.assert_never(
+                "Run numbers are always returned in sorted order and are always monotonically increasing"
+            )
+
+    if not post_creation_latest_run:
+        raise RuntimeError("Unable to locate the new run request for the 'build-commit' workflow")
+
+    print(f"Latest 'build-commit' workflow run found with id: {post_creation_latest_run.id}")
+    print(f"View the workflow run at: {post_creation_latest_run.url}")
+
+    while True:
+        jobs = repo.get_workflow_run(post_creation_latest_run.id).jobs()
+        if not jobs:
+            raise RuntimeError("The 'build-commit' workflow should have 1 job")
+        elif jobs.totalCount > 1:
+            raise RuntimeError("The 'build-commit' workflow should only have 1 job")
+
+        build_commit_job: WorkflowJob = jobs[0]
+        if build_commit_job.conclusion:
+            break
+        else:
+            print(f"Job is still running with status: {build_commit_job.status}")
+
+        sleep_and_then_retry(10)
+
+    print(f"Job completed with status {build_commit_job.conclusion}")
+
+    if build_commit_job.conclusion != "success":
+        raise RuntimeError(f"The 'build-commit' workflow failed; view the results here: {post_creation_latest_run.url}")
+
+    wheel_url = find_wheel(commit_hash)
+
+    if not wheel_url:
+        raise RuntimeError("The wheel was not able to be found in AWS S3; internal error")
+
+    return wheel_url
+
+
+def find_wheel(commit_hash: str) -> Optional[str]:
     s3 = boto3.client("s3")
-
-    branch_name, commit_hash = get_name_and_commit_hash(branch_name)
     response: dict = s3.list_objects_v2(Bucket="github-actions-artifacts-bucket", Prefix=f"builds/{commit_hash}/")
     wheel_urls = []
     for wheel in response.get("Contents", []):
@@ -83,75 +148,29 @@ def build(branch_name: Optional[str], force: bool):
     length = len(wheel_urls)
     assert length <= 1, "There should never be more than 1 object in S3 with the exact same key"
 
+    return wheel_urls[0] if wheel_urls else None
+
+
+def build(branch_name: Optional[str], force: bool):
+    """Runs a build on the given branch.
+
+    If the branch has already been built, it will reuse the already built wheel.
+    """
+    branch_name, commit_hash = get_name_and_commit_hash(branch_name)
+
     print(f"Checking if a build exists for the branch '{branch_name}' (commit-hash: {commit_hash})")
 
-    def run_build():
-        user_wants_to_build_commit = inquirer.confirm(message="No build found; would you like to build this branch?")
-        if not user_wants_to_build_commit:
-            print("Workflow aborted")
-            exit(1)
+    wheel_url = find_wheel(commit_hash)
 
-        repo = g.get_repo("Eventual-Inc/Daft")
-        workflow = repo.get_workflow("build-commit.yaml")
-
-        pre_creation_latest_run = get_latest_run(workflow)
-
-        inputs = {"arch": "x86"}
-        print(f"Launching new 'build-commit' workflow with the following inputs: {inputs}")
-        created = workflow.create_dispatch(
-            ref=branch_name,
-            inputs=inputs,
-        )
-        if not created:
-            raise RuntimeError("Could not create workflow, suggestion: run again with --verbose")
-
-        post_creation_latest_run = None
-        for _ in range(RETRY_ATTEMPTS):
-            post_creation_latest_run = get_latest_run(workflow)
-            if pre_creation_latest_run.run_number == post_creation_latest_run.run_number:
-                sleep_and_then_retry()
-            elif pre_creation_latest_run.run_number < post_creation_latest_run.run_number:
-                break
-            else:
-                typing.assert_never(
-                    "Run numbers are always returned in sorted order and are always monotonically increasing"
-                )
-
-        if not post_creation_latest_run:
-            raise RuntimeError("Unable to locate the new run request for the 'build-commit' workflow")
-
-        print(f"Latest 'build-commit' workflow run found with id: {post_creation_latest_run.id}")
-        print(f"View the workflow run at: {post_creation_latest_run.url}")
-
-        while True:
-            jobs = repo.get_workflow_run(post_creation_latest_run.id).jobs()
-            if not jobs:
-                raise RuntimeError("The 'build-commit' workflow should have 1 job")
-            elif len(jobs) > 1:
-                raise RuntimeError("The 'build-commit' workflow should only have 1 job")
-
-            build_commit_job: WorkflowJob = jobs[0]
-            if build_commit_job.conclusion:
-                break
-            else:
-                print(f"Job is still running with status: {build_commit_job.status}")
-
-            sleep_and_then_retry(10)
-
-        print(f"Job completed with status {build_commit_job.conclusion}")
-
-        if build_commit_job.conclusion != "success":
-            raise RuntimeError(
-                f"The 'build-commit' workflow failed; view the results here: {post_creation_latest_run.url}"
-            )
-
-    if length == 0:
-        run_build()
-    elif length == 1:
+    if wheel_url:
         if force:
-            run_build()
+            wheel_url = run_build(branch_name, commit_hash)
         else:
-            print("Build found; re-using build")
+            print(f"Wheel already found at url {wheel_url}; re-using")
+    else:
+        wheel_url = run_build(branch_name, commit_hash)
+
+    print(wheel_url)
 
 
 if __name__ == "__main__":
