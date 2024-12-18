@@ -31,7 +31,6 @@ pin-project = "1"
 pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
-tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
 
