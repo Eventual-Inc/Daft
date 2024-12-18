@@ -168,8 +168,7 @@ pub fn to_arrow_datatype(
             let precision = value.precision.unwrap_or(10) as u8;
             let scale = value.scale.unwrap_or(0) as i8;
 
-            let precision = usize::try_from(precision).wrap_err("precision is not a usize")?;
-
+            let precision = usize::from(precision);
             let scale = usize::try_from(scale).wrap_err("scale is not a usize")?;
 
             Ok(arrow2::datatypes::DataType::Decimal(precision, scale))

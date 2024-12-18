@@ -86,11 +86,11 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
 
         let daft_fields: Vec<_> = arrow_fields
             .iter()
-            .map(|arrow_field| daft_schema::field::Field::from(arrow_field))
+            .map(daft_schema::field::Field::from)
             .collect();
 
-        let daft_schema = daft_schema::schema::Schema::new(daft_fields.clone())
-            .wrap_err("Could not create schema")?;
+        let daft_schema =
+            daft_schema::schema::Schema::new(daft_fields).wrap_err("Could not create schema")?;
 
         let daft_schema = Arc::new(daft_schema);
 
