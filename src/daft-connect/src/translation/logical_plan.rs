@@ -7,8 +7,8 @@ use daft_local_execution::NativeExecutor;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
     partitioning::{
-        MicroPartitionBatch, MicroPartitionSet, PartitionBatch, PartitionCacheEntry,
-        PartitionMetadata, PartitionSet,
+        InMemoryPartitionSetCache, MicroPartitionSet, PartitionCacheEntry, PartitionMetadata,
+        PartitionSet, PartitionSetCache,
     },
     MicroPartition,
 };
@@ -29,29 +29,32 @@ mod to_df;
 mod with_columns;
 
 pub struct SparkAnalyzer<'a> {
-    pub pset: &'a MicroPartitionSet,
+    pub psets: &'a InMemoryPartitionSetCache,
 }
 
 impl SparkAnalyzer<'_> {
-    pub fn new(pset: &MicroPartitionSet) -> SparkAnalyzer {
-        SparkAnalyzer { pset }
+    pub fn new(pset: &InMemoryPartitionSetCache) -> SparkAnalyzer {
+        SparkAnalyzer { psets: pset }
     }
     pub fn create_in_memory_scan(
         &self,
+        plan_id: usize,
         schema: Arc<Schema>,
         tables: Vec<Table>,
     ) -> eyre::Result<LogicalPlanBuilder> {
-        let batch: MicroPartitionBatch = tables.try_into()?;
-        let partition_key: Arc<str> = uuid::Uuid::new_v4().to_string().into();
+        let partition_key = uuid::Uuid::new_v4().to_string();
 
-        self.pset.set_partition(partition_key.clone(), &batch)?;
+        let pset = Arc::new(MicroPartitionSet::from_tables(plan_id, tables)?);
+
         let PartitionMetadata {
-            size_bytes,
             num_rows,
-        } = batch.metadata();
-        let num_partitions = batch.partition.len();
+            size_bytes,
+        } = pset.metadata();
+        let num_partitions = pset.num_partitions();
 
-        let cache_entry = PartitionCacheEntry::Rust(partition_key.to_string());
+        self.psets.put_partition_set(&partition_key, &pset);
+
+        let cache_entry = PartitionCacheEntry::new_rust(partition_key.clone(), pset);
 
         Ok(LogicalPlanBuilder::in_memory_scan(
             &partition_key,
@@ -64,11 +67,13 @@ impl SparkAnalyzer<'_> {
     }
 
     pub async fn to_logical_plan(&self, relation: Relation) -> eyre::Result<LogicalPlanBuilder> {
-        if let Some(common) = relation.common {
-            if common.origin.is_some() {
-                warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
-            }
+        let Some(common) = relation.common else {
+            bail!("Common metadata is required");
         };
+
+        if common.origin.is_some() {
+            warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        }
 
         let Some(rel_type) = relation.rel_type else {
             bail!("Relation type is required");
@@ -98,9 +103,13 @@ impl SparkAnalyzer<'_> {
                 .to_df(*t)
                 .await
                 .wrap_err("Failed to apply to_df to logical plan"),
-            RelType::LocalRelation(l) => self
-                .local_relation(l)
-                .wrap_err("Failed to apply local_relation to logical plan"),
+            RelType::LocalRelation(l) => {
+                let Some(plan_id) = common.plan_id else {
+                    bail!("Plan ID is required for LocalRelation");
+                };
+                self.local_relation(plan_id, l)
+                    .wrap_err("Failed to apply local_relation to logical plan")
+            }
             RelType::Read(r) => read::read(r)
                 .await
                 .wrap_err("Failed to apply read to logical plan"),
@@ -112,10 +121,14 @@ impl SparkAnalyzer<'_> {
                 .filter(*f)
                 .await
                 .wrap_err("Failed to apply filter to logical plan"),
-            RelType::ShowString(ss) => self
-                .show_string(*ss)
-                .await
-                .wrap_err("Failed to apply show_string to logical plan"),
+            RelType::ShowString(ss) => {
+                let Some(plan_id) = common.plan_id else {
+                    bail!("Plan ID is required for LocalRelation");
+                };
+                self.show_string(plan_id, *ss)
+                    .await
+                    .wrap_err("Failed to show string")
+            }
             plan => bail!("Unsupported relation type: {plan:?}"),
         }
     }
@@ -135,7 +148,11 @@ impl SparkAnalyzer<'_> {
 
     /// right now this just naively applies a limit to the logical plan
     /// In the future, we want this to more closely match our daft implementation
-    async fn show_string(&self, show_string: ShowString) -> eyre::Result<LogicalPlanBuilder> {
+    async fn show_string(
+        &self,
+        plan_id: i64,
+        show_string: ShowString,
+    ) -> eyre::Result<LogicalPlanBuilder> {
         let ShowString {
             input,
             num_rows,
@@ -160,7 +177,7 @@ impl SparkAnalyzer<'_> {
 
         let cfg = Arc::new(DaftExecutionConfig::default());
         let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-        let result_stream = native_executor.run(self.pset, cfg, None)?.into_stream();
+        let result_stream = native_executor.run(self.psets, cfg, None)?.into_stream();
         let batch = result_stream.try_collect::<Vec<_>>().await?;
         let single_batch = MicroPartition::concat(batch)?;
         let tbls = single_batch.get_tables()?;
@@ -174,6 +191,6 @@ impl SparkAnalyzer<'_> {
         let tbl = Table::from_nonempty_columns(vec![s])?;
         let schema = tbl.schema.clone();
 
-        self.create_in_memory_scan(schema, vec![tbl])
+        self.create_in_memory_scan(plan_id as _, schema, vec![tbl])
     }
 }

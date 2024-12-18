@@ -34,7 +34,7 @@ on:
         type: string
         required: true
       entrypoint_args:
-        description: Entry-point arguments
+        description: Entry-point arguments (either a simple string or a JSON list)
         type: string
         required: false
         default: ""
@@ -79,24 +79,15 @@ jobs:
           uv run \
             --python 3.12 \
             .github/ci-scripts/templatize_ray_config.py \
-            --cluster-name "ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}" \
-            --daft-wheel-url '${{ inputs.daft_wheel_url }}' \
-            --daft-version '${{ inputs.daft_version }}' \
-            --python-version '${{ inputs.python_version }}' \
-            --cluster-profile '${{ inputs.cluster_profile }}' \
-            --working-dir '${{ inputs.working_dir }}' \
-            --entrypoint-script '${{ inputs.entrypoint_script }}'
+            --cluster-name="ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}" \
+            --daft-wheel-url='${{ inputs.daft_wheel_url }}' \
+            --daft-version='${{ inputs.daft_version }}' \
+            --python-version='${{ inputs.python_version }}' \
+            --cluster-profile='${{ inputs.cluster_profile }}' \
+            --working-dir='${{ inputs.working_dir }}' \
+            --entrypoint-script='${{ inputs.entrypoint_script }}'
         ) >> .github/assets/ray.yaml
         cat .github/assets/ray.yaml
-    - name: Setup ray env vars
-      run: |
-        source .venv/bin/activate
-        ray_env_var=$(python .github/ci-scripts/format_env_vars.py \
-          --env-vars '${{ inputs.env_vars }}' \
-          --enable-ray-tracing \
-        )
-        echo $ray_env_var
-        echo "ray_env_var=$ray_env_var" >> $GITHUB_ENV
     - name: Download private ssh key
       run: |
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
@@ -117,12 +108,14 @@ jobs:
           echo 'Invalid command submitted; command cannot be empty'
           exit 1
         fi
-        ray job submit \
-          --working-dir ${{ inputs.working_dir }} \
-          --address http://localhost:8265 \
-          --runtime-env-json "$ray_env_var" \
-          -- python ${{ inputs.entrypoint_script }} ${{ inputs.entrypoint_args }}
+        python .github/ci-scripts/job_runner.py \
+          --working-dir='${{ inputs.working_dir }}' \
+          --entrypoint-script='${{ inputs.entrypoint_script }}' \
+          --entrypoint-args='${{ inputs.entrypoint_args }}' \
+          --env-vars='${{ inputs.env_vars }}' \
+          --enable-ray-tracing
     - name: Download log files from ray cluster
+      if: always()
       run: |
         source .venv/bin/activate
         ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs ray-daft-logs
@@ -152,6 +145,7 @@ jobs:
         source .venv/bin/activate
         ray down .github/assets/ray.yaml -y
     - name: Upload log files
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: ray-daft-logs

@@ -30,7 +30,7 @@ impl Session {
 
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
 
-        let pset = self.pset.clone();
+        let pset = self.psets.clone();
 
         tokio::spawn(async move {
             let execution_fut = async {
@@ -46,8 +46,7 @@ impl Session {
                 let cfg = Arc::new(DaftExecutionConfig::default());
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
 
-                let mut result_stream =
-                    native_executor.run(pset.as_ref(), cfg, None)?.into_stream();
+                let mut result_stream = native_executor.run(&pset, cfg, None)?.into_stream();
 
                 while let Some(result) = result_stream.next().await {
                     let result = result?;

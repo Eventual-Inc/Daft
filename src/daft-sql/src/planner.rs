@@ -6,13 +6,13 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
+use daft_algebra::boolean::combine_conjunction;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
     common_treenode::{Transformed, TreeNode},
-    has_agg, lit, literals_to_series, null_lit,
-    optimization::conjuct,
-    AggExpr, Expr, ExprRef, LiteralValue, Operator, OuterReferenceColumn, Subquery,
+    has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
+    OuterReferenceColumn, Subquery,
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
@@ -21,10 +21,10 @@ use daft_functions::{
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
-        ArrayElemTypeDef, BinaryOperator, CastKind, DateTimeField, Distinct, ExactNumberInfo,
-        ExcludeSelectItem, GroupByExpr, Ident, Query, SelectItem, SetExpr, Statement, StructField,
-        Subscript, TableAlias, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
-        WildcardAdditionalOptions, With,
+        ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
+        ExactNumberInfo, ExcludeSelectItem, GroupByExpr, Ident, Query, SelectItem, SetExpr,
+        Statement, StructField, Subscript, TableAlias, TableWithJoins, TimezoneInfo, UnaryOperator,
+        Value, WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -959,12 +959,12 @@ impl<'a> SQLPlanner<'a> {
             };
 
             let mut left_plan = self.current_relation.as_ref().unwrap().inner.clone();
-            if let Some(left_predicate) = conjuct(left_filters) {
+            if let Some(left_predicate) = combine_conjunction(left_filters) {
                 left_plan = left_plan.filter(left_predicate)?;
             }
 
             let mut right_plan = right_rel.inner.clone();
-            if let Some(right_predicate) = conjuct(right_filters) {
+            if let Some(right_predicate) = combine_conjunction(right_filters) {
                 right_plan = right_plan.filter(right_predicate)?;
             }
 
@@ -1260,6 +1260,28 @@ impl<'a> SQLPlanner<'a> {
                 Ok(columns)
             }
         }
+    }
+
+    fn column_to_field(&self, column_def: &ColumnDef) -> SQLPlannerResult<Field> {
+        let ColumnDef {
+            name,
+            data_type,
+            collation,
+            options,
+        } = column_def;
+
+        if let Some(collation) = collation {
+            unsupported_sql_err!("collation operation ({collation:?}) is not supported")
+        }
+
+        if !options.is_empty() {
+            unsupported_sql_err!("unsupported options: {options:?}")
+        }
+
+        let name = ident_to_str(name);
+        let data_type = self.sql_dtype_to_dtype(data_type)?;
+
+        Ok(Field::new(name, data_type))
     }
 
     fn value_to_lit(&self, value: &Value) -> SQLPlannerResult<LiteralValue> {
@@ -2114,6 +2136,32 @@ fn check_wildcard_options(
 
     Ok(())
 }
+
+pub fn sql_schema<S: AsRef<str>>(s: S) -> SQLPlannerResult<SchemaRef> {
+    let planner = SQLPlanner::default();
+
+    let tokens = Tokenizer::new(&GenericDialect, s.as_ref()).tokenize()?;
+
+    let mut parser = Parser::new(&GenericDialect)
+        .with_options(ParserOptions {
+            trailing_commas: true,
+            ..Default::default()
+        })
+        .with_tokens(tokens);
+
+    let column_defs = parser.parse_comma_separated(Parser::parse_column_def)?;
+
+    let fields: Result<Vec<_>, _> = column_defs
+        .into_iter()
+        .map(|c| planner.column_to_field(&c))
+        .collect();
+
+    let fields = fields?;
+
+    let schema = Schema::new(fields)?;
+    Ok(Arc::new(schema))
+}
+
 pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
     let mut planner = SQLPlanner::default();
 
@@ -2138,6 +2186,12 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
 // ----------------
 // Helper functions
 // ----------------
+
+/// # Examples
+/// ```
+/// // Quoted identifier "MyCol" -> "MyCol"
+/// // Unquoted identifier MyCol -> "MyCol"
+/// ```
 fn ident_to_str(ident: &Ident) -> String {
     if ident.quote_style == Some('"') {
         ident.value.to_string()
@@ -2189,4 +2243,53 @@ fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> SQLPlannerResult<Ex
             }
         })
         .ok_or_else(|| PlannerError::column_not_found(expr.name(), "projection"))
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::*;
+
+    use crate::sql_schema;
+
+    #[test]
+    fn test_sql_schema_creates_expected_schema() {
+        let result =
+            sql_schema("Year int, First_Name STRING, County STRING, Sex STRING, Count int")
+                .unwrap();
+
+        let expected = Schema::new(vec![
+            Field::new("Year", DataType::Int32),
+            Field::new("First_Name", DataType::Utf8),
+            Field::new("County", DataType::Utf8),
+            Field::new("Sex", DataType::Utf8),
+            Field::new("Count", DataType::Int32),
+        ])
+        .unwrap();
+
+        assert_eq!(&*result, &expected);
+    }
+
+    #[test]
+    fn test_duplicate_column_names_in_schema() {
+        // This test checks that sql_schema fails or handles duplicates gracefully.
+        // The planner currently returns errors if schema construction fails, so we expect an Err here.
+        let result = sql_schema("col1 INT, col1 STRING");
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Daft error: DaftError::ValueError Attempting to make a Schema with duplicate field names: col1"
+        );
+    }
+
+    #[test]
+    fn test_degenerate_empty_schema() {
+        assert!(sql_schema("").is_err());
+    }
+
+    #[test]
+    fn test_single_field_schema() {
+        let result = sql_schema("col1 INT").unwrap();
+        let expected = Schema::new(vec![Field::new("col1", DataType::Int32)]).unwrap();
+        assert_eq!(&*result, &expected);
+    }
 }

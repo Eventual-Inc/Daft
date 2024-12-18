@@ -6,12 +6,11 @@ use std::{
 use common_error::DaftResult;
 use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
+use daft_algebra::boolean::{combine_conjunction, split_conjunction};
 use daft_core::join::JoinType;
 use daft_dsl::{
     col,
-    optimization::{
-        conjuct, get_required_columns, replace_columns_with_expressions, split_conjuction,
-    },
+    optimization::{get_required_columns, replace_columns_with_expressions},
     ExprRef,
 };
 
@@ -56,20 +55,20 @@ impl PushDownFilter {
                 // Filter-Filter --> Filter
 
                 // Split predicate expression on conjunctions (ANDs).
-                let parent_predicates = split_conjuction(&filter.predicate);
-                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().copied().collect();
+                let parent_predicates = split_conjunction(&filter.predicate);
+                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().collect();
                 // Add child predicate expressions to parent predicate expressions, eliminating duplicates.
                 let new_predicates: Vec<ExprRef> = parent_predicates
                     .iter()
                     .chain(
-                        split_conjuction(&child_filter.predicate)
+                        split_conjunction(&child_filter.predicate)
                             .iter()
-                            .filter(|e| !predicate_set.contains(**e)),
+                            .filter(|e| !predicate_set.contains(*e)),
                     )
                     .map(|e| (*e).clone())
                     .collect::<Vec<_>>();
                 // Reconjunct predicate expressions.
-                let new_predicate = conjuct(new_predicates).unwrap();
+                let new_predicate = combine_conjunction(new_predicates).unwrap();
                 let new_filter: Arc<LogicalPlan> =
                     LogicalPlan::from(Filter::try_new(child_filter.input.clone(), new_predicate)?)
                         .into();
@@ -133,8 +132,8 @@ impl PushDownFilter {
                             return Ok(Transformed::no(plan));
                         }
 
-                        let data_filter = conjuct(data_only_filter);
-                        let partition_filter = conjuct(partition_only_filter);
+                        let data_filter = combine_conjunction(data_only_filter);
+                        let partition_filter = combine_conjunction(partition_only_filter);
                         assert!(data_filter.is_some() || partition_filter.is_some());
 
                         let new_pushdowns = if let Some(data_filter) = data_filter {
@@ -158,7 +157,7 @@ impl PushDownFilter {
                             // TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
                             let filter_op: LogicalPlan = Filter::try_new(
                                 new_source.into(),
-                                conjuct(needing_filter_op).unwrap(),
+                                combine_conjunction(needing_filter_op).unwrap(),
                             )?
                             .into();
                             return Ok(Transformed::yes(filter_op.into()));
@@ -176,7 +175,7 @@ impl PushDownFilter {
                 // don't involve compute.
                 //
                 // Filter-Projection --> {Filter-}Projection-Filter
-                let predicates = split_conjuction(&filter.predicate);
+                let predicates = split_conjunction(&filter.predicate);
                 let projection_input_mapping = child_project
                     .projection
                     .iter()
@@ -191,7 +190,7 @@ impl PushDownFilter {
                 let mut can_push: Vec<ExprRef> = vec![];
                 let mut can_not_push: Vec<ExprRef> = vec![];
                 for predicate in predicates {
-                    let predicate_cols = get_required_columns(predicate);
+                    let predicate_cols = get_required_columns(&predicate);
                     if predicate_cols
                         .iter()
                         .all(|col| projection_input_mapping.contains_key(col))
@@ -212,7 +211,7 @@ impl PushDownFilter {
                     return Ok(Transformed::no(plan));
                 }
                 // Create new Filter with predicates that can be pushed past Projection.
-                let predicates_to_push = conjuct(can_push).unwrap();
+                let predicates_to_push = combine_conjunction(can_push).unwrap();
                 let push_down_filter: LogicalPlan =
                     Filter::try_new(child_project.input.clone(), predicates_to_push)?.into();
                 // Create new Projection.
@@ -226,7 +225,7 @@ impl PushDownFilter {
                 } else {
                     // Otherwise, add a Filter after Projection that filters with predicate expressions
                     // that couldn't be pushed past the Projection, returning a Filter-Projection-Filter subplan.
-                    let post_projection_predicate = conjuct(can_not_push).unwrap();
+                    let post_projection_predicate = combine_conjunction(can_not_push).unwrap();
                     let post_projection_filter: LogicalPlan =
                         Filter::try_new(new_projection.into(), post_projection_predicate)?.into();
                     post_projection_filter.into()
@@ -274,7 +273,7 @@ impl PushDownFilter {
                 let left_cols = HashSet::<_>::from_iter(child_join.left.schema().names());
                 let right_cols = HashSet::<_>::from_iter(child_join.right.schema().names());
 
-                for predicate in split_conjuction(&filter.predicate).into_iter().cloned() {
+                for predicate in split_conjunction(&filter.predicate) {
                     let pred_cols = HashSet::<_>::from_iter(get_required_columns(&predicate));
 
                     match (
@@ -307,11 +306,11 @@ impl PushDownFilter {
                     }
                 }
 
-                let left_pushdowns = conjuct(left_pushdowns);
-                let right_pushdowns = conjuct(right_pushdowns);
+                let left_pushdowns = combine_conjunction(left_pushdowns);
+                let right_pushdowns = combine_conjunction(right_pushdowns);
 
                 if left_pushdowns.is_some() || right_pushdowns.is_some() {
-                    let kept_predicates = conjuct(kept_predicates);
+                    let kept_predicates = combine_conjunction(kept_predicates);
 
                     let new_left = left_pushdowns.map_or_else(
                         || child_join.left.clone(),
