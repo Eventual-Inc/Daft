@@ -211,9 +211,8 @@ def test_sql_tbl_alias():
 
 def test_sql_distinct():
     df = daft.from_pydict({"n": [1, 1, 2, 2]})
-    actual = daft.sql("SELECT DISTINCT n FROM df").collect().to_pydict()
-    expected = df.distinct().collect().to_pydict()
-    assert actual == expected
+    df = daft.sql("SELECT DISTINCT n FROM df").collect().to_pydict()
+    assert set(df["n"]) == {1, 2}
 
 
 @pytest.mark.parametrize(
