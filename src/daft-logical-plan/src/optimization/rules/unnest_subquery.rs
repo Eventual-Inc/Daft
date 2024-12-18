@@ -2,12 +2,9 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
+use daft_algebra::boolean::{combine_conjunction, split_conjunction};
 use daft_core::{join::JoinType, prelude::SchemaRef};
-use daft_dsl::{
-    col,
-    optimization::{conjuct, split_conjuction},
-    Expr, ExprRef, Operator, Subquery,
-};
+use daft_dsl::{col, Expr, ExprRef, Operator, Subquery};
 use itertools::multiunzip;
 use uuid::Uuid;
 
@@ -73,12 +70,12 @@ impl UnnestScalarSubquery {
 impl UnnestScalarSubquery {
     fn unnest_subqueries(
         input: LogicalPlanRef,
-        exprs: Vec<&ExprRef>,
+        exprs: &[ExprRef],
     ) -> DaftResult<Transformed<(LogicalPlanRef, Vec<ExprRef>)>> {
         let mut subqueries = HashSet::new();
 
         let new_exprs = exprs
-            .into_iter()
+            .iter()
             .map(|expr| {
                 expr.clone()
                     .transform_down(|e| {
@@ -164,7 +161,7 @@ impl OptimizerRule for UnnestScalarSubquery {
                 input, predicate, ..
             }) => {
                 let unnest_result =
-                    Self::unnest_subqueries(input.clone(), split_conjuction(predicate))?;
+                    Self::unnest_subqueries(input.clone(), &split_conjunction(predicate))?;
 
                 if !unnest_result.transformed {
                     return Ok(Transformed::no(node));
@@ -172,7 +169,7 @@ impl OptimizerRule for UnnestScalarSubquery {
 
                 let (new_input, new_predicates) = unnest_result.data;
 
-                let new_predicate = conjuct(new_predicates)
+                let new_predicate = combine_conjunction(new_predicates)
                     .expect("predicates are guaranteed to exist at this point, so 'conjunct' should never return 'None'");
 
                 let new_filter = Arc::new(LogicalPlan::Filter(Filter::try_new(
@@ -192,7 +189,7 @@ impl OptimizerRule for UnnestScalarSubquery {
                 input, projection, ..
             }) => {
                 let unnest_result =
-                    Self::unnest_subqueries(input.clone(), projection.iter().collect())?;
+                    Self::unnest_subqueries(input.clone(), projection)?;
 
                 if !unnest_result.transformed {
                     return Ok(Transformed::no(node));
@@ -275,7 +272,7 @@ impl OptimizerRule for UnnestPredicateSubquery {
             }) => {
                 let mut subqueries = HashSet::new();
 
-                let new_predicates = split_conjuction(predicate)
+                let new_predicates = split_conjunction(predicate)
                     .into_iter()
                     .filter(|expr| {
                         match expr.as_ref() {
@@ -303,7 +300,6 @@ impl OptimizerRule for UnnestPredicateSubquery {
                             _ => true
                         }
                     })
-                    .cloned()
                     .collect::<Vec<_>>();
 
                 if subqueries.is_empty() {
@@ -345,7 +341,7 @@ impl OptimizerRule for UnnestPredicateSubquery {
                     )?)))
                 })?;
 
-                let new_plan = if let Some(new_predicate) = conjuct(new_predicates) {
+                let new_plan = if let Some(new_predicate) = combine_conjunction(new_predicates) {
                     // add filter back if there are non-subquery predicates
                     Arc::new(LogicalPlan::Filter(Filter::try_new(
                         new_input,
@@ -387,7 +383,7 @@ fn pull_up_correlated_cols(
         }) => {
             let mut found_correlated_col = false;
 
-            let preds = split_conjuction(predicate)
+            let preds = split_conjunction(predicate)
                 .into_iter()
                 .filter(|expr| {
                     if let Expr::BinaryOp {
@@ -418,7 +414,6 @@ fn pull_up_correlated_cols(
 
                     true
                 })
-                .cloned()
                 .collect::<Vec<_>>();
 
             // no new correlated cols found
@@ -426,7 +421,7 @@ fn pull_up_correlated_cols(
                 return Ok((plan.clone(), subquery_on, outer_on));
             }
 
-            if let Some(new_predicate) = conjuct(preds) {
+            if let Some(new_predicate) = combine_conjunction(preds) {
                 let new_plan = Arc::new(LogicalPlan::Filter(Filter::try_new(
                     input.clone(),
                     new_predicate,

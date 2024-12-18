@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 
-use super::expr::Expr;
-use crate::{ExprRef, Operator};
+use crate::{Expr, ExprRef};
 
 pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
     let mut cols = vec![];
@@ -56,31 +55,4 @@ pub fn replace_columns_with_expressions(
         })
         .expect("Error occurred when rewriting column expressions");
     transformed.data
-}
-
-pub fn split_conjuction(expr: &ExprRef) -> Vec<&ExprRef> {
-    let mut splits = vec![];
-    _split_conjuction(expr, &mut splits);
-    splits
-}
-
-fn _split_conjuction<'a>(expr: &'a ExprRef, out_exprs: &mut Vec<&'a ExprRef>) {
-    match expr.as_ref() {
-        Expr::BinaryOp {
-            op: Operator::And,
-            left,
-            right,
-        } => {
-            _split_conjuction(left, out_exprs);
-            _split_conjuction(right, out_exprs);
-        }
-        Expr::Alias(inner_expr, ..) => _split_conjuction(inner_expr, out_exprs),
-        _ => {
-            out_exprs.push(expr);
-        }
-    }
-}
-
-pub fn conjuct<T: IntoIterator<Item = ExprRef>>(exprs: T) -> Option<ExprRef> {
-    exprs.into_iter().reduce(|acc, expr| acc.and(expr))
 }

@@ -7,7 +7,7 @@ from daft import col
 def test_simple_intersect(make_df):
     df1 = make_df({"foo": [1, 2, 3]})
     df2 = make_df({"bar": [2, 3, 4]})
-    result = df1.intersect(df2)
+    result = df1.intersect(df2).sort(by="foo")
     assert result.to_pydict() == {"foo": [2, 3]}
 
 
