@@ -28,7 +28,6 @@ impl Session {
     pub fn new(id: String) -> Self {
         let server_side_session_id = Uuid::new_v4();
         let server_side_session_id = server_side_session_id.to_string();
-
         Self {
             config_values: Default::default(),
             id,
