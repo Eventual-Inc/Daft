@@ -11,6 +11,7 @@ daft-logical-plan = {workspace = true}
 daft-micropartition = {workspace = true}
 daft-scan = {workspace = true}
 daft-schema = {workspace = true}
+daft-sql = {workspace = true}
 daft-table = {workspace = true}
 dashmap = "6.1.0"
 eyre = "0.6.12"

@@ -9,6 +9,7 @@ common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
+daft-algebra = {path = "../daft-algebra", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions = {path = "../daft-functions", default-features = false}

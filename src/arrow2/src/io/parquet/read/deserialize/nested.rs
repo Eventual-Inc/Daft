@@ -34,6 +34,7 @@ where
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn columns_to_iter_recursive<'a, I>(
     mut columns: Vec<I>,
     mut types: Vec<&PrimitiveType>,
@@ -42,6 +43,7 @@ pub fn columns_to_iter_recursive<'a, I>(
     num_rows: usize,
     chunk_size: Option<usize>,
     mut num_values: Vec<usize>,
+    is_parent_nullable: bool,
 ) -> Result<NestedArrayIter<'a>>
 where
     I: Pages + 'a,
@@ -61,6 +63,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
             ))
         }
         Boolean => {
@@ -72,6 +75,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
             ))
         }
         Primitive(Int8) => {
@@ -84,6 +88,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
                 |x: i32| x as i8,
             ))
         }
@@ -97,6 +102,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
                 |x: i32| x as i16,
             ))
         }
@@ -110,6 +116,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
                 |x: i32| x,
             ))
         }
@@ -123,6 +130,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
                 |x: i64| x,
             ))
         }
@@ -136,6 +144,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
                 |x: i32| x as u8,
             ))
         }
@@ -149,6 +158,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
                 |x: i32| x as u16,
             ))
         }
@@ -163,6 +173,7 @@ where
                     num_rows,
                     chunk_size,
                     num_values.pop().unwrap(),
+                    is_parent_nullable,
                     |x: i32| x as u32,
                 )),
                 // some implementations of parquet write arrow's u32 into i64.
@@ -173,6 +184,7 @@ where
                     num_rows,
                     chunk_size,
                     num_values.pop().unwrap(),
+                    is_parent_nullable,
                     |x: i64| x as u32,
                 )),
                 other => {
@@ -192,6 +204,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
                 |x: i64| x as u64,
             ))
         }
@@ -205,6 +218,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
                 |x: f32| x,
             ))
         }
@@ -218,6 +232,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
                 |x: f64| x,
             ))
         }
@@ -231,6 +246,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
             ))
         }
         LargeBinary | LargeUtf8 => {
@@ -243,6 +259,7 @@ where
                 num_rows,
                 chunk_size,
                 num_values.pop().unwrap(),
+                is_parent_nullable,
             ))
         }
         _ => match field.data_type().to_logical_type() {
@@ -274,6 +291,7 @@ where
                     num_rows,
                     chunk_size,
                     num_values,
+                    is_parent_nullable || field.is_nullable,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;
@@ -293,6 +311,7 @@ where
                         num_rows,
                         chunk_size,
                         num_values.pop().unwrap(),
+                        is_parent_nullable,
                         |x: i32| x as i128,
                     )),
                     PhysicalType::Int64 => primitive(primitive::NestedIter::new(
@@ -302,6 +321,7 @@ where
                         num_rows,
                         chunk_size,
                         num_values.pop().unwrap(),
+                        is_parent_nullable,
                         |x: i64| x as i128,
                     )),
                     PhysicalType::FixedLenByteArray(n) if n > 16 => {
@@ -317,6 +337,7 @@ where
                             num_rows,
                             chunk_size,
                             num_values.pop().unwrap(),
+                            is_parent_nullable,
                         );
                         // Convert the fixed length byte array to Decimal.
                         let iter = iter.map(move |x| {
@@ -359,6 +380,7 @@ where
                         num_rows,
                         chunk_size,
                         num_values.pop().unwrap(),
+                        is_parent_nullable,
                         |x: i32| i256(I256::new(x as i128)),
                     )),
                     PhysicalType::Int64 => primitive(primitive::NestedIter::new(
@@ -368,6 +390,7 @@ where
                         num_rows,
                         chunk_size,
                         num_values.pop().unwrap(),
+                        is_parent_nullable,
                         |x: i64| i256(I256::new(x as i128)),
                     )),
                     PhysicalType::FixedLenByteArray(n) if n <= 16 => {
@@ -378,6 +401,7 @@ where
                             num_rows,
                             chunk_size,
                             num_values.pop().unwrap(),
+                            is_parent_nullable,
                         );
                         // Convert the fixed length byte array to Decimal.
                         let iter = iter.map(move |x| {
@@ -410,6 +434,7 @@ where
                             num_rows,
                             chunk_size,
                             num_values.pop().unwrap(),
+                            is_parent_nullable,
                         );
                         // Convert the fixed length byte array to Decimal.
                         let iter = iter.map(move |x| {
@@ -465,6 +490,7 @@ where
                             num_rows,
                             chunk_size,
                             num_values,
+                            is_parent_nullable || field.is_nullable,
                         )
                     })
                     .collect::<Result<Vec<_>>>()?;
@@ -481,6 +507,7 @@ where
                     num_rows,
                     chunk_size,
                     num_values,
+                    is_parent_nullable || field.is_nullable,
                 )?;
                 let iter = iter.map(move |x| {
                     let (mut nested, array) = x?;
