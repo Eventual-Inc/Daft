@@ -15,6 +15,8 @@ impl SparkAnalyzer<'_> {
         plan_id: i64,
         plan: spark_connect::LocalRelation,
     ) -> eyre::Result<LogicalPlanBuilder> {
+        // We can ignore spark schema. The true schema is sent in the
+        // arrow data. (see read_stream_metadata)
         let spark_connect::LocalRelation { data, schema: _ } = plan;
 
         let Some(data) = data else {
