@@ -220,9 +220,9 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
 ///  cache.put_partition_set("outer", &outer);
 /// {
 ///   let inner = Arc::new(MicroPartitionSet::empty());
-///   cache.put_partition_set("inner", &pset);
-///   cache.get_partition_set("inner"); // Some(pset)
-///   // pset is dropped here
+///   cache.put_partition_set("inner", &inner);
+///   cache.get_partition_set("inner"); // Some(inner)
+///   // inner is dropped here
 /// }
 ///
 /// cache.get_partition_set("inner"); // None
