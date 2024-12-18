@@ -379,6 +379,29 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 
 </div>
 
+**Work with your favorite tools**:
+
+<div class="grid cards" markdown>
+
+- [:simple-ray: **Ray**](integrations/ray.md)
+- [**Unity Catalog**](integrations/unity_catalog.md)
+- [**Apache Iceberg**](integrations/iceberg.md)
+- [**Delta Lake**](integrations/delta_lake.md)
+- [:material-microsoft-azure: **Microsoft Azure**](integrations/azure.md)
+- [:fontawesome-brands-aws: **Amazon Web Services (AWS)**](integrations/aws.md)
+- [**SQL**](integrations/sql.md)
+- [:simple-huggingface: **Hugging Face Datasets**](integrations/huggingface.md)
+
+</div>
+
+**Coming from?**
+
+<div class="grid cards" markdown>
+
+- [:simple-dask: **Dask Migration Guide**](migration/dask_migration.md)
+
+</div>
+
 **Try your hand at some [Tutorials](resources/tutorials.md):**
 
 <div class="grid cards" markdown>

@@ -42,7 +42,7 @@ First we run TPC-H 100 Scale Factor (around 100GB) benchmark  on 4 i3.2xlarge wo
 
 <!-- 
 ```python
---8<-- "docs/resources/benchmarks/tpch-100sf.html"
+--8<-- "docs-v2/resources/benchmarks/tpch-100sf.html"
 ```
 snippet works, but does not execute block
  -->

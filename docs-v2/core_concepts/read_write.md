@@ -127,7 +127,7 @@ This approach allows you to efficiently download and process data from a large n
 
 ## Writing Data
 
-The [`df.write_*(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/dataframe.html#df-write-data) methods are used to write DataFrames to files or other destinations.
+Writing data will execute your DataFrame and write the results out to the specified backend. The [`df.write_*(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/dataframe.html#df-write-data) methods are used to write DataFrames to files or other destinations.
 
 === "🐍 Python"
     ``` python
@@ -139,4 +139,6 @@ The [`df.write_*(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/
     df.write_csv("s3://mybucket/path/")
     ```
 
-Note that because Daft is a distributed DataFrame library, by default it will produce multiple files (one per partition) at your specified destination.
+!!! note "Note"
+
+    Because Daft is a distributed DataFrame library, by default it will produce multiple files (one per partition) at your specified destination. Writing your dataframe is a **blocking** operation that executes your DataFrame. It will return a new `DataFrame` that contains the filepaths to the written data. 
