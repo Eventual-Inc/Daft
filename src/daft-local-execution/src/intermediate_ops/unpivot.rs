@@ -9,6 +9,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
+use crate::resource_manager::MemoryManager;
 
 struct UnpivotParams {
     ids: Vec<ExprRef>,
@@ -45,6 +46,7 @@ impl IntermediateOperator for UnpivotOperator {
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
+        _memory_manager: Arc<MemoryManager>,
     ) -> IntermediateOpExecuteResult {
         let params = self.params.clone();
         runtime

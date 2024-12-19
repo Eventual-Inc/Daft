@@ -7,6 +7,7 @@ mod dispatcher;
 mod intermediate_ops;
 mod pipeline;
 mod progress_bar;
+mod resource_manager;
 mod run;
 mod runtime_stats;
 mod sinks;
@@ -24,6 +25,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use lazy_static::lazy_static;
 use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
+use resource_manager::MemoryManager;
 pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
 use runtime_stats::RuntimeStatsContext;
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
@@ -117,9 +119,10 @@ impl RuntimeHandle {
     }
 }
 
-pub struct ExecutionRuntimeContext {
+pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
+    memory_manager: Arc<MemoryManager>,
     progress_bar_manager: Option<Box<dyn ProgressBarManager>>,
 }
 
@@ -127,11 +130,13 @@ impl ExecutionRuntimeContext {
     #[must_use]
     pub fn new(
         default_morsel_size: usize,
+        memory_manager: Arc<MemoryManager>,
         progress_bar_manager: Option<Box<dyn ProgressBarManager>>,
     ) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
+            memory_manager,
             progress_bar_manager,
         }
     }
@@ -181,6 +186,11 @@ impl ExecutionRuntimeContext {
 
     pub(crate) fn handle(&self) -> RuntimeHandle {
         RuntimeHandle(tokio::runtime::Handle::current())
+    }
+
+    #[must_use]
+    pub(crate) fn memory_manager(&self) -> Arc<MemoryManager> {
+        self.memory_manager.clone()
     }
 }
 
