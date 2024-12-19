@@ -989,7 +989,6 @@ mod tests {
             )?
             .build();
 
-        // let expected = left
         let expected = dummy_scan_node_with_pushdowns(
             left_scan_op,
             Pushdowns::default().with_filters(Some(
