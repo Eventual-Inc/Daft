@@ -6,6 +6,7 @@ mod channel;
 mod dispatcher;
 mod intermediate_ops;
 mod pipeline;
+mod progress_bar;
 mod run;
 mod runtime_stats;
 mod sinks;
@@ -15,13 +16,16 @@ mod state_bridge;
 use std::{
     future::Future,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use lazy_static::lazy_static;
+use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
 pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
+use runtime_stats::RuntimeStatsContext;
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 
 lazy_static! {
@@ -116,14 +120,19 @@ impl RuntimeHandle {
 pub struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
+    progress_bar_manager: Option<Box<dyn ProgressBarManager>>,
 }
 
 impl ExecutionRuntimeContext {
     #[must_use]
-    pub fn new(default_morsel_size: usize) -> Self {
+    pub fn new(
+        default_morsel_size: usize,
+        progress_bar_manager: Option<Box<dyn ProgressBarManager>>,
+    ) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
+            progress_bar_manager,
         }
     }
     pub fn spawn(
@@ -149,8 +158,37 @@ impl ExecutionRuntimeContext {
         self.default_morsel_size
     }
 
+    pub fn make_progress_bar(
+        &self,
+        prefix: &str,
+        color: ProgressBarColor,
+        show_received: bool,
+        runtime_stats: Arc<RuntimeStatsContext>,
+    ) -> Option<Arc<OperatorProgressBar>> {
+        if let Some(ref pb_manager) = self.progress_bar_manager {
+            let pb = pb_manager
+                .make_new_bar(color, prefix, show_received)
+                .unwrap();
+            Some(Arc::new(OperatorProgressBar::new(
+                pb,
+                runtime_stats,
+                show_received,
+            )))
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn handle(&self) -> RuntimeHandle {
         RuntimeHandle(tokio::runtime::Handle::current())
+    }
+}
+
+impl Drop for ExecutionRuntimeContext {
+    fn drop(&mut self) {
+        if let Some(pbm) = self.progress_bar_manager.take() {
+            let _ = pbm.close_all();
+        }
     }
 }
 
