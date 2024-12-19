@@ -52,6 +52,7 @@ jobs:
 
   run-command:
     runs-on: [self-hosted, linux, x64, ci-dev]
+    if: always()
     permissions:
       id-token: write
       contents: read
