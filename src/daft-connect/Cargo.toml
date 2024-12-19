@@ -23,6 +23,9 @@ tonic = "0.12.3"
 tracing = {workspace = true}
 uuid = {version = "1.10.0", features = ["v4"]}
 
+[dev-dependencies]
+indexmap.workspace = true
+
 [features]
 python = ["dep:pyo3", "common-daft-config/python", "daft-local-execution/python", "daft-logical-plan/python", "daft-scan/python", "daft-table/python", "daft-dsl/python", "daft-schema/python", "daft-core/python", "daft-micropartition/python"]
 
