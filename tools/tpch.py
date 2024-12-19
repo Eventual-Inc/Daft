@@ -3,7 +3,6 @@
 # dependencies = [
 #   "PyGithub",
 #   "boto3",
-#   "inquirer",
 # ]
 # ///
 
@@ -11,8 +10,9 @@ import argparse
 import json
 
 import github
-import inquirer
 import utils
+
+TOTAL_NUMBER_OF_QUESTIONS = 22
 
 
 def run(
@@ -23,15 +23,9 @@ def run(
     cluster_profile: str,
     env_vars: str,
 ):
-    branch_name, commit_hash = utils.get_name_and_commit_hash(branch_name)
-    user_wants_to_run_tpch_benchmarking = inquirer.confirm(
-        message=f"Going to run TPCH benchmarking with the 'run-cluster' workflow on the branch '{branch_name}' (commit-hash: {commit_hash}); proceed?"
-    )
-    if not user_wants_to_run_tpch_benchmarking:
-        print("Workflow aborted")
-        exit(1)
+    branch_name, _ = utils.get_name_and_commit_hash(branch_name)
 
-    expanded_questions = utils.parse_questions(questions)
+    expanded_questions = utils.parse_questions(questions, TOTAL_NUMBER_OF_QUESTIONS)
     print(
         f"Running scale-factor of {scale_factor}GB with {num_partitions} partitions on questions: {', '.join(map(str, expanded_questions))}"
     )
