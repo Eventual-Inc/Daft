@@ -646,7 +646,7 @@ The [`df.explode()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc
 (Showing first 8 rows)
 ```
 
-<!-- Commented out because theres Advanced/Partitioning section -->
+<!-- Commented out because there's Advanced/Partitioning section -->
 <!-- ## Repartitioning
 
 Daft is a distributed DataFrame, and the dataframe is broken into multiple "partitions" which are processed in parallel across the cores in your machine or cluster.

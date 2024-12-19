@@ -87,7 +87,7 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 - [:octicons-code-16: **Expressions**](core_concepts.md#expressions)
 
     Daft expressions enable computations on DataFrame columns using Python or SQL for various operations.
-    
+
 - [:material-file-eye: **Reading Data**](core_concepts.md#reading-data)
 
     How to use Daft to read data from diverse sources like files, databases, and URLs.
@@ -145,7 +145,7 @@ Take a look at the many issues tagged with `good first issue` in our repo. If th
 
     Daft is the right tool for you if you are working with:
 
-    - **Large datasets** that don't fit into memory or would benefit from parallization
+    - **Large datasets** that don't fit into memory or would benefit from parallelization
     - **Multimodal data types** such as images, JSON, vector embeddings, and tensors
     - **Formats that support data skipping** through automatic partition pruning and stats-based file pruning for filter predicates
     - **ML workloads** that would benefit from interact computation within a DataFrame (via UDFs)
