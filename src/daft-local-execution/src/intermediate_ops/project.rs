@@ -10,16 +10,22 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::NUM_CPUS;
+use crate::{resource_manager::MemoryManager, NUM_CPUS};
 
 pub struct ProjectOperator {
     projection: Arc<Vec<ExprRef>>,
+    memory_request: u64,
 }
 
 impl ProjectOperator {
     pub fn new(projection: Vec<ExprRef>) -> Self {
+        let memory_request = get_resource_request(&projection)
+            .and_then(|req| req.memory_bytes())
+            .map(|m| m as u64)
+            .unwrap_or(0);
         Self {
             projection: Arc::new(projection),
+            memory_request,
         }
     }
 }
@@ -31,10 +37,13 @@ impl IntermediateOperator for ProjectOperator {
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
+        memory_manager: Arc<MemoryManager>,
     ) -> IntermediateOpExecuteResult {
         let projection = self.projection.clone();
+        let memory_request = self.memory_request;
         runtime
             .spawn(async move {
+                let _permit = memory_manager.request_bytes(memory_request).await?;
                 let out = input.eval_expression_list(&projection)?;
                 Ok((
                     state,
@@ -69,15 +78,6 @@ impl IntermediateOperator for ProjectOperator {
                 }
             }
             _ => Ok(*NUM_CPUS),
-        }
-    }
-
-    fn memory_request(&self) -> Option<u64> {
-        let resource_request = get_resource_request(&self.projection);
-        if let Some(resource_request) = resource_request {
-            resource_request.memory_bytes().map(|m| m as u64)
-        } else {
-            None
         }
     }
 }

@@ -9,6 +9,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
+use crate::resource_manager::MemoryManager;
 
 pub struct FilterOperator {
     predicate: ExprRef,
@@ -27,6 +28,7 @@ impl IntermediateOperator for FilterOperator {
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
+        _memory_manager: Arc<MemoryManager>,
     ) -> IntermediateOpExecuteResult {
         let predicate = self.predicate.clone();
         runtime

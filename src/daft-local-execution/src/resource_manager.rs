@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use common_error::{DaftError, DaftResult};
 use common_system_info::SystemInfoInternal;
@@ -6,7 +6,7 @@ use lazy_static::lazy_static;
 use tokio::sync::Notify;
 
 lazy_static! {
-    pub static ref MEMORY_MANAGER: Arc<MemoryManager> = Arc::new(MemoryManager::new());
+    pub(crate) static ref MEMORY_MANAGER: OnceLock<Arc<MemoryManager>> = OnceLock::new();
 }
 
 fn custom_memory_limit() -> Option<u64> {
@@ -19,16 +19,16 @@ fn custom_memory_limit() -> Option<u64> {
     None
 }
 
-pub fn get_memory_manager() -> Arc<MemoryManager> {
-    MEMORY_MANAGER.clone()
+pub(crate) fn get_or_init_memory_manager() -> &'static Arc<MemoryManager> {
+    MEMORY_MANAGER.get_or_init(|| Arc::new(MemoryManager::new()))
 }
 
-pub struct MemoryPermit {
+pub(crate) struct MemoryPermit<'a> {
     bytes: u64,
-    manager: Arc<MemoryManager>,
+    manager: &'a MemoryManager,
 }
 
-impl Drop for MemoryPermit {
+impl Drop for MemoryPermit<'_> {
     fn drop(&mut self) {
         if self.bytes > 0 {
             {
@@ -44,7 +44,7 @@ struct MemoryState {
     available_bytes: u64,
 }
 
-pub struct MemoryManager {
+pub(crate) struct MemoryManager {
     total_bytes: u64,
     state: Mutex<MemoryState>,
     notify: Notify,
@@ -79,12 +79,14 @@ impl MemoryManager {
         }
     }
 
-    pub async fn request_bytes(self: &Arc<Self>, bytes: u64) -> DaftResult<MemoryPermit> {
+    pub async fn request_bytes(&self, bytes: u64) -> DaftResult<MemoryPermit> {
         if bytes == 0 {
-            return Err(DaftError::ComputeError(
-                "Cannot request 0 bytes".to_string(),
-            ));
+            return Ok(MemoryPermit {
+                bytes: 0,
+                manager: self,
+            });
         }
+
         if bytes > self.total_bytes {
             return Err(DaftError::ComputeError(format!(
                 "Cannot request {} bytes, only {} available",
@@ -93,24 +95,23 @@ impl MemoryManager {
         }
 
         loop {
-            let can_allocate = {
-                let mut state = self.state.lock().unwrap();
-                if state.available_bytes >= bytes {
-                    state.available_bytes -= bytes;
-                    true
-                } else {
-                    false
-                }
-            }; // lock is released here
-
-            if can_allocate {
-                return Ok(MemoryPermit {
-                    bytes,
-                    manager: self.clone(),
-                });
+            if let Some(permit) = self.try_request_bytes(bytes) {
+                return Ok(permit);
             }
-
             self.notify.notified().await;
+        }
+    }
+
+    fn try_request_bytes(&self, bytes: u64) -> Option<MemoryPermit> {
+        let mut state = self.state.lock().unwrap();
+        if state.available_bytes >= bytes {
+            state.available_bytes -= bytes;
+            Some(MemoryPermit {
+                bytes,
+                manager: self,
+            })
+        } else {
+            None
         }
     }
 }

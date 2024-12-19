@@ -8,6 +8,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
+use crate::resource_manager::MemoryManager;
 
 struct SampleParams {
     fraction: f64,
@@ -38,6 +39,7 @@ impl IntermediateOperator for SampleOperator {
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
+        _memory_manager: Arc<MemoryManager>,
     ) -> IntermediateOpExecuteResult {
         let params = self.params.clone();
         runtime

@@ -44,6 +44,7 @@ pub trait IntermediateOperator: Send + Sync {
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
+        memory_manager: Arc<MemoryManager>,
     ) -> IntermediateOpExecuteResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
@@ -70,10 +71,6 @@ pub trait IntermediateOperator: Send + Sync {
                 runtime_handle.default_morsel_size(),
             )))
         }
-    }
-
-    fn memory_request(&self) -> Option<u64> {
-        None
     }
 }
 
@@ -119,23 +116,18 @@ impl IntermediateNode {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
         let mut state = op.make_state()?;
-        let memory_request = op.memory_request();
         while let Some(morsel) = receiver.recv().await {
             loop {
-                let result = {
-                    // MemoryPermit will be automatically dropped at the end of this scope
-                    let _permit = if let Some(mr) = memory_request {
-                        Some(memory_manager.request_bytes(mr).await?)
-                    } else {
-                        None
-                    };
-
-                    rt_context
-                        .in_span(&span, || {
-                            op.execute(morsel.clone(), state, &compute_runtime)
-                        })
-                        .await??
-                };
+                let result = rt_context
+                    .in_span(&span, || {
+                        op.execute(
+                            morsel.clone(),
+                            state,
+                            &compute_runtime,
+                            memory_manager.clone(),
+                        )
+                    })
+                    .await??;
                 state = result.0;
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {

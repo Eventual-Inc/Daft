@@ -13,7 +13,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::state_bridge::BroadcastStateBridgeRef;
+use crate::{resource_manager::MemoryManager, state_bridge::BroadcastStateBridgeRef};
 
 enum AntiSemiProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
@@ -119,6 +119,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
+        _memory_manager: Arc<MemoryManager>,
     ) -> IntermediateOpExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));

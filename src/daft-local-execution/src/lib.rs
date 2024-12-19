@@ -119,7 +119,7 @@ impl RuntimeHandle {
     }
 }
 
-pub struct ExecutionRuntimeContext {
+pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
