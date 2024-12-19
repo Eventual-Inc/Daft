@@ -23,6 +23,8 @@ repos:
       )$
   - id: check-yaml
     exclude: kubernetes-ops
+    args:
+    - --unsafe
   - id: pretty-format-json
     exclude: |
       (?x)^(
