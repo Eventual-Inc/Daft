@@ -9,11 +9,11 @@ use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct UploadFunction {
-    pub(super) location: String,
-    pub(super) max_connections: usize,
-    pub(super) multi_thread: bool,
-    pub(super) config: Arc<IOConfig>,
+pub struct UploadFunction {
+    pub location: String,
+    pub max_connections: usize,
+    pub multi_thread: bool,
+    pub config: Arc<IOConfig>,
 }
 
 #[typetag::serde]
