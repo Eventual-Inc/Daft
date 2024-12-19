@@ -7,7 +7,6 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from daft import get_build_type
 from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
 
 if TYPE_CHECKING:
@@ -109,14 +108,8 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             max_task_backlog=task_backlog,
             force_client_mode=ray_force_client_mode,
         )
-
-    # Use native runner if in dev mode
-    elif get_build_type() == "dev":
-        return _NativeRunnerConfig()
-
-    # Fall back on PyRunner
     else:
-        return _PyRunnerConfig(use_thread_pool=use_thread_pool)
+        return _NativeRunnerConfig()
 
 
 @dataclasses.dataclass
