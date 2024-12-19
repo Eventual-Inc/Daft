@@ -145,7 +145,6 @@ class SwordfishProgressBar:
             del self.pbars[pbar_id]
 
     def close(self) -> None:
-        for p in list(self.pbars.values()):
+        for p in self.pbars.values():
             p.close()
-        self.pbars.clear()
-        self.bar_configs.clear()
+            del p
