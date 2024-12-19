@@ -34,3 +34,15 @@ def test_null_safe_equals(spark_session):
 
     assert result[0].null_safe_equals is True  # 10 <=> 10
     assert result[1].null_safe_equals is False  # NULL <=> 10
+
+
+def test_not(spark_session):
+    """Test logical NOT operation with NULL handling."""
+    data = [(True,), (False,), (None,)]
+    df = spark_session.createDataFrame(data, ["value"])
+
+    result = df.withColumn("not_value", ~F.col("value")).collect()
+
+    assert result[0].not_value is False  # NOT True
+    assert result[1].not_value is True  # NOT False
+    assert result[2].not_value is None  # NOT NULL
