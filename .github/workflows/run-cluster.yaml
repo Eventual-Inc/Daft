@@ -56,6 +56,9 @@ jobs:
 
   run-command:
     runs-on: [self-hosted, linux, x64, ci-dev]
+    # If both the `daft-version` and `daft-wheel-url` parameters are not specified, the `build-commit` job is entirely skipped.
+    # We still want to run this job, even if `build-commit` is skipped.
+    # The `always()` guarantees that this job is always run.
     if: always()
     permissions:
       id-token: write
