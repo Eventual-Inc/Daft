@@ -23,25 +23,19 @@ pub fn unresolved_to_daft_expr(f: &UnresolvedFunction) -> eyre::Result<daft_dsl:
     }
 
     match function_name.as_str() {
-        "count" => handle_count(arguments).wrap_err("Failed to handle count function"),
-        "<" => handle_binary_op(arguments, daft_dsl::Operator::Lt)
-            .wrap_err("Failed to handle < function"),
-        ">" => handle_binary_op(arguments, daft_dsl::Operator::Gt)
-            .wrap_err("Failed to handle > function"),
-        "<=" => handle_binary_op(arguments, daft_dsl::Operator::LtEq)
-            .wrap_err("Failed to handle <= function"),
-        ">=" => handle_binary_op(arguments, daft_dsl::Operator::GtEq)
-            .wrap_err("Failed to handle >= function"),
-        "%" => handle_binary_op(arguments, daft_dsl::Operator::Modulus)
-            .wrap_err("Failed to handle % function"),
-        "==" => handle_binary_op(arguments, daft_dsl::Operator::Eq)
-            .wrap_err("Failed to handle == function"),
-        "not" => not(arguments).wrap_err("Failed to handle not function"),
-        "sum" => handle_sum(arguments).wrap_err("Failed to handle sum function"),
-        "isnotnull" => handle_isnotnull(arguments).wrap_err("Failed to handle isnotnull function"),
-        "isnull" => handle_isnull(arguments).wrap_err("Failed to handle isnull function"),
+        "<" => handle_binary_op(arguments, daft_dsl::Operator::Lt),
+        ">" => handle_binary_op(arguments, daft_dsl::Operator::Gt),
+        "<=" => handle_binary_op(arguments, daft_dsl::Operator::LtEq),
+        ">=" => handle_binary_op(arguments, daft_dsl::Operator::GtEq),
+        "%" => handle_binary_op(arguments, daft_dsl::Operator::Modulus),
+        "==" => handle_binary_op(arguments, daft_dsl::Operator::Eq),
+        "not" => not(arguments),
+        "sum" => handle_sum(arguments),
+        "isnotnull" => handle_isnotnull(arguments),
+        "isnull" => handle_isnull(arguments),
         n => bail!("Unresolved function {n:?} not yet supported"),
     }
+    .wrap_err_with(|| format!("Failed to handle function {function_name:?}"))
 }
 
 pub fn handle_sum(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
