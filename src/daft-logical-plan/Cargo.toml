@@ -24,6 +24,7 @@ uuid = {version = "1", features = ["v4"]}
 [dev-dependencies]
 daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
 pretty_assertions = {workspace = true}
+rand = "0.8"
 rstest = {workspace = true}
 test-log = {workspace = true}
 

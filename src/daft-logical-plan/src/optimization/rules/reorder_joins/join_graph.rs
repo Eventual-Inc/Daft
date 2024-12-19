@@ -13,8 +13,42 @@ use crate::{
     LogicalPlan, LogicalPlanBuilder, LogicalPlanRef,
 };
 
-#[derive(Debug)]
-struct JoinNode {
+// TODO(desmond): In the future these trees should keep track of current cost estimates.
+#[derive(Clone, Debug)]
+pub(super) enum JoinOrderTree {
+    Relation(usize),                                          // (id).
+    Join(Box<JoinOrderTree>, Box<JoinOrderTree>, Vec<usize>), // (subtree, subtree, nodes involved).
+}
+
+impl JoinOrderTree {
+    pub(super) fn join(self: Box<Self>, right: Box<JoinOrderTree>) -> Box<Self> {
+        let mut nodes = self.nodes();
+        nodes.append(&mut right.nodes());
+        Box::new(JoinOrderTree::Join(self, right, nodes))
+    }
+
+    pub(super) fn nodes(&self) -> Vec<usize> {
+        match self {
+            Self::Relation(id) => vec![*id],
+            Self::Join(_, _, nodes) => nodes.clone(),
+        }
+    }
+
+    // Helper function that checks if the join order tree contains a given id.
+    pub(super) fn contains(&self, target_id: usize) -> bool {
+        match self {
+            Self::Relation(id) => *id == target_id,
+            Self::Join(left, right, _) => left.contains(target_id) || right.contains(target_id),
+        }
+    }
+}
+
+pub(super) trait JoinOrderer {
+    fn order(&self, graph: &JoinGraph) -> Box<JoinOrderTree>;
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct JoinNode {
     relation_name: String,
     plan: LogicalPlanRef,
     final_name: String,
@@ -27,7 +61,7 @@ struct JoinNode {
 /// JoinNodes represent a relation (i.e. a non-reorderable logical plan node), the column
 /// that's being accessed from the relation, and the final name of the column in the output.
 impl JoinNode {
-    fn new(relation_name: String, plan: LogicalPlanRef, final_name: String) -> Self {
+    pub(super) fn new(relation_name: String, plan: LogicalPlanRef, final_name: String) -> Self {
         Self {
             relation_name,
             plan,
@@ -52,31 +86,31 @@ impl Display for JoinNode {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct JoinCondition {
+pub(super) struct JoinCondition {
     pub left_on: String,
     pub right_on: String,
 }
 
-impl JoinCondition {
-    pub(crate) fn flip(&self) -> Self {
-        JoinCondition {
-            left_on: self.right_on.clone(),
-            right_on: self.left_on.clone(),
-        }
-    }
+pub(super) struct JoinAdjList {
+    pub max_id: usize,
+    plan_to_id: HashMap<*const LogicalPlan, usize>,
+    id_to_plan: HashMap<usize, LogicalPlanRef>,
+    pub edges: HashMap<usize, HashMap<usize, Vec<JoinCondition>>>,
 }
-
-pub(crate) struct JoinAdjList(
-    pub HashMap<LogicalPlanRef, HashMap<LogicalPlanRef, Vec<JoinCondition>>>,
-);
 
 impl std::fmt::Display for JoinAdjList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Join Graph Adjacency List:")?;
-        for (node, neighbors) in &self.0 {
-            writeln!(f, "Node {}:", node.name())?;
-            for (neighbor, join_conds) in neighbors {
-                writeln!(f, "  -> {} with conditions:", neighbor.name())?;
+        for (node_id, neighbors) in &self.edges {
+            let node = self.id_to_plan.get(node_id).unwrap();
+            writeln!(f, "Node {} (id = {node_id}):", node.name())?;
+            for (neighbor_id, join_conds) in neighbors {
+                let neighbor = self.id_to_plan.get(neighbor_id).unwrap();
+                writeln!(
+                    f,
+                    "  -> {} (id = {neighbor_id}) with conditions:",
+                    neighbor.name()
+                )?;
                 for (i, cond) in join_conds.iter().enumerate() {
                     writeln!(f, "    {}: {} = {}", i, cond.left_on, cond.right_on)?;
                 }
@@ -87,27 +121,65 @@ impl std::fmt::Display for JoinAdjList {
 }
 
 impl JoinAdjList {
+    pub(super) fn empty() -> Self {
+        Self {
+            max_id: 0,
+            plan_to_id: HashMap::new(),
+            id_to_plan: HashMap::new(),
+            edges: HashMap::new(),
+        }
+    }
+
+    pub(super) fn get_plan_id(&mut self, plan: &LogicalPlanRef) -> usize {
+        let ptr = Arc::as_ptr(plan);
+        if let Some(id) = self.plan_to_id.get(&ptr) {
+            *id
+        } else {
+            let id = self.max_id;
+            self.max_id += 1;
+            self.plan_to_id.insert(ptr, id);
+            self.id_to_plan.insert(id, plan.clone());
+            id
+        }
+    }
+
     fn add_unidirectional_edge(&mut self, left: &JoinNode, right: &JoinNode) {
         // TODO(desmond): We should also keep track of projections that we need to do.
         let join_condition = JoinCondition {
             left_on: left.final_name.clone(),
             right_on: right.final_name.clone(),
         };
-        if let Some(neighbors) = self.0.get_mut(&left.plan) {
-            if let Some(join_conditions) = neighbors.get_mut(&right.plan) {
+        let left_id = self.get_plan_id(&left.plan);
+        let right_id = self.get_plan_id(&right.plan);
+        if let Some(neighbors) = self.edges.get_mut(&left_id) {
+            if let Some(join_conditions) = neighbors.get_mut(&right_id) {
                 join_conditions.push(join_condition);
             } else {
-                neighbors.insert(right.plan.clone(), vec![join_condition]);
+                neighbors.insert(right_id, vec![join_condition]);
             }
         } else {
             let mut neighbors = HashMap::new();
-            neighbors.insert(right.plan.clone(), vec![join_condition]);
-            self.0.insert(left.plan.clone(), neighbors);
+            neighbors.insert(right_id, vec![join_condition]);
+            self.edges.insert(left_id, neighbors);
         }
     }
-    fn add_bidirectional_edge(&mut self, node1: JoinNode, node2: JoinNode) {
+
+    pub(super) fn add_bidirectional_edge(&mut self, node1: JoinNode, node2: JoinNode) {
         self.add_unidirectional_edge(&node1, &node2);
         self.add_unidirectional_edge(&node2, &node1);
+    }
+
+    pub(super) fn connected(&self, left_nodes: &Vec<usize>, right_nodes: &Vec<usize>) -> bool {
+        for left_node in left_nodes {
+            if let Some(neighbors) = self.edges.get(left_node) {
+                for right_node in right_nodes {
+                    if let Some(_) = neighbors.get(right_node) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 }
 
@@ -138,42 +210,10 @@ impl JoinGraph {
         }
     }
 
-    pub(crate) fn apply_projections_and_filters_to_plan(
-        &mut self,
-        plan: LogicalPlanRef,
-    ) -> DaftResult<LogicalPlanRef> {
-        let mut plan = LogicalPlanBuilder::from(plan);
-        // Apply projections and filters in post-traversal order.
-        let mut reversed_items = self
-            .final_projections_and_filters
-            .drain(..)
-            .rev()
-            .peekable();
-        while let Some(projection_or_filter) = reversed_items.next() {
-            let is_last = reversed_items.peek().is_none();
-
-            match projection_or_filter {
-                ProjectionOrFilter::Projection(projections) => {
-                    if is_last {
-                        // The final projection is the output projection, so here we select the final projection.
-                        plan = plan.select(projections)?;
-                    } else {
-                        // Intermediate projections might only transform a subset of columns, so we use `with_columns()` instead of `select()`.
-                        plan = plan.with_columns(projections)?;
-                    }
-                }
-                ProjectionOrFilter::Filter(predicate) => {
-                    plan = plan.filter(predicate)?;
-                }
-            }
-        }
-        Ok(plan.build())
-    }
-
     /// Test helper function to get the number of edges that the current graph contains.
     pub(crate) fn num_edges(&self) -> usize {
         let mut num_edges = 0;
-        for (_, edges) in &self.adj_list.0 {
+        for (_, edges) in &self.adj_list.edges {
             num_edges += edges.len();
         }
         // Each edge is bidirectional, so we divide by 2 to get the correct number of edges.
@@ -182,7 +222,7 @@ impl JoinGraph {
 
     /// Test helper function to check that all relations in this graph are connected.
     pub(crate) fn fully_connected(&self) -> bool {
-        let start = if let Some((node, _)) = self.adj_list.0.iter().next() {
+        let start = if let Some((node, _)) = self.adj_list.edges.iter().next() {
             node
         } else {
             // There are no nodes. The empty graph is fully connected.
@@ -195,7 +235,7 @@ impl JoinGraph {
         while let Some(current) = stack.pop() {
             if seen.insert(current) {
                 // If this is a new node, add all its neighbors to the stack.
-                if let Some(neighbors) = self.adj_list.0.get(current) {
+                if let Some(neighbors) = self.adj_list.edges.get(current) {
                     stack.extend(neighbors.iter().filter_map(|(neighbor, _)| {
                         if !seen.contains(neighbor) {
                             Some(neighbor)
@@ -206,7 +246,7 @@ impl JoinGraph {
                 }
             }
         }
-        seen.len() == self.adj_list.0.len()
+        seen.len() == self.adj_list.max_id
     }
 
     /// Test helper function that checks if the graph contains the given projection/filter expressions
@@ -236,8 +276,10 @@ impl JoinGraph {
     /// exists in the current graph.
     pub(crate) fn contains_edges(&self, to_check: Vec<&str>) -> bool {
         let mut edge_strings = HashSet::new();
-        for (left, neighbors) in &self.adj_list.0 {
-            for (right, join_conds) in neighbors {
+        for (left_id, neighbors) in &self.adj_list.edges {
+            for (right_id, join_conds) in neighbors {
+                let left = self.adj_list.id_to_plan.get(left_id).unwrap();
+                let right = self.adj_list.id_to_plan.get(right_id).unwrap();
                 for join_cond in join_conds {
                     edge_strings.insert(format!(
                         "{}({}) <-> {}({})",
@@ -288,7 +330,7 @@ impl JoinGraphBuilder {
             plan,
             join_conds_to_resolve: vec![],
             final_name_map: HashMap::new(),
-            adj_list: JoinAdjList(HashMap::new()),
+            adj_list: JoinAdjList::empty(),
             final_projections_and_filters: vec![ProjectionOrFilter::Projection(output_projection)],
         }
     }
@@ -487,10 +529,7 @@ mod tests {
 
     use super::JoinGraphBuilder;
     use crate::{
-        optimization::rules::{
-            reorder_joins::greedy_join_order::GreedyJoinOrderer, EnrichWithStats, MaterializeScans,
-            OptimizerRule,
-        },
+        optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
         test::{
             dummy_scan_node_with_pushdowns, dummy_scan_operator, dummy_scan_operator_with_size,
         },
@@ -553,7 +592,7 @@ mod tests {
             .unwrap();
         let stats_enricher = EnrichWithStats::new();
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -565,9 +604,6 @@ mod tests {
             "Project(c) <-> Source(d)",
             "Source(a) <-> Source(d)"
         ]));
-        // Test greedy join reordering.
-        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
-        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -627,7 +663,7 @@ mod tests {
             .unwrap();
         let stats_enricher = EnrichWithStats::new();
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -639,9 +675,6 @@ mod tests {
             "Project(c) <-> Source(d)",
             "Source(b) <-> Source(d)",
         ]));
-        // Test greedy join reordering.
-        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
-        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -695,7 +728,7 @@ mod tests {
             .unwrap();
         let stats_enricher = EnrichWithStats::new();
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a_beta <-> b
@@ -705,9 +738,6 @@ mod tests {
             "Project(a_beta) <-> Source(b)",
             "Project(a_beta) <-> Source(c)",
         ]));
-        // Test greedy join reordering.
-        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
-        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -768,7 +798,7 @@ mod tests {
             .unwrap();
         let stats_enricher = EnrichWithStats::new();
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -784,9 +814,6 @@ mod tests {
         // `c_prime` gets renamed to `c` in the final projection
         let double_proj = col("c").add(col("c")).alias("double");
         assert!(join_graph.contains_projections_and_filters(vec![&double_proj]));
-        // Test greedy join reordering.
-        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
-        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -865,7 +892,7 @@ mod tests {
             .unwrap();
         let stats_enricher = EnrichWithStats::new();
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -887,9 +914,6 @@ mod tests {
             &double_proj,
             &filter_c_prime,
         ]));
-        // Test greedy join reordering.
-        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
-        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -963,7 +987,7 @@ mod tests {
             .unwrap();
         let stats_enricher = EnrichWithStats::new();
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -977,8 +1001,5 @@ mod tests {
         ]));
         // Projections below the aggregation should not be part of the final projections.
         assert!(!join_graph.contains_projections_and_filters(vec![&a_proj]));
-        // Test greedy join reordering.
-        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
-        assert!(reordered_plan.schema() == original_plan.schema());
     }
 }
