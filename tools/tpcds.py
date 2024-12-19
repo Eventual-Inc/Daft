@@ -100,7 +100,7 @@ def parse_questions(questions: str) -> list[int]:
     for item in items:
         try:
             num = int(item)
-            nums.push(str(num))
+            nums.append(str(num))
             continue
         except ValueError:
             ...
