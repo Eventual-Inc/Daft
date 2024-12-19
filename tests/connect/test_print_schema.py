@@ -53,3 +53,14 @@ def test_print_schema_with_nulls(spark_session, capsys) -> None:
     captured = capsys.readouterr()
     expected = "root\n" " |-- id: long (nullable = true)\n" " |-- value: string (nullable = true)\n\n"
     assert captured.out == expected
+
+
+def test_print_schema_nested(spark_session) -> None:
+    nested_data = [(1, {"name": "John", "age": 30}), (2, {"name": "Jane", "age": 25})]
+
+    # Create DataFrame with nested structures
+    df = spark_session.createDataFrame(nested_data, ["id", "info"])
+
+    # Print schema
+    print("DataFrame Schema:")
+    df.printSchema()
