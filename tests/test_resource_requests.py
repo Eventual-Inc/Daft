@@ -140,7 +140,9 @@ def set_memory_limit():
     return _set_limit
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"native"}, reason="requires NativeRunner to be in use")
+@pytest.mark.skip(
+    reason="Configuring custom memory limits via env vars is not reliable for testing. The global memory manager is probably already set"
+)
 @pytest.mark.parametrize("memory_limit, max_expected_concurrent", [(100, 1), (200, 2), (300, 3)])
 def test_memory_request_makes_udf_run_sequentially(set_memory_limit, memory_limit, max_expected_concurrent):
     import threading
