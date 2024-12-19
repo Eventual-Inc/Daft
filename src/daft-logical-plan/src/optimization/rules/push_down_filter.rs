@@ -6,7 +6,7 @@ use std::{
 use common_error::DaftResult;
 use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
-use daft_algebra::boolean::{combine_conjunction, split_conjunction};
+use daft_algebra::boolean::{combine_conjunction, split_conjunction, to_cnf};
 use daft_core::join::JoinType;
 use daft_dsl::{
     col,
@@ -273,7 +273,8 @@ impl PushDownFilter {
                 let left_cols = HashSet::<_>::from_iter(child_join.left.schema().names());
                 let right_cols = HashSet::<_>::from_iter(child_join.right.schema().names());
 
-                for predicate in split_conjunction(&filter.predicate) {
+                // TODO: simplify predicates, since they may be expanded with `to_cnf`
+                for predicate in split_conjunction(&to_cnf(filter.predicate.clone())) {
                     let pred_cols = HashSet::<_>::from_iter(get_required_columns(&predicate));
 
                     match (
@@ -961,6 +962,62 @@ mod tests {
         // should not push down filter
         let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that a complex predicate can be separated so that it can be pushed down into one side of the join.
+    /// Modeled after TPC-H Q7
+    #[rstest]
+    fn filter_commutes_with_join_complex() -> DaftResult<()> {
+        let left_scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
+        let right_scan_op = dummy_scan_operator(vec![Field::new("b", DataType::Utf8)]);
+
+        let plan = dummy_scan_node(left_scan_op.clone())
+            .join(
+                dummy_scan_node(right_scan_op.clone()),
+                vec![],
+                vec![],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+                false,
+            )?
+            .filter(
+                (col("a").eq(lit("FRANCE")).and(col("b").eq(lit("GERMANY"))))
+                    .or(col("a").eq(lit("GERMANY")).and(col("b").eq(lit("FRANCE")))),
+            )?
+            .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_filters(Some(
+                col("a").eq(lit("FRANCE")).or(col("a").eq(lit("GERMANY"))),
+            )),
+        )
+        .join(
+            dummy_scan_node_with_pushdowns(
+                right_scan_op,
+                Pushdowns::default().with_filters(Some(
+                    col("b").eq(lit("GERMANY")).or(col("b").eq(lit("FRANCE"))),
+                )),
+            ),
+            vec![],
+            vec![],
+            JoinType::Inner,
+            None,
+            None,
+            None,
+            false,
+        )?
+        .filter(
+            (col("b").eq(lit("GERMANY")).or(col("a").eq(lit("GERMANY"))))
+                .and(col("a").eq(lit("FRANCE")).or(col("b").eq(lit("FRANCE")))),
+        )?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
+
         Ok(())
     }
 }
