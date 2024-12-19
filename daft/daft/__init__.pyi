@@ -1033,9 +1033,11 @@ def url_download(
 ) -> PyExpr: ...
 def url_upload(
     expr: PyExpr,
-    folder_location: str,
+    folder_location: PyExpr,
     max_connections: int,
+    raise_error_on_failure: bool,
     multi_thread: bool,
+    is_single_folder: bool,
     io_config: IOConfig | None,
 ) -> PyExpr: ...
 def tokenize_encode(

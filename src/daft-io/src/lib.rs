@@ -317,9 +317,9 @@ impl IOClient {
                     Err(err)
                 } else {
                     log::warn!(
-                    "Error occurred during url_download at index: {index} {} (falling back to Null)",
-                    err
-                );
+                        "Error occurred during url_download at index: {index} {} (falling back to Null)",
+                        err
+                    );
                     Ok(None)
                 }
             }
@@ -332,6 +332,7 @@ impl IOClient {
         index: usize,
         dest: String,
         data: Option<bytes::Bytes>,
+        raise_error_on_failure: bool,
         io_stats: Option<IOStatsRef>,
     ) -> Result<Option<String>> {
         let value = if let Some(data) = data {
@@ -344,11 +345,15 @@ impl IOClient {
         match value {
             Some(Ok(())) => Ok(Some(dest)),
             Some(Err(err)) => {
-                log::warn!(
-                    "Error occurred during file upload at index: {index} {} (falling back to Null)",
-                    err
-                );
-                Err(err)
+                if raise_error_on_failure {
+                    Err(err)
+                } else {
+                    log::warn!(
+                        "Error occurred during file upload at index: {index} {} (falling back to Null)",
+                        err
+                    );
+                    Ok(None)
+                }
             }
             None => Ok(None),
         }
