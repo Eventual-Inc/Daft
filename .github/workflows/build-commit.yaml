@@ -127,3 +127,5 @@ jobs:
         echo "Directly download the wheel here:" >> $GITHUB_STEP_SUMMARY
         echo "$download_url" >> $GITHUB_STEP_SUMMARY
         echo "::set-output name=wheel_url::$wheel_url"
+      env:
+        wheel_url: ${{ env.wheel_url }}
