@@ -85,6 +85,10 @@ jobs:
         uv v
         source .venv/bin/activate
         uv pip install ray[default] boto3
+        output_dir=/tmp/outputs
+        mkdir -p $output_dir
+        echo "Output dir is set to $output_dir"
+        echo "output_dir=$output_dir" >> $GITHUB_OUTPUT
     - name: Dynamically update ray config file
       run: |
         source .venv/bin/activate
