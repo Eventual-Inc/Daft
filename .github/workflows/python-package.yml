@@ -26,26 +26,26 @@ jobs:
       matrix:
         python-version: ['3.9', '3.10']
         daft-runner: [py, ray, native]
-        pyarrow-version: [7.0.0, 16.0.0]
+        pyarrow-version: [8.0.0, 16.0.0]
         os: [ubuntu-20.04, windows-latest]
         exclude:
         - daft-runner: ray
-          pyarrow-version: 7.0.0
+          pyarrow-version: 8.0.0
           os: ubuntu-20.04
         - daft-runner: py
           python-version: '3.10'
-          pyarrow-version: 7.0.0
+          pyarrow-version: 8.0.0
           os: ubuntu-20.04
         - daft-runner: native
           python-version: '3.10'
-          pyarrow-version: 7.0.0
+          pyarrow-version: 8.0.0
           os: ubuntu-20.04
         - python-version: '3.9'
           pyarrow-version: 16.0.0
         - os: windows-latest
           python-version: '3.9'
         - os: windows-latest
-          pyarrow-version: 7.0.0
+          pyarrow-version: 8.0.0
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -93,7 +93,7 @@ jobs:
       run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
     - name: Override deltalake for pyarrow
-      if: ${{ (matrix.pyarrow-version == '7.0.0') }}
+      if: ${{ (matrix.pyarrow-version == '8.0.0') }}
       run: uv pip install deltalake==0.10.0
 
     - name: Build library and Test with pytest (unix)
