@@ -93,9 +93,6 @@ def submit_job(
         results.append(result)
 
     output_file = output_dir / "out.csv"
-    with open(output_file, "w") as file:
-        file.write("asdf")
-
     with open(output_file, mode="w", newline="") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=results[0].__dataclass_fields__.keys())
         writer.writeheader()
