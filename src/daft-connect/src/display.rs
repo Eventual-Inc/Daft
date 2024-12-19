@@ -98,27 +98,27 @@ fn type_to_string(dtype: &DataType) -> String {
         DataType::Duration(_) => "duration".to_string(),
         DataType::Interval => "interval".to_string(),
         DataType::Binary => "binary".to_string(),
-        DataType::FixedSizeBinary(_) => "fixed_size_binary".to_string(),
+        DataType::FixedSizeBinary(_) => "arrow.fixed_size_binary".to_string(),
         DataType::Utf8 => "string".to_string(),
-        DataType::FixedSizeList(_, _) => "daft[fixed_size_list]".to_string(),
-        DataType::List(_) => "daft[list]".to_string(),
+        DataType::FixedSizeList(_, _) => "arrow.fixed_size_list".to_string(),
+        DataType::List(_) => "arrow.list".to_string(),
         DataType::Struct(_) => "struct".to_string(),
         DataType::Map { .. } => "map".to_string(),
-        DataType::Extension(_, _, _) => "extension".to_string(),
-        DataType::Embedding(_, _) => "embedding".to_string(),
-        DataType::Image(_) => "image".to_string(),
-        DataType::FixedShapeImage(_, _, _) => "fixed_shape_image".to_string(),
-        DataType::Tensor(_) => "tensor".to_string(),
-        DataType::FixedShapeTensor(_, _) => "fixed_shape_tensor".to_string(),
-        DataType::SparseTensor(_) => "sparse_tensor".to_string(),
-        DataType::FixedShapeSparseTensor(_, _) => "fixed_shape_sparse_tensor".to_string(),
+        DataType::Extension(_, _, _) => "daft.extension".to_string(),
+        DataType::Embedding(_, _) => "daft.embedding".to_string(),
+        DataType::Image(_) => "daft.image".to_string(),
+        DataType::FixedShapeImage(_, _, _) => "daft.fixed_shape_image".to_string(),
+        DataType::Tensor(_) => "daft.tensor".to_string(),
+        DataType::FixedShapeTensor(_, _) => "daft.fixed_shape_tensor".to_string(),
+        DataType::SparseTensor(_) => "daft.sparse_tensor".to_string(),
+        DataType::FixedShapeSparseTensor(_, _) => "daft.fixed_shape_sparse_tensor".to_string(),
         #[cfg(feature = "python")]
-        DataType::Python => "python_object".to_string(),
+        DataType::Python => "daft.python".to_string(),
         DataType::Unknown => "unknown".to_string(),
-        DataType::UInt8 => "daft[ubyte]".to_string(),
-        DataType::UInt16 => "daft[ushort]".to_string(),
-        DataType::UInt32 => "daft[uint]".to_string(),
-        DataType::UInt64 => "daft[ulong]".to_string(),
+        DataType::UInt8 => "arrow.ubyte".to_string(),
+        DataType::UInt16 => "arrow.ushort".to_string(),
+        DataType::UInt32 => "arrow.uint".to_string(),
+        DataType::UInt64 => "arrow.ulong".to_string(),
     }
 }
 
@@ -231,8 +231,8 @@ root
         let output = schema.repr_spark_string();
         let expected = "\
 root
- |-- ints: daft[list] (nullable = true)
- |-- floats: daft[fixed_size_list] (nullable = true)
+ |-- ints: arrow.list (nullable = true)
+ |-- floats: arrow.fixed_size_list (nullable = true)
 ";
         assert_eq!(output, expected);
         Ok(())
@@ -275,7 +275,7 @@ root
         let output = schema.repr_spark_string();
         let expected = "\
 root
- |-- ext_field: extension (nullable = true)
+ |-- ext_field: daft.extension (nullable = true)
 ";
         assert_eq!(output, expected);
         Ok(())
@@ -310,9 +310,9 @@ root
 root
  |-- record: struct (nullable = true)
  |    |-- name: string (nullable = true)
- |    |-- values: daft[list] (nullable = true)
+ |    |-- values: arrow.list (nullable = true)
  |    |-- nested: struct (nullable = true)
- |    |    |-- sub_list: daft[list] (nullable = true)
+ |    |    |-- sub_list: arrow.list (nullable = true)
  |    |    |-- sub_struct: struct (nullable = true)
  |    |    |    |-- a: integer (nullable = true)
  |    |    |    |-- b: double (nullable = true)
@@ -347,7 +347,7 @@ root
         let output = schema.repr_spark_string();
         let expected = "\
 root
- |-- empty_list: daft[fixed_size_list] (nullable = true)
+ |-- empty_list: arrow.fixed_size_list (nullable = true)
 ";
         assert_eq!(output, expected);
         Ok(())
