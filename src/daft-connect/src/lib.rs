@@ -26,7 +26,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::{session::Session, translation::SparkAnalyzer};
+use crate::{display::SparkDisplay, session::Session, translation::SparkAnalyzer};
 
 mod config;
 mod display;
@@ -376,7 +376,7 @@ impl SparkConnectService for DaftSparkConnectService {
                     .build();
 
                 let schema = plan.schema();
-                let tree_string = display::to_tree_string(&schema).unwrap();
+                let tree_string = schema.repr_spark_string();
 
                 let response = AnalyzePlanResponse {
                     session_id,
