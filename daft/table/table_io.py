@@ -554,16 +554,11 @@ def _write_tabular_arrow_table(
 ):
     kwargs = dict()
 
-    from daft.utils import get_arrow_version
+    kwargs["max_rows_per_file"] = rows_per_file
+    kwargs["min_rows_per_group"] = rows_per_row_group
+    kwargs["max_rows_per_group"] = rows_per_row_group
 
-    arrow_version = get_arrow_version()
-
-    if arrow_version >= (7, 0, 0):
-        kwargs["max_rows_per_file"] = rows_per_file
-        kwargs["min_rows_per_group"] = rows_per_row_group
-        kwargs["max_rows_per_group"] = rows_per_row_group
-
-    if arrow_version >= (8, 0, 0) and not create_dir:
+    if not create_dir:
         kwargs["create_dir"] = False
 
     basename_template = _generate_basename_template(format.default_extname, version)
