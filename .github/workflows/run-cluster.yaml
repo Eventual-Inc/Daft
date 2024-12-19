@@ -85,6 +85,10 @@ jobs:
         uv v
         source .venv/bin/activate
         uv pip install ray[default] boto3
+        GHA_OUTPUT_DIR=/tmp/outputs
+        mkdir -p $GHA_OUTPUT_DIR
+        echo "Output dir is set to $GHA_OUTPUT_DIR"
+        echo "GHA_OUTPUT_DIR=$GHA_OUTPUT_DIR" >> $GITHUB_ENV
     - name: Dynamically update ray config file
       run: |
         source .venv/bin/activate
@@ -121,6 +125,7 @@ jobs:
           echo 'Invalid command submitted; command cannot be empty'
           exit 1
         fi
+        echo "Output dir: $GHA_OUTPUT_DIR"
         python .github/ci-scripts/job_runner.py \
           --working-dir='${{ inputs.working_dir }}' \
           --entrypoint-script='${{ inputs.entrypoint_script }}' \
@@ -157,6 +162,12 @@ jobs:
       run: |
         source .venv/bin/activate
         ray down .github/assets/ray.yaml -y
+    - name: Upload output dir
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: outputs
+        path: ${{ env.GHA_OUTPUT_DIR }}
     - name: Upload log files
       if: always()
       uses: actions/upload-artifact@v4
