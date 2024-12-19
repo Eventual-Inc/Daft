@@ -8,9 +8,7 @@ Daft can read data from a variety of sources, and write data to many destination
 
 ### From Files
 
-DataFrames can be loaded from file(s) on some filesystem, commonly your local filesystem or a remote cloud object store such as AWS S3.
-
-Additionally, Daft can read data from a variety of container file formats, including CSV, line-delimited JSON and Parquet.
+DataFrames can be loaded from file(s) on some filesystem, commonly your local filesystem or a remote cloud object store such as AWS S3. Additionally, Daft can read data from a variety of container file formats, including CSV, line-delimited JSON and Parquet.
 
 Daft supports file paths to a single file, a directory of files, and wildcards. It also supports paths to remote object storage such as AWS S3.
 === "🐍 Python"
@@ -141,5 +139,4 @@ Writing data will execute your DataFrame and write the results out to the specif
 
 !!! note "Note"
 
-    Because Daft is a distributed DataFrame library, by default it will produce multiple files (one per partition) at your specified destination. Writing your dataframe is a **blocking** operation that executes your DataFrame. It will return a new `DataFrame` that contains the filepaths to the written data. 
-    
+    Because Daft is a distributed DataFrame library, by default it will produce multiple files (one per partition) at your specified destination. Writing your dataframe is a **blocking** operation that executes your DataFrame. It will return a new `DataFrame` that contains the filepaths to the written data.

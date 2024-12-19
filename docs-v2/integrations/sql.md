@@ -142,7 +142,6 @@ In the example below, Daft reads the top ranked terms from the BigQuery Google T
  AND refresh_date < CAST('2024-04-08' AS DATE)
 ```
 
-
 The second last line labeled 'SQL Query =' shows the query that Daft executed. Filters such as `rank = 1` and projections such as `SELECT refresh_date, term, rank` have been injected into the query.
 
 Without these pushdowns, Daft would execute the unmodified `SELECT * FROM 'bigquery-public-data.google_trends.top_terms'` query and read in the entire dataset/table. We tested the code above on Google Colab (12GB RAM):

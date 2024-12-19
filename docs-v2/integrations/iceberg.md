@@ -5,7 +5,7 @@
 Daft currently natively supports:
 
 1. **Distributed Reads:** Daft will fully distribute the I/O of reads over your compute resources (whether Ray or on multithreading on the local PyRunner)
-2. **Skipping Filtered Data:** Daft uses `df.where(...)` filter calls to only read data that matches your predicates
+2. **Skipping Filtered Data:** Daft uses [`df.where(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.where.html) filter calls to only read data that matches your predicates
 3. **All Catalogs From PyIceberg:** Daft is natively integrated with PyIceberg, and supports all the catalogs that PyIceberg does
 
 ## Reading a Table
@@ -90,9 +90,9 @@ When reading from an Iceberg table into Daft:
 | `time` | [`daft.DataType.int64()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int64) |
 | `timestamp` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.timestamp) |
 | `timestampz`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.timestamp) |
-| `string` | [`daft.DataType.string()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.string) | 
+| `string` | [`daft.DataType.string()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.string) |
 | `uuid` | [`daft.DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary) |
-| `fixed(L)` | [`daft.DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary) 
+| `fixed(L)` | [`daft.DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary)
 | `binary` | [`daft.DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary) |
 | **Nested Types** |
 | `struct(fields)` | [`daft.DataType.struct(fields)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.struct) |

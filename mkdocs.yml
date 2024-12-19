@@ -39,7 +39,7 @@ nav:
         - Amazon Web Services: integrations/aws.md
         - SQL: integrations/sql.md
         - Hugging Face Datasets: integrations/huggingface.md
-    - Resources: 
+    - Resources:
         - Architecture: resources/architecture.md
         - DataFrame Comparison: resources/dataframe_comparison.md
         - Tutorials: resources/tutorials.md
@@ -50,7 +50,7 @@ nav:
 - API Docs
 
 # Configuration
-theme: 
+theme:
   name: material
   locale: en
   logo: img/daft.png
@@ -139,4 +139,3 @@ plugins:
       include_source: True
   - search:
       separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
-      

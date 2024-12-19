@@ -174,7 +174,6 @@ Running Class UDFs are exactly the same as running their functional cousins.
     ```
 
 ## Resource Requests
------------------
 
 Sometimes, you may want to request for specific resources for your UDF. For example, some UDFs need one GPU to run as they will load a model onto the GPU.
 
@@ -212,4 +211,3 @@ UDFs can also be parametrized with new resource requests after being initialized
         RunModelWithTwoGPUs(df["images"]),
     )
     ```
-    

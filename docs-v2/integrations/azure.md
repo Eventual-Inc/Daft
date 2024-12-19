@@ -49,8 +49,7 @@ You may also choose to pass these values into your Daft I/O function calls using
     df = daft.read_parquet("az://my_container/my_path/**/*")
     ```
 
-Alternatively, Daft supports overriding the default IOConfig per-operation by passing it into the `io_config=` keyword argument. This is extremely flexible as you can
-pass a different [`daft.io.AzureConfig`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_configs/daft.io.AzureConfig.html#daft.io.AzureConfig) per function call if you wish!
+Alternatively, Daft supports overriding the default IOConfig per-operation by passing it into the `io_config=` keyword argument. This is extremely flexible as you can pass a different [`daft.io.AzureConfig`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_configs/daft.io.AzureConfig.html#daft.io.AzureConfig) per function call if you wish!
 
 === "🐍 Python"
 
@@ -79,4 +78,3 @@ If you are connecting to storage in OneLake or another Microsoft Fabric service,
 
     df = daft.read_deltalake('abfss://[WORKSPACE]@onelake.dfs.fabric.microsoft.com/[LAKEHOUSE].Lakehouse/Tables/[TABLE]', io_config=io_config)
     ```
-    

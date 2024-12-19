@@ -4,7 +4,7 @@
 
 !!! failure "todo(docs): Incorporate SQL examples"
 
-In this quickstart, you will learn the basics of Daft's DataFrame and SQL API and the features that set it apart from frameworks like Pandas, PySpark, Dask, and Ray. 
+In this quickstart, you will learn the basics of Daft's DataFrame and SQL API and the features that set it apart from frameworks like Pandas, PySpark, Dask, and Ray.
 
 <!-- You will build a database of dog owners and their fluffy companions and see how you can use Daft to download images from URLs, run an ML classifier and call custom UDFs, all within an interactive DataFrame interface. Woof! 🐶 -->
 
@@ -59,7 +59,7 @@ See also [DataFrame Creation](https://www.getdaft.io/projects/docs/en/stable/api
 (Showing first 4 of 4 rows)
 ```
 
-You just created your first DataFrame! 
+You just created your first DataFrame!
 
 ## Read From a Data Source
 
@@ -257,7 +257,7 @@ To **drop** columns from the DataFrame, use the [`df.exclude()`](https://www.get
 
 ## Transform Columns with Expressions
 
-[Expressions](core_concepts/expressions.md) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.col.html#daft.col) expressions together with the [`with_column`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.with_column.html#daft.DataFrame.with_column) method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
+[Expressions](core_concepts.md#expressions) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.col.html#daft.col) expressions together with the [`with_column`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.with_column.html#daft.DataFrame.with_column) method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
 
 === "🐍 Python"
 

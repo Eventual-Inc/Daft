@@ -24,8 +24,7 @@ If instead you wish to have Daft use credentials from the "driver", you may wish
 
 You may also choose to pass these values into your Daft I/O function calls using an [`daft.io.S3Config`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_configs/daft.io.S3Config.html#daft.io.S3Config) config object.
 
-<!-- add SQL S3Config https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/sql_funcs/daft.sql._sql_funcs.S3Config.html -->
-
+!!! failure "todo(docs): add SQL S3Config https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/sql_funcs/daft.sql._sql_funcs.S3Config.html"
 
 [`daft.set_planning_config`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/configuration_functions/daft.set_planning_config.html#daft.set_planning_config) is a convenient way to set your [`daft.io.IOConfig`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_configs/daft.io.IOConfig.html#daft.io.IOConfig) as the default config to use on any subsequent Daft method calls.
 
@@ -44,8 +43,7 @@ You may also choose to pass these values into your Daft I/O function calls using
     df = daft.read_parquet("s3://my_bucket/my_path/**/*")
     ```
 
-Alternatively, Daft supports overriding the default IOConfig per-operation by passing it into the `io_config=` keyword argument. This is extremely flexible as you can
-pass a different [`daft.io.S3Config`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_configs/daft.io.S3Config.html#daft.io.S3Config) per function call if you wish!
+Alternatively, Daft supports overriding the default IOConfig per-operation by passing it into the `io_config=` keyword argument. This is extremely flexible as you can pass a different [`daft.io.S3Config`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_configs/daft.io.S3Config.html#daft.io.S3Config) per function call if you wish!
 
 === "🐍 Python"
 
@@ -53,4 +51,3 @@ pass a different [`daft.io.S3Config`](https://www.getdaft.io/projects/docs/en/st
     # Perform some I/O operation but override the IOConfig
     df2 = daft.read_csv("s3://my_bucket/my_other_path/**/*", io_config=io_config)
     ```
-    

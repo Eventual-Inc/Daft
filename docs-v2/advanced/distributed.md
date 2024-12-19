@@ -4,8 +4,6 @@ By default, Daft runs using your local machine's resources and your operations a
 
 However, Daft has strong integrations with [Ray](https://www.ray.io) which is a distributed computing framework for distributing computations across a cluster of machines. Here is a snippet showing how you can connect Daft to a Ray cluster:
 
-<!-- :material-language-python: -->
-
 === "🐍 Python"
 
     ```python
@@ -72,4 +70,3 @@ You can take the IP address and port and pass it to Daft:
 
     (Showing first 2 of 2 rows)
     ```
-    

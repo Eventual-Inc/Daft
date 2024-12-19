@@ -20,7 +20,7 @@ pip install -U "getdaft[hudi]"
 
 ## Reading a Table
 
-To read from an Apache Hudi table, use the [`daft.read_hudi`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_hudi.html#daft.read_hudi) function. The following is an example snippet of loading an example table
+To read from an Apache Hudi table, use the [`daft.read_hudi`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_hudi.html#daft.read_hudi) function. The following is an example snippet of loading an example table:
 
 === "🐍 Python"
 
@@ -53,7 +53,7 @@ When reading from a Hudi table into Daft:
 | `date` | [`daft.DataType.date()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.date) |
 | `timestamp` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.timestamp) |
 | `timestampz`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.timestamp) |
-| `string` | [`daft.DataType.string()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.string) | 
+| `string` | [`daft.DataType.string()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.string) |
 | `binary` | [`daft.DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary) |
 | **Nested Types** |
 | `struct(fields)` | [`daft.DataType.struct(fields)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.struct) |

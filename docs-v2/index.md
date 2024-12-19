@@ -53,7 +53,7 @@ This user guide aims to help Daft users master the usage of Daft for all your da
     1. [10 minute Quickstart](https://www.getdaft.io/projects/docs/en/stable/10-min.html): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
 
     2. [API Documentation](https://www.getdaft.io/projects/docs/en/stable/api_docs/index.html): Searchable documentation and reference material to Daft’s public API.
-                  
+
 ### Get Started
 
 <div class="grid cards" markdown>
@@ -131,7 +131,7 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
 ## Contribute to Daft
 
-If you're interested in hands-on learning about Daft internals and would like to contribute to Daft, join us [on Github](https://github.com/Eventual-Inc/Daft) 🚀
+If you're interested in hands-on learning about Daft internals and would like to contribute to our project, join us [on Github](https://github.com/Eventual-Inc/Daft) 🚀
 
 Take a look at the many issues tagged with `good first issue` in our repo. If there are any that interest you, feel free to chime in on the issue itself or join us in our [Distributed Data Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg) and send us a message in #daft-dev. Daft team members will be happy to assign any issue to you and provide any guidance if needed!
 

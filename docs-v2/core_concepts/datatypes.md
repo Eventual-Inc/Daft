@@ -7,7 +7,7 @@ All elements of a column are of the same dtype, or they can be the special Null 
 Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings and dates - all the way up to more complex types like tensors and images.
 
 !!! tip "Tip"
-    
+
     For a full overview on all the DataTypes that Daft supports, see the [DataType API Reference](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html).
 
 
@@ -93,4 +93,4 @@ Daft abstracts away the in-memory representation of your data and provides kerne
 
 For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
 
-Please add suggestions for new DataTypes to our Github Discussions page!
+Please add suggestions for new DataTypes to our [Github Discussions page](https://github.com/Eventual-Inc/Daft/discussions)!

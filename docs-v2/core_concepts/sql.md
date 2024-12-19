@@ -41,8 +41,7 @@ Daft's [`daft.sql`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.
 (Showing first 3 of 3 rows)
 ```
 
-In the above example, we query the DataFrame called `"my_special_df"` by simply referring to it in the SQL command. This produces a new DataFrame `sql_df` which can
-natively integrate with the rest of your Daft query.
+In the above example, we query the DataFrame called `"my_special_df"` by simply referring to it in the SQL command. This produces a new DataFrame `sql_df` which can natively integrate with the rest of your Daft query.
 
 ## Reading data from SQL
 
@@ -65,7 +64,7 @@ natively integrate with the rest of your Daft query.
         df = daft.read_parquet("s3://...")
         daft.sql("SELECT * FROM df")
         ```
-        
+
     We appreciate your patience with us and hope to deliver this crucial feature soon!
 
 ## SQL Expressions

@@ -12,45 +12,48 @@ The Ray client is a quick way to get started with running tasks and retrieving t
 
 !!! warning "Warning"
 
-    To run tasks using the Ray client, the version of Daft and the minor version (eg. 3.9, 3.10) of Python must match between client and server. 
+    To run tasks using the Ray client, the version of Daft and the minor version (eg. 3.9, 3.10) of Python must match between client and server.
 
 Here's an example of how you can use the Ray client with Daft:
 
 === "🐍 Python"
 
     ```python
-    >>> import daft
-    >>> import ray
-    >>>
-    >>> # Refer to the note under "Ray Job" for details on "runtime_env"
-    >>> ray.init("ray://<head_node_host>:10001", runtime_env={"pip": ["getdaft"]})
-    >>>
-    >>> # Starts the Ray client and tells Daft to use Ray to execute queries
-    >>> # If ray.init() has already been called, it uses the existing client
-    >>> daft.context.set_runner_ray("ray://<head_node_host>:10001")
-    >>>
-    >>> df = daft.from_pydict({
-    >>>     "a": [3, 2, 5, 6, 1, 4],
-    >>>     "b": [True, False, False, True, True, False]
-    >>> })
-    >>> df = df.where(df["b"]).sort(df["a"])
-    >>>
-    >>> # Daft executes the query remotely and returns a preview to the client
-    >>> df.collect()
-    ╭───────┬─────────╮
-    │ a     ┆ b       │
-    │ ---   ┆ ---     │
-    │ Int64 ┆ Boolean │
-    ╞═══════╪═════════╡
-    │ 1     ┆ true    │
-    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-    │ 3     ┆ true    │
-    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-    │ 6     ┆ true    │
-    ╰───────┴─────────╯
+    import daft
+    import ray
 
-    (Showing first 3 of 3 rows)
+    # Refer to the note under "Ray Job" for details on "runtime_env"
+    ray.init("ray://<head_node_host>:10001", runtime_env={"pip": ["getdaft"]})
+
+    # Starts the Ray client and tells Daft to use Ray to execute queries
+    # If ray.init() has already been called, it uses the existing client
+    daft.context.set_runner_ray("ray://<head_node_host>:10001")
+
+    df = daft.from_pydict({
+        "a": [3, 2, 5, 6, 1, 4],
+        "b": [True, False, False, True, True, False]
+    })
+    df = df.where(df["b"]).sort(df["a"])
+
+    # Daft executes the query remotely and returns a preview to the client
+    df.collect()
     ```
+
+```{title="Output"}
+╭───────┬─────────╮
+│ a     ┆ b       │
+│ ---   ┆ ---     │
+│ Int64 ┆ Boolean │
+╞═══════╪═════════╡
+│ 1     ┆ true    │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 3     ┆ true    │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 6     ┆ true    │
+╰───────┴─────────╯
+
+(Showing first 3 of 3 rows)
+```
 
 ### Ray Job
 

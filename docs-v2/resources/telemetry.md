@@ -4,7 +4,7 @@ To help core developers improve Daft, we collect non-identifiable statistics on 
 
 We take the privacy of our users extremely seriously, and telemetry in Daft is built to be:
 
-1. Easy to opt-out: to disable telemetry, set the following environment variable: ``DAFT_ANALYTICS_ENABLED=0``
+1. Easy to opt-out: to disable telemetry, set the following environment variable: `DAFT_ANALYTICS_ENABLED=0`
 2. Non-identifiable: events are keyed by a session ID which is generated on import of Daft
 3. Metadata-only: we do not collect any of our users' proprietary code or data
 

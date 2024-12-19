@@ -23,7 +23,7 @@ Common data operations that you would perform on DataFrames are:
 4. [**Sorting:**](dataframe.md#reordering-rows) Use [`df.sort(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.sort.html#daft.DataFrame.sort) to arrange your data based on values in one or more columns.
 5. **Grouping and aggregating:** Use [`df.groupby(...).agg(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.groupby.html#daft.DataFrame.groupby) to summarize your data by groups.
 
-## Creating a Dataframe
+## Creating a DataFrame
 
 !!! tip "See Also"
 
@@ -42,7 +42,7 @@ Let's create our first Dataframe from a Python dictionary of columns.
         "C": [True, True, False, False],
         "D": [None, None, None, None],
     })
-    ``` 
+    ```
 
 Examine your Dataframe by printing it:
 
@@ -255,7 +255,7 @@ Notice also that when we printed our DataFrame, Daft displayed its **schema**. E
 Daft can display your DataFrame's schema without materializing it. Under the hood, it performs intelligent sampling of your data to determine the appropriate schema, and if you make any modifications to your DataFrame it can infer the resulting types based on the operation.
 
 !!! note "Note"
-    
+
     Under the hood, Daft represents data in the [Apache Arrow](https://arrow.apache.org/) format, which allows it to efficiently represent and work on data using high-performance kernels which are written in Rust.
 
 ## Running Computation with Expressions
@@ -293,7 +293,7 @@ The following statement will [`df.show()`](https://www.getdaft.io/projects/docs/
 (Showing first 4 of 4 rows)
 ```
 
-!!! info "Info" 
+!!! info "Info"
 
     A common pattern is to create a new columns using [`DataFrame.with_column`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.with_column.html):
 

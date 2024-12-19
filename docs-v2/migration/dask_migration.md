@@ -29,13 +29,13 @@ Dask aims for as much feature-parity with pandas as possible, including maintain
 
 Daft drops the need for an Index to make queries more readable and consistent. How you write a query should not change because of the state of an index or a reset_index call. In our opinion, eliminating the index makes things simpler, more explicit, more readable and therefore less error-prone. Daft achieves this by using the [Expressions API](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html).
 
-In Dask you would index your DataFrame to return row `b` as follows: 
+In Dask you would index your DataFrame to return row `b` as follows:
 
 ```python
 ddf.loc[[“b”]]
 ```
 
-In Daft, you would accomplish the same by using a `col` Expression to refer to the column that contains `b`: 
+In Daft, you would accomplish the same by using a `col` Expression to refer to the column that contains `b`:
 
 ```python
 df.where(daft.col(“alpha”)==”b”)
@@ -62,7 +62,7 @@ Daft is built with logical query optimization by default. This means that Daft w
 Dask currently does not support full-featured query optimization.
 
 !!! note "Note"
-    
+
     As of version 2024.3.0 Dask is slowly implementing query optimization as well. As far as we can tell this is still in early development and has some rough edges. For context see [the discussion](https://github.com/dask/dask/issues/10995_) in the Dask repo.
 
 ## Daft uses Expressions and UDFs to perform computations in parallel
@@ -80,7 +80,7 @@ For example:
     res = ddf.map_partitions(my_function, **kwargs)
     ```
 
-Daft implements two APIs for mapping computations over the data in your DataFrame in parallel: [Expressions](../core_concepts/expressions.md) and [User-Defined Functions (UDFs)](../core_concepts/udf.md). Expressions are most useful when you need to define computation over your columns.
+Daft implements two APIs for mapping computations over the data in your DataFrame in parallel: [Expressions](../core_concepts.md#expressions) and [User-Defined Functions (UDFs)](../core_concepts.md#user-defined-functions-udf). Expressions are most useful when you need to define computation over your columns.
 
 === "🐍 Python"
 
@@ -113,7 +113,7 @@ Daft is built as a DataFrame API for distributed Machine learning. You can use D
 
 ## Daft supports Multimodal Data Types
 
-Dask supports the same data types as pandas. Daft is built to support many more data types, including Images, nested JSON, tensors, etc. See [the documentation](../core_concepts/datatypes.md) for a list of all supported data types.
+Dask supports the same data types as pandas. Daft is built to support many more data types, including Images, nested JSON, tensors, etc. See [the documentation](../core_concepts.md#datatypes) for a list of all supported data types.
 
 ## Distributed Computing and Remote Clusters
 

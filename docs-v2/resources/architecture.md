@@ -1,4 +1,4 @@
-# Architecture 
+# Architecture
 
 !!! failure "todo(docs): Add information about where Daft fits into the ecosystem or architecture of a system"
 
@@ -18,7 +18,7 @@ b. **Expressions:** A tree data-structure expressing the computation that produc
 ### 2. Planning
 
 !!! info "Users’ function calls on the User API layer are collected into the Planning layer, which is responsible for optimizing the plan and serializing it into a PhysicalPlan for the Scheduling layer."
-    
+
 a. **LogicalPlan:** When a user calls methods on a DataFrame, these operations are enqueued in a LogicalPlan for delayed execution.
 
 b. **Optimizer:** The Optimizer performs optimizations on LogicalPlans such as predicate pushdowns, column pruning, limit pushdowns and more
@@ -28,7 +28,7 @@ c. **PhysicalPlan:** The optimized LogicalPlan is then translated into a Physica
 ### 3. Scheduling
 
 !!! info "The scheduling layer is where Daft schedules tasks produced by the PhysicalPlan to be run on the requested backend"
-    
+
 a. **Runner:** The Runner consumes tasks produced by the PhysicalPlan. It is responsible for scheduling work on its backend (e.g. local threads or on Ray) and maintaining global distributed state.
 
 ### 4. Execution
@@ -43,10 +43,12 @@ b. **Series:** Each column in a Table is a Series. Series expose methods which i
 
 Daft DataFrames are lazy. When operations are called on the DataFrame, their actual execution is delayed. These operations are “enqueued” for execution in a LogicalPlan, which is a tree datastructure which describes the operations that will need to be performed to produce the requested DataFrame.
 
-```python
-df = daft.read_csv("s3://foo/*.csv")
-df = df.where(df["baz"] > 0)
-```
+=== "🐍 Python"
+
+    ```python
+    df = daft.read_csv("s3://foo/*.csv")
+    df = df.where(df["baz"] > 0)
+    ```
 
 When the Dataframe is executed, a few things will happen:
 

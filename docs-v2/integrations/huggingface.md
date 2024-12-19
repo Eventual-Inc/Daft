@@ -2,10 +2,10 @@
 
 Daft is able to read datasets directly from Hugging Face via the `hf://datasets/` protocol.
 
-Since Hugging Face will [automatically convert](https://huggingface.co/docs/dataset-viewer/en/parquet) all public datasets to parquet format, we can read these datasets using the [`read_parquet`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_parquet.html) method.
+Since Hugging Face will [automatically convert](https://huggingface.co/docs/dataset-viewer/en/parquet) all public datasets to parquet format, we can read these datasets using the [`daft.read_parquet()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_parquet.html) method.
 
 !!! warning "Warning"
-    
+
     This is limited to either public datasets, or PRO/ENTERPRISE datasets.
 
 For other file formats, you will need to manually specify the path or glob pattern to the files you want to read, similar to how you would read from a local file system.
@@ -67,4 +67,3 @@ to get around this, you can read all files using a glob pattern *(assuming they 
     ```python
     df = daft.read_parquet("hf://datasets/username/my_private_dataset/**/*.parquet", io_config=io_config) # Works
     ```
-    
