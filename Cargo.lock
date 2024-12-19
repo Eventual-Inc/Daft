@@ -1990,6 +1990,7 @@ dependencies = [
  "arrow2",
  "async-stream",
  "common-daft-config",
+ "common-display",
  "common-file-formats",
  "daft-core",
  "daft-dsl",
