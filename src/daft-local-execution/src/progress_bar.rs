@@ -52,8 +52,8 @@ pub struct OperatorProgressBar {
 }
 
 impl OperatorProgressBar {
-    // 100ms = 100_000_000ns
-    const UPDATE_INTERVAL: u64 = 100_000_000;
+    // 500ms = 500_000_000ns
+    const UPDATE_INTERVAL: u64 = 500_000_000;
 
     pub fn new(
         progress_bar: Box<dyn ProgressBar>,
