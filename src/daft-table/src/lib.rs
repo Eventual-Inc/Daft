@@ -12,6 +12,7 @@ use std::{
 use arrow2::array::Array;
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
+use common_runtime::get_compute_runtime;
 use daft_core::{
     array::ops::{
         full::FullNull, DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices,
@@ -23,6 +24,7 @@ use daft_dsl::{
     LiteralValue, SketchType,
 };
 use daft_logical_plan::FileInfos;
+use futures::{StreamExt, TryStreamExt};
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -650,6 +652,59 @@ impl Table {
             .map(|e| self.eval_expression(e))
             .try_collect()?;
 
+        self.process_eval_results(exprs, result_series)
+    }
+
+    pub async fn par_eval_expression_list(
+        &self,
+        exprs: &[ExprRef],
+        num_parallel_tasks: usize,
+    ) -> DaftResult<Self> {
+        // Evaluate non-compute expressions
+        let non_compute_results = exprs
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| !e.has_compute())
+            .map(|(i, e)| (i, self.eval_expression(e)))
+            .collect::<Vec<_>>();
+
+        let compute_runtime = get_compute_runtime();
+        // Then spawn tasks with the owned expressions.
+        let compute_futures = exprs
+            .iter()
+            .cloned()
+            .enumerate()
+            .filter_map(|(i, e)| if e.has_compute() { Some((i, e)) } else { None })
+            .map(|(i, e)| {
+                let table = self.clone();
+                compute_runtime.spawn(async move { (i, table.eval_expression(&e)) })
+            });
+
+        // Collect the results of the compute expressions
+        let compute_results = futures::stream::iter(compute_futures)
+            .buffered(num_parallel_tasks)
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        // Combine and sort by original index
+        let mut all_results = non_compute_results;
+        all_results.extend(compute_results);
+        all_results.sort_by_key(|(i, _)| *i);
+
+        // Extract just the results in order
+        let result_series = all_results
+            .into_iter()
+            .map(|(_, result)| result)
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        self.process_eval_results(exprs, result_series)
+    }
+
+    fn process_eval_results(
+        &self,
+        exprs: &[ExprRef],
+        result_series: Vec<Series>,
+    ) -> DaftResult<Self> {
         let fields: Vec<_> = result_series.iter().map(|s| s.field().clone()).collect();
 
         let mut seen = HashSet::new();

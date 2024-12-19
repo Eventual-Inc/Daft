@@ -6,7 +6,7 @@ use std::{
 };
 
 use daft_micropartition::MicroPartition;
-use loole::SendError;
+use kanal::SendError;
 
 use crate::channel::{Receiver, Sender};
 
@@ -116,10 +116,7 @@ impl CountingSender {
         Self { sender, rt }
     }
     #[inline]
-    pub(crate) async fn send(
-        &self,
-        v: Arc<MicroPartition>,
-    ) -> Result<(), SendError<Arc<MicroPartition>>> {
+    pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
         self.rt.mark_rows_emitted(v.len() as u64);
         self.sender.send(v).await?;
         Ok(())

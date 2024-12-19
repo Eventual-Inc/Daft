@@ -15,8 +15,7 @@ use daft_micropartition::{
     partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
     MicroPartition, MicroPartitionRef,
 };
-use futures::{FutureExt, Stream};
-use loole::RecvFuture;
+use futures::Stream;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -161,7 +160,7 @@ fn should_enable_explain_analyze() -> bool {
 }
 
 pub struct ExecutionEngineReceiverIterator {
-    receiver: Receiver<Arc<MicroPartition>>,
+    receiver: kanal::Receiver<Arc<MicroPartition>>,
     handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
 }
 
@@ -169,7 +168,7 @@ impl Iterator for ExecutionEngineReceiverIterator {
     type Item = DaftResult<Arc<MicroPartition>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.receiver.blocking_recv() {
+        match self.receiver.recv().ok() {
             Some(part) => Some(Ok(part)),
             None => {
                 if self.handle.is_some() {
@@ -191,41 +190,6 @@ impl Iterator for ExecutionEngineReceiverIterator {
     }
 }
 
-pub struct ExecutionEngineReceiverStream {
-    receive_fut: RecvFuture<Arc<MicroPartition>>,
-    handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
-}
-
-impl Stream for ExecutionEngineReceiverStream {
-    type Item = DaftResult<Arc<MicroPartition>>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        match self.receive_fut.poll_unpin(cx) {
-            std::task::Poll::Ready(Ok(part)) => std::task::Poll::Ready(Some(Ok(part))),
-            std::task::Poll::Ready(Err(_)) => {
-                if self.handle.is_some() {
-                    let join_result = self
-                        .handle
-                        .take()
-                        .unwrap()
-                        .join()
-                        .expect("Execution engine thread panicked");
-                    match join_result {
-                        Ok(()) => std::task::Poll::Ready(None),
-                        Err(e) => std::task::Poll::Ready(Some(Err(e))),
-                    }
-                } else {
-                    std::task::Poll::Ready(None)
-                }
-            }
-            std::task::Poll::Pending => std::task::Poll::Pending,
-        }
-    }
-}
-
 pub struct ExecutionEngineResult {
     handle: std::thread::JoinHandle<DaftResult<()>>,
     receiver: Receiver<Arc<MicroPartition>>,
@@ -233,10 +197,37 @@ pub struct ExecutionEngineResult {
 
 impl ExecutionEngineResult {
     pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
-        ExecutionEngineReceiverStream {
-            receive_fut: self.receiver.into_inner().recv_async(),
-            handle: Some(self.handle),
+        struct StreamState {
+            receiver: Receiver<Arc<MicroPartition>>,
+            handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
         }
+
+        let state = StreamState {
+            receiver: self.receiver,
+            handle: Some(self.handle),
+        };
+
+        futures::stream::unfold(state, |mut state| async {
+            match state.receiver.recv().await {
+                Some(part) => Some((Ok(part), state)),
+                None => {
+                    if state.handle.is_some() {
+                        let join_result = state
+                            .handle
+                            .take()
+                            .unwrap()
+                            .join()
+                            .expect("Execution engine thread panicked");
+                        match join_result {
+                            Ok(()) => None,
+                            Err(e) => Some((Err(e), state)),
+                        }
+                    } else {
+                        None
+                    }
+                }
+            }
+        })
     }
 }
 
@@ -246,7 +237,7 @@ impl IntoIterator for ExecutionEngineResult {
 
     fn into_iter(self) -> Self::IntoIter {
         ExecutionEngineReceiverIterator {
-            receiver: self.receiver,
+            receiver: self.receiver.into_inner().to_sync(),
             handle: Some(self.handle),
         }
     }
@@ -261,7 +252,7 @@ pub fn run_local(
 ) -> DaftResult<ExecutionEngineResult> {
     refresh_chrome_trace();
     let pipeline = physical_plan_to_pipeline(physical_plan, psets, &cfg)?;
-    let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
+    let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()

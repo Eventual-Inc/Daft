@@ -78,7 +78,7 @@ impl PipelineNode for SourceNode {
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
         let io_stats = self.io_stats.clone();
-        let (destination_sender, destination_receiver) = create_channel(1);
+        let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         runtime_handle.spawn(
             async move {

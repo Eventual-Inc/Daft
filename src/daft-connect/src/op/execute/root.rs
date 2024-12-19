@@ -1,4 +1,4 @@
-use std::{future::ready, sync::Arc};
+use std::{future::ready, pin::pin, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use daft_local_execution::NativeExecutor;
@@ -46,7 +46,7 @@ impl Session {
                 let cfg = Arc::new(DaftExecutionConfig::default());
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
 
-                let mut result_stream = native_executor.run(&pset, cfg, None)?.into_stream();
+                let mut result_stream = pin!(native_executor.run(&pset, cfg, None)?.into_stream());
 
                 while let Some(result) = result_stream.next().await {
                     let result = result?;

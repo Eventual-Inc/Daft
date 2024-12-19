@@ -204,7 +204,7 @@ impl PipelineNode for StreamingSinkNode {
             ));
         }
 
-        let (destination_sender, destination_receiver) = create_channel(1);
+        let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();
