@@ -6,7 +6,7 @@ use common_runtime::RuntimeRef;
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
     count_actor_pool_udfs,
-    functions::python::{get_batch_size, get_concurrency},
+    functions::python::{get_batch_size, get_concurrency, get_resource_request},
     ExprRef,
 };
 #[cfg(feature = "python")]
@@ -200,6 +200,15 @@ impl IntermediateOperator for ActorPoolProjectOperator {
                 self.batch_size
                     .unwrap_or_else(|| runtime_handle.default_morsel_size()),
             )))
+        }
+    }
+
+    fn memory_request(&self) -> Option<u64> {
+        let resource_request = get_resource_request(&self.projection);
+        if let Some(resource_request) = resource_request {
+            resource_request.memory_bytes().map(|m| m as u64)
+        } else {
+            None
         }
     }
 }
