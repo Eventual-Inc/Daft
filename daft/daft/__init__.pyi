@@ -586,37 +586,14 @@ class IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
 
-class NativeStorageConfig:
-    """Storage configuration for the Rust-native I/O layer."""
+class StorageConfig:
+    """Configuration for interacting with a particular storage backend."""
 
     # Whether or not to use a multithreaded tokio runtime for processing I/O
     multithreaded_io: bool
     io_config: IOConfig
 
-    def __init__(self, multithreaded_io: bool, io_config: IOConfig): ...
-
-class PythonStorageConfig:
-    """Storage configuration for the legacy Python I/O layer."""
-
-    io_config: IOConfig
-
-    def __init__(self, io_config: IOConfig): ...
-
-class StorageConfig:
-    """Configuration for interacting with a particular storage backend, using a particular I/O layer implementation."""
-
-    @staticmethod
-    def native(config: NativeStorageConfig) -> StorageConfig:
-        """Create from a native storage config."""
-        ...
-
-    @staticmethod
-    def python(config: PythonStorageConfig) -> StorageConfig:
-        """Create from a Python storage config."""
-        ...
-
-    @property
-    def config(self) -> NativeStorageConfig | PythonStorageConfig: ...
+    def __init__(self, multithreaded_io: bool, io_config: IOConfig | None): ...
 
 class ScanTask:
     """A batch of scan tasks for reading data from an external source."""
@@ -650,8 +627,8 @@ class ScanTask:
         url: str,
         file_format: FileFormatConfig,
         schema: PySchema,
-        num_rows: int | None,
         storage_config: StorageConfig,
+        num_rows: int | None,
         size_bytes: int | None,
         pushdowns: Pushdowns | None,
         stats: PyTable | None,
@@ -1730,6 +1707,8 @@ class PyDaftExecutionConfig:
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
+        partial_aggregation_threshold: int | None = None,
+        high_cardinality_aggregation_threshold: float | None = None,
         read_sql_partition_size_bytes: int | None = None,
         enable_aqe: bool | None = None,
         enable_native_executor: bool | None = None,
@@ -1764,6 +1743,10 @@ class PyDaftExecutionConfig:
     def csv_inflation_factor(self) -> float: ...
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
+    @property
+    def partial_aggregation_threshold(self) -> int: ...
+    @property
+    def high_cardinality_aggregation_threshold(self) -> float: ...
     @property
     def read_sql_partition_size_bytes(self) -> int: ...
     @property

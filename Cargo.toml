@@ -3,12 +3,14 @@ common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
+common-partitioning = {path = "src/common/partitioning", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-runtime = {path = "src/common/runtime", default-features = false}
 common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
+daft-algebra = {path = "src/daft-algebra", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-catalog-python-catalog = {path = "src/daft-catalog/python-catalog", optional = true}
 daft-compression = {path = "src/daft-compression", default-features = false}
@@ -46,17 +48,11 @@ sysinfo = {workspace = true}
 # maturin will turn this on
 python = [
   "common-daft-config/python",
-  "common-daft-config/python",
-  "common-daft-config/python",
   "common-display/python",
-  "common-display/python",
-  "common-display/python",
+  "common-partitioning/python",
   "common-resource-request/python",
-  "common-resource-request/python",
-  "common-resource-request/python",
+  "common-file-formats/python",
   "common-scan-info/python",
-  "common-system-info/python",
-  "common-system-info/python",
   "common-system-info/python",
   "daft-catalog-python-catalog/python",
   "daft-catalog/python",
@@ -78,7 +74,6 @@ python = [
   "daft-scan/python",
   "daft-scheduler/python",
   "daft-sql/python",
-  "daft-stats/python",
   "daft-stats/python",
   "daft-table/python",
   "daft-writers/python",
@@ -149,6 +144,7 @@ members = [
   "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
+  "src/daft-algebra",
   "src/daft-catalog",
   "src/daft-core",
   "src/daft-csv",
@@ -175,7 +171,8 @@ members = [
   "src/daft-connect",
   "src/parquet2",
   # "src/spark-connect-script",
-  "src/generated/spark-connect"
+  "src/generated/spark-connect",
+  "src/common/partitioning"
 ]
 
 [workspace.dependencies]
@@ -204,6 +201,7 @@ daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-micropartition = {path = "src/daft-micropartition"}
 daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
+daft-sql = {path = "src/daft-sql"}
 daft-table = {path = "src/daft-table"}
 derivative = "2.2.0"
 derive_builder = "0.20.2"

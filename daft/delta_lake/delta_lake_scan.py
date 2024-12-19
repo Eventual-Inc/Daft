@@ -41,7 +41,7 @@ class DeltaLakeScanOperator(ScanOperator):
         # Thus, if we don't detect any credentials being available, we attempt to detect it from the environment using our Daft credentials chain.
         #
         # See: https://github.com/delta-io/delta-rs/issues/2117
-        deltalake_sdk_io_config = storage_config.config.io_config
+        deltalake_sdk_io_config = storage_config.io_config
         scheme = urlparse(table_uri).scheme
         if scheme == "s3" or scheme == "s3a":
             # Try to get region from boto3

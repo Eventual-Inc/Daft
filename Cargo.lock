@@ -915,7 +915,7 @@ dependencies = [
  "serde_json",
  "time",
  "url",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -936,7 +936,7 @@ dependencies = [
  "time",
  "tz-rs",
  "url",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -958,7 +958,7 @@ dependencies = [
  "sha2",
  "time",
  "url",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -978,7 +978,7 @@ dependencies = [
  "serde_json",
  "time",
  "url",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -1538,6 +1538,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-partitioning"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-py-serde",
+ "futures",
+ "pyo3",
+ "serde",
+]
+
+[[package]]
 name = "common-py-serde"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1577,6 +1588,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "daft-algebra",
  "daft-dsl",
  "daft-schema",
  "pyo3",
@@ -1899,12 +1911,14 @@ dependencies = [
  "common-display",
  "common-file-formats",
  "common-hashable-float-wrapper",
+ "common-partitioning",
  "common-resource-request",
  "common-runtime",
  "common-scan-info",
  "common-system-info",
  "common-tracing",
  "common-version",
+ "daft-algebra",
  "daft-catalog",
  "daft-catalog-python-catalog",
  "daft-compression",
@@ -1939,6 +1953,17 @@ dependencies = [
  "pyo3-log",
  "sysinfo",
  "tikv-jemallocator",
+]
+
+[[package]]
+name = "daft-algebra"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-treenode",
+ "daft-dsl",
+ "daft-schema",
+ "rstest",
 ]
 
 [[package]]
@@ -1988,6 +2013,7 @@ dependencies = [
  "daft-micropartition",
  "daft-scan",
  "daft-schema",
+ "daft-sql",
  "daft-table",
  "dashmap",
  "eyre",
@@ -1999,7 +2025,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -2131,7 +2157,7 @@ dependencies = [
  "tiktoken-rs",
  "tokio",
  "typetag",
- "uuid 1.10.0",
+ "uuid 1.11.0",
  "xxhash-rust",
 ]
 
@@ -2324,10 +2350,12 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
+ "common-partitioning",
  "common-py-serde",
  "common-resource-request",
  "common-scan-info",
  "common-treenode",
+ "daft-algebra",
  "daft-core",
  "daft-dsl",
  "daft-functions",
@@ -2342,7 +2370,7 @@ dependencies = [
  "serde",
  "snafu",
  "test-log",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -2353,6 +2381,7 @@ dependencies = [
  "bincode",
  "common-error",
  "common-file-formats",
+ "common-partitioning",
  "common-runtime",
  "common-scan-info",
  "daft-core",
@@ -2364,10 +2393,12 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
+ "dashmap",
  "futures",
  "parquet2",
  "pyo3",
  "snafu",
+ "tracing",
 ]
 
 [[package]]
@@ -2483,6 +2514,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
+ "common-partitioning",
  "common-py-serde",
  "daft-core",
  "daft-dsl",
@@ -2535,6 +2567,7 @@ dependencies = [
  "common-error",
  "common-io-config",
  "common-runtime",
+ "daft-algebra",
  "daft-core",
  "daft-dsl",
  "daft-functions",
@@ -6878,9 +6911,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.10.0"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
+checksum = "f8c5f0a0af699448548ad1a2fbf920fb4bee257eae39953ba95cb84891a0446a"
 dependencies = [
  "getrandom 0.2.15",
  "serde",

@@ -30,6 +30,7 @@ use crate::session::Session;
 mod config;
 mod err;
 mod op;
+
 mod session;
 mod translation;
 pub mod util;
@@ -323,7 +324,29 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 Ok(Response::new(response))
             }
-            _ => unimplemented_err!("Analyze plan operation is not yet implemented"),
+            Analyze::DdlParse(DdlParse { ddl_string }) => {
+                let daft_schema = match daft_sql::sql_schema(&ddl_string) {
+                    Ok(daft_schema) => daft_schema,
+                    Err(e) => return invalid_argument_err!("{e}"),
+                };
+
+                let daft_schema = daft_schema.to_struct();
+
+                let schema = translation::to_spark_datatype(&daft_schema);
+
+                let schema = analyze_plan_response::Schema {
+                    schema: Some(schema),
+                };
+
+                let response = AnalyzePlanResponse {
+                    session_id,
+                    server_side_session_id: String::new(),
+                    result: Some(analyze_plan_response::Result::Schema(schema)),
+                };
+
+                Ok(Response::new(response))
+            }
+            other => unimplemented_err!("Analyze plan operation is not yet implemented: {other:?}"),
         }
     }
 

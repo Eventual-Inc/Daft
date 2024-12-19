@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class HudiScanOperator(ScanOperator):
     def __init__(self, table_uri: str, storage_config: StorageConfig) -> None:
         super().__init__()
-        resolved_path, self._resolved_fs = _resolve_paths_and_filesystem(table_uri, storage_config.config.io_config)
+        resolved_path, self._resolved_fs = _resolve_paths_and_filesystem(table_uri, storage_config.io_config)
         self._table = HudiTable(table_uri, self._resolved_fs, resolved_path[0])
         self._storage_config = storage_config
         self._schema = Schema.from_pyarrow_schema(self._table.schema)
