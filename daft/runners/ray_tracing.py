@@ -10,6 +10,7 @@ import contextlib
 import dataclasses
 import json
 import logging
+import os
 import pathlib
 import time
 from datetime import datetime
@@ -50,7 +51,7 @@ def ray_tracer(execution_id: str, daft_execution_config: PyDaftExecutionConfig) 
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     ray_logs_location = get_log_location()
     filepath: pathlib.Path | None
-    if ray_logs_location.exists() and daft_execution_config.enable_ray_tracing:
+    if ray_logs_location.exists() and daft_execution_config.enable_ray_tracing > 0:
         trace_filename = (
             f"trace_RayRunner.{execution_id}.{datetime.replace(datetime.now(), microsecond=0).isoformat()[:-3]}.json"
         )
@@ -255,6 +256,11 @@ class RunnerTracer:
                             "ph": RunnerTracer.PHASE_ASYNC_END,
                             "pid": 1,
                             "tid": 2,
+                            "args": {
+                                "memray_peak_memory_allocated": task_event.memory_stats.peak_memory_allocated,
+                                "memray_total_memory_allocated": task_event.memory_stats.total_memory_allocated,
+                                "memray_total_num_allocations": task_event.memory_stats.total_num_allocations,
+                            },
                         },
                         ts=end_ts,
                     )
@@ -272,6 +278,11 @@ class RunnerTracer:
                                 "ph": RunnerTracer.PHASE_DURATION_END,
                                 "pid": node_idx + RunnerTracer.NODE_PIDS_START,
                                 "tid": worker_idx,
+                                "args": {
+                                    "memray_peak_memory_allocated": task_event.memory_stats.peak_memory_allocated,
+                                    "memray_total_memory_allocated": task_event.memory_stats.total_memory_allocated,
+                                    "memray_total_num_allocations": task_event.memory_stats.total_num_allocations,
+                                },
                             },
                             ts=end_ts,
                         )
@@ -655,7 +666,9 @@ class MaterializedPhysicalPlanWrapper:
 @contextlib.contextmanager
 def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int, execution_config: PyDaftExecutionConfig):
     """Context manager that will ping the metrics actor to record various execution metrics about a given task."""
-    if execution_config.enable_ray_tracing:
+    if execution_config.enable_ray_tracing == 0:
+        yield
+    elif execution_config.enable_ray_tracing == 1:
         import time
 
         runtime_context = ray.get_runtime_context()
@@ -670,7 +683,46 @@ def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int, exe
             runtime_context.get_assigned_resources(),
             runtime_context.get_task_id(),
         )
-        yield
-        metrics_actor.mark_task_end(task_id, time.time())
+        try:
+            yield
+        finally:
+            metrics_actor.mark_task_end(task_id, time.time(), memory_stats=None)
+    elif execution_config.enable_ray_tracing == 2:
+        import time
+
+        import memray
+        from memray._memray import compute_statistics
+
+        tmpdir = "/tmp/ray/session_latest/logs/daft/task_memray_dumps"
+        os.makedirs(tmpdir, exist_ok=True)
+        memray_tmpfile = os.path.join(tmpdir, f"task-{task_id}.memray.bin")
+
+        runtime_context = ray.get_runtime_context()
+        metrics_actor = ray_metrics.get_metrics_actor(execution_id)
+        metrics_actor.mark_task_start(
+            task_id,
+            time.time(),
+            runtime_context.get_node_id(),
+            runtime_context.get_worker_id(),
+            stage_id,
+            runtime_context.get_assigned_resources(),
+            runtime_context.get_task_id(),
+        )
+        try:
+            with memray.Tracker(memray_tmpfile, native_traces=True, follow_fork=True):
+                yield
+        finally:
+            stats = compute_statistics(memray_tmpfile)
+            metrics_actor.mark_task_end(
+                task_id,
+                time.time(),
+                ray_metrics.TaskMemoryStats(
+                    peak_memory_allocated=stats.peak_memory_allocated,
+                    total_memory_allocated=stats.total_memory_allocated,
+                    total_num_allocations=stats.total_num_allocations,
+                ),
+            )
     else:
-        yield
+        raise RuntimeError(
+            f"Unrecognized value for $DAFT_ENABLE_RAY_TRACING. Expected a number from 0 to 2, but received: {execution_config.enable_ray_tracing}"
+        )

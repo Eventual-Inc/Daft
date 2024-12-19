@@ -352,7 +352,7 @@ def set_execution_config(
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
-    enable_ray_tracing: bool | None = None,
+    enable_ray_tracing: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -395,7 +395,8 @@ def set_execution_config(
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "map_reduce". Other options are "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
-        enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
+        enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to 0, but
+            can be set to 1 or 2 depending on the level of tracing desired. Levels 2 and above require `memray` to be installed.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
