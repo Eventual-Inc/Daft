@@ -3,9 +3,6 @@ use eyre::{bail, ensure, WrapErr};
 use spark_connect::data_type::Kind;
 use tracing::warn;
 
-mod codec;
-pub use codec::deser as deser_spark_datatype;
-
 pub fn to_spark_datatype(datatype: &DataType) -> spark_connect::DataType {
     match datatype {
         DataType::Null => spark_connect::DataType {
