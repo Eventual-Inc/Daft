@@ -53,3 +53,4 @@ pass a different [`daft.io.S3Config`](https://www.getdaft.io/projects/docs/en/st
     # Perform some I/O operation but override the IOConfig
     df2 = daft.read_csv("s3://my_bucket/my_other_path/**/*", io_config=io_config)
     ```
+    

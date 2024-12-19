@@ -67,3 +67,4 @@ to get around this, you can read all files using a glob pattern *(assuming they 
     ```python
     df = daft.read_parquet("hf://datasets/username/my_private_dataset/**/*.parquet", io_config=io_config) # Works
     ```
+    

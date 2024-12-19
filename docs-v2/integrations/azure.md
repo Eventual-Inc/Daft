@@ -79,3 +79,4 @@ If you are connecting to storage in OneLake or another Microsoft Fabric service,
 
     df = daft.read_deltalake('abfss://[WORKSPACE]@onelake.dfs.fabric.microsoft.com/[LAKEHOUSE].Lakehouse/Tables/[TABLE]', io_config=io_config)
     ```
+    

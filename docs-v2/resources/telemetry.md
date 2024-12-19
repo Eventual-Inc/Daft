@@ -14,7 +14,7 @@ We **do not** sell or buy any of the data that is collected in telemetry.
 
 ## What data do we collect?
 
-To audit what data is collected, please see the implementation of ``AnalyticsClient`` in the ``daft.analytics`` module.
+To audit what data is collected, please see the implementation of `AnalyticsClient` in the `daft.analytics` module.
 
 In short, we collect the following:
 
