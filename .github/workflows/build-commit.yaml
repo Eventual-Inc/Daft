@@ -7,17 +7,19 @@ on:
         description: The machine architecture to build for
         required: true
         type: string
+        default: x86
       python_version:
         description: The version of Python to use
         required: true
         type: string
+        default: "3.9"
     secrets:
       ACTIONS_AWS_ROLE_ARN:
         description: The AWS Role ARN for secrets access
         required: true
     outputs:
       wheel_url:
-        description: The name of the built wheel
+        description: The URL of the built wheel
         value: ${{ jobs.build-commit.outputs.wheel_url }}
   workflow_dispatch:
     inputs:
