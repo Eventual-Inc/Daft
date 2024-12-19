@@ -32,6 +32,7 @@ impl Session {
         };
 
         let finished = context.finished();
+        let pset = self.psets.clone();
 
         let result = async move {
             let WriteOperation {
@@ -109,19 +110,20 @@ impl Session {
                 }
             };
 
-            let mut plan = translation::to_logical_plan(input).await?;
+            let translator = translation::SparkAnalyzer::new(&pset);
 
-            plan.builder = plan
-                .builder
+            let plan = translator.to_logical_plan(input).await?;
+
+            let plan = plan
                 .table_write(&path, FileFormat::Parquet, None, None, None)
                 .wrap_err("Failed to create table write plan")?;
 
-            let optimized_plan = plan.builder.optimize()?;
+            let optimized_plan = plan.optimize()?;
             let cfg = DaftExecutionConfig::default();
             let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-            let mut result_stream = pin!(native_executor
-                .run(plan.psets, cfg.into(), None)?
-                .into_stream());
+
+            let mut result_stream =
+                pin!(native_executor.run(&pset, cfg.into(), None)?.into_stream());
 
             // this is so we make sure the operation is actually done
             // before we return

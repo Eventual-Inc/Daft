@@ -17,7 +17,8 @@ impl MonotonicallyIncreasingId {
         let column_name = column_name.unwrap_or("id");
 
         let mut schema_with_id_index_map = input.schema().fields.clone();
-        schema_with_id_index_map.insert(
+        schema_with_id_index_map.shift_insert(
+            0,
             column_name.to_string(),
             Field::new(column_name, DataType::UInt64),
         );

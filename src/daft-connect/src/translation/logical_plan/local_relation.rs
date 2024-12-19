@@ -1,32 +1,28 @@
-use std::{collections::HashMap, io::Cursor, sync::Arc};
+use std::{io::Cursor, sync::Arc};
 
 use arrow2::io::ipc::{
     read::{StreamMetadata, StreamReader, StreamState, Version},
     IpcField, IpcSchema,
 };
 use daft_core::series::Series;
-use daft_logical_plan::{
-    logical_plan::Source, InMemoryInfo, LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder,
-    SourceInfo,
+use daft_logical_plan::LogicalPlanBuilder;
+use daft_micropartition::partitioning::{
+    MicroPartitionSet, PartitionCacheEntry, PartitionMetadata, PartitionSet, PartitionSetCache,
 };
-use daft_micropartition::partitioning::InMemoryPartitionSet;
 use daft_schema::dtype::DaftDataType;
 use daft_table::Table;
 use eyre::{bail, ensure, WrapErr};
 use itertools::Itertools;
 
-use crate::translation::{deser_spark_datatype, logical_plan::Plan, to_daft_datatype};
+use super::SparkAnalyzer;
+use crate::translation::{deser_spark_datatype, to_daft_datatype};
 
-pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> {
-    #[cfg(not(feature = "python"))]
-    {
-        bail!("LocalRelation plan is only supported in Python mode");
-    }
-
-    #[cfg(feature = "python")]
-    {
-        use daft_micropartition::{python::PyMicroPartition, MicroPartition};
-        use pyo3::{types::PyAnyMethods, Python};
+impl SparkAnalyzer<'_> {
+    pub fn local_relation(
+        &self,
+        plan_id: i64,
+        plan: spark_connect::LocalRelation,
+    ) -> eyre::Result<LogicalPlanBuilder> {
         let spark_connect::LocalRelation { data, schema } = plan;
 
         let Some(data) = data else {
@@ -139,67 +135,33 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
                     "Mismatch in row counts across columns; all columns must have the same number of rows."
                 );
 
-                let Some(&num_rows) = num_rows.first() else {
-                    bail!("No columns were found; at least one column is required.")
-                };
+                let batch = Table::from_nonempty_columns(columns)?;
 
-                let table = Table::new_with_size(daft_schema.clone(), columns, num_rows)
-                    .wrap_err("Failed to create Table from columns and schema.")?;
-
-                tables.push(table);
+                tables.push(batch);
             }
             tables
         };
 
-        // Note: Verify if the Daft schema used here matches the schema of the table.
-        let micro_partition = MicroPartition::new_loaded(daft_schema, Arc::new(tables), None);
-        let micro_partition = Arc::new(micro_partition);
+        let pset = MicroPartitionSet::from_tables(plan_id as usize, tables)?;
+        let PartitionMetadata {
+            size_bytes,
+            num_rows,
+        } = pset.metadata();
+        let num_partitions = pset.num_partitions();
 
-        let plan = Python::with_gil(|py| {
-            // Convert MicroPartition to a logical plan using Python interop.
-            let py_micropartition = py
-                .import_bound(pyo3::intern!(py, "daft.table"))?
-                .getattr(pyo3::intern!(py, "MicroPartition"))?
-                .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
-                .call1((PyMicroPartition::from(micro_partition.clone()),))?;
+        let partition_key: Arc<str> = uuid::Uuid::new_v4().to_string().into();
+        let pset = Arc::new(pset);
+        self.psets.put_partition_set(&partition_key, &pset);
 
-            // ERROR:   2: AttributeError: 'daft.daft.PySchema' object has no attribute '_schema'
-            let py_plan_builder = py
-                .import_bound(pyo3::intern!(py, "daft.dataframe.dataframe"))?
-                .getattr(pyo3::intern!(py, "to_logical_plan_builder"))?
-                .call1((py_micropartition,))?;
+        let lp = LogicalPlanBuilder::in_memory_scan(
+            &partition_key,
+            PartitionCacheEntry::new_rust(partition_key.to_string(), pset),
+            daft_schema,
+            num_partitions,
+            size_bytes,
+            num_rows,
+        )?;
 
-            let py_plan_builder = py_plan_builder.getattr(pyo3::intern!(py, "_builder"))?;
-
-            let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
-
-            Ok::<_, eyre::Error>(plan.builder)
-        })?;
-
-        let cache_key = grab_singular_cache_key(&plan)?;
-
-        let mut psets = HashMap::new();
-        psets.insert(cache_key, vec![micro_partition]);
-
-        let plan = Plan {
-            builder: plan,
-            psets: InMemoryPartitionSet::new(psets),
-        };
-
-        Ok(plan)
+        Ok(lp)
     }
-}
-
-fn grab_singular_cache_key(plan: &LogicalPlanBuilder) -> eyre::Result<String> {
-    let plan = &*plan.plan;
-
-    let LogicalPlan::Source(Source { source_info, .. }) = plan else {
-        bail!("Expected a source plan");
-    };
-
-    let SourceInfo::InMemory(InMemoryInfo { cache_key, .. }) = &**source_info else {
-        bail!("Expected an in-memory source");
-    };
-
-    Ok(cache_key.clone())
 }

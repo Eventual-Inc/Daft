@@ -4,15 +4,11 @@ use std::{
     sync::atomic::AtomicUsize,
 };
 
+use common_partitioning::PartitionCacheEntry;
 use common_scan_info::PhysicalScanInfo;
 use daft_schema::schema::SchemaRef;
 pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "python")]
-use {
-    common_py_serde::{deserialize_py_object, serialize_py_object},
-    pyo3::PyObject,
-};
 
 use crate::partitioning::ClusteringSpecRef;
 
@@ -27,24 +23,18 @@ pub enum SourceInfo {
 pub struct InMemoryInfo {
     pub source_schema: SchemaRef,
     pub cache_key: String,
-    #[cfg(feature = "python")]
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    pub cache_entry: PyObject,
+    pub cache_entry: PartitionCacheEntry,
     pub num_partitions: usize,
     pub size_bytes: usize,
     pub num_rows: usize,
     pub clustering_spec: Option<ClusteringSpecRef>,
 }
 
-#[cfg(feature = "python")]
 impl InMemoryInfo {
     pub fn new(
         source_schema: SchemaRef,
         cache_key: String,
-        cache_entry: PyObject,
+        cache_entry: PartitionCacheEntry,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,

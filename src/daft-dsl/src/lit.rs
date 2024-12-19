@@ -444,6 +444,12 @@ pub fn null_lit() -> ExprRef {
     Arc::new(Expr::Literal(LiteralValue::Null))
 }
 
+impl LiteralValue {
+    pub fn into_single_value_series(self) -> DaftResult<Series> {
+        literals_to_series(&[self])
+    }
+}
+
 /// Convert a slice of literals to a series.
 /// This function will return an error if the literals are not all the same type
 pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {

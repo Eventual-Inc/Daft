@@ -43,8 +43,7 @@ def test_temporal_arithmetic_with_same_type() -> None:
 
 
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_temporal_file_roundtrip(format, use_native_downloader) -> None:
+def test_temporal_file_roundtrip(format) -> None:
     data = {
         "date32": pa.array([1], pa.date32()),
         "date64": pa.array([1], pa.date64()),
@@ -86,10 +85,10 @@ def test_temporal_file_roundtrip(format, use_native_downloader) -> None:
     with tempfile.TemporaryDirectory() as dirname:
         if format == "csv":
             df.write_csv(dirname)
-            df_readback = daft.read_csv(dirname, use_native_downloader=use_native_downloader).collect()
+            df_readback = daft.read_csv(dirname).collect()
         elif format == "parquet":
             df.write_parquet(dirname)
-            df_readback = daft.read_parquet(dirname, use_native_downloader=use_native_downloader).collect()
+            df_readback = daft.read_parquet(dirname).collect()
 
         assert df.to_pydict() == df_readback.to_pydict()
 

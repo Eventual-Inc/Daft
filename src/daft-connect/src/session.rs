@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use uuid::Uuid;
 
 pub struct Session {
@@ -10,6 +11,9 @@ pub struct Session {
 
     id: String,
     server_side_session_id: String,
+    /// MicroPartitionSet associated with this session
+    /// this will be filled up as the user runs queries
+    pub(crate) psets: InMemoryPartitionSetCache,
 }
 
 impl Session {
@@ -28,6 +32,7 @@ impl Session {
             config_values: Default::default(),
             id,
             server_side_session_id,
+            psets: InMemoryPartitionSetCache::empty(),
         }
     }
 
