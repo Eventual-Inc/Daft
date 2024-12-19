@@ -63,7 +63,7 @@ trino[sqlalchemy]==0.328.0
 PyMySQL==1.1.0
 psycopg2-binary==2.9.10
 sqlglot==23.3.0
-pyodbc==5.1.0
+pyodbc==5.2.0
 
 # AWS
 s3fs==2023.12.0
