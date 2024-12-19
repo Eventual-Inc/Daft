@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import sys
 from typing import Dict, List
 
 import pytest
@@ -52,25 +51,21 @@ def test_datatype_parsing(source, expected):
     assert DataType._infer_type(source) == expected
 
 
-# These tests are only valid for more modern versions of Python, but can't be skipped in the conventional
-# way either because we cannot even run the subscripting during import-time
-if sys.version_info >= (3, 9):
-
-    @pytest.mark.parametrize(
-        ["source", "expected"],
-        [
-            # These tests must be run in later version of Python that allow for subscripting of types
-            (list[str], DataType.list(DataType.string())),
-            (dict[str, int], DataType.map(DataType.string(), DataType.int64())),
-            (
-                {"foo": list[str], "bar": int},
-                DataType.struct({"foo": DataType.list(DataType.string()), "bar": DataType.int64()}),
-            ),
-            (list[list[str]], DataType.list(DataType.list(DataType.string()))),
-        ],
-    )
-    def test_subscripted_datatype_parsing(source, expected):
-        assert DataType._infer_type(source) == expected
+@pytest.mark.parametrize(
+    ["source", "expected"],
+    [
+        # These tests must be run in later version of Python that allow for subscripting of types
+        (list[str], DataType.list(DataType.string())),
+        (dict[str, int], DataType.map(DataType.string(), DataType.int64())),
+        (
+            {"foo": list[str], "bar": int},
+            DataType.struct({"foo": DataType.list(DataType.string()), "bar": DataType.int64()}),
+        ),
+        (list[list[str]], DataType.list(DataType.list(DataType.string()))),
+    ],
+)
+def test_subscripted_datatype_parsing(source, expected):
+    assert DataType._infer_type(source) == expected
 
 
 @pytest.mark.parametrize(

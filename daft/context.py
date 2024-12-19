@@ -7,7 +7,6 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from daft import get_build_type
 from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
 
 if TYPE_CHECKING:
@@ -109,14 +108,8 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             max_task_backlog=task_backlog,
             force_client_mode=ray_force_client_mode,
         )
-
-    # Use native runner if in dev mode
-    elif get_build_type() == "dev":
-        return _NativeRunnerConfig()
-
-    # Fall back on PyRunner
     else:
-        return _PyRunnerConfig(use_thread_pool=use_thread_pool)
+        return _NativeRunnerConfig()
 
 
 @dataclasses.dataclass
@@ -171,6 +164,12 @@ class DaftContext:
                 self._runner = PyRunner(use_thread_pool=runner_config.use_thread_pool)
             elif runner_config.name == "native":
                 from daft.runners.native_runner import NativeRunner
+
+                warnings.warn(
+                    "Daft is configured to use the new NativeRunner by default as of v0.4.0. "
+                    "If you are encountering any regressions, please switch back to the legacy PyRunner via `daft.context.set_runner_py()` or by setting the env variable `DAFT_RUNNER=py`. "
+                    "We appreciate you filing issues and helping make the NativeRunner better: https://github.com/Eventual-Inc/Daft/issues",
+                )
 
                 assert isinstance(runner_config, _NativeRunnerConfig)
                 self._runner = NativeRunner()

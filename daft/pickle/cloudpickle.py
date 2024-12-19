@@ -70,20 +70,7 @@ try:  # pragma: no branch
 except ImportError:
     _typing_extensions = Literal = Final = None
 
-if sys.version_info >= (3, 8):
-    from types import CellType
-else:
-
-    def f():
-        a = 1
-
-        def g():
-            return a
-
-        return g
-
-    CellType = type(f().__closure__[0])
-
+from types import CellType
 
 # cloudpickle is meant for inter process communication: we expect all
 # communicating processes to run the same Python version hence we favor

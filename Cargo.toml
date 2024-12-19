@@ -3,6 +3,7 @@ common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
+common-partitioning = {path = "src/common/partitioning", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-runtime = {path = "src/common/runtime", default-features = false}
 common-scan-info = {path = "src/common/scan-info", default-features = false}
@@ -47,17 +48,11 @@ sysinfo = {workspace = true}
 # maturin will turn this on
 python = [
   "common-daft-config/python",
-  "common-daft-config/python",
-  "common-daft-config/python",
   "common-display/python",
-  "common-display/python",
-  "common-display/python",
+  "common-partitioning/python",
   "common-resource-request/python",
-  "common-resource-request/python",
-  "common-resource-request/python",
+  "common-file-formats/python",
   "common-scan-info/python",
-  "common-system-info/python",
-  "common-system-info/python",
   "common-system-info/python",
   "daft-catalog-python-catalog/python",
   "daft-catalog/python",
@@ -79,7 +74,6 @@ python = [
   "daft-scan/python",
   "daft-scheduler/python",
   "daft-sql/python",
-  "daft-stats/python",
   "daft-stats/python",
   "daft-table/python",
   "daft-writers/python",
@@ -177,7 +171,8 @@ members = [
   "src/daft-connect",
   "src/parquet2",
   # "src/spark-connect-script",
-  "src/generated/spark-connect"
+  "src/generated/spark-connect",
+  "src/common/partitioning"
 ]
 
 [workspace.dependencies]
@@ -281,7 +276,7 @@ features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py38", "indexmap"]
+features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap"]
 version = "0.21.0"
 
 [workspace.dependencies.pyo3-log]

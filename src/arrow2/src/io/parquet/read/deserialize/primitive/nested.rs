@@ -87,8 +87,9 @@ where
         &self,
         page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
+        is_parent_nullable: bool,
     ) -> Result<Self::State> {
-        let is_optional =
+        let is_optional = is_parent_nullable ||
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
@@ -185,6 +186,7 @@ where
     rows_remaining: usize,
     chunk_size: Option<usize>,
     values_remaining: usize,
+    is_parent_nullable: bool,
     decoder: PrimitiveDecoder<T, P, F>,
 }
 
@@ -196,6 +198,7 @@ where
     P: ParquetNativeType,
     F: Copy + Fn(P) -> T,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
@@ -203,6 +206,7 @@ where
         num_rows: usize,
         chunk_size: Option<usize>,
         num_values: usize,
+        is_parent_nullable: bool,
         op: F,
     ) -> Self {
         Self {
@@ -214,6 +218,7 @@ where
             chunk_size,
             rows_remaining: num_rows,
             values_remaining: num_values,
+            is_parent_nullable,
             decoder: PrimitiveDecoder::new(op),
         }
     }
@@ -238,6 +243,7 @@ where
             &mut self.values_remaining,
             &self.init,
             self.chunk_size,
+            self.is_parent_nullable,
             &self.decoder,
         );
         match maybe_state {

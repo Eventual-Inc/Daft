@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Optional, Union
 
 from daft import context, from_pydict
 from daft.api_annotations import PublicAPI
-from daft.daft import PythonStorageConfig, ScanOperatorHandle, StorageConfig
+from daft.daft import ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
@@ -94,7 +94,7 @@ def read_sql(
         )
 
     io_config = context.get_context().daft_planning_config.default_io_config
-    storage_config = StorageConfig.python(PythonStorageConfig(io_config))
+    storage_config = StorageConfig(True, io_config)
 
     sql_conn = SQLConnection.from_url(conn) if isinstance(conn, str) else SQLConnection.from_connection_factory(conn)
     sql_operator = SQLScanOperator(

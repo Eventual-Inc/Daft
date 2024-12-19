@@ -8,44 +8,48 @@ if TYPE_CHECKING:
     from daft.execution.execution_step import PartitionTask
 
 
+def get_tqdm(use_ray_tqdm: bool) -> Any:
+    # Choose the appropriate tqdm module depending on whether we need to use Ray's tqdm
+    if use_ray_tqdm:
+        from ray.experimental.tqdm_ray import tqdm
+    else:
+        from tqdm.auto import tqdm as _tqdm
+
+        try:
+            import sys
+
+            from IPython import get_ipython
+
+            ipython = get_ipython()
+
+            # write to sys.stdout if in jupyter notebook
+            # source: https://github.com/tqdm/tqdm/blob/74722959a8626fd2057be03e14dcf899c25a3fd5/tqdm/autonotebook.py#L14
+            if ipython is not None and "IPKernelApp" in ipython.config:
+
+                class tqdm(_tqdm):  # type: ignore[no-redef]
+                    def __init__(self, *args, **kwargs):
+                        kwargs = kwargs.copy()
+                        if "file" not in kwargs:
+                            kwargs["file"] = sys.stdout  # avoid the red block in IPython
+
+                        super().__init__(*args, **kwargs)
+            else:
+                tqdm = _tqdm
+        except ImportError:
+            tqdm = _tqdm
+
+    return tqdm
+
+
 class ProgressBar:
     def __init__(self, use_ray_tqdm: bool, show_tasks_bar: bool = False, disable: bool = False) -> None:
         self.show_tasks_bar = show_tasks_bar
         self._maxinterval = 5.0
 
-        # Choose the appropriate tqdm module depending on whether we need to use Ray's tqdm
         self.use_ray_tqdm = use_ray_tqdm
-        if use_ray_tqdm:
-            from ray.experimental.tqdm_ray import tqdm
-        else:
-            from tqdm.auto import tqdm as _tqdm
+        self.tqdm_mod = get_tqdm(use_ray_tqdm)
 
-            try:
-                import sys
-
-                from IPython import get_ipython
-
-                ipython = get_ipython()
-
-                # write to sys.stdout if in jupyter notebook
-                # source: https://github.com/tqdm/tqdm/blob/74722959a8626fd2057be03e14dcf899c25a3fd5/tqdm/autonotebook.py#L14
-                if ipython is not None and "IPKernelApp" in ipython.config:
-
-                    class tqdm(_tqdm):  # type: ignore[no-redef]
-                        def __init__(self, *args, **kwargs):
-                            kwargs = kwargs.copy()
-                            if "file" not in kwargs:
-                                kwargs["file"] = sys.stdout  # avoid the red block in IPython
-
-                            super().__init__(*args, **kwargs)
-                else:
-                    tqdm = _tqdm
-            except ImportError:
-                tqdm = _tqdm
-
-        self.tqdm_mod = tqdm
-
-        self.pbars: dict[int, tqdm] = dict()
+        self.pbars: dict[int, Any] = dict()
         self.disable = (
             disable
             or not bool(int(os.environ.get("RAY_TQDM", "1")))
@@ -100,5 +104,37 @@ class ProgressBar:
         for p in self.pbars.values():
             if not self.use_ray_tqdm:
                 p.clear()
+            p.close()
+            del p
+
+
+# Progress Bar for local execution, should only be used in the native executor
+class SwordfishProgressBar:
+    def __init__(self) -> None:
+        self._maxinterval = 5.0
+        self.tqdm_mod = get_tqdm(False)
+        self.pbars: dict[int, Any] = dict()
+
+    def make_new_bar(self, bar_format: str, initial_message: str) -> int:
+        pbar_id = len(self.pbars)
+        self.pbars[pbar_id] = self.tqdm_mod(
+            bar_format=bar_format,
+            desc=initial_message,
+            position=pbar_id,
+            leave=False,
+            mininterval=1.0,
+            maxinterval=self._maxinterval,
+        )
+        return pbar_id
+
+    def update_bar(self, pbar_id: int, message: str) -> None:
+        self.pbars[pbar_id].set_description_str(message)
+
+    def close_bar(self, pbar_id: int) -> None:
+        self.pbars[pbar_id].close()
+        del self.pbars[pbar_id]
+
+    def close(self) -> None:
+        for p in self.pbars.values():
             p.close()
             del p
