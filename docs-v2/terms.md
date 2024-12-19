@@ -20,7 +20,7 @@ An [`Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expres
 
 ## Query Plan
 
-As mentioned earlier, Daft DataFrames are lazy. Under the hood, each DataFrame in Daft is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results. 
+As mentioned earlier, Daft DataFrames are lazy. Under the hood, each DataFrame in Daft is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results.
 
 You can examine a logical plan using [`df.explain()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.explain.html#daft.DataFrame.explain), here's an example:
 
@@ -88,4 +88,4 @@ You can examine a logical plan using [`df.explain()`](https://www.getdaft.io/pro
 SQL is a common query language for expressing queries over tables of data. Daft exposes a SQL API as an alternative (but often also complementary API) to the Python [`DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame) and
 [`Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html) APIs for building queries.
 
-You can use SQL in Daft via the [`daft.sql`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql) function, and Daft will also convert many SQL-compatible strings into Expressions via [`daft.sql_expr`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql_expr) for easy interoperability with DataFrames.
+You can use SQL in Daft via the [`daft.sql()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql) function, and Daft will also convert many SQL-compatible strings into Expressions via [`daft.sql_expr()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql_expr) for easy interoperability with DataFrames.
