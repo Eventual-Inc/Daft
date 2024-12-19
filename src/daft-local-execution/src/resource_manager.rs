@@ -1,7 +1,4 @@
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::{Arc, Mutex};
 
 use common_error::{DaftError, DaftResult};
 use common_system_info::SystemInfoInternal;
@@ -34,26 +31,34 @@ pub struct MemoryPermit {
 impl Drop for MemoryPermit {
     fn drop(&mut self) {
         if self.bytes > 0 {
-            self.manager
-                .available_bytes
-                .fetch_add(self.bytes, Ordering::Release);
+            {
+                let mut state = self.manager.state.lock().unwrap();
+                state.available_bytes += self.bytes;
+            } // lock is released here
             self.manager.notify.notify_waiters();
         }
     }
 }
 
+struct MemoryState {
+    available_bytes: u64,
+}
+
 pub struct MemoryManager {
     total_bytes: u64,
-    available_bytes: AtomicU64,
+    state: Mutex<MemoryState>,
     notify: Notify,
 }
 
 impl Default for MemoryManager {
     fn default() -> Self {
         let system_info = SystemInfoInternal::default();
+        let total_mem = system_info.total_memory();
         Self {
-            total_bytes: system_info.total_memory(),
-            available_bytes: AtomicU64::new(system_info.total_memory()),
+            total_bytes: total_mem,
+            state: Mutex::new(MemoryState {
+                available_bytes: total_mem,
+            }),
             notify: Notify::new(),
         }
     }
@@ -64,7 +69,9 @@ impl MemoryManager {
         if let Some(custom_limit) = custom_memory_limit() {
             Self {
                 total_bytes: custom_limit,
-                available_bytes: AtomicU64::new(custom_limit),
+                state: Mutex::new(MemoryState {
+                    available_bytes: custom_limit,
+                }),
                 notify: Notify::new(),
             }
         } else {
@@ -86,27 +93,23 @@ impl MemoryManager {
         }
 
         loop {
-            let available = self.available_bytes.load(Ordering::Acquire);
-            if available >= bytes {
-                // Try to atomically subtract the requested bytes
-                match self.available_bytes.compare_exchange(
-                    available,
-                    available - bytes,
-                    Ordering::AcqRel,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => {
-                        return Ok(MemoryPermit {
-                            bytes,
-                            manager: self.clone(),
-                        });
-                    }
-                    Err(_) => {
-                        // Someone else modified the value, try again
-                        continue;
-                    }
+            let can_allocate = {
+                let mut state = self.state.lock().unwrap();
+                if state.available_bytes >= bytes {
+                    state.available_bytes -= bytes;
+                    true
+                } else {
+                    false
                 }
+            }; // lock is released here
+
+            if can_allocate {
+                return Ok(MemoryPermit {
+                    bytes,
+                    manager: self.clone(),
+                });
             }
+
             self.notify.notified().await;
         }
     }
