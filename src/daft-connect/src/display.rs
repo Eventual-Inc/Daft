@@ -34,7 +34,7 @@ impl SparkDisplay for Field {
 
 impl SparkDisplay for DataType {
     fn repr_spark_string(&self) -> String {
-        type_to_string(self)
+        type_to_str(self).to_string()
     }
 }
 
@@ -51,7 +51,7 @@ fn write_field(
 
     let indent = make_indent(level);
 
-    let dtype_str = type_to_string(dtype);
+    let dtype_str = type_to_str(dtype);
     writeln!(
         w,
         "{indent}{field_name}: {dtype_str} (nullable = {NULLABLE})"
@@ -81,10 +81,10 @@ fn make_indent(level: usize) -> String {
     }
 }
 
-fn type_to_string(dtype: &DataType) -> String {
+fn type_to_str(dtype: &DataType) -> &'static str {
     match dtype {
-        DataType::Null => "null".to_string(),
-        DataType::Boolean => "boolean".to_string(),
+        DataType::Null => "null",
+        DataType::Boolean => "boolean",
         DataType::Int8
         | DataType::Int16
         | DataType::Int32
@@ -92,31 +92,31 @@ fn type_to_string(dtype: &DataType) -> String {
         | DataType::UInt8
         | DataType::UInt16
         | DataType::UInt32
-        | DataType::UInt64 => "integer".to_string(),
-        DataType::Float32 | DataType::Float64 => "double".to_string(),
-        DataType::Decimal128(_, _) => "decimal".to_string(),
-        DataType::Timestamp(_, _) => "timestamp".to_string(),
-        DataType::Date => "date".to_string(),
-        DataType::Time(_) => "time".to_string(),
-        DataType::Duration(_) => "duration".to_string(),
-        DataType::Interval => "interval".to_string(),
-        DataType::Binary => "binary".to_string(),
-        DataType::FixedSizeBinary(_) => "fixed_size_binary".to_string(),
-        DataType::Utf8 => "string".to_string(),
-        DataType::FixedSizeList(_, _) | DataType::List(_) => "array".to_string(),
-        DataType::Struct(_) => "struct".to_string(),
-        DataType::Map { .. } => "map".to_string(),
-        DataType::Extension(_, _, _) => "extension".to_string(),
-        DataType::Embedding(_, _) => "embedding".to_string(),
-        DataType::Image(_) => "image".to_string(),
-        DataType::FixedShapeImage(_, _, _) => "fixed_shape_image".to_string(),
-        DataType::Tensor(_) => "tensor".to_string(),
-        DataType::FixedShapeTensor(_, _) => "fixed_shape_tensor".to_string(),
-        DataType::SparseTensor(_) => "sparse_tensor".to_string(),
-        DataType::FixedShapeSparseTensor(_, _) => "fixed_shape_sparse_tensor".to_string(),
+        | DataType::UInt64 => "integer",
+        DataType::Float32 | DataType::Float64 => "double",
+        DataType::Decimal128(_, _) => "decimal",
+        DataType::Timestamp(_, _) => "timestamp",
+        DataType::Date => "date",
+        DataType::Time(_) => "time",
+        DataType::Duration(_) => "duration",
+        DataType::Interval => "interval",
+        DataType::Binary => "binary",
+        DataType::FixedSizeBinary(_) => "fixed_size_binary",
+        DataType::Utf8 => "string",
+        DataType::FixedSizeList(_, _) | DataType::List(_) => "array",
+        DataType::Struct(_) => "struct",
+        DataType::Map { .. } => "map",
+        DataType::Extension(_, _, _) => "extension",
+        DataType::Embedding(_, _) => "embedding",
+        DataType::Image(_) => "image",
+        DataType::FixedShapeImage(_, _, _) => "fixed_shape_image",
+        DataType::Tensor(_) => "tensor",
+        DataType::FixedShapeTensor(_, _) => "fixed_shape_tensor",
+        DataType::SparseTensor(_) => "sparse_tensor",
+        DataType::FixedShapeSparseTensor(_, _) => "fixed_shape_sparse_tensor",
         #[cfg(feature = "python")]
-        DataType::Python => "python_object".to_string(),
-        DataType::Unknown => "unknown".to_string(),
+        DataType::Python => "python_object",
+        DataType::Unknown => "unknown",
     }
 }
 
