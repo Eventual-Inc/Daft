@@ -27,6 +27,7 @@ mod range;
 mod read;
 mod to_df;
 mod with_columns;
+mod with_columns_renamed;
 
 pub struct SparkAnalyzer<'a> {
     pub psets: &'a InMemoryPartitionSetCache,
@@ -110,6 +111,10 @@ impl SparkAnalyzer<'_> {
                 self.local_relation(plan_id, l)
                     .wrap_err("Failed to apply local_relation to logical plan")
             }
+            RelType::WithColumnsRenamed(w) => self
+                .with_columns_renamed(*w)
+                .await
+                .wrap_err("Failed to apply with_columns_renamed to logical plan"),
             RelType::Read(r) => read::read(r)
                 .await
                 .wrap_err("Failed to apply read to logical plan"),
