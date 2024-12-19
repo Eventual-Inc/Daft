@@ -162,6 +162,12 @@ jobs:
       run: |
         source .venv/bin/activate
         ray down .github/assets/ray.yaml -y
+    - name: Upload output dir
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: outputs
+        path: ${{ env.GHA_OUTPUT_DIR }}
     - name: Upload log files
       if: always()
       uses: actions/upload-artifact@v4
