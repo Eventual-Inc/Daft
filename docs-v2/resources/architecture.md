@@ -1,5 +1,8 @@
 # Architecture 
 
+!!! failure "todo(docs): Add information about where Daft fits into the ecosystem or architecture of a system"
+
+
 ## High Level Overview
 
 ![Architecture diagram for the Daft library spanning the User API, Planning, Scheduling and Execution layers](../img/architecture.png)

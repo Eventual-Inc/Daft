@@ -38,7 +38,7 @@ nav:
         - Microsoft Azure: integrations/azure.md
         - Amazon Web Services: integrations/aws.md
         - SQL: integrations/sql.md
-        - Huggingface Datasets: integrations/huggingface.md
+        - Hugging Face Datasets: integrations/huggingface.md
     - Resources: 
         - Architecture: resources/architecture.md
         - DataFrame Comparison: resources/dataframe_comparison.md
