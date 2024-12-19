@@ -21,6 +21,7 @@ use tracing::warn;
 mod aggregate;
 mod drop;
 mod filter;
+mod join;
 mod local_relation;
 mod project;
 mod range;
@@ -118,6 +119,9 @@ impl SparkAnalyzer<'_> {
             RelType::Read(r) => read::read(r)
                 .await
                 .wrap_err("Failed to apply read to logical plan"),
+            RelType::Join(j) => join(*j)
+                .await
+                .wrap_err("Failed to apply join to logical plan"),
             RelType::Drop(d) => self
                 .drop(*d)
                 .await
