@@ -50,7 +50,8 @@ pub fn handle_sum(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::E
     Ok(arg.sum())
 }
 
-pub fn one(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
+/// If the arguments are exactly one, return it. Otherwise, return an error.
+pub fn to_single(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
     let arguments: [daft_dsl::ExprRef; 1] = match arguments.try_into() {
         Ok(arguments) => arguments,
         Err(arguments) => {
@@ -64,7 +65,7 @@ pub fn one(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef>
 }
 
 pub fn not(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
-    let arg = one(arguments)?;
+    let arg = to_single(arguments)?;
     Ok(arg.not())
 }
 
