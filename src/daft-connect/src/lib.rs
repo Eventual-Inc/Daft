@@ -353,6 +353,10 @@ impl SparkConnectService for DaftSparkConnectService {
                     return invalid_argument_err!("plan is required");
                 };
 
+                if let Some(level) = level {
+                    warn!("ignoring tree string level: {level:?}");
+                };
+
                 let Some(op_type) = plan.op_type else {
                     return invalid_argument_err!("op_type is required");
                 };

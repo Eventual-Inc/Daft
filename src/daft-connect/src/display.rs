@@ -73,7 +73,7 @@ fn write_field(
 fn make_indent(level: usize) -> String {
     if level == 0 {
         // If top-level (i.e., a bare field not in a schema), just return empty.
-        "".to_string()
+        String::new()
     } else if level == 1 {
         " |-- ".to_string()
     } else {
