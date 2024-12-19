@@ -10,7 +10,7 @@ use parquet2::metadata::RowGroupList;
 
 use crate::{ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef};
 
-pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
+type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
 /// Coalesces ScanTasks by their [`ScanTask::estimate_in_memory_size_bytes()`]
 ///
@@ -25,7 +25,7 @@ pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTas
 /// * `min_size_bytes`: Minimum size in bytes of a ScanTask, after which no more merging will be performed
 /// * `max_size_bytes`: Maximum size in bytes of a ScanTask, capping the maximum size of a merged ScanTask
 #[must_use]
-pub(crate) fn merge_by_sizes<'a>(
+fn merge_by_sizes<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
     pushdowns: &Pushdowns,
     cfg: &'a DaftExecutionConfig,
@@ -176,7 +176,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
 }
 
 #[must_use]
-pub(crate) fn split_by_row_groups(
+fn split_by_row_groups(
     scan_tasks: BoxScanTaskIter,
     max_tasks: usize,
     min_size_bytes: usize,
@@ -341,6 +341,7 @@ fn split_and_merge_pass(
     }
 }
 
+/// Sets ``SPLIT_AND_MERGE_PASS``, which is the publicly-available pass that the query optimizer can use
 #[ctor::ctor]
 fn set_pass() {
     let _ = SPLIT_AND_MERGE_PASS.set(&split_and_merge_pass);
