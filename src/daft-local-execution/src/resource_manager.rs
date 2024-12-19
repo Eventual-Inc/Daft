@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use common_error::{DaftError, DaftResult};
-use common_system_info::SystemInfoInternal;
+use common_system_info::SystemInfo;
 use lazy_static::lazy_static;
 use tokio::sync::Notify;
 
@@ -52,8 +52,8 @@ pub(crate) struct MemoryManager {
 
 impl Default for MemoryManager {
     fn default() -> Self {
-        let system_info = SystemInfoInternal::default();
-        let total_mem = system_info.total_memory();
+        let system_info = SystemInfo::default();
+        let total_mem = system_info.calculate_total_memory();
         Self {
             total_bytes: total_mem,
             state: Mutex::new(MemoryState {
