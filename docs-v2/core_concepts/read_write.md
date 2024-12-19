@@ -142,3 +142,4 @@ Writing data will execute your DataFrame and write the results out to the specif
 !!! note "Note"
 
     Because Daft is a distributed DataFrame library, by default it will produce multiple files (one per partition) at your specified destination. Writing your dataframe is a **blocking** operation that executes your DataFrame. It will return a new `DataFrame` that contains the filepaths to the written data. 
+    

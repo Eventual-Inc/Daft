@@ -212,3 +212,4 @@ UDFs can also be parametrized with new resource requests after being initialized
         RunModelWithTwoGPUs(df["images"]),
     )
     ```
+    
