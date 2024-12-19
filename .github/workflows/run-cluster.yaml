@@ -85,7 +85,7 @@ jobs:
             --python 3.12 \
             .github/ci-scripts/templatize_ray_config.py \
             --cluster-name="ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}" \
-            --daft-wheel-url='${{ needs.build-commit.outputs.wheel_url || "" }}' \
+            --daft-wheel-url='${{ needs.build-commit.outputs.wheel_url || '' }}' \
             --daft-version='${{ inputs.daft_version }}' \
             --python-version='${{ inputs.python_version }}' \
             --cluster-profile='${{ inputs.cluster_profile }}' \
