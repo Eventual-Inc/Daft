@@ -228,7 +228,6 @@ impl JoinGraph {
             // There are no nodes. The empty graph is fully connected.
             return true;
         };
-        // let start_ptr = Arc::as_ptr(&self.edges[0].0.plan);
         let mut seen = HashSet::new();
         let mut stack = vec![start];
 
