@@ -18,6 +18,8 @@ use futures::TryStreamExt;
 use spark_connect::{relation::RelType, Limit, Relation, ShowString};
 use tracing::warn;
 
+use crate::translation::logical_plan::{sample::sample, set_op::set_op};
+
 mod aggregate;
 mod drop;
 mod filter;
@@ -25,6 +27,7 @@ mod local_relation;
 mod project;
 mod range;
 mod read;
+mod sample;
 mod set_op;
 mod to_df;
 mod with_columns;
@@ -133,6 +136,9 @@ impl SparkAnalyzer<'_> {
             RelType::SetOp(s) => set_op(*s)
                 .await
                 .wrap_err("Failed to apply set_op to logical plan"),
+            RelType::Sample(s) => sample(*s)
+                .await
+                .wrap_err("Failed to apply sample to logical plan"),
             plan => bail!("Unsupported relation type: {plan:?}"),
         }
     }
