@@ -35,6 +35,7 @@ pandas = ["pandas"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   'ray[data, client]>=2.0.0 ; platform_system != "Windows"',
+  'ray[data, client]>=2.10.0 ; platform_system == "Windows"',  # ray 2.10 has the pyarrow upper pin removed
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
