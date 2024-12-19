@@ -47,7 +47,7 @@ nav:
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
-- API Docs
+- API Reference: api_reference/index.md
 
 # Configuration
 theme:
@@ -133,9 +133,33 @@ markdown_extensions:
 
 # Plugins
 plugins:
-- markdown-exec
-- mkdocs-jupyter:
+  markdown-exec:
+  mkdocs-jupyter:
     execute: false
     include_source: true
-- search:
+  search:
     separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  mkdocstrings:
+    handlers:
+      python:
+        options:
+          docstring_style: google
+          extensions:
+          - griffe_typingdoc
+          show_root_heading: true
+          show_if_no_docstring: true
+          # preload_modules:
+          # - httpx
+          # - starlette
+          # inherited_members: true
+          members_order: source
+          separate_signature: true
+          unwrap_annotated: true
+          # filters:
+          # - '!^_'
+          merge_init_into_class: true
+          docstring_section_style: spacy
+          signature_crossrefs: true
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          show_docstring_examples: true
