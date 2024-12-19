@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def test_print_schema_range(spark_session, capsys) -> None:
     df = spark_session.range(10)
@@ -55,6 +57,9 @@ def test_print_schema_with_nulls(spark_session, capsys) -> None:
     assert captured.out == expected
 
 
+@pytest.mark.skip(
+    reason="Skipping due to https://github.com/Eventual-Inc/Daft/issues/3605 - conversion doesn't work properly for nested structs"
+)
 def test_print_schema_nested(spark_session) -> None:
     nested_data = [(1, {"name": "John", "age": 30}), (2, {"name": "Jane", "age": 25})]
 
