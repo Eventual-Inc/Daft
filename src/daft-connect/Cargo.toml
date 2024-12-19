@@ -2,6 +2,7 @@
 arrow2 = {workspace = true, features = ["io_json_integration"]}
 async-stream = "0.3.6"
 common-daft-config = {workspace = true}
+common-display = {workspace = true}
 common-file-formats = {workspace = true}
 daft-core = {workspace = true}
 daft-dsl = {workspace = true}
