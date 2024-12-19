@@ -60,16 +60,19 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
 - [:material-download: **Installing Daft**](install.md)
 
-    Install Daft from your terminal and learn about other more advanced installation options.
-
-- [:octicons-book-16: **Terminology**](terms.md)
-
-    Learn about the terminology related to Daft, such as DataFrames, Expressions, Query Plans, and more.
+    Install Daft from your terminal and discover more advanced installation options.
 
 - [:material-clock-fast: **Quickstart**](quickstart.md)
 
     Install Daft, create your first DataFrame, and get started with common DataFrame operations.
 
+- [:octicons-book-16: **Terminology**](terms.md)
+
+    Learn about the terminology related to Daft, such as DataFrames, Expressions, Query Plans, and more.
+
+- [:simple-elasticstack: **Architecture**](resources/architecture.md)
+
+    Understand the different components to Daft under-the-hood.
 
 </div>
 
@@ -77,33 +80,41 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
 <div class="grid cards" markdown>
 
-- [:material-filter: **DataFrame Operations**](core_concepts/dataframe.md)
+- [:material-filter: **DataFrame Operations**](core_concepts.md#dataframe)
 
     Learn how to perform core DataFrame operations in Daft, including selection, filtering, joining, and sorting.
 
-- [:material-pencil: **Reading/Writing Data**](core_concepts/read_write.md)
-
-    How to use Daft to read data from diverse sources like files, databases, and URLs, and write data to destinations.
-
-- [:octicons-code-16: **Expressions**](core_concepts/expressions.md)
+- [:octicons-code-16: **Expressions**](core_concepts.md#expressions)
 
     Daft expressions enable computations on DataFrame columns using Python or SQL for various operations.
+    
+- [:material-file-eye: **Reading Data**](core_concepts.md#reading-data)
 
-- [:fontawesome-solid-square-binary: **DataTypes**](core_concepts/datatypes.md)
+    How to use Daft to read data from diverse sources like files, databases, and URLs.
+
+- [:material-file-edit: **Writing Data**](core_concepts.md#reading-data)
+
+    How to use Daft to write data DataFrames to files or other destinations.
+
+- [:fontawesome-solid-square-binary: **DataTypes**](core_concepts.md#datatypes)
 
     Daft DataTypes define the types of data in a DataFrame, from simple primitives to complex structures.
 
-- [:simple-quicklook: **SQL**](core_concepts/sql.md)
+- [:simple-quicklook: **SQL**](core_concepts.md#sql)
 
     Daft supports SQL for constructing query plans and expressions, while integrating with Python expressions.
 
-- [:material-select-group: **Aggregations and Grouping**](core_concepts/aggregations.md)
+- [:material-select-group: **Aggregations and Grouping**](core_concepts.md#aggregations-and-grouping)
 
     Daft supports aggregations and grouping across entire DataFrames and within grouped subsets of data.
 
-- [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts/udf.md)
+- [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts.md#user-defined-functions-udf)
 
     Daft allows you to define custom UDFs to process data at scale with flexibility in input and output.
+
+- [:octicons-image-16: **Multimodal Data**](core_concepts.md#multimodal-data)
+
+    Daft is built to work with multimodal data types, including URLs and images.
 
 </div>
 
@@ -111,7 +122,7 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
 <div class="grid cards" markdown>
 
-- [:material-star-shooting: **Daft Poweruser**](advanced/memory.md)
+- [:material-star-shooting: **Advanced Daft**](advanced/memory.md)
 - [:material-file-compare: **DataFrame Comparison**](resources/dataframe_comparison.md)
 - [:material-file-document: **Tutorials**](resources/tutorials.md)
 - [:material-chart-bar: **Benchmarks**](resources/benchmarks/tpch.md)

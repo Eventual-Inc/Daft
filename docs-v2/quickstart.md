@@ -1,5 +1,7 @@
 # Quickstart
 
+!!! failure "todo(docs): Are there too many sections?"
+
 !!! failure "todo(docs): Incorporate SQL examples"
 
 In this quickstart, you will learn the basics of Daft's DataFrame and SQL API and the features that set it apart from frameworks like Pandas, PySpark, Dask, and Ray. 
@@ -369,13 +371,15 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 
 <div class="grid cards" markdown>
 
-- [:material-filter: **DataFrame Operations**](core_concepts/dataframe.md)
-- [:material-pencil: **Reading/Writing Data**](core_concepts/read_write.md)
-- [:octicons-code-16: **Expressions**](core_concepts/expressions.md)
-- [:fontawesome-solid-square-binary: **DataTypes**](core_concepts/datatypes.md)
-- [:simple-quicklook: **SQL**](core_concepts/sql.md)
-- [:material-select-group: **Aggregations and Grouping**](core_concepts/aggregations.md)
-- [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts/udf.md)
+- [:material-filter: **DataFrame Operations**](core_concepts.md#dataframe)
+- [:octicons-code-16: **Expressions**](core_concepts.md#expressions)
+- [:material-file-eye: **Reading Data**](core_concepts.md#reading-data)
+- [:material-file-edit: **Writing Data**](core_concepts.md#reading-data)
+- [:fontawesome-solid-square-binary: **DataTypes**](core_concepts.md#datatypes)
+- [:simple-quicklook: **SQL**](core_concepts.md#sql)
+- [:material-select-group: **Aggregations and Grouping**](core_concepts.md#aggregations-and-grouping)
+- [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts.md#user-defined-functions-udf)
+- [:octicons-image-16: **Multimodal Data**](core_concepts.md#multimodal-data)
 
 </div>
 
@@ -412,5 +416,3 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 - [:material-image-sync: **Image Generation on GPUs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb)
 
 </div>
-
-!!! failure "todo(docs): What to do about the more advanced -> merging dataframes & multimodal data & ml workloads sections in 10min quickstart?"

@@ -1,6 +1,6 @@
 # Core Concepts
 
-!!! failure "todo(docs): Created a mega Core Concepts page to improve user journey. Right now `toc_depth=3` for visibility into subheadings, but are there now too many subheadings? Can we condense some sections? My concern is that `toc_depth=2` is not informative unless we turn off `toc.integrate` and have a right-hand menu for all the subheadings."
+!!! failure "todo(docs): Created a mega Core Concepts page to improve user journey. Right now `toc_depth=3` for visibility into subheadings, but are there now too many subheadings? Can we combine/condense some sections? My concern is that `toc_depth=2` is not informative unless we turn off `toc.integrate` and have a right-hand menu for all the subheadings."
 
 Learn about the core concepts that Daft is built on!
 
@@ -2251,7 +2251,7 @@ Now you're ready to call this function on the `urls` column and store the output
 
 ## Multimodal Data
 
-Daft is built to work comfortably with multimodal data types, including URLs and Images. You can use the [`url.download()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.url.download.html#daft.Expression.url.download) expression to download the bytes from a URL. Let’s store them in a new column using the `with_column` method:
+Daft is built to work comfortably with multimodal data types, including URLs and images. You can use the [`url.download()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.url.download.html#daft.Expression.url.download) expression to download the bytes from a URL. Let’s store them in a new column using the `with_column` method:
 
 !!! failure "todo(docs): This example is originally from 10min quickstart"
 
