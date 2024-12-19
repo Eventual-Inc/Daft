@@ -23,16 +23,17 @@ pub fn unresolved_to_daft_expr(f: &UnresolvedFunction) -> eyre::Result<daft_dsl:
     }
 
     match function_name.as_str() {
-        "<" => handle_binary_op(arguments, daft_dsl::Operator::Lt),
-        ">" => handle_binary_op(arguments, daft_dsl::Operator::Gt),
-        "<=" => handle_binary_op(arguments, daft_dsl::Operator::LtEq),
-        ">=" => handle_binary_op(arguments, daft_dsl::Operator::GtEq),
         "%" => handle_binary_op(arguments, daft_dsl::Operator::Modulus),
+        "<" => handle_binary_op(arguments, daft_dsl::Operator::Lt),
+        "<=" => handle_binary_op(arguments, daft_dsl::Operator::LtEq),
         "==" => handle_binary_op(arguments, daft_dsl::Operator::Eq),
-        "not" => not(arguments),
-        "sum" => handle_sum(arguments),
+        ">" => handle_binary_op(arguments, daft_dsl::Operator::Gt),
+        ">=" => handle_binary_op(arguments, daft_dsl::Operator::GtEq),
+        "count" => handle_count(arguments),
         "isnotnull" => handle_isnotnull(arguments),
         "isnull" => handle_isnull(arguments),
+        "not" => not(arguments),
+        "sum" => handle_sum(arguments),
         n => bail!("Unresolved function {n:?} not yet supported"),
     }
     .wrap_err_with(|| format!("Failed to handle function {function_name:?}"))
