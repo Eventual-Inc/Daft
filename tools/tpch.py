@@ -9,34 +9,36 @@
 
 import argparse
 import json
-from typing import Optional
 
 import github
 import inquirer
 import utils
 
-WHEEL_NAME = "getdaft-0.3.0.dev0-cp38-abi3-manylinux_2_31_x86_64.whl"
-
 
 def run(
     branch_name: str,
-    commit_hash: str,
     questions: str,
     scale_factor: int,
+    num_partitions: int,
     cluster_profile: str,
     env_vars: str,
 ):
-    user_wants_to_run_tpcds_benchmarking = inquirer.confirm(
-        message=f"Going to run the 'run-cluster' workflow on the branch '{branch_name}' (commit-hash: {commit_hash}); proceed?"
+    branch_name, commit_hash = utils.get_name_and_commit_hash(branch_name)
+    user_wants_to_run_tpch_benchmarking = inquirer.confirm(
+        message=f"Going to run TPCH benchmarking with the 'run-cluster' workflow on the branch '{branch_name}' (commit-hash: {commit_hash}); proceed?"
     )
-
-    if not user_wants_to_run_tpcds_benchmarking:
+    if not user_wants_to_run_tpch_benchmarking:
         print("Workflow aborted")
         exit(1)
 
     expanded_questions = utils.parse_questions(questions)
-    print(f"Running scale-factor of {scale_factor}GB on questions: {', '.join(map(str, expanded_questions))}")
-    args_as_list = [f"--question={q} --scale-factor={scale_factor}" for q in expanded_questions]
+    print(
+        f"Running scale-factor of {scale_factor}GB with {num_partitions} partitions on questions: {', '.join(map(str, expanded_questions))}"
+    )
+    args_as_list = [
+        f"--question-number={q} --parquet-folder=s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/{scale_factor}_0/{num_partitions}/parquet/"
+        for q in expanded_questions
+    ]
     entrypoint_args = json.dumps(args_as_list)
 
     workflow = utils.repo.get_workflow("run-cluster.yaml")
@@ -50,24 +52,6 @@ def run(
             "entrypoint_args": entrypoint_args,
             "env_vars": env_vars,
         },
-    )
-
-
-def main(
-    branch_name: Optional[str],
-    questions: str,
-    scale_factor: int,
-    cluster_profile: str,
-    env_vars: str,
-):
-    branch_name, commit_hash = utils.get_name_and_commit_hash(branch_name)
-    run(
-        branch_name=branch_name,
-        commit_hash=commit_hash,
-        questions=questions,
-        scale_factor=scale_factor,
-        cluster_profile=cluster_profile,
-        env_vars=env_vars,
     )
 
 
@@ -92,10 +76,11 @@ if __name__ == "__main__":
     if args.verbose:
         github.enable_console_debug_logging()
 
-    main(
+    run(
         branch_name=args.ref,
         questions=args.questions,
         scale_factor=args.scale_factor,
+        num_partitions=args.num_partitions,
         cluster_profile=args.cluster_profile,
         env_vars=args.env_vars,
     )
