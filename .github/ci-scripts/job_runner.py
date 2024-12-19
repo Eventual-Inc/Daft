@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["ray[default]"]
 # ///
 
 import argparse
