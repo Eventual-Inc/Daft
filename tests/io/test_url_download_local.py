@@ -35,6 +35,14 @@ def test_url_download_local(local_image_data_fixture, image_data):
 
 
 @pytest.mark.integration()
+def test_sql_url_download_local(local_image_data_fixture, image_data):
+    data = {"urls": local_image_data_fixture}
+    df = daft.from_pydict(data)
+    df = daft.sql("SELECT urls, url_download(urls) AS data FROM df")
+    assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(local_image_data_fixture))]}
+
+
+@pytest.mark.integration()
 def test_url_download_local_missing(local_image_data_fixture):
     data = {"urls": local_image_data_fixture + ["/missing/path/x.jpeg"]}
     df = daft.from_pydict(data)

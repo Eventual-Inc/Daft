@@ -14,7 +14,7 @@ use crate::{
         coalesce::SQLCoalesce, hashing, SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleFloat,
         SQLModuleImage, SQLModuleJson, SQLModuleList, SQLModuleMap, SQLModuleNumeric,
         SQLModulePartitioning, SQLModulePython, SQLModuleSketch, SQLModuleStructs,
-        SQLModuleTemporal, SQLModuleUtf8,
+        SQLModuleTemporal, SQLModuleURL, SQLModuleUtf8,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -37,6 +37,7 @@ pub(crate) static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
     functions.register::<SQLModuleStructs>();
     functions.register::<SQLModuleTemporal>();
     functions.register::<SQLModuleUtf8>();
+    functions.register::<SQLModuleURL>();
     functions.register::<SQLModuleConfig>();
     functions.add_fn("coalesce", SQLCoalesce {});
     functions
