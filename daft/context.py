@@ -352,6 +352,7 @@ def set_execution_config(
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
     enable_ray_tracing: bool | None = None,
+    enable_aggressive_scantask_splitting: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -395,6 +396,7 @@ def set_execution_config(
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "map_reduce". Other options are "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
+        enable_aggressive_scantask_splitting: Enable more aggressive splitting of ScanTasks to make smaller partitions. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -425,6 +427,7 @@ def set_execution_config(
             shuffle_algorithm=shuffle_algorithm,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             enable_ray_tracing=enable_ray_tracing,
+            enable_aggressive_scantask_splitting=enable_aggressive_scantask_splitting,
         )
 
         ctx._daft_execution_config = new_daft_execution_config
