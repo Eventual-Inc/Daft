@@ -18,8 +18,6 @@ use futures::TryStreamExt;
 use spark_connect::{relation::RelType, Limit, Relation, ShowString};
 use tracing::warn;
 
-use crate::translation::logical_plan::sort::sort;
-
 mod aggregate;
 mod drop;
 mod filter;
@@ -116,7 +114,8 @@ impl SparkAnalyzer<'_> {
             RelType::Read(r) => read::read(r)
                 .await
                 .wrap_err("Failed to apply read to logical plan"),
-            RelType::Sort(s) => sort(*s)
+            RelType::Sort(s) => self
+                .sort(*s)
                 .await
                 .wrap_err("Failed to apply sort to logical plan"),
             RelType::Drop(d) => self
