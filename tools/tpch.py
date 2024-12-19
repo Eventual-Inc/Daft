@@ -41,8 +41,8 @@ def run(
         branch_name=branch_name,
         inputs={
             "cluster_profile": cluster_profile,
-            "working_dir": "benchmarking/tpcds",
-            "entrypoint_script": "ray_entrypoint.py",
+            "working_dir": "benchmarking/tpch",
+            "entrypoint_script": "ray_job_runner.py",
             "entrypoint_args": entrypoint_args,
             "env_vars": env_vars,
         },
