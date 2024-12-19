@@ -165,6 +165,12 @@ class DaftContext:
             elif runner_config.name == "native":
                 from daft.runners.native_runner import NativeRunner
 
+                warnings.warn(
+                    "Daft is configured to use the new NativeRunner by default as of v0.4.0. "
+                    "If you are encountering any regressions, please switch back to the legacy PyRunner via `daft.context.set_runner_py()` or by setting the env variable `DAFT_RUNNER=py`. "
+                    "We appreciate you filing issues and helping make the NativeRunner better: https://github.com/Eventual-Inc/Daft/issues",
+                )
+
                 assert isinstance(runner_config, _NativeRunnerConfig)
                 self._runner = NativeRunner()
 
