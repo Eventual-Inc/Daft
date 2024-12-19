@@ -10,7 +10,7 @@ use parquet2::metadata::RowGroupList;
 
 use crate::{ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef};
 
-pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
+type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
 /// Coalesces ScanTasks by their [`ScanTask::estimate_in_memory_size_bytes()`]
 ///
@@ -25,7 +25,7 @@ pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTas
 /// * `min_size_bytes`: Minimum size in bytes of a ScanTask, after which no more merging will be performed
 /// * `max_size_bytes`: Maximum size in bytes of a ScanTask, capping the maximum size of a merged ScanTask
 #[must_use]
-pub(crate) fn merge_by_sizes<'a>(
+fn merge_by_sizes<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
     pushdowns: &Pushdowns,
     cfg: &'a DaftExecutionConfig,
@@ -176,7 +176,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
 }
 
 #[must_use]
-pub(crate) fn split_by_row_groups(
+fn split_by_row_groups(
     scan_tasks: BoxScanTaskIter,
     max_tasks: usize,
     min_size_bytes: usize,
@@ -316,31 +316,40 @@ fn split_and_merge_pass(
         .iter()
         .all(|st| st.as_any().downcast_ref::<ScanTask>().is_some())
     {
-        // TODO(desmond): Here we downcast Arc<dyn ScanTaskLike> to Arc<ScanTask>. ScanTask and DummyScanTask (test only) are
-        // the only non-test implementer of ScanTaskLike. It might be possible to avoid the downcast by implementing merging
-        // at the trait level, but today that requires shifting around a non-trivial amount of code to avoid circular dependencies.
-        let iter: BoxScanTaskIter = Box::new(scan_tasks.as_ref().iter().map(|st| {
-            st.clone()
-                .as_any_arc()
-                .downcast::<ScanTask>()
-                .map_err(|e| DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e)))
-        }));
-        let split_tasks = split_by_row_groups(
-            iter,
-            cfg.parquet_split_row_groups_max_files,
-            cfg.scan_tasks_min_size_bytes,
-            cfg.scan_tasks_max_size_bytes,
-        );
-        let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
-        let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
-            .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
-            .collect::<DaftResult<Vec<_>>>()?;
-        Ok(Arc::new(scan_tasks))
+        if cfg.scantask_splitting_level == 1 {
+            // TODO(desmond): Here we downcast Arc<dyn ScanTaskLike> to Arc<ScanTask>. ScanTask and DummyScanTask (test only) are
+            // the only non-test implementer of ScanTaskLike. It might be possible to avoid the downcast by implementing merging
+            // at the trait level, but today that requires shifting around a non-trivial amount of code to avoid circular dependencies.
+            let iter: BoxScanTaskIter = Box::new(scan_tasks.as_ref().iter().map(|st| {
+                st.clone().as_any_arc().downcast::<ScanTask>().map_err(|e| {
+                    DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e))
+                })
+            }));
+            let split_tasks = split_by_row_groups(
+                iter,
+                cfg.parquet_split_row_groups_max_files,
+                cfg.scan_tasks_min_size_bytes,
+                cfg.scan_tasks_max_size_bytes,
+            );
+            let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
+            let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
+                .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
+                .collect::<DaftResult<Vec<_>>>()?;
+            Ok(Arc::new(scan_tasks))
+        } else if cfg.scantask_splitting_level == 2 {
+            todo!("Implement aggressive scantask splitting");
+        } else {
+            panic!(
+                "DAFT_SCANTASK_SPLITTING_LEVEL must be either 1 or 2, received: {}",
+                cfg.scantask_splitting_level
+            );
+        }
     } else {
         Ok(scan_tasks)
     }
 }
 
+/// Sets ``SPLIT_AND_MERGE_PASS``, which is the publicly-available pass that the query optimizer can use
 #[ctor::ctor]
 fn set_pass() {
     let _ = SPLIT_AND_MERGE_PASS.set(&split_and_merge_pass);
