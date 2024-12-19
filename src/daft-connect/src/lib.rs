@@ -24,7 +24,7 @@ use spark_connect::{
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::info;
 use uuid::Uuid;
-
+use spark_connect::analyze_plan_request::explain::ExplainMode;
 use crate::session::Session;
 
 mod config;
@@ -143,10 +143,10 @@ impl DaftSparkConnectService {
 #[tonic::async_trait]
 impl SparkConnectService for DaftSparkConnectService {
     type ExecutePlanStream = std::pin::Pin<
-        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
+        Box<dyn futures::Stream<Item=Result<ExecutePlanResponse, Status>> + Send + 'static>,
     >;
     type ReattachExecuteStream = std::pin::Pin<
-        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
+        Box<dyn futures::Stream<Item=Result<ExecutePlanResponse, Status>> + Send + 'static>,
     >;
 
     #[tracing::instrument(skip_all)]
@@ -283,6 +283,8 @@ impl SparkConnectService for DaftSparkConnectService {
         use spark_connect::analyze_plan_request::*;
         let request = request.into_inner();
 
+        let mut session = self.get_session(&request.session_id)?;
+
         let AnalyzePlanRequest {
             session_id,
             analyze,
@@ -323,6 +325,35 @@ impl SparkConnectService for DaftSparkConnectService {
                 };
 
                 Ok(Response::new(response))
+            }
+            Analyze::Explain(explain) => {
+                let Explain { plan, explain_mode } = explain;
+
+                let explain_mode = ExplainMode::try_from(explain_mode)
+                    .map_err(|_| invalid_argument_err!("Invalid Explain Mode"))?;
+
+                let Some(plan) = plan else {
+                    return invalid_argument_err!("Plan is required");
+                };
+
+                let Some(plan) = plan.op_type else {
+                    return invalid_argument_err!("Op Type is required");
+                };
+
+                let OpType::Root(relation) = plan else {
+                    return invalid_argument_err!("Plan operation is required");
+                };
+
+                let result = match session.handle_explain_command(relation, explain_mode).await {
+                    Ok(result) => result,
+                    Err(e) => return Err(Status::internal(format!("Error in Daft server: {e:?}"))),
+                };
+
+                Ok(Response::new(result))
+            }
+            op => {
+                println!("{op:#?}");
+                unimplemented_err!("Analyze plan operation is not yet implemented")
             }
             Analyze::DdlParse(DdlParse { ddl_string }) => {
                 let daft_schema = match daft_sql::sql_schema(&ddl_string) {
