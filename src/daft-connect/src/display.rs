@@ -2,54 +2,86 @@ use std::fmt::Write;
 
 use daft_core::prelude::*;
 
-pub fn to_tree_string(schema: &Schema) -> eyre::Result<String> {
-    let mut output = String::new();
-    // Start with root
-    writeln!(&mut output, "root")?;
-    // Now print each top-level field
-    for (name, field) in &schema.fields {
-        print_field(&mut output, name, &field.dtype, /*nullable*/ true, 1)?;
-    }
-    Ok(output)
+pub trait SparkDisplay {
+    fn repr_spark_string(&self) -> String;
 }
 
-// A helper function to print a field at a given level of indentation.
-// level=1 means a single " |-- " prefix, level=2 means
-// " |    |-- " and so on, mimicking Spark's indentation style.
-// A helper function to print a field at a given level of indentation.
-fn print_field(
+impl SparkDisplay for Schema {
+    fn repr_spark_string(&self) -> String {
+        let mut output = String::new();
+        // Start with root
+        writeln!(&mut output, "root").unwrap();
+
+        // Print each top-level field with indentation level 1
+        for (name, field) in &self.fields {
+            // We'll rely on a helper function that knows how to print a field with given indentation
+            write_field(&mut output, name, &field.dtype, 1).unwrap();
+        }
+        output
+    }
+}
+
+impl SparkDisplay for Field {
+    fn repr_spark_string(&self) -> String {
+        // Fields on their own need context (indentation) to print nicely.
+        // For a standalone Field, we might choose zero indentation or provide a helper method.
+        // Here we choose zero indentation since it's ambiguous outside a schema:
+        let mut output = String::new();
+        write_field(&mut output, &self.name, &self.dtype, 0).unwrap();
+        output
+    }
+}
+
+impl SparkDisplay for DataType {
+    fn repr_spark_string(&self) -> String {
+        type_to_string(self)
+    }
+}
+
+// Private helpers to mimic the original indentation style and recursive printing:
+
+fn write_field(
     w: &mut String,
     field_name: &str,
     dtype: &DataType,
-    nullable: bool,
     level: usize,
 ) -> eyre::Result<()> {
-    let indent = if level == 1 {
-        " |-- ".to_string()
-    } else {
-        format!(" |{}-- ", "    |".repeat(level - 1))
-    };
+    /// All daft fields are nullable.
+    const NULLABLE: bool = true;
+
+    let indent = make_indent(level);
 
     let dtype_str = type_to_string(dtype);
     writeln!(
         w,
-        "{}{}: {} (nullable = {})",
-        indent, field_name, dtype_str, nullable
+        "{indent}{field_name}: {dtype_str} (nullable = {NULLABLE})"
     )?;
 
     if let DataType::Struct(fields) = dtype {
         for field in fields {
-            print_field(w, &field.name, &field.dtype, true, level + 1)?;
+            write_field(w, &field.name, &field.dtype, level + 1)?;
         }
     }
 
     Ok(())
 }
 
+// This helper creates indentation of the form:
+// level=1: " |-- "
+// level=2: " |    |-- "
+// and so forth.
+fn make_indent(level: usize) -> String {
+    if level == 0 {
+        // If top-level (i.e., a bare field not in a schema), just return empty.
+        "".to_string()
+    } else if level == 1 {
+        " |-- ".to_string()
+    } else {
+        format!(" |{}-- ", "    |".repeat(level - 1))
+    }
+}
+
 fn type_to_string(dtype: &DataType) -> String {
-    // We want a nice, human-readable type string.
-    // Spark generally prints something like "integer", "string", etc.
-    // We'll follow a similar style here:
     match dtype {
         DataType::Null => "null".to_string(),
         DataType::Boolean => "boolean".to_string(),
@@ -60,8 +92,8 @@ fn type_to_string(dtype: &DataType) -> String {
         | DataType::UInt8
         | DataType::UInt16
         | DataType::UInt32
-        | DataType::UInt64 => "integer".to_string(), // Spark doesn't differentiate sizes
-        DataType::Float32 | DataType::Float64 => "double".to_string(), // Spark calls all floats double for printing
+        | DataType::UInt64 => "integer".to_string(),
+        DataType::Float32 | DataType::Float64 => "double".to_string(),
         DataType::Decimal128(_, _) => "decimal".to_string(),
         DataType::Timestamp(_, _) => "timestamp".to_string(),
         DataType::Date => "date".to_string(),
@@ -71,8 +103,7 @@ fn type_to_string(dtype: &DataType) -> String {
         DataType::Binary => "binary".to_string(),
         DataType::FixedSizeBinary(_) => "fixed_size_binary".to_string(),
         DataType::Utf8 => "string".to_string(),
-        DataType::FixedSizeList(_, _) => "array".to_string(), // Spark calls them arrays
-        DataType::List(_) => "array".to_string(),
+        DataType::FixedSizeList(_, _) | DataType::List(_) => "array".to_string(),
         DataType::Struct(_) => "struct".to_string(),
         DataType::Map { .. } => "map".to_string(),
         DataType::Extension(_, _, _) => "extension".to_string(),
@@ -91,16 +122,12 @@ fn type_to_string(dtype: &DataType) -> String {
 
 #[cfg(test)]
 mod tests {
-    use indexmap::IndexMap;
-
     use super::*;
 
     #[test]
     fn test_empty_schema() -> eyre::Result<()> {
-        let schema = Schema {
-            fields: IndexMap::new(),
-        };
-        let output = to_tree_string(&schema)?;
+        let schema = Schema::empty();
+        let output = schema.repr_spark_string();
         let expected = "root\n";
         assert_eq!(output, expected);
         Ok(())
@@ -111,7 +138,7 @@ mod tests {
         let mut fields = Vec::new();
         fields.push(Field::new("step", DataType::Int32));
         let schema = Schema::new(fields)?;
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         let expected = "root\n |-- step: integer (nullable = true)\n";
         assert_eq!(output, expected);
         Ok(())
@@ -124,7 +151,7 @@ mod tests {
         fields.push(Field::new("type", DataType::Utf8));
         fields.push(Field::new("amount", DataType::Float64));
         let schema = Schema::new(fields)?;
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         let expected = "\
 root
  |-- step: integer (nullable = true)
@@ -149,7 +176,7 @@ root
         fields.push(Field::new("count", DataType::Int64));
         let schema = Schema::new(fields)?;
 
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         let expected = "\
 root
  |-- parent: struct (nullable = true)
@@ -176,7 +203,7 @@ root
         fields.push(Field::new("top", mid_struct));
         let schema = Schema::new(fields)?;
 
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         let expected = "\
 root
  |-- top: struct (nullable = true)
@@ -199,7 +226,7 @@ root
         fields.push(Field::new("floats", fixed_list_of_floats));
         let schema = Schema::new(fields)?;
 
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         let expected = "\
 root
  |-- ints: array (nullable = true)
@@ -220,7 +247,7 @@ root
         fields.push(Field::new("m", map_type));
         let schema = Schema::new(fields)?;
 
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         // Spark-like print doesn't show the internal "entries" struct by name, but we do show it as "struct":
         let expected = "\
 root
@@ -243,7 +270,7 @@ root
         fields.push(Field::new("ext_field", extension_type));
         let schema = Schema::new(fields)?;
 
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         let expected = "\
 root
  |-- ext_field: extension (nullable = true)
@@ -276,7 +303,7 @@ root
         fields.push(Field::new("record", DataType::Struct(main_fields)));
         let schema = Schema::new(fields)?;
 
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         let expected = "\
 root
  |-- record: struct (nullable = true)
@@ -298,7 +325,7 @@ root
         let mut fields = Vec::new();
         fields.push(Field::new("weird field@!#", DataType::Utf8));
         let schema = Schema::new(fields)?;
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         let expected = "\
 root
  |-- weird field@!#: string (nullable = true)
@@ -315,7 +342,7 @@ root
         fields.push(Field::new("empty_list", zero_sized_list));
         let schema = Schema::new(fields)?;
 
-        let output = to_tree_string(&schema)?;
+        let output = schema.repr_spark_string();
         let expected = "\
 root
  |-- empty_list: array (nullable = true)
