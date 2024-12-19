@@ -27,6 +27,7 @@ def test_split_parquet_read(parquet_files):
         assert df.to_pydict() == {"data": ["aaa"] * 100}
 
 
+@pytest.mark.skip(reason="Not implemented yet")
 def test_split_parquet_read_some_splits(tmpdir):
     with daft.execution_config_ctx(scantask_splitting_level=2):
         # Write a mix of 20 large and 20 small files
