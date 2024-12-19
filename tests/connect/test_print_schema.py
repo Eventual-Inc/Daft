@@ -35,7 +35,7 @@ def test_print_schema_multiple_columns(spark_session, capsys) -> None:
     assert captured.out == expected
 
 
-def test_print_schema_decimal(spark_session, capsys) -> None:
+def test_print_schema_floating_point(spark_session, capsys) -> None:
     data = [(1.23,), (4.56,)]
     df = spark_session.createDataFrame(data, ["amount"])
     df.printSchema()
