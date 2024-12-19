@@ -126,6 +126,8 @@ def run(
     commit_hash: str,
     questions: str,
     scale_factor: int,
+    cluster_profile: str,
+    env_vars: str,
 ):
     user_wants_to_run_tpcds_benchmarking = inquirer.confirm(
         message=f"Going to run the 'run-cluster' workflow on the branch '{branch_name}' (commit-hash: {commit_hash}); proceed?"
@@ -144,9 +146,11 @@ def run(
         workflow=workflow,
         branch_name=branch_name,
         inputs={
+            "cluster_profile": cluster_profile,
             "working_dir": "benchmarking/tpcds",
             "entrypoint_script": "ray_entrypoint.py",
             "entrypoint_args": entrypoint_args,
+            "env_vars": env_vars,
         },
     )
 
@@ -155,6 +159,8 @@ def main(
     branch_name: Optional[str],
     questions: str,
     scale_factor: int,
+    cluster_profile: str,
+    env_vars: str,
 ):
     branch_name, commit_hash = get_name_and_commit_hash(branch_name)
     run(
@@ -162,6 +168,8 @@ def main(
         commit_hash=commit_hash,
         questions=questions,
         scale_factor=scale_factor,
+        cluster_profile=cluster_profile,
+        env_vars=env_vars,
     )
 
 
@@ -172,6 +180,13 @@ if __name__ == "__main__":
         "--questions", type=str, required=False, default="*", help="A comma separated list of questions to run"
     )
     parser.add_argument("--scale-factor", type=int, required=False, default=2, help="The scale factor to run on")
+    parser.add_argument("--cluster-profile", type=str, required=False, help="The ray cluster configuration to run on")
+    parser.add_argument(
+        "--env-vars",
+        type=str,
+        required=False,
+        help="A comma separated list of environment variables to pass to ray job",
+    )
     parser.add_argument("--verbose", action="store_true", help="Verbose debugging")
     args = parser.parse_args()
 
@@ -182,4 +197,6 @@ if __name__ == "__main__":
         branch_name=args.ref,
         questions=args.questions,
         scale_factor=args.scale_factor,
+        cluster_profile=args.cluster_profile,
+        env_vars=args.env_vars,
     )
