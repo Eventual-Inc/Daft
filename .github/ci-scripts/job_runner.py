@@ -5,8 +5,10 @@
 
 import argparse
 import asyncio
+import csv
 import json
-from dataclasses import dataclass
+import os
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -45,6 +47,11 @@ def submit_job(
     env_vars: str,
     enable_ray_tracing: bool,
 ):
+    if "GHA_OUTPUT_DIR" not in os.environ:
+        raise RuntimeError("Output directory environment variable not found; don't know where to store outputs")
+    output_dir = Path(os.environ["GHA_OUTPUT_DIR"])
+    output_dir.mkdir(exist_ok=True, parents=True)
+
     env_vars_dict = parse_env_var_str(env_vars)
     if enable_ray_tracing:
         env_vars_dict["DAFT_ENABLE_RAY_TRACING"] = "1"
@@ -85,7 +92,15 @@ def submit_job(
         result = Result(query=index, duration=duration, error_msg=error_msg)
         results.append(result)
 
-    print(f"{results=}")
+    output_file = output_dir / "out.csv"
+    with open(output_file, "w") as file:
+        file.write("asdf")
+
+    with open(output_file, mode="w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=results[0].__dataclass_fields__.keys())
+        writer.writeheader()
+        for result in results:
+            writer.writerow(asdict(result))
 
 
 if __name__ == "__main__":
