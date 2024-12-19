@@ -25,6 +25,7 @@ mod local_relation;
 mod project;
 mod range;
 mod read;
+mod set_op;
 mod to_df;
 mod with_columns;
 
@@ -129,6 +130,9 @@ impl SparkAnalyzer<'_> {
                     .await
                     .wrap_err("Failed to show string")
             }
+            RelType::SetOp(s) => set_op(*s)
+                .await
+                .wrap_err("Failed to apply set_op to logical plan"),
             plan => bail!("Unsupported relation type: {plan:?}"),
         }
     }
