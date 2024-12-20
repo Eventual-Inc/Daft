@@ -1,8 +1,8 @@
 use super::join_graph::{JoinGraph, JoinOrderTree, JoinOrderer};
 
-pub(crate) struct NaiveJoinOrderer {}
+pub(crate) struct NaiveLeftDeepJoinOrderer {}
 
-impl NaiveJoinOrderer {
+impl NaiveLeftDeepJoinOrderer {
     fn extend_order(
         graph: &JoinGraph,
         current_order: Box<JoinOrderTree>,
@@ -13,10 +13,7 @@ impl NaiveJoinOrderer {
         }
         for (index, candidate_node_id) in available.iter().enumerate() {
             let right = Box::new(JoinOrderTree::Relation(*candidate_node_id));
-            if graph
-                .adj_list
-                .connected(&current_order.nodes(), &right.nodes())
-            {
+            if graph.adj_list.connected_join_trees(&current_order, &right) {
                 let new_order = current_order.join(right);
                 available.remove(index);
                 return Self::extend_order(graph, new_order, available);
@@ -26,7 +23,7 @@ impl NaiveJoinOrderer {
     }
 }
 
-impl JoinOrderer for NaiveJoinOrderer {
+impl JoinOrderer for NaiveLeftDeepJoinOrderer {
     fn order(&self, graph: &JoinGraph) -> Box<JoinOrderTree> {
         let available: Vec<usize> = (1..graph.adj_list.max_id).collect();
         // Take a starting order of the node with id 0.
@@ -39,9 +36,9 @@ impl JoinOrderer for NaiveJoinOrderer {
 mod tests {
     use common_scan_info::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
-    use rand::{seq::SliceRandom, Rng};
+    use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
-    use super::{JoinGraph, JoinOrderTree, JoinOrderer, NaiveJoinOrderer};
+    use super::{JoinGraph, JoinOrderTree, JoinOrderer, NaiveLeftDeepJoinOrderer};
     use crate::{
         optimization::rules::reorder_joins::join_graph::{JoinAdjList, JoinNode},
         test::{dummy_scan_node_with_pushdowns, dummy_scan_operator_with_size},
@@ -99,7 +96,7 @@ mod tests {
             (1, 2), // node_b <-> node_c
             (2, 3), // node_c <-> node_d
         ];
-        create_and_test_join_graph!(nodes, edges, NaiveJoinOrderer {});
+        create_and_test_join_graph!(nodes, edges, NaiveLeftDeepJoinOrderer {});
     }
 
     pub struct UnionFind {
@@ -139,7 +136,7 @@ mod tests {
     }
 
     fn create_random_connected_graph(num_nodes: usize) -> Vec<(usize, usize)> {
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::seed_from_u64(0);
         let mut edges = Vec::new();
         let mut uf = UnionFind::create(num_nodes);
 
@@ -176,6 +173,6 @@ mod tests {
             .map(|i| format!("node_{}", i))
             .collect();
         let edges = create_random_connected_graph(NUM_RANDOM_NODES);
-        create_and_test_join_graph!(nodes, edges, NaiveJoinOrderer {});
+        create_and_test_join_graph!(nodes, edges, NaiveLeftDeepJoinOrderer {});
     }
 }

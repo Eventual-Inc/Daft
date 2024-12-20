@@ -13,33 +13,54 @@ use crate::{
     LogicalPlan, LogicalPlanBuilder, LogicalPlanRef,
 };
 
-// TODO(desmond): In the future these trees should keep track of current cost estimates.
+/// A JoinOrderTree is a tree that describes a join order between relations, which can range from left deep trees
+/// to bushy trees. A relations in a JoinOrderTree contain IDs instead of logical plan references. An ID's
+/// corresponding logical plan reference can be found by consulting the JoinAdjList that was used to produce the
+/// given JoinOrderTree.
+///
+/// TODO(desmond): In the future these trees should keep track of current cost estimates.
 #[derive(Clone, Debug)]
 pub(super) enum JoinOrderTree {
-    Relation(usize),                                          // (id).
-    Join(Box<JoinOrderTree>, Box<JoinOrderTree>, Vec<usize>), // (subtree, subtree, nodes involved).
+    Relation(usize),                              // (ID).
+    Join(Box<JoinOrderTree>, Box<JoinOrderTree>), // (subtree, subtree).
 }
 
 impl JoinOrderTree {
     pub(super) fn join(self: Box<Self>, right: Box<JoinOrderTree>) -> Box<Self> {
-        let mut nodes = self.nodes();
-        nodes.append(&mut right.nodes());
-        Box::new(JoinOrderTree::Join(self, right, nodes))
-    }
-
-    pub(super) fn nodes(&self) -> Vec<usize> {
-        match self {
-            Self::Relation(id) => vec![*id],
-            Self::Join(_, _, nodes) => nodes.clone(),
-        }
+        Box::new(JoinOrderTree::Join(self, right))
     }
 
     // Helper function that checks if the join order tree contains a given id.
     pub(super) fn contains(&self, target_id: usize) -> bool {
         match self {
             Self::Relation(id) => *id == target_id,
-            Self::Join(left, right, _) => left.contains(target_id) || right.contains(target_id),
+            Self::Join(left, right) => left.contains(target_id) || right.contains(target_id),
         }
+    }
+
+    pub(super) fn iter(&self) -> JoinOrderTreeIterator {
+        JoinOrderTreeIterator { stack: vec![self] }
+    }
+}
+
+pub(super) struct JoinOrderTreeIterator<'a> {
+    stack: Vec<&'a JoinOrderTree>,
+}
+
+impl<'a> Iterator for JoinOrderTreeIterator<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(node) = self.stack.pop() {
+            match node {
+                JoinOrderTree::Relation(id) => return Some(*id),
+                JoinOrderTree::Join(left, right) => {
+                    self.stack.push(left);
+                    self.stack.push(right);
+                }
+            }
+        }
+        None
     }
 }
 
@@ -130,7 +151,7 @@ impl JoinAdjList {
         }
     }
 
-    pub(super) fn get_plan_id(&mut self, plan: &LogicalPlanRef) -> usize {
+    pub(super) fn get_or_create_plan_id(&mut self, plan: &LogicalPlanRef) -> usize {
         let ptr = Arc::as_ptr(plan);
         if let Some(id) = self.plan_to_id.get(&ptr) {
             *id
@@ -143,14 +164,12 @@ impl JoinAdjList {
         }
     }
 
-    fn add_unidirectional_edge(&mut self, left: &JoinNode, right: &JoinNode) {
-        // TODO(desmond): We should also keep track of projections that we need to do.
-        let join_condition = JoinCondition {
-            left_on: left.final_name.clone(),
-            right_on: right.final_name.clone(),
-        };
-        let left_id = self.get_plan_id(&left.plan);
-        let right_id = self.get_plan_id(&right.plan);
+    fn add_join_condition(
+        &mut self,
+        left_id: usize,
+        right_id: usize,
+        join_condition: JoinCondition,
+    ) {
         if let Some(neighbors) = self.edges.get_mut(&left_id) {
             if let Some(join_conditions) = neighbors.get_mut(&right_id) {
                 join_conditions.push(join_condition);
@@ -164,16 +183,26 @@ impl JoinAdjList {
         }
     }
 
+    fn add_unidirectional_edge(&mut self, left: &JoinNode, right: &JoinNode) {
+        let join_condition = JoinCondition {
+            left_on: left.final_name.clone(),
+            right_on: right.final_name.clone(),
+        };
+        let left_id = self.get_or_create_plan_id(&left.plan);
+        let right_id = self.get_or_create_plan_id(&right.plan);
+        self.add_join_condition(left_id, right_id, join_condition);
+    }
+
     pub(super) fn add_bidirectional_edge(&mut self, node1: JoinNode, node2: JoinNode) {
         self.add_unidirectional_edge(&node1, &node2);
         self.add_unidirectional_edge(&node2, &node1);
     }
 
-    pub(super) fn connected(&self, left_nodes: &Vec<usize>, right_nodes: &Vec<usize>) -> bool {
-        for left_node in left_nodes {
-            if let Some(neighbors) = self.edges.get(left_node) {
-                for right_node in right_nodes {
-                    if let Some(_) = neighbors.get(right_node) {
+    pub(super) fn connected_join_trees(&self, left: &JoinOrderTree, right: &JoinOrderTree) -> bool {
+        for left_node in left.iter() {
+            if let Some(neighbors) = self.edges.get(&left_node) {
+                for right_node in right.iter() {
+                    if let Some(_) = neighbors.get(&right_node) {
                         return true;
                     }
                 }
@@ -271,14 +300,21 @@ impl JoinGraph {
         false
     }
 
+    fn get_node_by_id(&self, id: usize) -> &LogicalPlanRef {
+        self.adj_list
+            .id_to_plan
+            .get(&id)
+            .expect("Tried to retrieve a plan from the join graph with an invalid ID")
+    }
+
     /// Helper function that loosely checks if a given edge (represented by a simple string)
     /// exists in the current graph.
     pub(crate) fn contains_edges(&self, to_check: Vec<&str>) -> bool {
         let mut edge_strings = HashSet::new();
         for (left_id, neighbors) in &self.adj_list.edges {
             for (right_id, join_conds) in neighbors {
-                let left = self.adj_list.id_to_plan.get(left_id).unwrap();
-                let right = self.adj_list.id_to_plan.get(right_id).unwrap();
+                let left = self.get_node_by_id(*left_id);
+                let right = self.get_node_by_id(*right_id);
                 for join_cond in join_conds {
                     edge_strings.insert(format!(
                         "{}({}) <-> {}({})",
