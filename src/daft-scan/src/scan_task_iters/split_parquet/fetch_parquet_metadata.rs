@@ -4,6 +4,17 @@ use common_error::DaftResult;
 use super::{split_parquet_decision, split_parquet_file};
 use crate::ScanTaskRef;
 
+/// Retrieves Parquet metadata for the incoming "Decisions".
+///
+/// # Returns
+///
+/// Returns [`ParquetSplitScanTaskGenerator`] instances which are themselves iterators that can yield:
+/// - A single [`ScanTaskRef`] if no split was needed
+/// - Multiple [`ScanTaskRef`]s if the task was split
+///
+/// # Implementation Details
+///
+/// Retrieval of Parquet metadata is performed in batches using a windowed approach for efficiency.
 pub(super) struct RetrieveParquetMetadataIterator<'cfg> {
     decider: split_parquet_decision::DecideSplitIterator<'cfg>,
     _cfg: &'cfg DaftExecutionConfig,

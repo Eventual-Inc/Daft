@@ -2,6 +2,11 @@ use common_daft_config::DaftExecutionConfig;
 
 use crate::scan_task_iters::BoxScanTaskIter;
 
+/// An iterator that determines whether incoming ScanTasks should be split by Parquet rowgroups.
+///
+/// # Returns
+///
+/// Returns an iterator of [`Decision`] objects indicating whether and how to split each task.
 pub(super) struct DecideSplitIterator<'cfg> {
     inputs: BoxScanTaskIter<'cfg>,
     _cfg: &'cfg DaftExecutionConfig,
