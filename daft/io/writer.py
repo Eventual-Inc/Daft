@@ -40,9 +40,6 @@ class FileWriterBase(ABC):
         version: Optional[int] = None,
         default_partition_fallback: Optional[str] = None,
     ):
-        print(
-            f"root_dir is {root_dir}, file_idx is {file_idx}, file_format is {file_format}, partition_values is {partition_values}"
-        )
         resolved_path, self.fs = self.resolve_path_and_fs(root_dir, io_config=io_config)
         protocol = get_protocol_from_path(root_dir)
         canonicalized_protocol = canonicalize_protocol(protocol)

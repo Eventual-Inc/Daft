@@ -197,7 +197,6 @@ def _infer_filesystem(
             FileSystem
     """
     protocol = get_protocol_from_path(path)
-    print(f"protocol is {protocol}")
     translated_kwargs: dict[str, Any]
 
     def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None):
