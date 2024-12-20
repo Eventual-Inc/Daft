@@ -341,7 +341,7 @@ fn split_and_merge_pass(
             Ok(Arc::new(scan_tasks))
         } else if cfg.scantask_splitting_level == 2 {
             let split_tasks = {
-                let splitter = split_parquet::SplitParquetScanTasks::new(iter, cfg);
+                let splitter = split_parquet::SplitParquetScanTasksIterator::new(iter, cfg);
                 Box::new(splitter.into_iter()) as BoxScanTaskIter
             };
             let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
