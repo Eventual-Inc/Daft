@@ -870,16 +870,11 @@ class DataFrame:
         from packaging.version import parse
 
         from daft import from_pydict
+        from daft.dependencies import unity_catalog
         from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
-
-        _UNITY_AVAILABLE = True
-        try:
-            from daft.unity_catalog import UnityCatalogTable
-        except ImportError:
-            _UNITY_AVAILABLE = False
 
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
@@ -903,7 +898,7 @@ class DataFrame:
                 table_uri = table
             elif isinstance(table, pathlib.Path):
                 table_uri = str(table)
-            elif _UNITY_AVAILABLE and isinstance(table, UnityCatalogTable):
+            elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
                 table_uri = table.table_uri
                 io_config = table.io_config
             elif isinstance(table, DataCatalogTable):
