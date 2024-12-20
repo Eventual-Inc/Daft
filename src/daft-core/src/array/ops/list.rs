@@ -257,7 +257,7 @@ fn list_sort_helper_fixed_size(
 
 fn general_list_fill_helper(element: &Series, num_array: &Int64Array) -> DaftResult<Vec<Series>> {
     let num_iter = create_iter(num_array, element.len());
-    let mut result = vec![];
+    let mut result = Vec::with_capacity(element.len());
     let element_data = element.as_physical()?;
     for (row_index, num) in num_iter.enumerate() {
         let list_arr = if element.is_valid(row_index) {

@@ -89,6 +89,12 @@ fn check_structurally_equal(
     Ok(())
 }
 
+const V_COL_L: &str = "__v_col_l";
+const V_L_CNT: &str = "__v_l_cnt";
+const V_COL_R: &str = "__v_col_r";
+const V_R_CNT: &str = "__v_r_cnt";
+const V_MIN_COUNT: &str = "__min_count";
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Intersect {
     // Upstream nodes.
@@ -164,15 +170,13 @@ impl Intersect {
                 .zip(left_cols.iter())
                 .map(|(r, l)| r.alias(l.name()))
                 .collect::<Vec<ExprRef>>();
-            let virtual_col_l = "__v_col_l";
-            let virtual_col_r = "__v_col_r";
             let left_v_cols = vec![
-                lit(true).alias(virtual_col_l),
-                null_lit().cast(&DataType::Boolean).alias(virtual_col_r),
+                lit(true).alias(V_COL_L),
+                null_lit().cast(&DataType::Boolean).alias(V_COL_R),
             ];
             let right_v_cols = vec![
-                null_lit().cast(&DataType::Boolean).alias(virtual_col_l),
-                lit(true).alias(virtual_col_r),
+                null_lit().cast(&DataType::Boolean).alias(V_COL_L),
+                lit(true).alias(V_COL_R),
             ];
             let left_v_cols = [left_v_cols, left_cols.clone()].concat();
             let right_v_cols = [right_v_cols, right_cols].concat();
@@ -183,17 +187,12 @@ impl Intersect {
                 right_v_cols,
             )?;
             let one_lit = lit(1);
-            let left_v_cnt = col(virtual_col_l)
-                .count(CountMode::Valid)
-                .alias("__v_l_cnt");
-            let right_v_cnt = col(virtual_col_r)
-                .count(CountMode::Valid)
-                .alias("__v_r_cnt");
-            let count_name = "__min_count";
-            let min_count = col("__v_l_cnt")
-                .gt(col("__v_r_cnt"))
-                .if_else(col("__v_r_cnt"), col("__v_l_cnt"))
-                .alias(count_name);
+            let left_v_cnt = col(V_COL_L).count(CountMode::Valid).alias(V_L_CNT);
+            let right_v_cnt = col(V_COL_R).count(CountMode::Valid).alias(V_R_CNT);
+            let min_count = col(V_L_CNT)
+                .gt(col(V_R_CNT))
+                .if_else(col(V_R_CNT), col(V_L_CNT))
+                .alias(V_MIN_COUNT);
             let aggregate_plan = Aggregate::try_new(
                 union_all.into(),
                 vec![left_v_cnt, right_v_cnt],
@@ -201,9 +200,9 @@ impl Intersect {
             )?;
             let filter_plan = Filter::try_new(
                 aggregate_plan.into(),
-                col("__v_l_cnt")
+                col(V_L_CNT)
                     .gt_eq(one_lit.clone())
-                    .and(col("__v_r_cnt").gt_eq(one_lit)),
+                    .and(col(V_R_CNT).gt_eq(one_lit)),
             )?;
             let min_count_plan = Project::try_new(
                 filter_plan.into(),
@@ -211,7 +210,9 @@ impl Intersect {
             )?;
             let fill_and_explodes = left_cols
                 .iter()
-                .map(|column| explode(list_fill(col(count_name), column.clone())))
+                .map(|column| {
+                    explode(list_fill(col(V_MIN_COUNT), column.clone())).alias(column.name())
+                })
                 .collect::<Vec<_>>();
             let project_plan = Project::try_new(min_count_plan.into(), fill_and_explodes)?;
             Ok(project_plan.into())
@@ -393,6 +394,7 @@ impl Except {
                 .map(|(r, l)| r.alias(l.name()))
                 .collect::<Vec<ExprRef>>();
             let virtual_col = "__v_col";
+            let virtual_sum = "__sum";
             let left_v_cols = vec![lit(1).alias(virtual_col)];
             let right_v_cols = vec![lit(-1).alias(virtual_col)];
             let left_v_cols = [left_v_cols, left_cols.clone()].concat();
@@ -403,14 +405,15 @@ impl Except {
                 left_v_cols,
                 right_v_cols,
             )?;
-            let sum_name = "__sum";
-            let sum = col(virtual_col).sum().alias(sum_name);
+            let sum = col(virtual_col).sum().alias(virtual_sum);
             let aggregate_plan =
                 Aggregate::try_new(union_all.into(), vec![sum], left_cols.clone())?;
-            let filter_plan = Filter::try_new(aggregate_plan.into(), col(sum_name).gt(lit(0)))?;
+            let filter_plan = Filter::try_new(aggregate_plan.into(), col(virtual_sum).gt(lit(0)))?;
             let fill_and_explodes = left_cols
                 .iter()
-                .map(|column| explode(list_fill(col(sum_name), column.clone())))
+                .map(|column| {
+                    explode(list_fill(col(virtual_sum), column.clone())).alias(column.name())
+                })
                 .collect::<Vec<_>>();
             let project_plan = Project::try_new(filter_plan.into(), fill_and_explodes)?;
             Ok(project_plan.into())

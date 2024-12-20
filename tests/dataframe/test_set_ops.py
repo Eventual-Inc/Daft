@@ -110,3 +110,24 @@ def test_intersect_with_nulls(make_df, op, left, right, expected):
 )
 def test_except_with_nulls(make_df, op, left, right, expected):
     helper(make_df, op, left, right, expected)
+
+
+@pytest.mark.parametrize(
+    "op, left, right, expected",
+    [
+        (
+            "intersect_all",
+            {"foo": [1, 2, 2], "bar": [2, 3, 3]},
+            {"a": [2, 2, 4], "b": [3, 3, 4]},
+            {"foo": [2, 2], "bar": [3, 3]},
+        ),
+        (
+            "except_all",
+            {"foo": [1, 2, 2], "bar": [2, 3, 3]},
+            {"a": [2, 2, 4], "b": [3, 3, 4]},
+            {"foo": [1], "bar": [2]},
+        ),
+    ],
+)
+def test_multiple_fields(make_df, op, left, right, expected):
+    helper(make_df, op, left, right, expected)
