@@ -1,4 +1,4 @@
-"""This file defines a FastAPI server that emulates an S3 implementation that serves Parquet files
+"""This file defines a FastAPI server that emulates an S3 implementation that serves Parquet files.
 
 This S3 implementation serves a small Parquet file at the location: `s3://{bucket-name}/{status_code}/{num_errors}/{item_id}`
 

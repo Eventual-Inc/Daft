@@ -4,6 +4,7 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_runtime, RuntimeRef};
 use daft_micropartition::MicroPartition;
+use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
@@ -13,8 +14,9 @@ use crate::{
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     pipeline::PipelineNode,
+    progress_bar::ProgressBarColor,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, OperatorOutput, NUM_CPUS,
+    ExecutionRuntimeContext, OperatorOutput, PipelineExecutionSnafu, NUM_CPUS,
 };
 
 pub(crate) trait IntermediateOpState: Send + Sync {
@@ -30,7 +32,6 @@ impl IntermediateOpState for DefaultIntermediateOperatorState {
 
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
     HasMoreOutput(Arc<MicroPartition>),
 }
 
@@ -49,8 +50,9 @@ pub trait IntermediateOperator: Send + Sync {
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
-    fn max_concurrency(&self) -> usize {
-        *NUM_CPUS
+    /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
+    fn max_concurrency(&self) -> DaftResult<usize> {
+        Ok(*NUM_CPUS)
     }
 
     fn dispatch_spawner(
@@ -200,17 +202,27 @@ impl PipelineNode for IntermediateNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
+        let progress_bar = runtime_handle.make_progress_bar(
+            self.name(),
+            ProgressBarColor::Magenta,
+            true,
+            self.runtime_stats.clone(),
+        );
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,
                 self.runtime_stats.clone(),
+                progress_bar.clone(),
             ));
         }
         let op = self.intermediate_op.clone();
-        let num_workers = op.max_concurrency();
+        let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
+            node_name: self.name(),
+        })?;
         let (destination_sender, destination_receiver) = create_channel(1);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
+        let counting_sender =
+            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
 
         let dispatch_spawner = self
             .intermediate_op
@@ -243,6 +255,7 @@ impl PipelineNode for IntermediateNode {
         );
         Ok(destination_receiver)
     }
+
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }

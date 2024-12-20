@@ -15,8 +15,7 @@ from daft.logical.builder import LogicalPlanBuilder
 
 
 class SQLCatalog:
-    """
-    SQLCatalog is a simple map from table names to dataframes used in query planning.
+    """SQLCatalog is a simple map from table names to dataframes used in query planning.
 
     EXPERIMENTAL: This features is early in development and will change.
     """
@@ -32,13 +31,16 @@ class SQLCatalog:
     def __str__(self) -> str:
         return str(self._catalog)
 
+    def register_table(self, name: str, df: DataFrame):
+        self._catalog.register_table(name, df._get_current_builder()._builder)
+
     def _copy_from(self, other: "SQLCatalog") -> None:
         self._catalog.copy_from(other._catalog)
 
 
 @PublicAPI
 def sql_expr(sql: str) -> Expression:
-    """Parses a SQL string into a Daft Expression
+    """Parses a SQL string into a Daft Expression.
 
     This function allows you to create Daft Expressions from SQL snippets, which can then be used
     in Daft operations or combined with other Daft Expressions.
@@ -96,13 +98,12 @@ def sql_expr(sql: str) -> Expression:
 
 @PublicAPI
 def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool = True) -> DataFrame:
-    """Run a SQL query, returning the results as a DataFrame
+    """Run a SQL query, returning the results as a DataFrame.
 
     .. WARNING::
         This features is early in development and will likely experience API changes.
 
     Examples:
-
         A simple example joining 2 dataframes together using a SQL statement, relying on Daft to detect the names of
         SQL tables using their corresponding Python variable names.
 

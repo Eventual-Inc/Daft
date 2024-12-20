@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use common_error::DaftResult;
 use daft_core::{
+    join::JoinSide,
     prelude::*,
     python::{PySchema, PySeries, PyTimeUnit},
 };
@@ -11,7 +12,7 @@ use daft_io::{python::IOConfig, IOStatsContext};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{
-    python::pylib::PyScanTask, storage_config::PyStorageConfig, DataSource, ScanTask, ScanTaskRef,
+    python::pylib::PyScanTask, storage_config::StorageConfig, DataSource, ScanTask, ScanTaskRef,
 };
 use daft_stats::{TableMetadata, TableStatistics};
 use daft_table::{python::PyTable, Table};
@@ -315,6 +316,15 @@ impl PyMicroPartition {
         })
     }
 
+    pub fn cross_join(
+        &self,
+        py: Python,
+        right: &Self,
+        outer_loop_side: JoinSide,
+    ) -> PyResult<Self> {
+        py.allow_threads(|| Ok(self.inner.cross_join(&right.inner, outer_loop_side)?.into()))
+    }
+
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
         let converted_to_explode: Vec<daft_dsl::ExprRef> =
             to_explode.into_iter().map(|e| e.expr).collect();
@@ -524,7 +534,7 @@ impl PyMicroPartition {
         py: Python,
         uri: &str,
         schema: PySchema,
-        storage_config: PyStorageConfig,
+        storage_config: StorageConfig,
         include_columns: Option<Vec<String>>,
         num_rows: Option<usize>,
     ) -> PyResult<Self> {
@@ -791,7 +801,7 @@ pub fn read_json_into_py_table(
     py: Python,
     uri: &str,
     schema: PySchema,
-    storage_config: PyStorageConfig,
+    storage_config: StorageConfig,
     include_columns: Option<Vec<String>>,
     num_rows: Option<usize>,
 ) -> PyResult<PyTable> {
@@ -821,7 +831,7 @@ pub fn read_csv_into_py_table(
     delimiter: Option<char>,
     double_quote: bool,
     schema: PySchema,
-    storage_config: PyStorageConfig,
+    storage_config: StorageConfig,
     include_columns: Option<Vec<String>>,
     num_rows: Option<usize>,
 ) -> PyResult<PyTable> {
@@ -853,7 +863,7 @@ pub fn read_parquet_into_py_table(
     uri: &str,
     schema: PySchema,
     coerce_int96_timestamp_unit: PyTimeUnit,
-    storage_config: PyStorageConfig,
+    storage_config: StorageConfig,
     include_columns: Option<Vec<String>>,
     num_rows: Option<usize>,
 ) -> PyResult<PyTable> {

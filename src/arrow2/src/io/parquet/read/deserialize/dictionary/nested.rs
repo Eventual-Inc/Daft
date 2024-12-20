@@ -87,8 +87,9 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
         &self,
         page: &'a DataPage,
         _: Option<&'a Self::Dictionary>,
+        is_parent_nullable: bool,
     ) -> Result<Self::State> {
-        let is_optional =
+        let is_optional = is_parent_nullable ||
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
@@ -200,6 +201,7 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
                 panic!("Reading a dictionary logical type with Daft is not currently supported. Please file an issue."),
                 &DictionaryDecoder::<K>::default(),
                 chunk_size,
+                panic!("Reading a dictionary logical type with Daft is not currently supported. Please file an issue."),
             );
             match error {
                 Ok(_) => {}

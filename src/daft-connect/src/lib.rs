@@ -5,7 +5,6 @@
 #![feature(iter_from_coroutine)]
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
-#![deny(clippy::print_stdout)]
 
 use dashmap::DashMap;
 use eyre::Context;
@@ -23,7 +22,7 @@ use spark_connect::{
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::{debug, info};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::session::Session;
@@ -31,6 +30,7 @@ use crate::session::Session;
 mod config;
 mod err;
 mod op;
+
 mod session;
 mod translation;
 pub mod util;
@@ -143,14 +143,10 @@ impl DaftSparkConnectService {
 #[tonic::async_trait]
 impl SparkConnectService for DaftSparkConnectService {
     type ExecutePlanStream = std::pin::Pin<
-        Box<
-            dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + Sync + 'static,
-        >,
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
     >;
     type ReattachExecuteStream = std::pin::Pin<
-        Box<
-            dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + Sync + 'static,
-        >,
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
     >;
 
     #[tracing::instrument(skip_all)]
@@ -191,8 +187,9 @@ impl SparkConnectService for DaftSparkConnectService {
                     CommandType::RegisterFunction(_) => {
                         unimplemented_err!("RegisterFunction not implemented")
                     }
-                    CommandType::WriteOperation(_) => {
-                        unimplemented_err!("WriteOperation not implemented")
+                    CommandType::WriteOperation(op) => {
+                        let result = session.handle_write_command(op, operation).await?;
+                        return Ok(Response::new(result));
                     }
                     CommandType::CreateDataframeView(_) => {
                         unimplemented_err!("CreateDataframeView not implemented")
@@ -306,7 +303,7 @@ impl SparkConnectService for DaftSparkConnectService {
                     return Err(Status::invalid_argument("op_type is required to be root"));
                 };
 
-                let result = match translation::relation_to_schema(relation) {
+                let result = match translation::relation_to_schema(relation).await {
                     Ok(schema) => schema,
                     Err(e) => {
                         return invalid_argument_err!(
@@ -325,11 +322,31 @@ impl SparkConnectService for DaftSparkConnectService {
                     result: Some(analyze_plan_response::Result::Schema(schema)),
                 };
 
-                debug!("response: {response:#?}");
+                Ok(Response::new(response))
+            }
+            Analyze::DdlParse(DdlParse { ddl_string }) => {
+                let daft_schema = match daft_sql::sql_schema(&ddl_string) {
+                    Ok(daft_schema) => daft_schema,
+                    Err(e) => return invalid_argument_err!("{e}"),
+                };
+
+                let daft_schema = daft_schema.to_struct();
+
+                let schema = translation::to_spark_datatype(&daft_schema);
+
+                let schema = analyze_plan_response::Schema {
+                    schema: Some(schema),
+                };
+
+                let response = AnalyzePlanResponse {
+                    session_id,
+                    server_side_session_id: String::new(),
+                    result: Some(analyze_plan_response::Result::Schema(schema)),
+                };
 
                 Ok(Response::new(response))
             }
-            _ => unimplemented_err!("Analyze plan operation is not yet implemented"),
+            other => unimplemented_err!("Analyze plan operation is not yet implemented: {other:?}"),
         }
     }
 
@@ -346,7 +363,6 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<InterruptRequest>,
     ) -> Result<Response<InterruptResponse>, Status> {
-        println!("got interrupt");
         unimplemented_err!("interrupt operation is not yet implemented")
     }
 
@@ -361,9 +377,19 @@ impl SparkConnectService for DaftSparkConnectService {
     #[tracing::instrument(skip_all)]
     async fn release_execute(
         &self,
-        _request: Request<ReleaseExecuteRequest>,
+        request: Request<ReleaseExecuteRequest>,
     ) -> Result<Response<ReleaseExecuteResponse>, Status> {
-        unimplemented_err!("release_execute operation is not yet implemented")
+        let request = request.into_inner();
+
+        let session = self.get_session(&request.session_id)?;
+
+        let response = ReleaseExecuteResponse {
+            session_id: session.client_side_session_id().to_string(),
+            server_side_session_id: session.server_side_session_id().to_string(),
+            operation_id: None, // todo: set but not strictly required
+        };
+
+        Ok(Response::new(response))
     }
 
     #[tracing::instrument(skip_all)]
@@ -371,7 +397,6 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<ReleaseSessionRequest>,
     ) -> Result<Response<ReleaseSessionResponse>, Status> {
-        println!("got release session");
         unimplemented_err!("release_session operation is not yet implemented")
     }
 
@@ -380,7 +405,6 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<FetchErrorDetailsRequest>,
     ) -> Result<Response<FetchErrorDetailsResponse>, Status> {
-        println!("got fetch error details");
         unimplemented_err!("fetch_error_details operation is not yet implemented")
     }
 }

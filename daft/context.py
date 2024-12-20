@@ -7,7 +7,6 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from daft import get_build_type
 from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
 
 if TYPE_CHECKING:
@@ -42,7 +41,7 @@ class _RayRunnerConfig(_RunnerConfig):
 
 
 def _get_runner_config_from_env() -> _RunnerConfig:
-    """Retrieves the appropriate RunnerConfig from environment variables
+    """Retrieves the appropriate RunnerConfig from environment variables.
 
     To use:
 
@@ -109,19 +108,13 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             max_task_backlog=task_backlog,
             force_client_mode=ray_force_client_mode,
         )
-
-    # Use native runner if in dev mode
-    elif get_build_type() == "dev":
-        return _NativeRunnerConfig()
-
-    # Fall back on PyRunner
     else:
-        return _PyRunnerConfig(use_thread_pool=use_thread_pool)
+        return _NativeRunnerConfig()
 
 
 @dataclasses.dataclass
 class DaftContext:
-    """Global context for the current Daft execution environment"""
+    """Global context for the current Daft execution environment."""
 
     # When a dataframe is executed, this config is copied into the Runner
     # which then keeps track of a per-unique-execution-ID copy of the config, using it consistently throughout the execution
@@ -172,6 +165,12 @@ class DaftContext:
             elif runner_config.name == "native":
                 from daft.runners.native_runner import NativeRunner
 
+                warnings.warn(
+                    "Daft is configured to use the new NativeRunner by default as of v0.4.0. "
+                    "If you are encountering any regressions, please switch back to the legacy PyRunner via `daft.context.set_runner_py()` or by setting the env variable `DAFT_RUNNER=py`. "
+                    "We appreciate you filing issues and helping make the NativeRunner better: https://github.com/Eventual-Inc/Daft/issues",
+                )
+
                 assert isinstance(runner_config, _NativeRunnerConfig)
                 self._runner = NativeRunner()
 
@@ -204,7 +203,7 @@ def set_runner_ray(
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> DaftContext:
-    """Set the runner for executing Daft dataframes to a Ray cluster
+    """Set the runner for executing Daft dataframes to a Ray cluster.
 
     Alternatively, users can set this behavior via environment variables:
 
@@ -222,7 +221,6 @@ def set_runner_ray(
     Returns:
         DaftContext: Daft context after setting the Ray runner
     """
-
     ctx = get_context()
     with ctx._lock:
         if ctx._runner is not None:
@@ -283,7 +281,7 @@ def set_runner_native() -> DaftContext:
 
 @contextlib.contextmanager
 def planning_config_ctx(**kwargs):
-    """Context manager that wraps set_planning_config to reset the config to its original setting afternwards"""
+    """Context manager that wraps set_planning_config to reset the config to its original setting afternwards."""
     original_config = get_context().daft_planning_config
     try:
         set_planning_config(**kwargs)
@@ -296,8 +294,9 @@ def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
 ) -> DaftContext:
-    """Globally sets various configuration parameters which control Daft plan construction behavior. These configuration values
-    are used when a Dataframe is being constructed (e.g. calls to create a Dataframe, or to build on an existing Dataframe)
+    """Globally sets various configuration parameters which control Daft plan construction behavior.
+
+    These configuration values are used when a Dataframe is being constructed (e.g. calls to create a Dataframe, or to build on an existing Dataframe).
 
     Args:
         config: A PyDaftPlanningConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
@@ -319,7 +318,7 @@ def set_planning_config(
 
 @contextlib.contextmanager
 def execution_config_ctx(**kwargs):
-    """Context manager that wraps set_execution_config to reset the config to its original setting afternwards"""
+    """Context manager that wraps set_execution_config to reset the config to its original setting afternwards."""
     original_config = get_context().daft_execution_config
     try:
         set_execution_config(**kwargs)
@@ -344,6 +343,8 @@ def set_execution_config(
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
+    partial_aggregation_threshold: int | None = None,
+    high_cardinality_aggregation_threshold: float | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
     enable_native_executor: bool | None = None,
@@ -352,8 +353,10 @@ def set_execution_config(
     pre_shuffle_merge_threshold: int | None = None,
     enable_ray_tracing: bool | None = None,
 ) -> DaftContext:
-    """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
-    are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
+    """Globally sets various configuration parameters which control various aspects of Daft execution.
+
+    These configuration values
+    are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
@@ -382,7 +385,9 @@ def set_execution_config(
         parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
-        shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
+        shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations on the Ray Runner. Defaults to 200, unless the number of input partitions is less than 200.
+        partial_aggregation_threshold: Threshold for performing partial aggregations on the Native Runner. Defaults to 10000 rows.
+        high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
         enable_native_executor: Enables the native executor, Defaults to False
@@ -411,6 +416,8 @@ def set_execution_config(
             csv_target_filesize=csv_target_filesize,
             csv_inflation_factor=csv_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
+            partial_aggregation_threshold=partial_aggregation_threshold,
+            high_cardinality_aggregation_threshold=high_cardinality_aggregation_threshold,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
             enable_native_executor=enable_native_executor,

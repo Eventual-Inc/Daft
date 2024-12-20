@@ -1,9 +1,8 @@
-import sys
-
 import pyarrow as pa
 import pytest
 
 import daft
+from tests.conftest import get_tests_daft_runner_name
 from tests.integration.io.conftest import minio_create_bucket
 
 TABLE_NAME = "my_table"
@@ -13,11 +12,8 @@ data = {
     "long": [-122.7, -74.1],
 }
 
-PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
-PY_LE_3_9_0 = sys.version_info < (3, 9)
-pytestmark = pytest.mark.skipif(
-    PYARROW_LE_8_0_0 or PY_LE_3_9_0, reason="lance only supported if pyarrow >= 8.0.0 and python >= 3.9.0"
-)
+PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
+pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="lance not supported on old versions of pyarrow")
 
 
 @pytest.fixture(scope="function")
@@ -33,6 +29,8 @@ def test_lancedb_roundtrip(lance_dataset_path):
     assert df.to_pydict() == data
 
 
+# TODO: re-enable test on Ray when fixed
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Lance fails to load credentials on Ray")
 @pytest.mark.integration()
 def test_lancedb_minio(minio_io_config):
     df = daft.from_pydict(data)

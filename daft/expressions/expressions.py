@@ -19,7 +19,7 @@ from typing import (
 
 import daft.daft as native
 from daft import context
-from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, bind_stateful_udfs
+from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, initialize_udfs
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
@@ -28,16 +28,15 @@ from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
-from daft.daft import stateful_udf as _stateful_udf
-from daft.daft import stateless_udf as _stateless_udf
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import to_struct as _to_struct
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
+from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
 from daft.daft import utf8_count_matches as _utf8_count_matches
-from daft.datatype import DataType, TimeUnit
+from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
@@ -45,7 +44,7 @@ from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
-    from daft.udf import PartialStatefulUDF, PartialStatelessUDF
+    from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
 elif os.getenv("DAFT_SPHINX_BUILD") == "1":
@@ -71,7 +70,7 @@ elif os.getenv("DAFT_SPHINX_BUILD") == "1":
 
 
 def lit(value: object) -> Expression:
-    """Creates an Expression representing a column with every value set to the provided value
+    """Creates an Expression representing a column with every value set to the provided value.
 
     Example:
         >>> import daft
@@ -175,14 +174,42 @@ def interval(
     millis: int | None = None,
     nanos: int | None = None,
 ) -> Expression:
-    """
-    Creates an Expression representing an interval.
-
-    """
+    """Creates an Expression representing an interval."""
     lit_value = native.interval_lit(
         years=years, months=months, days=days, hours=hours, minutes=minutes, seconds=seconds, millis=millis, nanos=nanos
     )
     return Expression._from_pyexpr(lit_value)
+
+
+def coalesce(*args: Expression) -> Expression:
+    """Returns the first non-null value in a list of expressions. If all inputs are null, returns null.
+
+    Example:
+        >>> import daft
+        >>> df = daft.from_pydict({"x": [1, None, 3], "y": [None, 2, None]})
+        >>> df = df.with_column("first_valid", daft.coalesce(df["x"], df["y"]))
+        >>> df.show()
+        ╭───────┬───────┬─────────────╮
+        │ x     ┆ y     ┆ first_valid │
+        │ ---   ┆ ---   ┆ ---         │
+        │ Int64 ┆ Int64 ┆ Int64       │
+        ╞═══════╪═══════╪═════════════╡
+        │ 1     ┆ None  ┆ 1           │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None  ┆ 2     ┆ 2           │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ None  ┆ 3           │
+        ╰───────┴───────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    Args:
+        *args: Two or more expressions to coalesce
+
+    Returns:
+        Expression: Expression containing first non-null value encountered when evaluating arguments in order
+    """
+    return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
 
 
 class Expression:
@@ -193,57 +220,57 @@ class Expression:
 
     @property
     def str(self) -> ExpressionStringNamespace:
-        """Access methods that work on columns of strings"""
+        """Access methods that work on columns of strings."""
         return ExpressionStringNamespace.from_expression(self)
 
     @property
     def dt(self) -> ExpressionDatetimeNamespace:
-        """Access methods that work on columns of datetimes"""
+        """Access methods that work on columns of datetimes."""
         return ExpressionDatetimeNamespace.from_expression(self)
 
     @property
     def embedding(self) -> ExpressionEmbeddingNamespace:
-        """Access methods that work on columns of embeddings"""
+        """Access methods that work on columns of embeddings."""
         return ExpressionEmbeddingNamespace.from_expression(self)
 
     @property
     def float(self) -> ExpressionFloatNamespace:
-        """Access methods that work on columns of floats"""
+        """Access methods that work on columns of floats."""
         return ExpressionFloatNamespace.from_expression(self)
 
     @property
     def url(self) -> ExpressionUrlNamespace:
-        """Access methods that work on columns of URLs"""
+        """Access methods that work on columns of URLs."""
         return ExpressionUrlNamespace.from_expression(self)
 
     @property
     def list(self) -> ExpressionListNamespace:
-        """Access methods that work on columns of lists"""
+        """Access methods that work on columns of lists."""
         return ExpressionListNamespace.from_expression(self)
 
     @property
     def struct(self) -> ExpressionStructNamespace:
-        """Access methods that work on columns of structs"""
+        """Access methods that work on columns of structs."""
         return ExpressionStructNamespace.from_expression(self)
 
     @property
     def map(self) -> ExpressionMapNamespace:
-        """Access methods that work on columns of maps"""
+        """Access methods that work on columns of maps."""
         return ExpressionMapNamespace.from_expression(self)
 
     @property
     def image(self) -> ExpressionImageNamespace:
-        """Access methods that work on columns of images"""
+        """Access methods that work on columns of images."""
         return ExpressionImageNamespace.from_expression(self)
 
     @property
     def partitioning(self) -> ExpressionPartitioningNamespace:
-        """Access methods that support partitioning operators"""
+        """Access methods that support partitioning operators."""
         return ExpressionPartitioningNamespace.from_expression(self)
 
     @property
     def json(self) -> ExpressionJsonNamespace:
-        """Access methods that work on columns of json"""
+        """Access methods that work on columns of json."""
         return ExpressionJsonNamespace.from_expression(self)
 
     @staticmethod
@@ -260,39 +287,26 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def stateless_udf(
+    def udf(
         name: builtins.str,
-        partial: PartialStatelessUDF,
+        inner: UninitializedUdf,
+        bound_args: BoundUDFArgs,
         expressions: builtins.list[Expression],
         return_dtype: DataType,
+        init_args: InitArgsType,
         resource_request: ResourceRequest | None,
-        batch_size: int | None,
-    ) -> Expression:
-        return Expression._from_pyexpr(
-            _stateless_udf(
-                name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request, batch_size
-            )
-        )
-
-    @staticmethod
-    def stateful_udf(
-        name: builtins.str,
-        partial: PartialStatefulUDF,
-        expressions: builtins.list[Expression],
-        return_dtype: DataType,
-        resource_request: ResourceRequest | None,
-        init_args: tuple[tuple[Any, ...], dict[builtins.str, Any]] | None,
         batch_size: int | None,
         concurrency: int | None,
     ) -> Expression:
         return Expression._from_pyexpr(
-            _stateful_udf(
+            _udf(
                 name,
-                partial,
+                inner,
+                bound_args,
                 [e._expr for e in expressions],
                 return_dtype._dtype,
-                resource_request,
                 init_args,
+                resource_request,
                 batch_size,
                 concurrency,
             )
@@ -306,7 +320,7 @@ class Expression:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
-            >>> df.select(daft.to_struct(col("a")*2, col("b"))).show()
+            >>> df.select(daft.to_struct(col("a") * 2, col("b"))).show()
             ╭───────────────────────────╮
             │ struct                    │
             │ ---                       │
@@ -350,15 +364,15 @@ class Expression:
         )
 
     def __abs__(self) -> Expression:
-        """Absolute of a numeric expression (``abs(expr)``)"""
+        """Absolute of a numeric expression."""
         return self.abs()
 
     def abs(self) -> Expression:
-        """Absolute of a numeric expression (``expr.abs()``)"""
+        """Absolute of a numeric expression."""
         return Expression._from_pyexpr(native.abs(self._expr))
 
     def __add__(self, other: object) -> Expression:
-        """Adds two numeric expressions or concatenates two string expressions (``e1 + e2``)"""
+        """Adds two numeric expressions or concatenates two string expressions (``e1 + e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr + expr._expr)
 
@@ -367,7 +381,7 @@ class Expression:
         return Expression._from_pyexpr(expr._expr + self._expr)
 
     def __sub__(self, other: object) -> Expression:
-        """Subtracts two numeric expressions (``e1 - e2``)"""
+        """Subtracts two numeric expressions (``e1 - e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr - expr._expr)
 
@@ -376,7 +390,7 @@ class Expression:
         return Expression._from_pyexpr(expr._expr - self._expr)
 
     def __mul__(self, other: object) -> Expression:
-        """Multiplies two numeric expressions (``e1 * e2``)"""
+        """Multiplies two numeric expressions (``e1 * e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr * expr._expr)
 
@@ -385,7 +399,7 @@ class Expression:
         return Expression._from_pyexpr(expr._expr * self._expr)
 
     def __truediv__(self, other: object) -> Expression:
-        """True divides two numeric expressions (``e1 / e2``)"""
+        """True divides two numeric expressions (``e1 / e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr / expr._expr)
 
@@ -394,72 +408,73 @@ class Expression:
         return Expression._from_pyexpr(expr._expr / self._expr)
 
     def __mod__(self, other: Expression) -> Expression:
-        """Takes the mod of two numeric expressions (``e1 % e2``)"""
+        """Takes the mod of two numeric expressions (``e1 % e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr % expr._expr)
 
     def __rmod__(self, other: Expression) -> Expression:
-        """Takes the mod of two numeric expressions (``e1 % e2``)"""
+        """Takes the mod of two numeric expressions (``e1 % e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr % self._expr)
 
     def __and__(self, other: Expression) -> Expression:
-        """Takes the logical AND of two boolean expressions, or bitwise AND of two integer expressions (``e1 & e2``)"""
+        """Takes the logical AND of two boolean expressions, or bitwise AND of two integer expressions (``e1 & e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr & expr._expr)
 
     def __rand__(self, other: Expression) -> Expression:
-        """Takes the logical reverse AND of two boolean expressions (``e1 & e2``)"""
+        """Takes the logical reverse AND of two boolean expressions (``e1 & e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr & self._expr)
 
     def __or__(self, other: Expression) -> Expression:
-        """Takes the logical OR of two boolean or integer expressions, or bitwise OR of two integer expressions (``e1 | e2``)"""
+        """Takes the logical OR of two boolean or integer expressions, or bitwise OR of two integer expressions (``e1 | e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr | expr._expr)
 
     def __xor__(self, other: Expression) -> Expression:
-        """Takes the logical XOR of two boolean or integer expressions, or bitwise XOR of two integer expressions (``e1 ^ e2``)"""
+        """Takes the logical XOR of two boolean or integer expressions, or bitwise XOR of two integer expressions (``e1 ^ e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr ^ expr._expr)
 
     def __ror__(self, other: Expression) -> Expression:
-        """Takes the logical reverse OR of two boolean expressions (``e1 | e2``)"""
+        """Takes the logical reverse OR of two boolean expressions (``e1 | e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr | self._expr)
 
     def __lt__(self, other: Expression) -> Expression:
-        """Compares if an expression is less than another (``e1 < e2``)"""
+        """Compares if an expression is less than another (``e1 < e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr < expr._expr)
 
     def __le__(self, other: Expression) -> Expression:
-        """Compares if an expression is less than or equal to another (``e1 <= e2``)"""
+        """Compares if an expression is less than or equal to another (``e1 <= e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr <= expr._expr)
 
     def __eq__(self, other: Expression) -> Expression:  # type: ignore
-        """Compares if an expression is equal to another (``e1 == e2``)"""
+        """Compares if an expression is equal to another (``e1 == e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr == expr._expr)
 
     def __ne__(self, other: Expression) -> Expression:  # type: ignore
-        """Compares if an expression is not equal to another (``e1 != e2``)"""
+        """Compares if an expression is not equal to another (``e1 != e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr != expr._expr)
 
     def __gt__(self, other: Expression) -> Expression:
-        """Compares if an expression is greater than another (``e1 > e2``)"""
+        """Compares if an expression is greater than another (``e1 > e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr > expr._expr)
 
     def __ge__(self, other: Expression) -> Expression:
-        """Compares if an expression is greater than or equal to another (``e1 >= e2``)"""
+        """Compares if an expression is greater than or equal to another (``e1 >= e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >= expr._expr)
 
     def __lshift__(self, other: Expression) -> Expression:
-        """Shifts the bits of an integer expression to the left (``e1 << e2``)
+        """Shifts the bits of an integer expression to the left (``e1 << e2``).
+
         Args:
             other: The number of bits to shift the expression to the left
         """
@@ -467,7 +482,7 @@ class Expression:
         return Expression._from_pyexpr(self._expr << expr._expr)
 
     def __rshift__(self, other: Expression) -> Expression:
-        """Shifts the bits of an integer expression to the right (``e1 >> e2``)
+        """Shifts the bits of an integer expression to the right (``e1 >> e2``).
 
         .. NOTE::
 
@@ -481,23 +496,22 @@ class Expression:
         return Expression._from_pyexpr(self._expr >> expr._expr)
 
     def __invert__(self) -> Expression:
-        """Inverts a boolean expression (``~e``)"""
+        """Inverts a boolean expression (``~e``)."""
         expr = self._expr.__invert__()
         return Expression._from_pyexpr(expr)
 
     def __floordiv__(self, other: Expression) -> Expression:
-        """Floor divides two numeric expressions (``e1 / e2``)"""
+        """Floor divides two numeric expressions (``e1 / e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr // expr._expr)
 
     def __rfloordiv__(self, other: object) -> Expression:
-        """Reverse floor divides two numeric expressions (``e2 / e1``)"""
+        """Reverse floor divides two numeric expressions (``e2 / e1``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr // self._expr)
 
     def alias(self, name: builtins.str) -> Expression:
-        """Gives the expression a new name, which is its column's name in the DataFrame schema and the name
-        by which subsequent expressions can refer to the results of this expression.
+        """Gives the expression a new name.
 
         Example:
             >>> import daft
@@ -528,7 +542,7 @@ class Expression:
         expr = self._expr.alias(name)
         return Expression._from_pyexpr(expr)
 
-    def cast(self, dtype: DataType) -> Expression:
+    def cast(self, dtype: DataTypeLike) -> Expression:
         """Casts an expression to the given datatype if possible.
 
         The following combinations of datatype casting is valid:
@@ -608,22 +622,24 @@ class Expression:
         Returns:
             Expression: Expression with the specified new datatype
         """
-        assert isinstance(dtype, DataType)
-        expr = self._expr.cast(dtype._dtype)
+        assert isinstance(dtype, (DataType, type))
+        inferred_dtype = DataType._infer_type(dtype)
+
+        expr = self._expr.cast(inferred_dtype._dtype)
         return Expression._from_pyexpr(expr)
 
     def ceil(self) -> Expression:
-        """The ceiling of a numeric expression (``expr.ceil()``)"""
+        """The ceiling of a numeric expression."""
         expr = native.ceil(self._expr)
         return Expression._from_pyexpr(expr)
 
     def floor(self) -> Expression:
-        """The floor of a numeric expression (``expr.floor()``)"""
+        """The floor of a numeric expression."""
         expr = native.floor(self._expr)
         return Expression._from_pyexpr(expr)
 
     def clip(self, min: Expression | None = None, max: Expression | None = None) -> Expression:
-        """Clips an expression to the given minimum and maximum values (``expr.clip(min, max)``).
+        """Clips an expression to the given minimum and maximum values.
 
         Args:
             min: Minimum value to clip to. If None (or column value is Null), no lower clipping is applied.
@@ -635,12 +651,12 @@ class Expression:
         return Expression._from_pyexpr(native.clip(self._expr, min_expr._expr, max_expr._expr))
 
     def sign(self) -> Expression:
-        """The sign of a numeric expression (``expr.sign()``)"""
+        """The sign of a numeric expression."""
         expr = native.sign(self._expr)
         return Expression._from_pyexpr(expr)
 
     def round(self, decimals: int = 0) -> Expression:
-        """The round of a numeric expression (``expr.round(decimals = 0)``)
+        """The round of a numeric expression.
 
         Args:
             decimals: number of decimal places to round to. Defaults to 0.
@@ -650,96 +666,98 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def sqrt(self) -> Expression:
-        """The square root of a numeric expression (``expr.sqrt()``)"""
+        """The square root of a numeric expression."""
         expr = native.sqrt(self._expr)
         return Expression._from_pyexpr(expr)
 
     def cbrt(self) -> Expression:
-        """The cube root of a numeric expression (``expr.cbrt()``)"""
+        """The cube root of a numeric expression."""
         return Expression._from_pyexpr(native.cbrt(self._expr))
 
     def sin(self) -> Expression:
-        """The elementwise sine of a numeric expression (``expr.sin()``)"""
+        """The elementwise sine of a numeric expression."""
         expr = native.sin(self._expr)
         return Expression._from_pyexpr(expr)
 
     def cos(self) -> Expression:
-        """The elementwise cosine of a numeric expression (``expr.cos()``)"""
+        """The elementwise cosine of a numeric expression."""
         expr = native.cos(self._expr)
         return Expression._from_pyexpr(expr)
 
     def tan(self) -> Expression:
-        """The elementwise tangent of a numeric expression (``expr.tan()``)"""
+        """The elementwise tangent of a numeric expression."""
         expr = native.tan(self._expr)
         return Expression._from_pyexpr(expr)
 
     def cot(self) -> Expression:
-        """The elementwise cotangent of a numeric expression (``expr.cot()``)"""
+        """The elementwise cotangent of a numeric expression."""
         expr = native.cot(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arcsin(self) -> Expression:
-        """The elementwise arc sine of a numeric expression (``expr.arcsin()``)"""
+        """The elementwise arc sine of a numeric expression."""
         expr = native.arcsin(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arccos(self) -> Expression:
-        """The elementwise arc cosine of a numeric expression (``expr.arccos()``)"""
+        """The elementwise arc cosine of a numeric expression."""
         expr = native.arccos(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arctan(self) -> Expression:
-        """The elementwise arc tangent of a numeric expression (``expr.arctan()``)"""
+        """The elementwise arc tangent of a numeric expression."""
         expr = native.arctan(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arctan2(self, other: Expression) -> Expression:
-        """Calculates the four quadrant arctangent of coordinates (y, x), in radians (``expr_y.arctan2(expr_x)``)
+        """Calculates the four quadrant arctangent of coordinates (y, x), in radians.
 
         * ``x = 0``, ``y = 0``: ``0``
         * ``x >= 0``: ``[-pi/2, pi/2]``
         * ``y >= 0``: ``(pi/2, pi]``
-        * ``y < 0``: ``(-pi, -pi/2)``"""
+        * ``y < 0``: ``(-pi, -pi/2)``
+        """
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(native.arctan2(self._expr, expr._expr))
 
     def arctanh(self) -> Expression:
-        """The elementwise inverse hyperbolic tangent of a numeric expression (``expr.arctanh()``)"""
+        """The elementwise inverse hyperbolic tangent of a numeric expression."""
         expr = native.arctanh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arccosh(self) -> Expression:
-        """The elementwise inverse hyperbolic cosine of a numeric expression (``expr.arccosh()``)"""
+        """The elementwise inverse hyperbolic cosine of a numeric expression."""
         expr = native.arccosh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arcsinh(self) -> Expression:
-        """The elementwise inverse hyperbolic sine of a numeric expression (``expr.arcsinh()``)"""
+        """The elementwise inverse hyperbolic sine of a numeric expression."""
         expr = native.arcsinh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def radians(self) -> Expression:
-        """The elementwise radians of a numeric expression (``expr.radians()``)"""
+        """The elementwise radians of a numeric expression."""
         expr = native.radians(self._expr)
         return Expression._from_pyexpr(expr)
 
     def degrees(self) -> Expression:
-        """The elementwise degrees of a numeric expression (``expr.degrees()``)"""
+        """The elementwise degrees of a numeric expression."""
         expr = native.degrees(self._expr)
         return Expression._from_pyexpr(expr)
 
     def log2(self) -> Expression:
-        """The elementwise log base 2 of a numeric expression (``expr.log2()``)"""
+        """The elementwise log base 2 of a numeric expression."""
         expr = native.log2(self._expr)
         return Expression._from_pyexpr(expr)
 
     def log10(self) -> Expression:
-        """The elementwise log base 10 of a numeric expression (``expr.log10()``)"""
+        """The elementwise log base 10 of a numeric expression."""
         expr = native.log10(self._expr)
         return Expression._from_pyexpr(expr)
 
     def log(self, base: float = math.e) -> Expression:  # type: ignore
-        """The elementwise log with given base, of a numeric expression (``expr.log(base = math.e)``)
+        """The elementwise log with given base, of a numeric expression.
+
         Args:
             base: The base of the logarithm. Defaults to e.
         """
@@ -748,32 +766,33 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def ln(self) -> Expression:
-        """The elementwise natural log of a numeric expression (``expr.ln()``)"""
+        """The elementwise natural log of a numeric expression."""
         expr = native.ln(self._expr)
         return Expression._from_pyexpr(expr)
 
     def exp(self) -> Expression:
-        """The e^self of a numeric expression (``expr.exp()``)"""
+        """The e^self of a numeric expression."""
         expr = native.exp(self._expr)
         return Expression._from_pyexpr(expr)
 
     def bitwise_and(self, other: Expression) -> Expression:
-        """Bitwise AND of two integer expressions (``expr.bitwise_and(other)``)"""
+        """Bitwise AND of two integer expressions."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr & expr._expr)
 
     def bitwise_or(self, other: Expression) -> Expression:
-        """Bitwise OR of two integer expressions (``expr.bitwise_or(other)``)"""
+        """Bitwise OR of two integer expressions."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr | expr._expr)
 
     def bitwise_xor(self, other: Expression) -> Expression:
-        """Bitwise XOR of two integer expressions (``expr.bitwise_xor(other)``)"""
+        """Bitwise XOR of two integer expressions."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr ^ expr._expr)
 
     def shift_left(self, other: Expression) -> Expression:
-        """Shifts the bits of an integer expression to the left (``expr << other``)
+        """Shifts the bits of an integer expression to the left (``expr << other``).
+
         Args:
             other: The number of bits to shift the expression to the left
         """
@@ -781,7 +800,7 @@ class Expression:
         return Expression._from_pyexpr(self._expr << expr._expr)
 
     def shift_right(self, other: Expression) -> Expression:
-        """Shifts the bits of an integer expression to the right (``expr >> other``)
+        """Shifts the bits of an integer expression to the right (``expr >> other``).
 
         .. NOTE::
             For unsigned integers, this expression perform a logical right shift.
@@ -809,13 +828,12 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def sum(self) -> Expression:
-        """Calculates the sum of the values in the expression"""
+        """Calculates the sum of the values in the expression."""
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
     def approx_count_distinct(self) -> Expression:
-        """
-        Calculates the approximate number of non-`NULL` unique values in the expression.
+        """Calculates the approximate number of non-`NULL` unique values in the expression.
 
         Approximation is performed using the `HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ algorithm.
 
@@ -842,7 +860,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:
-        """Calculates the approximate percentile(s) for a column of numeric values
+        """Calculates the approximate percentile(s) for a column of numeric values.
 
         For numeric columns, we use the `sketches_ddsketch crate <https://docs.rs/sketches-ddsketch/latest/sketches_ddsketch/index.html>`_.
         This is a Rust implementation of the paper `DDSketch: A Fast and Fully-Mergeable Quantile Sketch with Relative-Error Guarantees (Masson et al.) <https://arxiv.org/pdf/1908.10693>`_
@@ -874,7 +892,7 @@ class Expression:
 
             A grouped calculation of approximate percentiles:
 
-            >>> df = daft.from_pydict({"class":  ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
+            >>> df = daft.from_pydict({"class": ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
             >>> df = df.groupby("class").agg(
             ...     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
             ...     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
@@ -905,27 +923,27 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def mean(self) -> Expression:
-        """Calculates the mean of the values in the expression"""
+        """Calculates the mean of the values in the expression."""
         expr = self._expr.mean()
         return Expression._from_pyexpr(expr)
 
     def stddev(self) -> Expression:
-        """Calculates the standard deviation of the values in the expression"""
+        """Calculates the standard deviation of the values in the expression."""
         expr = self._expr.stddev()
         return Expression._from_pyexpr(expr)
 
     def min(self) -> Expression:
-        """Calculates the minimum value in the expression"""
+        """Calculates the minimum value in the expression."""
         expr = self._expr.min()
         return Expression._from_pyexpr(expr)
 
     def max(self) -> Expression:
-        """Calculates the maximum value in the expression"""
+        """Calculates the maximum value in the expression."""
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
     def any_value(self, ignore_nulls=False) -> Expression:
-        """Returns any value in the expression
+        """Returns any value in the expression.
 
         Args:
             ignore_nulls: whether to ignore null values when selecting the value. Defaults to False.
@@ -934,12 +952,12 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def agg_list(self) -> Expression:
-        """Aggregates the values in the expression into a list"""
+        """Aggregates the values in the expression into a list."""
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
 
     def agg_concat(self) -> Expression:
-        """Aggregates the values in the expression into a single string by concatenating them"""
+        """Aggregates the values in the expression into a single string by concatenating them."""
         expr = self._expr.agg_concat()
         return Expression._from_pyexpr(expr)
 
@@ -948,12 +966,15 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
-        """Conditionally choose values between two expressions using the current boolean expression as a condition
+        """Conditionally choose values between two expressions using the current boolean expression as a condition.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"A": [1, 2, 3], "B": [0, 2, 4]})
-            >>> df = df.with_column("A_if_bigger_else_B", (df["A"] > df["B"]).if_else(df["A"], df["B"]),)
+            >>> df = df.with_column(
+            ...     "A_if_bigger_else_B",
+            ...     (df["A"] > df["B"]).if_else(df["A"], df["B"]),
+            ... )
             >>> df.collect()
             ╭───────┬───────┬────────────────────╮
             │ A     ┆ B     ┆ A_if_bigger_else_B │
@@ -980,8 +1001,8 @@ class Expression:
         if_false = Expression._to_expression(if_false)
         return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
-    def apply(self, func: Callable, return_dtype: DataType) -> Expression:
-        """Apply a function on each value in a given expression
+    def apply(self, func: Callable, return_dtype: DataTypeLike) -> Expression:
+        """Apply a function on each value in a given expression.
 
         .. NOTE::
             This is just syntactic sugar on top of a UDF and is convenient to use when your function only operates
@@ -996,7 +1017,7 @@ class Expression:
             ...         return int(x_val)
             ...     else:
             ...         return 0
-            >>> df.with_column("num_x", df['x'].apply(f, return_dtype=daft.DataType.int64())).collect()
+            >>> df.with_column("num_x", df["x"].apply(f, return_dtype=daft.DataType.int64())).collect()
             ╭──────┬───────╮
             │ x    ┆ num_x │
             │ ---  ┆ ---   │
@@ -1018,7 +1039,9 @@ class Expression:
         Returns:
             Expression: New expression after having run the function on the expression
         """
-        from daft.udf import CommonUDFArgs, StatelessUDF
+        from daft.udf import UDF
+
+        inferred_return_dtype = DataType._infer_type(return_dtype)
 
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]
@@ -1028,23 +1051,19 @@ class Expression:
             name = name + "."
         name = name + getattr(func, "__qualname__")  # type: ignore[call-overload]
 
-        return StatelessUDF(
+        return UDF(
+            inner=batch_func,
             name=name,
-            func=batch_func,
-            return_dtype=return_dtype,
-            common_args=CommonUDFArgs(
-                resource_request=None,
-                batch_size=None,
-            ),
+            return_dtype=inferred_return_dtype,
         )(self)
 
     def is_null(self) -> Expression:
-        """Checks if values in the Expression are Null (a special value indicating missing data)
+        """Checks if values in the Expression are Null (a special value indicating missing data).
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1., None, float("nan")]})
-            >>> df = df.select(df['x'].is_null())
+            >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
+            >>> df = df.select(df["x"].is_null())
             >>> df.collect()
             ╭─────────╮
             │ x       │
@@ -1067,12 +1086,12 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def not_null(self) -> Expression:
-        """Checks if values in the Expression are not Null (a special value indicating missing data)
+        """Checks if values in the Expression are not Null (a special value indicating missing data).
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1., None, float("nan")]})
-            >>> df = df.select(df['x'].not_null())
+            >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
+            >>> df = df.select(df["x"].not_null())
             >>> df.collect()
             ╭─────────╮
             │ x       │
@@ -1095,7 +1114,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def fill_null(self, fill_value: Expression) -> Expression:
-        """Fills null values in the Expression with the provided fill_value
+        """Fills null values in the Expression with the provided fill_value.
 
         Example:
             >>> import daft
@@ -1119,13 +1138,12 @@ class Expression:
         Returns:
             Expression: Expression with null values filled with the provided fill_value
         """
-
         fill_value = Expression._to_expression(fill_value)
         expr = self._expr.fill_null(fill_value._expr)
         return Expression._from_pyexpr(expr)
 
     def is_in(self, other: Any) -> Expression:
-        """Checks if values in the Expression are in the provided list
+        """Checks if values in the Expression are in the provided list.
 
         Example:
             >>> import daft
@@ -1149,7 +1167,6 @@ class Expression:
         Returns:
             Expression: Boolean Expression indicating whether values are in the provided list
         """
-
         if not isinstance(other, Expression):
             series = item_to_series("items", other)
             other = Expression._to_expression(series)
@@ -1191,8 +1208,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def hash(self, seed: Any | None = None) -> Expression:
-        """
-        Hashes the values in the Expression.
+        """Hashes the values in the Expression.
 
         Uses the `XXH3_64bits <https://xxhash.com/>`_ non-cryptographic hash function to hash the values in the expression.
 
@@ -1217,8 +1233,7 @@ class Expression:
         seed: int = 1,
         hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
     ) -> Expression:
-        """
-        Runs the MinHash algorithm on the series.
+        """Runs the MinHash algorithm on the series.
 
         For a string, calculates the minimum hash over all its ngrams,
         repeating with `num_hashes` permutations. Returns as a list of 32-bit unsigned integers.
@@ -1263,8 +1278,8 @@ class Expression:
     def _input_mapping(self) -> builtins.str | None:
         return self._expr._input_mapping()
 
-    def _bind_stateful_udfs(self, initialized_funcs: dict[builtins.str, Callable]) -> Expression:
-        return Expression._from_pyexpr(bind_stateful_udfs(self._expr, initialized_funcs))
+    def _initialize_udfs(self) -> Expression:
+        return Expression._from_pyexpr(initialize_udfs(self._expr))
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
@@ -1286,7 +1301,7 @@ class ExpressionNamespace:
 class ExpressionUrlNamespace(ExpressionNamespace):
     @staticmethod
     def _should_use_multithreading_tokio_runtime() -> bool:
-        """Whether or not our expression should use the multithreaded tokio runtime under the hood, or a singlethreaded one
+        """Whether or not our expression should use the multithreaded tokio runtime under the hood, or a singlethreaded one.
 
         This matters because for distributed workloads, each process has its own tokio I/O runtime. if each distributed process
         is multithreaded (by default we spin up `N_CPU` threads) then we will be running `(N_CPU * N_PROC)` number of threads, and
@@ -1303,7 +1318,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
 
     @staticmethod
     def _override_io_config_max_connections(max_connections: int, io_config: IOConfig | None) -> IOConfig:
-        """Use a user-provided `max_connections` argument to override the value in S3Config
+        """Use a user-provided `max_connections` argument to override the value in S3Config.
 
         This is because our Rust code under the hood actually does `min(S3Config's max_connections, url_download's max_connections)` to
         determine how many connections to allow per-thread. Thus we need to override the io_config here to ensure that the user's max_connections
@@ -1318,9 +1333,8 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
-        use_native_downloader: bool = True,
     ) -> Expression:
-        """Treats each string as a URL, and downloads the bytes contents as a bytes column
+        """Treats each string as a URL, and downloads the bytes contents as a bytes column.
 
         .. NOTE::
             If you are observing excessive S3 issues (such as timeouts, DNS errors or slowdown errors) during URL downloads,
@@ -1336,37 +1350,26 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 the error but fallback to a Null value. Defaults to "raise".
             io_config: IOConfig to use when accessing remote storage. Note that the S3Config's `max_connections` parameter will be overridden
                 with `max_connections` that is passed in as a kwarg.
-            use_native_downloader (bool): Use the native downloader rather than python based one.
-                Defaults to True.
 
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occurred during download
         """
-        if use_native_downloader:
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
             raise_on_error = False
-            if on_error == "raise":
-                raise_on_error = True
-            elif on_error == "null":
-                raise_on_error = False
-            else:
-                raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-
-            if not (isinstance(max_connections, int) and max_connections > 0):
-                raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
-
-            multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
-            io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-            return Expression._from_pyexpr(
-                _url_download(self._expr, max_connections, raise_on_error, multi_thread, io_config)
-            )
         else:
-            from daft.udf_library import url_udfs
+            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
-            return url_udfs.download_udf(
-                Expression._from_pyexpr(self._expr),
-                max_worker_threads=max_connections,
-                on_error=on_error,
-            )
+        if not (isinstance(max_connections, int) and max_connections > 0):
+            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
+
+        multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
+        io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
+        return Expression._from_pyexpr(
+            _url_download(self._expr, max_connections, raise_on_error, multi_thread, io_config)
+        )
 
     def upload(
         self,
@@ -1374,13 +1377,13 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         max_connections: int = 32,
         io_config: IOConfig | None = None,
     ) -> Expression:
-        """Uploads a column of binary data to the provided location (also supports S3, local etc)
+        """Uploads a column of binary data to the provided location (also supports S3, local etc).
 
         Files will be written into the location (folder) with a generated UUID filename, and the result
         will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
 
         Example:
-            >>> col("data").url.upload("s3://my-bucket/my-folder") # doctest: +SKIP
+            >>> col("data").url.upload("s3://my-bucket/my-folder")  # doctest: +SKIP
 
         Args:
             location: a folder location to upload data into
@@ -1402,14 +1405,14 @@ class ExpressionUrlNamespace(ExpressionNamespace):
 
 class ExpressionFloatNamespace(ExpressionNamespace):
     def is_nan(self) -> Expression:
-        """Checks if values are NaN (a special float value indicating not-a-number)
+        """Checks if values are NaN (a special float value indicating not-a-number).
 
         .. NOTE::
             Nulls will be propagated! I.e. this operation will return a null for null values.
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"data": [1., None, float("nan")]})
+            >>> df = daft.from_pydict({"data": [1.0, None, float("nan")]})
             >>> df = df.select(df["data"].float.is_nan())
             >>> df.collect()
             ╭─────────╮
@@ -1439,7 +1442,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"data": [-float("inf"), 0., float("inf"), None]})
+            >>> df = daft.from_pydict({"data": [-float("inf"), 0.0, float("inf"), None]})
             >>> df = df.select(df["data"].float.is_inf())
             >>> df.collect()
             ╭─────────╮
@@ -1464,7 +1467,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.is_inf(self._expr))
 
     def not_nan(self) -> Expression:
-        """Checks if values are not NaN (a special float value indicating not-a-number)
+        """Checks if values are not NaN (a special float value indicating not-a-number).
 
         .. NOTE::
             Nulls will be propagated! I.e. this operation will return a null for null values.
@@ -1494,7 +1497,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.not_nan(self._expr))
 
     def fill_nan(self, fill_value: Expression) -> Expression:
-        """Fills NaN values in the Expression with the provided fill_value
+        """Fills NaN values in the Expression with the provided fill_value.
 
         Example:
             >>> import daft
@@ -1518,7 +1521,6 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         Returns:
             Expression: Expression with Nan values filled with the provided fill_value
         """
-
         fill_value = Expression._to_expression(fill_value)
         expr = native.fill_nan(self._expr, fill_value._expr)
         return Expression._from_pyexpr(expr)
@@ -1526,7 +1528,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
     def date(self) -> Expression:
-        """Retrieves the date for a datetime column
+        """Retrieves the date for a datetime column.
 
         Example:
             >>> import daft, datetime
@@ -1561,7 +1563,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.dt_date(self._expr))
 
     def day(self) -> Expression:
-        """Retrieves the day for a datetime column
+        """Retrieves the day for a datetime column.
 
         Example:
             >>> import daft, datetime
@@ -1596,7 +1598,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.dt_day(self._expr))
 
     def hour(self) -> Expression:
-        """Retrieves the day for a datetime column
+        """Retrieves the day for a datetime column.
 
         Example:
             >>> import daft, datetime
@@ -1631,7 +1633,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.dt_hour(self._expr))
 
     def minute(self) -> Expression:
-        """Retrieves the minute for a datetime column
+        """Retrieves the minute for a datetime column.
 
         Example:
             >>> import daft, datetime
@@ -1666,7 +1668,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.dt_minute(self._expr))
 
     def second(self) -> Expression:
-        """Retrieves the second for a datetime column
+        """Retrieves the second for a datetime column.
 
         Example:
             >>> import daft, datetime
@@ -1701,7 +1703,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.dt_second(self._expr))
 
     def time(self) -> Expression:
-        """Retrieves the time for a datetime column
+        """Retrieves the time for a datetime column.
 
         Example:
             >>> import daft, datetime
@@ -1736,11 +1738,12 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.dt_time(self._expr))
 
     def month(self) -> Expression:
-        """Retrieves the month for a datetime column
+        """Retrieves the month for a datetime column.
 
         Example:
             >>> import daft, datetime
-            >>> df = daft.from_pydict({
+            >>> df = daft.from_pydict(
+            ...     {
             ...         "datetime": [
             ...             datetime.datetime(2024, 7, 3, 0, 0, 0),
             ...             datetime.datetime(2024, 6, 4, 0, 0, 0),
@@ -1769,11 +1772,12 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.dt_month(self._expr))
 
     def year(self) -> Expression:
-        """Retrieves the year for a datetime column
+        """Retrieves the year for a datetime column.
 
         Example:
             >>> import daft, datetime
-            >>> df = daft.from_pydict({
+            >>> df = daft.from_pydict(
+            ...     {
             ...         "datetime": [
             ...             datetime.datetime(2024, 7, 3, 0, 0, 0),
             ...             datetime.datetime(2023, 7, 4, 0, 0, 0),
@@ -1803,11 +1807,12 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.dt_year(self._expr))
 
     def day_of_week(self) -> Expression:
-        """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday
+        """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday.
 
         Example:
             >>> import daft, datetime
-            >>> df = daft.from_pydict({
+            >>> df = daft.from_pydict(
+            ...     {
             ...         "datetime": [
             ...             datetime.datetime(2024, 7, 3, 0, 0, 0),
             ...             datetime.datetime(2024, 7, 4, 0, 0, 0),
@@ -1836,11 +1841,12 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
-        """Truncates the datetime column to the specified interval
+        """Truncates the datetime column to the specified interval.
 
         Example:
             >>> import daft, datetime
-            >>> df = daft.from_pydict({
+            >>> df = daft.from_pydict(
+            ...     {
             ...         "datetime": [
             ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
             ...             datetime.datetime(2021, 1, 1, 0, 1, 59),
@@ -1876,7 +1882,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
 class ExpressionStringNamespace(ExpressionNamespace):
     def contains(self, substr: str | Expression) -> Expression:
-        """Checks whether each string contains the given pattern in a string column
+        """Checks whether each string contains the given pattern in a string column.
 
         Example:
             >>> import daft
@@ -1907,7 +1913,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_contains(self._expr, substr_expr._expr))
 
     def match(self, pattern: str | Expression) -> Expression:
-        """Checks whether each string matches the given regular expression pattern in a string column
+        """Checks whether each string matches the given regular expression pattern in a string column.
 
         Example:
             >>> import daft
@@ -1937,7 +1943,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_match(self._expr, pattern_expr._expr))
 
     def endswith(self, suffix: str | Expression) -> Expression:
-        """Checks whether each string ends with the given pattern in a string column
+        """Checks whether each string ends with the given pattern in a string column.
 
         Example:
             >>> import daft
@@ -1967,7 +1973,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_endswith(self._expr, suffix_expr._expr))
 
     def startswith(self, prefix: str | Expression) -> Expression:
-        """Checks whether each string starts with the given pattern in a string column
+        """Checks whether each string starts with the given pattern in a string column.
 
         Example:
             >>> import daft
@@ -2048,7 +2054,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_split(self._expr, pattern_expr._expr, regex))
 
     def concat(self, other: str | Expression) -> Expression:
-        """Concatenates two string expressions together
+        """Concatenates two string expressions together.
 
         .. NOTE::
             Another (easier!) way to invoke this functionality is using the Python `+` operator which is
@@ -2132,7 +2138,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression with the extracted regex match
 
-        See also:
+        See Also:
             `extract_all`
         """
         pattern_expr = Expression._to_expression(pattern)
@@ -2188,7 +2194,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a List[Utf8] expression with the extracted regex matches
 
-        See also:
+        See Also:
             `extract`
         """
         pattern_expr = Expression._to_expression(pattern)
@@ -2254,7 +2260,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         )
 
     def length(self) -> Expression:
-        """Retrieves the length for a UTF-8 string column
+        """Retrieves the length for a UTF-8 string column.
 
         Example:
             >>> import daft
@@ -2308,7 +2314,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_length_bytes(self._expr))
 
     def lower(self) -> Expression:
-        """Convert UTF-8 string to all lowercase
+        """Convert UTF-8 string to all lowercase.
 
         Example:
             >>> import daft
@@ -2335,7 +2341,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_lower(self._expr))
 
     def upper(self) -> Expression:
-        """Convert UTF-8 string to all upper
+        """Convert UTF-8 string to all upper.
 
         Example:
             >>> import daft
@@ -2362,7 +2368,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_upper(self._expr))
 
     def lstrip(self) -> Expression:
-        """Strip whitespace from the left side of a UTF-8 string
+        """Strip whitespace from the left side of a UTF-8 string.
 
         Example:
             >>> import daft
@@ -2389,7 +2395,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_lstrip(self._expr))
 
     def rstrip(self) -> Expression:
-        """Strip whitespace from the right side of a UTF-8 string
+        """Strip whitespace from the right side of a UTF-8 string.
 
         Example:
             >>> import daft
@@ -2416,7 +2422,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_rstrip(self._expr))
 
     def reverse(self) -> Expression:
-        """Reverse a UTF-8 string
+        """Reverse a UTF-8 string.
 
         Example:
             >>> import daft
@@ -2443,7 +2449,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_reverse(self._expr))
 
     def capitalize(self) -> Expression:
-        """Capitalize a UTF-8 string
+        """Capitalize a UTF-8 string.
 
         Example:
             >>> import daft
@@ -2470,7 +2476,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_capitalize(self._expr))
 
     def left(self, nchars: int | Expression) -> Expression:
-        """Gets the n (from nchars) left-most characters of each string
+        """Gets the n (from nchars) left-most characters of each string.
 
         Example:
             >>> import daft
@@ -2498,7 +2504,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_left(self._expr, nchars_expr._expr))
 
     def right(self, nchars: int | Expression) -> Expression:
-        """Gets the n (from nchars) right-most characters of each string
+        """Gets the n (from nchars) right-most characters of each string.
 
         Example:
             >>> import daft
@@ -2526,7 +2532,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_right(self._expr, nchars_expr._expr))
 
     def find(self, substr: str | Expression) -> Expression:
-        """Returns the index of the first occurrence of the substring in each string
+        """Returns the index of the first occurrence of the substring in each string.
 
         .. NOTE::
             The returned index is 0-based.
@@ -2558,7 +2564,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_find(self._expr, substr_expr._expr))
 
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
-        """Right-pads each string by truncating or padding with the character
+        """Right-pads each string by truncating or padding with the character.
 
         .. NOTE::
             If the string is longer than the specified length, it will be truncated.
@@ -2591,7 +2597,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_rpad(self._expr, length_expr._expr, pad_expr._expr))
 
     def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
-        """Left-pads each string by truncating on the right or padding with the character
+        """Left-pads each string by truncating on the right or padding with the character.
 
         .. NOTE::
             If the string is longer than the specified length, it will be truncated on the right.
@@ -2624,7 +2630,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_lpad(self._expr, length_expr._expr, pad_expr._expr))
 
     def repeat(self, n: int | Expression) -> Expression:
-        """Repeats each string n times
+        """Repeats each string n times.
 
         Example:
             >>> import daft
@@ -2652,7 +2658,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_repeat(self._expr, n_expr._expr))
 
     def like(self, pattern: str | Expression) -> Expression:
-        """Checks whether each string matches the given SQL LIKE pattern, case sensitive
+        """Checks whether each string matches the given SQL LIKE pattern, case sensitive.
 
         .. NOTE::
             Use % as a multiple-character wildcard or _ as a single-character wildcard.
@@ -2683,7 +2689,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_like(self._expr, pattern_expr._expr))
 
     def ilike(self, pattern: str | Expression) -> Expression:
-        """Checks whether each string matches the given SQL LIKE pattern, case insensitive
+        """Checks whether each string matches the given SQL LIKE pattern, case insensitive.
 
         .. NOTE::
             Use % as a multiple-character wildcard or _ as a single-character wildcard.
@@ -2722,7 +2728,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
-            >>> df = df.select(df["x"].str.substr(2,4))
+            >>> df = df.select(df["x"].str.substr(2, 4))
             >>> df.show()
             ╭──────╮
             │ x    │
@@ -2746,7 +2752,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_substr(self._expr, start_expr._expr, length_expr._expr))
 
     def to_date(self, format: str) -> Expression:
-        """Converts a string to a date using the specified format
+        """Converts a string to a date using the specified format.
 
         .. NOTE::
             The format must be a valid date format string.
@@ -2777,7 +2783,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.utf8_to_date(self._expr, format))
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
-        """Converts a string to a datetime using the specified format and timezone
+        """Converts a string to a datetime using the specified format and timezone.
 
         .. NOTE::
             The format must be a valid datetime format string.
@@ -2805,7 +2811,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             If a timezone is provided, the datetime will be parsed in that timezone
 
             >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123 +0800", "2021-01-02 12:30:00.456 +0800", None]})
-            >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="Asia/Shanghai"))
+            >>> df = df.with_column(
+            ...     "datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="Asia/Shanghai")
+            ... )
             >>> df.show()
             ╭───────────────────────────────┬────────────────────────────────────────────────╮
             │ x                             ┆ datetime                                       │
@@ -2834,15 +2842,17 @@ class ExpressionStringNamespace(ExpressionNamespace):
         nfd_unicode: bool = False,
         white_space: bool = False,
     ):
-        """Normalizes a string for more useful deduplication.
+        r"""Normalizes a string for more useful deduplication.
 
         .. NOTE::
             All processing options are off by default.
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \\nWORLD!!!!"]})
-            >>> df = df.with_column("normalized", df["x"].str.normalize(remove_punct=True, lowercase=True, white_space=True))
+            >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \nWORLD!!!!"]})
+            >>> df = df.with_column(
+            ...     "normalized", df["x"].str.normalize(remove_punct=True, lowercase=True, white_space=True)
+            ... )
             >>> df.show()
             ╭───────────────┬─────────────╮
             │ x             ┆ normalized  │
@@ -2902,7 +2912,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with the encodings of the strings as lists of unsigned 32-bit integers.
         """
-
         # if special tokens are passed in, enable using special tokens
         if use_special_tokens is None:
             use_special_tokens = special_tokens is not None
@@ -2950,8 +2959,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         whole_words: bool = False,
         case_sensitive: bool = True,
     ):
-        """
-        Counts the number of times a pattern, or multiple patterns, appear in a string.
+        """Counts the number of times a pattern, or multiple patterns, appear in a string.
 
         .. NOTE::
             If a pattern is a substring of another pattern, the longest pattern is matched first.
@@ -2982,7 +2990,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
-        """Joins every element of a list using the specified string delimiter
+        """Joins every element of a list using the specified string delimiter.
 
         Args:
             delimiter (str | Expression): the delimiter to use to join lists with
@@ -3028,7 +3036,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_value_counts(self._expr))
 
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
-        """Counts the number of elements in each list
+        """Counts the number of elements in each list.
 
         Args:
             mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
@@ -3041,7 +3049,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_count(self._expr, mode))
 
     def lengths(self) -> Expression:
-        """Gets the length of each list
+        """Gets the length of each list.
 
         (DEPRECATED) Please use Expression.list.length instead
 
@@ -3056,7 +3064,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
 
     def length(self) -> Expression:
-        """Gets the length of each list
+        """Gets the length of each list.
 
         Returns:
             Expression: a UInt64 expression which is the length of each list
@@ -3064,7 +3072,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
 
     def get(self, idx: int | Expression, default: object = None) -> Expression:
-        """Gets the element at an index in each list
+        """Gets the element at an index in each list.
 
         Args:
             idx: index or indices to retrieve from each list
@@ -3078,7 +3086,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_get(self._expr, idx_expr._expr, default_expr._expr))
 
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
-        """Gets a subset of each list
+        """Gets a subset of each list.
 
         Args:
             start: index or column of indices. The slice will include elements starting from this index. If `start` is negative, it represents an offset from the end of the list
@@ -3092,7 +3100,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_slice(self._expr, start_expr._expr, end_expr._expr))
 
     def chunk(self, size: int) -> Expression:
-        """Splits each list into chunks of the given size
+        """Splits each list into chunks of the given size.
 
         Args:
             size: size of chunks to split the list into. Must be greater than 0
@@ -3173,7 +3181,7 @@ class ExpressionListNamespace(ExpressionNamespace):
 
 class ExpressionStructNamespace(ExpressionNamespace):
     def get(self, name: str) -> Expression:
-        """Retrieves one field from a struct column
+        """Retrieves one field from a struct column.
 
         Args:
             name: the name of the field to retrieve
@@ -3186,12 +3194,12 @@ class ExpressionStructNamespace(ExpressionNamespace):
 
 class ExpressionMapNamespace(ExpressionNamespace):
     def get(self, key: Expression) -> Expression:
-        """Retrieves the value for a key in a map column
+        """Retrieves the value for a key in a map column.
 
         Example:
             >>> import pyarrow as pa
             >>> import daft
-            >>> pa_array = pa.array([[("a", 1)],[],[("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+            >>> pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
             >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
             >>> df = df.with_column("a", df["map_col"].map.get("a"))
             >>> df.show()
@@ -3224,7 +3232,7 @@ class ExpressionMapNamespace(ExpressionNamespace):
 
 
 class ExpressionsProjection(Iterable[Expression]):
-    """A collection of Expressions that can be projected onto a Table to produce another Table
+    """A collection of Expressions that can be projected onto a Table to produce another Table.
 
     Invariants:
         1. All Expressions have names
@@ -3302,7 +3310,7 @@ class ExpressionsProjection(Iterable[Expression]):
         return {e.name() for e in self}
 
     def input_mapping(self) -> dict[str, str]:
-        """Returns a map of {output_name: input_name} for all expressions that are just no-ops/aliases of an existing input"""
+        """Returns a map of {output_name: input_name} for all expressions that are just no-ops/aliases of an existing input."""
         result = {}
         for e in self:
             input_map = e._input_mapping()
@@ -3337,8 +3345,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Expression:
-        """
-        Decodes the binary data in this column into images.
+        """Decodes the binary data in this column into images.
 
         This can only be applied to binary columns that contain encoded images (e.g. PNG, JPEG, etc.)
 
@@ -3366,9 +3373,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.image_decode(self._expr, raise_on_error=raise_on_error, mode=mode))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
-        """
-        Encode an image column as the provided image file format, returning a binary column
-        of encoded bytes.
+        """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
 
         Args:
             image_format: The image file format into which the images will be encoded.
@@ -3383,8 +3388,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.image_encode(self._expr, image_format))
 
     def resize(self, w: int, h: int) -> Expression:
-        """
-        Resize image into the provided width and height.
+        """Resize image into the provided width and height.
 
         Args:
             w: Desired width of the resized image.
@@ -3400,8 +3404,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.image_resize(self._expr, w, h))
 
     def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
-        """
-        Crops images with the provided bounding box
+        """Crops images with the provided bounding box.
 
         Args:
             bbox (tuple[float, float, float, float] | Expression): Either a tuple of (x, y, width, height)
@@ -3430,7 +3433,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
     def days(self) -> Expression:
-        """Partitioning Transform that returns the number of days since epoch (1970-01-01)
+        """Partitioning Transform that returns the number of days since epoch (1970-01-01).
 
         Returns:
             Expression: Int32 Expression in days
@@ -3438,7 +3441,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.partitioning_days())
 
     def hours(self) -> Expression:
-        """Partitioning Transform that returns the number of hours since epoch (1970-01-01)
+        """Partitioning Transform that returns the number of hours since epoch (1970-01-01).
 
         Returns:
             Expression: Int32 Expression in hours
@@ -3446,26 +3449,25 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.partitioning_hours())
 
     def months(self) -> Expression:
-        """Partitioning Transform that returns the number of months since epoch (1970-01-01)
+        """Partitioning Transform that returns the number of months since epoch (1970-01-01).
 
         Returns:
             Expression: Int32 Expression in months
         """
-
         return Expression._from_pyexpr(self._expr.partitioning_months())
 
     def years(self) -> Expression:
-        """Partitioning Transform that returns the number of years since epoch (1970-01-01)
+        """Partitioning Transform that returns the number of years since epoch (1970-01-01).
 
         Returns:
             Expression: Int32 Expression in years
         """
-
         return Expression._from_pyexpr(self._expr.partitioning_years())
 
     def iceberg_bucket(self, n: int) -> Expression:
-        """Partitioning Transform that returns the Hash Bucket following the Iceberg Specification of murmur3_32_x86
-        https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements
+        """Partitioning Transform that returns the Hash Bucket following the Iceberg Specification of murmur3_32_x86.
+
+        See https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements for more details.
 
         Args:
             n (int): Number of buckets
@@ -3477,7 +3479,8 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
 
     def iceberg_truncate(self, w: int) -> Expression:
         """Partitioning Transform that truncates the input to a standard width `w` following the Iceberg Specification.
-        https://iceberg.apache.org/spec/#truncate-transform-details
+
+        https://iceberg.apache.org/spec/#truncate-transform-details.
 
         Args:
             w (int): width of the truncation
@@ -3490,7 +3493,8 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
 
 class ExpressionJsonNamespace(ExpressionNamespace):
     def query(self, jq_query: str) -> Expression:
-        """Query JSON data in a column using a JQ-style filter https://jqlang.github.io/jq/manual/
+        """Query JSON data in a column using a JQ-style filter https://jqlang.github.io/jq/manual/.
+
         This expression uses jaq as the underlying executor, see https://github.com/01mf02/jaq for the full list of supported filters.
 
         Example:
@@ -3517,11 +3521,10 @@ class ExpressionJsonNamespace(ExpressionNamespace):
         Returns:
             Expression: Expression representing the result of the JQ query as a column of JSON-compatible strings
         """
-
         return Expression._from_pyexpr(native.json_query(self._expr, jq_query))
 
 
 class ExpressionEmbeddingNamespace(ExpressionNamespace):
     def cosine_distance(self, other: Expression) -> Expression:
-        """Compute the cosine distance between two embeddings"""
+        """Compute the cosine distance between two embeddings."""
         return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))

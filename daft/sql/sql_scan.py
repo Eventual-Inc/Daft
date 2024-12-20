@@ -69,6 +69,9 @@ class SQLScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def name(self) -> str:
+        return "SQLScanOperator"
+
     def display_name(self) -> str:
         return f"SQLScanOperator(sql={self.sql}, conn={self.conn})"
 
@@ -213,7 +216,7 @@ class SQLScanOperator(ScanOperator):
 
             except Exception as e:
                 warnings.warn(
-                    f"Failed to calculate partition bounds for read_sql using percentile strategy: {str(e)}. "
+                    f"Failed to calculate partition bounds for read_sql using percentile strategy: {e!s}. "
                     "Falling back to MIN_MAX strategy."
                 )
                 self._partition_bound_strategy = PartitionBoundStrategy.MIN_MAX
@@ -268,8 +271,8 @@ class SQLScanOperator(ScanOperator):
             url=self.conn.url,
             file_format=file_format_config,
             schema=self._schema._schema,
-            num_rows=num_rows,
             storage_config=self.storage_config,
+            num_rows=num_rows,
             size_bytes=size_bytes,
             pushdowns=pushdowns if not apply_pushdowns_to_sql else None,
             stats=stats,

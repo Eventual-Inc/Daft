@@ -1,6 +1,24 @@
 name: build-commit
 
 on:
+  workflow_call:
+    inputs:
+      arch:
+        description: The machine architecture to build for
+        required: true
+        type: string
+      python_version:
+        description: The version of Python to use
+        required: true
+        type: string
+    secrets:
+      ACTIONS_AWS_ROLE_ARN:
+        description: The AWS Role ARN for secrets access
+        required: true
+    outputs:
+      wheel_url:
+        description: The name of the built wheel
+        value: ${{ jobs.build-commit.outputs.wheel_url }}
   workflow_dispatch:
     inputs:
       arch:
@@ -24,6 +42,8 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    outputs:
+      wheel_url: ${{ steps.set-wheel-name.outputs.wheel_url }}
     steps:
     - name: Set platform substring
       run: |
@@ -96,6 +116,7 @@ jobs:
         )
         echo "wheel_name=$wheel_name" >> $GITHUB_ENV
     - name: Print url of the built wheel to GitHub Actions Summary Page
+      id: set-wheel-name
       run: |
         console_url="https://us-west-2.console.aws.amazon.com/s3/object/github-actions-artifacts-bucket?prefix=builds/${{ github.sha }}/$wheel_name"
         download_url="https://github-actions-artifacts-bucket.s3.us-west-2.amazonaws.com/builds/${{ github.sha }}/$wheel_name"
@@ -105,3 +126,6 @@ jobs:
 
         echo "Directly download the wheel here:" >> $GITHUB_STEP_SUMMARY
         echo "$download_url" >> $GITHUB_STEP_SUMMARY
+        echo "wheel_url=$download_url" >> $GITHUB_OUTPUT
+      env:
+        wheel_url: ${{ env.wheel_url }}

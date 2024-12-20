@@ -15,7 +15,6 @@ use daft_schema::schema::{Schema, SchemaRef};
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
-    crate::source_info::InMemoryInfo,
     common_daft_config::PyDaftPlanningConfig,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
@@ -26,12 +25,12 @@ use {
 use crate::{
     logical_plan::LogicalPlan,
     ops,
-    optimization::{Optimizer, OptimizerConfig},
+    optimization::Optimizer,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     sink_info::{OutputFileInfo, SinkInfo},
-    source_info::SourceInfo,
+    source_info::{InMemoryInfo, SourceInfo},
     LogicalPlanRef,
 };
 
@@ -114,10 +113,9 @@ impl LogicalPlanBuilder {
         Self::new(self.plan.clone(), Some(config))
     }
 
-    #[cfg(feature = "python")]
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: PyObject,
+        cache_entry: common_partitioning::PartitionCacheEntry,
         schema: Arc<Schema>,
         num_partitions: usize,
         size_bytes: usize,
@@ -383,6 +381,26 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(pivot_logical_plan))
     }
 
+    // Helper function to create inner joins more ergonimically in tests.
+    #[cfg(test)]
+    pub(crate) fn inner_join<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
+    ) -> DaftResult<Self> {
+        self.join(
+            right,
+            left_on,
+            right_on,
+            JoinType::Inner,
+            None,
+            None,
+            None,
+            false,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn join<Right: Into<LogicalPlanRef>>(
         &self,
@@ -590,16 +608,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn optimize(&self) -> DaftResult<Self> {
-        let default_optimizer_config: OptimizerConfig = Default::default();
-        let optimizer_config = OptimizerConfig {
-            enable_actor_pool_projections: self
-                .config
-                .as_ref()
-                .map(|planning_cfg| planning_cfg.enable_actor_pool_projections)
-                .unwrap_or(default_optimizer_config.enable_actor_pool_projections),
-            ..default_optimizer_config
-        };
-        let optimizer = Optimizer::new(optimizer_config);
+        let optimizer = Optimizer::new(Default::default());
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
@@ -653,7 +662,7 @@ impl LogicalPlanBuilder {
 /// as possible, converting pyo3 wrapper type arguments into their underlying Rust-native types
 /// (e.g. PySchema -> Schema).
 #[cfg_attr(feature = "python", pyclass(name = "LogicalPlanBuilder"))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PyLogicalPlanBuilder {
     // Internal logical plan builder.
     pub builder: LogicalPlanBuilder,
@@ -684,7 +693,7 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
-            cache_entry,
+            common_partitioning::PartitionCacheEntry::Python(cache_entry),
             schema.into(),
             num_partitions,
             size_bytes,

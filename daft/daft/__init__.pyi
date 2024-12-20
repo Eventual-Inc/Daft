@@ -9,7 +9,7 @@ from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
-from daft.udf import InitArgsType, PartialStatefulUDF, PartialStatelessUDF
+from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -17,8 +17,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
 class ImageMode(Enum):
-    """
-    Supported image modes for Daft's image type.
+    """Supported image modes for Daft's image type.
 
     .. warning::
         Currently, only the 8-bit modes (L, LA, RGB, RGBA) can be stored in a DataFrame.
@@ -58,8 +57,7 @@ class ImageMode(Enum):
 
     @staticmethod
     def from_mode_string(mode: str) -> ImageMode:
-        """
-        Create an ImageMode from its string representation.
+        """Create an ImageMode from its string representation.
 
         Args:
             mode: String representation of the mode. This is the same as the enum
@@ -69,9 +67,7 @@ class ImageMode(Enum):
         ...
 
 class ImageFormat(Enum):
-    """
-    Supported image formats for Daft's image I/O.
-    """
+    """Supported image formats for Daft's image I/O."""
 
     PNG: int
     JPEG: int
@@ -81,15 +77,11 @@ class ImageFormat(Enum):
 
     @staticmethod
     def from_format_string(mode: str) -> ImageFormat:
-        """
-        Create an ImageFormat from its string representation.
-        """
+        """Create an ImageFormat from its string representation."""
         ...
 
 class JoinType(Enum):
-    """
-    Type of a join operation.
-    """
+    """Type of a join operation."""
 
     Inner: int
     Left: int
@@ -100,8 +92,7 @@ class JoinType(Enum):
 
     @staticmethod
     def from_join_type_str(join_type: str) -> JoinType:
-        """
-        Create a JoinType from its string representation.
+        """Create a JoinType from its string representation.
 
         Args:
             join_type: String representation of the join type. This is the same as the enum
@@ -111,9 +102,7 @@ class JoinType(Enum):
         ...
 
 class JoinStrategy(Enum):
-    """
-    Join strategy (algorithm) to use.
-    """
+    """Join strategy (algorithm) to use."""
 
     Hash: int
     SortMerge: int
@@ -121,8 +110,7 @@ class JoinStrategy(Enum):
 
     @staticmethod
     def from_join_strategy_str(join_strategy: str) -> JoinStrategy:
-        """
-        Create a JoinStrategy from its string representation.
+        """Create a JoinStrategy from its string representation.
 
         Args:
             join_strategy: String representation of the join strategy. This is the same as the enum
@@ -131,9 +119,12 @@ class JoinStrategy(Enum):
         """
         ...
 
+class JoinSide(Enum):
+    Left: int
+    Right: int
+
 class CountMode(Enum):
-    """
-    Supported count modes for Daft's count aggregation.
+    """Supported count modes for Daft's count aggregation.
 
     | All   - Count both non-null and null values.
     | Valid - Count only valid values.
@@ -146,8 +137,7 @@ class CountMode(Enum):
 
     @staticmethod
     def from_count_mode_str(count_mode: str) -> CountMode:
-        """
-        Create a CountMode from its string representation.
+        """Create a CountMode from its string representation.
 
         Args:
             count_mode: String representation of the count mode , e.g. "all", "valid", or "null".
@@ -155,9 +145,7 @@ class CountMode(Enum):
         ...
 
 class ResourceRequest:
-    """
-    Resource request for a query fragment task.
-    """
+    """Resource request for a query fragment task."""
 
     num_cpus: float | None
     num_gpus: float | None
@@ -184,9 +172,7 @@ class ResourceRequest:
     def __ne__(self, other: ResourceRequest) -> bool: ...  # type: ignore[override]
 
 class FileFormat(Enum):
-    """
-    Format of a file, e.g. Parquet, CSV, and JSON.
-    """
+    """Format of a file, e.g. Parquet, CSV, and JSON."""
 
     Parquet: int
     Csv: int
@@ -195,9 +181,7 @@ class FileFormat(Enum):
     def ext(self): ...
 
 class ParquetSourceConfig:
-    """
-    Configuration of a Parquet data source.
-    """
+    """Configuration of a Parquet data source."""
 
     coerce_int96_timestamp_unit: PyTimeUnit | None
     field_id_mapping: dict[int, PyField] | None
@@ -213,9 +197,7 @@ class ParquetSourceConfig:
     ): ...
 
 class CsvSourceConfig:
-    """
-    Configuration of a CSV data source.
-    """
+    """Configuration of a CSV data source."""
 
     delimiter: str | None
     has_headers: bool
@@ -241,9 +223,7 @@ class CsvSourceConfig:
     ): ...
 
 class JsonSourceConfig:
-    """
-    Configuration of a JSON data source.
-    """
+    """Configuration of a JSON data source."""
 
     buffer_size: int | None
     chunk_size: int | None
@@ -255,9 +235,7 @@ class JsonSourceConfig:
     ): ...
 
 class DatabaseSourceConfig:
-    """
-    Configuration of a database data source.
-    """
+    """Configuration of a database data source."""
 
     sql: str
     conn: SQLConnection
@@ -265,53 +243,39 @@ class DatabaseSourceConfig:
     def __init__(self, sql: str, conn_factory: SQLConnection): ...
 
 class FileFormatConfig:
-    """
-    Configuration for parsing a particular file format (Parquet, CSV, JSON).
-    """
+    """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
     config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
-        """
-        Create a Parquet file format config.
-        """
+        """Create a Parquet file format config."""
         ...
 
     @staticmethod
     def from_csv_config(config: CsvSourceConfig) -> FileFormatConfig:
-        """
-        Create a CSV file format config.
-        """
+        """Create a CSV file format config."""
         ...
 
     @staticmethod
     def from_json_config(config: JsonSourceConfig) -> FileFormatConfig:
-        """
-        Create a JSON file format config.
-        """
+        """Create a JSON file format config."""
         ...
 
     @staticmethod
     def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
-        """
-        Create a database file format config.
-        """
+        """Create a database file format config."""
         ...
 
     def file_format(self) -> FileFormat:
-        """
-        Get the file format for this config.
-        """
+        """Get the file format for this config."""
         ...
 
     def __eq__(self, other: FileFormatConfig) -> bool: ...  # type: ignore[override]
     def __ne__(self, other: FileFormatConfig) -> bool: ...  # type: ignore[override]
 
 class CsvConvertOptions:
-    """
-    Options for converting CSV data to Daft data.
-    """
+    """Options for converting CSV data to Daft data."""
 
     limit: int | None
     include_columns: list[str] | None
@@ -329,9 +293,7 @@ class CsvConvertOptions:
     ): ...
 
 class CsvParseOptions:
-    """
-    Options for parsing CSV files.
-    """
+    """Options for parsing CSV files."""
 
     has_header: bool
     delimiter: str | None
@@ -353,9 +315,7 @@ class CsvParseOptions:
     ): ...
 
 class CsvReadOptions:
-    """
-    Options for reading CSV files.
-    """
+    """Options for reading CSV files."""
 
     buffer_size: int | None
     chunk_size: int | None
@@ -367,9 +327,7 @@ class CsvReadOptions:
     ): ...
 
 class JsonConvertOptions:
-    """
-    Options for converting JSON data to Daft data.
-    """
+    """Options for converting JSON data to Daft data."""
 
     limit: int | None
     include_columns: list[str] | None
@@ -383,14 +341,10 @@ class JsonConvertOptions:
     ): ...
 
 class JsonParseOptions:
-    """
-    Options for parsing JSON files.
-    """
+    """Options for parsing JSON files."""
 
 class JsonReadOptions:
-    """
-    Options for reading JSON files.
-    """
+    """Options for reading JSON files."""
 
     buffer_size: int | None
     chunk_size: int | None
@@ -402,18 +356,14 @@ class JsonReadOptions:
     ): ...
 
 class FileInfo:
-    """
-    Metadata for a single file.
-    """
+    """Metadata for a single file."""
 
     file_path: str
     file_size: int | None
     num_rows: int | None
 
 class FileInfos:
-    """
-    Metadata for a collection of files.
-    """
+    """Metadata for a collection of files."""
 
     file_paths: list[str]
     file_sizes: list[int | None]
@@ -422,27 +372,21 @@ class FileInfos:
     @staticmethod
     def from_infos(file_paths: list[str], file_sizes: list[int | None], num_rows: list[int | None]) -> FileInfos: ...
     def extend(self, new_infos: FileInfos) -> FileInfos:
-        """
-        Concatenate two FileInfos together.
-        """
+        """Concatenate two FileInfos together."""
         ...
 
     def __getitem__(self, idx: int) -> FileInfo: ...
     def __len__(self) -> int: ...
 
 class HTTPConfig:
-    """
-    I/O configuration for accessing HTTP systems
-    """
+    """I/O configuration for accessing HTTP systems."""
 
     bearer_token: str | None
 
     def __init__(self, bearer_token: str | None = None): ...
 
 class S3Config:
-    """
-    I/O configuration for accessing an S3-compatible system.
-    """
+    """I/O configuration for accessing an S3-compatible system."""
 
     region_name: str | None
     endpoint_url: str | None
@@ -509,12 +453,12 @@ class S3Config:
         force_virtual_addressing: bool | None = None,
         profile_name: str | None = None,
     ) -> S3Config:
-        """Replaces values if provided, returning a new S3Config"""
+        """Replaces values if provided, returning a new S3Config."""
         ...
 
     @staticmethod
     def from_env() -> S3Config:
-        """Creates an S3Config, retrieving credentials and configurations from the current environment"""
+        """Creates an S3Config, retrieving credentials and configurations from the current environment."""
         ...
 
 class S3Credentials:
@@ -532,9 +476,7 @@ class S3Credentials:
     ): ...
 
 class AzureConfig:
-    """
-    I/O configuration for accessing Azure Blob Storage.
-    """
+    """I/O configuration for accessing Azure Blob Storage."""
 
     storage_account: str | None
     access_key: str | None
@@ -576,13 +518,11 @@ class AzureConfig:
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
     ) -> AzureConfig:
-        """Replaces values if provided, returning a new AzureConfig"""
+        """Replaces values if provided, returning a new AzureConfig."""
         ...
 
 class GCSConfig:
-    """
-    I/O configuration for accessing Google Cloud Storage.
-    """
+    """I/O configuration for accessing Google Cloud Storage."""
 
     project_id: str | None
     credentials: str | None
@@ -618,13 +558,11 @@ class GCSConfig:
         read_timeout_ms: int | None = None,
         num_tries: int | None = None,
     ) -> GCSConfig:
-        """Replaces values if provided, returning a new GCSConfig"""
+        """Replaces values if provided, returning a new GCSConfig."""
         ...
 
 class IOConfig:
-    """
-    Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems.
-    """
+    """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
     s3: S3Config
     azure: AzureConfig
@@ -645,67 +583,27 @@ class IOConfig:
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
     ) -> IOConfig:
-        """Replaces values if provided, returning a new IOConfig"""
+        """Replaces values if provided, returning a new IOConfig."""
         ...
 
-class NativeStorageConfig:
-    """
-    Storage configuration for the Rust-native I/O layer.
-    """
+class StorageConfig:
+    """Configuration for interacting with a particular storage backend."""
 
     # Whether or not to use a multithreaded tokio runtime for processing I/O
     multithreaded_io: bool
     io_config: IOConfig
 
-    def __init__(self, multithreaded_io: bool, io_config: IOConfig): ...
-
-class PythonStorageConfig:
-    """
-    Storage configuration for the legacy Python I/O layer.
-    """
-
-    io_config: IOConfig
-
-    def __init__(self, io_config: IOConfig): ...
-
-class StorageConfig:
-    """
-    Configuration for interacting with a particular storage backend, using a particular
-    I/O layer implementation.
-    """
-
-    @staticmethod
-    def native(config: NativeStorageConfig) -> StorageConfig:
-        """
-        Create from a native storage config.
-        """
-        ...
-
-    @staticmethod
-    def python(config: PythonStorageConfig) -> StorageConfig:
-        """
-        Create from a Python storage config.
-        """
-        ...
-
-    @property
-    def config(self) -> NativeStorageConfig | PythonStorageConfig: ...
+    def __init__(self, multithreaded_io: bool, io_config: IOConfig | None): ...
 
 class ScanTask:
-    """
-    A batch of scan tasks for reading data from an external source.
-    """
+    """A batch of scan tasks for reading data from an external source."""
 
     def num_rows(self) -> int:
-        """
-        Get number of rows that will be scanned by this ScanTask.
-        """
+        """Get number of rows that will be scanned by this ScanTask."""
         ...
 
     def estimate_in_memory_size_bytes(self, cfg: PyDaftExecutionConfig) -> int:
-        """
-        Estimate the In Memory Size of this ScanTask.
-        """
+        """Estimate the In Memory Size of this ScanTask."""
         ...
 
     @staticmethod
@@ -721,9 +619,7 @@ class ScanTask:
         partition_values: PyTable | None,
         stats: PyTable | None,
     ) -> ScanTask | None:
-        """
-        Create a Catalog Scan Task
-        """
+        """Create a Catalog Scan Task."""
         ...
 
     @staticmethod
@@ -731,15 +627,13 @@ class ScanTask:
         url: str,
         file_format: FileFormatConfig,
         schema: PySchema,
-        num_rows: int | None,
         storage_config: StorageConfig,
+        num_rows: int | None,
         size_bytes: int | None,
         pushdowns: Pushdowns | None,
         stats: PyTable | None,
     ) -> ScanTask:
-        """
-        Create a SQL Scan Task
-        """
+        """Create a SQL Scan Task."""
         ...
 
     @staticmethod
@@ -753,15 +647,11 @@ class ScanTask:
         pushdowns: Pushdowns | None,
         stats: PyTable | None,
     ) -> ScanTask:
-        """
-        Create a Python factory function Scan Task
-        """
+        """Create a Python factory function Scan Task."""
         ...
 
 class ScanOperatorHandle:
-    """
-    A handle to a scan operator.
-    """
+    """A handle to a scan operator."""
 
     @staticmethod
     def anonymous_scan(
@@ -786,9 +676,7 @@ class ScanOperatorHandle:
 def logical_plan_table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
 
 class PartitionField:
-    """
-    Partitioning Field of a Scan Source such as Hive or Iceberg
-    """
+    """Partitioning Field of a Scan Source such as Hive or Iceberg."""
 
     field: PyField
 
@@ -800,9 +688,7 @@ class PartitionField:
     ) -> None: ...
 
 class PartitionTransform:
-    """
-    Partitioning Transform from a Data Catalog source field to a Partitioning Columns
-    """
+    """Partitioning Transform from a Data Catalog source field to a Partitioning Columns."""
 
     @staticmethod
     def identity() -> PartitionTransform: ...
@@ -820,9 +706,7 @@ class PartitionTransform:
     def iceberg_truncate(w: int) -> PartitionTransform: ...
 
 class Pushdowns:
-    """
-    Pushdowns from the query optimizer that can optimize scanning data sources.
-    """
+    """Pushdowns from the query optimizer that can optimize scanning data sources."""
 
     columns: list[str] | None
     filters: PyExpr | None
@@ -1123,29 +1007,20 @@ def interval_lit(
 ) -> PyExpr: ...
 def decimal_lit(sign: bool, digits: tuple[int, ...], exp: int) -> PyExpr: ...
 def series_lit(item: PySeries) -> PyExpr: ...
-def stateless_udf(
+def udf(
     name: str,
-    partial_stateless_udf: PartialStatelessUDF,
+    inner: UninitializedUdf,
+    bound_args: BoundUDFArgs,
     expressions: list[PyExpr],
     return_dtype: PyDataType,
-    resource_request: ResourceRequest | None,
-    batch_size: int | None,
-) -> PyExpr: ...
-def stateful_udf(
-    name: str,
-    partial_stateful_udf: PartialStatefulUDF,
-    expressions: list[PyExpr],
-    return_dtype: PyDataType,
-    resource_request: ResourceRequest | None,
     init_args: InitArgsType,
+    resource_request: ResourceRequest | None,
     batch_size: int | None,
     concurrency: int | None,
 ) -> PyExpr: ...
 def check_column_name_validity(name: str, schema: PySchema): ...
-def extract_partial_stateful_udf_py(
-    expression: PyExpr,
-) -> dict[str, tuple[PartialStatefulUDF, InitArgsType]]: ...
-def bind_stateful_udfs(expression: PyExpr, initialized_funcs: dict[str, Callable]) -> PyExpr: ...
+def initialize_udfs(expression: PyExpr) -> PyExpr: ...
+def get_udf_names(expression: PyExpr) -> list[str]: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
 def hash(expr: PyExpr, seed: Any | None = None) -> PyExpr: ...
 def cosine_distance(expr: PyExpr, other: PyExpr) -> PyExpr: ...
@@ -1185,6 +1060,7 @@ def minhash(
     seed: int = 1,
     hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
 ) -> PyExpr: ...
+def coalesce(exprs: list[PyExpr]) -> PyExpr: ...
 
 # -----
 # SQL functions
@@ -1582,6 +1458,11 @@ class PyMicroPartition:
         right_on: list[PyExpr],
         is_sorted: bool,
     ) -> PyMicroPartition: ...
+    def cross_join(
+        self,
+        right: PyMicroPartition,
+        outer_loop_side: JoinSide,
+    ) -> PyMicroPartition: ...
     def explode(self, to_explode: list[PyExpr]) -> PyMicroPartition: ...
     def unpivot(
         self,
@@ -1652,9 +1533,7 @@ class PyMicroPartition:
     ): ...
 
 class PhysicalPlanScheduler:
-    """
-    A work scheduler for physical query plans.
-    """
+    """A work scheduler for physical query plans."""
 
     @staticmethod
     def from_logical_plan_builder(
@@ -1671,9 +1550,7 @@ class PhysicalPlanScheduler:
     def run(self, psets: dict[str, list[PartitionT]]) -> Iterator[PyMicroPartition]: ...
 
 class AdaptivePhysicalPlanScheduler:
-    """
-    An adaptive Physical Plan Scheduler.
-    """
+    """An adaptive Physical Plan Scheduler."""
 
     @staticmethod
     def from_logical_plan_builder(
@@ -1694,9 +1571,9 @@ class AdaptivePhysicalPlanScheduler:
     ) -> None: ...
 
 class LogicalPlanBuilder:
-    """
-    A logical plan builder, which simplifies constructing logical plans via
-    a fluent interface. E.g., LogicalPlanBuilder.table_scan(..).project(..).filter(..).
+    """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
+
+    E.g., LogicalPlanBuilder.table_scan(..).project(..).filter(..).
 
     This builder holds the current root (sink) of the logical plan, and the building methods return
     a brand new builder holding a new plan; i.e., this is an immutable builder.
@@ -1830,6 +1707,8 @@ class PyDaftExecutionConfig:
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
+        partial_aggregation_threshold: int | None = None,
+        high_cardinality_aggregation_threshold: float | None = None,
         read_sql_partition_size_bytes: int | None = None,
         enable_aqe: bool | None = None,
         enable_native_executor: bool | None = None,
@@ -1865,6 +1744,10 @@ class PyDaftExecutionConfig:
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
     @property
+    def partial_aggregation_threshold(self) -> int: ...
+    @property
+    def high_cardinality_aggregation_threshold(self) -> float: ...
+    @property
     def read_sql_partition_size_bytes(self) -> int: ...
     @property
     def enable_aqe(self) -> bool: ...
@@ -1885,12 +1768,9 @@ class PyDaftPlanningConfig:
     def with_config_values(
         self,
         default_io_config: IOConfig | None = None,
-        enable_actor_pool_projections: bool | None = None,
     ) -> PyDaftPlanningConfig: ...
     @property
     def default_io_config(self) -> IOConfig: ...
-    @property
-    def enable_actor_pool_projections(self) -> bool: ...
 
 def build_type() -> str: ...
 def version() -> str: ...
@@ -1907,9 +1787,7 @@ def io_glob(
 ) -> list[dict]: ...
 
 class SystemInfo:
-    """
-    Accessor for system information.
-    """
+    """Accessor for system information."""
 
     def __init__(self) -> None: ...
     def total_memory(self) -> int: ...

@@ -89,7 +89,6 @@ impl BinaryArray {
         .unwrap()
     }
 }
-
 impl FixedSizeBinaryArray {
     pub fn from_iter<S: AsRef<[u8]>>(
         name: &str,

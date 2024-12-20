@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import threading
+from typing import TYPE_CHECKING, Union
 
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
@@ -73,7 +74,7 @@ class TimeUnit:
 
 
 class DataType:
-    """A Daft DataType defines the type of all the values in an Expression or DataFrame column"""
+    """A Daft DataType defines the type of all the values in an Expression or DataFrame column."""
 
     _dtype: PyDataType
 
@@ -83,6 +84,40 @@ class DataType:
             "use a creator method like DataType.int32() or use DataType.from_arrow_type(pa_type)"
         )
 
+    @classmethod
+    def _infer_type(cls, user_provided_type: DataTypeLike) -> DataType:
+        from typing import get_args, get_origin
+
+        if isinstance(user_provided_type, DataType):
+            return user_provided_type
+        elif isinstance(user_provided_type, dict):
+            return DataType.struct({k: DataType._infer_type(user_provided_type[k]) for k in user_provided_type})
+        elif get_origin(user_provided_type) is not None:
+            origin_type = get_origin(user_provided_type)
+            if origin_type is list:
+                child_type = get_args(user_provided_type)[0]
+                return DataType.list(DataType._infer_type(child_type))
+            elif origin_type is dict:
+                (key_type, val_type) = get_args(user_provided_type)
+                return DataType.map(DataType._infer_type(key_type), DataType._infer_type(val_type))
+            else:
+                raise ValueError(f"Unrecognized Python origin type, cannot convert to Daft type: {origin_type}")
+        elif isinstance(user_provided_type, type):
+            if user_provided_type is str:
+                return DataType.string()
+            elif user_provided_type is int:
+                return DataType.int64()
+            elif user_provided_type is float:
+                return DataType.float64()
+            elif user_provided_type is bytes:
+                return DataType.binary()
+            elif user_provided_type is object:
+                return DataType.python()
+            else:
+                raise ValueError(f"Unrecognized Python type, cannot convert to Daft type: {user_provided_type}")
+        else:
+            raise ValueError(f"Unable to infer Daft DataType for provided value: {user_provided_type}")
+
     @staticmethod
     def _from_pydatatype(pydt: PyDataType) -> DataType:
         dt = DataType.__new__(DataType)
@@ -91,79 +126,79 @@ class DataType:
 
     @classmethod
     def int8(cls) -> DataType:
-        """Create an 8-bit integer DataType"""
+        """Create an 8-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int8())
 
     @classmethod
     def int16(cls) -> DataType:
-        """Create an 16-bit integer DataType"""
+        """Create an 16-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int16())
 
     @classmethod
     def int32(cls) -> DataType:
-        """Create an 32-bit integer DataType"""
+        """Create an 32-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int32())
 
     @classmethod
     def int64(cls) -> DataType:
-        """Create an 64-bit integer DataType"""
+        """Create an 64-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int64())
 
     @classmethod
     def uint8(cls) -> DataType:
-        """Create an unsigned 8-bit integer DataType"""
+        """Create an unsigned 8-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint8())
 
     @classmethod
     def uint16(cls) -> DataType:
-        """Create an unsigned 16-bit integer DataType"""
+        """Create an unsigned 16-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint16())
 
     @classmethod
     def uint32(cls) -> DataType:
-        """Create an unsigned 32-bit integer DataType"""
+        """Create an unsigned 32-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint32())
 
     @classmethod
     def uint64(cls) -> DataType:
-        """Create an unsigned 64-bit integer DataType"""
+        """Create an unsigned 64-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint64())
 
     @classmethod
     def float32(cls) -> DataType:
-        """Create a 32-bit float DataType"""
+        """Create a 32-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float32())
 
     @classmethod
     def float64(cls) -> DataType:
-        """Create a 64-bit float DataType"""
+        """Create a 64-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float64())
 
     @classmethod
     def string(cls) -> DataType:
-        """Create a String DataType: A string of UTF8 characters"""
+        """Create a String DataType: A string of UTF8 characters."""
         return cls._from_pydatatype(PyDataType.string())
 
     @classmethod
     def bool(cls) -> DataType:
-        """Create the Boolean DataType: Either ``True`` or ``False``"""
+        """Create the Boolean DataType: Either ``True`` or ``False``."""
         return cls._from_pydatatype(PyDataType.bool())
 
     @classmethod
     def binary(cls) -> DataType:
-        """Create a Binary DataType: A string of bytes"""
+        """Create a Binary DataType: A string of bytes."""
         return cls._from_pydatatype(PyDataType.binary())
 
     @classmethod
     def fixed_size_binary(cls, size: int) -> DataType:
-        """Create a FixedSizeBinary DataType: A fixed-size string of bytes"""
+        """Create a FixedSizeBinary DataType: A fixed-size string of bytes."""
         if not isinstance(size, int) or size <= 0:
             raise ValueError("The size for a fixed-size binary must be a positive integer, but got: ", size)
         return cls._from_pydatatype(PyDataType.fixed_size_binary(size))
 
     @classmethod
     def null(cls) -> DataType:
-        """Creates the Null DataType: Always the ``Null`` value"""
+        """Creates the Null DataType: Always the ``Null`` value."""
         return cls._from_pydatatype(PyDataType.null())
 
     @classmethod
@@ -173,7 +208,7 @@ class DataType:
 
     @classmethod
     def date(cls) -> DataType:
-        """Create a Date DataType: A date with a year, month and day"""
+        """Create a Date DataType: A date with a year, month and day."""
         return cls._from_pydatatype(PyDataType.date())
 
     @classmethod
@@ -204,7 +239,7 @@ class DataType:
 
     @classmethod
     def list(cls, dtype: DataType) -> DataType:
-        """Create a List DataType: Variable-length list, where each element in the list has type ``dtype``
+        """Create a List DataType: Variable-length list, where each element in the list has type ``dtype``.
 
         Args:
             dtype: DataType of each element in the list
@@ -213,8 +248,7 @@ class DataType:
 
     @classmethod
     def fixed_size_list(cls, dtype: DataType, size: int) -> DataType:
-        """Create a FixedSizeList DataType: Fixed-size list, where each element in the list has type ``dtype``
-        and each list has length ``size``.
+        """Create a FixedSizeList DataType: Fixed-size list, where each element in the list has type ``dtype`` and each list has length ``size``.
 
         Args:
             dtype: DataType of each element in the list
@@ -227,6 +261,7 @@ class DataType:
     @classmethod
     def map(cls, key_type: DataType, value_type: DataType) -> DataType:
         """Create a Map DataType: A map is a nested type of key-value pairs that is implemented as a list of structs with two fields, key and value.
+
         Args:
             key_type: DataType of the keys in the map
             value_type: DataType of the values in the map
@@ -235,7 +270,7 @@ class DataType:
 
     @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
-        """Create a Struct DataType: a nested type which has names mapped to child types
+        """Create a Struct DataType: a nested type which has names mapped to child types.
 
         Example:
         >>> DataType.struct({"name": DataType.string(), "age": DataType.int64()})
@@ -251,8 +286,7 @@ class DataType:
 
     @classmethod
     def embedding(cls, dtype: DataType, size: int) -> DataType:
-        """Create an Embedding DataType: embeddings are fixed size arrays, where each element
-        in the array has a **numeric** ``dtype`` and each array has a fixed length of ``size``.
+        """Create an Embedding DataType: embeddings are fixed size arrays, where each element in the array has a **numeric** ``dtype`` and each array has a fixed length of ``size``.
 
         Args:
             dtype: DataType of each element in the list (must be numeric)
@@ -309,8 +343,7 @@ class DataType:
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
     ) -> DataType:
-        """Create a tensor DataType: tensor arrays contain n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
-        ``shape``.
+        """Create a tensor DataType: tensor arrays contain n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided ``shape``.
 
         If a ``shape`` is given, each ndarray in the column will have this shape.
 
@@ -333,8 +366,7 @@ class DataType:
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
     ) -> DataType:
-        """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
-        ``shape``.
+        """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided ``shape``.
 
         If a ``shape`` is given, each ndarray in the column will have this shape.
 
@@ -353,7 +385,7 @@ class DataType:
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
-        """Maps a PyArrow DataType to a Daft DataType"""
+        """Maps a PyArrow DataType to a Daft DataType."""
         if pa.types.is_int8(arrow_type):
             return cls.int8()
         elif pa.types.is_int16(arrow_type):
@@ -461,7 +493,7 @@ class DataType:
 
     @classmethod
     def from_numpy_dtype(cls, np_type: np.dtype) -> DataType:
-        """Maps a Numpy datatype to a Daft DataType"""
+        """Maps a Numpy datatype to a Daft DataType."""
         arrow_type = pa.from_numpy_dtype(np_type)
         return cls.from_arrow_type(arrow_type)
 
@@ -470,7 +502,7 @@ class DataType:
 
     @classmethod
     def python(cls) -> DataType:
-        """Create a Python DataType: a type which refers to an arbitrary Python object"""
+        """Create a Python DataType: a type which refers to an arbitrary Python object."""
         return cls._from_pydatatype(PyDataType.python())
 
     def _is_python_type(self) -> builtins.bool:
@@ -541,6 +573,11 @@ class DataType:
         return self._dtype.__hash__()
 
 
+# Type alias for a union of types that can be inferred into a DataType
+DataTypeLike = Union[DataType, type]
+
+
+_EXT_TYPE_REGISTRATION_LOCK = threading.Lock()
 _EXT_TYPE_REGISTERED = False
 _STATIC_DAFT_EXTENSION = None
 
@@ -548,31 +585,36 @@ _STATIC_DAFT_EXTENSION = None
 def _ensure_registered_super_ext_type():
     global _EXT_TYPE_REGISTERED
     global _STATIC_DAFT_EXTENSION
+
+    # Double-checked locking: avoid grabbing the lock if we know that the ext type
+    # has already been registered.
     if not _EXT_TYPE_REGISTERED:
+        with _EXT_TYPE_REGISTRATION_LOCK:
+            if not _EXT_TYPE_REGISTERED:
 
-        class DaftExtension(pa.ExtensionType):
-            def __init__(self, dtype, metadata=b""):
-                # attributes need to be set first before calling
-                # super init (as that calls serialize)
-                self._metadata = metadata
-                super().__init__(dtype, "daft.super_extension")
+                class DaftExtension(pa.ExtensionType):
+                    def __init__(self, dtype, metadata=b""):
+                        # attributes need to be set first before calling
+                        # super init (as that calls serialize)
+                        self._metadata = metadata
+                        super().__init__(dtype, "daft.super_extension")
 
-            def __reduce__(self):
-                return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
+                    def __reduce__(self):
+                        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
 
-            def __arrow_ext_serialize__(self):
-                return self._metadata
+                    def __arrow_ext_serialize__(self):
+                        return self._metadata
 
-            @classmethod
-            def __arrow_ext_deserialize__(cls, storage_type, serialized):
-                return cls(storage_type, serialized)
+                    @classmethod
+                    def __arrow_ext_deserialize__(cls, storage_type, serialized):
+                        return cls(storage_type, serialized)
 
-        _STATIC_DAFT_EXTENSION = DaftExtension
-        pa.register_extension_type(DaftExtension(pa.null()))
-        import atexit
+                _STATIC_DAFT_EXTENSION = DaftExtension
+                pa.register_extension_type(DaftExtension(pa.null()))
+                import atexit
 
-        atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
-        _EXT_TYPE_REGISTERED = True
+                atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
+                _EXT_TYPE_REGISTERED = True
 
 
 def get_super_ext_type():

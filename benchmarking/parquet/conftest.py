@@ -49,22 +49,31 @@ def daft_native_read_to_arrow(path: str, columns: list[str] | None = None) -> pa
     return daft.table.read_parquet_into_pyarrow(path, columns=columns)
 
 
+def daft_dataframe_read(path: str, columns: list[str] | None = None) -> pa.Table:
+    df = daft.read_parquet(path)
+    if columns is not None:
+        df = df.select(*columns)
+    return df.to_arrow()
+
+
 @pytest.fixture(
     params=[
         daft_native_read,
         daft_native_read_to_arrow,
         pyarrow_read,
         boto3_get_object_read,
+        daft_dataframe_read,
     ],
     ids=[
         "daft_native_read",
         "daft_native_read_to_arrow",
         "pyarrow",
         "boto3_get_object",
+        "daft_dataframe_read",
     ],
 )
 def read_fn(request):
-    """Fixture which returns the function to read a PyArrow table from a path"""
+    """Fixture which returns the function to read a PyArrow table from a path."""
     return request.param
 
 
@@ -107,5 +116,5 @@ def boto_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[p
     ],
 )
 def bulk_read_fn(request):
-    """Fixture which returns the function to read a PyArrow table from a path"""
+    """Fixture which returns the function to read a PyArrow table from a path."""
     return request.param

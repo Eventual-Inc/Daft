@@ -14,6 +14,7 @@ from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution.native_executor import NativeExecutor
 from daft.execution.physical_plan import ActorPoolManager
+from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_visible_devices
 from daft.runners import runner_io
@@ -34,7 +35,6 @@ from daft.table import MicroPartition
 if TYPE_CHECKING:
     from daft.execution import physical_plan
     from daft.execution.execution_step import Instruction, PartitionTask
-    from daft.expressions import ExpressionsProjection
     from daft.logical.builder import LogicalPlanBuilder
 
 logger = logging.getLogger(__name__)
@@ -69,8 +69,7 @@ class PyRunnerResources:
         return resources[0] if resources is not None else None
 
     def try_acquire_multiple(self, resource_requests: list[ResourceRequest]) -> list[AcquiredResources] | None:
-        """
-        Attempts to acquire the requested resources.
+        """Attempts to acquire the requested resources.
 
         If the requested resources are available, returns a list of `AcquiredResources` with the amount of acquired CPUs and memory, as well as the specific GPUs that were acquired per request.
 
@@ -165,11 +164,10 @@ class PyRunnerResources:
                     self.available_resources.gpus[gpu] += amount
 
 
-class PyStatefulActorSingleton:
-    """
-    This class stores the singleton `initialized_projection` that is isolated to each Python process. It stores the projection with initialized stateful UDF objects of a single actor.
+class PyActorSingleton:
+    """This class stores the singleton `initialized_projection` that is isolated to each Python process. It stores the projection with initialized actor pool UDF objects of a single actor.
 
-    Currently, only one stateful UDF per actor is supported, but we allow multiple here in case we want to support multiple stateful UDFs in the future.
+    Currently, only one actor pool UDF per actor is supported, but we allow multiple here in case we want to support multiple actor pool UDFs in the future.
 
     Note: The class methods should only be called inside of actor processes.
     """
@@ -181,28 +179,28 @@ class PyStatefulActorSingleton:
         uninitialized_projection: ExpressionsProjection,
         cuda_device_queue: mp.Queue[str],
     ):
-        if PyStatefulActorSingleton.initialized_projection is not None:
+        if PyActorSingleton.initialized_projection is not None:
             raise RuntimeError("Cannot initialize Python process actor twice.")
 
         import os
 
-        from daft.execution.stateful_actor import initialize_actor_pool_projection
-
         os.environ["CUDA_VISIBLE_DEVICES"] = cuda_device_queue.get(timeout=1)
 
-        PyStatefulActorSingleton.initialized_projection = initialize_actor_pool_projection(uninitialized_projection)
+        PyActorSingleton.initialized_projection = ExpressionsProjection(
+            [e._initialize_udfs() for e in uninitialized_projection]
+        )
 
     @staticmethod
-    def build_partitions_with_stateful_project(
+    def build_partitions_with_actor_pool_project(
         partition: MicroPartition,
         partial_metadata: PartialPartitionMetadata,
     ) -> list[MaterializedResult[MicroPartition]]:
-        # Bind the expressions to the initialized stateful UDFs, which should already have been initialized at process start-up
+        # Bind the expressions to the initialized actor pool UDFs, which should already have been initialized at process start-up
         assert (
-            PyStatefulActorSingleton.initialized_projection is not None
-        ), "PyActor process must be initialized with stateful UDFs before execution"
+            PyActorSingleton.initialized_projection is not None
+        ), "PyActor process must be initialized with actor pool UDFs before execution"
 
-        new_part = partition.eval_expression_list(PyStatefulActorSingleton.initialized_projection)
+        new_part = partition.eval_expression_list(PyActorSingleton.initialized_projection)
         return [
             LocalMaterializedResult(
                 new_part, PartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata)
@@ -235,17 +233,17 @@ class PyActorPool:
         assert self._executor is not None, "Cannot submit to uninitialized PyActorPool"
 
         # PyActorPools can only handle 1 to 1 projections (no fanouts/fan-ins) and only
-        # StatefulUDFProject instructions (no filters etc)
+        # ActorPoolProject instructions (no filters etc)
         assert len(partitions) == 1
         assert len(final_metadata) == 1
         assert len(instruction_stack) == 1
         instruction = instruction_stack[0]
-        assert isinstance(instruction, execution_step.StatefulUDFProject)
+        assert isinstance(instruction, execution_step.ActorPoolProject)
         partition = partitions[0]
         partial_metadata = final_metadata[0]
 
         return self._executor.submit(
-            PyStatefulActorSingleton.build_partitions_with_stateful_project,
+            PyActorSingleton.build_partitions_with_actor_pool_project,
             partition,
             partial_metadata,
         )
@@ -264,7 +262,7 @@ class PyActorPool:
 
         self._executor = futures.ProcessPoolExecutor(
             self._num_actors,
-            initializer=PyStatefulActorSingleton.initialize_actor_global_state,
+            initializer=PyActorSingleton.initialize_actor_global_state,
             initargs=(self._projection, cuda_device_queue),
         )
 
@@ -342,8 +340,8 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         results_buffer_size: int | None = None,
     ) -> Iterator[LocalMaterializedResult]:
         warnings.warn(
-            "PyRunner will be deprecated in v0.4.0 and the new NativeRunner will become the default for local execution."
-            "We recommend switching to the NativeRunner now via `daft.context.set_runner_native()` or by setting the env variable `DAFT_RUNNER=native`. "
+            "PyRunner is deprecated and the new NativeRunner is now the default for local execution."
+            "Please switch to the NativeRunner now via `daft.context.set_runner_native()` or by setting the env variable `DAFT_RUNNER=native`. "
             "Please report any issues at github.com/Eventual-Inc/Daft/issues",
         )
         # NOTE: Freeze and use this same execution config for the entire execution
@@ -447,10 +445,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             del self._actor_pools[actor_pool_id]
 
     def _create_resource_release_callback(self, resources: AcquiredResources) -> Callable[[futures.Future], None]:
-        """
-        This higher order function is used so that the `resources` released by the callback
-        are from the ones stored in the variable at the creation of the callback instead of during its call.
-        """
+        """This higher order function is used so that the `resources` released by the callback are from the ones stored in the variable at the creation of the callback instead of during its call."""
         return lambda _: self._resources.release(resources)
 
     def _physical_plan_to_partitions(

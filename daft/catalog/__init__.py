@@ -45,27 +45,18 @@ from daft.logical.builder import LogicalPlanBuilder
 
 from daft.dataframe import DataFrame
 
-_PYICEBERG_AVAILABLE = False
-try:
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
     from pyiceberg.catalog import Catalog as PyIcebergCatalog
-
-    _PYICEBERG_AVAILABLE = True
-except ImportError:
-    pass
-
-_UNITY_AVAILABLE = False
-try:
     from daft.unity_catalog import UnityCatalog
 
-    _UNITY_AVAILABLE = True
-except ImportError:
-    pass
 
 __all__ = [
     "read_table",
     "register_python_catalog",
-    "unregister_catalog",
     "register_table",
+    "unregister_catalog",
 ]
 
 # Forward imports from the native catalog which don't require Python wrappers
@@ -73,7 +64,7 @@ unregister_catalog = native_catalog.unregister_catalog
 
 
 def read_table(name: str) -> DataFrame:
-    """Finds a table with the specified name and reads it as a DataFrame
+    """Finds a table with the specified name and reads it as a DataFrame.
 
     The provided name can be any of the following, and Daft will return them with the following order of priority:
 
@@ -113,7 +104,7 @@ def register_table(name: str, dataframe: DataFrame) -> str:
 
 
 def register_python_catalog(catalog: PyIcebergCatalog | UnityCatalog, name: str | None = None) -> str:
-    """Registers a Python catalog with Daft
+    """Registers a Python catalog with Daft.
 
     Currently supports:
 
@@ -136,6 +127,22 @@ def register_python_catalog(catalog: PyIcebergCatalog | UnityCatalog, name: str 
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
 
     """
+    _PYICEBERG_AVAILABLE = False
+    try:
+        from pyiceberg.catalog import Catalog as PyIcebergCatalog
+
+        _PYICEBERG_AVAILABLE = True
+    except ImportError:
+        pass
+
+    _UNITY_AVAILABLE = False
+    try:
+        from daft.unity_catalog import UnityCatalog
+
+        _UNITY_AVAILABLE = True
+    except ImportError:
+        pass
+
     python_catalog: PyIcebergCatalog
     if _PYICEBERG_AVAILABLE and isinstance(catalog, PyIcebergCatalog):
         from daft.catalog.pyiceberg import PyIcebergCatalogAdaptor

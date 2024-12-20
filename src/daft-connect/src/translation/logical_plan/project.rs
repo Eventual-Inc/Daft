@@ -7,20 +7,22 @@ use daft_logical_plan::LogicalPlanBuilder;
 use eyre::bail;
 use spark_connect::Project;
 
-use crate::translation::{to_daft_expr, to_logical_plan};
+use super::SparkAnalyzer;
+use crate::translation::to_daft_expr;
 
-pub fn project(project: Project) -> eyre::Result<LogicalPlanBuilder> {
-    let Project { input, expressions } = project;
+impl SparkAnalyzer<'_> {
+    pub async fn project(&self, project: Project) -> eyre::Result<LogicalPlanBuilder> {
+        let Project { input, expressions } = project;
 
-    let Some(input) = input else {
-        bail!("Project input is required");
-    };
+        let Some(input) = input else {
+            bail!("Project input is required");
+        };
 
-    let plan = to_logical_plan(*input)?;
+        let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-    let daft_exprs: Vec<_> = expressions.iter().map(to_daft_expr).try_collect()?;
+        let daft_exprs: Vec<_> = expressions.iter().map(to_daft_expr).try_collect()?;
+        plan = plan.select(daft_exprs)?;
 
-    let plan = plan.select(daft_exprs)?;
-
-    Ok(plan)
+        Ok(plan)
+    }
 }

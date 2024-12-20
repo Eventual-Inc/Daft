@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import decimal
-import sys
 from pathlib import Path
 
 import pyarrow as pa
@@ -13,15 +12,10 @@ from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
 from tests.conftest import get_tests_daft_runner_name
 
-PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (
-    8,
-    0,
-    0,
-)
-PYTHON_LT_3_8 = sys.version_info[:2] < (3, 8)
+PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
 pytestmark = pytest.mark.skipif(
-    PYARROW_LE_8_0_0 or PYTHON_LT_3_8,
-    reason="deltalake only supported if pyarrow >= 8.0.0 and python >= 3.8",
+    PYARROW_LOWER_BOUND_SKIP,
+    reason="deltalake not supported on older versions of pyarrow",
 )
 
 
@@ -60,7 +54,7 @@ def test_deltalake_multi_write_basic(tmp_path, base_table):
 
 def test_deltalake_write_cloud(base_table, cloud_paths):
     deltalake = pytest.importorskip("deltalake")
-    path, io_config, catalog_table = cloud_paths
+    path, io_config, _ = cloud_paths
     df = daft.from_arrow(base_table)
     result = df.write_deltalake(str(path), io_config=io_config)
     result = result.to_pydict()
@@ -93,7 +87,7 @@ def test_deltalake_write_overwrite_basic(tmp_path):
 
 def test_deltalake_write_overwrite_cloud(cloud_paths):
     deltalake = pytest.importorskip("deltalake")
-    path, io_config, catalog_table = cloud_paths
+    path, io_config, _ = cloud_paths
     df1 = daft.from_pydict({"a": [1, 2]})
     df1.write_deltalake(str(path), io_config=io_config)
 

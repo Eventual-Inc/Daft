@@ -4,15 +4,17 @@ use daft_dsl::ExprRef;
 use hashing::SQLModuleHashing;
 use once_cell::sync::Lazy;
 use sqlparser::ast::{
-    Function, FunctionArg, FunctionArgExpr, FunctionArgOperator, FunctionArguments,
+    DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
+    FunctionArguments,
 };
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     modules::{
-        hashing, SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleFloat, SQLModuleImage,
-        SQLModuleJson, SQLModuleList, SQLModuleMap, SQLModuleNumeric, SQLModulePartitioning,
-        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUtf8,
+        coalesce::SQLCoalesce, hashing, SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleFloat,
+        SQLModuleImage, SQLModuleJson, SQLModuleList, SQLModuleMap, SQLModuleNumeric,
+        SQLModulePartitioning, SQLModulePython, SQLModuleSketch, SQLModuleStructs,
+        SQLModuleTemporal, SQLModuleUtf8,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -36,6 +38,7 @@ pub(crate) static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
     functions.register::<SQLModuleTemporal>();
     functions.register::<SQLModuleUtf8>();
     functions.register::<SQLModuleConfig>();
+    functions.add_fn("coalesce", SQLCoalesce {});
     functions
 });
 
@@ -240,14 +243,19 @@ impl<'a> SQLPlanner<'a> {
         // assert using only supported features
         check_features(func)?;
 
+        fn get_func_from_sqlfunctions_registry(
+            name: impl AsRef<str>,
+        ) -> SQLPlannerResult<Arc<dyn SQLFunction>> {
+            let name = name.as_ref();
+            SQL_FUNCTIONS.get(name).cloned().ok_or_else(|| {
+                PlannerError::unsupported_sql(format!("Function `{}` not found", name))
+            })
+        }
+
         // lookup function variant(s) by name
-        let fns = &SQL_FUNCTIONS;
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
-        let fn_match = match fns.get(&fn_name) {
-            Some(func) => func,
-            None => unsupported_sql_err!("Function `{}` not found", fn_name),
-        };
+        let mut fn_match = get_func_from_sqlfunctions_registry(fn_name.as_str())?;
 
         // TODO: Filter the variants for correct arity.
         //
@@ -272,9 +280,20 @@ impl<'a> SQLPlanner<'a> {
                 unsupported_sql_err!("subquery function argument")
             }
             sqlparser::ast::FunctionArguments::List(args) => {
-                if args.duplicate_treatment.is_some() {
-                    unsupported_sql_err!("function argument with duplicate treatment");
+                let duplicate_treatment =
+                    args.duplicate_treatment.unwrap_or(DuplicateTreatment::All);
+
+                match (fn_name.as_str(), duplicate_treatment) {
+                    ("count", DuplicateTreatment::Distinct) => {
+                        fn_match = get_func_from_sqlfunctions_registry("count_distinct")?;
+                    }
+                    ("count", DuplicateTreatment::All) => (),
+                    (name, DuplicateTreatment::Distinct) => {
+                        unsupported_sql_err!("DISTINCT is only supported on COUNT, not on {}", name)
+                    }
+                    (_, DuplicateTreatment::All) => (),
                 }
+
                 if !args.clauses.is_empty() {
                     unsupported_sql_err!("function arguments with clauses");
                 }

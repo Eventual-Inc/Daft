@@ -6,8 +6,10 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, EliminateCrossJoin, EnrichWithStats, LiftProjectFromAgg, MaterializeScans,
-        OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection, SplitActorPoolProjects,
+        DropRepartition, EliminateCrossJoin, EnrichWithStats, FilterNullJoinKey,
+        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownFilter, PushDownLimit,
+        PushDownProjection, SimplifyExpressionsRule, SplitActorPoolProjects,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -17,15 +19,12 @@ use crate::LogicalPlan;
 pub struct OptimizerConfig {
     // Default maximum number of optimization passes the optimizer will make over a fixed-point RuleBatch.
     pub default_max_optimizer_passes: usize,
-    // Feature flag for enabling creating ActorPoolProject nodes during plan optimization
-    pub enable_actor_pool_projections: bool,
 }
 
 impl OptimizerConfig {
-    fn new(max_optimizer_passes: usize, enable_actor_pool_projections: bool) -> Self {
+    fn new(max_optimizer_passes: usize) -> Self {
         Self {
             default_max_optimizer_passes: max_optimizer_passes,
-            enable_actor_pool_projections,
         }
     }
 }
@@ -33,7 +32,7 @@ impl OptimizerConfig {
 impl Default for OptimizerConfig {
     fn default() -> Self {
         // Default to a max of 5 optimizer passes for a given batch.
-        Self::new(5, false)
+        Self::new(5)
     }
 }
 
@@ -91,62 +90,61 @@ pub struct Optimizer {
 
 impl Optimizer {
     pub fn new(config: OptimizerConfig) -> Self {
-        let mut rule_batches = Vec::new();
-
-        // --- Split ActorPoolProjection nodes from Project nodes ---
-        // This is feature-flagged behind DAFT_ENABLE_ACTOR_POOL_PROJECTIONS=1
-        if config.enable_actor_pool_projections {
-            rule_batches.push(RuleBatch::new(
+        let rule_batches = vec![
+            // --- Rewrite rules ---
+            RuleBatch::new(
                 vec![
-                    Box::new(PushDownProjection::new()),
+                    Box::new(LiftProjectFromAgg::new()),
+                    Box::new(UnnestScalarSubquery::new()),
+                    Box::new(UnnestPredicateSubquery::new()),
                     Box::new(SplitActorPoolProjects::new()),
-                    Box::new(PushDownProjection::new()),
                 ],
+                RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // we want to simplify expressions first to make the rest of the rules easier
+            RuleBatch::new(
+                vec![Box::new(SimplifyExpressionsRule::new())],
+                RuleExecutionStrategy::FixedPoint(Some(3)),
+            ),
+            // --- Bulk of our rules ---
+            RuleBatch::new(
+                vec![
+                    Box::new(DropRepartition::new()),
+                    Box::new(FilterNullJoinKey::new()),
+                    Box::new(PushDownFilter::new()),
+                    Box::new(PushDownProjection::new()),
+                    Box::new(EliminateCrossJoin::new()),
+                ],
+                // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
+                // at the current node, which would require another batch application in order to have a chance to push
+                // that Filter node through upstream nodes.
+                // TODO(Clark): Refine this fixed-point policy.
+                RuleExecutionStrategy::FixedPoint(Some(3)),
+            ),
+            // --- Limit pushdowns ---
+            // This needs to be separate from PushDownProjection because otherwise the limit and
+            // projection just keep swapping places, preventing optimization
+            // (see https://github.com/Eventual-Inc/Daft/issues/2616)
+            RuleBatch::new(
+                vec![Box::new(PushDownLimit::new())],
+                RuleExecutionStrategy::FixedPoint(Some(3)),
+            ),
+            // --- Materialize scan nodes ---
+            RuleBatch::new(
+                vec![Box::new(MaterializeScans::new())],
                 RuleExecutionStrategy::Once,
-            ));
-        }
-
-        // --- Rewrite rules ---
-        rule_batches.push(RuleBatch::new(
-            vec![Box::new(LiftProjectFromAgg::new())],
-            RuleExecutionStrategy::Once,
-        ));
-
-        // --- Bulk of our rules ---
-        rule_batches.push(RuleBatch::new(
-            vec![
-                Box::new(DropRepartition::new()),
-                Box::new(PushDownFilter::new()),
-                Box::new(PushDownProjection::new()),
-                Box::new(EliminateCrossJoin::new()),
-            ],
-            // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
-            // at the current node, which would require another batch application in order to have a chance to push
-            // that Filter node through upstream nodes.
-            // TODO(Clark): Refine this fixed-point policy.
-            RuleExecutionStrategy::FixedPoint(Some(3)),
-        ));
-
-        // --- Limit pushdowns ---
-        // This needs to be separate from PushDownProjection because otherwise the limit and
-        // projection just keep swapping places, preventing optimization
-        // (see https://github.com/Eventual-Inc/Daft/issues/2616)
-        rule_batches.push(RuleBatch::new(
-            vec![Box::new(PushDownLimit::new())],
-            RuleExecutionStrategy::FixedPoint(Some(3)),
-        ));
-
-        // --- Materialize scan nodes ---
-        rule_batches.push(RuleBatch::new(
-            vec![Box::new(MaterializeScans::new())],
-            RuleExecutionStrategy::Once,
-        ));
-
-        // --- Enrich logical plan with stats ---
-        rule_batches.push(RuleBatch::new(
-            vec![Box::new(EnrichWithStats::new())],
-            RuleExecutionStrategy::Once,
-        ));
+            ),
+            // --- Enrich logical plan with stats ---
+            RuleBatch::new(
+                vec![Box::new(EnrichWithStats::new())],
+                RuleExecutionStrategy::Once,
+            ),
+            // try to simplify expressions again as other rules could introduce new exprs
+            RuleBatch::new(
+                vec![Box::new(SimplifyExpressionsRule::new())],
+                RuleExecutionStrategy::FixedPoint(Some(3)),
+            ),
+        ];
 
         Self::with_rule_batches(rule_batches, config)
     }
@@ -268,7 +266,7 @@ mod tests {
                 vec![Box::new(NoOp::new())],
                 RuleExecutionStrategy::Once,
             )],
-            OptimizerConfig::new(5, false),
+            OptimizerConfig::new(5),
         );
         let plan: Arc<LogicalPlan> =
             dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)])).build();
@@ -315,7 +313,7 @@ mod tests {
                 vec![Box::new(RotateProjection::new(false))],
                 RuleExecutionStrategy::FixedPoint(Some(20)),
             )],
-            OptimizerConfig::new(20, false),
+            OptimizerConfig::new(20),
         );
         let proj_exprs = vec![
             col("a").add(lit(1)),
@@ -350,7 +348,7 @@ mod tests {
                 vec![Box::new(RotateProjection::new(true))],
                 RuleExecutionStrategy::FixedPoint(Some(20)),
             )],
-            OptimizerConfig::new(20, false),
+            OptimizerConfig::new(20),
         );
         let proj_exprs = vec![
             col("a").add(lit(1)),
@@ -401,7 +399,7 @@ mod tests {
                     RuleExecutionStrategy::Once,
                 ),
             ],
-            OptimizerConfig::new(20, false),
+            OptimizerConfig::new(20),
         );
         let proj_exprs = vec![
             col("a").add(lit(1)),

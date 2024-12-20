@@ -19,7 +19,7 @@ def _nested_field_to_daft_pyfield(field: NestedField) -> PyField:
 
 
 class SchemaFieldIdMappingVisitor(SchemaVisitor[FieldIdMapping]):
-    """Extracts a mapping of {field_id: PyField} from an Iceberg schema"""
+    """Extracts a mapping of {field_id: PyField} from an Iceberg schema."""
 
     def schema(self, schema: Schema, struct_result: FieldIdMapping) -> FieldIdMapping:
         """Visit a Schema."""

@@ -34,6 +34,7 @@ impl<'a> NestedDecoder<'a> for NullDecoder {
         &self,
         _page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
+        _: bool,
     ) -> Result<Self::State> {
         if let Some(n) = dict {
             return Ok(*n);
@@ -74,6 +75,7 @@ where
     rows_remaining: usize,
     chunk_size: Option<usize>,
     values_remaining: usize,
+    is_parent_nullable: bool,
     decoder: NullDecoder,
 }
 
@@ -88,6 +90,7 @@ where
         num_rows: usize,
         chunk_size: Option<usize>,
         num_values: usize,
+        is_parent_nullable: bool,
     ) -> Self {
         Self {
             iter,
@@ -97,6 +100,7 @@ where
             chunk_size,
             rows_remaining: num_rows,
             values_remaining: num_values,
+            is_parent_nullable,
             decoder: NullDecoder {},
         }
     }
@@ -117,6 +121,7 @@ where
             &mut self.values_remaining,
             &self.init,
             self.chunk_size,
+            self.is_parent_nullable,
             &self.decoder,
         );
         match maybe_state {

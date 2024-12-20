@@ -2,6 +2,8 @@
 mod tests;
 
 use std::{
+    any::Any,
+    hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
     sync::Arc,
 };
@@ -38,8 +40,11 @@ use crate::{
 
 pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     fn name(&self) -> &'static str;
     fn schema(&self) -> SchemaRef;
+    fn dyn_eq(&self, other: &dyn SubqueryPlan) -> bool;
+    fn dyn_hash(&self, state: &mut dyn Hasher);
 }
 
 #[derive(Display, Debug, Clone)]
@@ -60,6 +65,14 @@ impl Subquery {
     pub fn name(&self) -> &'static str {
         self.plan.name()
     }
+
+    pub fn semantic_id(&self) -> FieldID {
+        let mut s = DefaultHasher::new();
+        self.hash(&mut s);
+        let hash = s.finish();
+
+        FieldID::new(format!("subquery({}-{})", self.name(), hash))
+    }
 }
 
 impl Serialize for Subquery {
@@ -76,7 +89,7 @@ impl<'de> Deserialize<'de> for Subquery {
 
 impl PartialEq for Subquery {
     fn eq(&self, other: &Self) -> bool {
-        self.plan.name() == other.plan.name() && self.plan.schema() == other.plan.schema()
+        self.plan.dyn_eq(other.plan.as_ref())
     }
 }
 
@@ -84,8 +97,7 @@ impl Eq for Subquery {}
 
 impl std::hash::Hash for Subquery {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.plan.name().hash(state);
-        self.plan.schema().hash(state);
+        self.plan.dyn_hash(state);
     }
 }
 
@@ -177,7 +189,7 @@ pub struct OuterReferenceColumn {
 
 impl Display for OuterReferenceColumn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "outer_col({}, {})", self.field.name, self.depth)
+        write!(f, "outer_col({}, depth={})", self.field.name, self.depth)
     }
 }
 
@@ -744,10 +756,18 @@ impl Expr {
             // Agg: Separate path.
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
             Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
+            Self::Subquery(subquery) => subquery.semantic_id(),
+            Self::InSubquery(expr, subquery) => {
+                let child_id = expr.semantic_id(schema);
+                let subquery_id = subquery.semantic_id();
 
-            Self::Subquery(..) | Self::InSubquery(..) | Self::Exists(..) => {
-                FieldID::new("__subquery__")
-            } // todo: better/unique id
+                FieldID::new(format!("({child_id} IN {subquery_id})"))
+            }
+            Self::Exists(subquery) => {
+                let subquery_id = subquery.semantic_id();
+
+                FieldID::new(format!("(EXISTS {subquery_id})"))
+            }
             Self::OuterReferenceColumn(c) => {
                 let name = &c.field.name;
                 let depth = c.depth;
@@ -1273,14 +1293,35 @@ pub fn has_agg(expr: &ExprRef) -> bool {
     expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
 }
 
-pub fn has_stateful_udf(expr: &ExprRef) -> bool {
-    expr.exists(|e| {
-        matches!(
-            e.as_ref(),
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+#[inline]
+pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
+    matches!(
+        expr.as_ref(),
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF {
+                concurrency: Some(_),
                 ..
-            }
-        )
-    })
+            }),
+            ..
+        }
+    )
+}
+
+pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
+    exprs
+        .iter()
+        .map(|expr| {
+            let mut count = 0;
+            expr.apply(|e| {
+                if is_actor_pool_udf(e) {
+                    count += 1;
+                }
+
+                Ok(common_treenode::TreeNodeRecursion::Continue)
+            })
+            .unwrap();
+
+            count
+        })
+        .sum()
 }

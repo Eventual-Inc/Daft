@@ -14,7 +14,7 @@ on:
 
 env:
   PACKAGE_NAME: getdaft
-  PYTHON_VERSION: 3.8
+  PYTHON_VERSION: 3.9
 
 jobs:
   build-and-push:

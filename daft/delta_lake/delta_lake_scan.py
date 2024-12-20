@@ -41,7 +41,7 @@ class DeltaLakeScanOperator(ScanOperator):
         # Thus, if we don't detect any credentials being available, we attempt to detect it from the environment using our Daft credentials chain.
         #
         # See: https://github.com/delta-io/delta-rs/issues/2117
-        deltalake_sdk_io_config = storage_config.config.io_config
+        deltalake_sdk_io_config = storage_config.io_config
         scheme = urlparse(table_uri).scheme
         if scheme == "s3" or scheme == "s3a":
             # Try to get region from boto3
@@ -111,6 +111,9 @@ class DeltaLakeScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def name(self) -> str:
+        return "DeltaLakeScanOperator"
+
     def display_name(self) -> str:
         return f"DeltaLakeScanOperator({self._table.metadata().name})"
 
@@ -134,7 +137,7 @@ class DeltaLakeScanOperator(ScanOperator):
         add_actions: pa.RecordBatch = self._table.get_add_actions()
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
-            logging.warning(
+            logger.warning(
                 "%s has partitioning keys = %s, but no partition filter was specified. This will result in a full table scan.",
                 self.display_name(),
                 self.partitioning_keys(),

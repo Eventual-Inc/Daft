@@ -1,18 +1,25 @@
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use spark_connect::{
     data_type::{Kind, Struct, StructField},
     DataType, Relation,
 };
 use tracing::warn;
 
-use crate::translation::{to_logical_plan, to_spark_datatype};
+use super::SparkAnalyzer;
+use crate::translation::to_spark_datatype;
 
 #[tracing::instrument(skip_all)]
-pub fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
-    if input.common.is_some() {
-        warn!("We do not currently look at common fields");
+pub async fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
+    if let Some(common) = &input.common {
+        if common.origin.is_some() {
+            warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        }
     }
 
-    let plan = to_logical_plan(input)?;
+    // We're just checking the schema here, so we don't need to use a persistent cache as it won't be used
+    let pset = InMemoryPartitionSetCache::empty();
+    let translator = SparkAnalyzer::new(&pset);
+    let plan = Box::pin(translator.to_logical_plan(input)).await?;
 
     let result = plan.schema();
 

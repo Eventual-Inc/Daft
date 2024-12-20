@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_core::prelude::*;
 use daft_dsl::{
-    col, has_stateful_udf,
+    col, is_actor_pool_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
     Expr, ExprRef,
 };
@@ -274,8 +274,11 @@ impl PushDownProjection {
                             })
                             .collect_vec();
 
-                        // Construct either a new ActorPoolProject or Project, depending on whether the pruned projection still has StatefulUDFs
-                        let new_plan = if new_actor_pool_projections.iter().any(has_stateful_udf) {
+                        // Construct either a new ActorPoolProject or Project, depending on whether the pruned projection still has actor pool UDFs
+                        let new_plan = if new_actor_pool_projections
+                            .iter()
+                            .any(|e| e.exists(is_actor_pool_udf))
+                        {
                             LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                                 upstream_actor_pool_projection.input.clone(),
                                 new_actor_pool_projections,
@@ -307,7 +310,7 @@ impl PushDownProjection {
                         .cloned()
                         .collect::<Vec<_>>();
 
-                    // If all StatefulUDF expressions end up being pruned, the ActorPoolProject should essentially become
+                    // If all actor pool UDF expressions end up being pruned, the ActorPoolProject should essentially become
                     // a no-op passthrough projection for the rest of the columns. In this case, we should just get rid of it
                     // altogether since it serves no purpose.
                     let all_projections_are_just_colexprs =
@@ -664,16 +667,24 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
+    use common_resource_request::ResourceRequest;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{
         col,
-        functions::python::{RuntimePyObject, UDFRuntimeBinding},
-        lit,
+        functions::{
+            python::{MaybeInitializedUDF, PythonUDF, RuntimePyObject},
+            FunctionExpr,
+        },
+        lit, Expr, ExprRef,
     };
 
     use crate::{
-        optimization::{rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq},
+        optimization::{
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            rules::PushDownProjection,
+            test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
     };
@@ -688,8 +699,31 @@ mod tests {
         assert_optimized_plan_with_rules_eq(
             plan,
             expected,
-            vec![Box::new(PushDownProjection::new())],
+            vec![RuleBatch::new(
+                vec![Box::new(PushDownProjection::new())],
+                RuleExecutionStrategy::Once,
+            )],
         )
+    }
+
+    fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> ExprRef {
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF {
+                name: Arc::new("my-udf".to_string()),
+                func: MaybeInitializedUDF::Uninitialized {
+                    inner: RuntimePyObject::new_testing_none(),
+                    init_args: RuntimePyObject::new_testing_none(),
+                },
+                bound_args: RuntimePyObject::new_testing_none(),
+                num_expressions: inputs.len(),
+                return_dtype: DataType::Utf8,
+                resource_request: Some(ResourceRequest::default_cpu()),
+                batch_size: None,
+                concurrency: Some(8),
+            }),
+            inputs,
+        }
+        .arced()
     }
 
     /// Projection merging: Ensure factored projections do not get merged.
@@ -903,15 +937,6 @@ mod tests {
     /// Projection<-ActorPoolProject prunes columns from the ActorPoolProject
     #[test]
     fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
-        use common_resource_request::ResourceRequest;
-        use daft_dsl::{
-            functions::{
-                python::{PythonUDF, StatefulPythonUDF},
-                FunctionExpr,
-            },
-            Expr,
-        };
-
         use crate::ops::{ActorPoolProject, Project};
 
         let scan_op = dummy_scan_operator(vec![
@@ -920,26 +945,12 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]);
         let scan_node = dummy_scan_node(scan_op.clone());
-        let mock_stateful_udf = Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                name: Arc::new("my-udf".to_string()),
-                stateful_partial_func: RuntimePyObject::new_testing_none(),
-                num_expressions: 1,
-                return_dtype: DataType::Utf8,
-                resource_request: Some(ResourceRequest::default_cpu()),
-                batch_size: None,
-                concurrency: Some(8),
-                init_args: None,
-                runtime_binding: UDFRuntimeBinding::Unbound,
-            })),
-            inputs: vec![col("c")],
-        }
-        .arced();
+        let mock_udf = create_actor_pool_udf(vec![col("c")]);
 
         // Select the `udf_results` column, so the ActorPoolProject should apply column pruning to the other columns
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.build(),
-            vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
+            vec![col("a"), col("b"), mock_udf.alias("udf_results")],
         )?)
         .arced();
         let project = LogicalPlan::Project(Project::try_new(
@@ -954,7 +965,7 @@ mod tests {
                 Pushdowns::default().with_columns(Some(Arc::new(vec!["c".to_string()]))),
             )
             .build(),
-            vec![mock_stateful_udf.alias("udf_results")],
+            vec![mock_udf.alias("udf_results")],
         )?)
         .arced();
 
@@ -965,15 +976,6 @@ mod tests {
     /// Projection<-ActorPoolProject<-ActorPoolProject prunes columns from both ActorPoolProjects
     #[test]
     fn test_projection_pushdown_into_double_actorpoolproject() -> DaftResult<()> {
-        use common_resource_request::ResourceRequest;
-        use daft_dsl::{
-            functions::{
-                python::{PythonUDF, StatefulPythonUDF},
-                FunctionExpr,
-            },
-            Expr,
-        };
-
         use crate::ops::{ActorPoolProject, Project};
 
         let scan_op = dummy_scan_operator(vec![
@@ -982,26 +984,12 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]);
         let scan_node = dummy_scan_node(scan_op.clone()).build();
-        let mock_stateful_udf = Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                name: Arc::new("my-udf".to_string()),
-                stateful_partial_func: RuntimePyObject::new_testing_none(),
-                num_expressions: 1,
-                return_dtype: DataType::Utf8,
-                resource_request: Some(ResourceRequest::default_cpu()),
-                batch_size: None,
-                concurrency: Some(8),
-                init_args: None,
-                runtime_binding: UDFRuntimeBinding::Unbound,
-            })),
-            inputs: vec![col("a")],
-        }
-        .arced();
+        let mock_udf = create_actor_pool_udf(vec![col("a")]);
 
         // Select the `udf_results` column, so the ActorPoolProject should apply column pruning to the other columns
         let plan = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node,
-            vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results_0")],
+            vec![col("a"), col("b"), mock_udf.alias("udf_results_0")],
         )?)
         .arced();
 
@@ -1011,7 +999,7 @@ mod tests {
                 col("a"),
                 col("b"),
                 col("udf_results_0"),
-                mock_stateful_udf.alias("udf_results_1"),
+                mock_udf.alias("udf_results_1"),
             ],
         )?)
         .arced();
@@ -1032,7 +1020,7 @@ mod tests {
             )
             .build(),
             // col("b") is pruned
-            vec![mock_stateful_udf.alias("udf_results_0"), col("a")],
+            vec![mock_udf.alias("udf_results_0"), col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -1040,7 +1028,7 @@ mod tests {
             vec![
                 // Absorbed a non-computational expression (alias) from the Projection
                 col("udf_results_0").alias("udf_results_0_alias"),
-                mock_stateful_udf.alias("udf_results_1"),
+                mock_udf.alias("udf_results_1"),
             ],
         )?)
         .arced();
@@ -1049,18 +1037,9 @@ mod tests {
         Ok(())
     }
 
-    /// Projection<-ActorPoolProject prunes ActorPoolProject entirely if the stateful projection column is pruned
+    /// Projection<-ActorPoolProject prunes ActorPoolProject entirely if the actor pool UDF column is pruned
     #[test]
     fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
-        use common_resource_request::ResourceRequest;
-        use daft_dsl::{
-            functions::{
-                python::{PythonUDF, StatefulPythonUDF},
-                FunctionExpr,
-            },
-            Expr,
-        };
-
         use crate::ops::{ActorPoolProject, Project};
 
         let scan_op = dummy_scan_operator(vec![
@@ -1069,26 +1048,12 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]);
         let scan_node = dummy_scan_node(scan_op.clone()).build();
-        let mock_stateful_udf = Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                name: Arc::new("my-udf".to_string()),
-                stateful_partial_func: RuntimePyObject::new_testing_none(),
-                num_expressions: 1,
-                return_dtype: DataType::Utf8,
-                resource_request: Some(ResourceRequest::default_cpu()),
-                batch_size: None,
-                concurrency: Some(8),
-                init_args: None,
-                runtime_binding: UDFRuntimeBinding::Unbound,
-            })),
-            inputs: vec![col("c")],
-        }
-        .arced();
+        let mock_udf = create_actor_pool_udf(vec![col("c")]);
 
         // Select only col("a"), so the ActorPoolProject node is now redundant and should be removed
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node,
-            vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
+            vec![col("a"), col("b"), mock_udf.alias("udf_results")],
         )?)
         .arced();
         let project =
