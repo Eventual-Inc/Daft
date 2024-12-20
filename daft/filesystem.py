@@ -197,6 +197,7 @@ def _infer_filesystem(
             FileSystem
     """
     protocol = get_protocol_from_path(path)
+    print(f"protocol is {protocol}")
     translated_kwargs: dict[str, Any]
 
     def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None):
@@ -290,6 +291,13 @@ def _infer_filesystem(
             fsspec_fs = fsspec_fs_cls()
         resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
+        return resolved_path, resolved_filesystem
+
+    elif protocol == "hdfs":
+        print(f"path is {path}, unwrap_protocol is {_unwrap_protocol(path)}")
+        resolved_filesystem = pafs.HadoopFileSystem.from_uri(path)
+        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
+        print(f"resolved_filesystem is {resolved_filesystem}, and resolved_path is {resolved_path}")
         return resolved_path, resolved_filesystem
 
     else:
