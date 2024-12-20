@@ -145,7 +145,7 @@ fn prepare_folder_paths(
             instantiate_and_trim_path(folder_path, true, &mut instantiated_folder_paths)?;
         Ok(repeat(folder_path).take(len).collect())
     } else {
-        assert_eq!(arr.len(), len);
+        debug_assert_eq!(arr.len(), len);
         Ok(arr
             .as_arrow()
             .iter()
