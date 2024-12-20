@@ -2550,7 +2550,7 @@ class DataFrame:
             >>> import daft
             >>> df1 = daft.from_pydict({"a": [1, 2, 2], "b": [4, 6, 6]})
             >>> df2 = daft.from_pydict({"a": [1, 1, 2, 2], "b": [4, 4, 6, 6]})
-            >>> df1.intersect_all(df2).collect()
+            >>> df1.intersect_all(df2).sort("a").collect()
             ╭───────┬───────╮
             │ a     ┆ b     │
             │ ---   ┆ ---   │
