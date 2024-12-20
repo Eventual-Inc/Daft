@@ -294,10 +294,8 @@ def _infer_filesystem(
         return resolved_path, resolved_filesystem
 
     elif protocol == "hdfs":
-        print(f"path is {path}, unwrap_protocol is {_unwrap_protocol(path)}")
         resolved_filesystem = pafs.HadoopFileSystem.from_uri(path)
-        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
-        print(f"resolved_filesystem is {resolved_filesystem}, and resolved_path is {resolved_path}")
+        resolved_path = resolved_filesystem.normalize_path(path)
         return resolved_path, resolved_filesystem
 
     else:
