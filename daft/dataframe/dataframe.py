@@ -874,7 +874,12 @@ class DataFrame:
         from daft.io import DataCatalogTable
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
-        from daft.unity_catalog import UnityCatalogTable
+
+        _UNITY_AVAILABLE = True
+        try:
+            from daft.unity_catalog import UnityCatalogTable
+        except ImportError:
+            _UNITY_AVAILABLE = False
 
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
@@ -884,30 +889,35 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        if isinstance(table, (str, pathlib.Path, DataCatalogTable, UnityCatalogTable)):
-            if isinstance(table, str):
-                table_uri = table
-            elif isinstance(table, pathlib.Path):
-                table_uri = str(table)
-            elif isinstance(table, UnityCatalogTable):
-                table_uri = table.table_uri
-                io_config = table.io_config
-            else:
-                table_uri = table.table_uri(io_config)
+        # Retrieve table_uri and storage_options from various backends
+        table_uri: str
+        storage_options: dict
 
-            if io_config is None:
-                raise ValueError(
-                    "io_config was not provided to write_deltalake and could not be retrieved from the default configuration."
-                )
-            storage_options = io_config_to_storage_options(io_config, table_uri) or {}
-            table = try_get_deltatable(table_uri, storage_options=storage_options)
-        elif isinstance(table, deltalake.DeltaTable):
+        if isinstance(table, deltalake.DeltaTable):
             table_uri = table.table_uri
             storage_options = table._storage_options or {}
             new_storage_options = io_config_to_storage_options(io_config, table_uri)
             storage_options.update(new_storage_options or {})
         else:
-            raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
+            if isinstance(table, str):
+                table_uri = table
+            elif isinstance(table, pathlib.Path):
+                table_uri = str(table)
+            elif _UNITY_AVAILABLE and isinstance(table, UnityCatalogTable):
+                table_uri = table.table_uri
+                io_config = table.io_config
+            elif isinstance(table, DataCatalogTable):
+                table_uri = table.table_uri(io_config)
+            else:
+                raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
+
+            if io_config is None:
+                raise ValueError(
+                    "io_config was not provided to write_deltalake and could not be retrieved from defaults."
+                )
+
+            storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+            table = try_get_deltatable(table_uri, storage_options=storage_options)
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
         scheme = get_protocol_from_path(table_uri)
