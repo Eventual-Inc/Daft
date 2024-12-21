@@ -21,7 +21,6 @@ pub trait ProgressBarManager {
         &self,
         color: ProgressBarColor,
         prefix: &str,
-        show_received: bool,
     ) -> DaftResult<Box<dyn ProgressBar>>;
 
     fn close_all(&self) -> DaftResult<()>;
@@ -52,8 +51,8 @@ pub struct OperatorProgressBar {
 }
 
 impl OperatorProgressBar {
-    // 100ms = 100_000_000ns
-    const UPDATE_INTERVAL: u64 = 100_000_000;
+    // 500ms = 500_000_000ns
+    const UPDATE_INTERVAL: u64 = 500_000_000;
 
     pub fn new(
         progress_bar: Box<dyn ProgressBar>,
@@ -146,18 +145,11 @@ impl ProgressBarManager for IndicatifProgressBarManager {
         &self,
         color: ProgressBarColor,
         prefix: &str,
-        show_received: bool,
     ) -> DaftResult<Box<dyn ProgressBar>> {
         let template_str = format!(
             "🗡️ 🐟 {{spinner:.green}} {{prefix:.{color}/bold}} | [{{elapsed_precise}}] {{msg}}",
             color = color.to_str(),
         );
-
-        let initial_message = if show_received {
-            "0 rows received, 0 rows emitted".to_string()
-        } else {
-            "0 rows emitted".to_string()
-        };
 
         let pb = indicatif::ProgressBar::new_spinner()
             .with_style(
@@ -165,8 +157,7 @@ impl ProgressBarManager for IndicatifProgressBarManager {
                     .template(template_str.as_str())
                     .unwrap(),
             )
-            .with_prefix(prefix.to_string())
-            .with_message(initial_message);
+            .with_prefix(prefix.to_string());
 
         self.multi_progress.add(pb.clone());
         DaftResult::Ok(Box::new(IndicatifProgressBar(pb)))
@@ -263,18 +254,10 @@ mod python {
             &self,
             _color: ProgressBarColor,
             prefix: &str,
-            show_received: bool,
         ) -> DaftResult<Box<dyn ProgressBar>> {
             let bar_format = format!("🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}", prefix = prefix);
-            let initial_message = if show_received {
-                "0 rows received, 0 rows emitted".to_string()
-            } else {
-                "0 rows emitted".to_string()
-            };
             let pb_id = Python::with_gil(|py| {
-                let pb_id =
-                    self.inner
-                        .call_method1(py, "make_new_bar", (bar_format, initial_message))?;
+                let pb_id = self.inner.call_method1(py, "make_new_bar", (bar_format,))?;
                 let pb_id = pb_id.extract::<usize>(py)?;
                 DaftResult::Ok(pb_id)
             })?;
