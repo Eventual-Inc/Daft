@@ -15,6 +15,7 @@ use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     pipeline::PipelineNode,
     progress_bar::ProgressBarColor,
+    resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeContext, OperatorOutput, PipelineExecutionSnafu, NUM_CPUS,
 };
@@ -43,6 +44,7 @@ pub trait IntermediateOperator: Send + Sync {
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
+        memory_manager: Arc<MemoryManager>,
     ) -> IntermediateOpExecuteResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
@@ -109,6 +111,7 @@ impl IntermediateNode {
         receiver: Receiver<Arc<MicroPartition>>,
         sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
+        memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
@@ -117,7 +120,12 @@ impl IntermediateNode {
             loop {
                 let result = rt_context
                     .in_span(&span, || {
-                        op.execute(morsel.clone(), state, &compute_runtime)
+                        op.execute(
+                            morsel.clone(),
+                            state,
+                            &compute_runtime,
+                            memory_manager.clone(),
+                        )
                     })
                     .await??;
                 state = result.0;
@@ -147,6 +155,7 @@ impl IntermediateNode {
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
         runtime_handle: &mut ExecutionRuntimeContext,
         maintain_order: bool,
+        memory_manager: Arc<MemoryManager>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
@@ -157,6 +166,7 @@ impl IntermediateNode {
                     input_receiver,
                     output_sender,
                     self.runtime_stats.clone(),
+                    memory_manager.clone(),
                 ),
                 self.intermediate_op.name(),
             );
@@ -241,6 +251,7 @@ impl PipelineNode for IntermediateNode {
             spawned_dispatch_result.worker_receivers,
             runtime_handle,
             maintain_order,
+            runtime_handle.memory_manager(),
         );
         runtime_handle.spawn(
             async move {

@@ -10,6 +10,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
+use crate::resource_manager::MemoryManager;
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<ExprRef>>,
@@ -30,6 +31,7 @@ impl IntermediateOperator for ExplodeOperator {
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
+        _memory_manager: Arc<MemoryManager>,
     ) -> IntermediateOpExecuteResult {
         let to_explode = self.to_explode.clone();
         runtime
