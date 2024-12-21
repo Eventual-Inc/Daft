@@ -297,9 +297,8 @@ class LogicalPlanBuilder:
         builder = self._builder.table_write(str(root_dir), file_format, part_cols_pyexprs, compression, io_config)
         return LogicalPlanBuilder(builder)
 
-    def write_iceberg(self, table: IcebergTable) -> LogicalPlanBuilder:
+    def write_iceberg(self, table: IcebergTable, io_config: IOConfig) -> LogicalPlanBuilder:
         from daft.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
-        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         name = ".".join(table.name())
         location = f"{table.location()}/data"
@@ -314,7 +313,6 @@ class LogicalPlanBuilder:
         partition_cols = [partition_field_to_expr(field, schema)._expr for field in partition_spec.fields]
         props = table.properties
         columns = [col.name for col in schema.columns]
-        io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
         builder = builder.iceberg_write(
             name, location, partition_spec.spec_id, partition_cols, schema, props, columns, io_config
         )

@@ -686,7 +686,9 @@ class DataFrame:
             )
 
     @DataframePublicAPI
-    def write_iceberg(self, table: "pyiceberg.table.Table", mode: str = "append") -> "DataFrame":
+    def write_iceberg(
+        self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
+    ) -> "DataFrame":
         """Writes the DataFrame to an `Iceberg <https://iceberg.apache.org/docs/nightly/>`__ table, returning a new DataFrame with the operations that occurred.
 
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
@@ -697,6 +699,7 @@ class DataFrame:
         Args:
             table (pyiceberg.table.Table): Destination `PyIceberg Table <https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table>`__ to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to "append".
+            io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -704,6 +707,8 @@ class DataFrame:
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
+
+        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
@@ -719,12 +724,17 @@ class DataFrame:
         if mode not in ["append", "overwrite"]:
             raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
+        io_config = (
+            _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
+        )
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         operations = []
         path = []
         rows = []
         size = []
 
-        builder = self._builder.write_iceberg(table)
+        builder = self._builder.write_iceberg(table, io_config)
         write_df = DataFrame(builder)
         write_df.collect()
 
