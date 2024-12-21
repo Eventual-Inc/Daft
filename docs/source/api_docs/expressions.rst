@@ -227,6 +227,7 @@ List
    Expression.list.sort
    Expression.list.sum
    Expression.list.value_counts
+   Expression.list.distinct
 
 Struct
 ######
