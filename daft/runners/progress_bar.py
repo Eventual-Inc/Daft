@@ -114,23 +114,22 @@ class SwordfishProgressBar:
         self._maxinterval = 5.0
         self.tqdm_mod = get_tqdm(False)
         self.pbars: dict[int, Any] = dict()
-        self.bar_configs: dict[int, tuple[str, str]] = dict()
+        self.bar_configs: dict[int, str] = dict()
         self.next_id = 0
 
-    def make_new_bar(self, bar_format: str, initial_message: str) -> int:
+    def make_new_bar(self, bar_format: str) -> int:
         pbar_id = self.next_id
         self.next_id += 1
-        self.bar_configs[pbar_id] = (bar_format, initial_message)
+        self.bar_configs[pbar_id] = bar_format
         return pbar_id
 
     def update_bar(self, pbar_id: int, message: str) -> None:
         if pbar_id not in self.pbars:
             if pbar_id not in self.bar_configs:
                 raise ValueError(f"No bar configuration found for id {pbar_id}")
-            bar_format, initial_message = self.bar_configs[pbar_id]
+            bar_format = self.bar_configs[pbar_id]
             self.pbars[pbar_id] = self.tqdm_mod(
                 bar_format=bar_format,
-                desc=initial_message,
                 position=pbar_id,
                 leave=False,
                 mininterval=1.0,
