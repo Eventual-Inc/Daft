@@ -5,4 +5,3 @@ The Daft Poweruser
 
     poweruser/memory
     poweruser/partitioning
-    poweruser/distributed-computing

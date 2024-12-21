@@ -88,3 +88,9 @@ To submit this script as a job, use the Ray CLI, which can be installed with `pi
 
 
 For more information about Ray jobs, see `Ray docs -> Ray Jobs Overview  <https://docs.ray.io/en/latest/cluster/running-applications/job-submission/index.html>`_.
+
+Daft Launcher
+-------------
+Running Ray manually, especially if it's your first time, may be cumbersome.
+In order to help with the getting-started process, we've built an easy-to-use *launcher* which can help you abstract away some of the complexities of running Ray.
+To learn more about our launcher, "daft-launcher", read more :ref:`here <daft_launcher>`.
