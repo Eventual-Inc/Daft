@@ -2547,6 +2547,94 @@ class DataFrame:
         builder = self._builder.intersect(other._builder)
         return DataFrame(builder)
 
+    @DataframePublicAPI
+    def intersect_all(self, other: "DataFrame") -> "DataFrame":
+        """Returns the intersection of two DataFrames, including duplicates.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 2, 2], "b": [4, 6, 6]})
+            >>> df2 = daft.from_pydict({"a": [1, 1, 2, 2], "b": [4, 4, 6, 6]})
+            >>> df1.intersect_all(df2).sort("a").collect()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 6     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Args:
+            other (DataFrame): DataFrame to intersect with
+
+        Returns:
+            DataFrame: DataFrame with the intersection of the two DataFrames, including duplicates
+        """
+        builder = self._builder.intersect_all(other._builder)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def except_distinct(self, other: "DataFrame") -> "DataFrame":
+        """Returns the set difference of two DataFrames.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> df2 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 8, 6]})
+            >>> df1.except_distinct(df2).collect()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 2     ┆ 5     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Args:
+            other (DataFrame): DataFrame to except with
+
+        Returns:
+            DataFrame: DataFrame with the set difference of the two DataFrames
+        """
+        builder = self._builder.except_distinct(other._builder)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def except_all(self, other: "DataFrame") -> "DataFrame":
+        """Returns the set difference of two DataFrames, considering duplicates.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 1, 2, 2], "b": [4, 4, 6, 6]})
+            >>> df2 = daft.from_pydict({"a": [1, 2, 2], "b": [4, 6, 6]})
+            >>> df1.except_all(df2).collect()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Args:
+            other (DataFrame): DataFrame to except with
+
+        Returns:
+            DataFrame: DataFrame with the set difference of the two DataFrames, considering duplicates
+        """
+        builder = self._builder.except_all(other._builder)
+        return DataFrame(builder)
+
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         context = get_context()

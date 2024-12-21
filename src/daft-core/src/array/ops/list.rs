@@ -1,6 +1,6 @@
 use std::{iter::repeat, sync::Arc};
 
-use arrow2::offset::OffsetsBuffer;
+use arrow2::offset::{Offsets, OffsetsBuffer};
 use common_error::DaftResult;
 use indexmap::{
     map::{raw_entry_v1::RawEntryMut, RawEntryApiV1},
@@ -253,6 +253,31 @@ fn list_sort_helper_fixed_size(
             }
         })
         .collect()
+}
+
+fn general_list_fill_helper(element: &Series, num_array: &Int64Array) -> DaftResult<Vec<Series>> {
+    let num_iter = create_iter(num_array, element.len());
+    let mut result = Vec::with_capacity(element.len());
+    let element_data = element.as_physical()?;
+    for (row_index, num) in num_iter.enumerate() {
+        let list_arr = if element.is_valid(row_index) {
+            let mut list_growable = make_growable(
+                element.name(),
+                element.data_type(),
+                vec![&element_data],
+                false,
+                num as usize,
+            );
+            for _ in 0..num {
+                list_growable.extend(0, row_index, 1);
+            }
+            list_growable.build()?
+        } else {
+            Series::full_null(element.name(), element.data_type(), num as usize)
+        };
+        result.push(list_arr);
+    }
+    Ok(result)
 }
 
 impl ListArray {
@@ -623,6 +648,25 @@ impl ListArray {
             child,
             self.offsets().clone(),
             self.validity().cloned(),
+        ))
+    }
+
+    pub fn list_fill(elem: &Series, num_array: &Int64Array) -> DaftResult<Self> {
+        let generated = general_list_fill_helper(elem, num_array)?;
+        let generated_refs: Vec<&Series> = generated.iter().collect();
+        let lengths = generated.iter().map(|arr| arr.len());
+        let offsets = Offsets::try_from_lengths(lengths)?;
+        let flat_child = if generated_refs.is_empty() {
+            // when there's no output, we should create an empty series
+            Series::empty(elem.name(), elem.data_type())
+        } else {
+            Series::concat(&generated_refs)?
+        };
+        Ok(Self::new(
+            elem.field().to_list_field()?,
+            flat_child,
+            offsets.into(),
+            None,
         ))
     }
 }
