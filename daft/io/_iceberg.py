@@ -9,7 +9,6 @@ from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
-    # from pyiceberg.table import Table as PyIcebergTable
     import pyiceberg
 
 
@@ -29,7 +28,7 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
 
     io_config = IOConfig(
         s3=S3Config(
-            endpoint_url=props.get("s3.endpoint"),
+            endpoint_url=get_first_property_value("s3.endpoint"),
             region_name=get_first_property_value("s3.region", "client.region"),
             key_id=get_first_property_value("s3.access-key-id", "client.access-key-id"),
             access_key=get_first_property_value("s3.secret-access-key", "client.secret-access-key"),
@@ -44,8 +43,8 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
             client_secret=get_first_property_value("adls.client-secret", "adlfs.client-secret"),
         ),
         gcs=GCSConfig(
-            project_id=props.get("gcs.project-id"),
-            token=props.get("gcs.oauth2.token"),
+            project_id=get_first_property_value("gcs.project-id"),
+            token=get_first_property_value("gcs.oauth2.token"),
         ),
     )
 
