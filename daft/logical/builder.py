@@ -279,6 +279,18 @@ class LogicalPlanBuilder:
         builder = self._builder.intersect(other._builder, False)
         return LogicalPlanBuilder(builder)
 
+    def intersect_all(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
+        builder = self._builder.intersect(other._builder, True)
+        return LogicalPlanBuilder(builder)
+
+    def except_distinct(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
+        builder = self._builder.except_(other._builder, False)
+        return LogicalPlanBuilder(builder)
+
+    def except_all(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
+        builder = self._builder.except_(other._builder, True)
+        return LogicalPlanBuilder(builder)
+
     def add_monotonically_increasing_id(self, column_name: str | None) -> LogicalPlanBuilder:
         builder = self._builder.add_monotonically_increasing_id(column_name)
         return LogicalPlanBuilder(builder)
