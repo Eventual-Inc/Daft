@@ -292,6 +292,11 @@ def _infer_filesystem(
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
         return resolved_path, resolved_filesystem
 
+    elif protocol == "hdfs":
+        resolved_filesystem = pafs.HadoopFileSystem.from_uri(path)
+        resolved_path = resolved_filesystem.normalize_path(path)
+        return resolved_path, resolved_filesystem
+
     else:
         raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
 
