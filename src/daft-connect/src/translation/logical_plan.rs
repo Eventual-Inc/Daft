@@ -25,6 +25,7 @@ mod local_relation;
 mod project;
 mod range;
 mod read;
+mod sort;
 mod to_df;
 mod with_columns;
 mod with_columns_renamed;
@@ -118,6 +119,10 @@ impl SparkAnalyzer<'_> {
             RelType::Read(r) => read::read(r)
                 .await
                 .wrap_err("Failed to apply read to logical plan"),
+            RelType::Sort(s) => self
+                .sort(*s)
+                .await
+                .wrap_err("Failed to apply sort to logical plan"),
             RelType::Drop(d) => self
                 .drop(*d)
                 .await
