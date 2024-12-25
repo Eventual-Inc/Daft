@@ -93,3 +93,23 @@ def test_create_special_chars_df(spark_session):
         " ",
         "!@#$%^&*",
     ], "Special character DataFrame should contain expected values"
+
+
+def test_create_nested_df(spark_session):
+    # Create DataFrame with nested structures
+    nested_data = [
+        (1, {"name": "John", "age": 30, "scores": [85, 90, 95]}),
+        (2, {"name": "Jane", "age": 25, "scores": [88, 92, 98]}),
+        (3, {"name": "Bob", "age": 35, "scores": [75, 80, 85]})
+    ]
+    df_nested = spark_session.createDataFrame(nested_data, ["id", "info"])
+    df_nested_pandas = df_nested.toPandas()
+
+    assert len(df_nested_pandas) == 3, "Nested DataFrame should have 3 rows"
+    assert list(df_nested_pandas["id"]) == [1, 2, 3], "ID column should contain expected values"
+
+    # Check nested structure values
+    first_record = df_nested_pandas["info"][0]
+    assert first_record["name"] == "John", "Nested name field should match"
+    assert first_record["age"] == 30, "Nested age field should match"
+    assert first_record["scores"] == [85, 90, 95], "Nested scores array should match"
