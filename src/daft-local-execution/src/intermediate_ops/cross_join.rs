@@ -11,7 +11,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::state_bridge::BroadcastStateBridgeRef;
+use crate::{resource_manager::MemoryManager, state_bridge::BroadcastStateBridgeRef};
 
 struct CrossJoinState {
     bridge: BroadcastStateBridgeRef<Vec<Table>>,
@@ -74,6 +74,7 @@ impl IntermediateOperator for CrossJoinOperator {
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
+        _memory_manager: Arc<MemoryManager>,
     ) -> IntermediateOpExecuteResult {
         let output_schema = self.output_schema.clone();
 
