@@ -1,5 +1,5 @@
 [dependencies]
-aws-credential-types = {version = "0.55.3"}
+aws-credential-types = {version = "1.2.1"}
 chrono = {workspace = true}
 common-py-serde = {path = "../py-serde", default-features = false}
 derive_more = {workspace = true}
