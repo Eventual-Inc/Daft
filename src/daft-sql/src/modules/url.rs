@@ -15,6 +15,8 @@ use crate::{
 
 pub struct SQLModuleURL;
 
+const DEFAULT_MAX_CONNECTIONS: usize = 32;
+
 impl SQLModule for SQLModuleURL {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("url_download", UrlDownload);
@@ -26,16 +28,22 @@ impl TryFrom<SQLFunctionArguments> for DownloadFunction {
     type Error = PlannerError;
 
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
-        let max_connections = args.try_get_named("max_connections")?.unwrap_or(32);
+        let max_connections = args
+            .try_get_named("max_connections")?
+            .unwrap_or(DEFAULT_MAX_CONNECTIONS);
         let raise_error_on_failure = args
             .get_named("on_error")
             .map(|arg| match arg.as_ref() {
                 Expr::Literal(LiteralValue::Utf8(s)) => match s.as_ref() {
                     "raise" => Ok(true),
                     "null" => Ok(false),
-                    _ => unsupported_sql_err!("Expected on_error to be 'raise' or 'null'"),
+                    other => unsupported_sql_err!(
+                        "Expected on_error to be 'raise' or 'null'; instead got '{other:?}'"
+                    ),
                 },
-                _ => unsupported_sql_err!("Expected on_error to be 'raise' or 'null'"),
+                other => unsupported_sql_err!(
+                    "Expected on_error to be 'raise' or 'null'; instead got '{other:?}'"
+                ),
             })
             .transpose()?
             .unwrap_or(true);
@@ -81,7 +89,7 @@ impl SQLFunction for UrlDownload {
                     args.max_connections,
                     args.raise_error_on_failure,
                     args.multi_thread,
-                    Arc::try_unwrap(args.config).unwrap_or_default().into(),
+                    Arc::try_unwrap(args.config).ok(), // upload requires Option<IOConfig>
                 ))
             }
             _ => unsupported_sql_err!("Invalid arguments for url_download: '{inputs:?}'"),
@@ -107,7 +115,9 @@ impl TryFrom<SQLFunctionArguments> for UploadFunction {
     type Error = PlannerError;
 
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
-        let max_connections = args.try_get_named("max_connections")?.unwrap_or(32);
+        let max_connections = args
+            .try_get_named("max_connections")?
+            .unwrap_or(DEFAULT_MAX_CONNECTIONS);
 
         let raise_error_on_failure = args
             .get_named("on_error")
@@ -115,9 +125,13 @@ impl TryFrom<SQLFunctionArguments> for UploadFunction {
                 Expr::Literal(LiteralValue::Utf8(s)) => match s.as_ref() {
                     "raise" => Ok(true),
                     "null" => Ok(false),
-                    _ => unsupported_sql_err!("Expected on_error to be 'raise' or 'null'"),
+                    other => unsupported_sql_err!(
+                        "Expected on_error to be 'raise' or 'null'; instead got '{other:?}'"
+                    ),
                 },
-                _ => unsupported_sql_err!("Expected on_error to be 'raise' or 'null'"),
+                other => unsupported_sql_err!(
+                    "Expected on_error to be 'raise' or 'null'; instead got '{other:?}'"
+                ),
             })
             .transpose()?
             .unwrap_or(true);
@@ -168,7 +182,7 @@ impl SQLFunction for UrlUpload {
                     args.raise_error_on_failure,
                     args.multi_thread,
                     args.is_single_folder,
-                    Arc::try_unwrap(args.config).unwrap_or_default().into(),
+                    Arc::try_unwrap(args.config).ok(), // upload requires Option<IOConfig>
                 ))
             }
             _ => unsupported_sql_err!("Invalid arguments for url_upload: '{inputs:?}'"),
