@@ -89,7 +89,10 @@ impl SQLFunction for UrlDownload {
                     args.max_connections,
                     args.raise_error_on_failure,
                     args.multi_thread,
-                    Arc::try_unwrap(args.config).ok(), // upload requires Option<IOConfig>
+                    Some(match Arc::try_unwrap(args.config) {
+                        Ok(elem) => elem,
+                        Err(elem) => (*elem).clone(),
+                    }), // download requires Option<IOConfig>
                 ))
             }
             _ => unsupported_sql_err!("Invalid arguments for url_download: '{inputs:?}'"),
@@ -182,7 +185,10 @@ impl SQLFunction for UrlUpload {
                     args.raise_error_on_failure,
                     args.multi_thread,
                     args.is_single_folder,
-                    Arc::try_unwrap(args.config).ok(), // upload requires Option<IOConfig>
+                    Some(match Arc::try_unwrap(args.config) {
+                        Ok(elem) => elem,
+                        Err(elem) => (*elem).clone(),
+                    }), // upload requires Option<IOConfig>
                 ))
             }
             _ => unsupported_sql_err!("Invalid arguments for url_upload: '{inputs:?}'"),
