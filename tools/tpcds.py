@@ -8,6 +8,7 @@
 
 import argparse
 import json
+from typing import Optional
 
 import git_utils
 import github
@@ -15,7 +16,7 @@ import github
 
 def run(
     branch_name: str,
-    questions: str,
+    questions: Optional[str],
     scale_factor: int,
     cluster_profile: str,
     env_vars: str,
@@ -44,9 +45,7 @@ def run(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref", type=str, required=False, help="The branch name to run on")
-    parser.add_argument(
-        "--questions", type=str, required=False, default="*", help="A comma separated list of questions to run"
-    )
+    parser.add_argument("--questions", type=str, required=False, help="A comma separated list of questions to run")
     parser.add_argument(
         "--scale-factor",
         choices=[

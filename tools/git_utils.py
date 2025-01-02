@@ -75,42 +75,8 @@ def get_name_and_commit_hash(branch_name: Optional[str]) -> tuple[str, str]:
     return name, commit_hash
 
 
-def parse_questions(questions: str, total_number_of_questions: int) -> list[int]:
-    if not questions:
-        return []
-
-    if questions == "*":
-        return list(range(1, total_number_of_questions + 1))
-
-    items = questions.split(",")
-    nums = []
-    for item in items:
-        try:
-            num = int(item)
-            if num > total_number_of_questions:
-                raise RuntimeError(
-                    f"Requested question number ({num}) is greater than the total number of questions available ({total_number_of_questions})"
-                )
-            nums.append(str(num))
-            continue
-        except ValueError:
-            ...
-
-        if "-" not in item:
-            raise ValueError("...")
-
-        try:
-            lower, upper = item.split("-")
-            lower_int = int(lower)
-            upper_int = int(upper)
-            if lower_int > upper_int:
-                raise ValueError
-            if upper_int > total_number_of_questions:
-                raise RuntimeError(
-                    f"Requested question number ({upper_int}) is greater than the total number of questions available ({total_number_of_questions})"
-                )
-            nums.extend(range(lower_int, upper_int + 1))
-        except ValueError:
-            raise ValueError(f"Invalid question item; expected a number or a range, instead got {item}")
-
-    return nums
+def parse_questions(questions: Optional[str], total_number_of_questions: int) -> list[int]:
+    if questions is None:
+        return list(range(total_number_of_questions))
+    else:
+        return [int(q) for q in questions.split(",")]
