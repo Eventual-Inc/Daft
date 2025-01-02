@@ -19,7 +19,7 @@ def run(
     questions: Optional[str],
     scale_factor: int,
     cluster_profile: str,
-    env_vars: str,
+    env_vars: Optional[str],
 ):
     branch_name, _ = git_utils.get_name_and_commit_hash(branch_name)
 
@@ -80,11 +80,13 @@ if __name__ == "__main__":
     if args.verbose:
         github.enable_console_debug_logging()
 
-    list_of_env_vars: list[str] = args.env_var
-    for env_var in list_of_env_vars:
-        if "=" not in env_var:
-            raise ValueError("Environment variables must in the form `KEY=VALUE`")
-    env_vars = ",".join(list_of_env_vars)
+    env_vars = None
+    if args.env_var:
+        list_of_env_vars: list[str] = args.env_var
+        for env_var in list_of_env_vars:
+            if "=" not in env_var:
+                raise ValueError("Environment variables must in the form `KEY=VALUE`")
+        env_vars = ",".join(list_of_env_vars)
 
     run(
         branch_name=args.ref,
