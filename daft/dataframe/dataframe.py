@@ -686,7 +686,9 @@ class DataFrame:
             )
 
     @DataframePublicAPI
-    def write_iceberg(self, table: "pyiceberg.table.Table", mode: str = "append") -> "DataFrame":
+    def write_iceberg(
+        self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
+    ) -> "DataFrame":
         """Writes the DataFrame to an `Iceberg <https://iceberg.apache.org/docs/nightly/>`__ table, returning a new DataFrame with the operations that occurred.
 
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
@@ -697,6 +699,7 @@ class DataFrame:
         Args:
             table (pyiceberg.table.Table): Destination `PyIceberg Table <https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table>`__ to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to "append".
+            io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -704,6 +707,8 @@ class DataFrame:
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
+
+        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
@@ -719,12 +724,17 @@ class DataFrame:
         if mode not in ["append", "overwrite"]:
             raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
+        io_config = (
+            _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
+        )
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         operations = []
         path = []
         rows = []
         size = []
 
-        builder = self._builder.write_iceberg(table)
+        builder = self._builder.write_iceberg(table, io_config)
         write_df = DataFrame(builder)
         write_df.collect()
 
@@ -870,11 +880,11 @@ class DataFrame:
         from packaging.version import parse
 
         from daft import from_pydict
+        from daft.dependencies import unity_catalog
         from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
-        from daft.unity_catalog import UnityCatalogTable
 
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
@@ -884,30 +894,35 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        if isinstance(table, (str, pathlib.Path, DataCatalogTable, UnityCatalogTable)):
-            if isinstance(table, str):
-                table_uri = table
-            elif isinstance(table, pathlib.Path):
-                table_uri = str(table)
-            elif isinstance(table, UnityCatalogTable):
-                table_uri = table.table_uri
-                io_config = table.io_config
-            else:
-                table_uri = table.table_uri(io_config)
+        # Retrieve table_uri and storage_options from various backends
+        table_uri: str
+        storage_options: dict
 
-            if io_config is None:
-                raise ValueError(
-                    "io_config was not provided to write_deltalake and could not be retrieved from the default configuration."
-                )
-            storage_options = io_config_to_storage_options(io_config, table_uri) or {}
-            table = try_get_deltatable(table_uri, storage_options=storage_options)
-        elif isinstance(table, deltalake.DeltaTable):
+        if isinstance(table, deltalake.DeltaTable):
             table_uri = table.table_uri
             storage_options = table._storage_options or {}
             new_storage_options = io_config_to_storage_options(io_config, table_uri)
             storage_options.update(new_storage_options or {})
         else:
-            raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
+            if isinstance(table, str):
+                table_uri = table
+            elif isinstance(table, pathlib.Path):
+                table_uri = str(table)
+            elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
+                table_uri = table.table_uri
+                io_config = table.io_config
+            elif isinstance(table, DataCatalogTable):
+                table_uri = table.table_uri(io_config)
+            else:
+                raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
+
+            if io_config is None:
+                raise ValueError(
+                    "io_config was not provided to write_deltalake and could not be retrieved from defaults."
+                )
+
+            storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+            table = try_get_deltatable(table_uri, storage_options=storage_options)
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
         scheme = get_protocol_from_path(table_uri)

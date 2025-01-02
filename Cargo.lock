@@ -2351,6 +2351,7 @@ dependencies = [
  "log",
  "pretty_assertions",
  "pyo3",
+ "rand 0.8.5",
  "rstest",
  "serde",
  "snafu",
