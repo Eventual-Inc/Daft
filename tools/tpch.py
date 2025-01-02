@@ -62,7 +62,7 @@ if __name__ == "__main__":
         default=2,
         help="The scale factor to run on",
     )
-    parser.add_argument("--num-partitions", type=int, required=False, default=2, help="The number of partitions")
+    parser.add_argument("--num-partitions", type=int, required=True, help="The number of partitions")
     parser.add_argument(
         "--cluster-profile",
         choices=["debug_xs-x86", "medium-x86"],
