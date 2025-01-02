@@ -79,4 +79,13 @@ def parse_questions(questions: Optional[str], total_number_of_questions: int) ->
     if questions is None:
         return list(range(total_number_of_questions))
     else:
-        return [int(q) for q in questions.split(",")]
+
+        def to_int(q: str) -> int:
+            question = int(q)
+            if question > total_number_of_questions:
+                raise ValueError(
+                    f"Question number should be less than {total_number_of_questions}, instead got {question}"
+                )
+            return question
+
+        return [to_int(q) for q in questions.split(",")]
