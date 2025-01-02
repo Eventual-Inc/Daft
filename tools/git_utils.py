@@ -88,4 +88,4 @@ def parse_questions(questions: Optional[str], total_number_of_questions: int) ->
                 )
             return question
 
-        return [to_int(q) for q in questions.split(",")]
+        return list(map(to_int, filter(lambda q: q, questions.split(","))))
