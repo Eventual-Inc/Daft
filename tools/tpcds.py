@@ -47,8 +47,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "--questions", type=str, required=False, default="*", help="A comma separated list of questions to run"
     )
-    parser.add_argument("--scale-factor", type=int, required=False, default=2, help="The scale factor to run on")
-    parser.add_argument("--cluster-profile", type=str, required=False, help="The ray cluster configuration to run on")
+    parser.add_argument(
+        "--scale-factor",
+        choices=[
+            2,
+            5,
+            10,
+            100,
+            1000,
+        ],
+        required=False,
+        default=2,
+        help="The scale factor to run on",
+    )
+    parser.add_argument(
+        "--cluster-profile",
+        choices=["debug_xs-x86", "medium-x86"],
+        required=False,
+        help="The ray cluster configuration to run on",
+    )
     parser.add_argument(
         "--env-vars",
         type=str,
