@@ -9,8 +9,8 @@
 import argparse
 import json
 
+import git_utils
 import github
-import utils
 
 TOTAL_NUMBER_OF_QUESTIONS = 22
 
@@ -23,9 +23,9 @@ def run(
     cluster_profile: str,
     env_vars: str,
 ):
-    branch_name, _ = utils.get_name_and_commit_hash(branch_name)
+    branch_name, _ = git_utils.get_name_and_commit_hash(branch_name)
 
-    expanded_questions = utils.parse_questions(questions, TOTAL_NUMBER_OF_QUESTIONS)
+    expanded_questions = git_utils.parse_questions(questions, TOTAL_NUMBER_OF_QUESTIONS)
     print(
         f"Running scale-factor of {scale_factor}GB with {num_partitions} partitions on questions: {', '.join(map(str, expanded_questions))}"
     )
@@ -35,8 +35,8 @@ def run(
     ]
     entrypoint_args = json.dumps(args_as_list)
 
-    workflow = utils.repo.get_workflow("run-cluster.yaml")
-    utils.dispatch(
+    workflow = git_utils.repo.get_workflow("run-cluster.yaml")
+    git_utils.dispatch(
         workflow=workflow,
         branch_name=branch_name,
         inputs={
