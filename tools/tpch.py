@@ -54,9 +54,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref", type=str, required=False, help="The branch name to run on")
     parser.add_argument("--questions", type=str, required=False, help="A comma separated list of questions to run")
-    parser.add_argument("--scale-factor", type=int, required=False, default=2, help="The scale factor to run on")
+    parser.add_argument(
+        "--scale-factor",
+        choices=[2, 10, 100, 1000],
+        type=int,
+        required=False,
+        default=2,
+        help="The scale factor to run on",
+    )
     parser.add_argument("--num-partitions", type=int, required=False, default=2, help="The number of partitions")
-    parser.add_argument("--cluster-profile", type=str, required=False, help="The ray cluster configuration to run on")
+    parser.add_argument(
+        "--cluster-profile",
+        choices=["debug_xs-x86", "medium-x86"],
+        type=str,
+        required=False,
+        help="The ray cluster configuration to run on",
+    )
     parser.add_argument(
         "--env-var",
         type=str,
