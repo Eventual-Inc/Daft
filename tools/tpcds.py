@@ -56,6 +56,7 @@ if __name__ == "__main__":
             100,
             1000,
         ],
+        type=int,
         required=False,
         default=2,
         help="The scale factor to run on",
@@ -63,14 +64,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cluster-profile",
         choices=["debug_xs-x86", "medium-x86"],
+        type=str,
         required=False,
         help="The ray cluster configuration to run on",
     )
     parser.add_argument(
-        "--env-vars",
+        "--env-var",
         type=str,
+        action="append",
         required=False,
-        help="A comma separated list of environment variables to pass to ray job",
+        help="Environment variable in the format KEY=VALUE. Can be specified multiple times.",
     )
     parser.add_argument("--verbose", action="store_true", help="Verbose debugging")
     args = parser.parse_args()
@@ -78,10 +81,16 @@ if __name__ == "__main__":
     if args.verbose:
         github.enable_console_debug_logging()
 
+    list_of_env_vars: list[str] = args.env_var
+    for env_var in list_of_env_vars:
+        if "=" not in env_var:
+            raise ValueError("Environment variables must in the form `KEY=VALUE`")
+    env_vars = ",".join(list_of_env_vars)
+
     run(
         branch_name=args.ref,
         questions=args.questions,
         scale_factor=args.scale_factor,
         cluster_profile=args.cluster_profile,
-        env_vars=args.env_vars,
+        env_vars=env_vars,
     )
