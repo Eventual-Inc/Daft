@@ -15,7 +15,7 @@ import github
 
 
 def run(
-    branch_name: str,
+    branch_name: Optional[str],
     questions: Optional[str],
     scale_factor: int,
     cluster_profile: str,
@@ -49,6 +49,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--scale-factor",
         choices=[
+            1,
             2,
             5,
             10,
