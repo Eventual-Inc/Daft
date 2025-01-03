@@ -4,17 +4,21 @@
 #   "PyGithub",
 #   "boto3",
 #   "duckdb",
+#   "getdaft",
 # ]
 # ///
 
 
 import logging
+import os
 import typing
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Optional
 
 import duckdb
+
+import daft
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,9 @@ def generate_local_tpcds_data(
         parquet_file = final_dir / f"{tbl}.parquet"
         print(f"Exporting {tbl} to {parquet_file}")
         db.sql(f"COPY {tbl} TO '{parquet_file}'")
+
+        daft.read_parquet(str(parquet_file)).write_parquet(final_dir / tbl)
+        os.remove(parquet_file)
 
 
 def generate_local_tpch_data(
