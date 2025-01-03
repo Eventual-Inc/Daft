@@ -1,6 +1,7 @@
 name: datagen
 
 on:
+  push:
   workflow_dispatch:
     inputs:
       bench_type:
