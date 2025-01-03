@@ -27,10 +27,11 @@ def generate_local_tpcds_data(
     if final_dir.exists():
         if not final_dir.is_dir():
             raise ValueError(f"The path {final_dir} already exists, but it's not a directory")
-        logger.info(
-            "The directory %s already exists; doing nothing",
+        logger.warning(
+            "The directory '%s' already exists; doing nothing",
             final_dir,
         )
+        return
 
     final_dir.mkdir(parents=True, exist_ok=True)
     db = duckdb.connect(database=final_dir / "tpcds.db")
