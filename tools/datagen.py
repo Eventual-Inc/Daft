@@ -58,7 +58,7 @@ def generate_local_tpch_data(
 
 
 def main(
-    bench: str,
+    bench_type: str,
     scale_factor: int,
     num_partitions: int,
     output_dir: Optional[Path],
@@ -73,9 +73,9 @@ def main(
 
     output_dir = output_dir or Path("data")
 
-    if bench == "tpcds":
+    if bench_type == "tpcds":
         generate_local_tpcds_data(scale_factor, output_dir)
-    elif bench == "tpch":
+    elif bench_type == "tpch":
         generate_local_tpch_data(scale_factor, num_partitions, output_dir)
 
     else:
@@ -84,7 +84,9 @@ def main(
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("bench", choices=["tpcds", "tpch"], type=str, help="Type of benchmark to generate data for")
+    parser.add_argument(
+        "bench_type", choices=["tpcds", "tpch"], type=str, help="Type of benchmark to generate data for"
+    )
     parser.add_argument("--scale-factor", type=int, required=True, help="Size of data to generate (in GB)")
     parser.add_argument("--num-partitions", type=int, required=False, help="Number of partitions to create")
     parser.add_argument(
@@ -103,7 +105,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(
-        args.bench,
+        args.bench_type,
         args.scale_factor,
         args.num_partitions,
         args.output_dir,
