@@ -41,7 +41,7 @@ jobs:
     - name: Install uv, rust, python
       uses: ./.github/actions/install
       with:
-        python_version: ${{ inputs.python_version }}
+        python_version: '3.9'
     - name: Generate data
       run: |
         uv run tools/datagen.py \
