@@ -7,7 +7,7 @@ services:
     volumes:
     - /data
     ports:
-    - 9000:9000
+    - 9001:9000
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -33,3 +33,24 @@ services:
       dockerfile: Dockerfile.s3_retry_server
     ports:
     - 8001:8000
+
+  namenode:
+    image: apache/hadoop:3
+    entrypoint: [/docker-entrypoint.sh]
+    command: [hdfs, namenode]
+    ports:
+    - 9870:9870
+    - 9000:9000
+    volumes:
+    - ./namenode-entrypoint.sh:/docker-entrypoint.sh
+    - ./core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+
+  datanode:
+    image: apache/hadoop:3
+    command: [hdfs, datanode]
+    ports:
+    - 9864:9864
+    depends_on:
+    - namenode
+    volumes:
+    - ./core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
