@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
+    iter::Chain,
     sync::Arc,
 };
 
@@ -38,29 +39,11 @@ impl JoinOrderTree {
         }
     }
 
-    pub(super) fn iter(&self) -> JoinOrderTreeIterator {
-        JoinOrderTreeIterator { stack: vec![self] }
-    }
-}
-
-pub(super) struct JoinOrderTreeIterator<'a> {
-    stack: Vec<&'a JoinOrderTree>,
-}
-
-impl<'a> Iterator for JoinOrderTreeIterator<'a> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(node) = self.stack.pop() {
-            match node {
-                JoinOrderTree::Relation(id) => return Some(*id),
-                JoinOrderTree::Join(left, right) => {
-                    self.stack.push(left);
-                    self.stack.push(right);
-                }
-            }
+    pub fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
+        match self {
+            JoinOrderTree::Relation(id) => Box::new(std::iter::once(*id)),
+            JoinOrderTree::Join(left, right) => Box::new(left.iter().chain(right.iter())),
         }
-        None
     }
 }
 
