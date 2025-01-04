@@ -30,18 +30,25 @@ def local_image_data_fixture(tmpdir, image_data) -> YieldFixture[list[str]]:
 def test_url_download_local(local_image_data_fixture, image_data):
     data = {"urls": local_image_data_fixture}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download())
-    assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(local_image_data_fixture))]}
+
+    def check_results(df):
+        assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(local_image_data_fixture))]}
+
+    check_results(df.with_column("data", df["urls"].url.download()))
+    check_results(daft.sql("SELECT urls, url_download(urls) AS data FROM df"))
 
 
 @pytest.mark.integration()
 def test_url_download_local_missing(local_image_data_fixture):
     data = {"urls": local_image_data_fixture + ["/missing/path/x.jpeg"]}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(on_error="raise"))
 
-    with pytest.raises(FileNotFoundError):
-        df.collect()
+    def check_results(df):
+        with pytest.raises(FileNotFoundError):
+            df.collect()
+
+    check_results(df.with_column("data", df["urls"].url.download(on_error="raise")))
+    check_results(daft.sql("SELECT urls, url_download(urls, on_error:='raise') AS data FROM df"))
 
 
 @pytest.mark.integration()

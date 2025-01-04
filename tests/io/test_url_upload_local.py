@@ -9,17 +9,21 @@ def test_upload_local(tmpdir):
     bytes_data = [b"a", b"b", b"c"]
     data = {"data": bytes_data}
     df = daft.from_pydict(data)
-    df = df.with_column("files", df["data"].url.upload(str(tmpdir + "/nested")))
-    df.collect()
 
-    results = df.to_pydict()
-    assert results["data"] == bytes_data
-    assert len(results["files"]) == len(bytes_data)
-    for path, expected in zip(results["files"], bytes_data):
-        assert path.startswith("file://")
-        path = path[len("file://") :]
-        with open(path, "rb") as f:
-            assert f.read() == expected
+    def check_upload_results(df):
+        df.collect()
+        results = df.to_pydict()
+        assert results["data"] == bytes_data
+        assert len(results["files"]) == len(bytes_data)
+        for path, expected in zip(results["files"], bytes_data):
+            assert path.startswith("file://")
+            path = path[len("file://") :]
+            with open(path, "rb") as f:
+                assert f.read() == expected
+
+    # check df and sql
+    check_upload_results(df.with_column("files", df["data"].url.upload(str(tmpdir + "/nested"))))
+    check_upload_results(daft.sql(f"SELECT data, url_upload(data, '{tmpdir!s}') AS files FROM df"))
 
 
 def test_upload_local_single_file_url(tmpdir):
@@ -27,23 +31,27 @@ def test_upload_local_single_file_url(tmpdir):
     paths = [f"{tmpdir}/0"]
     data = {"data": bytes_data, "paths": paths}
     df = daft.from_pydict(data)
-    # Even though there is only one row, since we pass in the upload URL via an expression, we
-    # should treat the given path as a per-row path and write directly to that path, instead of
-    # treating the path as a directory and writing to `{path}/uuid`.
-    df = df.with_column("files", df["data"].url.upload(df["paths"]))
-    df.collect()
 
-    results = df.to_pydict()
-    assert results["data"] == bytes_data
-    assert len(results["files"]) == len(bytes_data)
-    for path, expected in zip(results["files"], bytes_data):
-        assert path.startswith("file://")
-        path = path[len("file://") :]
-        with open(path, "rb") as f:
-            assert f.read() == expected
-    # Check that data was uploaded to the correct paths.
-    for path, expected in zip(results["files"], paths):
-        assert path == "file://" + expected
+    def check_upload_results(df):
+        # Even though there is only one row, since we pass in the upload URL via an expression, we
+        # should treat the given path as a per-row path and write directly to that path, instead of
+        # treating the path as a directory and writing to `{path}/uuid`.
+        df.collect()
+
+        results = df.to_pydict()
+        assert results["data"] == bytes_data
+        assert len(results["files"]) == len(bytes_data)
+        for path, expected in zip(results["files"], bytes_data):
+            assert path.startswith("file://")
+            path = path[len("file://") :]
+            with open(path, "rb") as f:
+                assert f.read() == expected
+        # Check that data was uploaded to the correct paths.
+        for path, expected in zip(results["files"], paths):
+            assert path == "file://" + expected
+
+    check_upload_results(df.with_column("files", df["data"].url.upload(df["paths"])))
+    check_upload_results(daft.sql("SELECT data, url_upload(data, paths) AS files FROM df"))
 
 
 def test_upload_local_row_specifc_urls(tmpdir):
@@ -51,20 +59,23 @@ def test_upload_local_row_specifc_urls(tmpdir):
     paths = [f"{tmpdir}/0", f"{tmpdir}/1", f"{tmpdir}/2"]
     data = {"data": bytes_data, "paths": paths}
     df = daft.from_pydict(data)
-    df = df.with_column("files", df["data"].url.upload(df["paths"]))
-    df.collect()
 
-    results = df.to_pydict()
-    assert results["data"] == bytes_data
-    assert len(results["files"]) == len(bytes_data)
-    for path, expected in zip(results["files"], bytes_data):
-        assert path.startswith("file://")
-        path = path[len("file://") :]
-        with open(path, "rb") as f:
-            assert f.read() == expected
-    # Check that data was uploaded to the correct paths.
-    for path, expected in zip(results["files"], paths):
-        assert path == "file://" + expected
+    def check_upload_results(df):
+        df.collect()
+        results = df.to_pydict()
+        assert results["data"] == bytes_data
+        assert len(results["files"]) == len(bytes_data)
+        for path, expected in zip(results["files"], bytes_data):
+            assert path.startswith("file://")
+            path = path[len("file://") :]
+            with open(path, "rb") as f:
+                assert f.read() == expected
+        # Check that data was uploaded to the correct paths.
+        for path, expected in zip(results["files"], paths):
+            assert path == "file://" + expected
+
+    check_upload_results(df.with_column("files", df["data"].url.upload(df["paths"])))
+    check_upload_results(daft.sql("SELECT data, url_upload(data, paths) AS files FROM df"))
 
 
 def test_upload_local_no_write_permissions(tmpdir):
