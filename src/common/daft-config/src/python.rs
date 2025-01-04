@@ -99,6 +99,7 @@ impl PyDaftExecutionConfig {
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
         enable_ray_tracing: Option<bool>,
+        enable_aggressive_scantask_splitting: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -182,6 +183,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(enable_ray_tracing) = enable_ray_tracing {
             config.enable_ray_tracing = enable_ray_tracing;
+        }
+
+        if let Some(enable_aggressive_scantask_splitting) = enable_aggressive_scantask_splitting {
+            config.enable_aggressive_scantask_splitting = enable_aggressive_scantask_splitting;
         }
 
         Ok(Self {
@@ -292,6 +297,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_ray_tracing(&self) -> PyResult<bool> {
         Ok(self.config.enable_ray_tracing)
+    }
+
+    #[getter]
+    fn enable_aggressive_scantask_splitting(&self) -> PyResult<bool> {
+        Ok(self.config.enable_aggressive_scantask_splitting)
     }
 }
 

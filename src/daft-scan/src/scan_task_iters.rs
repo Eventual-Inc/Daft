@@ -1,3 +1,7 @@
+mod mark_scan_tasks_for_split;
+mod retrieve_parquet_metadata;
+mod split_parquet_files_by_rowgroup;
+
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
@@ -325,20 +329,63 @@ fn split_and_merge_pass(
                 .downcast::<ScanTask>()
                 .map_err(|e| DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e)))
         }));
-        let split_tasks = split_by_row_groups(
-            iter,
-            cfg.parquet_split_row_groups_max_files,
-            cfg.scan_tasks_min_size_bytes,
-            cfg.scan_tasks_max_size_bytes,
-        );
-        let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
-        let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
+
+        let optimized = if cfg.enable_aggressive_scantask_splitting {
+            split_and_merge_pass_v2(iter, pushdowns, cfg)
+        } else {
+            split_and_merge_pass_v1(iter, pushdowns, cfg)
+        };
+
+        let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = optimized
             .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
             .collect::<DaftResult<Vec<_>>>()?;
         Ok(Arc::new(scan_tasks))
     } else {
         Ok(scan_tasks)
     }
+}
+
+fn split_and_merge_pass_v1<'a>(
+    inputs: BoxScanTaskIter<'a>,
+    pushdowns: &Pushdowns,
+    cfg: &'a DaftExecutionConfig,
+) -> BoxScanTaskIter<'a> {
+    let split_tasks = split_by_row_groups(
+        inputs,
+        cfg.parquet_split_row_groups_max_files,
+        cfg.scan_tasks_min_size_bytes,
+        cfg.scan_tasks_max_size_bytes,
+    );
+    let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
+    merged_tasks
+}
+
+fn split_and_merge_pass_v2<'a>(
+    inputs: BoxScanTaskIter<'a>,
+    pushdowns: &Pushdowns,
+    cfg: &'a DaftExecutionConfig,
+) -> BoxScanTaskIter<'a> {
+    // Split Parquet ScanTasks based on their rowgroups
+    let split_tasks = {
+        // Decide which ScanTasks need to be split
+        let decisions = mark_scan_tasks_for_split::decide_scantask_split_by_rowgroups(inputs, cfg);
+
+        // Fetch Parquet metadatas based on previous decisions
+        let max_batch_size = 16;
+        let fetched_parquet_metadata =
+            retrieve_parquet_metadata::batched_parquet_metadata_retrieval(
+                decisions,
+                max_batch_size,
+            );
+
+        // Perform splits
+        split_parquet_files_by_rowgroup::split_by_rowgroup(fetched_parquet_metadata)
+    };
+
+    // Merge ScanTasks based on their estimated sizes
+    let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
+
+    merged_tasks
 }
 
 #[ctor::ctor]
