@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
-    iter::Chain,
     sync::Arc,
 };
 
@@ -39,7 +38,7 @@ impl JoinOrderTree {
         }
     }
 
-    pub fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
+    fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
         match self {
             JoinOrderTree::Relation(id) => Box::new(std::iter::once(*id)),
             JoinOrderTree::Join(left, right) => Box::new(left.iter().chain(right.iter())),
