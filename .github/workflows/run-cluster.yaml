@@ -22,6 +22,7 @@ on:
         options:
         - medium-x86
         - debug_xs-x86
+        - benchmarking_1000-x86
         required: false
         default: medium-x86
       working_dir:

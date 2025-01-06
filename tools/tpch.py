@@ -65,7 +65,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-partitions", type=int, required=True, help="The number of partitions")
     parser.add_argument(
         "--cluster-profile",
-        choices=["debug_xs-x86", "medium-x86"],
+        choices=["debug_xs-x86", "medium-x86", "benchmarking_1000-x86"],
         type=str,
         required=False,
         help="The ray cluster configuration to run on",
