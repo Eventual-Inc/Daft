@@ -482,9 +482,17 @@ impl LogicalPlanBuilder {
     pub fn intersect(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             ops::Intersect::try_new(self.plan.clone(), other.plan.clone(), is_all)?
-                .to_optimized_join()?;
+                .to_logical_plan()?;
         Ok(self.with_new_plan(logical_plan))
     }
+
+    pub fn except(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan =
+            ops::Except::try_new(self.plan.clone(), other.plan.clone(), is_all)?
+                .to_logical_plan()?;
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn union(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             ops::Union::try_new(self.plan.clone(), other.plan.clone(), is_all)?
@@ -859,6 +867,11 @@ impl PyLogicalPlanBuilder {
 
     pub fn intersect(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
         Ok(self.builder.intersect(&other.builder, is_all)?.into())
+    }
+
+    #[pyo3(name = "except_")]
+    pub fn except(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
+        Ok(self.builder.except(&other.builder, is_all)?.into())
     }
 
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> PyResult<Self> {
