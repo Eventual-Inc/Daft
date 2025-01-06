@@ -87,6 +87,8 @@ impl AntiSemiProbeSink {
         }
     }
 
+    // This function performs probing for anti-semi joins when the side to keep is the probe side, i.e. we built the probe table
+    // on the right side and are streaming the left side.
     fn probe_anti_semi(
         probe_on: &[ExprRef],
         probe_set: &Arc<dyn Probeable>,
@@ -111,6 +113,8 @@ impl AntiSemiProbeSink {
                 let iter = probe_set.probe_exists(&join_keys)?;
 
                 for (probe_row_idx, matched) in iter.enumerate() {
+                    // 1. If this is a semi join, we keep the row if it matches.
+                    // 2. If this is an anti join, we keep the row if it doesn't match.
                     match (is_semi, matched) {
                         (true, true) | (false, false) => {
                             probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
@@ -128,6 +132,9 @@ impl AntiSemiProbeSink {
         )))
     }
 
+    // This function performs the anti semi join when the side to keep is the build side, i.e. we built the probe table
+    // on the left side and we are streaming the right side. In this case, we use a bitmap index to track matches, and only
+    // emit a final result at the end.
     fn probe_anti_semi_with_bitmap(
         probe_on: &[ExprRef],
         probe_set: &Arc<dyn Probeable>,
@@ -150,6 +157,7 @@ impl AntiSemiProbeSink {
         Ok(())
     }
 
+    // Finalize the anti/semi join where we have a bitmap index, i.e. left side builds.
     async fn finalize_anti_semi(
         mut states: Vec<Box<dyn StreamingSinkState>>,
         is_semi: bool,
@@ -194,6 +202,8 @@ impl AntiSemiProbeSink {
         }
         .expect("at least one bitmap should be present");
 
+        // The bitmap marks matched rows as 0, so we need to negate it if we are doing semi join, i.e. the matched rows become 1 so that
+        // we can we can keep them in the final result.
         if is_semi {
             merged_bitmap = merged_bitmap.negate();
         }
