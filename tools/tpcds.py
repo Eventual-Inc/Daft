@@ -15,7 +15,7 @@ import github
 
 
 def run(
-    branch_name: str,
+    branch_name: Optional[str],
     questions: Optional[str],
     scale_factor: int,
     cluster_profile: str,
