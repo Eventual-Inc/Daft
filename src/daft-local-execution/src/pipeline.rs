@@ -29,14 +29,14 @@ use snafu::ResultExt;
 use crate::{
     channel::Receiver,
     intermediate_ops::{
-        actor_pool_project::ActorPoolProjectOperator,
-        anti_semi_hash_join_probe::AntiSemiProbeOperator, cross_join::CrossJoinOperator,
+        actor_pool_project::ActorPoolProjectOperator, cross_join::CrossJoinOperator,
         explode::ExplodeOperator, filter::FilterOperator,
         inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
         project::ProjectOperator, sample::SampleOperator, unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink,
+        anti_semi_hash_join_probe::AntiSemiProbeSink,
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
         cross_join_collect::CrossJoinCollectSink,
@@ -409,12 +409,13 @@ pub fn physical_plan_to_pipeline(
                 let probe_child_node = physical_plan_to_pipeline(probe_child, psets, cfg)?;
 
                 match join_type {
-                    JoinType::Anti | JoinType::Semi => Ok(IntermediateNode::new(
-                        Arc::new(AntiSemiProbeOperator::new(
+                    JoinType::Anti | JoinType::Semi => Ok(StreamingSinkNode::new(
+                        Arc::new(AntiSemiProbeSink::new(
                             casted_probe_on,
                             join_type,
                             schema,
                             probe_state_bridge,
+                            build_on_left,
                         )),
                         vec![build_node, probe_child_node],
                     )
