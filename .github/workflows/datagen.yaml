@@ -51,5 +51,6 @@ jobs:
     - name: Copy data to S3
       run: |
         if [ "${{ inputs.bench_type }}" == "tpcds" ]; then
+          aws s3 rm s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/${{ inputs.scale_factor }}/ --recursive
           aws s3 cp data/${{ inputs.scale_factor }} s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/${{ inputs.scale_factor }}/ --recursive
         fi
