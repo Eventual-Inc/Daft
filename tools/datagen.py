@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Optional
 
 import duckdb
-import git_utils
 
 import daft
 
@@ -53,6 +52,8 @@ def generate_local_tpcds_data(
 def generate_remote_tpcds_data(
     scale_factor: int,
 ):
+    import git_utils
+
     branch_name, _ = git_utils.get_name_and_commit_hash(None)
 
     workflow = git_utils.repo.get_workflow("datagen.yaml")
