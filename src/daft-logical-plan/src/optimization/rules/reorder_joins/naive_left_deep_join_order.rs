@@ -3,6 +3,7 @@ use super::join_graph::{JoinGraph, JoinOrderTree, JoinOrderer};
 pub(crate) struct NaiveLeftDeepJoinOrderer {}
 
 impl NaiveLeftDeepJoinOrderer {
+    #[allow(clippy::unnecessary_box_returns)]
     fn extend_order(
         graph: &JoinGraph,
         current_order: Box<JoinOrderTree>,

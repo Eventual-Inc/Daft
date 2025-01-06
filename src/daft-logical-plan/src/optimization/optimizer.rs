@@ -1,5 +1,6 @@
 use std::{ops::ControlFlow, sync::Arc};
 
+use common_daft_config::DaftPlanningConfig;
 use common_error::DaftResult;
 use common_treenode::Transformed;
 
@@ -8,7 +9,7 @@ use super::{
     rules::{
         DropRepartition, EliminateCrossJoin, EnrichWithStats, FilterNullJoinKey,
         LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownFilter, PushDownLimit,
-        PushDownProjection, SimplifyExpressionsRule, SplitActorPoolProjects,
+        PushDownProjection, ReorderJoins, SimplifyExpressionsRule, SplitActorPoolProjects,
         UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
@@ -19,20 +20,32 @@ use crate::LogicalPlan;
 pub struct OptimizerConfig {
     // Default maximum number of optimization passes the optimizer will make over a fixed-point RuleBatch.
     pub default_max_optimizer_passes: usize,
+    pub enable_join_reordering: bool,
 }
 
 impl OptimizerConfig {
-    fn new(max_optimizer_passes: usize) -> Self {
+    fn new(max_optimizer_passes: usize, enable_join_reordering: bool) -> Self {
         Self {
             default_max_optimizer_passes: max_optimizer_passes,
+            enable_join_reordering,
         }
+    }
+}
+
+impl From<&Option<Arc<DaftPlanningConfig>>> for OptimizerConfig {
+    fn from(planning_conf: &Option<Arc<DaftPlanningConfig>>) -> Self {
+        let mut conf: Self = Default::default();
+        if let Some(planning_conf) = planning_conf {
+            conf.enable_join_reordering = planning_conf.enable_join_reordering;
+        }
+        conf
     }
 }
 
 impl Default for OptimizerConfig {
     fn default() -> Self {
         // Default to a max of 5 optimizer passes for a given batch.
-        Self::new(5)
+        Self::new(5, false)
     }
 }
 
@@ -90,7 +103,7 @@ pub struct Optimizer {
 
 impl Optimizer {
     pub fn new(config: OptimizerConfig) -> Self {
-        let rule_batches = vec![
+        let mut rule_batches = vec![
             // --- Rewrite rules ---
             RuleBatch::new(
                 vec![
@@ -139,12 +152,22 @@ impl Optimizer {
                 vec![Box::new(EnrichWithStats::new())],
                 RuleExecutionStrategy::Once,
             ),
-            // try to simplify expressions again as other rules could introduce new exprs
-            RuleBatch::new(
-                vec![Box::new(SimplifyExpressionsRule::new())],
-                RuleExecutionStrategy::FixedPoint(Some(3)),
-            ),
         ];
+        // --- Reorder joins ---
+        if config.enable_join_reordering {
+            rule_batches.push(RuleBatch::new(
+                vec![
+                    Box::new(ReorderJoins::new()),
+                    Box::new(EnrichWithStats::new()),
+                ],
+                RuleExecutionStrategy::Once,
+            ));
+        }
+        // try to simplify expressions again as other rules could introduce new exprs
+        rule_batches.push(RuleBatch::new(
+            vec![Box::new(SimplifyExpressionsRule::new())],
+            RuleExecutionStrategy::FixedPoint(Some(3)),
+        ));
 
         Self::with_rule_batches(rule_batches, config)
     }
@@ -266,7 +289,7 @@ mod tests {
                 vec![Box::new(NoOp::new())],
                 RuleExecutionStrategy::Once,
             )],
-            OptimizerConfig::new(5),
+            OptimizerConfig::new(5, false),
         );
         let plan: Arc<LogicalPlan> =
             dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)])).build();
@@ -313,7 +336,7 @@ mod tests {
                 vec![Box::new(RotateProjection::new(false))],
                 RuleExecutionStrategy::FixedPoint(Some(20)),
             )],
-            OptimizerConfig::new(20),
+            OptimizerConfig::new(20, false),
         );
         let proj_exprs = vec![
             col("a").add(lit(1)),
@@ -348,7 +371,7 @@ mod tests {
                 vec![Box::new(RotateProjection::new(true))],
                 RuleExecutionStrategy::FixedPoint(Some(20)),
             )],
-            OptimizerConfig::new(20),
+            OptimizerConfig::new(20, false),
         );
         let proj_exprs = vec![
             col("a").add(lit(1)),
@@ -399,7 +422,7 @@ mod tests {
                     RuleExecutionStrategy::Once,
                 ),
             ],
-            OptimizerConfig::new(20),
+            OptimizerConfig::new(20, false),
         );
         let proj_exprs = vec![
             col("a").add(lit(1)),

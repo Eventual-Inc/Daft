@@ -26,11 +26,13 @@ pub(super) enum JoinOrderTree {
 }
 
 impl JoinOrderTree {
-    pub(super) fn join(self: Box<Self>, right: Box<JoinOrderTree>) -> Box<Self> {
-        Box::new(JoinOrderTree::Join(self, right))
+    #[allow(clippy::unnecessary_box_returns)]
+    pub(super) fn join(self: Box<Self>, right: Box<Self>) -> Box<Self> {
+        Box::new(Self::Join(self, right))
     }
 
     // Helper function that checks if the join order tree contains a given id.
+    #[cfg(test)]
     pub(super) fn contains(&self, target_id: usize) -> bool {
         match self {
             Self::Relation(id) => *id == target_id,
@@ -40,13 +42,14 @@ impl JoinOrderTree {
 
     fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
         match self {
-            JoinOrderTree::Relation(id) => Box::new(std::iter::once(*id)),
-            JoinOrderTree::Join(left, right) => Box::new(left.iter().chain(right.iter())),
+            Self::Relation(id) => Box::new(std::iter::once(*id)),
+            Self::Join(left, right) => Box::new(left.iter().chain(right.iter())),
         }
     }
 }
 
 pub(super) trait JoinOrderer {
+    #[allow(clippy::unnecessary_box_returns)]
     fn order(&self, graph: &JoinGraph) -> Box<JoinOrderTree>;
 }
 
@@ -184,25 +187,25 @@ impl JoinAdjList {
         for left_node in left.iter() {
             if let Some(neighbors) = self.edges.get(&left_node) {
                 for right_node in right.iter() {
-                    if let Some(_) = neighbors.get(&right_node) {
+                    if neighbors.get(&right_node).is_some() {
                         return true;
                     }
                 }
             }
         }
-        return false;
+        false
     }
 }
 
 #[derive(Debug)]
-pub(crate) enum ProjectionOrFilter {
+pub(super) enum ProjectionOrFilter {
     Projection(Vec<ExprRef>),
     Filter(ExprRef),
 }
 
 /// Representation of a logical plan as edges between relations, along with additional information needed to
 /// reconstruct a logcial plan that's equivalent to the plan that produced this graph.
-pub(crate) struct JoinGraph {
+pub(super) struct JoinGraph {
     pub adj_list: JoinAdjList,
     // List of projections and filters that should be applied after join reordering. This list respects
     // pre-order traversal of projections and filters in the query tree, so we should apply these operators
@@ -211,7 +214,7 @@ pub(crate) struct JoinGraph {
 }
 
 impl JoinGraph {
-    pub(crate) fn new(
+    pub(super) fn new(
         adj_list: JoinAdjList,
         final_projections_and_filters: Vec<ProjectionOrFilter>,
     ) -> Self {
@@ -221,10 +224,100 @@ impl JoinGraph {
         }
     }
 
+    fn apply_projections_and_filters_to_plan_builder(
+        &self,
+        mut plan_builder: LogicalPlanBuilder,
+    ) -> DaftResult<LogicalPlanBuilder> {
+        // Apply projections and filters in post-traversal order.
+        let mut reversed_items = self.final_projections_and_filters.iter().rev().peekable();
+        while let Some(projection_or_filter) = reversed_items.next() {
+            let is_last = reversed_items.peek().is_none();
+
+            match projection_or_filter {
+                ProjectionOrFilter::Projection(projections) => {
+                    if is_last {
+                        // The final projection is the output projection, so here we select the final projection.
+                        plan_builder = plan_builder.select(projections.clone())?;
+                    } else {
+                        // Intermediate projections might only transform a subset of columns, so we use `with_columns()` instead of `select()`.
+                        plan_builder = plan_builder.with_columns(projections.clone())?;
+                    }
+                }
+                ProjectionOrFilter::Filter(predicate) => {
+                    plan_builder = plan_builder.filter(predicate.clone())?;
+                }
+            }
+        }
+        Ok(plan_builder)
+    }
+
+    fn build_joins_from_join_order(
+        &self,
+        join_order: &JoinOrderTree,
+    ) -> DaftResult<(LogicalPlanBuilder, usize)> {
+        match join_order {
+            JoinOrderTree::Relation(id) => {
+                let relation = self
+                    .adj_list
+                    .id_to_plan
+                    .get(id)
+                    .expect("Join order contains non-existent plan id");
+                Ok((LogicalPlanBuilder::from(relation.clone()), 1 << id))
+            }
+            JoinOrderTree::Join(left_tree, right_tree) => {
+                let (left_builder, left_mask) = self.build_joins_from_join_order(left_tree)?;
+                let (right_builder, right_mask) = self.build_joins_from_join_order(right_tree)?;
+                let mut left_remaining = left_mask;
+                let mut left_cols = vec![];
+                let mut right_cols = vec![];
+                for _ in 0..left_remaining.count_ones() {
+                    let left_id = left_remaining.trailing_zeros();
+                    left_remaining ^= 1 << left_id;
+                    let mut right_remaining = right_mask;
+                    for _ in 0..right_remaining.count_ones() {
+                        let right_id = right_remaining.trailing_zeros();
+                        right_remaining ^= 1 << right_id;
+                        for cond in self
+                            .adj_list
+                            .edges
+                            .get(&(left_id as usize))
+                            .expect("Join order contains non-existent plan id")
+                            .get(&(right_id as usize))
+                            .expect("Join order contains non-existent plan id")
+                        {
+                            left_cols.push(col(cond.left_on.clone()));
+                            right_cols.push(col(cond.right_on.clone()));
+                        }
+                    }
+                }
+                let join = left_builder.inner_join(right_builder, left_cols, right_cols)?;
+
+                Ok((join, left_mask | right_mask))
+            }
+        }
+    }
+
+    pub(super) fn to_logical_plan(
+        &self,
+        join_order: Box<JoinOrderTree>,
+    ) -> DaftResult<LogicalPlanRef> {
+        let (mut plan_builder, relation_mask) = self.build_joins_from_join_order(&join_order)?;
+        assert_eq!(relation_mask, self.adj_list.max_id - 1);
+        plan_builder = self.apply_projections_and_filters_to_plan_builder(plan_builder)?;
+        Ok(plan_builder.build())
+    }
+
+    pub(super) fn could_reorder(&self) -> bool {
+        // For this join graph to reorder joins, there must be at least 3 relations to join. Otherwise
+        // there is only one join to perform and no reordering is needed.
+        self.adj_list.max_id >= 3
+    }
+
     /// Test helper function to get the number of edges that the current graph contains.
-    pub(crate) fn num_edges(&self) -> usize {
+    #[cfg(test)]
+    fn num_edges(&self) -> usize {
         let mut num_edges = 0;
-        for (_, edges) in &self.adj_list.edges {
+        for edges in self.adj_list.edges.values() {
             num_edges += edges.len();
         }
         // Each edge is bidirectional, so we divide by 2 to get the correct number of edges.
@@ -232,7 +325,8 @@ impl JoinGraph {
     }
 
     /// Test helper function to check that all relations in this graph are connected.
-    pub(crate) fn fully_connected(&self) -> bool {
+    #[cfg(test)]
+    fn fully_connected(&self) -> bool {
         let start = if let Some((node, _)) = self.adj_list.edges.iter().next() {
             node
         } else {
@@ -261,7 +355,8 @@ impl JoinGraph {
 
     /// Test helper function that checks if the graph contains the given projection/filter expressions
     /// in the given order.
-    pub(crate) fn contains_projections_and_filters(&self, to_check: Vec<&ExprRef>) -> bool {
+    #[cfg(test)]
+    fn contains_projections_and_filters(&self, to_check: Vec<&ExprRef>) -> bool {
         let all_exprs: Vec<_> = self
             .final_projections_and_filters
             .iter()
@@ -282,6 +377,7 @@ impl JoinGraph {
         false
     }
 
+    #[cfg(test)]
     fn get_node_by_id(&self, id: usize) -> &LogicalPlanRef {
         self.adj_list
             .id_to_plan
@@ -291,7 +387,8 @@ impl JoinGraph {
 
     /// Helper function that loosely checks if a given edge (represented by a simple string)
     /// exists in the current graph.
-    pub(crate) fn contains_edges(&self, to_check: Vec<&str>) -> bool {
+    #[cfg(test)]
+    fn contains_edges(&self, to_check: Vec<&str>) -> bool {
         let mut edge_strings = HashSet::new();
         for (left_id, neighbors) in &self.adj_list.edges {
             for (right_id, join_conds) in neighbors {
@@ -318,7 +415,7 @@ impl JoinGraph {
 }
 
 /// JoinGraphBuilder takes in a logical plan. On .build(), it returns a JoinGraph that represents the given logical plan.
-struct JoinGraphBuilder {
+pub(super) struct JoinGraphBuilder {
     plan: LogicalPlanRef,
     join_conds_to_resolve: Vec<(String, LogicalPlanRef, bool)>,
     final_name_map: HashMap<String, ExprRef>,
@@ -327,12 +424,12 @@ struct JoinGraphBuilder {
 }
 
 impl JoinGraphBuilder {
-    pub(crate) fn build(mut self) -> JoinGraph {
+    pub(super) fn build(mut self) -> JoinGraph {
         self.process_node(&self.plan.clone());
         JoinGraph::new(self.adj_list, self.final_projections_and_filters)
     }
 
-    pub(crate) fn from_logical_plan(plan: LogicalPlanRef) -> Self {
+    pub(super) fn from_logical_plan(plan: LogicalPlanRef) -> Self {
         let output_schema = plan.schema();
         // During join reordering, we might produce an output schema that differs from the initial output schema. For example,
         // columns might be rearranged, or columns that were not originally selected might now be in the output schema.
@@ -363,9 +460,9 @@ impl JoinGraphBuilder {
     /// Joins that added conditions to `join_conds_to_resolve` will pop them off the stack after they have been resolved.
     /// Combining each of their resolved `left_on` conditions with their respective resolved `right_on` conditions produces
     /// a join edge between the relation used in the left condition and the relation used in the right condition.
-    fn process_node<'a>(&mut self, plan: &'a LogicalPlanRef) {
+    fn process_node(&mut self, plan: &LogicalPlanRef) {
         let schema = plan.schema();
-        for (name, node, done) in self.join_conds_to_resolve.iter_mut() {
+        for (name, node, done) in &mut self.join_conds_to_resolve {
             if !*done && schema.has_field(name) {
                 *node = plan.clone();
             }
@@ -390,7 +487,7 @@ impl JoinGraphBuilder {
                     });
                 if reorderable_project {
                     let mut non_join_names: HashSet<String> = schema.names().into_iter().collect();
-                    for (name, _, done) in self.join_conds_to_resolve.iter_mut() {
+                    for (name, _, done) in &mut self.join_conds_to_resolve {
                         if !*done {
                             if let Some(new_expr) = projection_input_mapping.get(name) {
                                 // Remove the current name from the list of schema names so that we can produce
@@ -418,7 +515,7 @@ impl JoinGraphBuilder {
                     // Continue to children.
                     self.process_node(input);
                 } else {
-                    for (name, _, done) in self.join_conds_to_resolve.iter_mut() {
+                    for (name, _, done) in &mut self.join_conds_to_resolve {
                         if schema.has_field(name) {
                             *done = true;
                         }
@@ -445,7 +542,7 @@ impl JoinGraphBuilder {
             }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
                 for l in left_on {
                     let name = l.name();
-                    if self.final_name_map.get(name).is_none() {
+                    if self.final_name_map.contains_key(name) {
                         self.final_name_map.insert(name.to_string(), col(name));
                     }
                     self.join_conds_to_resolve
@@ -458,7 +555,7 @@ impl JoinGraphBuilder {
                 }
                 for r in right_on {
                     let name = r.name();
-                    if self.final_name_map.get(name).is_none() {
+                    if self.final_name_map.contains_key(name) {
                         self.final_name_map.insert(name.to_string(), col(name));
                     }
                     self.join_conds_to_resolve
@@ -497,7 +594,7 @@ impl JoinGraphBuilder {
                 let mut projections = vec![];
                 let mut needs_projection = false;
                 let mut seen_names = HashSet::new();
-                for (name, _, done) in self.join_conds_to_resolve.iter_mut() {
+                for (name, _, done) in &mut self.join_conds_to_resolve {
                     if schema.has_field(name) && !*done && !seen_names.contains(name) {
                         if let Some(final_name) = self.final_name_map.get(name) {
                             let final_name = final_name.name().to_string();
@@ -523,7 +620,7 @@ impl JoinGraphBuilder {
                 } else {
                     plan.clone()
                 };
-                for (name, node, done) in self.join_conds_to_resolve.iter_mut() {
+                for (name, node, done) in &mut self.join_conds_to_resolve {
                     if schema.has_field(name) && !*done {
                         *done = true;
                         *node = projected_plan.clone();

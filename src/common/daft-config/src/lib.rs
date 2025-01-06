@@ -10,12 +10,20 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize, Deserialize, Default, Debug)]
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
+    pub enable_join_reordering: bool,
 }
 
 impl DaftPlanningConfig {
     #[must_use]
     pub fn from_env() -> Self {
-        Default::default()
+        let mut cfg: Self = Default::default();
+        let aqe_env_var_name = "ENABLE_JOIN_REORDERING";
+        if let Ok(val) = std::env::var(aqe_env_var_name)
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.enable_join_reordering = true;
+        }
+        cfg
     }
 }
 
