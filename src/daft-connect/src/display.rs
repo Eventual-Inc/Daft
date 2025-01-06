@@ -46,24 +46,46 @@ fn write_field(
     dtype: &DataType,
     level: usize,
 ) -> eyre::Result<()> {
-    /// All daft fields are nullable.
-    const NULLABLE: bool = true;
+    fn write_field_inner(
+        w: &mut String,
+        field_name: &str,
+        dtype: &DataType,
+        level: usize,
+        is_list: bool,
+    ) -> eyre::Result<()> {
+        /// All daft fields are nullable.
+        const NULLABLE: bool = true;
 
-    let indent = make_indent(level);
+        let indent = make_indent(level);
 
-    let dtype_str = type_to_string(dtype);
-    writeln!(
-        w,
-        "{indent}{field_name}: {dtype_str} (nullable = {NULLABLE})"
-    )?;
+        let dtype_str = type_to_string(dtype);
 
-    if let DataType::Struct(fields) = dtype {
-        for field in fields {
-            write_field(w, &field.name, &field.dtype, level + 1)?;
-        }
+        writeln!(
+            w,
+            "{indent}{field_name}: {dtype_str} ({nullable} = {NULLABLE})",
+            // for some reason, spark prints "containsNulls" instead of "nullable" for lists
+            nullable = if is_list { "containsNulls" } else { "nullable" }
+        )?;
+
+        // handle nested dtypes
+        match dtype {
+            DataType::List(inner) => {
+                write_field_inner(w, "element", inner, level + 1, true)?;
+            }
+            DataType::FixedSizeList(inner, _) => {
+                write_field_inner(w, "element", inner, level + 1, true)?;
+            }
+            DataType::Struct(fields) => {
+                for field in fields {
+                    write_field_inner(w, &field.name, &field.dtype, level + 1, false)?;
+                }
+            }
+            _ => {}
+        };
+        Ok(())
     }
 
-    Ok(())
+    write_field_inner(w, field_name, dtype, level, false)
 }
 
 // This helper creates indentation of the form:
@@ -101,7 +123,7 @@ fn type_to_string(dtype: &DataType) -> String {
         DataType::FixedSizeBinary(_) => "arrow.fixed_size_binary".to_string(),
         DataType::Utf8 => "string".to_string(),
         DataType::FixedSizeList(_, _) => "arrow.fixed_size_list".to_string(),
-        DataType::List(_) => "arrow.list".to_string(),
+        DataType::List(_) => "array".to_string(),
         DataType::Struct(_) => "struct".to_string(),
         DataType::Map { .. } => "map".to_string(),
         DataType::Extension(_, _, _) => "daft.extension".to_string(),
@@ -115,10 +137,10 @@ fn type_to_string(dtype: &DataType) -> String {
         #[cfg(feature = "python")]
         DataType::Python => "daft.python".to_string(),
         DataType::Unknown => "unknown".to_string(),
-        DataType::UInt8 => "arrow.ubyte".to_string(),
-        DataType::UInt16 => "arrow.ushort".to_string(),
-        DataType::UInt32 => "arrow.uint".to_string(),
-        DataType::UInt64 => "arrow.ulong".to_string(),
+        DataType::UInt8 => "arrow.uint8".to_string(),
+        DataType::UInt16 => "arrow.uint16".to_string(),
+        DataType::UInt32 => "arrow.uint32".to_string(),
+        DataType::UInt64 => "arrow.uint64".to_string(),
     }
 }
 
@@ -231,8 +253,10 @@ root
         let output = schema.repr_spark_string();
         let expected = "\
 root
- |-- ints: arrow.list (nullable = true)
+ |-- ints: array (nullable = true)
+ |    |-- element: short (containsNulls = true)
  |-- floats: arrow.fixed_size_list (nullable = true)
+
 ";
         assert_eq!(output, expected);
         Ok(())
@@ -310,9 +334,10 @@ root
 root
  |-- record: struct (nullable = true)
  |    |-- name: string (nullable = true)
- |    |-- values: arrow.list (nullable = true)
+ |    |-- values: array (nullable = true)
  |    |-- nested: struct (nullable = true)
- |    |    |-- sub_list: arrow.list (nullable = true)
+ |    |    |-- sub_list: array (nullable = true)
+ |    |    |    |-- element: string (containsNulls = true)
  |    |    |-- sub_struct: struct (nullable = true)
  |    |    |    |-- a: integer (nullable = true)
  |    |    |    |-- b: double (nullable = true)
@@ -348,6 +373,7 @@ root
         let expected = "\
 root
  |-- empty_list: arrow.fixed_size_list (nullable = true)
+ |    |-- element: byte (containsNulls = true)
 ";
         assert_eq!(output, expected);
         Ok(())
