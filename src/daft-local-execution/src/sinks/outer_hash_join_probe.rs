@@ -565,22 +565,22 @@ impl StreamingSink for OuterHashJoinProbeSink {
                     let probe_state = outer_join_state.get_or_build_probe_state().await;
                     let out = match params.join_type {
                         JoinType::Left | JoinType::Right if needs_bitmap => {
-                        Self::probe_left_right_with_bitmap(
-                            &input,
-                            outer_join_state
-                                .get_or_build_bitmap()
-                                .await
-                                .as_mut()
-                                .expect("bitmap should be set"),
-                            &probe_state,
-                            params.join_type,
-                            &params.probe_on,
-                            &params.common_join_keys,
-                            &params.left_non_join_columns,
-                            &params.right_non_join_columns,
-                        )
-                    }
-                    JoinType::Left | JoinType::Right => Self::probe_left_right(
+                            Self::probe_left_right_with_bitmap(
+                                &input,
+                                outer_join_state
+                                    .get_or_build_bitmap()
+                                    .await
+                                    .as_mut()
+                                    .expect("bitmap should be set"),
+                                &probe_state,
+                                params.join_type,
+                                &params.probe_on,
+                                &params.common_join_keys,
+                                &params.left_non_join_columns,
+                                &params.right_non_join_columns,
+                            )
+                        }
+                        JoinType::Left | JoinType::Right => Self::probe_left_right(
                             &input,
                             &probe_state,
                             params.join_type,
