@@ -256,7 +256,7 @@ root
  |-- ints: array (nullable = true)
  |    |-- element: short (containsNulls = true)
  |-- floats: arrow.fixed_size_list (nullable = true)
-
+ |    |-- element: float (containsNulls = true)
 ";
         assert_eq!(output, expected);
         Ok(())
