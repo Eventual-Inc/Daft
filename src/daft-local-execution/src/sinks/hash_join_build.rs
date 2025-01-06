@@ -4,7 +4,6 @@ use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
-use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
 
@@ -28,9 +27,8 @@ impl ProbeTableState {
         key_schema: &SchemaRef,
         projection: Vec<ExprRef>,
         nulls_equal_aware: Option<&Vec<bool>>,
-        join_type: &JoinType,
+        track_indices: bool,
     ) -> DaftResult<Self> {
-        let track_indices = !matches!(join_type, JoinType::Anti | JoinType::Semi);
         Ok(Self::Building {
             probe_table_builder: Some(make_probeable_builder(
                 key_schema.clone(),
@@ -95,7 +93,7 @@ pub struct HashJoinBuildSink {
     key_schema: SchemaRef,
     projection: Vec<ExprRef>,
     nulls_equal_aware: Option<Vec<bool>>,
-    join_type: JoinType,
+    track_indices: bool,
     probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
 }
 
@@ -104,14 +102,14 @@ impl HashJoinBuildSink {
         key_schema: SchemaRef,
         projection: Vec<ExprRef>,
         nulls_equal_aware: Option<Vec<bool>>,
-        join_type: &JoinType,
+        track_indices: bool,
         probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
     ) -> DaftResult<Self> {
         Ok(Self {
             key_schema,
             projection,
             nulls_equal_aware,
-            join_type: *join_type,
+            track_indices,
             probe_state_bridge,
         })
     }
@@ -166,7 +164,7 @@ impl BlockingSink for HashJoinBuildSink {
             &self.key_schema,
             self.projection.clone(),
             self.nulls_equal_aware.as_ref(),
-            &self.join_type,
+            self.track_indices,
         )?))
     }
 }

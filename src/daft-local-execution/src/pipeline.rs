@@ -345,11 +345,32 @@ pub fn physical_plan_to_pipeline(
                                 size <= cfg.broadcast_join_size_bytes_threshold
                             })
                     }
+                    _ => true,
+                },
+                JoinType::Anti | JoinType::Semi => match (left_stats_state, right_stats_state) {
+                    (
+                        StatsState::Materialized(left_stats),
+                        StatsState::Materialized(right_stats),
+                    ) => {
+                        let left_size = left_stats.approx_stats.upper_bound_bytes;
+                        let right_size = right_stats.approx_stats.upper_bound_bytes;
+                        left_size
+                            .zip(right_size)
+                            .map_or(true, |(l, r)| (r as f64) < ((l as f64) * 1.5))
+                    }
+                    // If stats are only available on the left side of the join, and the upper bound bytes on the left
+                    // are under the broadcast join size threshold, we build on the left instead of the right.
+                    (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
+                        left_stats
+                            .approx_stats
+                            .upper_bound_bytes
+                            .map_or(false, |size| {
+                                size <= cfg.broadcast_join_size_bytes_threshold
+                            })
+                    }
+                    // Else, default to building on the right
                     _ => false,
                 },
-
-                // Anti and semi joins always build on the right
-                JoinType::Anti | JoinType::Semi => false,
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {
                 true => (left_on, right_on, left, right),
@@ -395,11 +416,16 @@ pub fn physical_plan_to_pipeline(
                     .collect::<Vec<_>>();
                 // we should move to a builder pattern
                 let probe_state_bridge = BroadcastStateBridge::new();
+                let track_indices = if matches!(join_type, JoinType::Anti | JoinType::Semi) {
+                    build_on_left
+                } else {
+                    true
+                };
                 let build_sink = HashJoinBuildSink::new(
                     key_schema,
                     casted_build_on,
                     null_equals_null.clone(),
-                    join_type,
+                    track_indices,
                     probe_state_bridge.clone(),
                 )?;
                 let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
