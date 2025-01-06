@@ -85,7 +85,9 @@ if __name__ == "__main__":
     parser.add_argument("--daft-wheel-url")
     parser.add_argument("--daft-version")
     parser.add_argument("--python-version", required=True)
-    parser.add_argument("--cluster-profile", required=True, choices=["debug_xs-x86", "medium-x86"])
+    parser.add_argument(
+        "--cluster-profile", required=True, choices=["debug_xs-x86", "medium-x86", "benchmarking_1000-x86"]
+    )
     parser.add_argument("--working-dir", required=True)
     parser.add_argument("--entrypoint-script", required=True)
     args = parser.parse_args()
