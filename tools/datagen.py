@@ -61,7 +61,7 @@ def generate_remote_tpcds_data(
         branch_name=branch_name,
         inputs={
             "bench_type": "tpcds",
-            "scale_factor": scale_factor,
+            "scale_factor": str(scale_factor),
         },
     )
 
