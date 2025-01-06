@@ -6,7 +6,9 @@ use std::{
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
-use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
+#[cfg(feature = "python")]
+use common_file_formats::DatabaseSourceConfig;
+use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
 use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
@@ -17,16 +19,11 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
-use daft_scan::{
-    storage_config::{NativeStorageConfig, StorageConfig},
-    ChunkSpec, DataSource, ScanTask,
-};
+use daft_scan::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use daft_table::Table;
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
-#[cfg(feature = "python")]
-use {crate::PyIOSnafu, common_file_formats::DatabaseSourceConfig};
 
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
@@ -60,6 +57,7 @@ impl Display for TableState {
         }
     }
 }
+pub type MicroPartitionRef = Arc<MicroPartition>;
 
 #[derive(Debug)]
 pub struct MicroPartition {
@@ -111,280 +109,193 @@ fn materialize_scan_task(
         .iter()
         .map(daft_scan::DataSource::get_path);
 
-    let mut table_values = match scan_task.storage_config.as_ref() {
-        StorageConfig::Native(native_storage_config) => {
-            let multithreaded_io = native_storage_config.multithreaded_io;
-            let io_config = Arc::new(native_storage_config.io_config.clone().unwrap_or_default());
-            let io_client = daft_io::get_io_client(multithreaded_io, io_config).unwrap();
+    let multithreaded_io = scan_task.storage_config.multithreaded_io;
+    let io_config = Arc::new(
+        scan_task
+            .storage_config
+            .io_config
+            .clone()
+            .unwrap_or_default(),
+    );
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config).unwrap();
 
-            match scan_task.file_format_config.as_ref() {
-                // ********************
-                // Native Parquet Reads
-                // ********************
-                FileFormatConfig::Parquet(ParquetSourceConfig {
-                    coerce_int96_timestamp_unit,
-                    field_id_mapping,
-                    chunk_size,
-                    ..
-                }) => {
-                    let inference_options =
-                        ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
+    let mut table_values = match scan_task.file_format_config.as_ref() {
+        // ********************
+        // Native Parquet Reads
+        // ********************
+        FileFormatConfig::Parquet(ParquetSourceConfig {
+            coerce_int96_timestamp_unit,
+            field_id_mapping,
+            chunk_size,
+            ..
+        }) => {
+            let inference_options =
+                ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
-                    // TODO: This is a hardcoded magic value but should be configurable
-                    let num_parallel_tasks = 8;
+            // TODO: This is a hardcoded magic value but should be configurable
+            let num_parallel_tasks = 8;
 
-                    let urls = urls.collect::<Vec<_>>();
+            let urls = urls.collect::<Vec<_>>();
 
-                    // Create vec of all unique delete files in the scan task
-                    let iceberg_delete_files = scan_task
-                        .sources
-                        .iter()
-                        .filter_map(|s| s.get_iceberg_delete_files())
-                        .flatten()
-                        .map(String::as_str)
-                        .collect::<HashSet<_>>()
-                        .into_iter()
-                        .collect::<Vec<_>>();
+            // Create vec of all unique delete files in the scan task
+            let iceberg_delete_files = scan_task
+                .sources
+                .iter()
+                .filter_map(|s| s.get_iceberg_delete_files())
+                .flatten()
+                .map(String::as_str)
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
 
-                    let delete_map = _read_delete_files(
-                        iceberg_delete_files.as_slice(),
-                        urls.as_slice(),
-                        io_client.clone(),
-                        io_stats.clone(),
-                        num_parallel_tasks,
-                        multithreaded_io,
-                        &inference_options,
-                    )
-                    .context(DaftCoreComputeSnafu)?;
+            let delete_map = _read_delete_files(
+                iceberg_delete_files.as_slice(),
+                urls.as_slice(),
+                io_client.clone(),
+                io_stats.clone(),
+                num_parallel_tasks,
+                multithreaded_io,
+                &inference_options,
+            )
+            .context(DaftCoreComputeSnafu)?;
 
-                    let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
-                    let metadatas = scan_task
-                        .sources
-                        .iter()
-                        .map(|s| s.get_parquet_metadata().cloned())
-                        .collect::<Option<Vec<_>>>();
-                    daft_parquet::read::read_parquet_bulk(
-                        urls.as_slice(),
-                        file_column_names.as_deref(),
-                        None,
-                        scan_task.pushdowns.limit,
-                        row_groups,
-                        scan_task.pushdowns.filters.clone(),
-                        io_client,
-                        io_stats,
-                        num_parallel_tasks,
-                        multithreaded_io,
-                        &inference_options,
-                        field_id_mapping.clone(),
-                        metadatas,
-                        Some(delete_map),
-                        *chunk_size,
-                    )
-                    .context(DaftCoreComputeSnafu)?
-                }
+            let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
+            let metadatas = scan_task
+                .sources
+                .iter()
+                .map(|s| s.get_parquet_metadata().cloned())
+                .collect::<Option<Vec<_>>>();
+            daft_parquet::read::read_parquet_bulk(
+                urls.as_slice(),
+                file_column_names.as_deref(),
+                None,
+                scan_task.pushdowns.limit,
+                row_groups,
+                scan_task.pushdowns.filters.clone(),
+                io_client,
+                io_stats,
+                num_parallel_tasks,
+                multithreaded_io,
+                &inference_options,
+                field_id_mapping.clone(),
+                metadatas,
+                Some(delete_map),
+                *chunk_size,
+            )
+            .context(DaftCoreComputeSnafu)?
+        }
 
-                // ****************
-                // Native CSV Reads
-                // ****************
-                FileFormatConfig::Csv(cfg) => {
-                    let schema_of_file = scan_task.schema.clone();
-                    let col_names = if !cfg.has_headers {
-                        Some(
-                            schema_of_file
-                                .fields
-                                .values()
-                                .map(|f| f.name.as_str())
-                                .collect::<Vec<_>>(),
-                        )
-                    } else {
-                        None
-                    };
-                    let convert_options = CsvConvertOptions::new_internal(
-                        scan_task.pushdowns.limit,
-                        file_column_names
-                            .as_ref()
-                            .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                        col_names
-                            .as_ref()
-                            .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                        Some(schema_of_file),
-                        scan_task.pushdowns.filters.clone(),
-                    );
-                    let parse_options = CsvParseOptions::new_with_defaults(
-                        cfg.has_headers,
-                        cfg.delimiter,
-                        cfg.double_quote,
-                        cfg.quote,
-                        cfg.allow_variable_columns,
-                        cfg.escape_char,
-                        cfg.comment,
-                    )
-                    .context(DaftCSVSnafu)?;
-                    let read_options =
-                        CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
-                    let uris = urls.collect::<Vec<_>>();
-                    daft_csv::read_csv_bulk(
-                        uris.as_slice(),
-                        Some(convert_options),
-                        Some(parse_options),
-                        Some(read_options),
-                        io_client,
-                        io_stats,
-                        native_storage_config.multithreaded_io,
-                        None,
-                        8,
-                    )
-                    .context(DaftCoreComputeSnafu)?
-                }
+        // ****************
+        // Native CSV Reads
+        // ****************
+        FileFormatConfig::Csv(cfg) => {
+            let schema_of_file = scan_task.schema.clone();
+            let col_names = if !cfg.has_headers {
+                Some(
+                    schema_of_file
+                        .fields
+                        .values()
+                        .map(|f| f.name.as_str())
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                None
+            };
+            let convert_options = CsvConvertOptions::new_internal(
+                scan_task.pushdowns.limit,
+                file_column_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
+                col_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
+                Some(schema_of_file),
+                scan_task.pushdowns.filters.clone(),
+            );
+            let parse_options = CsvParseOptions::new_with_defaults(
+                cfg.has_headers,
+                cfg.delimiter,
+                cfg.double_quote,
+                cfg.quote,
+                cfg.allow_variable_columns,
+                cfg.escape_char,
+                cfg.comment,
+            )
+            .context(DaftCSVSnafu)?;
+            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+            let uris = urls.collect::<Vec<_>>();
+            daft_csv::read_csv_bulk(
+                uris.as_slice(),
+                Some(convert_options),
+                Some(parse_options),
+                Some(read_options),
+                io_client,
+                io_stats,
+                scan_task.storage_config.multithreaded_io,
+                None,
+                8,
+            )
+            .context(DaftCoreComputeSnafu)?
+        }
 
-                // ****************
-                // Native JSON Reads
-                // ****************
-                FileFormatConfig::Json(cfg) => {
-                    let convert_options = JsonConvertOptions::new_internal(
-                        scan_task.pushdowns.limit,
-                        file_column_names
-                            .as_ref()
-                            .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                        Some(scan_task.schema.clone()),
-                        scan_task.pushdowns.filters.clone(),
-                    );
-                    let parse_options = JsonParseOptions::new_internal();
-                    let read_options =
-                        JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
-                    let uris = urls.collect::<Vec<_>>();
-                    daft_json::read_json_bulk(
-                        uris.as_slice(),
-                        Some(convert_options),
-                        Some(parse_options),
-                        Some(read_options),
-                        io_client,
-                        io_stats,
-                        native_storage_config.multithreaded_io,
-                        None,
-                        8,
-                    )
-                    .context(DaftCoreComputeSnafu)?
-                }
-                #[cfg(feature = "python")]
-                FileFormatConfig::Database(_) => {
-                    return Err(common_error::DaftError::TypeError(
-                        "Native reads for Database file format not implemented".to_string(),
-                    ))
-                    .context(DaftCoreComputeSnafu);
-                }
-                #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction => {
-                    return Err(common_error::DaftError::TypeError(
-                        "Native reads for PythonFunction file format not implemented".to_string(),
-                    ))
-                    .context(DaftCoreComputeSnafu);
-                }
-            }
+        // ****************
+        // Native JSON Reads
+        // ****************
+        FileFormatConfig::Json(cfg) => {
+            let convert_options = JsonConvertOptions::new_internal(
+                scan_task.pushdowns.limit,
+                file_column_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
+                Some(scan_task.schema.clone()),
+                scan_task.pushdowns.filters.clone(),
+            );
+            let parse_options = JsonParseOptions::new_internal();
+            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+            let uris = urls.collect::<Vec<_>>();
+            daft_json::read_json_bulk(
+                uris.as_slice(),
+                Some(convert_options),
+                Some(parse_options),
+                Some(read_options),
+                io_client,
+                io_stats,
+                scan_task.storage_config.multithreaded_io,
+                None,
+                8,
+            )
+            .context(DaftCoreComputeSnafu)?
         }
         #[cfg(feature = "python")]
-        StorageConfig::Python(_) => {
-            use pyo3::Python;
-            match scan_task.file_format_config.as_ref() {
-                FileFormatConfig::Parquet(ParquetSourceConfig {
-                    coerce_int96_timestamp_unit,
-                    ..
-                }) => Python::with_gil(|py| {
-                    urls.map(|url| {
-                        crate::python::read_parquet_into_py_table(
-                            py,
-                            url,
-                            scan_task.schema.clone().into(),
-                            (*coerce_int96_timestamp_unit).into(),
-                            scan_task.storage_config.clone().into(),
-                            scan_task
-                                .pushdowns
-                                .columns
-                                .as_ref()
-                                .map(|cols| cols.as_ref().clone()),
-                            scan_task.pushdowns.limit,
-                        )
-                        .map(std::convert::Into::into)
-                        .context(PyIOSnafu)
-                    })
-                    .collect::<crate::Result<Vec<_>>>()
-                })?,
-                FileFormatConfig::Csv(CsvSourceConfig {
-                    has_headers,
-                    delimiter,
-                    double_quote,
-                    ..
-                }) => Python::with_gil(|py| {
-                    urls.map(|url| {
-                        crate::python::read_csv_into_py_table(
-                            py,
-                            url,
-                            *has_headers,
-                            *delimiter,
-                            *double_quote,
-                            scan_task.schema.clone().into(),
-                            scan_task.storage_config.clone().into(),
-                            scan_task
-                                .pushdowns
-                                .columns
-                                .as_ref()
-                                .map(|cols| cols.as_ref().clone()),
-                            scan_task.pushdowns.limit,
-                        )
-                        .map(std::convert::Into::into)
-                        .context(PyIOSnafu)
-                    })
-                    .collect::<crate::Result<Vec<_>>>()
-                })?,
-                FileFormatConfig::Json(_) => Python::with_gil(|py| {
-                    urls.map(|url| {
-                        crate::python::read_json_into_py_table(
-                            py,
-                            url,
-                            scan_task.schema.clone().into(),
-                            scan_task.storage_config.clone().into(),
-                            scan_task
-                                .pushdowns
-                                .columns
-                                .as_ref()
-                                .map(|cols| cols.as_ref().clone()),
-                            scan_task.pushdowns.limit,
-                        )
-                        .map(std::convert::Into::into)
-                        .context(PyIOSnafu)
-                    })
-                    .collect::<crate::Result<Vec<_>>>()
-                })?,
-                FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {
-                    let predicate = scan_task
+        FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {
+            let predicate = scan_task
+                .pushdowns
+                .filters
+                .as_ref()
+                .map(|p| (*p.as_ref()).clone().into());
+            pyo3::Python::with_gil(|py| {
+                let table = crate::python::read_sql_into_py_table(
+                    py,
+                    sql,
+                    conn,
+                    predicate.clone(),
+                    scan_task.schema.clone().into(),
+                    scan_task
                         .pushdowns
-                        .filters
+                        .columns
                         .as_ref()
-                        .map(|p| (*p.as_ref()).clone().into());
-                    Python::with_gil(|py| {
-                        let table = crate::python::read_sql_into_py_table(
-                            py,
-                            sql,
-                            conn,
-                            predicate.clone(),
-                            scan_task.schema.clone().into(),
-                            scan_task
-                                .pushdowns
-                                .columns
-                                .as_ref()
-                                .map(|cols| cols.as_ref().clone()),
-                            scan_task.pushdowns.limit,
-                        )
-                        .map(std::convert::Into::into)
-                        .context(PyIOSnafu)?;
-                        Ok(vec![table])
-                    })?
-                }
-                FileFormatConfig::PythonFunction => {
-                    let tables = crate::python::read_pyfunc_into_table_iter(&scan_task)?;
-                    tables.collect::<crate::Result<Vec<_>>>()?
-                }
-            }
+                        .map(|cols| cols.as_ref().clone()),
+                    scan_task.pushdowns.limit,
+                )
+                .map(std::convert::Into::into)
+                .context(crate::PyIOSnafu)?;
+                Ok(vec![table])
+            })?
+        }
+        #[cfg(feature = "python")]
+        FileFormatConfig::PythonFunction => {
+            let tables = crate::python::read_pyfunc_into_table_iter(&scan_task)?;
+            tables.collect::<crate::Result<Vec<_>>>()?
         }
     };
 
@@ -472,11 +383,10 @@ impl MicroPartition {
             &scan_task.metadata,
             &scan_task.statistics,
             scan_task.file_format_config.as_ref(),
-            scan_task.storage_config.as_ref(),
         ) {
             // CASE: ScanTask provides all required metadata.
             // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
-            (Some(metadata), Some(statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
+            (Some(metadata), Some(statistics), _) if scan_task.pushdowns.filters.is_none() => {
                 Ok(Self::new_unloaded(
                     scan_task.clone(),
                     scan_task
@@ -501,7 +411,6 @@ impl MicroPartition {
                     chunk_size,
                     ..
                 }),
-                StorageConfig::Native(cfg),
             ) => {
                 let uris = scan_task
                     .sources
@@ -537,10 +446,15 @@ impl MicroPartition {
                     row_groups,
                     scan_task.pushdowns.filters.clone(),
                     scan_task.partition_spec(),
-                    cfg.io_config.clone().map(Arc::new).unwrap_or_default(),
+                    scan_task
+                        .storage_config
+                        .io_config
+                        .clone()
+                        .map(Arc::new)
+                        .unwrap_or_default(),
                     Some(io_stats),
                     if scan_task.sources.len() == 1 { 1 } else { 128 }, // Hardcoded for to 128 bulk reads
-                    cfg.multithreaded_io,
+                    scan_task.storage_config.multithreaded_io,
                     &ParquetSchemaInferenceOptions {
                         coerce_int96_timestamp_unit,
                         ..Default::default()
@@ -630,10 +544,12 @@ impl MicroPartition {
             TableState::Loaded(tables) => Ok(tables.clone()),
         }
     }
+
     pub fn get_tables(&self) -> crate::Result<Arc<Vec<Table>>> {
         let tables = self.tables_or_read(IOStatsContext::new("get tables"))?;
         Ok(tables)
     }
+
     pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
         let tables = self.tables_or_read(io_stats)?;
         if tables.len() <= 1 {
@@ -674,7 +590,8 @@ impl MicroPartition {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let mut schema_with_id_index_map = self.schema.fields.clone();
-        schema_with_id_index_map.insert(
+        schema_with_id_index_map.shift_insert(
+            0,
             column_name.to_string(),
             Field::new(column_name, DataType::UInt64),
         );
@@ -1195,14 +1112,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             })
             .into(),
             scan_task_daft_schema,
-            StorageConfig::Native(
-                NativeStorageConfig::new_internal(
-                    multithreaded_io,
-                    Some(io_config.as_ref().clone()),
-                )
-                .into(),
-            )
-            .into(),
+            StorageConfig::new_internal(multithreaded_io, Some(io_config.as_ref().clone())).into(),
             Pushdowns::new(
                 None,
                 None,

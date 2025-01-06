@@ -44,6 +44,8 @@ pub struct DaftExecutionConfig {
     pub csv_target_filesize: usize,
     pub csv_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
+    pub partial_aggregation_threshold: usize,
+    pub high_cardinality_aggregation_threshold: f64,
     pub read_sql_partition_size_bytes: usize,
     pub enable_aqe: bool,
     pub enable_native_executor: bool,
@@ -70,6 +72,8 @@ impl Default for DaftExecutionConfig {
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
             shuffle_aggregation_default_partitions: 200,
+            partial_aggregation_threshold: 10000,
+            high_cardinality_aggregation_threshold: 0.8,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
             enable_native_executor: false,
@@ -109,6 +113,10 @@ impl DaftExecutionConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.enable_ray_tracing = true;
+        }
+        let shuffle_algorithm_env_var_name = "DAFT_SHUFFLE_ALGORITHM";
+        if let Ok(val) = std::env::var(shuffle_algorithm_env_var_name) {
+            cfg.shuffle_algorithm = val;
         }
         cfg
     }

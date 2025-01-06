@@ -4,7 +4,10 @@ pub mod catalog;
 pub mod error;
 pub mod functions;
 mod modules;
+
 mod planner;
+pub use planner::*;
+
 #[cfg(feature = "python")]
 pub mod python;
 mod table_provider;

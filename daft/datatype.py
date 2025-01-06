@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import threading
+from typing import TYPE_CHECKING, Union
 
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
@@ -82,6 +83,40 @@ class DataType:
             "We do not support creating a DataType via __init__ "
             "use a creator method like DataType.int32() or use DataType.from_arrow_type(pa_type)"
         )
+
+    @classmethod
+    def _infer_type(cls, user_provided_type: DataTypeLike) -> DataType:
+        from typing import get_args, get_origin
+
+        if isinstance(user_provided_type, DataType):
+            return user_provided_type
+        elif isinstance(user_provided_type, dict):
+            return DataType.struct({k: DataType._infer_type(user_provided_type[k]) for k in user_provided_type})
+        elif get_origin(user_provided_type) is not None:
+            origin_type = get_origin(user_provided_type)
+            if origin_type is list:
+                child_type = get_args(user_provided_type)[0]
+                return DataType.list(DataType._infer_type(child_type))
+            elif origin_type is dict:
+                (key_type, val_type) = get_args(user_provided_type)
+                return DataType.map(DataType._infer_type(key_type), DataType._infer_type(val_type))
+            else:
+                raise ValueError(f"Unrecognized Python origin type, cannot convert to Daft type: {origin_type}")
+        elif isinstance(user_provided_type, type):
+            if user_provided_type is str:
+                return DataType.string()
+            elif user_provided_type is int:
+                return DataType.int64()
+            elif user_provided_type is float:
+                return DataType.float64()
+            elif user_provided_type is bytes:
+                return DataType.binary()
+            elif user_provided_type is object:
+                return DataType.python()
+            else:
+                raise ValueError(f"Unrecognized Python type, cannot convert to Daft type: {user_provided_type}")
+        else:
+            raise ValueError(f"Unable to infer Daft DataType for provided value: {user_provided_type}")
 
     @staticmethod
     def _from_pydatatype(pydt: PyDataType) -> DataType:
@@ -538,6 +573,11 @@ class DataType:
         return self._dtype.__hash__()
 
 
+# Type alias for a union of types that can be inferred into a DataType
+DataTypeLike = Union[DataType, type]
+
+
+_EXT_TYPE_REGISTRATION_LOCK = threading.Lock()
 _EXT_TYPE_REGISTERED = False
 _STATIC_DAFT_EXTENSION = None
 
@@ -545,31 +585,36 @@ _STATIC_DAFT_EXTENSION = None
 def _ensure_registered_super_ext_type():
     global _EXT_TYPE_REGISTERED
     global _STATIC_DAFT_EXTENSION
+
+    # Double-checked locking: avoid grabbing the lock if we know that the ext type
+    # has already been registered.
     if not _EXT_TYPE_REGISTERED:
+        with _EXT_TYPE_REGISTRATION_LOCK:
+            if not _EXT_TYPE_REGISTERED:
 
-        class DaftExtension(pa.ExtensionType):
-            def __init__(self, dtype, metadata=b""):
-                # attributes need to be set first before calling
-                # super init (as that calls serialize)
-                self._metadata = metadata
-                super().__init__(dtype, "daft.super_extension")
+                class DaftExtension(pa.ExtensionType):
+                    def __init__(self, dtype, metadata=b""):
+                        # attributes need to be set first before calling
+                        # super init (as that calls serialize)
+                        self._metadata = metadata
+                        super().__init__(dtype, "daft.super_extension")
 
-            def __reduce__(self):
-                return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
+                    def __reduce__(self):
+                        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
 
-            def __arrow_ext_serialize__(self):
-                return self._metadata
+                    def __arrow_ext_serialize__(self):
+                        return self._metadata
 
-            @classmethod
-            def __arrow_ext_deserialize__(cls, storage_type, serialized):
-                return cls(storage_type, serialized)
+                    @classmethod
+                    def __arrow_ext_deserialize__(cls, storage_type, serialized):
+                        return cls(storage_type, serialized)
 
-        _STATIC_DAFT_EXTENSION = DaftExtension
-        pa.register_extension_type(DaftExtension(pa.null()))
-        import atexit
+                _STATIC_DAFT_EXTENSION = DaftExtension
+                pa.register_extension_type(DaftExtension(pa.null()))
+                import atexit
 
-        atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
-        _EXT_TYPE_REGISTERED = True
+                atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
+                _EXT_TYPE_REGISTERED = True
 
 
 def get_super_ext_type():

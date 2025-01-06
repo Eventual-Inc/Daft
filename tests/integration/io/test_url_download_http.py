@@ -6,11 +6,10 @@ import daft
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_url_download_http(mock_http_image_urls, image_data, use_native_downloader):
+def test_url_download_http(mock_http_image_urls, image_data):
     data = {"urls": mock_http_image_urls}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(use_native_downloader=use_native_downloader))
+    df = df.with_column("data", df["urls"].url.download())
     assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(mock_http_image_urls))]}
 
 
@@ -20,7 +19,7 @@ def test_url_download_http_error_codes(nginx_config, status_code):
     server_url, _ = nginx_config
     data = {"urls": [f"{server_url}/{status_code}.html"]}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(on_error="raise", use_native_downloader=True))
+    df = df.with_column("data", df["urls"].url.download(on_error="raise"))
 
     # 404 should always be corner-cased to return FileNotFoundError
     if status_code == 404:

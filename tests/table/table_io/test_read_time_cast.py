@@ -28,9 +28,9 @@ from tests.table.table_io.test_parquet import _parquet_write_helper
         ),
         # Test reordering of columns
         (
-            pa.Table.from_pydict({"foo": pa.array([1, 2, 3]), "bar": pa.array([1, 2, 3])}),
+            pa.Table.from_pydict({"foo": pa.array([1, 2, 3]), "bar": pa.array([4, 5, 6])}),
             Schema._from_field_name_and_types([("bar", DataType.int64()), ("foo", DataType.int64())]),
-            MicroPartition.from_pydict({"bar": pa.array([1, 2, 3]), "foo": pa.array([1, 2, 3])}),
+            MicroPartition.from_pydict({"bar": pa.array([4, 5, 6]), "foo": pa.array([1, 2, 3])}),
         ),
         # Test automatic insertion of null values for missing column
         (

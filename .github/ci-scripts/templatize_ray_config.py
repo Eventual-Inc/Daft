@@ -110,5 +110,7 @@ if __name__ == "__main__":
         if metadata:
             metadata = Metadata(**metadata)
             content = content.replace(OTHER_INSTALL_PLACEHOLDER, " ".join(metadata.dependencies))
+        else:
+            content = content.replace(OTHER_INSTALL_PLACEHOLDER, "")
 
     print(content)

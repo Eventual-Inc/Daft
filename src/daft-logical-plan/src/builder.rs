@@ -15,7 +15,6 @@ use daft_schema::schema::{Schema, SchemaRef};
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
-    crate::source_info::InMemoryInfo,
     common_daft_config::PyDaftPlanningConfig,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
@@ -31,7 +30,7 @@ use crate::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     sink_info::{OutputFileInfo, SinkInfo},
-    source_info::SourceInfo,
+    source_info::{InMemoryInfo, SourceInfo},
     LogicalPlanRef,
 };
 
@@ -114,10 +113,9 @@ impl LogicalPlanBuilder {
         Self::new(self.plan.clone(), Some(config))
     }
 
-    #[cfg(feature = "python")]
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: PyObject,
+        cache_entry: common_partitioning::PartitionCacheEntry,
         schema: Arc<Schema>,
         num_partitions: usize,
         size_bytes: usize,
@@ -383,6 +381,26 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(pivot_logical_plan))
     }
 
+    // Helper function to create inner joins more ergonimically in tests.
+    #[cfg(test)]
+    pub(crate) fn inner_join<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
+    ) -> DaftResult<Self> {
+        self.join(
+            right,
+            left_on,
+            right_on,
+            JoinType::Inner,
+            None,
+            None,
+            None,
+            false,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn join<Right: Into<LogicalPlanRef>>(
         &self,
@@ -464,9 +482,17 @@ impl LogicalPlanBuilder {
     pub fn intersect(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             ops::Intersect::try_new(self.plan.clone(), other.plan.clone(), is_all)?
-                .to_optimized_join()?;
+                .to_logical_plan()?;
         Ok(self.with_new_plan(logical_plan))
     }
+
+    pub fn except(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan =
+            ops::Except::try_new(self.plan.clone(), other.plan.clone(), is_all)?
+                .to_logical_plan()?;
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn union(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             ops::Union::try_new(self.plan.clone(), other.plan.clone(), is_all)?
@@ -675,7 +701,7 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
-            cache_entry,
+            common_partitioning::PartitionCacheEntry::Python(cache_entry),
             schema.into(),
             num_partitions,
             size_bytes,
@@ -841,6 +867,11 @@ impl PyLogicalPlanBuilder {
 
     pub fn intersect(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
         Ok(self.builder.intersect(&other.builder, is_all)?.into())
+    }
+
+    #[pyo3(name = "except_")]
+    pub fn except(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
+        Ok(self.builder.except(&other.builder, is_all)?.into())
     }
 
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> PyResult<Self> {

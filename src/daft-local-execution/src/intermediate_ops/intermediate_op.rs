@@ -14,6 +14,7 @@ use crate::{
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     pipeline::PipelineNode,
+    progress_bar::ProgressBarColor,
     runtime_stats::{CountingReceiver, CountingSender, ExecutionTaskSpawner, RuntimeStatsContext},
     ExecutionRuntimeContext, OperatorOutput, PipelineExecutionSnafu, NUM_CPUS,
 };
@@ -198,11 +199,18 @@ impl PipelineNode for IntermediateNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
+        let progress_bar = runtime_handle.make_progress_bar(
+            self.name(),
+            ProgressBarColor::Magenta,
+            true,
+            self.runtime_stats.clone(),
+        );
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,
                 self.runtime_stats.clone(),
+                progress_bar.clone(),
             ));
         }
         let op = self.intermediate_op.clone();
@@ -210,7 +218,8 @@ impl PipelineNode for IntermediateNode {
             node_name: self.name(),
         })?;
         let (destination_sender, destination_receiver) = create_channel(1);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
+        let counting_sender =
+            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
 
         let dispatch_spawner = self
             .intermediate_op
@@ -243,6 +252,7 @@ impl PipelineNode for IntermediateNode {
         );
         Ok(destination_receiver)
     }
+
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }

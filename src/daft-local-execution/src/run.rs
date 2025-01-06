@@ -11,7 +11,10 @@ use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::MicroPartition;
+use daft_micropartition::{
+    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
+    MicroPartition, MicroPartitionRef,
+};
 use futures::{FutureExt, Stream};
 use loole::RecvFuture;
 use tokio_util::sync::CancellationToken;
@@ -26,6 +29,7 @@ use {
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
+    progress_bar::make_progress_bar_manager,
     Error, ExecutionRuntimeContext,
 };
 
@@ -77,21 +81,25 @@ impl PyNativeExecutor {
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<PyObject> {
-        let native_psets: HashMap<String, Vec<Arc<MicroPartition>>> = psets
+        let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
                 (
                     part_id,
-                    parts
-                        .into_iter()
-                        .map(std::convert::Into::into)
-                        .collect::<Vec<Arc<MicroPartition>>>(),
+                    Arc::new(
+                        parts
+                            .into_iter()
+                            .map(std::convert::Into::into)
+                            .collect::<Vec<Arc<MicroPartition>>>()
+                            .into(),
+                    ),
                 )
             })
             .collect();
+        let psets = InMemoryPartitionSetCache::new(&native_psets);
         let out = py.allow_threads(|| {
             self.executor
-                .run(native_psets, cfg.config, results_buffer_size)
+                .run(&psets, cfg.config, results_buffer_size)
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
@@ -113,6 +121,7 @@ impl NativeExecutor {
     ) -> DaftResult<Self> {
         let logical_plan = logical_plan_builder.build();
         let local_physical_plan = translate(&logical_plan)?;
+
         Ok(Self {
             local_physical_plan,
             cancel: CancellationToken::new(),
@@ -121,7 +130,7 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        psets: HashMap<String, Vec<Arc<MicroPartition>>>,
+        psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
@@ -149,6 +158,15 @@ fn should_enable_explain_analyze() -> bool {
         true
     } else {
         false
+    }
+}
+
+fn should_enable_progress_bar() -> bool {
+    let progress_var_name = "DAFT_PROGRESS_BAR";
+    if let Ok(val) = std::env::var(progress_var_name) {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        true // Return true when env var is not set
     }
 }
 
@@ -246,21 +264,23 @@ impl IntoIterator for ExecutionEngineResult {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    psets: HashMap<String, Vec<Arc<MicroPartition>>>,
+    psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,
 ) -> DaftResult<ExecutionEngineResult> {
     refresh_chrome_trace();
-    let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
+    let pipeline = physical_plan_to_pipeline(physical_plan, psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
+        let pb_manager = should_enable_progress_bar().then(make_progress_bar_manager);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("Failed to create tokio runtime");
         let execution_task = async {
-            let mut runtime_handle = ExecutionRuntimeContext::new(cfg.default_morsel_size);
+            let mut runtime_handle =
+                ExecutionRuntimeContext::new(cfg.default_morsel_size, pb_manager);
             let receiver = pipeline.start(true, &mut runtime_handle)?;
 
             while let Some(val) = receiver.recv().await {

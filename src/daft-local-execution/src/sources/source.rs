@@ -11,6 +11,7 @@ use futures::{stream::BoxStream, StreamExt};
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::PipelineNode,
+    progress_bar::ProgressBarColor,
     runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeContext,
 };
@@ -76,10 +77,17 @@ impl PipelineNode for SourceNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let progress_bar = runtime_handle.make_progress_bar(
+            self.name(),
+            ProgressBarColor::Blue,
+            false,
+            self.runtime_stats.clone(),
+        );
         let source = self.source.clone();
         let io_stats = self.io_stats.clone();
         let (destination_sender, destination_receiver) = create_channel(1);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
+        let counting_sender =
+            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;

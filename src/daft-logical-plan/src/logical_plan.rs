@@ -1,8 +1,13 @@
-use std::{num::NonZeroUsize, sync::Arc};
+use std::{
+    any::Any,
+    hash::{Hash, Hasher},
+    num::NonZeroUsize,
+    sync::Arc,
+};
 
 use common_display::ascii::AsciiTreeDisplay;
 use common_error::DaftError;
-use daft_dsl::{optimization::get_required_columns, SubqueryPlan};
+use daft_dsl::{optimization::get_required_columns, Subquery, SubqueryPlan};
 use daft_schema::schema::SchemaRef;
 use indexmap::IndexSet;
 use snafu::Snafu;
@@ -396,6 +401,10 @@ impl SubqueryPlan for LogicalPlan {
         self
     }
 
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+
     fn name(&self) -> &'static str {
         Self::name(self)
     }
@@ -403,6 +412,26 @@ impl SubqueryPlan for LogicalPlan {
     fn schema(&self) -> SchemaRef {
         Self::schema(self)
     }
+
+    fn dyn_eq(&self, other: &dyn SubqueryPlan) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |other| self == other)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state);
+    }
+}
+
+pub(crate) fn downcast_subquery(subquery: &Subquery) -> LogicalPlanRef {
+    subquery
+        .plan
+        .clone()
+        .as_any_arc()
+        .downcast::<LogicalPlan>()
+        .expect("subquery plan should be a LogicalPlan")
 }
 
 #[derive(Debug, Snafu)]

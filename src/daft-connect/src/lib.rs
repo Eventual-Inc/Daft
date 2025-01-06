@@ -30,6 +30,7 @@ use crate::session::Session;
 mod config;
 mod err;
 mod op;
+
 mod session;
 mod translation;
 pub mod util;
@@ -142,14 +143,10 @@ impl DaftSparkConnectService {
 #[tonic::async_trait]
 impl SparkConnectService for DaftSparkConnectService {
     type ExecutePlanStream = std::pin::Pin<
-        Box<
-            dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + Sync + 'static,
-        >,
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
     >;
     type ReattachExecuteStream = std::pin::Pin<
-        Box<
-            dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + Sync + 'static,
-        >,
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
     >;
 
     #[tracing::instrument(skip_all)]
@@ -190,8 +187,9 @@ impl SparkConnectService for DaftSparkConnectService {
                     CommandType::RegisterFunction(_) => {
                         unimplemented_err!("RegisterFunction not implemented")
                     }
-                    CommandType::WriteOperation(_) => {
-                        unimplemented_err!("WriteOperation not implemented")
+                    CommandType::WriteOperation(op) => {
+                        let result = session.handle_write_command(op, operation).await?;
+                        return Ok(Response::new(result));
                     }
                     CommandType::CreateDataframeView(_) => {
                         unimplemented_err!("CreateDataframeView not implemented")
@@ -305,7 +303,7 @@ impl SparkConnectService for DaftSparkConnectService {
                     return Err(Status::invalid_argument("op_type is required to be root"));
                 };
 
-                let result = match translation::relation_to_schema(relation) {
+                let result = match translation::relation_to_schema(relation).await {
                     Ok(schema) => schema,
                     Err(e) => {
                         return invalid_argument_err!(
@@ -326,7 +324,29 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 Ok(Response::new(response))
             }
-            _ => unimplemented_err!("Analyze plan operation is not yet implemented"),
+            Analyze::DdlParse(DdlParse { ddl_string }) => {
+                let daft_schema = match daft_sql::sql_schema(&ddl_string) {
+                    Ok(daft_schema) => daft_schema,
+                    Err(e) => return invalid_argument_err!("{e}"),
+                };
+
+                let daft_schema = daft_schema.to_struct();
+
+                let schema = translation::to_spark_datatype(&daft_schema);
+
+                let schema = analyze_plan_response::Schema {
+                    schema: Some(schema),
+                };
+
+                let response = AnalyzePlanResponse {
+                    session_id,
+                    server_side_session_id: String::new(),
+                    result: Some(analyze_plan_response::Result::Schema(schema)),
+                };
+
+                Ok(Response::new(response))
+            }
+            other => unimplemented_err!("Analyze plan operation is not yet implemented: {other:?}"),
         }
     }
 

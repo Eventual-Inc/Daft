@@ -137,7 +137,11 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        optimization::{rules::PushDownLimit, test::assert_optimized_plan_with_rules_eq},
+        optimization::{
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            rules::PushDownLimit,
+            test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan, LogicalPlanBuilder,
     };
@@ -149,7 +153,14 @@ mod tests {
         plan: Arc<LogicalPlan>,
         expected: Arc<LogicalPlan>,
     ) -> DaftResult<()> {
-        assert_optimized_plan_with_rules_eq(plan, expected, vec![Box::new(PushDownLimit::new())])
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![RuleBatch::new(
+                vec![Box::new(PushDownLimit::new())],
+                RuleExecutionStrategy::Once,
+            )],
+        )
     }
 
     /// Tests that Limit pushes into external Source.
@@ -262,10 +273,16 @@ mod tests {
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
         let py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
-        let plan =
-            LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default(), 5, 3)?
-                .limit(5, false)?
-                .build();
+        let plan = LogicalPlanBuilder::in_memory_scan(
+            "foo",
+            common_partitioning::PartitionCacheEntry::Python(py_obj),
+            schema,
+            Default::default(),
+            5,
+            3,
+        )?
+        .limit(5, false)?
+        .build();
         assert_optimized_plan_eq(plan.clone(), plan)?;
         Ok(())
     }

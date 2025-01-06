@@ -13,11 +13,11 @@ use derive_more::Display;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::field::Field;
+use crate::{field::Field, prelude::DataType};
 
 pub type SchemaRef = Arc<Schema>;
 
-#[derive(Debug, Display, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Display, Serialize, Deserialize)]
 #[serde(transparent)]
 #[display("{}\n", make_schema_vertical_table(
     fields.iter().map(|(name, field)| (name.clone(), field.dtype.to_string()))
@@ -46,6 +46,11 @@ impl Schema {
         }
 
         Ok(Self { fields: map })
+    }
+
+    pub fn to_struct(&self) -> DataType {
+        let fields = self.fields.values().cloned().collect();
+        DataType::Struct(fields)
     }
 
     pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
@@ -329,3 +334,17 @@ impl TryFrom<&arrow2::datatypes::Schema> for Schema {
         Self::new(daft_fields)
     }
 }
+
+/// Custom impl of PartialEq because IndexMap PartialEq does not check for ordering
+impl PartialEq for Schema {
+    fn eq(&self, other: &Self) -> bool {
+        self.fields.len() == other.fields.len()
+            && self
+                .fields
+                .iter()
+                .zip(other.fields.iter())
+                .all(|(s, o)| s == o)
+    }
+}
+
+impl Eq for Schema {}

@@ -423,3 +423,19 @@ def test_udf_invalid_batch_sizes():
 
     with pytest.raises(OverflowError):
         table.eval_expression_list([noop.override_options(batch_size=-1)(col("a"))])
+
+
+@pytest.mark.parametrize("batch_size", [None, 1, 2])
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_udf_empty(batch_size, use_actor_pool):
+    df = daft.from_pydict({"a": []})
+
+    @udf(return_dtype=DataType.int64(), batch_size=batch_size)
+    def identity(data):
+        return data
+
+    if use_actor_pool:
+        identity = identity.with_concurrency(2)
+
+    result = df.select(identity(col("a")))
+    assert result.to_pydict() == {"a": []}

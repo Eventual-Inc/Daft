@@ -7,7 +7,6 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from daft import get_build_type
 from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
 
 if TYPE_CHECKING:
@@ -109,14 +108,8 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             max_task_backlog=task_backlog,
             force_client_mode=ray_force_client_mode,
         )
-
-    # Use native runner if in dev mode
-    elif get_build_type() == "dev":
-        return _NativeRunnerConfig()
-
-    # Fall back on PyRunner
     else:
-        return _PyRunnerConfig(use_thread_pool=use_thread_pool)
+        return _NativeRunnerConfig()
 
 
 @dataclasses.dataclass
@@ -171,6 +164,12 @@ class DaftContext:
                 self._runner = PyRunner(use_thread_pool=runner_config.use_thread_pool)
             elif runner_config.name == "native":
                 from daft.runners.native_runner import NativeRunner
+
+                warnings.warn(
+                    "Daft is configured to use the new NativeRunner by default as of v0.4.0. "
+                    "If you are encountering any regressions, please switch back to the legacy PyRunner via `daft.context.set_runner_py()` or by setting the env variable `DAFT_RUNNER=py`. "
+                    "We appreciate you filing issues and helping make the NativeRunner better: https://github.com/Eventual-Inc/Daft/issues",
+                )
 
                 assert isinstance(runner_config, _NativeRunnerConfig)
                 self._runner = NativeRunner()
@@ -344,6 +343,8 @@ def set_execution_config(
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
+    partial_aggregation_threshold: int | None = None,
+    high_cardinality_aggregation_threshold: float | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
     enable_native_executor: bool | None = None,
@@ -384,7 +385,9 @@ def set_execution_config(
         parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
-        shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
+        shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations on the Ray Runner. Defaults to 200, unless the number of input partitions is less than 200.
+        partial_aggregation_threshold: Threshold for performing partial aggregations on the Native Runner. Defaults to 10000 rows.
+        high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
         enable_native_executor: Enables the native executor, Defaults to False
@@ -413,6 +416,8 @@ def set_execution_config(
             csv_target_filesize=csv_target_filesize,
             csv_inflation_factor=csv_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
+            partial_aggregation_threshold=partial_aggregation_threshold,
+            high_cardinality_aggregation_threshold=high_cardinality_aggregation_threshold,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
             enable_native_executor=enable_native_executor,

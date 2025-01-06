@@ -36,7 +36,7 @@ from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
 from daft.daft import utf8_count_matches as _utf8_count_matches
-from daft.datatype import DataType, TimeUnit
+from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
@@ -542,7 +542,7 @@ class Expression:
         expr = self._expr.alias(name)
         return Expression._from_pyexpr(expr)
 
-    def cast(self, dtype: DataType) -> Expression:
+    def cast(self, dtype: DataTypeLike) -> Expression:
         """Casts an expression to the given datatype if possible.
 
         The following combinations of datatype casting is valid:
@@ -622,8 +622,10 @@ class Expression:
         Returns:
             Expression: Expression with the specified new datatype
         """
-        assert isinstance(dtype, DataType)
-        expr = self._expr.cast(dtype._dtype)
+        assert isinstance(dtype, (DataType, type))
+        inferred_dtype = DataType._infer_type(dtype)
+
+        expr = self._expr.cast(inferred_dtype._dtype)
         return Expression._from_pyexpr(expr)
 
     def ceil(self) -> Expression:
@@ -999,7 +1001,7 @@ class Expression:
         if_false = Expression._to_expression(if_false)
         return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
-    def apply(self, func: Callable, return_dtype: DataType) -> Expression:
+    def apply(self, func: Callable, return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
 
         .. NOTE::
@@ -1039,6 +1041,8 @@ class Expression:
         """
         from daft.udf import UDF
 
+        inferred_return_dtype = DataType._infer_type(return_dtype)
+
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]
 
@@ -1050,7 +1054,7 @@ class Expression:
         return UDF(
             inner=batch_func,
             name=name,
-            return_dtype=return_dtype,
+            return_dtype=inferred_return_dtype,
         )(self)
 
     def is_null(self) -> Expression:
@@ -1329,7 +1333,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
-        use_native_downloader: bool = True,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column.
 
@@ -1347,55 +1350,51 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 the error but fallback to a Null value. Defaults to "raise".
             io_config: IOConfig to use when accessing remote storage. Note that the S3Config's `max_connections` parameter will be overridden
                 with `max_connections` that is passed in as a kwarg.
-            use_native_downloader (bool): Use the native downloader rather than python based one.
-                Defaults to True.
 
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occurred during download
         """
-        if use_native_downloader:
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
             raise_on_error = False
-            if on_error == "raise":
-                raise_on_error = True
-            elif on_error == "null":
-                raise_on_error = False
-            else:
-                raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-
-            if not (isinstance(max_connections, int) and max_connections > 0):
-                raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
-
-            multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
-            io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-            return Expression._from_pyexpr(
-                _url_download(self._expr, max_connections, raise_on_error, multi_thread, io_config)
-            )
         else:
-            from daft.udf_library import url_udfs
+            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
-            return url_udfs.download_udf(
-                Expression._from_pyexpr(self._expr),
-                max_worker_threads=max_connections,
-                on_error=on_error,
-            )
+        if not (isinstance(max_connections, int) and max_connections > 0):
+            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
+
+        multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
+        io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
+        return Expression._from_pyexpr(
+            _url_download(self._expr, max_connections, raise_on_error, multi_thread, io_config)
+        )
 
     def upload(
         self,
-        location: str,
+        location: str | Expression,
         max_connections: int = 32,
+        on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
     ) -> Expression:
-        """Uploads a column of binary data to the provided location (also supports S3, local etc).
+        """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
 
-        Files will be written into the location (folder) with a generated UUID filename, and the result
+        Files will be written into the location (folder(s)) with a generated UUID filename, and the result
         will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
 
         Example:
             >>> col("data").url.upload("s3://my-bucket/my-folder")  # doctest: +SKIP
 
+            Upload to row-specific URLs
+
+            >>> col("data").url.upload(col("paths"))  # doctest: +SKIP
+
         Args:
-            location: a folder location to upload data into
+            location: a folder location or column of folder locations to upload data into
             max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
+            on_error: Behavior when a URL upload error is encountered - "raise" to raise the error immediately or "null" to log
+                the error but fallback to a Null value. Defaults to "raise".
             io_config: IOConfig to use when uploading data
 
         Returns:
@@ -1404,10 +1403,29 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         if not (isinstance(max_connections, int) and max_connections > 0):
             raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
 
+        location_expr = Expression._to_expression(location)
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
+            raise_on_error = False
+        else:
+            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
+        # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
+        # if the user gave an expression, we assume that each row has a specific url to upload to.
+        is_single_folder = isinstance(location, str)
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
         return Expression._from_pyexpr(
-            native.url_upload(self._expr, location, max_connections, multi_thread, io_config)
+            native.url_upload(
+                self._expr,
+                location_expr._expr,
+                max_connections,
+                raise_on_error,
+                multi_thread,
+                is_single_folder,
+                io_config,
+            )
         )
 
 
