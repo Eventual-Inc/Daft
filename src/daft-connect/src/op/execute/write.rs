@@ -55,9 +55,7 @@ impl Session {
                 bail!("Source is required");
             };
 
-            if source != "parquet" {
-                bail!("Unsupported source: {source}; only parquet is supported");
-            }
+            let file_format: FileFormat = source.parse()?;
 
             let Ok(mode) = SaveMode::try_from(mode) else {
                 bail!("Invalid save mode: {mode}");
@@ -115,7 +113,7 @@ impl Session {
             let plan = translator.to_logical_plan(input).await?;
 
             let plan = plan
-                .table_write(&path, FileFormat::Parquet, None, None, None)
+                .table_write(&path, file_format, None, None, None)
                 .wrap_err("Failed to create table write plan")?;
 
             let optimized_plan = plan.optimize()?;

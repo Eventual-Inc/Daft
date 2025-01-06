@@ -208,9 +208,10 @@ class DataFrame:
             print_to_file("\n== Optimized Logical Plan ==\n")
             builder = builder.optimize()
             print_to_file(builder.pretty_print(simple))
-            print_to_file("\n== Physical Plan ==\n")
-            physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-            print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
+            if get_context().get_or_create_runner().name != "native":
+                print_to_file("\n== Physical Plan ==\n")
+                physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+                print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
         else:
             print_to_file(
                 "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.",
@@ -685,7 +686,9 @@ class DataFrame:
             )
 
     @DataframePublicAPI
-    def write_iceberg(self, table: "pyiceberg.table.Table", mode: str = "append") -> "DataFrame":
+    def write_iceberg(
+        self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
+    ) -> "DataFrame":
         """Writes the DataFrame to an `Iceberg <https://iceberg.apache.org/docs/nightly/>`__ table, returning a new DataFrame with the operations that occurred.
 
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
@@ -696,6 +699,7 @@ class DataFrame:
         Args:
             table (pyiceberg.table.Table): Destination `PyIceberg Table <https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table>`__ to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to "append".
+            io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -703,6 +707,8 @@ class DataFrame:
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
+
+        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
@@ -718,12 +724,17 @@ class DataFrame:
         if mode not in ["append", "overwrite"]:
             raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
+        io_config = (
+            _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
+        )
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         operations = []
         path = []
         rows = []
         size = []
 
-        builder = self._builder.write_iceberg(table)
+        builder = self._builder.write_iceberg(table, io_config)
         write_df = DataFrame(builder)
         write_df.collect()
 
@@ -869,11 +880,11 @@ class DataFrame:
         from packaging.version import parse
 
         from daft import from_pydict
+        from daft.dependencies import unity_catalog
         from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
-        from daft.unity_catalog import UnityCatalogTable
 
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
@@ -883,30 +894,35 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        if isinstance(table, (str, pathlib.Path, DataCatalogTable, UnityCatalogTable)):
-            if isinstance(table, str):
-                table_uri = table
-            elif isinstance(table, pathlib.Path):
-                table_uri = str(table)
-            elif isinstance(table, UnityCatalogTable):
-                table_uri = table.table_uri
-                io_config = table.io_config
-            else:
-                table_uri = table.table_uri(io_config)
+        # Retrieve table_uri and storage_options from various backends
+        table_uri: str
+        storage_options: dict
 
-            if io_config is None:
-                raise ValueError(
-                    "io_config was not provided to write_deltalake and could not be retrieved from the default configuration."
-                )
-            storage_options = io_config_to_storage_options(io_config, table_uri) or {}
-            table = try_get_deltatable(table_uri, storage_options=storage_options)
-        elif isinstance(table, deltalake.DeltaTable):
+        if isinstance(table, deltalake.DeltaTable):
             table_uri = table.table_uri
             storage_options = table._storage_options or {}
             new_storage_options = io_config_to_storage_options(io_config, table_uri)
             storage_options.update(new_storage_options or {})
         else:
-            raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
+            if isinstance(table, str):
+                table_uri = table
+            elif isinstance(table, pathlib.Path):
+                table_uri = str(table)
+            elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
+                table_uri = table.table_uri
+                io_config = table.io_config
+            elif isinstance(table, DataCatalogTable):
+                table_uri = table.table_uri(io_config)
+            else:
+                raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
+
+            if io_config is None:
+                raise ValueError(
+                    "io_config was not provided to write_deltalake and could not be retrieved from defaults."
+                )
+
+            storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+            table = try_get_deltatable(table_uri, storage_options=storage_options)
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
         scheme = get_protocol_from_path(table_uri)
@@ -1094,13 +1110,9 @@ class DataFrame:
         <BLANKLINE>
         (Showing first 1 of 1 rows)
         """
-        import sys
-
         from daft import from_pydict
         from daft.io.object_store_options import io_config_to_storage_options
 
-        if sys.version_info < (3, 9):
-            raise ValueError("'write_lance' requires python 3.9 or higher")
         try:
             import lance
             import pyarrow as pa
@@ -2543,6 +2555,94 @@ class DataFrame:
             DataFrame: DataFrame with the intersection of the two DataFrames
         """
         builder = self._builder.intersect(other._builder)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def intersect_all(self, other: "DataFrame") -> "DataFrame":
+        """Returns the intersection of two DataFrames, including duplicates.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 2, 2], "b": [4, 6, 6]})
+            >>> df2 = daft.from_pydict({"a": [1, 1, 2, 2], "b": [4, 4, 6, 6]})
+            >>> df1.intersect_all(df2).sort("a").collect()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 6     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Args:
+            other (DataFrame): DataFrame to intersect with
+
+        Returns:
+            DataFrame: DataFrame with the intersection of the two DataFrames, including duplicates
+        """
+        builder = self._builder.intersect_all(other._builder)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def except_distinct(self, other: "DataFrame") -> "DataFrame":
+        """Returns the set difference of two DataFrames.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> df2 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 8, 6]})
+            >>> df1.except_distinct(df2).collect()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 2     ┆ 5     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Args:
+            other (DataFrame): DataFrame to except with
+
+        Returns:
+            DataFrame: DataFrame with the set difference of the two DataFrames
+        """
+        builder = self._builder.except_distinct(other._builder)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def except_all(self, other: "DataFrame") -> "DataFrame":
+        """Returns the set difference of two DataFrames, considering duplicates.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 1, 2, 2], "b": [4, 4, 6, 6]})
+            >>> df2 = daft.from_pydict({"a": [1, 2, 2], "b": [4, 6, 6]})
+            >>> df1.except_all(df2).collect()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Args:
+            other (DataFrame): DataFrame to except with
+
+        Returns:
+            DataFrame: DataFrame with the set difference of the two DataFrames, considering duplicates
+        """
+        builder = self._builder.except_all(other._builder)
         return DataFrame(builder)
 
     def _materialize_results(self) -> None:

@@ -14,6 +14,7 @@ use crate::{
     },
     dispatcher::DispatchSpawner,
     pipeline::PipelineNode,
+    progress_bar::ProgressBarColor,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeContext, JoinSnafu, OperatorOutput, TaskSet, NUM_CPUS,
 };
@@ -195,17 +196,25 @@ impl PipelineNode for StreamingSinkNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let progress_bar = runtime_handle.make_progress_bar(
+            self.name(),
+            ProgressBarColor::Cyan,
+            true,
+            self.runtime_stats.clone(),
+        );
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,
                 self.runtime_stats.clone(),
+                progress_bar.clone(),
             ));
         }
 
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
+        let counting_sender =
+            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();

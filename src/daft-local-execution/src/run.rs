@@ -28,6 +28,7 @@ use {
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
+    progress_bar::make_progress_bar_manager,
     Error, ExecutionRuntimeContext,
 };
 
@@ -159,6 +160,15 @@ fn should_enable_explain_analyze() -> bool {
     }
 }
 
+fn should_enable_progress_bar() -> bool {
+    let progress_var_name = "DAFT_PROGRESS_BAR";
+    if let Ok(val) = std::env::var(progress_var_name) {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        true // Return true when env var is not set
+    }
+}
+
 pub struct ExecutionEngineReceiverIterator {
     receiver: kanal::Receiver<Arc<MicroPartition>>,
     handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
@@ -254,12 +264,14 @@ pub fn run_local(
     let pipeline = physical_plan_to_pipeline(physical_plan, psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
     let handle = std::thread::spawn(move || {
+        let pb_manager = should_enable_progress_bar().then(make_progress_bar_manager);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("Failed to create tokio runtime");
         let execution_task = async {
-            let mut runtime_handle = ExecutionRuntimeContext::new(cfg.default_morsel_size);
+            let mut runtime_handle =
+                ExecutionRuntimeContext::new(cfg.default_morsel_size, pb_manager);
             let receiver = pipeline.start(true, &mut runtime_handle)?;
 
             while let Some(val) = receiver.recv().await {
