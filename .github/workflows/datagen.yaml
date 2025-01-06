@@ -22,7 +22,7 @@ on:
 
 jobs:
   generate-data:
-    runs-on: [self-hosted, linux, x64, ci-dev]
+    runs-on: [self-hosted, linux, x64, bench]
     permissions:
       id-token: write
       contents: read
