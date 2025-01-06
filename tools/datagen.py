@@ -11,12 +11,12 @@
 
 import logging
 import os
-import typing
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Optional
 
 import duckdb
+import git_utils
 
 import daft
 
@@ -50,11 +50,20 @@ def generate_local_tpcds_data(
         os.remove(parquet_file)
 
 
-def generate_local_tpch_data(
+def generate_remote_tpcds_data(
     scale_factor: int,
-    num_partitions: int,
-    output_dir: Path,
-): ...
+):
+    branch_name, _ = git_utils.get_name_and_commit_hash(None)
+
+    workflow = git_utils.repo.get_workflow("datagen.yaml")
+    git_utils.dispatch(
+        workflow=workflow,
+        branch_name=branch_name,
+        inputs={
+            "bench_type": "tpcds",
+            "scale_factor": scale_factor,
+        },
+    )
 
 
 def main(
@@ -68,18 +77,19 @@ def main(
         raise ValueError("Can't specify both `--output-dir` and `--remote`")
 
     if remote:
-        # todo!
-        ...
-
-    output_dir = output_dir or Path("data")
-
-    if bench_type == "tpcds":
-        generate_local_tpcds_data(scale_factor, output_dir)
-    elif bench_type == "tpch":
-        generate_local_tpch_data(scale_factor, num_partitions, output_dir)
-
+        if bench_type == "tpcds":
+            generate_remote_tpcds_data(scale_factor)
+        elif bench_type == "tpch":
+            # todo!
+            ...
     else:
-        typing.assert_never()
+        output_dir = output_dir or Path("data")
+
+        if bench_type == "tpcds":
+            generate_local_tpcds_data(scale_factor, output_dir)
+        elif bench_type == "tpch":
+            # todo!
+            ...
 
 
 if __name__ == "__main__":
