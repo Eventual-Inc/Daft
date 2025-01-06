@@ -37,7 +37,7 @@ jobs:
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-region: us-west-2
-        role-session-name: run-command-workflow
+        role-session-name: datagen-workflow
     - name: Install uv, rust, python
       uses: ./.github/actions/install
       with:
