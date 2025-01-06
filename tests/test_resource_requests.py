@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import os
-import time
 
 import pytest
 import ray
@@ -12,7 +11,6 @@ from daft import udf
 from daft.daft import SystemInfo
 from daft.expressions import col
 from daft.internal.gpu import cuda_visible_devices
-from daft.series import Series
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -118,64 +116,6 @@ def test_requesting_too_much_memory():
 
     with pytest.raises(Exception):
         df.collect()
-
-
-@pytest.fixture
-def set_memory_limit():
-    """Temporarily set DAFT_MEMORY_LIMIT environment variable for a test."""
-    old_value = os.environ.get("DAFT_MEMORY_LIMIT")
-    import contextlib
-
-    @contextlib.contextmanager
-    def _set_limit(limit: int):
-        os.environ["DAFT_MEMORY_LIMIT"] = str(limit)
-        try:
-            yield
-        finally:
-            if old_value is not None:
-                os.environ["DAFT_MEMORY_LIMIT"] = old_value
-            else:
-                os.environ.pop("DAFT_MEMORY_LIMIT", None)
-
-    return _set_limit
-
-
-@pytest.mark.skip(
-    reason="Configuring custom memory limits via env vars is not reliable for testing. The global memory manager is probably already set"
-)
-@pytest.mark.parametrize("memory_limit, max_expected_concurrent", [(100, 1), (200, 2), (300, 3)])
-def test_memory_request_makes_udf_run_sequentially(set_memory_limit, memory_limit, max_expected_concurrent):
-    import threading
-
-    with daft.execution_config_ctx(default_morsel_size=1):
-        with set_memory_limit(memory_limit):
-            df = daft.from_pydict(DATA)
-
-            concurrent_executions = 0
-            max_concurrent = 0
-            lock = threading.Lock()
-
-            @udf(return_dtype=daft.DataType.int64(), memory_bytes=100)
-            def big_mem_udf(s: Series):
-                nonlocal concurrent_executions, max_concurrent
-                with lock:
-                    concurrent_executions += 1
-                    max_concurrent = max(max_concurrent, concurrent_executions)
-
-                time.sleep(0.01)
-
-                with lock:
-                    concurrent_executions -= 1
-
-                return s
-
-            df = df.with_column(
-                "foo",
-                big_mem_udf(col("id")),
-            ).collect()
-
-            # Most of the time these should be equal, but it is not guaranteed
-            assert max_concurrent <= max_expected_concurrent
 
 
 ###
