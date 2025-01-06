@@ -5,18 +5,17 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::{col, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
-use tracing::{info_span, instrument, Instrument};
+use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::NUM_CPUS;
+use crate::{runtime_stats::ExecutionTaskSpawner, NUM_CPUS};
 
 #[derive(Clone)]
 enum AggStrategy {
@@ -311,11 +310,11 @@ impl BlockingSink for GroupedAggregateSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
         let params = self.grouped_aggregate_params.clone();
         let strategy_lock = self.global_strategy_lock.clone();
-        runtime
+        spawner
             .spawn(
                 async move {
                     let agg_state = state
@@ -325,8 +324,8 @@ impl BlockingSink for GroupedAggregateSink {
 
                     agg_state.push(input, &params, &strategy_lock)?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
-                }
-                .instrument(info_span!("GroupedAggregateSink::sink")),
+                },
+                Span::current(),
             )
             .into()
     }
@@ -335,11 +334,11 @@ impl BlockingSink for GroupedAggregateSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();
-        runtime
+        spawner
             .spawn(
                 async move {
                     let mut state_iters = states
@@ -414,8 +413,8 @@ impl BlockingSink for GroupedAggregateSink {
                         .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(&results)?;
                     Ok(Some(Arc::new(concated)))
-                }
-                .instrument(info_span!("GroupedAggregateSink::finalize")),
+                },
+                Span::current(),
             )
             .into()
     }

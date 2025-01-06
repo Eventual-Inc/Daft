@@ -89,19 +89,22 @@ impl BlockingSink for AggregateSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        runtime: &ExecutionTaskSpawner,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
         let params = self.agg_sink_params.clone();
-        runtime
-            .spawn(async move {
-                let agg_state = state
-                    .as_any_mut()
-                    .downcast_mut::<AggregateState>()
-                    .expect("AggregateSink should have AggregateState");
-                let agged = Arc::new(input.agg(&params.sink_agg_exprs, &[])?);
-                agg_state.push(agged);
-                Ok(BlockingSinkStatus::NeedMoreInput(state))
-            })
+        spawner
+            .spawn(
+                async move {
+                    let agg_state = state
+                        .as_any_mut()
+                        .downcast_mut::<AggregateState>()
+                        .expect("AggregateSink should have AggregateState");
+                    let agged = Arc::new(input.agg(&params.sink_agg_exprs, &[])?);
+                    agg_state.push(agged);
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
             .into()
     }
 
@@ -124,7 +127,7 @@ impl BlockingSink for AggregateSink {
                     });
                     let concated = MicroPartition::concat(all_parts)?;
                     let agged = concated.agg(&params.finalize_agg_exprs, &[])?;
-                let projected = agged.eval_expression_list(&params.final_projections)?;
+                    let projected = agged.eval_expression_list(&params.final_projections)?;
                     Ok(Some(Arc::new(projected)))
                 },
                 Span::current(),
