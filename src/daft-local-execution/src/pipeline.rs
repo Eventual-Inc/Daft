@@ -347,6 +347,8 @@ pub fn physical_plan_to_pipeline(
                     }
                     _ => true,
                 },
+                // Anti/semi joins can build on the left side, but prefer building on the right because building on left requires keeping track
+                // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
                 JoinType::Anti | JoinType::Semi => match (left_stats_state, right_stats_state) {
                     (
                         StatsState::Materialized(left_stats),
