@@ -52,6 +52,8 @@ def generate_local_tpcds_data(
 def generate_remote_tpcds_data(
     scale_factor: int,
 ):
+    # *not* imported at the global level
+    # `git_utils` runs some code upon import to get the `$GITHUB_OAUTH_TOKEN`, which should only be done on the local computer, not on the GitHub Actions servers
     import git_utils
 
     branch_name, _ = git_utils.get_name_and_commit_hash(None)
