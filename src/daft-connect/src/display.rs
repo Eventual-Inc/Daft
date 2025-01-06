@@ -335,6 +335,7 @@ root
  |-- record: struct (nullable = true)
  |    |-- name: string (nullable = true)
  |    |-- values: array (nullable = true)
+ |    |    |-- element: long (containsNulls = true)
  |    |-- nested: struct (nullable = true)
  |    |    |-- sub_list: array (nullable = true)
  |    |    |    |-- element: string (containsNulls = true)
