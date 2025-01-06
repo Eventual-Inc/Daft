@@ -42,9 +42,11 @@ jobs:
       uses: ./.github/actions/install
       with:
         python_version: '3.12'
-
-    - uses: lhotari/action-upterm@v1
-
+    - name: Mount NVMe drive
+      run: |
+        sudo mkfs.ext4 /dev/nvme0n1
+        sudo mount -t ext4 /dev/nvme0n1 data
+        sudo chmod 777 data
     - name: Generate data
       run: |
         uv run tools/datagen.py \
