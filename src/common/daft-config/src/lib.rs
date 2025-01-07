@@ -17,8 +17,8 @@ impl DaftPlanningConfig {
     #[must_use]
     pub fn from_env() -> Self {
         let mut cfg: Self = Default::default();
-        let aqe_env_var_name = "ENABLE_JOIN_REORDERING";
-        if let Ok(val) = std::env::var(aqe_env_var_name)
+        let join_reordering_var_name = "DAFT_DEV_ENABLE_JOIN_REORDERING";
+        if let Ok(val) = std::env::var(join_reordering_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.enable_join_reordering = true;
