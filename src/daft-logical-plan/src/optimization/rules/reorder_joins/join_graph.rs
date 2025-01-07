@@ -267,8 +267,8 @@ impl JoinGraph {
                     .adj_list
                     .id_to_plan
                     .get(id)
-                    .expect("Join order contains non-existent plan id");
-                Ok((LogicalPlanBuilder::from(relation.clone()), 1 << id))
+                    .expect("Join order contains non-existent plan id 1");
+                Ok((LogicalPlanBuilder::from(relation.clone()), 1 << *id))
             }
             JoinOrderTree::Join(left_tree, right_tree) => {
                 let (left_builder, left_mask) = self.build_joins_from_join_order(left_tree)?;
@@ -284,16 +284,17 @@ impl JoinGraph {
                     for _ in 0..right_remaining.count_ones() {
                         let right_id = right_remaining.trailing_zeros();
                         right_remaining ^= 1 << right_id;
-                        for cond in self
+                        if let Some(join_conditions) = self
                             .adj_list
                             .edges
                             .get(&(left_id as usize))
-                            .expect("Join order contains non-existent plan id")
+                            .expect("Join order contains non-existent plan id 2")
                             .get(&(right_id as usize))
-                            .expect("Join order contains non-existent plan id")
                         {
-                            left_cols.push(col(cond.left_on.clone()));
-                            right_cols.push(col(cond.right_on.clone()));
+                            for cond in join_conditions {
+                                left_cols.push(col(cond.left_on.clone()));
+                                right_cols.push(col(cond.right_on.clone()));
+                            }
                         }
                     }
                 }
@@ -313,7 +314,7 @@ impl JoinGraph {
     ) -> DaftResult<LogicalPlanRef> {
         let (mut plan_builder, relation_mask) = self.build_joins_from_join_order(&join_order)?;
         // After we've rebuilt all the joins, every relation should be contained in the final logical plan builder.
-        assert_eq!(relation_mask, self.adj_list.max_id - 1);
+        assert_eq!(relation_mask, (2 << self.adj_list.max_id) - 1);
         plan_builder = self.apply_projections_and_filters_to_plan_builder(plan_builder)?;
         Ok(plan_builder.build())
     }
