@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     hash::{Hash, Hasher},
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use aws_credential_types::{
@@ -531,66 +531,47 @@ impl S3Config {
 impl S3Credentials {
     #[new]
     pub fn new(
-        py: Python,
         key_id: String,
         access_key: String,
         session_token: Option<String>,
-        expiry: Option<Bound<PyAny>>,
-    ) -> PyResult<Self> {
-        // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
-        let expiry = expiry
-            .map(|e| {
-                let ts = e.call_method0(pyo3::intern!(py, "timestamp"))?.extract()?;
-
-                Ok::<_, PyErr>(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(ts))
-            })
-            .transpose()?;
-
-        Ok(Self {
+        expiry: Option<SystemTime>,
+    ) -> Self {
+        Self {
             credentials: crate::S3Credentials {
                 key_id,
                 access_key,
                 session_token,
                 expiry,
             },
-        })
+        }
     }
 
-    pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.credentials))
+    pub fn __repr__(&self) -> String {
+        format!("{}", self.credentials)
     }
 
     /// AWS Access Key ID
     #[getter]
-    pub fn key_id(&self) -> PyResult<String> {
-        Ok(self.credentials.key_id.clone())
+    pub fn key_id(&self) -> &str {
+        &self.credentials.key_id
     }
 
     /// AWS Secret Access Key
     #[getter]
-    pub fn access_key(&self) -> PyResult<String> {
-        Ok(self.credentials.access_key.clone())
+    pub fn access_key(&self) -> &str {
+        &self.credentials.access_key
     }
 
     /// AWS Session Token
     #[getter]
-    pub fn expiry<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
-        // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
-        self.credentials
-            .expiry
-            .map(|e| {
-                let datetime = py.import_bound(pyo3::intern!(py, "datetime"))?;
+    pub fn session_token(&self) -> Option<&str> {
+        self.credentials.session_token.as_deref()
+    }
 
-                datetime
-                    .getattr(pyo3::intern!(py, "datetime"))?
-                    .call_method1(
-                        pyo3::intern!(py, "fromtimestamp"),
-                        (e.duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs_f64(),),
-                    )
-            })
-            .transpose()
+    /// AWS Credentials Expiry
+    #[getter]
+    pub fn expiry(&self) -> Option<SystemTime> {
+        self.credentials.expiry
     }
 }
 

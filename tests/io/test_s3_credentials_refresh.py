@@ -119,6 +119,14 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
 
     assert df.to_arrow() == df2.to_arrow()
 
+    time.sleep(1)
+    df.write_parquet(output_file_path, io_config=dynamic_config, write_mode="overwrite")
+    assert count_get_credentials == 3
+
+    df2 = daft.read_parquet(output_file_path, io_config=static_config)
+
+    assert df.to_arrow() == df2.to_arrow()
+
     # Shutdown moto server.
     stop_process(process)
     # Restore old set of environment variables.

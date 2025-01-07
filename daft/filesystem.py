@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import logging
 import os
 import pathlib
 import sys
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from daft.convert import from_pydict
-from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
+from daft.daft import FileFormat, FileInfos, IOConfig, S3Credentials, io_glob
 from daft.dependencies import fsspec, pafs
 from daft.expressions.expressions import col, lit
 from daft.table import MicroPartition
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _CACHED_FSES: dict[tuple[str, IOConfig | None], pafs.FileSystem] = {}
+_CACHED_S3_CREDS: dict[Callable[[], S3Credentials], S3Credentials] = {}
 
 
 def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
@@ -37,6 +39,18 @@ def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | N
     global _CACHED_FSES
 
     _CACHED_FSES[(protocol, io_config)] = fs
+
+
+def _get_s3_creds_from_provider_cached(provider: Callable[[], S3Credentials]) -> S3Credentials:
+    """Get S3 credentials from the cache if the current provider was already called and the creds have not expired."""
+    global _CACHED_S3_CREDS
+
+    if provider not in _CACHED_S3_CREDS or (
+        _CACHED_S3_CREDS[provider].expiry is not None and _CACHED_S3_CREDS[provider].expiry <= datetime.datetime.now()  # type: ignore
+    ):
+        _CACHED_S3_CREDS[provider] = provider()
+
+    return _CACHED_S3_CREDS[provider]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -224,6 +238,12 @@ def _infer_filesystem(
                     translated_kwargs["retry_strategy"] = AwsStandardS3RetryStrategy(max_attempts=s3_config.num_tries)
                 except ImportError:
                     pass  # Config does not exist in pyarrow 7.0.0
+
+            if s3_config.credentials_provider is not None:
+                s3_creds = _get_s3_creds_from_provider_cached(s3_config.credentials_provider)
+                _set_if_not_none(translated_kwargs, "access_key", s3_creds.key_id)
+                _set_if_not_none(translated_kwargs, "secret_key", s3_creds.access_key)
+                _set_if_not_none(translated_kwargs, "session_token", s3_creds.session_token)
 
         resolved_filesystem = pafs.S3FileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
