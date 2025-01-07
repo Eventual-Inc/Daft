@@ -227,22 +227,17 @@ impl JoinGraph {
         mut plan_builder: LogicalPlanBuilder,
     ) -> DaftResult<LogicalPlanBuilder> {
         // Apply projections and filters in post-traversal order.
-        let mut reversed_items = self
-            .final_projections_and_filters
-            .drain(..)
-            .rev()
-            .peekable();
-        while let Some(projection_or_filter) = reversed_items.next() {
-            let is_last = reversed_items.peek().is_none();
+        while let Some(projection_or_filter) = self.final_projections_and_filters.pop() {
+            let is_last = self.final_projections_and_filters.is_empty();
 
             match projection_or_filter {
                 ProjectionOrFilter::Projection(projections) => {
                     if is_last {
                         // The final projection is the output projection, so here we select the final projection.
-                        plan_builder = plan_builder.select(projections.clone())?;
+                        plan_builder = plan_builder.select(projections)?;
                     } else {
                         // Intermediate projections might only transform a subset of columns, so we use `with_columns()` instead of `select()`.
-                        plan_builder = plan_builder.with_columns(projections.clone())?;
+                        plan_builder = plan_builder.with_columns(projections)?;
                     }
                 }
                 ProjectionOrFilter::Filter(predicate) => {
