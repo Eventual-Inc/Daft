@@ -273,6 +273,15 @@ class Expression:
         """Access methods that work on columns of json."""
         return ExpressionJsonNamespace.from_expression(self)
 
+    @property
+    def binary(self) -> ExpressionBinaryNamespace:
+        """Access binary string operations for this expression.
+
+        Returns:
+            ExpressionBinaryNamespace: A namespace containing binary string operations
+        """
+        return ExpressionBinaryNamespace.from_expression(self)
+
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
@@ -3554,3 +3563,32 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
     def cosine_distance(self, other: Expression) -> Expression:
         """Compute the cosine distance between two embeddings."""
         return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
+
+
+class ExpressionBinaryNamespace(ExpressionNamespace):
+    def length(self) -> Expression:
+        """Retrieves the length for a binary string column.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [b"foo", b"bar", b"baz"]})
+            >>> df = df.select(df["x"].binary.length())
+            >>> df.show()
+            ╭────────╮
+            │ x      │
+            │ ---    │
+            │ UInt64 │
+            ╞════════╡
+            │ 3      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 3      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 3      │
+            ╰────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Returns:
+            Expression: an UInt64 expression with the length of each binary string in bytes
+        """
+        return Expression._from_pyexpr(native.binary_length(self._expr))
