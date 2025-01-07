@@ -25,7 +25,7 @@ use crate::{
 impl OptimizerRule for ReorderJoins {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         if let LogicalPlan::Join(_) = &*plan {
-            let join_graph = JoinGraphBuilder::from_logical_plan(plan.clone()).build();
+            let mut join_graph = JoinGraphBuilder::from_logical_plan(plan.clone()).build();
             // Return early if the join graph won't reorder joins.
             // TODO(desmond): We also want to check if we can potentially reorder joins within relations themselves.
             // E.g., we might have a query plan like:
@@ -46,7 +46,9 @@ impl OptimizerRule for ReorderJoins {
             }
             let orderer = NaiveLeftDeepJoinOrderer {};
             let join_order = orderer.order(&join_graph);
-            join_graph.to_logical_plan(join_order).map(Transformed::yes)
+            join_graph
+                .build_logical_plan(join_order)
+                .map(Transformed::yes)
         } else {
             rewrite_children(self, plan)
         }

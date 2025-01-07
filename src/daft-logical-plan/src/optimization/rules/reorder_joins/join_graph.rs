@@ -223,11 +223,15 @@ impl JoinGraph {
     }
 
     fn apply_projections_and_filters_to_plan_builder(
-        &self,
+        &mut self,
         mut plan_builder: LogicalPlanBuilder,
     ) -> DaftResult<LogicalPlanBuilder> {
         // Apply projections and filters in post-traversal order.
-        let mut reversed_items = self.final_projections_and_filters.iter().rev().peekable();
+        let mut reversed_items = self
+            .final_projections_and_filters
+            .drain(..)
+            .rev()
+            .peekable();
         while let Some(projection_or_filter) = reversed_items.next() {
             let is_last = reversed_items.peek().is_none();
 
@@ -302,7 +306,11 @@ impl JoinGraph {
     }
 
     /// Takes a `JoinOrderTree` and creates a logical plan from the current join graph.
-    pub(super) fn to_logical_plan(&self, join_order: JoinOrderTree) -> DaftResult<LogicalPlanRef> {
+    /// Takes in `&mut self` because it drains the projections and filters to apply from the current join graph.
+    pub(super) fn build_logical_plan(
+        &mut self,
+        join_order: JoinOrderTree,
+    ) -> DaftResult<LogicalPlanRef> {
         let (mut plan_builder, relation_mask) = self.build_joins_from_join_order(&join_order)?;
         // After we've rebuilt all the joins, every relation should be contained in the final logical plan builder.
         assert_eq!(relation_mask, self.adj_list.max_id - 1);
