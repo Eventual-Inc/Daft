@@ -3598,10 +3598,9 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({
-            ...     "a": [b"Hello", b"\\xff\\xfe", b"", b"World"],
-            ...     "b": [b" World", b"\\x00", b"empty", b"!"]
-            ... })
+            >>> df = daft.from_pydict(
+            ...     {"a": [b"Hello", b"\\xff\\xfe", b"", b"World"], "b": [b" World", b"\\x00", b"empty", b"!"]}
+            ... )
             >>> df = df.select(df["a"].binary.concat(df["b"]))
             >>> df.show()
             ╭────────────────────╮
