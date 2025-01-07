@@ -101,11 +101,6 @@ def test_binary_concat_broadcast():
     result = table.eval_expression_list([col("a").binary.concat(b" World!")])
     assert result.to_pydict() == {"a": [b"Hello World!", b"Goodbye World!", b"Test World!"]}
 
-    # Test broadcasting with literal on left
-    table = MicroPartition.from_pydict({"b": [b"World", b"Planet", b"Universe"]})
-    result = table.eval_expression_list([col("b").binary.concat(b"!")])
-    assert result.to_pydict() == {"b": [b"World!", b"Planet!", b"Universe!"]}
-
     # Test broadcasting with nulls
     table = MicroPartition.from_pydict({"a": [b"Hello", None, b"Test"]})
     result = table.eval_expression_list([col("a").binary.concat(b" World!")])

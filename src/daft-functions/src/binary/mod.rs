@@ -1,5 +1,5 @@
-pub mod length;
 pub mod concat;
+pub mod length;
 
-pub use length::{binary_length, BinaryLength};
 pub use concat::{binary_concat, BinaryConcat};
+pub use length::{binary_length, BinaryLength};

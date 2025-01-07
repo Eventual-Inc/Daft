@@ -1,10 +1,7 @@
 use daft_dsl::python::PyExpr;
 use pyo3::{pyfunction, PyResult};
 
-use crate::binary::{
-    length::binary_length as length_fn,
-    concat::binary_concat as concat_fn,
-};
+use crate::binary::{concat::binary_concat as concat_fn, length::binary_length as length_fn};
 
 #[pyfunction]
 pub fn binary_length(input: PyExpr) -> PyResult<PyExpr> {

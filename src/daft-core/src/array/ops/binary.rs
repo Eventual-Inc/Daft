@@ -10,8 +10,9 @@ impl BinaryArray {
         let self_arrow = self.as_arrow();
         let offsets = self_arrow.offsets();
         let arrow_result = arrow2::array::UInt64Array::from_iter(
-            offsets.windows(2).map(|w| Some((w[1] - w[0]) as u64))
-        ).with_validity(self_arrow.validity().cloned());
+            offsets.windows(2).map(|w| Some((w[1] - w[0]) as u64)),
+        )
+        .with_validity(self_arrow.validity().cloned());
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
 
@@ -29,21 +30,16 @@ impl BinaryArray {
             let shorter_val = shorter_arr.value(0);
             longer_arr
                 .iter()
-                .map(|val| match val {
-                    Some(val) => Some([val, shorter_val].concat()),
-                    None => None,
-                })
+                .map(|val| val.map(|val| [val, shorter_val].concat()))
                 .collect::<arrow2::array::BinaryArray<i64>>()
         } else {
             // Regular case - element-wise concatenation
             self_arrow
                 .iter()
                 .zip(other_arrow.iter())
-                .map(|(left_val, right_val)| {
-                    match (left_val, right_val) {
-                        (Some(left), Some(right)) => Some([left, right].concat()),
-                        _ => None,
-                    }
+                .map(|(left_val, right_val)| match (left_val, right_val) {
+                    (Some(left), Some(right)) => Some([left, right].concat()),
+                    _ => None,
                 })
                 .collect::<arrow2::array::BinaryArray<i64>>()
         };
