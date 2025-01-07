@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
@@ -22,8 +21,7 @@ use super::intermediate_op::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    resource_manager::MemoryManager,
-    ExecutionRuntimeContext,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 struct ActorHandle {
@@ -161,12 +159,10 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
-        memory_manager: Arc<MemoryManager>,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let memory_request = self.memory_request;
-        let fut = runtime.spawn(async move {
-            let _permit = memory_manager.request_bytes(memory_request).await?;
+        let fut = task_spawner.spawn_with_memory_request(memory_request, async move {
             let actor_pool_project_state = state
                 .as_any_mut()
                 .downcast_mut::<ActorPoolProjectState>()

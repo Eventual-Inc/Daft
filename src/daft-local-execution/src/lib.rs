@@ -22,7 +22,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::RuntimeTask;
+use common_runtime::{RuntimeRef, RuntimeTask};
 use lazy_static::lazy_static;
 use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
 use resource_manager::MemoryManager;
@@ -199,6 +199,44 @@ impl Drop for ExecutionRuntimeContext {
         if let Some(pbm) = self.progress_bar_manager.take() {
             let _ = pbm.close_all();
         }
+    }
+}
+
+pub(crate) struct ExecutionTaskSpawner {
+    runtime_ref: RuntimeRef,
+    memory_manager: Arc<MemoryManager>,
+}
+
+impl ExecutionTaskSpawner {
+    pub fn new(runtime_ref: RuntimeRef, memory_manager: Arc<MemoryManager>) -> Self {
+        Self {
+            runtime_ref,
+            memory_manager,
+        }
+    }
+
+    pub fn spawn_with_memory_request<F, O>(
+        &self,
+        memory_request: u64,
+        future: F,
+    ) -> RuntimeTask<DaftResult<O>>
+    where
+        F: Future<Output = DaftResult<O>> + Send + 'static,
+        O: Send + 'static,
+    {
+        let memory_manager = self.memory_manager.clone();
+        self.runtime_ref.spawn(async move {
+            let _permit = memory_manager.request_bytes(memory_request).await?;
+            future.await
+        })
+    }
+
+    pub fn spawn<F, O>(&self, future: F) -> RuntimeTask<DaftResult<O>>
+    where
+        F: Future<Output = DaftResult<O>> + Send + 'static,
+        O: Send + 'static,
+    {
+        self.runtime_ref.spawn(future)
     }
 }
 

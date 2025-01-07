@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
@@ -13,7 +12,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{resource_manager::MemoryManager, state_bridge::BroadcastStateBridgeRef};
+use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum AntiSemiProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
@@ -118,8 +117,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
-        _memory_manager: Arc<MemoryManager>,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -131,7 +129,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         }
 
         let params = self.params.clone();
-        runtime
+        task_spawner
             .spawn(async move {
                 let probe_state = state
                     .as_any_mut()

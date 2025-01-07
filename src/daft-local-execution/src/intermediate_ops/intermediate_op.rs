@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_runtime::{get_compute_runtime, RuntimeRef};
+use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
@@ -17,7 +17,8 @@ use crate::{
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, OperatorOutput, PipelineExecutionSnafu, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
+    NUM_CPUS,
 };
 
 pub(crate) trait IntermediateOpState: Send + Sync {
@@ -43,8 +44,7 @@ pub trait IntermediateOperator: Send + Sync {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
-        memory_manager: Arc<MemoryManager>,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
@@ -115,18 +115,12 @@ impl IntermediateNode {
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
+        let task_spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager);
         let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
             loop {
                 let result = rt_context
-                    .in_span(&span, || {
-                        op.execute(
-                            morsel.clone(),
-                            state,
-                            &compute_runtime,
-                            memory_manager.clone(),
-                        )
-                    })
+                    .in_span(&span, || op.execute(morsel.clone(), state, &task_spawner))
                     .await??;
                 state = result.0;
                 match result.1 {
