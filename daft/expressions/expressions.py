@@ -3592,3 +3592,38 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             Expression: an UInt64 expression with the length of each binary string in bytes
         """
         return Expression._from_pyexpr(native.binary_length(self._expr))
+
+    def concat(self, other: Expression) -> Expression:
+        """Concatenates two binary strings.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({
+            ...     "a": [b"Hello", b"\\xff\\xfe", b"", b"World"],
+            ...     "b": [b" World", b"\\x00", b"empty", b"!"]
+            ... })
+            >>> df = df.select(df["a"].binary.concat(df["b"]))
+            >>> df.show()
+            ╭───────────────────╮
+            │ a                 │
+            │ ---               │
+            │ Binary            │
+            ╞═══════════════════╡
+            │ b"Hello World"    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌│
+            │ b"\\xff\\xfe\\x00"│
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"empty"          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"World!"         │
+            ╰───────────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+
+        Args:
+            other: The binary string to concatenate with
+
+        Returns:
+            Expression: A binary expression containing the concatenated strings
+        """
+        return Expression._from_pyexpr(native.binary_concat(self._expr, other._expr))

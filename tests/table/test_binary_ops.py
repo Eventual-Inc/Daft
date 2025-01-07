@@ -5,13 +5,91 @@ from daft.table import MicroPartition
 
 
 def test_binary_length():
-    table = MicroPartition.from_pydict({"col": [b"Hello", b"\xff\xfe\x00", b"", b"World!"]})
-
+    # Test basic ASCII strings
+    table = MicroPartition.from_pydict({"col": [b"Hello", b"World!", b"", b"Test"]})
     result = table.eval_expression_list([col("col").binary.length()])
-    assert result.to_pydict() == {"col": [5, 3, 0, 6]}
+    assert result.to_pydict() == {"col": [5, 6, 0, 4]}
 
-    # Test with nulls
-    table = MicroPartition.from_pydict({"col": [b"Hello", None, b"", b"World!", None]})
-
+    # Test with special binary sequences
+    table = MicroPartition.from_pydict({
+        "col": [
+            b"\x00\x01\x02",  # Null and control characters
+            b"\xff\xfe\xfd",  # High-value bytes
+            b"\x7f\x80\x81",  # Around ASCII boundary
+            b"Hello\x00World",  # Embedded null
+            b"\xe2\x98\x83",  # UTF-8 encoded snowman (☃)
+            b"\xf0\x9f\x98\x89",  # UTF-8 encoded winking face (😉)
+        ]
+    })
     result = table.eval_expression_list([col("col").binary.length()])
-    assert result.to_pydict() == {"col": [5, None, 0, 6, None]}
+    assert result.to_pydict() == {"col": [3, 3, 3, 11, 3, 4]}
+
+    # Test with nulls and empty strings
+    table = MicroPartition.from_pydict({
+        "col": [b"Hello", None, b"", b"\x00", None, b"Test", b""]
+    })
+    result = table.eval_expression_list([col("col").binary.length()])
+    assert result.to_pydict() == {"col": [5, None, 0, 1, None, 4, 0]}
+
+
+def test_binary_concat():
+    # Test basic ASCII concatenation
+    table = MicroPartition.from_pydict({
+        "a": [b"Hello", b"Test", b"", b"End"],
+        "b": [b" World", b"ing", b"Empty", b"!"]
+    })
+    result = table.eval_expression_list([col("a").binary.concat(col("b"))])
+    assert result.to_pydict() == {"a": [b"Hello World", b"Testing", b"Empty", b"End!"]}
+
+    # Test with special binary sequences
+    table = MicroPartition.from_pydict({
+        "a": [
+            b"\x00\x01",  # Null and control chars
+            b"\xff\xfe",  # High-value bytes
+            b"Hello\x00",  # String with null
+            b"\xe2\x98",  # Partial UTF-8
+            b"\xf0\x9f\x98",  # Another partial UTF-8
+        ],
+        "b": [
+            b"\x02\x03",  # More control chars
+            b"\xfd\xfc",  # More high-value bytes
+            b"\x00World",  # Null and string
+            b"\x83",  # Complete the UTF-8 snowman
+            b"\x89",  # Complete the UTF-8 winking face
+        ]
+    })
+    result = table.eval_expression_list([col("a").binary.concat(col("b"))])
+    assert result.to_pydict() == {
+        "a": [
+            b"\x00\x01\x02\x03",  # Concatenated control chars
+            b"\xff\xfe\xfd\xfc",  # Concatenated high-value bytes
+            b"Hello\x00\x00World",  # String with multiple nulls
+            b"\xe2\x98\x83",  # Complete UTF-8 snowman (☃)
+            b"\xf0\x9f\x98\x89",  # Complete UTF-8 winking face (😉)
+        ]
+    }
+
+    # Test with nulls and empty strings
+    table = MicroPartition.from_pydict({
+        "a": [b"Hello", None, b"", b"Test", None, b"End", b""],
+        "b": [b" World", b"!", None, None, b"ing", b"", b"Empty"]
+    })
+    result = table.eval_expression_list([col("a").binary.concat(col("b"))])
+    assert result.to_pydict() == {
+        "a": [b"Hello World", None, None, None, None, b"End", b"Empty"]
+    }
+
+    # Test concatenating large binary strings
+    large_binary = b"x" * 1000
+    table = MicroPartition.from_pydict({
+        "a": [large_binary, b"small", large_binary],
+        "b": [large_binary, large_binary, b"small"]
+    })
+    result = table.eval_expression_list([col("a").binary.concat(col("b"))])
+    assert result.to_pydict() == {
+        "a": [
+            b"x" * 2000,  # Two large binaries concatenated
+            b"small" + (b"x" * 1000),  # Small + large
+            (b"x" * 1000) + b"small"  # Large + small
+        ]
+    }

@@ -1204,6 +1204,7 @@ def utf8_normalize(
 # expr.binary namespace
 # ---
 def binary_length(expr: PyExpr) -> PyExpr: ...
+def binary_concat(left: PyExpr, right: PyExpr) -> PyExpr: ...
 
 class PyCatalog:
     @staticmethod
