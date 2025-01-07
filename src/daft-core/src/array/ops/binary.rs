@@ -19,7 +19,7 @@ impl BinaryArray {
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
 
-    pub fn binary_concat(&self, other: &BinaryArray) -> DaftResult<BinaryArray> {
+    pub fn binary_concat(&self, other: &Self) -> DaftResult<Self> {
         let self_arrow = self.as_arrow();
         let other_arrow = other.as_arrow();
 
@@ -35,6 +35,6 @@ impl BinaryArray {
             .collect::<arrow2::array::BinaryArray<i64>>()
             .with_validity(self_arrow.validity().zip(other_arrow.validity()).map(|(a, b)| a & b));
 
-        Ok(BinaryArray::from((self.name(), Box::new(arrow_result))))
+        Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
 }

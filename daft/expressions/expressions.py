@@ -3594,7 +3594,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.binary_length(self._expr))
 
     def concat(self, other: Expression) -> Expression:
-        """Concatenates two binary strings.
+        r"""Concatenates two binary strings.
 
         Example:
             >>> import daft
