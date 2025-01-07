@@ -146,7 +146,7 @@ impl Default for OptimizerBuilder {
 }
 
 impl OptimizerBuilder {
-    pub fn reorder_joins(&mut self) {
+    pub fn reorder_joins(mut self) -> Self {
         self.rule_batches.push(RuleBatch::new(
             vec![
                 Box::new(ReorderJoins::new()),
@@ -154,18 +154,21 @@ impl OptimizerBuilder {
             ],
             RuleExecutionStrategy::Once,
         ));
+        self
     }
 
-    pub fn simplify_expressions(&mut self) {
-        // try to simplify expressions again as other rules could introduce new exprs
+    pub fn simplify_expressions(mut self) -> Self {
+        // Try to simplify expressions again as other rules could introduce new exprs.
         self.rule_batches.push(RuleBatch::new(
             vec![Box::new(SimplifyExpressionsRule::new())],
             RuleExecutionStrategy::FixedPoint(Some(3)),
         ));
+        self
     }
 
-    pub fn with_optimizer_config(&mut self, config: OptimizerConfig) {
+    pub fn with_optimizer_config(mut self, config: OptimizerConfig) -> Self {
         self.config = config;
+        self
     }
 
     pub fn build(self) -> Optimizer {

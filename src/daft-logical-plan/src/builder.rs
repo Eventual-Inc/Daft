@@ -619,9 +619,9 @@ impl LogicalPlanBuilder {
         if let Some(conf) = &self.config
             && conf.enable_join_reordering
         {
-            optimizer_builder.reorder_joins();
+            optimizer_builder = optimizer_builder.reorder_joins();
         }
-        optimizer_builder.simplify_expressions();
+        optimizer_builder = optimizer_builder.simplify_expressions();
         let optimizer = optimizer_builder.build();
 
         // Run LogicalPlan optimizations
