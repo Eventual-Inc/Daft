@@ -15,7 +15,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{runtime_stats::ExecutionTaskSpawner, NUM_CPUS};
+use crate::{ExecutionTaskSpawner, NUM_CPUS};
 
 #[derive(Clone)]
 enum AggStrategy {

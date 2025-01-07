@@ -12,7 +12,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{runtime_stats::ExecutionTaskSpawner, state_bridge::BroadcastStateBridgeRef};
+use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum InnerHashJoinProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
@@ -171,7 +171,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        spawner: &ExecutionTaskSpawner,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -183,7 +183,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         }
 
         let params = self.params.clone();
-        spawner
+        task_spawner
             .spawn(
                 async move {
                     let inner_join_state = state

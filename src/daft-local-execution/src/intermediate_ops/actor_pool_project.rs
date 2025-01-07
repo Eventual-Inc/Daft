@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
     count_actor_pool_udfs,
-    functions::python::{get_batch_size, get_concurrency},
+    functions::python::{get_batch_size, get_concurrency, get_resource_request},
     ExprRef,
 };
 #[cfg(feature = "python")]
@@ -21,8 +21,7 @@ use super::intermediate_op::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    runtime_stats::ExecutionTaskSpawner,
-    ExecutionRuntimeContext,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 struct ActorHandle {
@@ -126,6 +125,7 @@ pub struct ActorPoolProjectOperator {
     projection: Vec<ExprRef>,
     concurrency: usize,
     batch_size: Option<usize>,
+    memory_request: u64,
 }
 
 impl ActorPoolProjectOperator {
@@ -140,10 +140,15 @@ impl ActorPoolProjectOperator {
         let concurrency = get_concurrency(&projection);
         let batch_size = get_batch_size(&projection);
 
+        let memory_request = get_resource_request(&projection)
+            .and_then(|req| req.memory_bytes())
+            .map(|m| m as u64)
+            .unwrap_or(0);
         Self {
             projection,
             concurrency,
             batch_size,
+            memory_request,
         }
     }
 }
@@ -154,9 +159,11 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        spawner: &ExecutionTaskSpawner,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
-        let fut = spawner.spawn(
+        let memory_request = self.memory_request;
+        let fut = task_spawner.spawn_with_memory_request(
+            memory_request,
             async move {
                 let actor_pool_project_state = state
                     .as_any_mut()

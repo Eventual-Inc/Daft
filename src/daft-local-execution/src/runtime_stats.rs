@@ -8,7 +8,6 @@ use std::{
     time::Instant,
 };
 
-use common_runtime::{RuntimeRef, RuntimeTask};
 use daft_micropartition::MicroPartition;
 use loole::SendError;
 use tracing::{instrument::Instrumented, Instrument};
@@ -153,40 +152,6 @@ impl<F: Future> Future for TimedFuture<F> {
             Poll::Pending => Poll::Pending,
             Poll::Ready(output) => Poll::Ready(output),
         }
-    }
-}
-
-pub struct ExecutionTaskSpawner {
-    runtime_ref: RuntimeRef,
-    runtime_context: Arc<RuntimeStatsContext>,
-    outer_span: tracing::Span,
-}
-
-impl ExecutionTaskSpawner {
-    pub fn new(
-        runtime_ref: RuntimeRef,
-        runtime_context: Arc<RuntimeStatsContext>,
-        span: tracing::Span,
-    ) -> Self {
-        Self {
-            runtime_ref,
-            runtime_context,
-            outer_span: span,
-        }
-    }
-
-    pub fn spawn<T: Send + 'static>(
-        &self,
-        task: impl std::future::Future<Output = T> + Send + 'static,
-        inner_span: tracing::Span,
-    ) -> RuntimeTask<T> {
-        let instrumented = task.instrument(inner_span);
-        let timed_fut = TimedFuture::new(
-            instrumented,
-            self.runtime_context.clone(),
-            self.outer_span.clone(),
-        );
-        self.runtime_ref.spawn(timed_fut)
     }
 }
 

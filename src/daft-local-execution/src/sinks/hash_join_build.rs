@@ -12,7 +12,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{runtime_stats::ExecutionTaskSpawner, state_bridge::BroadcastStateBridgeRef};
+use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum ProbeTableState {
     Building {

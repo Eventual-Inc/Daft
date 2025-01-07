@@ -8,7 +8,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::runtime_stats::ExecutionTaskSpawner;
+use crate::ExecutionTaskSpawner;
 
 pub struct FilterOperator {
     predicate: ExprRef,
@@ -26,10 +26,10 @@ impl IntermediateOperator for FilterOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        spawner: &ExecutionTaskSpawner,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let predicate = self.predicate.clone();
-        spawner
+        task_spawner
             .spawn(
                 async move {
                     let out = input.filter(&[predicate])?;

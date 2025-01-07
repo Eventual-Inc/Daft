@@ -22,9 +22,8 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    runtime_stats::ExecutionTaskSpawner,
     state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 struct IndexBitmapBuilder {

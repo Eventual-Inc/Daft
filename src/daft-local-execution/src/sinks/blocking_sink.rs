@@ -12,8 +12,9 @@ use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::PipelineNode,
     progress_bar::ProgressBarColor,
-    runtime_stats::{CountingReceiver, CountingSender, ExecutionTaskSpawner, RuntimeStatsContext},
-    ExecutionRuntimeContext, JoinSnafu, OperatorOutput, TaskSet,
+    resource_manager::MemoryManager,
+    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    ExecutionRuntimeContext, ExecutionTaskSpawner, JoinSnafu, OperatorOutput, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
@@ -79,10 +80,11 @@ impl BlockingSinkNode {
         op: Arc<dyn BlockingSink>,
         input_receiver: Receiver<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
+        memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<Box<dyn BlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
-        let spawner = ExecutionTaskSpawner::new(compute_runtime, rt_context, span);
+        let spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
         let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
             let result = op.sink(morsel, state, &spawner).await??;
@@ -104,9 +106,15 @@ impl BlockingSinkNode {
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
         task_set: &mut TaskSet<DaftResult<Box<dyn BlockingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
+        memory_manager: Arc<MemoryManager>,
     ) {
         for input_receiver in input_receivers {
-            task_set.spawn(Self::run_worker(op.clone(), input_receiver, stats.clone()));
+            task_set.spawn(Self::run_worker(
+                op.clone(),
+                input_receiver,
+                stats.clone(),
+                memory_manager.clone(),
+            ));
         }
     }
 }
@@ -176,6 +184,7 @@ impl PipelineNode for BlockingSinkNode {
             self.name(),
         );
 
+        let memory_manager = runtime_handle.memory_manager();
         runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
@@ -184,6 +193,7 @@ impl PipelineNode for BlockingSinkNode {
                     spawned_dispatch_result.worker_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
+                    memory_manager.clone(),
                 );
 
                 let mut finished_states = Vec::with_capacity(num_workers);
@@ -195,6 +205,7 @@ impl PipelineNode for BlockingSinkNode {
                 let compute_runtime = get_compute_runtime();
                 let spawner = ExecutionTaskSpawner::new(
                     compute_runtime,
+                    memory_manager,
                     runtime_stats.clone(),
                     info_span!("BlockingSink::Finalize"),
                 );

@@ -9,8 +9,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    runtime_stats::ExecutionTaskSpawner,
-    ExecutionRuntimeContext,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 struct LimitSinkState {

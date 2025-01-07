@@ -10,7 +10,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{runtime_stats::ExecutionTaskSpawner, state_bridge::BroadcastStateBridgeRef};
+use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 struct CrossJoinState {
     bridge: BroadcastStateBridgeRef<Vec<Table>>,
@@ -72,7 +72,7 @@ impl IntermediateOperator for CrossJoinOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        spawner: &ExecutionTaskSpawner,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let output_schema = self.output_schema.clone();
 
@@ -82,7 +82,7 @@ impl IntermediateOperator for CrossJoinOperator {
 
         let stream_side = self.stream_side;
 
-        spawner
+        task_spawner
             .spawn(
                 async move {
                     let cross_join_state = state

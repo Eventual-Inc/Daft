@@ -14,8 +14,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    runtime_stats::ExecutionTaskSpawner,
-    ExecutionRuntimeContext, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, NUM_CPUS,
 };
 
 pub enum WriteFormat {
