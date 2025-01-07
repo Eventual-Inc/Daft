@@ -26,9 +26,8 @@ pub(super) enum JoinOrderTree {
 }
 
 impl JoinOrderTree {
-    #[allow(clippy::unnecessary_box_returns)]
-    pub(super) fn join(self: Box<Self>, right: Box<Self>) -> Box<Self> {
-        Box::new(Self::Join(self, right))
+    pub(super) fn join(self, right: Self) -> Self {
+        Self::Join(Box::new(self), Box::new(right))
     }
 
     // Helper function that checks if the join order tree contains a given id.
@@ -49,8 +48,7 @@ impl JoinOrderTree {
 }
 
 pub(super) trait JoinOrderer {
-    #[allow(clippy::unnecessary_box_returns)]
-    fn order(&self, graph: &JoinGraph) -> Box<JoinOrderTree>;
+    fn order(&self, graph: &JoinGraph) -> JoinOrderTree;
 }
 
 #[derive(Clone, Debug)]
@@ -304,10 +302,7 @@ impl JoinGraph {
     }
 
     /// Takes a `JoinOrderTree` and creates a logical plan from the current join graph.
-    pub(super) fn to_logical_plan(
-        &self,
-        join_order: Box<JoinOrderTree>,
-    ) -> DaftResult<LogicalPlanRef> {
+    pub(super) fn to_logical_plan(&self, join_order: JoinOrderTree) -> DaftResult<LogicalPlanRef> {
         let (mut plan_builder, relation_mask) = self.build_joins_from_join_order(&join_order)?;
         // After we've rebuilt all the joins, every relation should be contained in the final logical plan builder.
         assert_eq!(relation_mask, self.adj_list.max_id - 1);
