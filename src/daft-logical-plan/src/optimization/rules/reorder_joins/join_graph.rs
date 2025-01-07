@@ -21,13 +21,13 @@ use crate::{
 /// TODO(desmond): In the future these trees should keep track of current cost estimates.
 #[derive(Clone, Debug)]
 pub(super) enum JoinOrderTree {
-    Relation(usize),                              // (ID).
-    Join(Box<JoinOrderTree>, Box<JoinOrderTree>), // (subtree, subtree).
+    Relation(usize),                                                  // (ID).
+    Join(Box<JoinOrderTree>, Box<JoinOrderTree>, Vec<JoinCondition>), // (subtree, subtree, join conditions).
 }
 
 impl JoinOrderTree {
-    pub(super) fn join(self, right: Self) -> Self {
-        Self::Join(Box::new(self), Box::new(right))
+    pub(super) fn join(self, right: Self, conds: Vec<JoinCondition>) -> Self {
+        Self::Join(Box::new(self), Box::new(right), conds)
     }
 
     // Helper function that checks if the join order tree contains a given id.
@@ -35,14 +35,14 @@ impl JoinOrderTree {
     pub(super) fn contains(&self, target_id: usize) -> bool {
         match self {
             Self::Relation(id) => *id == target_id,
-            Self::Join(left, right) => left.contains(target_id) || right.contains(target_id),
+            Self::Join(left, right, _) => left.contains(target_id) || right.contains(target_id),
         }
     }
 
     fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
         match self {
             Self::Relation(id) => Box::new(std::iter::once(*id)),
-            Self::Join(left, right) => Box::new(left.iter().chain(right.iter())),
+            Self::Join(left, right, _) => Box::new(left.iter().chain(right.iter())),
         }
     }
 }
@@ -181,17 +181,22 @@ impl JoinAdjList {
         self.add_unidirectional_edge(&node2, &node1);
     }
 
-    pub(super) fn connected_join_trees(&self, left: &JoinOrderTree, right: &JoinOrderTree) -> bool {
+    pub(super) fn get_connections(
+        &self,
+        left: &JoinOrderTree,
+        right: &JoinOrderTree,
+    ) -> Vec<JoinCondition> {
+        let mut conds = vec![];
         for left_node in left.iter() {
             if let Some(neighbors) = self.edges.get(&left_node) {
                 for right_node in right.iter() {
-                    if neighbors.get(&right_node).is_some() {
-                        return true;
+                    if let Some(edges) = neighbors.get(&right_node) {
+                        conds.extend(edges.iter().cloned());
                     }
                 }
             }
         }
-        false
+        conds
     }
 }
 
@@ -255,7 +260,7 @@ impl JoinGraph {
     fn build_joins_from_join_order(
         &self,
         join_order: &JoinOrderTree,
-    ) -> DaftResult<(LogicalPlanBuilder, usize)> {
+    ) -> DaftResult<LogicalPlanBuilder> {
         match join_order {
             JoinOrderTree::Relation(id) => {
                 let relation = self
@@ -263,40 +268,18 @@ impl JoinGraph {
                     .id_to_plan
                     .get(id)
                     .expect("Join order contains non-existent plan id 1");
-                Ok((LogicalPlanBuilder::from(relation.clone()), 1 << *id))
+                Ok(LogicalPlanBuilder::from(relation.clone()))
             }
-            JoinOrderTree::Join(left_tree, right_tree) => {
-                let (left_builder, left_mask) = self.build_joins_from_join_order(left_tree)?;
-                let (right_builder, right_mask) = self.build_joins_from_join_order(right_tree)?;
-                // For all pairs of plan IDs in the left and right side of the join, collect their join conditions.
-                let mut left_remaining = left_mask;
+            JoinOrderTree::Join(left_tree, right_tree, conds) => {
+                let left_builder = self.build_joins_from_join_order(left_tree)?;
+                let right_builder = self.build_joins_from_join_order(right_tree)?;
                 let mut left_cols = vec![];
                 let mut right_cols = vec![];
-                for _ in 0..left_remaining.count_ones() {
-                    let left_id = left_remaining.trailing_zeros();
-                    left_remaining ^= 1 << left_id;
-                    let mut right_remaining = right_mask;
-                    for _ in 0..right_remaining.count_ones() {
-                        let right_id = right_remaining.trailing_zeros();
-                        right_remaining ^= 1 << right_id;
-                        if let Some(join_conditions) = self
-                            .adj_list
-                            .edges
-                            .get(&(left_id as usize))
-                            .expect("Join order contains non-existent plan id 2")
-                            .get(&(right_id as usize))
-                        {
-                            for cond in join_conditions {
-                                left_cols.push(col(cond.left_on.clone()));
-                                right_cols.push(col(cond.right_on.clone()));
-                            }
-                        }
-                    }
+                for cond in conds {
+                    left_cols.push(col(cond.left_on.clone()));
+                    right_cols.push(col(cond.right_on.clone()));
                 }
-                // Create the inner join.
-                let join = left_builder.inner_join(right_builder, left_cols, right_cols)?;
-
-                Ok((join, left_mask | right_mask))
+                Ok(left_builder.inner_join(right_builder, left_cols, right_cols)?)
             }
         }
     }
@@ -307,9 +290,7 @@ impl JoinGraph {
         &mut self,
         join_order: JoinOrderTree,
     ) -> DaftResult<LogicalPlanRef> {
-        let (mut plan_builder, relation_mask) = self.build_joins_from_join_order(&join_order)?;
-        // After we've rebuilt all the joins, every relation should be contained in the final logical plan builder.
-        assert_eq!(relation_mask, (2 << self.adj_list.max_id) - 1);
+        let mut plan_builder = self.build_joins_from_join_order(&join_order)?;
         plan_builder = self.apply_projections_and_filters_to_plan_builder(plan_builder)?;
         Ok(plan_builder.build())
     }

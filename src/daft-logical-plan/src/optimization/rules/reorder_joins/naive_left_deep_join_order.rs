@@ -13,8 +13,9 @@ impl NaiveLeftDeepJoinOrderer {
         }
         for (index, candidate_node_id) in available.iter().enumerate() {
             let right = JoinOrderTree::Relation(*candidate_node_id);
-            if graph.adj_list.connected_join_trees(&current_order, &right) {
-                let new_order = current_order.join(right);
+            let connections = graph.adj_list.get_connections(&current_order, &right);
+            if !connections.is_empty() {
+                let new_order = current_order.join(right, connections);
                 available.remove(index);
                 return Self::extend_order(graph, new_order, available);
             }
