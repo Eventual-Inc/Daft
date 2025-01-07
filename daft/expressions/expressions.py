@@ -15,6 +15,7 @@ from typing import (
     Literal,
     TypeVar,
     overload,
+    Union,
 )
 
 import daft.daft as native
@@ -3593,7 +3594,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.binary_length(self._expr))
 
-    def concat(self, other: Expression) -> Expression:
+    def concat(self, other: Union[Expression, bytes]) -> Expression:
         r"""Concatenates two binary strings.
 
         Example:
@@ -3620,9 +3621,11 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 4 of 4 rows)
 
         Args:
-            other: The binary string to concatenate with
+            other: The binary string to concatenate with, can be either an Expression or a bytes literal
 
         Returns:
             Expression: A binary expression containing the concatenated strings
         """
+        if isinstance(other, bytes):
+            other = lit(other)
         return Expression._from_pyexpr(native.binary_concat(self._expr, other._expr))

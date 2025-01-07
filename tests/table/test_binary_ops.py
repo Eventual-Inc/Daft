@@ -93,3 +93,25 @@ def test_binary_concat():
             (b"x" * 1000) + b"small",  # Large + small
         ]
     }
+
+
+def test_binary_concat_broadcast():
+    # Test broadcasting with literal on right
+    table = MicroPartition.from_pydict({"a": [b"Hello", b"Goodbye", b"Test"]})
+    result = table.eval_expression_list([col("a").binary.concat(b" World!")])
+    assert result.to_pydict() == {"a": [b"Hello World!", b"Goodbye World!", b"Test World!"]}
+
+    # Test broadcasting with literal on left
+    table = MicroPartition.from_pydict({"b": [b"World", b"Planet", b"Universe"]})
+    result = table.eval_expression_list([col("b").binary.concat(b"!")])
+    assert result.to_pydict() == {"b": [b"World!", b"Planet!", b"Universe!"]}
+
+    # Test broadcasting with nulls
+    table = MicroPartition.from_pydict({"a": [b"Hello", None, b"Test"]})
+    result = table.eval_expression_list([col("a").binary.concat(b" World!")])
+    assert result.to_pydict() == {"a": [b"Hello World!", None, b"Test World!"]}
+
+    # Test broadcasting special binary sequences
+    table = MicroPartition.from_pydict({"a": [b"\x00\x01", b"\xff\xfe", b"Hello\x00"]})
+    result = table.eval_expression_list([col("a").binary.concat(b"\x02\x03")])
+    assert result.to_pydict() == {"a": [b"\x00\x01\x02\x03", b"\xff\xfe\x02\x03", b"Hello\x00\x02\x03"]}
