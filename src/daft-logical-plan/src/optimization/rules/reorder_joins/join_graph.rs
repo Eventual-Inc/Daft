@@ -251,6 +251,10 @@ impl JoinGraph {
         Ok(plan_builder)
     }
 
+    /// Converts a `JoinOrderTree` into a tree of inner joins.
+    /// Returns a tuple of the logical plan builder consisting of joins, and a bitmask indicating the plan IDs
+    /// that are contained within the current logical plan builder. The bitmask is used for determining join
+    /// conditions to use when logical plan builders are joined together.
     fn build_joins_from_join_order(
         &self,
         join_order: &JoinOrderTree,
@@ -267,6 +271,7 @@ impl JoinGraph {
             JoinOrderTree::Join(left_tree, right_tree) => {
                 let (left_builder, left_mask) = self.build_joins_from_join_order(left_tree)?;
                 let (right_builder, right_mask) = self.build_joins_from_join_order(right_tree)?;
+                // For all pairs of plan IDs in the left and right side of the join, collect their join conditions.
                 let mut left_remaining = left_mask;
                 let mut left_cols = vec![];
                 let mut right_cols = vec![];
@@ -290,6 +295,7 @@ impl JoinGraph {
                         }
                     }
                 }
+                // Create the inner join.
                 let join = left_builder.inner_join(right_builder, left_cols, right_cols)?;
 
                 Ok((join, left_mask | right_mask))
@@ -297,11 +303,13 @@ impl JoinGraph {
         }
     }
 
+    /// Takes a `JoinOrderTree` and creates a logical plan from the current join graph.
     pub(super) fn to_logical_plan(
         &self,
         join_order: Box<JoinOrderTree>,
     ) -> DaftResult<LogicalPlanRef> {
         let (mut plan_builder, relation_mask) = self.build_joins_from_join_order(&join_order)?;
+        // After we've rebuilt all the joins, every relation should be contained in the final logical plan builder.
         assert_eq!(relation_mask, self.adj_list.max_id - 1);
         plan_builder = self.apply_projections_and_filters_to_plan_builder(plan_builder)?;
         Ok(plan_builder.build())
