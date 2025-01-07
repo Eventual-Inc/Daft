@@ -25,7 +25,7 @@ use {
 use crate::{
     logical_plan::LogicalPlan,
     ops,
-    optimization::{Optimizer, OptimizerConfig},
+    optimization::OptimizerBuilder,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
@@ -615,8 +615,14 @@ impl LogicalPlanBuilder {
     }
 
     pub fn optimize(&self) -> DaftResult<Self> {
-        let optimizer_conf = OptimizerConfig::from(&self.config);
-        let optimizer = Optimizer::new(optimizer_conf);
+        let mut optimizer_builder = OptimizerBuilder::default();
+        if let Some(conf) = &self.config
+            && conf.enable_join_reordering
+        {
+            optimizer_builder.reorder_joins();
+        }
+        optimizer_builder.simplify_expressions();
+        let optimizer = optimizer_builder.build();
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
