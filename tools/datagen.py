@@ -4,20 +4,16 @@
 #   "PyGithub",
 #   "boto3",
 #   "duckdb",
-#   "getdaft",
 # ]
 # ///
 
 
 import logging
-import os
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Optional
 
 import duckdb
-
-import daft
 
 logger = logging.getLogger(__name__)
 
@@ -45,54 +41,20 @@ def generate_local_tpcds_data(
         print(f"Exporting {tbl} to {parquet_file}")
         db.sql(f"COPY {tbl} TO '{parquet_file}'")
 
-        daft.read_parquet(str(parquet_file)).write_parquet(final_dir / tbl)
-        os.remove(parquet_file)
-
-
-def generate_remote_tpcds_data(
-    scale_factor: int,
-):
-    # *not* imported at the global level
-    # `git_utils` runs some code upon import to get the `$GITHUB_OAUTH_TOKEN`, which should only be done on the local computer, not on the GitHub Actions servers
-    import git_utils
-
-    branch_name, _ = git_utils.get_name_and_commit_hash(None)
-
-    workflow = git_utils.repo.get_workflow("datagen.yaml")
-    git_utils.dispatch(
-        workflow=workflow,
-        branch_name=branch_name,
-        inputs={
-            "bench_type": "tpcds",
-            "scale_factor": str(scale_factor),
-        },
-    )
-
 
 def main(
     bench_type: str,
     scale_factor: int,
     num_partitions: int,
     output_dir: Optional[Path],
-    remote: bool,
 ):
-    if output_dir and remote:
-        raise ValueError("Can't specify both `--output-dir` and `--remote`")
+    output_dir = output_dir or Path("data")
 
-    if remote:
-        if bench_type == "tpcds":
-            generate_remote_tpcds_data(scale_factor)
-        elif bench_type == "tpch":
-            # todo!
-            ...
-    else:
-        output_dir = output_dir or Path("data")
-
-        if bench_type == "tpcds":
-            generate_local_tpcds_data(scale_factor, output_dir)
-        elif bench_type == "tpch":
-            # todo!
-            ...
+    if bench_type == "tpcds":
+        generate_local_tpcds_data(scale_factor, output_dir)
+    elif bench_type == "tpch":
+        # todo!
+        ...
 
 
 if __name__ == "__main__":
@@ -108,12 +70,6 @@ if __name__ == "__main__":
         required=False,
         help="Which output directory to store the data in (relative to $CWD)",
     )
-    parser.add_argument(
-        "--remote",
-        action="store_true",
-        required=False,
-        help="Whether to generate this data remotely (in S3)",
-    )
 
     args = parser.parse_args()
 
@@ -122,5 +78,4 @@ if __name__ == "__main__":
         args.scale_factor,
         args.num_partitions,
         args.output_dir,
-        args.remote,
     )
