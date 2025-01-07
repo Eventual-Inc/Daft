@@ -550,7 +550,7 @@ impl JoinGraphBuilder {
             }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
                 for l in left_on {
                     let name = l.name();
-                    if self.final_name_map.contains_key(name) {
+                    if !self.final_name_map.contains_key(name) {
                         self.final_name_map.insert(name.to_string(), col(name));
                     }
                     self.join_conds_to_resolve
@@ -563,7 +563,7 @@ impl JoinGraphBuilder {
                 }
                 for r in right_on {
                     let name = r.name();
-                    if self.final_name_map.contains_key(name) {
+                    if !self.final_name_map.contains_key(name) {
                         self.final_name_map.insert(name.to_string(), col(name));
                     }
                     self.join_conds_to_resolve
