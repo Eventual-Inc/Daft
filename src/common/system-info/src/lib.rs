@@ -19,6 +19,20 @@ impl Default for SystemInfo {
     }
 }
 
+impl SystemInfo {
+    pub fn calculate_cpu_count(&self) -> Option<u64> {
+        self.info.physical_core_count().map(|x| x as u64)
+    }
+
+    pub fn calculate_total_memory(&self) -> u64 {
+        if let Some(cgroup) = self.info.cgroup_limits() {
+            cgroup.total_memory
+        } else {
+            self.info.total_memory()
+        }
+    }
+}
+
 #[cfg(feature = "python")]
 #[pymethods]
 impl SystemInfo {
@@ -30,16 +44,12 @@ impl SystemInfo {
 
     #[must_use]
     pub fn cpu_count(&self) -> Option<u64> {
-        self.info.physical_core_count().map(|x| x as u64)
+        self.calculate_cpu_count()
     }
 
     #[must_use]
     pub fn total_memory(&self) -> u64 {
-        if let Some(cgroup) = self.info.cgroup_limits() {
-            cgroup.total_memory
-        } else {
-            self.info.total_memory()
-        }
+        self.calculate_total_memory()
     }
 }
 
