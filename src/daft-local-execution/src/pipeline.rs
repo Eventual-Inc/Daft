@@ -333,7 +333,7 @@ pub fn physical_plan_to_pipeline(
                         let right_size = right_stats.approx_stats.upper_bound_bytes;
                         left_size
                             .zip(right_size)
-                            .map_or(true, |(l, r)| (r as f64) < ((l as f64) * 1.5))
+                            .map_or(true, |(l, r)| ((r as f64) * 1.5) < (l as f64))
                     }
                     // If stats are only available on the right side of the join, and the upper bound bytes on the
                     // right are under the broadcast join size threshold, we build on the right instead of the left.
@@ -341,9 +341,7 @@ pub fn physical_plan_to_pipeline(
                         right_stats
                             .approx_stats
                             .upper_bound_bytes
-                            .map_or(false, |size| {
-                                size <= cfg.broadcast_join_size_bytes_threshold
-                            })
+                            .map_or(true, |size| size > cfg.broadcast_join_size_bytes_threshold)
                     }
                     _ => true,
                 },
@@ -358,7 +356,7 @@ pub fn physical_plan_to_pipeline(
                         let right_size = right_stats.approx_stats.upper_bound_bytes;
                         left_size
                             .zip(right_size)
-                            .map_or(true, |(l, r)| (r as f64) < ((l as f64) * 1.5))
+                            .map_or(false, |(l, r)| (r as f64) > ((l as f64) * 1.5))
                     }
                     // If stats are only available on the left side of the join, and the upper bound bytes on the left
                     // are under the broadcast join size threshold, we build on the left instead of the right.
