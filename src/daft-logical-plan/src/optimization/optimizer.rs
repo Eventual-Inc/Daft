@@ -177,6 +177,14 @@ impl OptimizerBuilder {
             config: self.config,
         }
     }
+
+    pub fn when(self, condition: bool, f: impl FnOnce(Self) -> Self) -> Self {
+        if condition {
+            f(self)
+        } else {
+            self
+        }
+    }
 }
 
 /// Logical rule-based optimizer.

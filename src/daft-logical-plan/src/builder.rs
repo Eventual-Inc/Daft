@@ -615,14 +615,15 @@ impl LogicalPlanBuilder {
     }
 
     pub fn optimize(&self) -> DaftResult<Self> {
-        let mut optimizer_builder = OptimizerBuilder::default();
-        if let Some(conf) = &self.config
-            && conf.enable_join_reordering
-        {
-            optimizer_builder = optimizer_builder.reorder_joins();
-        }
-        optimizer_builder = optimizer_builder.simplify_expressions();
-        let optimizer = optimizer_builder.build();
+        let optimizer = OptimizerBuilder::default()
+            .when(
+                self.config
+                    .as_ref()
+                    .map_or(false, |conf| conf.enable_join_reordering),
+                |builder| builder.reorder_joins(),
+            )
+            .simplify_expressions()
+            .build();
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();

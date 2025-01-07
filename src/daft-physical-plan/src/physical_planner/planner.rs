@@ -358,8 +358,7 @@ impl AdaptivePlanner {
 
         self.logical_plan = result.data;
 
-        let optimizer_builder = OptimizerBuilder::default().simplify_expressions();
-        let optimizer = optimizer_builder.build();
+        let optimizer = OptimizerBuilder::default().simplify_expressions().build();
 
         self.logical_plan = optimizer.optimize(
             self.logical_plan.clone(),
