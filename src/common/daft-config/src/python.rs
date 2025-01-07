@@ -99,6 +99,7 @@ impl PyDaftExecutionConfig {
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
         enable_ray_tracing: Option<bool>,
+        scantask_splitting_level: Option<i32>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -182,6 +183,15 @@ impl PyDaftExecutionConfig {
 
         if let Some(enable_ray_tracing) = enable_ray_tracing {
             config.enable_ray_tracing = enable_ray_tracing;
+        }
+
+        if let Some(scantask_splitting_level) = scantask_splitting_level {
+            if !matches!(scantask_splitting_level, 1 | 2) {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "scantask_splitting_level must be 1 or 2",
+                ));
+            }
+            config.scantask_splitting_level = scantask_splitting_level;
         }
 
         Ok(Self {
@@ -292,6 +302,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_ray_tracing(&self) -> PyResult<bool> {
         Ok(self.config.enable_ray_tracing)
+    }
+
+    #[getter]
+    fn scantask_splitting_level(&self) -> PyResult<i32> {
+        Ok(self.config.scantask_splitting_level)
     }
 }
 
