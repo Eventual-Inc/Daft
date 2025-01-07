@@ -17,3 +17,9 @@ impl Iterator for ParquetFileSplitter {
         todo!("Split the parquet file");
     }
 }
+
+impl ParquetFileSplitter {
+    pub fn new(_scan_task: ScanTaskRef) -> Self {
+        Self {}
+    }
+}

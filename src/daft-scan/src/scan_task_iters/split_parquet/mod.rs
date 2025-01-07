@@ -26,7 +26,7 @@ pub struct SplitParquetScanTasksIterator<'cfg> {
 impl<'cfg> SplitParquetScanTasksIterator<'cfg> {
     pub fn new(inputs: BoxScanTaskIter<'cfg>, cfg: &'cfg DaftExecutionConfig) -> Self {
         let decider = split_parquet_decision::DecideSplitIterator::new(inputs, cfg);
-        let retriever = fetch_parquet_metadata::RetrieveParquetMetadataIterator::new(decider, cfg);
+        let retriever = fetch_parquet_metadata::RetrieveParquetMetadataIterator::new(decider);
         SplitParquetScanTasksIterator {
             split_result_iter: retriever.flatten(),
         }
