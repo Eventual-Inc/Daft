@@ -46,8 +46,7 @@ def _get_s3_creds_from_provider_cached(provider: Callable[[], S3Credentials]) ->
     global _CACHED_S3_CREDS
 
     if provider not in _CACHED_S3_CREDS or (
-        _CACHED_S3_CREDS[provider].expiry is not None
-        and _CACHED_S3_CREDS[provider].expiry <= datetime.datetime.now(datetime.timezone.utc)  # type: ignore
+        _CACHED_S3_CREDS[provider].expiry is not None and _CACHED_S3_CREDS[provider].expiry <= datetime.datetime.now()  # type: ignore
     ):
         _CACHED_S3_CREDS[provider] = provider()
 

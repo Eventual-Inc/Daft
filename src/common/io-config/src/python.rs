@@ -1,13 +1,13 @@
 use std::{
     any::Any,
     hash::{Hash, Hasher},
-    time::SystemTime,
 };
 
 use aws_credential_types::{
     provider::{error::CredentialsError, ProvideCredentials},
     Credentials,
 };
+use chrono::{DateTime, Utc};
 use common_py_serde::{
     deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
 };
@@ -534,7 +534,7 @@ impl S3Credentials {
         key_id: String,
         access_key: String,
         session_token: Option<String>,
-        expiry: Option<SystemTime>,
+        expiry: Option<DateTime<Utc>>,
     ) -> Self {
         Self {
             credentials: crate::S3Credentials {
@@ -570,7 +570,7 @@ impl S3Credentials {
 
     /// AWS Credentials Expiry
     #[getter]
-    pub fn expiry(&self) -> Option<SystemTime> {
+    pub fn expiry(&self) -> Option<DateTime<Utc>> {
         self.credentials.expiry
     }
 }
@@ -613,7 +613,7 @@ impl ProvideCredentials for PyS3CredentialsProvider {
                     creds.credentials.key_id,
                     creds.credentials.access_key,
                     creds.credentials.session_token,
-                    creds.credentials.expiry,
+                    creds.credentials.expiry.map(|e| e.into()),
                     "daft_custom_provider",
                 )
             }),

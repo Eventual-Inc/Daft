@@ -2,7 +2,6 @@ use std::{
     any::Any,
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
-    time::SystemTime,
 };
 
 use aws_credential_types::provider::ProvideCredentials;
@@ -40,7 +39,7 @@ pub struct S3Credentials {
     pub key_id: String,
     pub access_key: String,
     pub session_token: Option<String>,
-    pub expiry: Option<SystemTime>,
+    pub expiry: Option<DateTime<Utc>>,
 }
 
 #[typetag::serde(tag = "type")]
@@ -225,8 +224,6 @@ impl S3Credentials {
             res.push(format!("Session token = {session_token}"));
         }
         if let Some(expiry) = &self.expiry {
-            let expiry: DateTime<Utc> = (*expiry).into();
-
             res.push(format!("Expiry = {}", expiry.format("%Y-%m-%dT%H:%M:%S")));
         }
         res
