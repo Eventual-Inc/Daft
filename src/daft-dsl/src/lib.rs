@@ -28,20 +28,20 @@ pub use resolve_expr::{check_column_name_validity, ExprResolver};
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyExpr>()?;
 
-    parent.add_function(wrap_pyfunction_bound!(python::col, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::lit, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::date_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::time_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::timestamp_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::duration_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::interval_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::decimal_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::series_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::udf, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::initialize_udfs, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::get_udf_names, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::eq, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(
+    parent.add_function(wrap_pyfunction!(python::col, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::lit, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::date_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::time_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::timestamp_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::duration_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::interval_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::decimal_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::series_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::udf, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::initialize_udfs, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::get_udf_names, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::eq, parent)?)?;
+    parent.add_function(wrap_pyfunction!(
         python::check_column_name_validity,
         parent
     )?)?;

@@ -67,7 +67,7 @@ impl AdaptivePhysicalPlanScheduler {
             let in_memory_info = InMemoryInfo::new(
                 Schema::empty().into(), // TODO thread in schema from in memory scan
                 partition_key.into(),
-                PartitionCacheEntry::Python(cache_entry),
+                PartitionCacheEntry::Python(Arc::new(cache_entry)),
                 num_partitions,
                 size_bytes,
                 num_rows,

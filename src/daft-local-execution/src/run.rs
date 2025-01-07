@@ -23,7 +23,9 @@ use {
     common_daft_config::PyDaftExecutionConfig,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
+    pyo3::{
+        pyclass, pymethods, Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
+    },
 };
 
 use crate::{
@@ -36,7 +38,7 @@ use crate::{
 #[cfg(feature = "python")]
 #[pyclass]
 struct LocalPartitionIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send>,
+    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>,
 }
 
 #[cfg(feature = "python")]
@@ -74,13 +76,14 @@ impl PyNativeExecutor {
         })
     }
 
-    pub fn run(
+    #[pyo3(signature = (psets, cfg, results_buffer_size=None))]
+    pub fn run<'a>(
         &self,
-        py: Python,
+        py: Python<'a>,
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Bound<'a, PyAny>> {
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
@@ -103,10 +106,15 @@ impl PyNativeExecutor {
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
-            part.map(|p| pyo3::Python::with_gil(|py| PyMicroPartition::from(p).into_py(py)))
+            pyo3::Python::with_gil(|py| {
+                Ok(PyMicroPartition::from(part?)
+                    .into_pyobject(py)?
+                    .unbind()
+                    .into_any())
+            })
         }));
         let part_iter = LocalPartitionIterator { iter };
-        Ok(part_iter.into_py(py))
+        Ok(part_iter.into_pyobject(py)?.into_any())
     }
 }
 

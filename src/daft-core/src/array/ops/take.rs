@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow2::types::Index;
 use common_error::DaftResult;
 
@@ -122,8 +124,8 @@ impl crate::datatypes::PythonArray {
         let old_values = self.as_arrow().values();
 
         // Execute take on the data values, ignoring validity.
-        let new_values: Vec<PyObject> = {
-            let py_none = Python::with_gil(|py: Python| py.None());
+        let new_values: Vec<Arc<PyObject>> = {
+            let py_none = Arc::new(Python::with_gil(|py: Python| py.None()));
 
             indices
                 .iter()

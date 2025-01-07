@@ -133,6 +133,7 @@ impl Default for ParquetSourceConfig {
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     #[new]
+    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None))]
     fn new(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
@@ -218,6 +219,17 @@ impl CsvSourceConfig {
     /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (
+        has_headers,
+        double_quote,
+        allow_variable_columns,
+        delimiter=None,
+        quote=None,
+        escape_char=None,
+        comment=None,
+        buffer_size=None,
+        chunk_size=None
+    ))]
     fn new(
         has_headers: bool,
         double_quote: bool,
@@ -291,6 +303,7 @@ impl JsonSourceConfig {
     /// * `buffer_size` - Size of the buffer (in bytes) used by the streaming reader.
     /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     #[new]
+    #[pyo3(signature = (buffer_size=None, chunk_size=None))]
     fn new(buffer_size: Option<usize>, chunk_size: Option<usize>) -> Self {
         Self::new_internal(buffer_size, chunk_size)
     }
@@ -308,7 +321,7 @@ pub struct DatabaseSourceConfig {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub conn: PyObject,
+    pub conn: Arc<PyObject>,
 }
 
 #[cfg(feature = "python")]
@@ -337,7 +350,7 @@ impl Hash for DatabaseSourceConfig {
 #[cfg(feature = "python")]
 impl DatabaseSourceConfig {
     #[must_use]
-    pub fn new_internal(sql: String, conn: PyObject) -> Self {
+    pub fn new_internal(sql: String, conn: Arc<PyObject>) -> Self {
         Self { sql, conn }
     }
 
@@ -355,7 +368,7 @@ impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
     fn new(sql: &str, conn: PyObject) -> Self {
-        Self::new_internal(sql.to_string(), conn)
+        Self::new_internal(sql.to_string(), Arc::new(conn))
     }
 }
 
