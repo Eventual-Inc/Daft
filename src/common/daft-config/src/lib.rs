@@ -53,6 +53,7 @@ pub struct DaftExecutionConfig {
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
     pub enable_ray_tracing: bool,
+    pub scantask_splitting_level: i32,
 }
 
 impl Default for DaftExecutionConfig {
@@ -81,6 +82,7 @@ impl Default for DaftExecutionConfig {
             shuffle_algorithm: "map_reduce".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
             enable_ray_tracing: false,
+            scantask_splitting_level: 1,
         }
     }
 }
@@ -117,6 +119,10 @@ impl DaftExecutionConfig {
         let shuffle_algorithm_env_var_name = "DAFT_SHUFFLE_ALGORITHM";
         if let Ok(val) = std::env::var(shuffle_algorithm_env_var_name) {
             cfg.shuffle_algorithm = val;
+        }
+        let enable_aggressive_scantask_splitting_env_var_name = "DAFT_SCANTASK_SPLITTING_LEVEL";
+        if let Ok(val) = std::env::var(enable_aggressive_scantask_splitting_env_var_name) {
+            cfg.scantask_splitting_level = val.parse::<i32>().unwrap_or(0);
         }
         cfg
     }
