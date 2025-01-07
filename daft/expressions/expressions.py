@@ -3604,19 +3604,19 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             ... })
             >>> df = df.select(df["a"].binary.concat(df["b"]))
             >>> df.show()
-            ╭───────────────────╮
-            │ a                 │
-            │ ---               │
-            │ Binary            │
-            ╞═══════════════════╡
-            │ b"Hello World"    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌│
-            │ b"\\xff\\xfe\\x00"│
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b"empty"          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b"World!"         │
-            ╰───────────────────╯
+            ╭─────────────────╮
+            │ a               │
+            │ ---             │
+            │ Binary          │
+            ╞═════════════════╡
+            │ b"Hello World"  │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"\\xff\\xfe\\x00" │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"empty"        │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"World!"       │
+            ╰─────────────────╯
             <BLANKLINE>
             (Showing first 4 of 4 rows)
 
