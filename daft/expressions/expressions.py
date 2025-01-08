@@ -3658,11 +3658,6 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         Returns:
             Expression: A binary expression containing the substrings
         """
-        print("Input:", self._expr)
         start_expr = Expression._to_expression(start)
-        print("Start:", start_expr._expr)
         length_expr = Expression._to_expression(None if length is None else length)
-        print("Length:", length_expr._expr)
-        result = Expression._from_pyexpr(native.binary_substr(self._expr, start_expr._expr, length_expr._expr))
-        print("Result:", result._expr)
-        return result
+        return Expression._from_pyexpr(native.binary_substr(self._expr, start_expr._expr, length_expr._expr))
