@@ -24,15 +24,24 @@ impl BinaryArray {
 
         let arrow_result = if self_arrow.len() == 1 || other_arrow.len() == 1 {
             // Handle broadcasting case
-            let (longer_arr, shorter_arr) = if self_arrow.len() > other_arrow.len() {
-                (self_arrow, other_arrow)
+            let (longer_arr, shorter_arr, is_self_longer) = if self_arrow.len() > other_arrow.len()
+            {
+                (self_arrow, other_arrow, true)
             } else {
-                (other_arrow, self_arrow)
+                (other_arrow, self_arrow, false)
             };
             let shorter_val = shorter_arr.value(0);
             longer_arr
                 .iter()
-                .map(|val| val.map(|val| [val, shorter_val].concat()))
+                .map(|val| {
+                    val.map(|val| {
+                        if is_self_longer {
+                            [val, shorter_val].concat()
+                        } else {
+                            [shorter_val, val].concat()
+                        }
+                    })
+                })
                 .collect::<arrow2::array::BinaryArray<i64>>()
         } else {
             // Regular case - element-wise concatenation

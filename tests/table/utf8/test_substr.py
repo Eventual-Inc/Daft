@@ -8,9 +8,39 @@ from daft.table import MicroPartition
 
 
 def test_utf8_substr() -> None:
-    table = MicroPartition.from_pydict({"col": ["foo", None, "barbarbar", "quux", "1", ""]})
+    table = MicroPartition.from_pydict(
+        {
+            "col": [
+                "foo",
+                None,
+                "barbarbar",
+                "quux",
+                "1",
+                "",
+                "Hello☃World",  # UTF-8 character in middle
+                "😉test",  # UTF-8 character at start
+                "test🌈",  # UTF-8 character at end
+                "☃😉🌈",  # Multiple UTF-8 characters
+                "Hello\u0000World",  # Null character
+            ]
+        }
+    )
     result = table.eval_expression_list([col("col").str.substr(0, 5)])
-    assert result.to_pydict() == {"col": ["foo", None, "barba", "quux", "1", None]}
+    assert result.to_pydict() == {
+        "col": [
+            "foo",
+            None,
+            "barba",
+            "quux",
+            "1",
+            None,
+            "Hello",  # Should handle UTF-8 correctly
+            "😉test",  # Should include full emoji
+            "test🌈",  # Should include full emoji
+            "☃😉🌈",  # Should include all characters
+            "Hello",  # Should handle null character
+        ]
+    }
 
 
 @pytest.mark.parametrize(
@@ -18,45 +48,45 @@ def test_utf8_substr() -> None:
     [
         # Test with column for start position
         (
-            ["hello", "world", "test"],
-            [1, 0, 2],
+            ["hello", "world", "test", "Hello☃World", "😉test", "test🌈"],
+            [1, 0, 2, 5, 1, 4],
             3,
-            ["ell", "wor", "st"],
+            ["ell", "wor", "st", "☃Wo", "tes", "🌈"],
         ),
         # Test with column for length
         (
-            ["hello", "world", "test"],
+            ["hello", "world", "test", "Hello☃World", "😉test", "test🌈"],
             1,
-            [2, 3, 4],
-            ["el", "orl", "est"],
+            [2, 3, 4, 5, 2, 1],
+            ["el", "orl", "est", "ello☃", "te", "e"],
         ),
         # Test with both start and length as columns
         (
-            ["hello", "world", "test"],
-            [1, 0, 2],
-            [2, 3, 1],
-            ["el", "wor", "s"],
+            ["hello", "world", "test", "Hello☃World", "😉test", "test🌈"],
+            [1, 0, 2, 5, 1, 4],
+            [2, 3, 1, 2, 3, 1],
+            ["el", "wor", "s", "☃W", "tes", "🌈"],
         ),
         # Test with nulls in start column
         (
-            ["hello", "world", "test"],
-            [1, None, 2],
+            ["hello", "world", "test", "Hello☃World", "😉test", "test🌈"],
+            [1, None, 2, None, 1, None],
             3,
-            ["ell", None, "st"],
+            ["ell", None, "st", None, "tes", None],
         ),
         # Test with nulls in length column
         (
-            ["hello", "world", "test"],
+            ["hello", "world", "test", "Hello☃World", "😉test", "test🌈"],
             1,
-            [2, None, 4],
-            ["el", "orld", "est"],
+            [2, None, 4, None, 2, None],
+            ["el", "orld", "est", "ello☃World", "te", "est🌈"],
         ),
         # Test with nulls in both columns
         (
-            ["hello", "world", "test"],
-            [1, None, 2],
-            [2, 3, None],
-            ["el", None, "st"],
+            ["hello", "world", "test", "Hello☃World", "😉test", "test🌈"],
+            [1, None, 2, 5, None, 4],
+            [2, 3, None, None, 2, None],
+            ["el", None, "st", "☃World", None, "🌈"],
         ),
     ],
 )
@@ -88,15 +118,47 @@ def test_utf8_substr_with_columns(
     "input_data,start,length,expected_result",
     [
         # Test start beyond string length
-        (["hello", "world"], [10, 20], 2, [None, None]),
+        (
+            ["hello", "world", "Hello☃World", "😉test", "test🌈"],
+            [10, 20, 15, 10, 10],
+            2,
+            [None, None, None, None, None],
+        ),
         # Test zero length
-        (["hello", "world"], [1, 0], 0, [None, None]),
+        (
+            ["hello", "world", "Hello☃World", "😉test", "test🌈"],
+            [1, 0, 5, 0, 4],
+            0,
+            [None, None, None, None, None],
+        ),
         # Test very large length
-        (["hello", "world"], [0, 1], 100, ["hello", "orld"]),
+        (
+            ["hello", "world", "Hello☃World", "😉test", "test🌈"],
+            [0, 1, 5, 0, 4],
+            100,
+            ["hello", "orld", "☃World", "😉test", "🌈"],
+        ),
         # Test empty strings
-        (["", ""], [0, 1], 3, [None, None]),
+        (
+            ["", "", ""],
+            [0, 1, 2],
+            3,
+            [None, None, None],
+        ),
         # Test start + length overflow
-        (["hello", "world"], [2, 3], 9999999999, ["llo", "ld"]),
+        (
+            ["hello", "world", "Hello☃World", "😉test", "test🌈"],
+            [2, 3, 5, 0, 4],
+            9999999999,
+            ["llo", "ld", "☃World", "😉test", "🌈"],
+        ),
+        # Test UTF-8 character boundaries
+        (
+            ["Hello☃World", "😉test", "test🌈", "☃😉🌈"],
+            [4, 0, 3, 1],
+            2,
+            ["o☃", "😉t", "t🌈", "😉🌈"],
+        ),
     ],
 )
 def test_utf8_substr_edge_cases(
@@ -112,22 +174,22 @@ def test_utf8_substr_edge_cases(
 
 def test_utf8_substr_errors() -> None:
     # Test negative start
-    table = MicroPartition.from_pydict({"col": ["hello", "world"], "start": [-1, -2]})
+    table = MicroPartition.from_pydict({"col": ["hello", "world", "Hello☃World"], "start": [-1, -2, -3]})
     with pytest.raises(Exception, match="Error in repeat: failed to cast length as usize"):
         table.eval_expression_list([col("col").str.substr(col("start"), 2)])
 
     # Test negative length
-    table = MicroPartition.from_pydict({"col": ["hello", "world"]})
+    table = MicroPartition.from_pydict({"col": ["hello", "world", "Hello☃World"]})
     with pytest.raises(Exception, match="Error in substr: failed to cast length as usize -3"):
         table.eval_expression_list([col("col").str.substr(0, -3)])
 
     # Test both negative
-    table = MicroPartition.from_pydict({"col": ["hello", "world"], "start": [-2, -1]})
+    table = MicroPartition.from_pydict({"col": ["hello", "world", "Hello☃World"], "start": [-2, -1, -3]})
     with pytest.raises(Exception, match="Error in substr: failed to cast length as usize -2"):
         table.eval_expression_list([col("col").str.substr(col("start"), -2)])
 
     # Test negative length in column
-    table = MicroPartition.from_pydict({"col": ["hello", "world"], "length": [-2, -3]})
+    table = MicroPartition.from_pydict({"col": ["hello", "world", "Hello☃World"], "length": [-2, -3, -4]})
     with pytest.raises(Exception, match="Error in repeat: failed to cast length as usize"):
         table.eval_expression_list([col("col").str.substr(0, col("length"))])
 
@@ -142,6 +204,9 @@ def test_utf8_substr_computed() -> None:
                 "data science",  # len=12, start=7, expect "ience"
                 "artificial",  # len=10, start=5, expect "icial"
                 "intelligence",  # len=12, start=7, expect "gence"
+                "Hello☃World",  # len=11, start=6, expect "World"
+                "test😉test",  # len=9, start=4, expect "😉test"
+                "test🌈test",  # len=9, start=4, expect "🌈test"
             ]
         }
     )
@@ -153,7 +218,7 @@ def test_utf8_substr_computed() -> None:
             )
         ]
     )
-    assert result.to_pydict() == {"col": ["wor", "mmi", "ien", "ici", "gen"]}
+    assert result.to_pydict() == {"col": ["wor", "mmi", "ien", "ici", "gen", "Wor", "😉te", "🌈te"]}
 
     # Test with computed length (half of string length)
     table = MicroPartition.from_pydict(
@@ -164,6 +229,9 @@ def test_utf8_substr_computed() -> None:
                 "data science",  # len=12, len/2=6, expect "data s"
                 "artificial",  # len=10, len/2=5, expect "artif"
                 "intelligence",  # len=12, len/2=6, expect "intell"
+                "Hello☃World",  # len=11, len/2=5, expect "Hello"
+                "test😉test",  # len=9, len/2=4, expect "test"
+                "test🌈test",  # len=9, len/2=4, expect "test"
             ]
         }
     )
@@ -175,7 +243,7 @@ def test_utf8_substr_computed() -> None:
             )
         ]
     )
-    assert result.to_pydict() == {"col": ["hello", "python pr", "data s", "artif", "intell"]}
+    assert result.to_pydict() == {"col": ["hello", "python pr", "data s", "artif", "intell", "Hello", "test", "test"]}
 
     # Test with both computed start and length
     table = MicroPartition.from_pydict(
@@ -186,6 +254,9 @@ def test_utf8_substr_computed() -> None:
                 "data science",  # len=12, start=2, len=4, expect "ta s"
                 "artificial",  # len=10, start=2, len=3, expect "tif"
                 "intelligence",  # len=12, start=2, len=4, expect "tell"
+                "Hello☃World",  # len=11, start=2, len=3, expect "llo"
+                "test😉test",  # len=9, start=1, len=3, expect "est😉"
+                "test🌈test",  # len=9, start=1, len=3, expect "est🌈"
             ]
         }
     )
@@ -197,4 +268,4 @@ def test_utf8_substr_computed() -> None:
             )
         ]
     )
-    assert result.to_pydict() == {"col": ["llo", "hon pr", "ta s", "tif", "tell"]}
+    assert result.to_pydict() == {"col": ["llo", "hon pr", "ta s", "tif", "tell", "llo", "est", "est"]}
