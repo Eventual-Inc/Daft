@@ -33,10 +33,8 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSy
 
     if (protocol, io_config) in _CACHED_FSES:
         fs, expiry = _CACHED_FSES[(protocol, io_config)]
-        print("found cached fs")
 
         if expiry is None or expiry > datetime.now(timezone.utc):
-            print("cached fs not expired")
             return fs
 
     return None
@@ -57,7 +55,6 @@ def _get_s3_creds_from_provider_cached(provider: Callable[[], S3Credentials]) ->
         _CACHED_S3_CREDS[provider].expiry is not None
         and _CACHED_S3_CREDS[provider].expiry <= datetime.now(timezone.utc)  # type: ignore
     ):
-        print("calling provider")
         _CACHED_S3_CREDS[provider] = provider()
 
     return _CACHED_S3_CREDS[provider]
@@ -147,7 +144,6 @@ def _resolve_paths_and_filesystem(
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
     """
-    print("resolving path and fs")
     if isinstance(paths, pathlib.Path):
         paths = str(paths)
     if isinstance(paths, str):
@@ -221,7 +217,6 @@ def _infer_filesystem(
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
     """
-    print("inferring file system: ", io_config)
     protocol = get_protocol_from_path(path)
     translated_kwargs: dict[str, Any]
 
