@@ -59,7 +59,7 @@ def run(
     with open(query_file) as f:
         query = f.read()
 
-    info_path = Path("/") / "tmp" / "ray" / "info"
+    info_path = Path("/tmp") / "ray" / "session_latest" / "logs" / "info"
     info_path.mkdir(parents=True, exist_ok=True)
 
     explain_delta = None
