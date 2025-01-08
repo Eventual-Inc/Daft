@@ -32,9 +32,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos, windows]
-        compile_arch: [x86_64, aarch64]
-        lts: [0, 1] # LongTerm Support CPUs
+        # os: [ubuntu, macos, windows]
+        os: [ubuntu]
+        # compile_arch: [x86_64, aarch64]
+        compile_arch: [x86_64]
+        # lts: [0, 1] # LongTerm Support CPUs
+        lts: [1] # LongTerm Support CPUs
         exclude:
         - os: windows
           compile_arch: aarch64
@@ -57,7 +60,14 @@ jobs:
       run: tomlq -i -t ".project.name = \"daft-lts\"" pyproject.toml
 
     - name: Configure RUSTFLAGS
-      run: if [[ ${{ matrix.lts }}  ]]; then echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b" >> $GITHUB_ENV echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16" >> $GITHUB_ENV else echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe -Z tune-cpu=skylake" >> $GITHUB_ENV echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe" >> $GITHUB_ENV fi
+      run: |
+        if [[ ${{ matrix.lts }} ]]; then
+          echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b" >> $GITHUB_ENV \
+          echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16" >> $GITHUB_ENV \
+        else \
+          echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe -Z tune-cpu=skylake" >> $GITHUB_ENV \
+          echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe" >> $GITHUB_ENV \
+        fi
 
     - name: Build wheels - Mac and Windows x86
       if: ${{ ((matrix.os == 'macos') || (matrix.os == 'windows')) && (matrix.compile_arch == 'x86_64')  }}
