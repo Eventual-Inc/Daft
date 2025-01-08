@@ -1,11 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#   "getdaft",
-#   "ray[default]==2.34",
-# ]
-# ///
-
 import argparse
 from datetime import datetime
 from pathlib import Path
