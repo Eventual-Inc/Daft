@@ -278,13 +278,13 @@ def test_binary_concat_errors() -> None:
     # Test concat with wrong number of arguments
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [b"foo", b"bar"], "c": [b"test", b"data"]})
     with pytest.raises(
-        Exception, match="ExpressionBinaryNamespace.concat\\(\\) takes 2 positional arguments but 3 were given"
+        Exception, match="(?:ExpressionBinaryNamespace.)?concat\\(\\) takes 2 positional arguments but 3 were given"
     ):
         table.eval_expression_list([col("a").binary.concat(col("b"), col("c"))])
 
     # Test concat with no arguments
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"]})
     with pytest.raises(
-        Exception, match="ExpressionBinaryNamespace.concat\\(\\) missing 1 required positional argument: 'other'"
+        Exception, match="(?:ExpressionBinaryNamespace.)?concat\\(\\) missing 1 required positional argument: 'other'"
     ):
         table.eval_expression_list([col("a").binary.concat()])

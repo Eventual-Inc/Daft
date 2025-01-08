@@ -315,14 +315,14 @@ def test_binary_substr_errors() -> None:
     )
     with pytest.raises(
         Exception,
-        match="ExpressionBinaryNamespace.substr\\(\\) takes from 2 to 3 positional arguments but 4 were given",
+        match="(?:ExpressionBinaryNamespace.)?substr\\(\\) takes from 2 to 3 positional arguments but 4 were given",
     ):
         table.eval_expression_list([col("col").binary.substr(col("start"), col("length"), col("extra"))])
 
     # Test substr with wrong number of arguments (too few)
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [1, 2]})
     with pytest.raises(
-        Exception, match="ExpressionBinaryNamespace.substr\\(\\) missing 1 required positional argument: 'start'"
+        Exception, match="(?:ExpressionBinaryNamespace.)?substr\\(\\) missing 1 required positional argument: 'start'"
     ):
         table.eval_expression_list([col("col").binary.substr()])
 
