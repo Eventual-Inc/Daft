@@ -3634,20 +3634,20 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [b"Hello World", b"\\xff\\xfe\\x00", b"empty"]})
+            >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
             >>> df = df.select(df["x"].binary.substr(1, 3))
             >>> df.show()
-            ╭───────────────╮
-            │ x             │
-            │ ---           │
-            │ Binary        │
-            ╞═══════════════╡
-            │ b"ell"        │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b"\\xfe\\x00" │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b"mpt"        │
-            ╰───────────────╯
+            ╭─────────────╮
+            │ x           │
+            │ ---         │
+            │ Binary      │
+            ╞═════════════╡
+            │ b"ell"      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"\xfe\x00" │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"mpt"      │
+            ╰─────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
