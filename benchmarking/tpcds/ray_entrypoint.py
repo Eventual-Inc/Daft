@@ -1,4 +1,10 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["getdaft", "ray[default]==2.34"]
+# ///
+
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 import daft
@@ -36,7 +42,7 @@ def register_catalog(scale_factor: int) -> SQLCatalog:
     return SQLCatalog(
         tables={
             table: daft.read_parquet(
-                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/{scale_factor}/{table}.parquet"
+                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/{scale_factor}/{table}"
             )
             for table in TABLE_NAMES
         }
@@ -53,9 +59,26 @@ def run(
     with open(query_file) as f:
         query = f.read()
 
-    daft.sql(query, catalog=catalog).explain(show_all=True)
+    info_path = Path("/") / "tmp" / "ray" / "info"
+    info_path.mkdir(parents=True, exist_ok=True)
+
+    explain_delta = None
+    with open(info_path / f"plan-{question}.txt", "w") as f:
+        explain_start = datetime.now()
+        daft.sql(query, catalog=catalog).explain(show_all=True, file=f)
+        explain_end = datetime.now()
+        explain_delta = explain_end - explain_start
+
+    execute_delta = None
     if not dry_run:
+        execute_start = datetime.now()
         daft.sql(query, catalog=catalog).collect()
+        execute_end = datetime.now()
+        execute_delta = execute_end - execute_start
+
+    with open(info_path / f"stats-{question}.txt", "w") as f:
+        f.write(f"planning-time = {explain_delta}\n")
+        f.write(f"execution-time = {execute_delta}\n")
 
 
 if __name__ == "__main__":
