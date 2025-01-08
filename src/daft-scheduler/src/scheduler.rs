@@ -352,7 +352,9 @@ fn physical_plan_to_partition_tasks(
             Ok(py_iter.into())
         }
 
-        PhysicalPlan::Filter(Filter { input, predicate }) => {
+        PhysicalPlan::Filter(Filter {
+            input, predicate, ..
+        }) => {
             let upstream_iter =
                 physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let expressions_mod =

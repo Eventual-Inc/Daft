@@ -187,69 +187,48 @@ impl PhysicalPlan {
     pub fn approximate_stats(&self) -> ApproxStats {
         match self {
             Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => ApproxStats {
-                lower_bound_rows: in_memory_info.num_rows,
-                upper_bound_rows: Some(in_memory_info.num_rows),
-                lower_bound_bytes: in_memory_info.size_bytes,
-                upper_bound_bytes: Some(in_memory_info.size_bytes),
+                num_rows: in_memory_info.num_rows,
+                size_bytes: in_memory_info.size_bytes,
             },
             Self::TabularScan(TabularScan { scan_tasks, .. }) => {
-                let mut stats = ApproxStats::empty();
+                let mut approx_stats = ApproxStats::empty();
                 for st in scan_tasks.iter() {
-                    stats.lower_bound_rows += st.num_rows().unwrap_or(0);
-                    let in_memory_size = st.estimate_in_memory_size_bytes(None);
-                    stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
-                    if let Some(st_ub) = st.upper_bound_rows() {
-                        if let Some(ub) = stats.upper_bound_rows {
-                            stats.upper_bound_rows = Some(ub + st_ub);
-                        } else {
-                            stats.upper_bound_rows = st.upper_bound_rows();
-                        }
-                    }
-                    if let Some(st_ub) = in_memory_size {
-                        if let Some(ub) = stats.upper_bound_bytes {
-                            stats.upper_bound_bytes = Some(ub + st_ub);
-                        } else {
-                            stats.upper_bound_bytes = in_memory_size;
-                        }
-                    }
+                    approx_stats.num_rows += st
+                        .num_rows()
+                        .unwrap_or_else(|| st.approx_num_rows(None).unwrap_or(0.0) as usize);
+                    approx_stats.size_bytes += st.estimate_in_memory_size_bytes(None).unwrap_or(0);
                 }
-                stats
+                approx_stats
             }
             Self::EmptyScan(..) => ApproxStats {
-                lower_bound_rows: 0,
-                upper_bound_rows: Some(0),
-                lower_bound_bytes: 0,
-                upper_bound_bytes: Some(0),
+                num_rows: 0,
+                size_bytes: 0,
             },
             // Assume no row/column pruning in cardinality-affecting operations.
             // TODO(Clark): Estimate row/column pruning to get a better size approximation.
-            Self::Filter(Filter { input, .. }) => {
+            Self::Filter(Filter {
+                input,
+                estimated_selectivity,
+                ..
+            }) => {
                 let input_stats = input.approximate_stats();
                 ApproxStats {
-                    lower_bound_rows: 0,
-                    upper_bound_rows: input_stats.upper_bound_rows,
-                    lower_bound_bytes: 0,
-                    upper_bound_bytes: input_stats.upper_bound_bytes,
+                    num_rows: (input_stats.num_rows as f64 * estimated_selectivity).ceil() as usize,
+                    size_bytes: (input_stats.size_bytes as f64 * estimated_selectivity).ceil()
+                        as usize,
                 }
             }
             Self::Limit(Limit { input, limit, .. }) => {
-                let limit = *limit as usize;
                 let input_stats = input.approximate_stats();
-                let est_bytes_per_row_lower =
-                    input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
-                let est_bytes_per_row_upper = input_stats
-                    .upper_bound_bytes
-                    .and_then(|bytes| input_stats.upper_bound_rows.map(|rows| bytes / rows.max(1)));
-                let new_lower_rows = input_stats.lower_bound_rows.min(limit);
-                let new_upper_rows = input_stats
-                    .upper_bound_rows
-                    .map(|ub| ub.min(limit))
-                    .unwrap_or(limit);
+                let limit = *limit as usize;
+                let est_bytes_per_row = input_stats.size_bytes / input_stats.num_rows;
                 ApproxStats {
-                    lower_bound_rows: new_lower_rows,
-                    upper_bound_rows: Some(new_upper_rows),
-                    lower_bound_bytes: new_lower_rows * est_bytes_per_row_lower,
-                    upper_bound_bytes: est_bytes_per_row_upper.map(|x| x * new_upper_rows),
+                    num_rows: limit.min(input_stats.num_rows),
+                    size_bytes: if input_stats.num_rows > limit {
+                        limit * est_bytes_per_row
+                    } else {
+                        input_stats.size_bytes
+                    },
                 }
             }
             Self::Project(Project { input, .. })
@@ -265,11 +244,10 @@ impl PhysicalPlan {
                 .apply(|v| ((v as f64) * fraction) as usize),
             Self::Explode(Explode { input, .. }) => {
                 let input_stats = input.approximate_stats();
+                let est_num_exploded_rows = input_stats.num_rows * 4;
                 ApproxStats {
-                    lower_bound_rows: input_stats.lower_bound_rows,
-                    upper_bound_rows: None,
-                    lower_bound_bytes: input_stats.lower_bound_bytes,
-                    upper_bound_bytes: None,
+                    num_rows: est_num_exploded_rows,
+                    size_bytes: input_stats.size_bytes,
                 }
             }
             // Propagate child approximation for operations that don't affect cardinality.
@@ -294,53 +272,35 @@ impl PhysicalPlan {
                 let right_stats = right.approximate_stats();
 
                 ApproxStats {
-                    lower_bound_rows: 0,
-                    upper_bound_rows: left_stats
-                        .upper_bound_rows
-                        .and_then(|l| right_stats.upper_bound_rows.map(|r| l.max(r))),
-                    lower_bound_bytes: 0,
-                    upper_bound_bytes: left_stats
-                        .upper_bound_bytes
-                        .and_then(|l| right_stats.upper_bound_bytes.map(|r| l.max(r))),
+                    num_rows: left_stats.num_rows.max(right_stats.num_rows),
+                    size_bytes: left_stats.size_bytes.max(right_stats.size_bytes),
                 }
             }
             // TODO(Clark): Approximate post-aggregation sizes via grouping estimates + aggregation type.
             Self::Aggregate(Aggregate { input, groupby, .. }) => {
                 let input_stats = input.approximate_stats();
                 // TODO we should use schema inference here
-                let est_bytes_per_row_lower =
-                    input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
-                let est_bytes_per_row_upper = input_stats
-                    .upper_bound_bytes
-                    .and_then(|bytes| input_stats.upper_bound_rows.map(|rows| bytes / rows.max(1)));
+                let est_bytes_per_row = input_stats.size_bytes / (input_stats.num_rows.max(1));
                 if groupby.is_empty() {
                     ApproxStats {
-                        lower_bound_rows: input_stats.lower_bound_rows.min(1),
-                        upper_bound_rows: Some(1),
-                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1)
-                            * est_bytes_per_row_lower,
-                        upper_bound_bytes: est_bytes_per_row_upper,
+                        num_rows: 1,
+                        size_bytes: est_bytes_per_row,
                     }
                 } else {
-                    // we should use the new schema here
+                    // TODO: Make a better estimation. Currently we assume that the groupby reduces the number of rows by 20%.
+                    let est_num_groups = input_stats.num_rows / 5 * 4;
                     ApproxStats {
-                        lower_bound_rows: input_stats.lower_bound_rows.min(1),
-                        upper_bound_rows: input_stats.upper_bound_rows,
-                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1)
-                            * est_bytes_per_row_lower,
-                        upper_bound_bytes: input_stats.upper_bound_bytes,
+                        num_rows: est_num_groups,
+                        size_bytes: est_bytes_per_row * est_num_groups,
                     }
                 }
             }
             Self::Unpivot(Unpivot { input, values, .. }) => {
                 let input_stats = input.approximate_stats();
                 let num_values = values.len();
-                // the number of bytes should be the name but nows should be multiplied by num_values
                 ApproxStats {
-                    lower_bound_rows: input_stats.lower_bound_rows * num_values,
-                    upper_bound_rows: input_stats.upper_bound_rows.map(|v| v * num_values),
-                    lower_bound_bytes: input_stats.lower_bound_bytes,
-                    upper_bound_bytes: input_stats.upper_bound_bytes,
+                    num_rows: input_stats.num_rows * num_values,
+                    size_bytes: input_stats.size_bytes,
                 }
             }
             // Post-write DataFrame will contain paths to files that were written.
@@ -408,7 +368,7 @@ impl PhysicalPlan {
                 ).unwrap()),
 
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
-                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
+                Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),

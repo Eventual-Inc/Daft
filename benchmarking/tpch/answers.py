@@ -375,7 +375,8 @@ def q12(get_df: GetDFFunc) -> DataFrame:
     daft_df = (
         orders.join(lineitem, left_on=col("O_ORDERKEY"), right_on=col("L_ORDERKEY"))
         .where(
-            col("L_SHIPMODE").is_in(["MAIL", "SHIP"])
+            # col("L_SHIPMODE").is_in(["MAIL", "SHIP"])
+            ((col("L_SHIPMODE") == "MAIL") | (col("L_SHIPMODE") == "SHIP"))
             & (col("L_COMMITDATE") < col("L_RECEIPTDATE"))
             & (col("L_SHIPDATE") < col("L_COMMITDATE"))
             & (col("L_RECEIPTDATE") >= datetime.date(1994, 1, 1))
@@ -475,7 +476,17 @@ def q16(get_df: GetDFFunc) -> DataFrame:
         .where(
             (col("P_BRAND") != "Brand#45")
             & ~col("P_TYPE").str.startswith("MEDIUM POLISHED")
-            & (col("P_SIZE").is_in([49, 14, 23, 45, 19, 3, 36, 9]))
+            # & (col("P_SIZE").is_in([49, 14, 23, 45, 19, 3, 36, 9]))
+            & (
+                (col("P_SIZE") == 49)
+                | (col("P_SIZE") == 14)
+                | (col("P_SIZE") == 23)
+                | (col("P_SIZE") == 45)
+                | (col("P_SIZE") == 19)
+                | (col("P_SIZE") == 3)
+                | (col("P_SIZE") == 36)
+                | (col("P_SIZE") == 9)
+            )
         )
         .join(suppkeys, left_on="PS_SUPPKEY", right_on="S_SUPPKEY", how="left")
         .where(col("PS_SUPPKEY_RIGHT").is_null())
@@ -544,8 +555,8 @@ def q19(get_df: GetDFFunc) -> DataFrame:
                 & (col("L_QUANTITY") <= 11)
                 & (col("P_SIZE") >= 1)
                 & (col("P_SIZE") <= 5)
-                & col("L_SHIPMODE").is_in(["AIR", "AIR REG"])
-                & (col("L_SHIPINSTRUCT") == "DELIVER IN PERSON")
+                # & col("L_SHIPMODE").is_in(["AIR", "AIR REG"])
+                # & (col("L_SHIPINSTRUCT") == "DELIVER IN PERSON")
             )
             | (
                 (col("P_BRAND") == "Brand#23")
@@ -554,8 +565,8 @@ def q19(get_df: GetDFFunc) -> DataFrame:
                 & (col("L_QUANTITY") <= 20)
                 & (col("P_SIZE") >= 1)
                 & (col("P_SIZE") <= 10)
-                & col("L_SHIPMODE").is_in(["AIR", "AIR REG"])
-                & (col("L_SHIPINSTRUCT") == "DELIVER IN PERSON")
+                # & col("L_SHIPMODE").is_in(["AIR", "AIR REG"])
+                # & (col("L_SHIPINSTRUCT") == "DELIVER IN PERSON")
             )
             | (
                 (col("P_BRAND") == "Brand#34")
@@ -564,10 +575,12 @@ def q19(get_df: GetDFFunc) -> DataFrame:
                 & (col("L_QUANTITY") <= 30)
                 & (col("P_SIZE") >= 1)
                 & (col("P_SIZE") <= 15)
-                & col("L_SHIPMODE").is_in(["AIR", "AIR REG"])
-                & (col("L_SHIPINSTRUCT") == "DELIVER IN PERSON")
+                # & col("L_SHIPMODE").is_in(["AIR", "AIR REG"])
+                # & (col("L_SHIPINSTRUCT") == "DELIVER IN PERSON")
             )
         )
+        .where((col("L_SHIPMODE") == "AIR") | (col("L_SHIPMODE") == "AIR REG"))
+        .where(col("L_SHIPINSTRUCT") == "DELIVER IN PERSON")
         .agg((col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))).sum().alias("revenue"))
     )
 
@@ -595,7 +608,6 @@ def q20(get_df: GetDFFunc) -> DataFrame:
     daft_df = (
         part.where(col("P_NAME").str.startswith("forest"))
         .select("P_PARTKEY")
-        .distinct()
         .join(partsupp, left_on="P_PARTKEY", right_on="PS_PARTKEY")
         .join(
             res_1,
@@ -604,7 +616,6 @@ def q20(get_df: GetDFFunc) -> DataFrame:
         )
         .where(col("PS_AVAILQTY") > col("sum_quantity"))
         .select("PS_SUPPKEY")
-        .distinct()
         .join(res_3, left_on="PS_SUPPKEY", right_on="S_SUPPKEY")
         .select("S_NAME", "S_ADDRESS")
         .sort("S_NAME")
@@ -621,7 +632,6 @@ def q21(get_df: GetDFFunc) -> DataFrame:
 
     res_1 = (
         lineitem.select("L_SUPPKEY", "L_ORDERKEY")
-        .distinct()
         .groupby("L_ORDERKEY")
         .agg(col("L_SUPPKEY").count().alias("nunique_col"))
         .where(col("nunique_col") > 1)
@@ -652,7 +662,16 @@ def q22(get_df: GetDFFunc) -> DataFrame:
 
     res_1 = (
         customer.with_column("cntrycode", col("C_PHONE").str.left(2))
-        .where(col("cntrycode").is_in(["13", "31", "23", "29", "30", "18", "17"]))
+        # .where(col("cntrycode").is_in(["13", "31", "23", "29", "30", "18", "17"]))
+        .where(
+            (col("cntrycode") == "13")
+            | (col("cntrycode") == "31")
+            | (col("cntrycode") == "23")
+            | (col("cntrycode") == "29")
+            | (col("cntrycode") == "30")
+            | (col("cntrycode") == "18")
+            | (col("cntrycode") == "17")
+        )
         .select("C_ACCTBAL", "C_CUSTKEY", "cntrycode")
     )
 
