@@ -5,7 +5,11 @@ use common_partitioning::{Partition, PartitionSet, PartitionSetCache};
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::python::PyMicroPartition;
 use futures::stream::BoxStream;
-use pyo3::{intern, prelude::*, types::PyDict};
+use pyo3::{
+    intern,
+    prelude::*,
+    types::{PyDict, PyIterator},
+};
 
 /// this is the python `MicroPartition` object, NOT the `PyMicroPartition` object, which is the native rust object
 /// so yes, a rust wrapper around a python wrapper around a rust object
@@ -57,12 +61,6 @@ impl RayPartitionSetShim {
             })
         })
     }
-    fn run_iter_impl(
-        lp: LogicalPlanBuilder,
-        results_buffer_size: Option<usize>,
-    )  {
-        todo!()
-    }
 }
 
 #[pymethods]
@@ -72,69 +70,18 @@ impl RayPartitionSetShim {
         Self::try_new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{:?}", e)))
     }
-    pub fn run_iter(&self, py: Python, lp: PyObject, results_buffer_size: Option<usize>) -> PyResult<()> {
+
+    pub fn run_iter(
+        &self,
+        py: Python,
+        lp: PyObject,
+        results_buffer_size: Option<usize>,
+    ) -> PyResult<()> {
         let builder = lp.getattr(py, "_builder")?;
         let builder = builder.extract::<PyLogicalPlanBuilder>(py)?;
         let builder = builder.builder;
-        
+
         Ok(())
-    }
-    
-}
-
-impl PartitionSet<Arc<WrappedPyMicroPartition>> for RayPartitionSetShim {
-    fn get_merged_partitions(&self) -> DaftResult<common_partitioning::PartitionRef> {
-        todo!()
-    }
-
-    fn get_preview_partitions(
-        &self,
-        num_rows: usize,
-    ) -> DaftResult<Vec<Arc<WrappedPyMicroPartition>>> {
-        todo!()
-    }
-
-    fn num_partitions(&self) -> usize {
-        todo!()
-    }
-
-    fn len(&self) -> usize {
-        todo!()
-    }
-
-    fn size_bytes(&self) -> DaftResult<usize> {
-        todo!()
-    }
-
-    fn has_partition(&self, idx: &common_partitioning::PartitionId) -> bool {
-        todo!()
-    }
-
-    fn delete_partition(&self, idx: &common_partitioning::PartitionId) -> DaftResult<()> {
-        todo!()
-    }
-
-    fn set_partition(
-        &self,
-        idx: common_partitioning::PartitionId,
-        part: &Arc<WrappedPyMicroPartition>,
-    ) -> DaftResult<()> {
-        todo!()
-    }
-
-    fn get_partition(
-        &self,
-        idx: &common_partitioning::PartitionId,
-    ) -> DaftResult<Arc<WrappedPyMicroPartition>> {
-        todo!()
-    }
-
-    fn to_partition_stream(&self) -> BoxStream<'static, DaftResult<Arc<WrappedPyMicroPartition>>> {
-        todo!()
-    }
-
-    fn metadata(&self) -> common_partitioning::PartitionMetadata {
-        todo!()
     }
 }
 
@@ -152,7 +99,6 @@ impl RayRunnerShim {
         Python::with_gil(|py| {
             let ray_runner_module = py.import_bound("daft.runners.ray_runner")?;
             let ray_runner = ray_runner_module.getattr("RayRunner")?;
-            println!("ray_runner: {:?}", ray_runner);
             let kwargs = PyDict::new_bound(py);
             kwargs.set_item("address", address)?;
             kwargs.set_item("max_task_backlog", max_task_backlog)?;
@@ -164,6 +110,31 @@ impl RayRunnerShim {
             Ok(Self {
                 ray_runner: instance,
             })
+        })
+    }
+
+    fn run_iter_impl(
+        &self,
+        lp: LogicalPlanBuilder,
+        results_buffer_size: Option<usize>,
+    ) -> DaftResult<()> {
+        let py_lp = PyLogicalPlanBuilder::new(lp);
+        Python::with_gil(|py| {
+            let builder = py.import_bound("daft.logical.builder")?;
+            let builder = builder.getattr("LogicalPlanBuilder")?;
+            let builder = builder.call((py_lp,), None)?;
+            // let builder = builder.to_object(py);
+            let result = self
+                .ray_runner
+                .call_method_bound(py, "run_iter", (builder, results_buffer_size), None)?
+                .into_bound(py);
+
+            let iter = PyIterator::from_bound_object(&result)?;
+            for item in iter {
+                println!("{:?}", item);
+            }
+
+            Ok(())
         })
     }
 }
@@ -179,8 +150,15 @@ impl RayRunnerShim {
         Self::try_new(address, max_task_backlog, force_client_mode)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{:?}", e)))
     }
-    pub fn run(&self, py: Python) -> PyResult<PyObject> {
-        todo!()
+
+    pub fn run_iter(&self, py: Python, builder: PyObject) -> PyResult<PyObject> {
+        let builder = builder.getattr(py, "_builder")?;
+        let builder = builder.extract::<PyLogicalPlanBuilder>(py)?;
+        let builder = builder.builder;
+        self.run_iter_impl(builder, None)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{:?}", e)))?;
+
+        Ok(py.None())
     }
 }
 
