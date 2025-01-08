@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
     count_actor_pool_udfs,
-    functions::python::{get_batch_size, get_concurrency},
+    functions::python::{get_batch_size, get_concurrency, get_resource_request},
     ExprRef,
 };
 #[cfg(feature = "python")]
@@ -14,7 +13,7 @@ use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -22,7 +21,7 @@ use super::intermediate_op::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 struct ActorHandle {
@@ -126,6 +125,7 @@ pub struct ActorPoolProjectOperator {
     projection: Vec<ExprRef>,
     concurrency: usize,
     batch_size: Option<usize>,
+    memory_request: u64,
 }
 
 impl ActorPoolProjectOperator {
@@ -140,10 +140,15 @@ impl ActorPoolProjectOperator {
         let concurrency = get_concurrency(&projection);
         let batch_size = get_batch_size(&projection);
 
+        let memory_request = get_resource_request(&projection)
+            .and_then(|req| req.memory_bytes())
+            .map(|m| m as u64)
+            .unwrap_or(0);
         Self {
             projection,
             concurrency,
             batch_size,
+            memory_request,
         }
     }
 }
@@ -154,19 +159,24 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
-        let fut = runtime.spawn(async move {
-            let actor_pool_project_state = state
-                .as_any_mut()
-                .downcast_mut::<ActorPoolProjectState>()
-                .expect("ActorPoolProjectState");
-            let res = actor_pool_project_state
-                .actor_handle
-                .eval_input(input)
-                .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
-            Ok((state, res))
-        });
+        let memory_request = self.memory_request;
+        let fut = task_spawner.spawn_with_memory_request(
+            memory_request,
+            async move {
+                let actor_pool_project_state = state
+                    .as_any_mut()
+                    .downcast_mut::<ActorPoolProjectState>()
+                    .expect("ActorPoolProjectState");
+                let res = actor_pool_project_state
+                    .actor_handle
+                    .eval_input(input)
+                    .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
+                Ok((state, res))
+            },
+            Span::current(),
+        );
         fut.into()
     }
 

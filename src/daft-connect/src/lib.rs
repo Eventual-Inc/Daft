@@ -6,6 +6,7 @@
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
 
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use dashmap::DashMap;
 use eyre::Context;
 #[cfg(feature = "python")]
@@ -22,12 +23,13 @@ use spark_connect::{
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::session::Session;
+use crate::{display::SparkDisplay, session::Session, translation::SparkAnalyzer};
 
 mod config;
+mod display;
 mod err;
 mod op;
 mod runner;
@@ -303,7 +305,7 @@ impl SparkConnectService for DaftSparkConnectService {
                     return Err(Status::invalid_argument("op_type is required to be root"));
                 };
 
-                let result = match translation::relation_to_schema(relation).await {
+                let result = match translation::relation_to_spark_schema(relation).await {
                     Ok(schema) => schema,
                     Err(e) => {
                         return invalid_argument_err!(
@@ -342,6 +344,50 @@ impl SparkConnectService for DaftSparkConnectService {
                     session_id,
                     server_side_session_id: String::new(),
                     result: Some(analyze_plan_response::Result::Schema(schema)),
+                };
+
+                Ok(Response::new(response))
+            }
+            Analyze::TreeString(TreeString { plan, level }) => {
+                let Some(plan) = plan else {
+                    return invalid_argument_err!("plan is required");
+                };
+
+                if let Some(level) = level {
+                    warn!("ignoring tree string level: {level:?}");
+                };
+
+                let Some(op_type) = plan.op_type else {
+                    return invalid_argument_err!("op_type is required");
+                };
+
+                let OpType::Root(input) = op_type else {
+                    return invalid_argument_err!("op_type must be Root");
+                };
+
+                if let Some(common) = &input.common {
+                    if common.origin.is_some() {
+                        warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+                    }
+                }
+
+                // We're just checking the schema here, so we don't need to use a persistent cache as it won't be used
+                let pset = InMemoryPartitionSetCache::empty();
+                let translator = SparkAnalyzer::new(&pset);
+                let plan = Box::pin(translator.to_logical_plan(input))
+                    .await
+                    .unwrap()
+                    .build();
+
+                let schema = plan.schema();
+                let tree_string = schema.repr_spark_string();
+
+                let response = AnalyzePlanResponse {
+                    session_id,
+                    server_side_session_id: String::new(),
+                    result: Some(analyze_plan_response::Result::TreeString(
+                        analyze_plan_response::TreeString { tree_string },
+                    )),
                 };
 
                 Ok(Response::new(response))

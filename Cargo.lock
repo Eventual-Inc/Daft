@@ -2285,6 +2285,7 @@ dependencies = [
  "common-file-formats",
  "common-runtime",
  "common-scan-info",
+ "common-system-info",
  "common-tracing",
  "daft-core",
  "daft-csv",

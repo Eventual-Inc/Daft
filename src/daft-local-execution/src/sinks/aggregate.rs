@@ -1,18 +1,17 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::{Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::NUM_CPUS;
+use crate::{ExecutionTaskSpawner, NUM_CPUS};
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -90,19 +89,22 @@ impl BlockingSink for AggregateSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
         let params = self.agg_sink_params.clone();
-        runtime
-            .spawn(async move {
-                let agg_state = state
-                    .as_any_mut()
-                    .downcast_mut::<AggregateState>()
-                    .expect("AggregateSink should have AggregateState");
-                let agged = Arc::new(input.agg(&params.sink_agg_exprs, &[])?);
-                agg_state.push(agged);
-                Ok(BlockingSinkStatus::NeedMoreInput(state))
-            })
+        spawner
+            .spawn(
+                async move {
+                    let agg_state = state
+                        .as_any_mut()
+                        .downcast_mut::<AggregateState>()
+                        .expect("AggregateSink should have AggregateState");
+                    let agged = Arc::new(input.agg(&params.sink_agg_exprs, &[])?);
+                    agg_state.push(agged);
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
             .into()
     }
 
@@ -110,23 +112,26 @@ impl BlockingSink for AggregateSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.agg_sink_params.clone();
-        runtime
-            .spawn(async move {
-                let all_parts = states.into_iter().flat_map(|mut state| {
-                    state
-                        .as_any_mut()
-                        .downcast_mut::<AggregateState>()
-                        .expect("AggregateSink should have AggregateState")
-                        .finalize()
-                });
-                let concated = MicroPartition::concat(all_parts)?;
-                let agged = concated.agg(&params.finalize_agg_exprs, &[])?;
-                let projected = agged.eval_expression_list(&params.final_projections)?;
-                Ok(Some(Arc::new(projected)))
-            })
+        spawner
+            .spawn(
+                async move {
+                    let all_parts = states.into_iter().flat_map(|mut state| {
+                        state
+                            .as_any_mut()
+                            .downcast_mut::<AggregateState>()
+                            .expect("AggregateSink should have AggregateState")
+                            .finalize()
+                    });
+                    let concated = MicroPartition::concat(all_parts)?;
+                    let agged = concated.agg(&params.finalize_agg_exprs, &[])?;
+                    let projected = agged.eval_expression_list(&params.final_projections)?;
+                    Ok(Some(Arc::new(projected)))
+                },
+                Span::current(),
+            )
             .into()
     }
 
