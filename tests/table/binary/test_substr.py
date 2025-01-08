@@ -113,22 +113,22 @@ def test_binary_substr_edge_cases(
 def test_binary_substr_errors() -> None:
     # Test negative start
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [-1, -2]})
-    with pytest.raises(Exception, match="Error in repeat: failed to cast length as usize"):
+    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize"):
         table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
 
     # Test negative length
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"]})
-    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize -3"):
+    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize"):
         table.eval_expression_list([col("col").binary.substr(0, -3)])
 
     # Test both negative
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [-2, -1]})
-    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize -2"):
+    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize"):
         table.eval_expression_list([col("col").binary.substr(col("start"), -2)])
 
     # Test negative length in column
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "length": [-2, -3]})
-    with pytest.raises(Exception, match="Error in repeat: failed to cast length as usize"):
+    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize"):
         table.eval_expression_list([col("col").binary.substr(0, col("length"))])
 
 

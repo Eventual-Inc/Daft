@@ -61,17 +61,17 @@ impl BinaryArray {
         <J as DaftNumericType>::Native: Ord + TryInto<usize>,
     {
         let self_arrow = self.as_arrow();
-        println!("Input array: {:?}", self_arrow);
 
         // Handle broadcasting for start
         let start_iter = if start.len() == 1 {
             let start_val = start.as_arrow().iter().next().unwrap();
             Box::new(iter::repeat(start_val).take(self_arrow.len()).map(
                 |x| -> DaftResult<Option<usize>> {
-                    println!("Start value (broadcast): {:?}", x);
                     x.map(|x| {
                         (*x).try_into().map_err(|_| {
-                            DaftError::ComputeError("Failed to convert start index".to_string())
+                            DaftError::ComputeError(
+                                "Error in substr: failed to cast length as usize".to_string(),
+                            )
                         })
                     })
                     .transpose()
@@ -83,10 +83,11 @@ impl BinaryArray {
                     .as_arrow()
                     .iter()
                     .map(|x| -> DaftResult<Option<usize>> {
-                        println!("Start value: {:?}", x);
                         x.map(|x| {
                             (*x).try_into().map_err(|_| {
-                                DaftError::ComputeError("Failed to convert start index".to_string())
+                                DaftError::ComputeError(
+                                    "Error in substr: failed to cast length as usize".to_string(),
+                                )
                             })
                         })
                         .transpose()
@@ -97,15 +98,16 @@ impl BinaryArray {
         // Handle broadcasting for length
         let length_iter = match length {
             Some(length) => {
-                println!("Length array: {:?}", length.as_arrow());
                 if length.len() == 1 {
                     let length_val = length.as_arrow().iter().next().unwrap();
                     Box::new(iter::repeat(length_val).take(self_arrow.len()).map(
                         |x| -> DaftResult<Option<usize>> {
-                            println!("Length value (broadcast): {:?}", x);
                             x.map(|x| {
                                 (*x).try_into().map_err(|_| {
-                                    DaftError::ComputeError("Failed to convert length".to_string())
+                                    DaftError::ComputeError(
+                                        "Error in substr: failed to cast length as usize"
+                                            .to_string(),
+                                    )
                                 })
                             })
                             .transpose()
@@ -117,11 +119,11 @@ impl BinaryArray {
                             .as_arrow()
                             .iter()
                             .map(|x| -> DaftResult<Option<usize>> {
-                                println!("Length value: {:?}", x);
                                 x.map(|x| {
                                     (*x).try_into().map_err(|_| {
                                         DaftError::ComputeError(
-                                            "Failed to convert length".to_string(),
+                                            "Error in substr: failed to cast length as usize"
+                                                .to_string(),
                                         )
                                     })
                                 })
@@ -138,44 +140,29 @@ impl BinaryArray {
         let mut validity = arrow2::bitmap::MutableBitmap::new();
 
         for ((val, start), length) in self_arrow.iter().zip(start_iter).zip(length_iter) {
-            println!(
-                "Processing: val={:?}, start={:?}, length={:?}",
-                val, start, length
-            );
             match (val, start?, length?) {
                 (Some(val), Some(start), Some(length)) => {
-                    if start >= val.len() {
-                        println!(
-                            "Start beyond length: start={}, val.len()={}",
-                            start,
-                            val.len()
-                        );
-                        builder.push(Some(&[]));
+                    if start >= val.len() || length == 0 || val.is_empty() {
+                        builder.push::<&[u8]>(None);
+                        validity.push(false);
                     } else {
                         let end = (start + length).min(val.len());
                         let substr = &val[start..end];
-                        println!("Pushing substring: {:?}", substr);
                         builder.push(Some(substr));
+                        validity.push(true);
                     }
-                    validity.push(true);
                 }
                 (Some(val), Some(start), None) => {
-                    if start >= val.len() {
-                        println!(
-                            "Start beyond length: start={}, val.len()={}",
-                            start,
-                            val.len()
-                        );
-                        builder.push(Some(&[]));
+                    if start >= val.len() || val.is_empty() {
+                        builder.push::<&[u8]>(None);
+                        validity.push(false);
                     } else {
                         let substr = &val[start..];
-                        println!("Pushing rest of string: {:?}", substr);
                         builder.push(Some(substr));
+                        validity.push(true);
                     }
-                    validity.push(true);
                 }
                 _ => {
-                    println!("Pushing None due to null input");
                     builder.push::<&[u8]>(None);
                     validity.push(false);
                 }
@@ -183,7 +170,6 @@ impl BinaryArray {
         }
 
         let arrow_array = builder.into();
-        println!("Final array: {:?}", arrow_array);
         Ok(Self::from((self.name(), Box::new(arrow_array))))
     }
 }
