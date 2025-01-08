@@ -23,35 +23,22 @@ impl ScalarUDF for BinaryLength {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [data] => match data.to_field(schema) {
-                Ok(data_field) => match &data_field.dtype {
-                    DataType::Binary => Ok(Field::new(data_field.name, DataType::UInt64)),
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expects input to length to be binary, but received {data_field}",
-                    ))),
-                },
-                Err(e) => Err(e),
+        let data = &inputs[0];
+        match data.to_field(schema) {
+            Ok(data_field) => match &data_field.dtype {
+                DataType::Binary => Ok(Field::new(data_field.name, DataType::UInt64)),
+                _ => Err(DaftError::TypeError(format!(
+                    "Expects input to length to be binary, but received {data_field}",
+                ))),
             },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
-            ))),
+            Err(e) => Err(e),
         }
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [data] => {
-                let binary_array = data.downcast::<BinaryArray>()?;
-                let result = binary_array.length()?;
-                Ok(result.into_series())
-            }
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        let binary_array = inputs[0].downcast::<BinaryArray>()?;
+        let result = binary_array.length()?;
+        Ok(result.into_series())
     }
 }
 

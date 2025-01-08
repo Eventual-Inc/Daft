@@ -42,18 +42,10 @@ impl ScalarUDF for BinaryConcat {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [left, right] => {
-                let left_array = left.downcast::<BinaryArray>()?;
-                let right_array = right.downcast::<BinaryArray>()?;
-                let result = left_array.binary_concat(right_array)?;
-                Ok(result.into_series())
-            }
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        let left_array = inputs[0].downcast::<BinaryArray>()?;
+        let right_array = inputs[1].downcast::<BinaryArray>()?;
+        let result = left_array.binary_concat(right_array)?;
+        Ok(result.into_series())
     }
 }
 

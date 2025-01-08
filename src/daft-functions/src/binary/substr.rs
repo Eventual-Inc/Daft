@@ -48,13 +48,10 @@ impl ScalarUDF for BinarySubstr {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [data, start, length] => data.binary_substr(start, length),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 3 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        let data = &inputs[0];
+        let start = &inputs[1];
+        let length = &inputs[2];
+        data.binary_substr(start, length)
     }
 }
 
