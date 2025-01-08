@@ -246,7 +246,7 @@ impl JoinGraph {
                     }
                 }
                 ProjectionOrFilter::Filter(predicate) => {
-                    plan_builder = plan_builder.filter(predicate.clone())?;
+                    plan_builder = plan_builder.filter(predicate)?;
                 }
             }
         }
