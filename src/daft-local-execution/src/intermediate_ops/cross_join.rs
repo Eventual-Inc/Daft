@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
-use tracing::{info_span, instrument, Instrument};
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -132,8 +132,8 @@ impl IntermediateOperator for CrossJoinOperator {
                             IntermediateOperatorResult::HasMoreOutput(output_morsel)
                         };
                     Ok((state, result))
-                }
-                .instrument(info_span!("CrossJoinOperator::execute")),
+                },
+                Span::current(),
             )
             .into()
     }

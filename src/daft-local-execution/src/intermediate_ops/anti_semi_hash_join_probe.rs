@@ -6,7 +6,7 @@ use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState, Probeable};
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -130,16 +130,19 @@ impl IntermediateOperator for AntiSemiProbeOperator {
 
         let params = self.params.clone();
         task_spawner
-            .spawn(async move {
-                let probe_state = state
-                    .as_any_mut()
-                    .downcast_mut::<AntiSemiProbeState>()
-                    .expect("AntiSemiProbeState should be used with AntiSemiProbeOperator");
-                let probeable = probe_state.get_or_await_probeable().await;
-                let res =
-                    Self::probe_anti_semi(&params.probe_on, &probeable, &input, params.is_semi);
-                Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
-            })
+            .spawn(
+                async move {
+                    let probe_state = state
+                        .as_any_mut()
+                        .downcast_mut::<AntiSemiProbeState>()
+                        .expect("AntiSemiProbeState should be used with AntiSemiProbeOperator");
+                    let probeable = probe_state.get_or_await_probeable().await;
+                    let res =
+                        Self::probe_anti_semi(&params.probe_on, &probeable, &input, params.is_semi);
+                    Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
+                },
+                Span::current(),
+            )
             .into()
     }
 

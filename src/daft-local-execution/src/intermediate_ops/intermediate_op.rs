@@ -115,13 +115,12 @@ impl IntermediateNode {
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
-        let task_spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager);
+        let task_spawner =
+            ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
         let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
             loop {
-                let result = rt_context
-                    .in_span(&span, || op.execute(morsel.clone(), state, &task_spawner))
-                    .await??;
+                let result = op.execute(morsel.clone(), state, &task_spawner).await??;
                 state = result.0;
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
