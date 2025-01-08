@@ -38,10 +38,9 @@ jobs:
         exclude:
         - os: windows
           compile_arch: aarch64
-        - os: windows
-          lts: 1
         - lts: 1
           compile_arch: aarch64
+
     steps:
     - uses: actions/checkout@v4
       with:
@@ -59,6 +58,8 @@ jobs:
       run: tomlq -i -t ".project.name = \"daft-lts\"" pyproject.toml
 
     - name: Configure RUSTFLAGS
+      if: ${{ (matrix.compile_arch == 'x86_64') }}
+      shell: bash
       run: |
         if [[ ${{ matrix.lts }} ]]; then
           echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b" >> $GITHUB_ENV && \
