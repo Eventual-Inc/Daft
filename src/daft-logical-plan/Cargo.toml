@@ -39,6 +39,7 @@ python = [
   "common-io-config/python",
   "common-daft-config/python",
   "common-resource-request/python",
+  "common-partitioning/python",
   "common-scan-info/python",
   "daft-core/python",
   "daft-dsl/python",

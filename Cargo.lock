@@ -1925,6 +1925,7 @@ dependencies = [
  "daft-minhash",
  "daft-parquet",
  "daft-physical-plan",
+ "daft-ray-execution",
  "daft-scan",
  "daft-scheduler",
  "daft-sql",
@@ -2453,6 +2454,19 @@ dependencies = [
  "log",
  "rstest",
  "serde",
+]
+
+[[package]]
+name = "daft-ray-execution"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-partitioning",
+ "daft-logical-plan",
+ "daft-micropartition",
+ "futures",
+ "log",
+ "pyo3",
 ]
 
 [[package]]

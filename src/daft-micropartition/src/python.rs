@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use common_error::DaftResult;
+use common_partitioning::Partition;
 use daft_core::{
     join::JoinSide,
     prelude::*,
@@ -25,9 +26,9 @@ use crate::{
 };
 
 #[pyclass(module = "daft.daft", frozen)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PyMicroPartition {
-    inner: Arc<MicroPartition>,
+    pub inner: Arc<MicroPartition>,
 }
 
 #[pymethods]
