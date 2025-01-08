@@ -59,10 +59,11 @@ pub struct S3Config {
 ///     expiry (datetime.datetime, optional): Expiry time of the credentials, credentials are assumed to be permanent if not provided
 ///
 /// Example:
+///     >>> from datetime import datetime, timedelta, timezone
 ///     >>> get_credentials = lambda: S3Credentials(
 ///     ...     key_id="xxx",
 ///     ...     access_key="xxx",
-///     ...     expiry=(datetime.datetime.now() + datetime.timedelta(hours=1))
+///     ...     expiry=(datetime.now(timezone.utc) + timedelta(hours=1))
 ///     ... )
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)

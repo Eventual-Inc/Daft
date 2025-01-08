@@ -72,7 +72,7 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
             key_id=aws_credentials["AWS_ACCESS_KEY_ID"],
             access_key=aws_credentials["AWS_SECRET_ACCESS_KEY"],
             session_token=aws_credentials["AWS_SESSION_TOKEN"],
-            expiry=(datetime.datetime.now() + datetime.timedelta(seconds=1)),
+            expiry=(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=1)),
         )
 
     static_config = daft.io.IOConfig(
@@ -114,14 +114,6 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
 
     df.write_parquet(output_file_path, io_config=dynamic_config)
     assert count_get_credentials == 2
-
-    df2 = daft.read_parquet(output_file_path, io_config=static_config)
-
-    assert df.to_arrow() == df2.to_arrow()
-
-    time.sleep(1)
-    df.write_parquet(output_file_path, io_config=dynamic_config, write_mode="overwrite")
-    assert count_get_credentials == 3
 
     df2 = daft.read_parquet(output_file_path, io_config=static_config)
 

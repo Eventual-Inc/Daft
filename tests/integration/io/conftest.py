@@ -24,16 +24,32 @@ YieldFixture = Generator[T, None, None]
 ###
 
 
-@pytest.fixture(scope="session")
-def minio_io_config() -> daft.io.IOConfig:
-    return daft.io.IOConfig(
-        s3=daft.io.S3Config(
-            endpoint_url="http://127.0.0.1:9000",
-            key_id="minioadmin",
-            access_key="minioadmin",
-            use_ssl=False,
+@pytest.fixture(scope="session", params=[True, False])
+def minio_io_config(request) -> daft.io.IOConfig:
+    if request.param:
+        return daft.io.IOConfig(
+            s3=daft.io.S3Config(
+                endpoint_url="http://127.0.0.1:9000",
+                key_id="minioadmin",
+                access_key="minioadmin",
+                use_ssl=False,
+            )
         )
-    )
+    else:
+
+        def get_credentials():
+            return daft.io.S3Credentials(
+                key_id="minioadmin",
+                access_key="minioadmin",
+            )
+
+        return daft.io.IOConfig(
+            s3=daft.io.S3Config(
+                endpoint_url="http://127.0.0.1:9000",
+                credentials_provider=get_credentials,
+                use_ssl=False,
+            )
+        )
 
 
 @pytest.fixture(scope="session")

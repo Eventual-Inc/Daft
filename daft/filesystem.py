@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
-import datetime
 import logging
 import os
 import pathlib
 import sys
 import urllib.parse
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from daft.convert import from_pydict
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHED_FSES: dict[tuple[str, IOConfig | None], pafs.FileSystem] = {}
+_CACHED_FSES: dict[tuple[str, IOConfig | None], tuple[pafs.FileSystem, datetime | None]] = {}
 _CACHED_S3_CREDS: dict[Callable[[], S3Credentials], S3Credentials] = {}
 
 
@@ -31,14 +31,22 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSy
     """
     global _CACHED_FSES
 
-    return _CACHED_FSES.get((protocol, io_config))
+    if (protocol, io_config) in _CACHED_FSES:
+        fs, expiry = _CACHED_FSES[(protocol, io_config)]
+        print("found cached fs")
+
+        if expiry is None or expiry > datetime.now(timezone.utc):
+            print("cached fs not expired")
+            return fs
+
+    return None
 
 
-def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | None) -> None:
+def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | None, expiry: datetime | None) -> None:
     """Put pyarrow filesystem in cache under provided protocol."""
     global _CACHED_FSES
 
-    _CACHED_FSES[(protocol, io_config)] = fs
+    _CACHED_FSES[(protocol, io_config)] = (fs, expiry)
 
 
 def _get_s3_creds_from_provider_cached(provider: Callable[[], S3Credentials]) -> S3Credentials:
@@ -46,8 +54,10 @@ def _get_s3_creds_from_provider_cached(provider: Callable[[], S3Credentials]) ->
     global _CACHED_S3_CREDS
 
     if provider not in _CACHED_S3_CREDS or (
-        _CACHED_S3_CREDS[provider].expiry is not None and _CACHED_S3_CREDS[provider].expiry <= datetime.datetime.now()  # type: ignore
+        _CACHED_S3_CREDS[provider].expiry is not None
+        and _CACHED_S3_CREDS[provider].expiry <= datetime.now(timezone.utc)  # type: ignore
     ):
+        print("calling provider")
         _CACHED_S3_CREDS[provider] = provider()
 
     return _CACHED_S3_CREDS[provider]
@@ -137,6 +147,7 @@ def _resolve_paths_and_filesystem(
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
     """
+    print("resolving path and fs")
     if isinstance(paths, pathlib.Path):
         paths = str(paths)
     if isinstance(paths, str):
@@ -168,10 +179,10 @@ def _resolve_paths_and_filesystem(
     if resolved_filesystem is None:
         # Resolve path and filesystem for the first path.
         # We use this first resolved filesystem for validation on all other paths.
-        resolved_path, resolved_filesystem = _infer_filesystem(paths[0], io_config)
+        resolved_path, resolved_filesystem, expiry = _infer_filesystem(paths[0], io_config)
 
         # Put resolved filesystem in cache under these paths' canonical protocol.
-        _put_fs_in_cache(protocol, resolved_filesystem, io_config)
+        _put_fs_in_cache(protocol, resolved_filesystem, io_config, expiry)
     else:
         resolved_path = _validate_filesystem(paths[0], resolved_filesystem, io_config)
 
@@ -189,7 +200,7 @@ def _resolve_paths_and_filesystem(
 
 
 def _validate_filesystem(path: str, fs: pafs.FileSystem, io_config: IOConfig | None) -> str:
-    resolved_path, inferred_fs = _infer_filesystem(path, io_config)
+    resolved_path, inferred_fs, _ = _infer_filesystem(path, io_config)
     if not isinstance(fs, type(inferred_fs)):
         raise RuntimeError(
             f"Cannot read multiple paths with different inferred PyArrow filesystems. Expected: {fs} but received: {inferred_fs}"
@@ -200,8 +211,8 @@ def _validate_filesystem(path: str, fs: pafs.FileSystem, io_config: IOConfig | N
 def _infer_filesystem(
     path: str,
     io_config: IOConfig | None,
-) -> tuple[str, pafs.FileSystem]:
-    """Resolves and normalizes the provided path and infers it's filesystem.
+) -> tuple[str, pafs.FileSystem, datetime | None]:
+    """Resolves and normalizes the provided path and infers its filesystem and expiry.
 
     Also ensures that the inferred filesystem is compatible with the passedfilesystem, if provided.
 
@@ -210,6 +221,7 @@ def _infer_filesystem(
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
     """
+    print("inferring file system: ", io_config)
     protocol = get_protocol_from_path(path)
     translated_kwargs: dict[str, Any]
 
@@ -239,15 +251,18 @@ def _infer_filesystem(
                 except ImportError:
                     pass  # Config does not exist in pyarrow 7.0.0
 
+            expiry = None
             if s3_config.credentials_provider is not None:
                 s3_creds = _get_s3_creds_from_provider_cached(s3_config.credentials_provider)
                 _set_if_not_none(translated_kwargs, "access_key", s3_creds.key_id)
                 _set_if_not_none(translated_kwargs, "secret_key", s3_creds.access_key)
                 _set_if_not_none(translated_kwargs, "session_token", s3_creds.session_token)
 
+                expiry = s3_creds.expiry
+
         resolved_filesystem = pafs.S3FileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, expiry
 
     ###
     # Local
@@ -255,7 +270,7 @@ def _infer_filesystem(
     elif protocol == "file":
         resolved_filesystem = pafs.LocalFileSystem()
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, None
 
     ###
     # GCS
@@ -277,7 +292,7 @@ def _infer_filesystem(
 
         resolved_filesystem = GcsFileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, None
 
     ###
     # HTTP: Use FSSpec as a fallback
@@ -287,7 +302,7 @@ def _infer_filesystem(
         fsspec_fs = fsspec_fs_cls()
         resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(resolved_path)
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, None
 
     ###
     # Azure: Use FSSpec as a fallback
@@ -310,7 +325,7 @@ def _infer_filesystem(
             fsspec_fs = fsspec_fs_cls()
         resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, None
 
     else:
         raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
