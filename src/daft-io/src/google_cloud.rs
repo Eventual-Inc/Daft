@@ -168,10 +168,7 @@ impl GCSClientWrapper {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        println!("original uri: {}", uri);
         let (bucket, key) = parse_raw_uri(uri)?;
-        println!("bucket: {bucket}");
-        println!("key: {key}");
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
