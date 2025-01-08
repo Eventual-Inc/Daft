@@ -152,7 +152,7 @@ struct GCSClientWrapper {
 fn parse_raw_uri(uri: &str) -> super::Result<(&str, &str)> {
     // We use regex here instead of the more robust url crate because we do not want to handle character escaping
     // which is done by `google_cloud_storage::client::Client` already
-    let re = Regex::new(r"^gs://([^/]+)(?:/(.+))?$").unwrap();
+    let re = Regex::new(r"^gs://([^/]+)(?:/(.*))?$").unwrap();
 
     if let Some(cap) = re.captures(uri) {
         let bucket = cap.get(1).unwrap().as_str();
