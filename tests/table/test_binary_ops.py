@@ -110,3 +110,50 @@ def test_binary_concat_broadcast():
     table = MicroPartition.from_pydict({"a": [b"\x00\x01", b"\xff\xfe", b"Hello\x00"]})
     result = table.eval_expression_list([col("a").binary.concat(b"\x02\x03")])
     assert result.to_pydict() == {"a": [b"\x00\x01\x02\x03", b"\xff\xfe\x02\x03", b"Hello\x00\x02\x03"]}
+
+
+def test_binary_substr():
+    # Test basic substring
+    table = MicroPartition.from_pydict({"col": [b"Hello World", b"\xff\xfe\x00", b"empty", None]})
+    result = table.eval_expression_list([col("col").binary.substr(1, 3)])
+    assert result.to_pydict()["col"] == [b"ell", b"\xfe\x00", b"mpt", None]
+
+    # Test with length that would exceed string length (should return truncated substring)
+    table = MicroPartition.from_pydict({"col": [b"Hi", b"\xff", b"a"]})
+    result = table.eval_expression_list([col("col").binary.substr(1, 3)])
+    assert result.to_pydict()["col"] == [b"i", b"", b""]
+
+    # Test with start at string length (should return empty)
+    table = MicroPartition.from_pydict({"col": [b"Hi", b"\xff", b"a"]})
+    result = table.eval_expression_list([col("col").binary.substr(2, 1)])
+    assert result.to_pydict()["col"] == [b"", b"", b""]
+
+    # Test with start beyond string length (should return empty)
+    table = MicroPartition.from_pydict({"col": [b"Hi", b"\xff", b"a"]})
+    result = table.eval_expression_list([col("col").binary.substr(3, 1)])
+    assert result.to_pydict()["col"] == [b"", b"", b""]
+
+    # Test with empty input
+    table = MicroPartition.from_pydict({"col": [b""]})
+    result = table.eval_expression_list([col("col").binary.substr(0, 1)])
+    assert result.to_pydict()["col"] == [b""]
+
+    # Test with zero length (should return empty)
+    table = MicroPartition.from_pydict({"col": [b"Hello", b"\xff\xfe", b"test"]})
+    result = table.eval_expression_list([col("col").binary.substr(1, 0)])
+    assert result.to_pydict()["col"] == [b"", b"", b""]
+
+    # Test with None length (should return rest of string)
+    table = MicroPartition.from_pydict({"col": [b"Hello", b"\xff\xfe", b"test"]})
+    result = table.eval_expression_list([col("col").binary.substr(1, None)])
+    assert result.to_pydict()["col"] == [b"ello", b"\xfe", b"est"]
+
+    # Test with mixed null and non-null inputs
+    table = MicroPartition.from_pydict({"col": [None, b"Hi", None]})
+    result = table.eval_expression_list([col("col").binary.substr(0, 1)])
+    assert result.to_pydict()["col"] == [None, b"H", None]
+
+    # # Test with computed indices
+    # table = MicroPartition.from_pydict({"col": [b"Hi", b"Hello", b"Hey"]})
+    # result = table.eval_expression_list([col("col").binary.substr(col("col").binary.length() - 1, 1)])
+    # assert result.to_pydict()["col"] == [b"i", b"o", b"y"]

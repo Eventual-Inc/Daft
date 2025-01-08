@@ -913,7 +913,7 @@ class Expression:
             │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═══════╪═════════════════════╪════════════════════════════════╡
             │ c     ┆ None                ┆ None                           │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
@@ -3628,3 +3628,41 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         if isinstance(other, bytes):
             other = lit(other)
         return Expression._from_pyexpr(native.binary_concat(self._expr, other._expr))
+
+    def substr(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
+        r"""Returns a substring of each binary string.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
+            >>> df = df.select(df["x"].binary.substr(1, 3))
+            >>> df.show()
+            ╭─────────────────╮
+            │ x               │
+            │ ---             │
+            │ Binary          │
+            ╞═════════════════╡
+            │ b"ell"          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"\xfe\x00"     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"mpt"          │
+            ╰─────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Args:
+            start: The starting position (0-based) of the substring
+            length: Optional length of the substring. If None, returns all bytes from start to end.
+
+        Returns:
+            Expression: A binary expression containing the substrings
+        """
+        print("Input:", self._expr)
+        start_expr = Expression._to_expression(start)
+        print("Start:", start_expr._expr)
+        length_expr = Expression._to_expression(None if length is None else length)
+        print("Length:", length_expr._expr)
+        result = Expression._from_pyexpr(native.binary_substr(self._expr, start_expr._expr, length_expr._expr))
+        print("Result:", result._expr)
+        return result

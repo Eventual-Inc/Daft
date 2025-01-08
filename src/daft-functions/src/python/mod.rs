@@ -41,6 +41,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(distance::cosine_distance);
     add!(binary::binary_length);
     add!(binary::binary_concat);
+    add!(binary::binary_substr);
 
     add!(float::is_inf);
     add!(float::is_nan);
