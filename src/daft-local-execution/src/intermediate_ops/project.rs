@@ -1,25 +1,30 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::RuntimeRef;
 use daft_dsl::{functions::python::get_resource_request, ExprRef};
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::NUM_CPUS;
+use crate::{ExecutionTaskSpawner, NUM_CPUS};
 
 pub struct ProjectOperator {
     projection: Arc<Vec<ExprRef>>,
+    memory_request: u64,
 }
 
 impl ProjectOperator {
     pub fn new(projection: Vec<ExprRef>) -> Self {
+        let memory_request = get_resource_request(&projection)
+            .and_then(|req| req.memory_bytes())
+            .map(|m| m as u64)
+            .unwrap_or(0);
         Self {
             projection: Arc::new(projection),
+            memory_request,
         }
     }
 }
@@ -30,17 +35,22 @@ impl IntermediateOperator for ProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let projection = self.projection.clone();
-        runtime
-            .spawn(async move {
-                let out = input.eval_expression_list(&projection)?;
-                Ok((
-                    state,
-                    IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                ))
-            })
+        let memory_request = self.memory_request;
+        task_spawner
+            .spawn_with_memory_request(
+                memory_request,
+                async move {
+                    let out = input.eval_expression_list(&projection)?;
+                    Ok((
+                        state,
+                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                    ))
+                },
+                Span::current(),
+            )
             .into()
     }
 

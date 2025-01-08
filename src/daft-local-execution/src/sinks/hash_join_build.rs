@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
+use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::state_bridge::BroadcastStateBridgeRef;
+use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum ProbeTableState {
     Building {
@@ -126,24 +126,28 @@ impl BlockingSink for HashJoinBuildSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        runtime
-            .spawn(async move {
-                let probe_table_state: &mut ProbeTableState = state
-                    .as_any_mut()
-                    .downcast_mut::<ProbeTableState>()
-                    .expect("HashJoinBuildSink should have ProbeTableState");
-                probe_table_state.add_tables(&input)?;
-                Ok(BlockingSinkStatus::NeedMoreInput(state))
-            })
+        spawner
+            .spawn(
+                async move {
+                    let probe_table_state: &mut ProbeTableState = state
+                        .as_any_mut()
+                        .downcast_mut::<ProbeTableState>()
+                        .expect("HashJoinBuildSink should have ProbeTableState");
+                    probe_table_state.add_tables(&input)?;
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                info_span!("HashJoinBuildSink::sink"),
+            )
             .into()
     }
 
+    #[instrument(skip_all, name = "HashJoinBuildSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        _runtime: &RuntimeRef,
+        _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().unwrap();

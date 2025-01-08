@@ -1,19 +1,18 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState, Probeable};
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::state_bridge::BroadcastStateBridgeRef;
+use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum AntiSemiProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
@@ -118,7 +117,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -130,17 +129,20 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         }
 
         let params = self.params.clone();
-        runtime
-            .spawn(async move {
-                let probe_state = state
-                    .as_any_mut()
-                    .downcast_mut::<AntiSemiProbeState>()
-                    .expect("AntiSemiProbeState should be used with AntiSemiProbeOperator");
-                let probeable = probe_state.get_or_await_probeable().await;
-                let res =
-                    Self::probe_anti_semi(&params.probe_on, &probeable, &input, params.is_semi);
-                Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
-            })
+        task_spawner
+            .spawn(
+                async move {
+                    let probe_state = state
+                        .as_any_mut()
+                        .downcast_mut::<AntiSemiProbeState>()
+                        .expect("AntiSemiProbeState should be used with AntiSemiProbeOperator");
+                    let probeable = probe_state.get_or_await_probeable().await;
+                    let res =
+                        Self::probe_anti_semi(&params.probe_on, &probeable, &input, params.is_semi);
+                    Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
+                },
+                Span::current(),
+            )
             .into()
     }
 

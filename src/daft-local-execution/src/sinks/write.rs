@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
 use daft_writers::{FileWriter, WriterFactory};
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
@@ -15,7 +14,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, NUM_CPUS,
 };
 
 pub enum WriteFormat {
@@ -77,18 +76,21 @@ impl BlockingSink for WriteSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        runtime_ref: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        runtime_ref
-            .spawn(async move {
-                state
-                    .as_any_mut()
-                    .downcast_mut::<WriteState>()
-                    .expect("WriteSink should have WriteState")
-                    .writer
-                    .write(input)?;
-                Ok(BlockingSinkStatus::NeedMoreInput(state))
-            })
+        spawner
+            .spawn(
+                async move {
+                    state
+                        .as_any_mut()
+                        .downcast_mut::<WriteState>()
+                        .expect("WriteSink should have WriteState")
+                        .writer
+                        .write(input)?;
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
             .into()
     }
 
@@ -96,26 +98,29 @@ impl BlockingSink for WriteSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
-        runtime
-            .spawn(async move {
-                let mut results = vec![];
-                for mut state in states {
-                    let state = state
-                        .as_any_mut()
-                        .downcast_mut::<WriteState>()
-                        .expect("State type mismatch");
-                    results.extend(state.writer.close()?);
-                }
-                let mp = Arc::new(MicroPartition::new_loaded(
-                    file_schema,
-                    results.into(),
-                    None,
-                ));
-                Ok(Some(mp))
-            })
+        spawner
+            .spawn(
+                async move {
+                    let mut results = vec![];
+                    for mut state in states {
+                        let state = state
+                            .as_any_mut()
+                            .downcast_mut::<WriteState>()
+                            .expect("State type mismatch");
+                        results.extend(state.writer.close()?);
+                    }
+                    let mp = Arc::new(MicroPartition::new_loaded(
+                        file_schema,
+                        results.into(),
+                        None,
+                    ));
+                    Ok(Some(mp))
+                },
+                Span::current(),
+            )
             .into()
     }
 

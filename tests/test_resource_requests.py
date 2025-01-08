@@ -103,7 +103,7 @@ def test_requesting_too_many_gpus():
         df.collect()
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"py"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_tests_daft_runner_name() not in {"py", "native"}, reason="requires PyRunner to be in use")
 def test_requesting_too_much_memory():
     df = daft.from_pydict(DATA)
     system_info = SystemInfo()
@@ -114,7 +114,7 @@ def test_requesting_too_much_memory():
         my_udf_parametrized(col("id")),
     )
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(Exception):
         df.collect()
 
 
