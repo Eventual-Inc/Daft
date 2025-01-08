@@ -26,12 +26,12 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-struct IndexBitmapBuilder {
+pub(crate) struct IndexBitmapBuilder {
     mutable_bitmaps: Vec<MutableBitmap>,
 }
 
 impl IndexBitmapBuilder {
-    fn new(tables: &[Table]) -> Self {
+    pub fn new(tables: &[Table]) -> Self {
         Self {
             mutable_bitmaps: tables
                 .iter()
@@ -41,23 +41,23 @@ impl IndexBitmapBuilder {
     }
 
     #[inline]
-    fn mark_used(&mut self, table_idx: usize, row_idx: usize) {
+    pub fn mark_used(&mut self, table_idx: usize, row_idx: usize) {
         self.mutable_bitmaps[table_idx].set(row_idx, false);
     }
 
-    fn build(self) -> IndexBitmap {
+    pub fn build(self) -> IndexBitmap {
         IndexBitmap {
             bitmaps: self.mutable_bitmaps.into_iter().map(|b| b.into()).collect(),
         }
     }
 }
 
-struct IndexBitmap {
+pub(crate) struct IndexBitmap {
     bitmaps: Vec<Bitmap>,
 }
 
 impl IndexBitmap {
-    fn merge(&self, other: &Self) -> Self {
+    pub fn merge(&self, other: &Self) -> Self {
         Self {
             bitmaps: self
                 .bitmaps
@@ -68,7 +68,13 @@ impl IndexBitmap {
         }
     }
 
-    fn convert_to_boolean_arrays(self) -> impl Iterator<Item = BooleanArray> {
+    pub fn negate(&self) -> Self {
+        Self {
+            bitmaps: self.bitmaps.iter().map(|b| !b).collect(),
+        }
+    }
+
+    pub fn convert_to_boolean_arrays(self) -> impl Iterator<Item = BooleanArray> {
         self.bitmaps
             .into_iter()
             .map(|b| BooleanArray::from(("bitmap", b)))
