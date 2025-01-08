@@ -13,7 +13,7 @@ use indexmap::IndexSet;
 use snafu::Snafu;
 
 pub use crate::ops::*;
-use crate::stats::PlanStats;
+use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -204,7 +204,7 @@ impl LogicalPlan {
         }
     }
 
-    pub fn materialized_stats(&self) -> &PlanStats {
+    pub fn stats_state(&self) -> &StatsState {
         match self {
             Self::Source(Source { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
@@ -223,7 +223,7 @@ impl LogicalPlan {
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. }) => {
-                stats_state.materialized_stats()
+                stats_state
             }
             Self::Intersect(_) => {
                 panic!("Intersect nodes should be optimized away before stats are materialized")
@@ -232,6 +232,10 @@ impl LogicalPlan {
                 panic!("Union nodes should be optimized away before stats are materialized")
             }
         }
+    }
+
+    pub fn materialized_stats(&self) -> &PlanStats {
+        self.stats_state().materialized_stats()
     }
 
     // Materializes stats over logical plans. If stats are already materialized, this function recomputes stats, which might be

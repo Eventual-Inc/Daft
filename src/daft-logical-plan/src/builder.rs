@@ -25,7 +25,7 @@ use {
 use crate::{
     logical_plan::LogicalPlan,
     ops,
-    optimization::Optimizer,
+    optimization::OptimizerBuilder,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
@@ -381,8 +381,7 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(pivot_logical_plan))
     }
 
-    // Helper function to create inner joins more ergonimically in tests.
-    #[cfg(test)]
+    // Helper function to create inner joins more ergonimically.
     pub(crate) fn inner_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -616,7 +615,15 @@ impl LogicalPlanBuilder {
     }
 
     pub fn optimize(&self) -> DaftResult<Self> {
-        let optimizer = Optimizer::new(Default::default());
+        let optimizer = OptimizerBuilder::default()
+            .when(
+                self.config
+                    .as_ref()
+                    .map_or(false, |conf| conf.enable_join_reordering),
+                |builder| builder.reorder_joins(),
+            )
+            .simplify_expressions()
+            .build();
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
