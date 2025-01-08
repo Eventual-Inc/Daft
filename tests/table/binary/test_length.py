@@ -80,3 +80,12 @@ def test_binary_length_parameterized(input_data: list[bytes | None], expected_le
     table = MicroPartition.from_pydict({"col": input_data})
     result = table.eval_expression_list([col("col").binary.length()])
     assert result.to_pydict() == {"col": expected_lengths}
+
+
+def test_binary_length_errors() -> None:
+    # Test length with wrong number of arguments
+    table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [b"foo", b"bar"]})
+    with pytest.raises(
+        Exception, match="ExpressionBinaryNamespace.length\\(\\) takes 1 positional argument but 2 were given"
+    ):
+        table.eval_expression_list([col("a").binary.length(col("b"))])

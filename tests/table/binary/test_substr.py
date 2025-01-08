@@ -183,6 +183,30 @@ def test_binary_substr_with_columns(
             2,
             [None, None, None, None, None, None],
         ),
+        # Test start way beyond string length
+        (
+            [
+                b"hello",  # len 5
+                b"world",  # len 5
+                b"test",  # len 4
+                b"\xff\xfe\xfd",  # len 3
+            ],
+            [100, 1000, 50, 25],
+            5,
+            [None, None, None, None],
+        ),
+        # Test start beyond length with None length
+        (
+            [
+                b"hello",
+                b"world",
+                b"test",
+                b"\xff\xfe\xfd",
+            ],
+            [10, 20, 15, 8],
+            None,
+            [None, None, None, None],
+        ),
         # Test zero length
         (
             [
@@ -285,6 +309,23 @@ def test_binary_substr_errors() -> None:
     with pytest.raises(Exception, match="Error in substr: failed to cast length as usize"):
         table.eval_expression_list([col("col").binary.substr(0, col("length"))])
 
+    # Test substr with wrong number of arguments (too many)
+    table = MicroPartition.from_pydict(
+        {"col": [b"hello", b"world"], "start": [1, 2], "length": [2, 3], "extra": [4, 5]}
+    )
+    with pytest.raises(
+        Exception,
+        match="ExpressionBinaryNamespace.substr\\(\\) takes from 2 to 3 positional arguments but 4 were given",
+    ):
+        table.eval_expression_list([col("col").binary.substr(col("start"), col("length"), col("extra"))])
+
+    # Test substr with wrong number of arguments (too few)
+    table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [1, 2]})
+    with pytest.raises(
+        Exception, match="ExpressionBinaryNamespace.substr\\(\\) missing 1 required positional argument: 'start'"
+    ):
+        table.eval_expression_list([col("col").binary.substr()])
+
 
 def test_binary_substr_computed() -> None:
     # Test with computed start index (length - 5)
@@ -380,3 +421,45 @@ def test_binary_substr_computed() -> None:
     assert result.to_pydict() == {
         "col": [b"llo", b"hon pr", b"ta s", b"tif", b"tell", b"llo\xe2", b"st\xf0\x9f", b"st\xf0\x9f", b"\xfe"]
     }
+
+
+def test_binary_substr_type_errors() -> None:
+    # Test substr with string start type
+    table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": ["1", "2"]})
+    with pytest.raises(
+        Exception,
+        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Utf8 and Int32",
+    ):
+        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+
+    # Test substr with float start type
+    table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [1.5, 2.5]})
+    with pytest.raises(
+        Exception,
+        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Float64 and Int32",
+    ):
+        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+
+    # Test substr with boolean start type
+    table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [True, False]})
+    with pytest.raises(
+        Exception,
+        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Boolean and Int32",
+    ):
+        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+
+    # Test substr with binary start type
+    table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [b"1", b"2"]})
+    with pytest.raises(
+        Exception,
+        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Binary and Int32",
+    ):
+        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+
+    # Test substr with null start type
+    table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [None, None]})
+    with pytest.raises(
+        Exception,
+        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Null and Int32",
+    ):
+        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])

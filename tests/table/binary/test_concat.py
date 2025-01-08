@@ -252,3 +252,39 @@ def test_binary_concat_edge_cases() -> None:
             b"\xff\xff\xff\xfe\xfe\xfe",  # High bytes concatenation
         ]
     }
+
+
+def test_binary_concat_errors() -> None:
+    # Test concat with incompatible type (string)
+    table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": ["foo", "bar"]})
+    with pytest.raises(Exception, match="Expects inputs to concat to be binary, but received a#Binary and b#Utf8"):
+        table.eval_expression_list([col("a").binary.concat(col("b"))])
+
+    # Test concat with incompatible type (integer)
+    table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [1, 2]})
+    with pytest.raises(Exception, match="Expects inputs to concat to be binary, but received a#Binary and b#Int64"):
+        table.eval_expression_list([col("a").binary.concat(col("b"))])
+
+    # Test concat with incompatible type (float)
+    table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [1.0, 2.0]})
+    with pytest.raises(Exception, match="Expects inputs to concat to be binary, but received a#Binary and b#Float64"):
+        table.eval_expression_list([col("a").binary.concat(col("b"))])
+
+    # Test concat with incompatible type (boolean)
+    table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [True, False]})
+    with pytest.raises(Exception, match="Expects inputs to concat to be binary, but received a#Binary and b#Boolean"):
+        table.eval_expression_list([col("a").binary.concat(col("b"))])
+
+    # Test concat with wrong number of arguments
+    table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [b"foo", b"bar"], "c": [b"test", b"data"]})
+    with pytest.raises(
+        Exception, match="ExpressionBinaryNamespace.concat\\(\\) takes 2 positional arguments but 3 were given"
+    ):
+        table.eval_expression_list([col("a").binary.concat(col("b"), col("c"))])
+
+    # Test concat with no arguments
+    table = MicroPartition.from_pydict({"a": [b"hello", b"world"]})
+    with pytest.raises(
+        Exception, match="ExpressionBinaryNamespace.concat\\(\\) missing 1 required positional argument: 'other'"
+    ):
+        table.eval_expression_list([col("a").binary.concat()])

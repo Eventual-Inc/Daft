@@ -124,6 +124,30 @@ def test_utf8_substr_with_columns(
             2,
             [None, None, None, None, None],
         ),
+        # Test start way beyond string length
+        (
+            [
+                "hello",  # len 5
+                "world",  # len 5
+                "test",   # len 4
+                "☃😉🌈",  # len 3
+            ],
+            [100, 1000, 50, 25],
+            5,
+            [None, None, None, None],
+        ),
+        # Test start beyond length with None length
+        (
+            [
+                "hello",
+                "world",
+                "test",
+                "☃😉🌈",
+            ],
+            [10, 20, 15, 8],
+            None,
+            [None, None, None, None],
+        ),
         # Test zero length
         (
             ["hello", "world", "Hello☃World", "😉test", "test🌈"],
