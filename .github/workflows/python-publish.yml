@@ -38,7 +38,9 @@ jobs:
       matrix:
         os: [ubuntu, macos, windows]
         compile_arch: [x86_64, aarch64]
-        lts: [0, 1] # LongTerm Support CPUs
+        # lts: [0, 1] # LongTerm Support CPUs
+        lts: [1] # LongTerm Support CPUs
+
         exclude:
         - os: windows
           compile_arch: aarch64
@@ -153,10 +155,13 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-
   publish:
     name: Publish wheels to PYPI and Anaconda
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
     needs:
     - build-and-test
     steps:
@@ -165,19 +170,17 @@ jobs:
         python-version: ${{ env.PYTHON_VERSION }}
         architecture: x64
     - run: pip install -U twine
-    - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - run: ls -R ./dist
-    - name: Publish bdist package to PYPI
-      if: ${{ success() && (env.IS_PUSH == 'true') }}
-      run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+    - name: Publish package distributions to PyPI
+      # if: ${{ success() && (env.IS_PUSH == 'true') }}
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        skip-existing: true
 
     - uses: conda-incubator/setup-miniconda@v3
       with:
