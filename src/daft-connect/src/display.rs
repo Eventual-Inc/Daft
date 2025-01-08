@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use daft_core::prelude::*;
 
+// note: right now this is only implemented for Schema, but we'll want to extend this for our dataframe output, and the plan repr.
 pub trait SparkDisplay {
     fn repr_spark_string(&self) -> String;
 }
@@ -21,25 +22,7 @@ impl SparkDisplay for Schema {
     }
 }
 
-impl SparkDisplay for Field {
-    fn repr_spark_string(&self) -> String {
-        // Fields on their own need context (indentation) to print nicely.
-        // For a standalone Field, we might choose zero indentation or provide a helper method.
-        // Here we choose zero indentation since it's ambiguous outside a schema:
-        let mut output = String::new();
-        write_field(&mut output, &self.name, &self.dtype, 0).unwrap();
-        output
-    }
-}
-
-impl SparkDisplay for DataType {
-    fn repr_spark_string(&self) -> String {
-        type_to_string(self)
-    }
-}
-
 // Private helpers to mimic the original indentation style and recursive printing:
-
 fn write_field(
     w: &mut String,
     field_name: &str,
@@ -53,16 +36,13 @@ fn write_field(
         level: usize,
         is_list: bool,
     ) -> eyre::Result<()> {
-        /// All daft fields are nullable.
-        const NULLABLE: bool = true;
-
         let indent = make_indent(level);
 
         let dtype_str = type_to_string(dtype);
 
         writeln!(
             w,
-            "{indent}{field_name}: {dtype_str} ({nullable} = {NULLABLE})",
+            "{indent}{field_name}: {dtype_str} ({nullable} = true)",
             // for some reason, spark prints "containsNulls" instead of "nullable" for lists
             nullable = if is_list { "containsNulls" } else { "nullable" }
         )?;
