@@ -3,7 +3,7 @@ use std::cmp::min;
 use common_error::DaftResult;
 #[cfg(feature = "python")]
 use common_py_serde::pickle_dumps;
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -38,12 +38,12 @@ impl PythonArray {
 
         let values = self.as_arrow().values();
 
-        let mut rng = thread_rng();
+        let mut rng = StdRng::seed_from_u64(0);
         let sample_candidates =
             values.choose_multiple(&mut rng, min(values.len(), MAX_SAMPLE_QUANTITY));
 
         let mut sample_size_allowed = MAX_SAMPLE_SIZE;
-        let mut sampled_sizes = Vec::new();
+        let mut sampled_sizes = Vec::with_capacity(sample_candidates.len());
         for c in sample_candidates {
             let size = pickle_dumps(c)?.len();
             sampled_sizes.push(size);
