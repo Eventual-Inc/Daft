@@ -1,8 +1,11 @@
 use std::{future::ready, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use daft_local_execution::NativeExecutor;
+use common_runtime::{get_compute_runtime, RuntimeRef};
+use daft_local_execution::{ExecutionRuntimeContext, NativeExecutor};
+use daft_ray_execution::RayRunnerShim;
 use futures::stream;
+use pyo3::Python;
 use spark_connect::{ExecutePlanResponse, Relation};
 use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 
@@ -32,39 +35,43 @@ impl Session {
 
         let pset = self.psets.clone();
 
-        tokio::spawn(async move {
-            let execution_fut = async {
-                let translator = translation::SparkAnalyzer::new(&pset);
-                let lp = translator.to_logical_plan(command).await?;
+        self.runtime
+            .block_on(async move {
+                let execution_fut = async {
+                    let translator = translation::SparkAnalyzer::new(&pset);
+                    let lp = translator.to_logical_plan(command).await?;
 
-                // todo: convert optimize to async (looks like A LOT of work)... it touches a lot of API
-                // I tried and spent about an hour and gave up ~ Andrew Gazelka 🪦 2024-12-09
-                let optimized_plan = tokio::task::spawn_blocking(move || lp.optimize())
-                    .await
-                    .unwrap()?;
+                    let runner = RayRunnerShim::try_new(None, None, None)?;
+                    let result_set = tokio::task::spawn_blocking(move || {
+                        Python::with_gil(|py| {
+                            let res = runner.run_iter_impl(py, lp, None).unwrap();
 
-                let cfg = Arc::new(DaftExecutionConfig::default());
-                let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
+                            let res = res.into_iter().flat_map(|res| {
+                                let result = res.unwrap();
+                                let tables = result.get_tables().unwrap();
+                                Arc::unwrap_or_clone(tables)
+                            });
+                            res.collect::<Vec<_>>()
+                        })
+                    })
+                    .await?;
 
-                let mut result_stream = native_executor.run(&pset, cfg, None)?.into_stream();
+                    let mut iter = result_set.into_iter();
 
-                while let Some(result) = result_stream.next().await {
-                    let result = result?;
-                    let tables = result.get_tables()?;
-                    for table in tables.as_slice() {
-                        let response = context.gen_response(table)?;
+                    while let Some(table) = iter.next() {
+                        let response = context.gen_response(&table)?;
                         if tx.send(Ok(response)).await.is_err() {
                             return Ok(());
                         }
                     }
-                }
-                Ok(())
-            };
+                    Ok(())
+                };
 
-            if let Err(e) = execution_fut.await {
-                let _ = tx.send(Err(e)).await;
-            }
-        });
+                if let Err(e) = execution_fut.await {
+                    let _ = tx.send(Err(e)).await;
+                }
+            })
+            .unwrap();
 
         let stream = ReceiverStream::new(rx);
 
