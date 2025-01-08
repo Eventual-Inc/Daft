@@ -13,7 +13,4 @@ pub fn binary_concat(left: PyExpr, right: PyExpr) -> PyResult<PyExpr> {
     Ok(concat_fn(left.into(), right.into()).into())
 }
 
-#[pyfunction]
-pub fn binary_substr(input: PyExpr, start: PyExpr, length: PyExpr) -> PyResult<PyExpr> {
-    Ok(crate::binary::substr::binary_substr(input.into(), start.into(), length.into()).into())
-}
+simple_python_wrapper!(binary_substr, crate::binary::substr::binary_substr, [input: PyExpr, start: PyExpr, length: PyExpr]);
