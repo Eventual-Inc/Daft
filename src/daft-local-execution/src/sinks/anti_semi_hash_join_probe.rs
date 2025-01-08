@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::{prelude::SchemaRef, series::IntoSeries};
 use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState, Probeable, Table};
 use futures::{stream, StreamExt};
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Span};
 
 use super::{
     outer_hash_join_probe::IndexBitmapBuilder,
@@ -19,7 +18,7 @@ use super::{
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 enum AntiSemiProbeState {
@@ -224,12 +223,12 @@ impl AntiSemiProbeSink {
 }
 
 impl StreamingSink for AntiSemiProbeSink {
-    #[instrument(skip_all, name = "AntiSemiOperator::execute")]
+    #[instrument(skip_all, name = "AntiSemiProbeSink::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
-        runtime: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -238,32 +237,35 @@ impl StreamingSink for AntiSemiProbeSink {
 
         let params = self.params.clone();
         let build_on_left = self.build_on_left;
-        runtime
-            .spawn(async move {
-                let probe_state = state
-                    .as_any_mut()
-                    .downcast_mut::<AntiSemiProbeState>()
-                    .expect("AntiSemiProbeState should be used with AntiSemiProbeSink");
-                let (ps, bitmap_builder) =
-                    probe_state.get_or_await_probe_state(build_on_left).await;
-                if let Some(bm_builder) = bitmap_builder {
-                    Self::probe_anti_semi_with_bitmap(
-                        &params.probe_on,
-                        ps.get_probeable(),
-                        bm_builder,
-                        &input,
-                    )?;
-                    Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
-                } else {
-                    let res = Self::probe_anti_semi(
-                        &params.probe_on,
-                        ps.get_probeable(),
-                        &input,
-                        params.is_semi,
-                    );
-                    Ok((state, StreamingSinkOutput::NeedMoreInput(Some(res?))))
-                }
-            })
+        task_spawner
+            .spawn(
+                async move {
+                    let probe_state = state
+                        .as_any_mut()
+                        .downcast_mut::<AntiSemiProbeState>()
+                        .expect("AntiSemiProbeState should be used with AntiSemiProbeSink");
+                    let (ps, bitmap_builder) =
+                        probe_state.get_or_await_probe_state(build_on_left).await;
+                    if let Some(bm_builder) = bitmap_builder {
+                        Self::probe_anti_semi_with_bitmap(
+                            &params.probe_on,
+                            ps.get_probeable(),
+                            bm_builder,
+                            &input,
+                        )?;
+                        Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
+                    } else {
+                        let res = Self::probe_anti_semi(
+                            &params.probe_on,
+                            ps.get_probeable(),
+                            &input,
+                            params.is_semi,
+                        );
+                        Ok((state, StreamingSinkOutput::NeedMoreInput(Some(res?))))
+                    }
+                },
+                Span::current(),
+            )
             .into()
     }
 
@@ -271,15 +273,19 @@ impl StreamingSink for AntiSemiProbeSink {
         "AntiSemiProbeSink"
     }
 
+    #[instrument(skip_all, name = "AntiSemiProbeSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn super::streaming_sink::StreamingSinkState>>,
-        runtime: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> super::streaming_sink::StreamingSinkFinalizeResult {
         if self.build_on_left {
             let is_semi = self.params.is_semi;
-            runtime
-                .spawn(async move { Self::finalize_anti_semi(states, is_semi).await })
+            task_spawner
+                .spawn(
+                    async move { Self::finalize_anti_semi(states, is_semi).await },
+                    Span::current(),
+                )
                 .into()
         } else {
             Ok(None).into()

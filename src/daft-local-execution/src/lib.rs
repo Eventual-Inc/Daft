@@ -27,8 +27,9 @@ use lazy_static::lazy_static;
 use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
 use resource_manager::MemoryManager;
 pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
-use runtime_stats::RuntimeStatsContext;
+use runtime_stats::{RuntimeStatsContext, TimedFuture};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
+use tracing::Instrument;
 
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
@@ -203,13 +204,22 @@ impl Drop for ExecutionRuntimeContext {
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
+    runtime_context: Arc<RuntimeStatsContext>,
+    outer_span: tracing::Span,
 }
 
 impl ExecutionTaskSpawner {
-    pub fn new(runtime_ref: RuntimeRef, memory_manager: Arc<MemoryManager>) -> Self {
+    pub fn new(
+        runtime_ref: RuntimeRef,
+        memory_manager: Arc<MemoryManager>,
+        runtime_context: Arc<RuntimeStatsContext>,
+        span: tracing::Span,
+    ) -> Self {
         Self {
             runtime_ref,
             memory_manager,
+            runtime_context,
+            outer_span: span,
         }
     }
 
@@ -217,24 +227,37 @@ impl ExecutionTaskSpawner {
         &self,
         memory_request: u64,
         future: F,
+        span: tracing::Span,
     ) -> RuntimeTask<DaftResult<O>>
     where
         F: Future<Output = DaftResult<O>> + Send + 'static,
         O: Send + 'static,
     {
+        let instrumented = future.instrument(span);
+        let timed_fut = TimedFuture::new(
+            instrumented,
+            self.runtime_context.clone(),
+            self.outer_span.clone(),
+        );
         let memory_manager = self.memory_manager.clone();
         self.runtime_ref.spawn(async move {
             let _permit = memory_manager.request_bytes(memory_request).await?;
-            future.await
+            timed_fut.await
         })
     }
 
-    pub fn spawn<F, O>(&self, future: F) -> RuntimeTask<DaftResult<O>>
+    pub fn spawn<F, O>(&self, future: F, inner_span: tracing::Span) -> RuntimeTask<DaftResult<O>>
     where
         F: Future<Output = DaftResult<O>> + Send + 'static,
         O: Send + 'static,
     {
-        self.runtime_ref.spawn(future)
+        let instrumented = future.instrument(inner_span);
+        let timed_fut = TimedFuture::new(
+            instrumented,
+            self.runtime_context.clone(),
+            self.outer_span.clone(),
+        );
+        self.runtime_ref.spawn(timed_fut)
     }
 }
 

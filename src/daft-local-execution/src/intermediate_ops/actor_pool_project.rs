@@ -13,7 +13,7 @@ use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -162,17 +162,21 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let memory_request = self.memory_request;
-        let fut = task_spawner.spawn_with_memory_request(memory_request, async move {
-            let actor_pool_project_state = state
-                .as_any_mut()
-                .downcast_mut::<ActorPoolProjectState>()
-                .expect("ActorPoolProjectState");
-            let res = actor_pool_project_state
-                .actor_handle
-                .eval_input(input)
-                .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
-            Ok((state, res))
-        });
+        let fut = task_spawner.spawn_with_memory_request(
+            memory_request,
+            async move {
+                let actor_pool_project_state = state
+                    .as_any_mut()
+                    .downcast_mut::<ActorPoolProjectState>()
+                    .expect("ActorPoolProjectState");
+                let res = actor_pool_project_state
+                    .actor_handle
+                    .eval_input(input)
+                    .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
+                Ok((state, res))
+            },
+            Span::current(),
+        );
         fut.into()
     }
 
