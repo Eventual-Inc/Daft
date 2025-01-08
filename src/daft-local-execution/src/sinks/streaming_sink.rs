@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_runtime::{get_compute_runtime, RuntimeRef};
+use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
@@ -15,8 +15,9 @@ use crate::{
     dispatcher::DispatchSpawner,
     pipeline::PipelineNode,
     progress_bar::ProgressBarColor,
+    resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, JoinSnafu, OperatorOutput, TaskSet, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, JoinSnafu, OperatorOutput, TaskSet, NUM_CPUS,
 };
 
 pub trait StreamingSinkState: Send + Sync {
@@ -42,14 +43,14 @@ pub trait StreamingSink: Send + Sync {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn StreamingSinkState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult;
 
     /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
         states: Vec<Box<dyn StreamingSinkState>>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult;
 
     /// The name of the StreamingSink operator.
@@ -99,16 +100,15 @@ impl StreamingSinkNode {
         input_receiver: Receiver<Arc<MicroPartition>>,
         output_sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
+        memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<Box<dyn StreamingSinkState>> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
+        let spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
         let mut state = op.make_state();
         while let Some(morsel) = input_receiver.recv().await {
             loop {
-                let output = rt_context.in_span(&span, || {
-                    op.execute(morsel.clone(), state, &compute_runtime)
-                });
-                let result = output.await??;
+                let result = op.execute(morsel.clone(), state, &spawner).await??;
                 state = result.0;
                 match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
@@ -143,6 +143,7 @@ impl StreamingSinkNode {
         task_set: &mut TaskSet<DaftResult<Box<dyn StreamingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
         maintain_order: bool,
+        memory_manager: Arc<MemoryManager>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
@@ -152,6 +153,7 @@ impl StreamingSinkNode {
                 input_receiver,
                 output_sender,
                 stats.clone(),
+                memory_manager.clone(),
             ));
         }
         output_receiver
@@ -231,6 +233,7 @@ impl PipelineNode for StreamingSinkNode {
             self.name(),
         );
 
+        let memory_manager = runtime_handle.memory_manager();
         runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
@@ -240,6 +243,7 @@ impl PipelineNode for StreamingSinkNode {
                     &mut task_set,
                     runtime_stats.clone(),
                     maintain_order,
+                    memory_manager.clone(),
                 );
 
                 while let Some(morsel) = output_receiver.recv().await {
@@ -255,11 +259,13 @@ impl PipelineNode for StreamingSinkNode {
                 }
 
                 let compute_runtime = get_compute_runtime();
-                let finalized_result = runtime_stats
-                    .in_span(&info_span!("StreamingSinkNode::finalize"), || {
-                        op.finalize(finished_states, &compute_runtime)
-                    })
-                    .await??;
+                let spawner = ExecutionTaskSpawner::new(
+                    compute_runtime,
+                    memory_manager,
+                    runtime_stats.clone(),
+                    info_span!("StreamingSink::Finalize"),
+                );
+                let finalized_result = op.finalize(finished_states, &spawner).await??;
                 if let Some(res) = finalized_result {
                     let _ = counting_sender.send(res).await;
                 }

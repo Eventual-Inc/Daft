@@ -29,6 +29,7 @@ use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
     progress_bar::make_progress_bar_manager,
+    resource_manager::get_or_init_memory_manager,
     Error, ExecutionRuntimeContext,
 };
 
@@ -270,8 +271,12 @@ pub fn run_local(
             .build()
             .expect("Failed to create tokio runtime");
         let execution_task = async {
-            let mut runtime_handle =
-                ExecutionRuntimeContext::new(cfg.default_morsel_size, pb_manager);
+            let memory_manager = get_or_init_memory_manager();
+            let mut runtime_handle = ExecutionRuntimeContext::new(
+                cfg.default_morsel_size,
+                memory_manager.clone(),
+                pb_manager,
+            );
             let receiver = pipeline.start(true, &mut runtime_handle)?;
 
             while let Some(val) = receiver.recv().await {

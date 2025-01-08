@@ -1,16 +1,15 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::RuntimeRef;
 use daft_dsl::{functions::python::get_resource_request, ExprRef};
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::NUM_CPUS;
+use crate::{ExecutionTaskSpawner, NUM_CPUS};
 
 fn num_parallel_exprs(projection: &[ExprRef]) -> usize {
     max(
@@ -23,13 +22,19 @@ pub struct ProjectOperator {
     projection: Arc<Vec<ExprRef>>,
     max_concurrency: usize,
     parallel_exprs: usize,
+    memory_request: u64,
 }
 
 impl ProjectOperator {
     pub fn new(projection: Vec<ExprRef>) -> DaftResult<Self> {
+        let memory_request = get_resource_request(&projection)
+            .and_then(|req| req.memory_bytes())
+            .map(|m| m as u64)
+            .unwrap_or(0);
         let (max_concurrency, parallel_exprs) = Self::get_optimal_allocation(&projection)?;
         Ok(Self {
             projection: Arc::new(projection),
+            memory_request,
             max_concurrency,
             parallel_exprs,
         })
@@ -84,24 +89,29 @@ impl IntermediateOperator for ProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
-        runtime
-            .spawn(async move {
-                let out = if num_parallel_exprs > 1 {
-                    input
-                        .par_eval_expression_list(&projection, num_parallel_exprs)
-                        .await?
-                } else {
-                    input.eval_expression_list(&projection)?
-                };
-                Ok((
-                    state,
-                    IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                ))
-            })
+        let memory_request = self.memory_request;
+        task_spawner
+            .spawn_with_memory_request(
+                memory_request,
+                async move {
+                    let out = if num_parallel_exprs > 1 {
+                        input
+                            .par_eval_expression_list(&projection, num_parallel_exprs)
+                            .await?
+                    } else {
+                        input.eval_expression_list(&projection)?
+                    };
+                    Ok((
+                        state,
+                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                    ))
+                },
+                Span::current(),
+            )
             .into()
     }
 

@@ -5,16 +5,17 @@ pub(crate) struct NaiveLeftDeepJoinOrderer {}
 impl NaiveLeftDeepJoinOrderer {
     fn extend_order(
         graph: &JoinGraph,
-        current_order: Box<JoinOrderTree>,
+        current_order: JoinOrderTree,
         mut available: Vec<usize>,
-    ) -> Box<JoinOrderTree> {
+    ) -> JoinOrderTree {
         if available.is_empty() {
             return current_order;
         }
         for (index, candidate_node_id) in available.iter().enumerate() {
-            let right = Box::new(JoinOrderTree::Relation(*candidate_node_id));
-            if graph.adj_list.connected_join_trees(&current_order, &right) {
-                let new_order = current_order.join(right);
+            let right = JoinOrderTree::Relation(*candidate_node_id);
+            let connections = graph.adj_list.get_connections(&current_order, &right);
+            if !connections.is_empty() {
+                let new_order = current_order.join(right, connections);
                 available.remove(index);
                 return Self::extend_order(graph, new_order, available);
             }
@@ -24,10 +25,10 @@ impl NaiveLeftDeepJoinOrderer {
 }
 
 impl JoinOrderer for NaiveLeftDeepJoinOrderer {
-    fn order(&self, graph: &JoinGraph) -> Box<JoinOrderTree> {
+    fn order(&self, graph: &JoinGraph) -> JoinOrderTree {
         let available: Vec<usize> = (1..graph.adj_list.max_id).collect();
         // Take a starting order of the node with id 0.
-        let starting_order = Box::new(JoinOrderTree::Relation(0));
+        let starting_order = JoinOrderTree::Relation(0);
         Self::extend_order(graph, starting_order, available)
     }
 }
@@ -45,7 +46,7 @@ mod tests {
         LogicalPlanRef,
     };
 
-    fn assert_order_contains_all_nodes(order: &Box<JoinOrderTree>, graph: &JoinGraph) {
+    fn assert_order_contains_all_nodes(order: &JoinOrderTree, graph: &JoinGraph) {
         for id in 0..graph.adj_list.max_id {
             assert!(
                 order.contains(id),
