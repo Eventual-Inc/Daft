@@ -8,5 +8,5 @@ pub enum Runner {
 
 
 impl Runner {
-    pub fn run(lp: LogicalPlanBuilder) -> DaftResult<
+    // pub fn run(lp: LogicalPlanBuilder) -> DaftResult<
 }

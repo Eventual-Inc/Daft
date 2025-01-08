@@ -205,6 +205,7 @@ daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
 daft-sql = {path = "src/daft-sql"}
 daft-table = {path = "src/daft-table"}
+daft-ray-execution = {path = "src/daft-ray-execution"}
 derivative = "2.2.0"
 derive_builder = "0.20.2"
 futures = "0.3.30"

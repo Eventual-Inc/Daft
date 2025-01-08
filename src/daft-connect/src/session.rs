@@ -51,12 +51,4 @@ impl Session {
     pub fn server_side_session_id(&self) -> &str {
         &self.server_side_session_id
     }
-
-    pub(crate) fn runner(&self) -> Runner {
-        match self.config_values.get("daft.runner").map(|s| s.as_str()) {
-            Some("ray") => Runner::Ray(RayRunnerShim::try_new(None, None, None).unwrap()),
-            Some("native") => Runner::Native,
-            _ => Runner::Ray(RayRunnerShim::try_new(None, None, None).unwrap()),
-        }
-    }
 }

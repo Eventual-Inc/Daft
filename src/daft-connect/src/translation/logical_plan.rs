@@ -37,6 +37,7 @@ impl SparkAnalyzer<'_> {
     pub fn new(pset: &InMemoryPartitionSetCache) -> SparkAnalyzer {
         SparkAnalyzer { psets: pset }
     }
+
     pub fn create_in_memory_scan(
         &self,
         plan_id: usize,

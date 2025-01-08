@@ -33,8 +33,6 @@ impl Session {
 
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
 
-        let pset = self.psets.clone();
-
         self.runtime
             .block_on(async move {
                 let execution_fut = async {
