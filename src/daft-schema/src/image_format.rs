@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Supported image formats for Daft's I/O layer.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
 pub enum ImageFormat {
     PNG,
     JPEG,

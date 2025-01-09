@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
@@ -10,7 +9,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, NUM_CPUS,
 };
 
 struct ConcatSinkState {}
@@ -31,7 +30,7 @@ impl StreamingSink for ConcatSink {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn StreamingSinkState>,
-        _runtime_ref: &RuntimeRef,
+        _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
     }
@@ -43,7 +42,7 @@ impl StreamingSink for ConcatSink {
     fn finalize(
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,
-        _runtime_ref: &RuntimeRef,
+        _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }

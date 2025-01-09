@@ -23,19 +23,23 @@ use {
     common_daft_config::PyDaftExecutionConfig,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
+    pyo3::{
+        pyclass, pymethods, Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
+    },
 };
 
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
+    progress_bar::make_progress_bar_manager,
+    resource_manager::get_or_init_memory_manager,
     Error, ExecutionRuntimeContext,
 };
 
 #[cfg(feature = "python")]
 #[pyclass]
 struct LocalPartitionIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send>,
+    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>,
 }
 
 #[cfg(feature = "python")]
@@ -73,13 +77,14 @@ impl PyNativeExecutor {
         })
     }
 
-    pub fn run(
+    #[pyo3(signature = (psets, cfg, results_buffer_size=None))]
+    pub fn run<'a>(
         &self,
-        py: Python,
+        py: Python<'a>,
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Bound<'a, PyAny>> {
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
@@ -102,10 +107,15 @@ impl PyNativeExecutor {
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
-            part.map(|p| pyo3::Python::with_gil(|py| PyMicroPartition::from(p).into_py(py)))
+            pyo3::Python::with_gil(|py| {
+                Ok(PyMicroPartition::from(part?)
+                    .into_pyobject(py)?
+                    .unbind()
+                    .into_any())
+            })
         }));
         let part_iter = LocalPartitionIterator { iter };
-        Ok(part_iter.into_py(py))
+        Ok(part_iter.into_pyobject(py)?.into_any())
     }
 }
 
@@ -157,6 +167,15 @@ fn should_enable_explain_analyze() -> bool {
         true
     } else {
         false
+    }
+}
+
+fn should_enable_progress_bar() -> bool {
+    let progress_var_name = "DAFT_PROGRESS_BAR";
+    if let Ok(val) = std::env::var(progress_var_name) {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        true // Return true when env var is not set
     }
 }
 
@@ -263,12 +282,18 @@ pub fn run_local(
     let pipeline = physical_plan_to_pipeline(physical_plan, psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
+        let pb_manager = should_enable_progress_bar().then(make_progress_bar_manager);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("Failed to create tokio runtime");
         let execution_task = async {
-            let mut runtime_handle = ExecutionRuntimeContext::new(cfg.default_morsel_size);
+            let memory_manager = get_or_init_memory_manager();
+            let mut runtime_handle = ExecutionRuntimeContext::new(
+                cfg.default_morsel_size,
+                memory_manager.clone(),
+                pb_manager,
+            );
             let receiver = pipeline.start(true, &mut runtime_handle)?;
 
             while let Some(val) = receiver.recv().await {

@@ -182,6 +182,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (timeunit, timezone=None))]
     pub fn timestamp(timeunit: PyTimeUnit, timezone: Option<String>) -> PyResult<Self> {
         Ok(DataType::Timestamp(timeunit.timeunit, timezone).into())
     }
@@ -232,6 +233,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (name, storage_data_type, metadata=None))]
     pub fn extension(
         name: &str,
         storage_data_type: Self,
@@ -263,6 +265,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (mode=None, height=None, width=None))]
     pub fn image(
         mode: Option<ImageMode>,
         height: Option<u32>,
@@ -281,6 +284,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (dtype, shape=None))]
     pub fn tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
         // TODO(Clark): Add support for non-numeric (e.g. string) tensor columns.
         if !dtype.dtype.is_numeric() {
@@ -297,6 +301,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (dtype, shape=None))]
     pub fn sparse_tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
         if !dtype.dtype.is_numeric() {
             return Err(PyValueError::new_err(format!(
@@ -317,11 +322,11 @@ impl PyDataType {
     }
 
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         match &self.dtype {
             DataType::FixedShapeTensor(dtype, shape) => {
                 if py
-                    .import_bound(pyo3::intern!(py, "daft.utils"))?
+                    .import(pyo3::intern!(py, "daft.utils"))?
                     .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
                     .call0()?
                     .extract()?
@@ -333,7 +338,7 @@ impl PyDataType {
                                 dtype: *dtype.clone(),
                             }
                             .to_arrow(py)?,
-                            pyo3::types::PyTuple::new_bound(py, shape.clone()),
+                            pyo3::types::PyTuple::new(py, shape.clone())?,
                         ))
                 } else {
                     // Fall back to default Daft super extension representation if installed pyarrow doesn't have the

@@ -53,7 +53,7 @@ pub fn to_py_array<'py>(
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
-    let array = PyModule::import_bound(py, pyo3::intern!(py, "daft.arrow_utils"))?
+    let array = PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
         .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
         .call1((array,))?;
 

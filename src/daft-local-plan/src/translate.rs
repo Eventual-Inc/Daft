@@ -197,7 +197,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Repartition(repartition) => {
-            log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
+            log::warn!("Repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition");
             translate(&repartition.input)
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {

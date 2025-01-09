@@ -26,13 +26,13 @@ mod utf8;
 
 use pyo3::{
     types::{PyModule, PyModuleMethods},
-    wrap_pyfunction_bound, Bound, PyResult,
+    wrap_pyfunction, Bound, PyResult,
 };
 
 pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     macro_rules! add {
         ($p:path) => {
-            parent.add_function(wrap_pyfunction_bound!($p, parent)?)?;
+            parent.add_function(wrap_pyfunction!($p, parent)?)?;
         };
     }
 

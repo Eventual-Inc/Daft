@@ -6,7 +6,11 @@ Daft currently supports:
 
 1. **20+ SQL Dialects:** Daft supports over 20 databases, data warehouses, and query engines by using [SQLGlot](https://sqlglot.com/sqlglot.html) to convert SQL queries across dialects. See the full list of supported dialects [here](https://sqlglot.com/sqlglot/dialects.html).
 
+<<<<<<< HEAD
 2. **Parallel + Distributed Reads:** Daft parallelizes SQL reads by using all local machine cores with its default multithreading runner, or all cores across multiple machines if using the [distributed Ray runner](../distributed.md).
+=======
+2. **Parallel + Distributed Reads:** Daft parallelizes SQL reads by using all local machine cores with its default multithreading runner, or all cores across multiple machines if using the [distributed Ray runner](../advanced/distributed.md).
+>>>>>>> bb85070a9c582695946b03f30adde6480c58db56
 
 3. **Skipping Filtered Data:** Daft ensures that only data that matches your [`df.select(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.select.html#daft.DataFrame.select), [`df.limit(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.limit.html#daft.DataFrame.limit), and [`df.where(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.where.html#daft.DataFrame.where) expressions will be read, often skipping entire partitions/columns.
 

@@ -1,17 +1,16 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
-use tracing::{info_span, instrument, Instrument};
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::state_bridge::BroadcastStateBridgeRef;
+use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 struct CrossJoinState {
     bridge: BroadcastStateBridgeRef<Vec<Table>>,
@@ -73,7 +72,7 @@ impl IntermediateOperator for CrossJoinOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let output_schema = self.output_schema.clone();
 
@@ -83,7 +82,7 @@ impl IntermediateOperator for CrossJoinOperator {
 
         let stream_side = self.stream_side;
 
-        runtime
+        task_spawner
             .spawn(
                 async move {
                     let cross_join_state = state
@@ -133,8 +132,8 @@ impl IntermediateOperator for CrossJoinOperator {
                             IntermediateOperatorResult::HasMoreOutput(output_morsel)
                         };
                     Ok((state, result))
-                }
-                .instrument(info_span!("CrossJoinOperator::execute")),
+                },
+                Span::current(),
             )
             .into()
     }

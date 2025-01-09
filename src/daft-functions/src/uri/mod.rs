@@ -29,19 +29,22 @@ pub fn download(
 #[must_use]
 pub fn upload(
     input: ExprRef,
-    location: &str,
+    location: ExprRef,
     max_connections: usize,
+    raise_error_on_failure: bool,
     multi_thread: bool,
+    is_single_folder: bool,
     config: Option<IOConfig>,
 ) -> ExprRef {
     ScalarFunction::new(
         UploadFunction {
-            location: location.to_string(),
             max_connections,
+            raise_error_on_failure,
             multi_thread,
+            is_single_folder,
             config: config.unwrap_or_default().into(),
         },
-        vec![input],
+        vec![input, location],
     )
     .into()
 }

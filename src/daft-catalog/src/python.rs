@@ -80,13 +80,16 @@ fn py_register_table(
 ///     >>> daft.unregister_catalog("my_catalog")
 ///     True
 #[pyfunction]
-#[pyo3(name = "unregister_catalog")]
+#[pyo3(
+    name = "unregister_catalog",
+    signature = (catalog_name=None)
+)]
 pub fn py_unregister_catalog(catalog_name: Option<&str>) -> bool {
     crate::global_catalog::unregister_catalog(catalog_name)
 }
 
 pub fn register_modules<'py>(parent: &Bound<'py, PyModule>) -> PyResult<Bound<'py, PyModule>> {
-    let module = PyModule::new_bound(parent.py(), "catalog")?;
+    let module = PyModule::new(parent.py(), "catalog")?;
 
     module.add_wrapped(wrap_pyfunction!(py_read_table))?;
     module.add_wrapped(wrap_pyfunction!(py_register_table))?;

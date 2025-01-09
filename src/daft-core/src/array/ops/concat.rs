@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
 
@@ -89,7 +91,7 @@ where
                         .iter()
                         .map(|s| {
                             s.as_any()
-                                .downcast_ref::<PseudoArrowArray<PyObject>>()
+                                .downcast_ref::<PseudoArrowArray<Arc<PyObject>>>()
                                 .unwrap()
                         })
                         .collect(),

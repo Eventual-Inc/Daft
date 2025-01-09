@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-
 import pytest
 
 from daft.datatype import DataType, TimeUnit
@@ -279,10 +277,6 @@ def ts_with_tz_maker(y, m, d, h, mi, s, us, tz):
         return datetime(y, m, d, h, mi, s, us, pytz.timezone(tz))
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 8),
-    reason="Timezone conversions via PyArrow are supported in Python 3.8+",
-)
 @pytest.mark.parametrize(
     ["input", "interval", "expected"],
     [
@@ -319,10 +313,6 @@ def test_series_timestamp_truncate_operation(input, interval, expected, tz) -> N
     assert expected_series.to_pylist() == truncated
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 8),
-    reason="Timezone conversions via PyArrow are supported in Python 3.8+",
-)
 @pytest.mark.parametrize("tz", [None, "UTC", "+09:00", "-13:00"])
 @pytest.mark.parametrize(
     ["input", "interval", "expected", "relative_to"],
@@ -360,10 +350,6 @@ def test_series_timestamp_truncate_operation_with_relative_to(tz, input, interva
     assert expected_series.to_pylist() == truncated
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 8),
-    reason="Timezone conversions via PyArrow are supported in Python 3.8+",
-)
 @pytest.mark.parametrize("tz", [None, "UTC", "+09:00", "-13:00"])
 @pytest.mark.parametrize(
     ["input", "interval", "expected", "relative_to"],

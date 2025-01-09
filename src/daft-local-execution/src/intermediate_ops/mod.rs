@@ -1,5 +1,4 @@
 pub mod actor_pool_project;
-pub mod anti_semi_hash_join_probe;
 pub mod cross_join;
 pub mod explode;
 pub mod filter;

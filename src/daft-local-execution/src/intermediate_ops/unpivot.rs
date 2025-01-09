@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use common_runtime::RuntimeRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
+use crate::ExecutionTaskSpawner;
 
 struct UnpivotParams {
     ids: Vec<ExprRef>,
@@ -44,22 +44,25 @@ impl IntermediateOperator for UnpivotOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let params = self.params.clone();
-        runtime
-            .spawn(async move {
-                let out = input.unpivot(
-                    &params.ids,
-                    &params.values,
-                    &params.variable_name,
-                    &params.value_name,
-                )?;
-                Ok((
-                    state,
-                    IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                ))
-            })
+        task_spawner
+            .spawn(
+                async move {
+                    let out = input.unpivot(
+                        &params.ids,
+                        &params.values,
+                        &params.variable_name,
+                        &params.value_name,
+                    )?;
+                    Ok((
+                        state,
+                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                    ))
+                },
+                Span::current(),
+            )
             .into()
     }
 

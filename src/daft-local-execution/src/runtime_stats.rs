@@ -1,14 +1,21 @@
 use core::fmt;
 use std::{
     fmt::Write,
+    future::Future,
+    pin::Pin,
     sync::{atomic::AtomicU64, Arc},
+    task::{Context, Poll},
     time::Instant,
 };
 
 use daft_micropartition::MicroPartition;
 use loole::SendError;
+use tracing::{instrument::Instrumented, Instrument};
 
-use crate::channel::{Receiver, Sender};
+use crate::{
+    channel::{Receiver, Sender},
+    progress_bar::OperatorProgressBar,
+};
 
 #[derive(Default)]
 pub struct RuntimeStatsContext {
@@ -66,15 +73,11 @@ impl RuntimeStatsContext {
             cpu_us: AtomicU64::new(0),
         })
     }
-    pub(crate) fn in_span<F: FnOnce() -> T, T>(&self, span: &tracing::Span, f: F) -> T {
-        let _enter = span.enter();
-        let start = Instant::now();
-        let result = f();
-        let total = start.elapsed();
-        let micros = total.as_micros() as u64;
-        self.cpu_us
-            .fetch_add(micros, std::sync::atomic::Ordering::Relaxed);
-        result
+    pub(crate) fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
+        self.cpu_us.fetch_add(
+            elapsed.as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 
     pub(crate) fn mark_rows_received(&self, rows: u64) {
@@ -86,6 +89,16 @@ impl RuntimeStatsContext {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
     }
+
+    pub(crate) fn get_rows_received(&self) -> u64 {
+        self.rows_received
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn get_rows_emitted(&self) -> u64 {
+        self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     #[allow(unused)]
     pub(crate) fn reset(&self) {
         self.rows_received
@@ -106,14 +119,59 @@ impl RuntimeStatsContext {
     }
 }
 
+#[pin_project::pin_project]
+pub struct TimedFuture<F: Future> {
+    start: Option<Instant>,
+    #[pin]
+    future: Instrumented<F>,
+    runtime_context: Arc<RuntimeStatsContext>,
+}
+
+impl<F: Future> TimedFuture<F> {
+    pub fn new(future: F, runtime_context: Arc<RuntimeStatsContext>, span: tracing::Span) -> Self {
+        let instrumented = future.instrument(span);
+        Self {
+            start: None,
+            future: instrumented,
+            runtime_context,
+        }
+    }
+}
+
+impl<F: Future> Future for TimedFuture<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let mut this = self.project();
+        let start = this.start.get_or_insert_with(Instant::now);
+        let inner_poll = this.future.as_mut().poll(cx);
+        let elapsed = start.elapsed();
+        this.runtime_context.record_elapsed_cpu_time(elapsed);
+
+        match inner_poll {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(output) => Poll::Ready(output),
+        }
+    }
+}
+
 pub struct CountingSender {
     sender: Sender<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
+    progress_bar: Option<Arc<OperatorProgressBar>>,
 }
 
 impl CountingSender {
-    pub(crate) fn new(sender: Sender<Arc<MicroPartition>>, rt: Arc<RuntimeStatsContext>) -> Self {
-        Self { sender, rt }
+    pub(crate) fn new(
+        sender: Sender<Arc<MicroPartition>>,
+        rt: Arc<RuntimeStatsContext>,
+        progress_bar: Option<Arc<OperatorProgressBar>>,
+    ) -> Self {
+        Self {
+            sender,
+            rt,
+            progress_bar,
+        }
     }
     #[inline]
     pub(crate) async fn send(
@@ -121,6 +179,9 @@ impl CountingSender {
         v: Arc<MicroPartition>,
     ) -> Result<(), SendError<Arc<MicroPartition>>> {
         self.rt.mark_rows_emitted(v.len() as u64);
+        if let Some(ref pb) = self.progress_bar {
+            pb.render();
+        }
         self.sender.send(v).await?;
         Ok(())
     }
@@ -129,20 +190,29 @@ impl CountingSender {
 pub struct CountingReceiver {
     receiver: Receiver<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
+    progress_bar: Option<Arc<OperatorProgressBar>>,
 }
 
 impl CountingReceiver {
     pub(crate) fn new(
         receiver: Receiver<Arc<MicroPartition>>,
         rt: Arc<RuntimeStatsContext>,
+        progress_bar: Option<Arc<OperatorProgressBar>>,
     ) -> Self {
-        Self { receiver, rt }
+        Self {
+            receiver,
+            rt,
+            progress_bar,
+        }
     }
     #[inline]
     pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
             self.rt.mark_rows_received(v.len() as u64);
+            if let Some(ref pb) = self.progress_bar {
+                pb.render();
+            }
         }
         v
     }

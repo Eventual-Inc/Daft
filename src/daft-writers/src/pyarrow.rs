@@ -22,10 +22,10 @@ impl PyArrowWriter {
         partition_values: Option<&Table>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
-            let file_writer_module = py.import_bound(pyo3::intern!(py, "daft.io.writer"))?;
+            let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("ParquetFileWriter")?;
             let _from_pytable = py
-                .import_bound(pyo3::intern!(py, "daft.table"))?
+                .import(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "Table"))?
                 .getattr(pyo3::intern!(py, "_from_pytable"))?;
             let partition_values = match partition_values {
@@ -60,10 +60,10 @@ impl PyArrowWriter {
         partition_values: Option<&Table>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
-            let file_writer_module = py.import_bound(pyo3::intern!(py, "daft.io.writer"))?;
+            let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("CSVFileWriter")?;
             let _from_pytable = py
-                .import_bound(pyo3::intern!(py, "daft.table"))?
+                .import(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "Table"))?
                 .getattr(pyo3::intern!(py, "_from_pytable"))?;
             let partition_values = match partition_values {
@@ -99,10 +99,10 @@ impl PyArrowWriter {
         io_config: &Option<daft_io::IOConfig>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
-            let file_writer_module = py.import_bound(pyo3::intern!(py, "daft.io.writer"))?;
+            let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("IcebergWriter")?;
             let _from_pytable = py
-                .import_bound(pyo3::intern!(py, "daft.table"))?
+                .import(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "Table"))?
                 .getattr(pyo3::intern!(py, "_from_pytable"))?;
             let partition_values = match partition_values {
@@ -140,10 +140,10 @@ impl PyArrowWriter {
         io_config: &Option<daft_io::IOConfig>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
-            let file_writer_module = py.import_bound(pyo3::intern!(py, "daft.io.writer"))?;
+            let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("DeltalakeWriter")?;
             let _from_pytable = py
-                .import_bound(pyo3::intern!(py, "daft.table"))?
+                .import(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "Table"))?
                 .getattr(pyo3::intern!(py, "_from_pytable"))?;
             let partition_values = match partition_values {
@@ -180,7 +180,7 @@ impl FileWriter for PyArrowWriter {
         assert!(!self.is_closed, "Cannot write to a closed PyArrowWriter");
         let bytes_written = Python::with_gil(|py| {
             let py_micropartition = py
-                .import_bound(pyo3::intern!(py, "daft.table"))?
+                .import(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "MicroPartition"))?
                 .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
                 .call1((PyMicroPartition::from(data),))?;

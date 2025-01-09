@@ -29,6 +29,7 @@ impl PyDaftPlanningConfig {
         }
     }
 
+    #[pyo3(signature = (default_io_config=None))]
     fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -74,6 +75,32 @@ impl PyDaftExecutionConfig {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        scan_tasks_min_size_bytes=None,
+        scan_tasks_max_size_bytes=None,
+        broadcast_join_size_bytes_threshold=None,
+        parquet_split_row_groups_max_files=None,
+        sort_merge_join_sort_with_aligned_boundaries=None,
+        hash_join_partition_size_leniency=None,
+        sample_size_for_sort=None,
+        num_preview_rows=None,
+        parquet_target_filesize=None,
+        parquet_target_row_group_size=None,
+        parquet_inflation_factor=None,
+        csv_target_filesize=None,
+        csv_inflation_factor=None,
+        shuffle_aggregation_default_partitions=None,
+        partial_aggregation_threshold=None,
+        high_cardinality_aggregation_threshold=None,
+        read_sql_partition_size_bytes=None,
+        enable_aqe=None,
+        enable_native_executor=None,
+        default_morsel_size=None,
+        shuffle_algorithm=None,
+        pre_shuffle_merge_threshold=None,
+        enable_ray_tracing=None,
+        scantask_splitting_level=None
+    ))]
     fn with_config_values(
         &self,
         scan_tasks_min_size_bytes: Option<usize>,
@@ -99,6 +126,7 @@ impl PyDaftExecutionConfig {
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
         enable_ray_tracing: Option<bool>,
+        scantask_splitting_level: Option<i32>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -182,6 +210,15 @@ impl PyDaftExecutionConfig {
 
         if let Some(enable_ray_tracing) = enable_ray_tracing {
             config.enable_ray_tracing = enable_ray_tracing;
+        }
+
+        if let Some(scantask_splitting_level) = scantask_splitting_level {
+            if !matches!(scantask_splitting_level, 1 | 2) {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "scantask_splitting_level must be 1 or 2",
+                ));
+            }
+            config.scantask_splitting_level = scantask_splitting_level;
         }
 
         Ok(Self {
@@ -292,6 +329,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_ray_tracing(&self) -> PyResult<bool> {
         Ok(self.config.enable_ray_tracing)
+    }
+
+    #[getter]
+    fn scantask_splitting_level(&self) -> PyResult<i32> {
+        Ok(self.config.scantask_splitting_level)
     }
 }
 

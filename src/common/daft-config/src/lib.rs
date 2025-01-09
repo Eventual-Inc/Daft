@@ -10,12 +10,20 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize, Deserialize, Default, Debug)]
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
+    pub enable_join_reordering: bool,
 }
 
 impl DaftPlanningConfig {
     #[must_use]
     pub fn from_env() -> Self {
-        Default::default()
+        let mut cfg: Self = Default::default();
+        let join_reordering_var_name = "DAFT_DEV_ENABLE_JOIN_REORDERING";
+        if let Ok(val) = std::env::var(join_reordering_var_name)
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.enable_join_reordering = true;
+        }
+        cfg
     }
 }
 
@@ -53,6 +61,7 @@ pub struct DaftExecutionConfig {
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
     pub enable_ray_tracing: bool,
+    pub scantask_splitting_level: i32,
 }
 
 impl Default for DaftExecutionConfig {
@@ -81,6 +90,7 @@ impl Default for DaftExecutionConfig {
             shuffle_algorithm: "map_reduce".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
             enable_ray_tracing: false,
+            scantask_splitting_level: 1,
         }
     }
 }
@@ -117,6 +127,10 @@ impl DaftExecutionConfig {
         let shuffle_algorithm_env_var_name = "DAFT_SHUFFLE_ALGORITHM";
         if let Ok(val) = std::env::var(shuffle_algorithm_env_var_name) {
             cfg.shuffle_algorithm = val;
+        }
+        let enable_aggressive_scantask_splitting_env_var_name = "DAFT_SCANTASK_SPLITTING_LEVEL";
+        if let Ok(val) = std::env::var(enable_aggressive_scantask_splitting_env_var_name) {
+            cfg.scantask_splitting_level = val.parse::<i32>().unwrap_or(0);
         }
         cfg
     }

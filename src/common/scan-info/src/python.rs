@@ -17,6 +17,7 @@ pub mod pylib {
     #[pymethods]
     impl PyPartitionField {
         #[new]
+        #[pyo3(signature = (field, source_field=None, transform=None))]
         fn new(
             field: PyField,
             source_field: Option<PyField>,

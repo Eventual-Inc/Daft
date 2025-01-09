@@ -409,7 +409,7 @@ impl Literal for Series {
 #[cfg(feature = "python")]
 impl Literal for pyo3::PyObject {
     fn literal_value(self) -> LiteralValue {
-        LiteralValue::Python(PyObjectWrapper(self))
+        LiteralValue::Python(PyObjectWrapper(Arc::new(self)))
     }
 }
 
