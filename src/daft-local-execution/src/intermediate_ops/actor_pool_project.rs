@@ -36,7 +36,7 @@ impl ActorHandle {
             let handle = Python::with_gil(|py| {
                 // create python object
                 Ok::<PyObject, PyErr>(
-                    py.import_bound(pyo3::intern!(py, "daft.execution.actor_pool_udf"))?
+                    py.import(pyo3::intern!(py, "daft.execution.actor_pool_udf"))?
                         .getattr(pyo3::intern!(py, "ActorHandle"))?
                         .call1((projection
                             .iter()

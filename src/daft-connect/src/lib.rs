@@ -464,7 +464,7 @@ pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &pyo3::Bound<pyo3::types::PyModule>) -> pyo3::PyResult<()> {
-    parent.add_function(pyo3::wrap_pyfunction_bound!(py_connect_start, parent)?)?;
+    parent.add_function(pyo3::wrap_pyfunction!(py_connect_start, parent)?)?;
     parent.add_class::<ConnectionHandle>()?;
     Ok(())
 }

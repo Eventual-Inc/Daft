@@ -457,7 +457,7 @@ impl crate::datatypes::PythonArray {
             // Find visualization hooks for this object's class
             let pyany = val.bind(py);
             let get_viz_hook = py
-                .import_bound(pyo3::intern!(py, "daft.viz.html_viz_hooks"))?
+                .import(pyo3::intern!(py, "daft.viz.html_viz_hooks"))?
                 .getattr(pyo3::intern!(py, "get_viz_hook"))?;
             let hook = get_viz_hook.call1((pyany,))?;
 

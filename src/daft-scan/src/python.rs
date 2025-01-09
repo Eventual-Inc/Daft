@@ -1,4 +1,7 @@
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{prelude::*, types::PyTuple};
@@ -12,7 +15,7 @@ struct PyObjectSerializableWrapper(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub PyObject,
+    pub Arc<PyObject>,
 );
 
 /// Python arguments to a Python function that produces Tables
@@ -29,7 +32,7 @@ impl Hash for PythonTablesFactoryArgs {
 }
 
 impl PythonTablesFactoryArgs {
-    pub fn new(args: Vec<PyObject>) -> Self {
+    pub fn new(args: Vec<Arc<PyObject>>) -> Self {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         Python::with_gil(|py| {
             for obj in &args {
@@ -45,9 +48,8 @@ impl PythonTablesFactoryArgs {
         }
     }
 
-    #[must_use]
-    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> Bound<'a, PyTuple> {
-        pyo3::types::PyTuple::new_bound(py, self.args.iter().map(|x| x.0.bind(py)))
+    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyTuple>> {
+        pyo3::types::PyTuple::new(py, self.args.iter().map(|x| x.0.bind(py)))
     }
 }
 
@@ -78,11 +80,7 @@ pub mod pylib {
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
     use daft_table::{python::PyTable, Table};
-    use pyo3::{
-        prelude::*,
-        pyclass,
-        types::{PyIterator, PyList},
-    };
+    use pyo3::{prelude::*, pyclass, types::PyIterator};
     use serde::{Deserialize, Serialize};
 
     use super::PythonTablesFactoryArgs;
@@ -126,6 +124,15 @@ pub mod pylib {
 
         #[staticmethod]
         #[allow(clippy::too_many_arguments)]
+        #[pyo3(signature = (
+            glob_path,
+            file_format_config,
+            storage_config,
+            hive_partitioning,
+            infer_schema,
+            schema=None,
+            file_path_column=None
+        ))]
         pub fn glob_scan(
             py: Python,
             glob_path: Vec<String>,
@@ -186,10 +193,10 @@ pub mod pylib {
         }
         fn _partitioning_keys(abc: &PyObject, py: Python) -> PyResult<Vec<PartitionField>> {
             let result = abc.call_method0(py, pyo3::intern!(py, "partitioning_keys"))?;
-            let result = result.extract::<&PyList>(py)?;
             result
-                .into_iter()
-                .map(|p| Ok(p.extract::<PyPartitionField>()?.0.as_ref().clone()))
+                .bind(py)
+                .try_iter()?
+                .map(|p| Ok(p?.extract::<PyPartitionField>()?.0.as_ref().clone()))
                 .collect()
         }
 
@@ -280,11 +287,11 @@ pub mod pylib {
 
         fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
             let scan_tasks = Python::with_gil(|py| {
-                let pypd = PyPushdowns(pushdowns.clone().into()).into_py(py);
+                let pypd = PyPushdowns(pushdowns.clone().into()).into_pyobject(py)?;
                 let pyiter =
                     self.operator
                         .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
-                let pyiter = PyIterator::from_bound_object(pyiter.bind(py))?;
+                let pyiter = PyIterator::from_object(pyiter.bind(py))?;
                 DaftResult::Ok(
                     pyiter
                         .map(|v| {
@@ -340,6 +347,18 @@ pub mod pylib {
     impl PyScanTask {
         #[allow(clippy::too_many_arguments)]
         #[staticmethod]
+        #[pyo3(signature = (
+            file,
+            file_format,
+            schema,
+            storage_config,
+            num_rows=None,
+            size_bytes=None,
+            iceberg_delete_files=None,
+            pushdowns=None,
+            partition_values=None,
+            stats=None
+        ))]
         pub fn catalog_scan_task(
             file: String,
             file_format: PyFileFormatConfig,
@@ -404,6 +423,16 @@ pub mod pylib {
 
         #[allow(clippy::too_many_arguments)]
         #[staticmethod]
+        #[pyo3(signature = (
+            url,
+            file_format,
+            schema,
+            storage_config,
+            num_rows=None,
+            size_bytes=None,
+            pushdowns=None,
+            stats=None
+        ))]
         pub fn sql_scan_task(
             url: String,
             file_format: PyFileFormatConfig,
@@ -437,11 +466,20 @@ pub mod pylib {
 
         #[allow(clippy::too_many_arguments)]
         #[staticmethod]
+        #[pyo3(signature = (
+            module,
+            func_name,
+            func_args,
+            schema,
+            num_rows=None,
+            size_bytes=None,
+            pushdowns=None,
+            stats=None
+        ))]
         pub fn python_factory_func_scan_task(
-            py: Python,
             module: String,
             func_name: String,
-            func_args: Vec<Bound<PyAny>>,
+            func_args: Vec<PyObject>,
             schema: PySchema,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
@@ -455,7 +493,7 @@ pub mod pylib {
                 module,
                 func_name,
                 func_args: PythonTablesFactoryArgs::new(
-                    func_args.iter().map(|pyany| pyany.into_py(py)).collect(),
+                    func_args.into_iter().map(Arc::new).collect(),
                 ),
                 size_bytes,
                 metadata: num_rows.map(|num_rows| TableMetadata {
@@ -523,7 +561,7 @@ pub mod pylib {
     ///
     /// Returns an `i64` representing the estimated size in bytes.
     ///
-    #[pyfunction]
+    #[pyfunction(signature = (uri, file_size, columns=None, has_metadata=None))]
     pub fn estimate_in_memory_size_bytes(
         uri: &str,
         file_size: u64,
@@ -572,16 +610,13 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
-    parent.add_function(wrap_pyfunction_bound!(
-        pylib::logical_plan_table_scan,
-        parent
-    )?)?;
+    parent.add_function(wrap_pyfunction!(pylib::logical_plan_table_scan, parent)?)?;
 
     Ok(())
 }
 
 pub fn register_testing_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction_bound!(
+    parent.add_function(wrap_pyfunction!(
         pylib::estimate_in_memory_size_bytes,
         parent
     )?)?;

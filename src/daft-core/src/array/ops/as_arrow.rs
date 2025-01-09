@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow2::{array, types::months_days_ns};
 
 #[cfg(feature = "python")]
@@ -64,7 +66,7 @@ impl_asarrow_dataarray!(FixedSizeBinaryArray, array::FixedSizeBinaryArray);
 impl_asarrow_dataarray!(IntervalArray, array::PrimitiveArray<months_days_ns>);
 
 #[cfg(feature = "python")]
-impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<pyo3::PyObject>);
+impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<Arc<pyo3::PyObject>>);
 
 impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
 impl_asarrow_logicalarray!(TimeArray, array::PrimitiveArray<i64>);

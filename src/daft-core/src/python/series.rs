@@ -1,6 +1,7 @@
 use std::{
     hash::BuildHasherDefault,
     ops::{Add, Div, Mul, Rem, Sub},
+    sync::Arc,
 };
 
 use common_arrow_ffi as ffi;
@@ -46,17 +47,22 @@ impl PySeries {
 
     // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(name: &str, pylist: Bound<PyAny>, pyobj: &str) -> PyResult<Self> {
+    pub fn from_pylist(
+        py: Python<'_>,
+        name: &str,
+        pylist: Bound<PyAny>,
+        pyobj: &str,
+    ) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-        let py = pylist.py();
         let dtype = match pyobj {
             "force" => DataType::Python,
             "allow" => infer_daft_dtype_for_sequence(&vec_pyobj, py, name)?.unwrap_or(DataType::Python),
             "disallow" => panic!("Cannot create a Series from a pylist and being strict about only using Arrow types by setting pyobj=disallow"),
             _ => panic!("Unsupported pyobj behavior when creating Series from pylist: {}", pyobj)
         };
+        let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
         let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::<PyObject>::from_pyobj_vec(vec_pyobj));
+            Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
         let field = Field::new(name, DataType::Python);
 
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
@@ -66,17 +72,23 @@ impl PySeries {
 
     // This is for PythonArrays only,
     // to convert the Rust PythonArray to a Python list[object].
-    pub fn to_pylist(&self) -> PyResult<PyObject> {
+    pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
         let pseudo_arrow_array = self.series.python()?.as_arrow();
         let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
-        Python::with_gil(|py| Ok(PyList::new_bound(py, pyobj_vec).into()))
+
+        let pyobj_vec_cloned = pyobj_vec
+            .into_iter()
+            .map(|pyobj| pyobj.clone_ref(py))
+            .collect::<Vec<_>>();
+
+        PyList::new(py, pyobj_vec_cloned)
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
         let arrow_array = self.series.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         Python::with_gil(|py| {
-            let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+            let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
             Ok(ffi::to_py_array(py, arrow_array, &pyarrow)?.unbind())
         })
     }
@@ -310,6 +322,7 @@ impl PySeries {
         Ok(self.series.argsort(descending, nulls_first)?.into())
     }
 
+    #[pyo3(signature = (seed=None))]
     pub fn hash(&self, seed: Option<Self>) -> PyResult<Self> {
         let seed_series;
         let mut seed_array = None;
@@ -567,6 +580,7 @@ impl PySeries {
         Ok(self.series.utf8_to_date(format)?.into())
     }
 
+    #[pyo3(signature = (format, timezone=None))]
     pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
         Ok(self.series.utf8_to_datetime(format, timezone)?.into())
     }
@@ -731,7 +745,7 @@ impl PySeries {
 
     pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<PyObject> {
         let values = bincode::serialize(&self.series).unwrap();
-        Ok(PyBytes::new_bound(py, &values).into())
+        Ok(PyBytes::new(py, &values).into())
     }
 
     #[staticmethod]
@@ -763,16 +777,16 @@ fn infer_daft_dtype_for_sequence(
     _name: &str,
 ) -> PyResult<Option<DataType>> {
     let py_pil_image_type = py
-        .import_bound(pyo3::intern!(py, "PIL.Image"))
+        .import(pyo3::intern!(py, "PIL.Image"))
         .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
     let np_ndarray_type = py
-        .import_bound(pyo3::intern!(py, "numpy"))
+        .import(pyo3::intern!(py, "numpy"))
         .and_then(|m| m.getattr(pyo3::intern!(py, "ndarray")));
     let np_generic_type = py
-        .import_bound(pyo3::intern!(py, "numpy"))
+        .import(pyo3::intern!(py, "numpy"))
         .and_then(|m| m.getattr(pyo3::intern!(py, "generic")));
     let from_numpy_dtype = {
-        py.import_bound(pyo3::intern!(py, "daft.datatype"))?
+        py.import(pyo3::intern!(py, "daft.datatype"))?
             .getattr(pyo3::intern!(py, "DataType"))?
             .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
     };

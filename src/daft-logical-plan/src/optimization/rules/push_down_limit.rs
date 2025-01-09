@@ -275,7 +275,7 @@ mod tests {
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
         let plan = LogicalPlanBuilder::in_memory_scan(
             "foo",
-            common_partitioning::PartitionCacheEntry::Python(py_obj),
+            common_partitioning::PartitionCacheEntry::Python(Arc::new(py_obj)),
             schema,
             Default::default(),
             5,

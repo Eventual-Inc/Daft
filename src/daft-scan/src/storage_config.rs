@@ -70,6 +70,7 @@ impl Default for StorageConfig {
 impl StorageConfig {
     #[new]
     #[must_use]
+    #[pyo3(signature = (multithreaded_io, io_config=None))]
     pub fn new(multithreaded_io: bool, io_config: Option<python::IOConfig>) -> Self {
         Self::new_internal(multithreaded_io, io_config.map(|c| c.config))
     }

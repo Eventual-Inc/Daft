@@ -26,7 +26,15 @@ pub fn url_download(
     .into())
 }
 
-#[pyfunction]
+#[pyfunction(signature = (
+    expr,
+    folder_location,
+    max_connections,
+    raise_error_on_failure,
+    multi_thread,
+    is_single_folder,
+    io_config=None
+))]
 pub fn url_upload(
     expr: PyExpr,
     folder_location: PyExpr,

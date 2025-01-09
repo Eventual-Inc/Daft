@@ -210,6 +210,7 @@ impl PyTable {
         py.allow_threads(|| Ok(self.table.head(num)?.into()))
     }
 
+    #[pyo3(signature = (fraction, with_replacement, seed=None))]
     pub fn sample_by_fraction(
         &self,
         py: Python,
@@ -235,6 +236,7 @@ impl PyTable {
         })
     }
 
+    #[pyo3(signature = (size, with_replacement, seed=None))]
     pub fn sample_by_size(
         &self,
         py: Python,
@@ -475,12 +477,13 @@ impl PyTable {
 
     pub fn to_arrow_record_batch(&self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+            let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
             ffi::table_to_record_batch(py, &self.table, pyarrow)
         })
     }
 
     #[staticmethod]
+    #[pyo3(signature = (schema=None))]
     pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
         Ok(Table::empty(match schema {
             Some(s) => Some(s.schema),

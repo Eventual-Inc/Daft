@@ -8,7 +8,14 @@ pub mod pylib {
 
     use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uri,
+        convert_options=None,
+        parse_options=None,
+        read_options=None,
+        io_config=None,
+        multithreaded_io=None
+    ))]
     pub fn read_csv(
         py: Python,
         uri: &str,
@@ -39,7 +46,13 @@ pub mod pylib {
         })
     }
 
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uri,
+        parse_options=None,
+        max_bytes=None,
+        io_config=None,
+        multithreaded_io=None
+    ))]
     pub fn read_csv_schema(
         py: Python,
         uri: &str,
