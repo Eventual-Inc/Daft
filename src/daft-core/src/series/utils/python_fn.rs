@@ -38,18 +38,18 @@ fn python_binary_op_with_utilfn(
         (a, b) => panic!("Cannot apply operation on arrays of different lengths: {a} vs {b}"),
     };
 
-    let left_pylist = PySeries::from(lhs.clone()).to_pylist()?;
-    let right_pylist = PySeries::from(rhs).to_pylist()?;
-
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
-        let py_operator =
-            PyModule::import_bound(py, pyo3::intern!(py, "operator"))?.getattr(operator_fn)?;
+        let left_pylist = PySeries::from(lhs.clone()).to_pylist(py)?;
+        let right_pylist = PySeries::from(rhs).to_pylist(py)?;
 
-        let result_pylist = PyModule::import_bound(py, pyo3::intern!(py, "daft.utils"))?
+        let py_operator =
+            PyModule::import(py, pyo3::intern!(py, "operator"))?.getattr(operator_fn)?;
+
+        let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
             .getattr(util_fn)?
             .call1((py_operator, left_pylist, right_pylist))?;
 
-        PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?
+        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
             .getattr(pyo3::intern!(py, "Series"))?
             .getattr(pyo3::intern!(py, "from_pylist"))?
             .call1((result_pylist, lhs.name(), pyo3::intern!(py, "disallow")))?
@@ -68,15 +68,15 @@ pub fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series>
     let lhs_casted = lhs.cast(&DataType::Python)?;
     let rhs_casted = rhs.cast(&DataType::Python)?;
 
-    let left_pylist = PySeries::from(lhs_casted.clone()).to_pylist()?;
-    let right_pylist = PySeries::from(rhs_casted).to_pylist()?;
-
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
-        let result_pylist = PyModule::import_bound(py, pyo3::intern!(py, "daft.utils"))?
+        let left_pylist = PySeries::from(lhs_casted.clone()).to_pylist(py)?;
+        let right_pylist = PySeries::from(rhs_casted).to_pylist(py)?;
+
+        let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
             .getattr(pyo3::intern!(py, "python_list_membership_check"))?
             .call1((left_pylist, right_pylist))?;
 
-        PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?
+        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
             .getattr(pyo3::intern!(py, "Series"))?
             .getattr(pyo3::intern!(py, "from_pylist"))?
             .call1((
@@ -127,16 +127,16 @@ pub fn py_between_op_utilfn(value: &Series, lower: &Series, upper: &Series) -> D
             }
         };
 
-    let value_pylist = PySeries::from(value_casted.clone()).to_pylist()?;
-    let lower_pylist = PySeries::from(lower_casted).to_pylist()?;
-    let upper_pylist = PySeries::from(upper_casted).to_pylist()?;
-
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
-        let result_pylist = PyModule::import_bound(py, pyo3::intern!(py, "daft.utils"))?
+        let value_pylist = PySeries::from(value_casted.clone()).to_pylist(py)?;
+        let lower_pylist = PySeries::from(lower_casted).to_pylist(py)?;
+        let upper_pylist = PySeries::from(upper_casted).to_pylist(py)?;
+
+        let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
             .getattr(pyo3::intern!(py, "python_list_between_check"))?
             .call1((value_pylist, lower_pylist, upper_pylist))?;
 
-        PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?
+        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
             .getattr(pyo3::intern!(py, "Series"))?
             .getattr(pyo3::intern!(py, "from_pylist"))?
             .call1((

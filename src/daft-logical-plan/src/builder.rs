@@ -534,8 +534,8 @@ impl LogicalPlanBuilder {
         table_location: String,
         partition_spec_id: i64,
         partition_cols: Vec<ExprRef>,
-        iceberg_schema: PyObject,
-        iceberg_properties: PyObject,
+        iceberg_schema: Arc<PyObject>,
+        iceberg_properties: Arc<PyObject>,
         io_config: Option<IOConfig>,
         catalog_columns: Vec<String>,
     ) -> DaftResult<Self> {
@@ -595,7 +595,7 @@ impl LogicalPlanBuilder {
         columns_name: Vec<String>,
         mode: String,
         io_config: Option<IOConfig>,
-        kwargs: PyObject,
+        kwargs: Arc<PyObject>,
     ) -> DaftResult<Self> {
         use crate::sink_info::LanceCatalogInfo;
 
@@ -708,7 +708,7 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
-            common_partitioning::PartitionCacheEntry::Python(cache_entry),
+            common_partitioning::PartitionCacheEntry::Python(Arc::new(cache_entry)),
             schema.into(),
             num_partitions,
             size_bytes,
@@ -781,6 +781,7 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[pyo3(signature = (partition_by, num_partitions=None))]
     pub fn hash_repartition(
         &self,
         partition_by: Vec<PyExpr>,
@@ -792,6 +793,7 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[pyo3(signature = (num_partitions=None))]
     pub fn random_shuffle(&self, num_partitions: Option<usize>) -> PyResult<Self> {
         Ok(self.builder.random_shuffle(num_partitions)?.into())
     }
@@ -804,6 +806,7 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.distinct()?.into())
     }
 
+    #[pyo3(signature = (fraction, with_replacement, seed=None))]
     pub fn sample(
         &self,
         fraction: f64,
@@ -843,6 +846,15 @@ impl PyLogicalPlanBuilder {
             .into())
     }
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        right,
+        left_on,
+        right_on,
+        join_type,
+        join_strategy=None,
+        join_suffix=None,
+        join_prefix=None
+    ))]
     pub fn join(
         &self,
         right: &Self,
@@ -881,6 +893,7 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.except(&other.builder, is_all)?.into())
     }
 
+    #[pyo3(signature = (column_name=None))]
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> PyResult<Self> {
         Ok(self
             .builder
@@ -888,6 +901,13 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[pyo3(signature = (
+        root_dir,
+        file_format,
+        partition_cols=None,
+        compression=None,
+        io_config=None
+    ))]
     pub fn table_write(
         &self,
         root_dir: &str,
@@ -909,6 +929,16 @@ impl PyLogicalPlanBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        table_name,
+        table_location,
+        partition_spec_id,
+        partition_cols,
+        iceberg_schema,
+        iceberg_properties,
+        catalog_columns,
+        io_config=None
+    ))]
     pub fn iceberg_write(
         &self,
         table_name: String,
@@ -927,8 +957,8 @@ impl PyLogicalPlanBuilder {
                 table_location,
                 partition_spec_id,
                 pyexprs_to_exprs(partition_cols),
-                iceberg_schema,
-                iceberg_properties,
+                Arc::new(iceberg_schema),
+                Arc::new(iceberg_properties),
                 io_config.map(|cfg| cfg.config),
                 catalog_columns,
             )?
@@ -936,6 +966,15 @@ impl PyLogicalPlanBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        path,
+        columns_name,
+        mode,
+        version,
+        large_dtypes,
+        partition_cols=None,
+        io_config=None
+    ))]
     pub fn delta_write(
         &self,
         path: String,
@@ -960,6 +999,13 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[pyo3(signature = (
+        path,
+        columns_name,
+        mode,
+        io_config=None,
+        kwargs=None
+    ))]
     pub fn lance_write(
         &self,
         py: Python,
@@ -969,7 +1015,7 @@ impl PyLogicalPlanBuilder {
         io_config: Option<common_io_config::python::IOConfig>,
         kwargs: Option<PyObject>,
     ) -> PyResult<Self> {
-        let kwargs = kwargs.unwrap_or_else(|| py.None());
+        let kwargs = Arc::new(kwargs.unwrap_or_else(|| py.None()));
         Ok(self
             .builder
             .lance_write(

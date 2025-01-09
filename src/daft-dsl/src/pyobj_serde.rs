@@ -1,6 +1,7 @@
 use std::{
     hash::{Hash, Hasher},
     io::Write,
+    sync::Arc,
 };
 
 use common_py_serde::{deserialize_py_object, serialize_py_object};
@@ -14,7 +15,7 @@ pub struct PyObjectWrapper(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub PyObject,
+    pub Arc<PyObject>,
 );
 
 impl PartialEq for PyObjectWrapper {

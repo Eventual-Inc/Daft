@@ -152,7 +152,10 @@ impl DataCatalog for PythonCatalog {
 ///     >>> daft.register_python_catalog(python_catalog, "my_catalog")
 ///     'default'
 #[pyfunction]
-#[pyo3(name = "register_python_catalog")]
+#[pyo3(
+    name = "register_python_catalog",
+    signature = (python_catalog_obj, catalog_name=None)
+)]
 pub fn py_register_python_catalog(
     python_catalog_obj: PyObject,
     catalog_name: Option<&str>,

@@ -40,7 +40,7 @@ pub fn time_lit(item: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
     Ok(expr.into())
 }
 
-#[pyfunction]
+#[pyfunction(signature = (val, tu, tz=None))]
 pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
     Ok(expr.into())
@@ -52,8 +52,17 @@ pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
     Ok(expr.into())
 }
 
-#[pyfunction]
 #[allow(clippy::too_many_arguments)]
+#[pyfunction(signature = (
+    years=None,
+    months=None,
+    days=None,
+    hours=None,
+    minutes=None,
+    seconds=None,
+    millis=None,
+    nanos=None
+))]
 pub fn interval_lit(
     years: Option<i32>,
     months: Option<i32>,
@@ -173,8 +182,18 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     }
 }
 
-#[pyfunction]
 #[allow(clippy::too_many_arguments)]
+#[pyfunction(signature = (
+    name,
+    inner,
+    bound_args,
+    expressions,
+    return_dtype,
+    init_args,
+    resource_request=None,
+    batch_size=None,
+    concurrency=None
+))]
 pub fn udf(
     name: &str,
     inner: PyObject,

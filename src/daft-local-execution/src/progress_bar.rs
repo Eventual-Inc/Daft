@@ -192,7 +192,7 @@ mod python {
 
     pub fn in_notebook() -> bool {
         pyo3::Python::with_gil(|py| {
-            py.import_bound(pyo3::intern!(py, "daft.utils"))
+            py.import(pyo3::intern!(py, "daft.utils"))
                 .and_then(|m| m.getattr(pyo3::intern!(py, "in_notebook")))
                 .and_then(|m| m.call0())
                 .and_then(|m| m.extract())
@@ -217,17 +217,17 @@ mod python {
 
     #[derive(Clone)]
     pub struct TqdmProgressBarManager {
-        inner: PyObject,
+        inner: Arc<PyObject>,
     }
 
     impl TqdmProgressBarManager {
         pub fn new() -> Self {
             Python::with_gil(|py| {
-                let module = py.import_bound("daft.runners.progress_bar")?;
+                let module = py.import("daft.runners.progress_bar")?;
                 let progress_bar_class = module.getattr("SwordfishProgressBar")?;
                 let pb_object = progress_bar_class.call0()?;
                 DaftResult::Ok(Self {
-                    inner: pb_object.into(),
+                    inner: Arc::new(pb_object.into()),
                 })
             })
             .expect("Failed to create progress bar")
