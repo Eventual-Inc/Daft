@@ -1,4 +1,5 @@
 import argparse
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -73,8 +74,15 @@ def run(
         execute_delta = execute_end - execute_start
 
     with open(info_path / f"stats-{question}.txt", "w") as f:
-        f.write(f"planning-time = {explain_delta}\n")
-        f.write(f"execution-time = {execute_delta}\n")
+        stats = json.dumps(
+            {
+                "question": question,
+                "scale-factor": scale_factor,
+                "planning-time": explain_delta,
+                "execution-time": execute_delta,
+            }
+        )
+        f.write(stats)
 
 
 if __name__ == "__main__":
