@@ -1,8 +1,6 @@
 use std::future::ready;
 
-use common_daft_config::DaftExecutionConfig;
 use common_file_formats::FileFormat;
-use daft_local_execution::NativeExecutor;
 use eyre::{bail, WrapErr};
 use spark_connect::{
     write_operation::{SaveMode, SaveType},
@@ -32,7 +30,8 @@ impl Session {
         };
 
         let finished = context.finished();
-        let pset = self.psets.clone();
+
+        let this = self.clone();
 
         let result = async move {
             let WriteOperation {
@@ -108,7 +107,7 @@ impl Session {
                 }
             };
 
-            let translator = translation::SparkAnalyzer::new(&pset);
+            let translator = translation::SparkAnalyzer::new(&this);
 
             let plan = translator.to_logical_plan(input).await?;
 
@@ -116,11 +115,7 @@ impl Session {
                 .table_write(&path, file_format, None, None, None)
                 .wrap_err("Failed to create table write plan")?;
 
-            let optimized_plan = plan.optimize()?;
-            let cfg = DaftExecutionConfig::default();
-            let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-
-            let mut result_stream = native_executor.run(&pset, cfg.into(), None)?.into_stream();
+            let mut result_stream = this.run_query(plan).await?;
 
             // this is so we make sure the operation is actually done
             // before we return

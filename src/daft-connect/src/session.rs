@@ -1,13 +1,9 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
-use common_runtime::{get_compute_runtime, RuntimeRef};
-use daft_local_execution::NativeExecutor;
 use daft_micropartition::partitioning::InMemoryPartitionSetCache;
-use daft_ray_execution::RayRunnerShim;
 use uuid::Uuid;
 
-use crate::runner::Runner;
-
+#[derive(Clone)]
 pub struct Session {
     /// so order is preserved, and so we can efficiently do a prefix search
     ///
@@ -18,8 +14,7 @@ pub struct Session {
     server_side_session_id: String,
     /// MicroPartitionSet associated with this session
     /// this will be filled up as the user runs queries
-    pub(crate) psets: InMemoryPartitionSetCache,
-    pub runtime: RuntimeRef,
+    pub(crate) psets: Arc<InMemoryPartitionSetCache>,
 }
 
 impl Session {
@@ -34,13 +29,11 @@ impl Session {
     pub fn new(id: String) -> Self {
         let server_side_session_id = Uuid::new_v4();
         let server_side_session_id = server_side_session_id.to_string();
-        let rt = get_compute_runtime();
         Self {
             config_values: Default::default(),
             id,
             server_side_session_id,
-            psets: InMemoryPartitionSetCache::empty(),
-            runtime: rt,
+            psets: Arc::new(InMemoryPartitionSetCache::empty()),
         }
     }
 

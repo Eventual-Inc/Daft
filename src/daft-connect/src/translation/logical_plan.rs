@@ -1,22 +1,23 @@
 use std::sync::Arc;
 
-use common_daft_config::DaftExecutionConfig;
 use daft_core::prelude::Schema;
 use daft_dsl::LiteralValue;
-use daft_local_execution::NativeExecutor;
-use daft_logical_plan::LogicalPlanBuilder;
+use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{
     partitioning::{
-        InMemoryPartitionSetCache, MicroPartitionSet, PartitionCacheEntry, PartitionMetadata,
-        PartitionSet, PartitionSetCache,
+        MicroPartitionSet, PartitionCacheEntry, PartitionMetadata, PartitionSet, PartitionSetCache,
     },
+    python::PyMicroPartition,
     MicroPartition,
 };
 use daft_table::Table;
 use eyre::{bail, Context};
 use futures::TryStreamExt;
+use pyo3::Python;
 use spark_connect::{relation::RelType, Limit, Relation, ShowString};
 use tracing::warn;
+
+use crate::{session::Session, Runner};
 
 mod aggregate;
 mod drop;
@@ -29,13 +30,14 @@ mod to_df;
 mod with_columns;
 mod with_columns_renamed;
 
-pub struct SparkAnalyzer<'a> {
-    pub psets: &'a InMemoryPartitionSetCache,
-}
+use pyo3::prelude::*;
 
+pub struct SparkAnalyzer<'a> {
+    pub session: &'a Session,
+}
 impl SparkAnalyzer<'_> {
-    pub fn new(pset: &InMemoryPartitionSetCache) -> SparkAnalyzer {
-        SparkAnalyzer { psets: pset }
+    pub fn new<'a>(session: &'a Session) -> SparkAnalyzer<'a> {
+        SparkAnalyzer { session }
     }
 
     pub fn create_in_memory_scan(
@@ -44,28 +46,56 @@ impl SparkAnalyzer<'_> {
         schema: Arc<Schema>,
         tables: Vec<Table>,
     ) -> eyre::Result<LogicalPlanBuilder> {
-        let partition_key = uuid::Uuid::new_v4().to_string();
+        let runner = self.session.get_runner()?;
 
-        let pset = Arc::new(MicroPartitionSet::from_tables(plan_id, tables)?);
+        match runner {
+            Runner::Ray => {
+                let mp =
+                    MicroPartition::new_loaded(tables[0].schema.clone(), Arc::new(tables), None);
+                Python::with_gil(|py| {
+                    // Convert MicroPartition to a logical plan using Python interop.
+                    let py_micropartition = py
+                        .import_bound(pyo3::intern!(py, "daft.table"))?
+                        .getattr(pyo3::intern!(py, "MicroPartition"))?
+                        .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
+                        .call1((PyMicroPartition::from(mp),))?;
 
-        let PartitionMetadata {
-            num_rows,
-            size_bytes,
-        } = pset.metadata();
-        let num_partitions = pset.num_partitions();
+                    // ERROR:   2: AttributeError: 'daft.daft.PySchema' object has no attribute '_schema'
+                    let py_plan_builder = py
+                        .import_bound(pyo3::intern!(py, "daft.dataframe.dataframe"))?
+                        .getattr(pyo3::intern!(py, "to_logical_plan_builder"))?
+                        .call1((py_micropartition,))?;
+                    let py_plan_builder = py_plan_builder.getattr(pyo3::intern!(py, "_builder"))?;
+                    let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
+                    
+                    Ok::<_, eyre::Error>(dbg!(plan.builder))
+                })
+            }
+            Runner::Native => {
+                let partition_key = uuid::Uuid::new_v4().to_string();
 
-        self.psets.put_partition_set(&partition_key, &pset);
+                let pset = Arc::new(MicroPartitionSet::from_tables(plan_id, tables)?);
 
-        let cache_entry = PartitionCacheEntry::new_rust(partition_key.clone(), pset);
+                let PartitionMetadata {
+                    num_rows,
+                    size_bytes,
+                } = pset.metadata();
+                let num_partitions = pset.num_partitions();
 
-        Ok(LogicalPlanBuilder::in_memory_scan(
-            &partition_key,
-            cache_entry,
-            schema,
-            num_partitions,
-            size_bytes,
-            num_rows,
-        )?)
+                self.session.psets.put_partition_set(&partition_key, &pset);
+
+                let cache_entry = PartitionCacheEntry::new_rust(partition_key.clone(), pset);
+
+                Ok(LogicalPlanBuilder::in_memory_scan(
+                    &partition_key,
+                    cache_entry,
+                    schema,
+                    num_partitions,
+                    size_bytes,
+                    num_rows,
+                )?)
+            }
+        }
     }
 
     pub async fn to_logical_plan(&self, relation: Relation) -> eyre::Result<LogicalPlanBuilder> {
@@ -177,15 +207,13 @@ impl SparkAnalyzer<'_> {
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
         let plan = plan.limit(num_rows as i64, true)?;
 
-        let optimized_plan = tokio::task::spawn_blocking(move || plan.optimize())
-            .await
-            .unwrap()?;
+        let results = self.session.run_query(plan).await?;
+        let results = results.try_collect::<Vec<_>>().await?;
+        let single_batch = results
+            .into_iter()
+            .next()
+            .ok_or_else(|| eyre::eyre!("No results"))?;
 
-        let cfg = Arc::new(DaftExecutionConfig::default());
-        let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-        let result_stream = native_executor.run(self.psets, cfg, None)?.into_stream();
-        let batch = result_stream.try_collect::<Vec<_>>().await?;
-        let single_batch = MicroPartition::concat(batch)?;
         let tbls = single_batch.get_tables()?;
         let tbl = Table::concat(&tbls)?;
         let output = tbl.to_comfy_table(None).to_string();

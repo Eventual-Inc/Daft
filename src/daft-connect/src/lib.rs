@@ -6,7 +6,6 @@
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
 
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use dashmap::DashMap;
 use eyre::Context;
 #[cfg(feature = "python")]
@@ -32,7 +31,6 @@ mod config;
 mod display;
 mod err;
 mod op;
-mod runner;
 mod session;
 mod translation;
 pub mod util;
@@ -305,7 +303,10 @@ impl SparkConnectService for DaftSparkConnectService {
                     return Err(Status::invalid_argument("op_type is required to be root"));
                 };
 
-                let result = match translation::relation_to_spark_schema(relation).await {
+                let session = self.get_session(&session_id)?;
+                let translator = SparkAnalyzer::new(&session);
+
+                let result = match translator.relation_to_spark_schema(relation).await {
                     Ok(schema) => schema,
                     Err(e) => {
                         return invalid_argument_err!(
@@ -370,10 +371,9 @@ impl SparkConnectService for DaftSparkConnectService {
                         warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
                     }
                 }
+                let session = self.get_session(&session_id)?;
 
-                // We're just checking the schema here, so we don't need to use a persistent cache as it won't be used
-                let pset = InMemoryPartitionSetCache::empty();
-                let translator = SparkAnalyzer::new(&pset);
+                let translator = SparkAnalyzer::new(&session);
                 let plan = Box::pin(translator.to_logical_plan(input))
                     .await
                     .unwrap()
@@ -453,6 +453,11 @@ impl SparkConnectService for DaftSparkConnectService {
     ) -> Result<Response<FetchErrorDetailsResponse>, Status> {
         unimplemented_err!("fetch_error_details operation is not yet implemented")
     }
+}
+
+pub enum Runner {
+    Ray,
+    Native,
 }
 
 #[cfg(feature = "python")]

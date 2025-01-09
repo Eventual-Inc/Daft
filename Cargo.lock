@@ -1993,7 +1993,6 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-file-formats",
- "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-local-execution",
