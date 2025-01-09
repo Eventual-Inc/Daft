@@ -31,7 +31,7 @@ impl Limit {
         let input_stats = self.input.materialized_stats();
         let limit = self.limit as usize;
         let est_bytes_per_row =
-            input_stats.approx_stats.size_bytes / input_stats.approx_stats.num_rows;
+            input_stats.approx_stats.size_bytes / input_stats.approx_stats.num_rows.max(1);
         let approx_stats = ApproxStats {
             num_rows: limit.min(input_stats.approx_stats.num_rows),
             size_bytes: if input_stats.approx_stats.num_rows > limit {
