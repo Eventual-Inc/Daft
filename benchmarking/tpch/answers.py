@@ -608,6 +608,7 @@ def q20(get_df: GetDFFunc) -> DataFrame:
     daft_df = (
         part.where(col("P_NAME").str.startswith("forest"))
         .select("P_PARTKEY")
+        .distinct()
         .join(partsupp, left_on="P_PARTKEY", right_on="PS_PARTKEY")
         .join(
             res_1,
@@ -632,6 +633,7 @@ def q21(get_df: GetDFFunc) -> DataFrame:
 
     res_1 = (
         lineitem.select("L_SUPPKEY", "L_ORDERKEY")
+        .distinct()
         .groupby("L_ORDERKEY")
         .agg(col("L_SUPPKEY").count().alias("nunique_col"))
         .where(col("nunique_col") > 1)
