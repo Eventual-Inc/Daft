@@ -106,16 +106,11 @@ impl Default for OptimizerBuilder {
                     vec![Box::new(SimplifyExpressionsRule::new())],
                     RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
-                // --- Filter out null join keys ---
-                // This rule should be run once, before any filter pushdown rules.
-                RuleBatch::new(
-                    vec![Box::new(FilterNullJoinKey::new())],
-                    RuleExecutionStrategy::Once,
-                ),
                 // --- Bulk of our rules ---
                 RuleBatch::new(
                     vec![
                         Box::new(DropRepartition::new()),
+                        Box::new(FilterNullJoinKey::new()),
                         Box::new(PushDownFilter::new()),
                         Box::new(PushDownProjection::new()),
                         Box::new(EliminateCrossJoin::new()),
