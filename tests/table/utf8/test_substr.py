@@ -55,10 +55,10 @@ def test_utf8_substr() -> None:
         ),
         # Test with column for length
         (
-            ["hello", "world", "test", "Hello☃World", "😉test", "test🌈"],
+            ["hello", "world", "test", "Hello☃World", "😉best", "test🌈"],
             1,
             [2, 3, 4, 5, 2, 1],
-            ["el", "orl", "est", "ello☃", "te", "e"],
+            ["el", "orl", "est", "ello☃", "be", "e"],
         ),
         # Test with both start and length as columns
         (
@@ -76,10 +76,10 @@ def test_utf8_substr() -> None:
         ),
         # Test with nulls in length column
         (
-            ["hello", "world", "test", "Hello☃World", "😉test", "test🌈"],
+            ["hello", "world", "test", "Hello☃World", "😉best", "test🌈"],
             1,
             [2, None, 4, None, 2, None],
-            ["el", "orld", "est", "ello☃World", "te", "est🌈"],
+            ["el", "orld", "est", "ello☃World", "be", "est🌈"],
         ),
         # Test with nulls in both columns
         (
@@ -129,7 +129,7 @@ def test_utf8_substr_with_columns(
             [
                 "hello",  # len 5
                 "world",  # len 5
-                "test",   # len 4
+                "test",  # len 4
                 "☃😉🌈",  # len 3
             ],
             [100, 1000, 50, 25],
@@ -223,14 +223,14 @@ def test_utf8_substr_computed() -> None:
     table = MicroPartition.from_pydict(
         {
             "col": [
-                "hello world",  # len=11, start=6, expect "world"
-                "python programming",  # len=17, start=12, expect "mming"
-                "data science",  # len=12, start=7, expect "ience"
-                "artificial",  # len=10, start=5, expect "icial"
-                "intelligence",  # len=12, start=7, expect "gence"
-                "Hello☃World",  # len=11, start=6, expect "World"
-                "test😉test",  # len=9, start=4, expect "😉test"
-                "test🌈test",  # len=9, start=4, expect "🌈test"
+                "hello world",  # len=11, start=6, expect "wor"
+                "python programming",  # len=17, start=12, expect "mmi"
+                "data science",  # len=12, start=7, expect "ien"
+                "artificial",  # len=10, start=5, expect "ici"
+                "intelligence",  # len=12, start=7, expect "gen"
+                "Hello☃World",  # len=11, start=6, expect "Wor"
+                "test😉best",  # len=9, start=4, expect "😉be"
+                "test🌈best",  # len=9, start=4, expect "🌈be"
             ]
         }
     )
@@ -242,7 +242,7 @@ def test_utf8_substr_computed() -> None:
             )
         ]
     )
-    assert result.to_pydict() == {"col": ["wor", "mmi", "ien", "ici", "gen", "Wor", "😉te", "🌈te"]}
+    assert result.to_pydict() == {"col": ["wor", "mmi", "ien", "ici", "gen", "Wor", "😉be", "🌈be"]}
 
     # Test with computed length (half of string length)
     table = MicroPartition.from_pydict(
