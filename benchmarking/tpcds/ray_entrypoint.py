@@ -52,22 +52,23 @@ def run(
     catalog = register_catalog(scale_factor)
     query_file = Path(__file__).parent / "queries" / f"{question:02}.sql"
     with open(query_file) as f:
-        query = f.read()
+        query_string = f.read()
 
     info_path = Path("/tmp") / "ray" / "session_latest" / "logs" / "info"
     info_path.mkdir(parents=True, exist_ok=True)
+    query = daft.sql(query_string, catalog=catalog)
 
     explain_delta = None
     with open(info_path / f"plan-{question}.txt", "w") as f:
         explain_start = datetime.now()
-        daft.sql(query, catalog=catalog).explain(show_all=True, file=f)
+        query.explain(show_all=True, file=f, format="mermaid")
         explain_end = datetime.now()
         explain_delta = explain_end - explain_start
 
     execute_delta = None
     if not dry_run:
         execute_start = datetime.now()
-        daft.sql(query, catalog=catalog).collect()
+        query.collect()
         execute_end = datetime.now()
         execute_delta = execute_end - execute_start
 
