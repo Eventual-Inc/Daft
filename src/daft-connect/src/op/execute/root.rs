@@ -2,19 +2,24 @@ use std::{future::ready, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
+use daft_dsl::LiteralValue;
 use daft_local_execution::NativeExecutor;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_ray_execution::RayEngine;
+use daft_table::Table;
 use eyre::bail;
-use futures::stream::{self, BoxStream};
+use futures::{
+    stream::{self, BoxStream},
+    TryStreamExt,
+};
 use itertools::Itertools;
 use pyo3::Python;
-use spark_connect::{ExecutePlanResponse, Relation};
+use spark_connect::{relation::RelType, ExecutePlanResponse, Relation, ShowString};
 use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 
 use crate::{
-    op::execute::{ExecuteStream, PlanIds},
+    op::execute::{ExecuteStream, ResponseBuilder},
     session::Session,
     translation, Runner,
 };
@@ -75,13 +80,14 @@ impl Session {
     ) -> Result<ExecuteStream, Status> {
         use futures::{StreamExt, TryStreamExt};
 
-        let context = PlanIds {
-            session: self.client_side_session_id().to_string(),
-            server_side_session: self.server_side_session_id().to_string(),
-            operation: operation_id,
+        let response_builder = ResponseBuilder {
+            session_id: self.client_side_session_id().to_string(),
+            server_side_session_id: self.server_side_session_id().to_string(),
+            operation_id,
         };
 
-        let finished = context.finished();
+        // fallback response
+        let result_complete = response_builder.result_complete_response();
 
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
 
@@ -90,23 +96,33 @@ impl Session {
         tokio::spawn(async move {
             let execution_fut = async {
                 let translator = translation::SparkAnalyzer::new(&this);
-                let lp = translator.to_logical_plan(command).await?;
-
-                let mut result_stream = this.run_query(lp).await?;
-
-                while let Some(result) = result_stream.next().await {
-                    let result = result?;
-                    let tables = result.get_tables()?;
-                    for table in tables.as_slice() {
-                        let response = context.gen_response(table)?;
-                        if tx.send(Ok(response)).await.is_err() {
+                match command.rel_type {
+                    Some(RelType::ShowString(ss)) => {
+                        let response = this.show_string(*ss, response_builder).await;
+                        if tx.send(response).await.is_err() {
                             return Ok(());
                         }
+                        Ok(())
+                    }
+                    _ => {
+                        let lp = translator.to_logical_plan(command).await?;
+
+                        let mut result_stream = this.run_query(lp).await?;
+
+                        while let Some(result) = result_stream.next().await {
+                            let result = result?;
+                            let tables = result.get_tables()?;
+                            for table in tables.as_slice() {
+                                let response = response_builder.arrow_batch_response(table)?;
+                                if tx.send(Ok(response)).await.is_err() {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        Ok(())
                     }
                 }
-                Ok(())
             };
-
             if let Err(e) = execution_fut.await {
                 let _ = tx.send(Err(e)).await;
             }
@@ -116,8 +132,53 @@ impl Session {
 
         let stream = stream
             .map_err(|e| Status::internal(format!("Error in Daft server: {e:?}")))
-            .chain(stream::once(ready(Ok(finished))));
+            .chain(stream::once(ready(Ok(result_complete))));
 
         Ok(Box::pin(stream))
+    }
+
+    async fn show_string(
+        &self,
+        show_string: ShowString,
+        response_builder: ResponseBuilder,
+    ) -> eyre::Result<ExecutePlanResponse> {
+        let translator = translation::SparkAnalyzer::new(self);
+
+        let ShowString {
+            input,
+            num_rows,
+            truncate: _,
+            vertical,
+        } = show_string;
+
+        if vertical {
+            bail!("Vertical show string is not supported");
+        }
+
+        let Some(input) = input else {
+            bail!("input must be set");
+        };
+
+        let plan = Box::pin(translator.to_logical_plan(*input)).await?;
+        let plan = plan.limit(num_rows as i64, true)?;
+
+        let results = translator.session.run_query(plan).await?;
+        let results = results.try_collect::<Vec<_>>().await?;
+        let single_batch = results
+            .into_iter()
+            .next()
+            .ok_or_else(|| eyre::eyre!("No results"))?;
+
+        let tbls = single_batch.get_tables()?;
+        let tbl = Table::concat(&tbls)?;
+        let output = tbl.to_comfy_table(None).to_string();
+
+        let s = LiteralValue::Utf8(output)
+            .into_single_value_series()?
+            .rename("show_string");
+
+        let tbl = Table::from_nonempty_columns(vec![s])?;
+        let response = response_builder.arrow_batch_response(&tbl)?;
+        Ok(response)
     }
 }

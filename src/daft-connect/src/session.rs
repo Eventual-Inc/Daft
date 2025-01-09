@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use uuid::Uuid;
 
+
 #[derive(Clone)]
 pub struct Session {
     /// so order is preserved, and so we can efficiently do a prefix search

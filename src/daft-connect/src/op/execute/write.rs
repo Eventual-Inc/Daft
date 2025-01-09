@@ -10,7 +10,7 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    op::execute::{ExecuteStream, PlanIds},
+    op::execute::{ExecuteStream, ResponseBuilder},
     session::Session,
     translation,
 };
@@ -23,13 +23,13 @@ impl Session {
     ) -> Result<ExecuteStream, Status> {
         use futures::StreamExt;
 
-        let context = PlanIds {
-            session: self.client_side_session_id().to_string(),
-            server_side_session: self.server_side_session_id().to_string(),
-            operation: operation_id,
+        let context = ResponseBuilder {
+            session_id: self.client_side_session_id().to_string(),
+            server_side_session_id: self.server_side_session_id().to_string(),
+            operation_id,
         };
 
-        let finished = context.finished();
+        let finished = context.result_complete_response();
 
         let this = self.clone();
 

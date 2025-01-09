@@ -32,9 +32,11 @@ mod with_columns_renamed;
 
 use pyo3::prelude::*;
 
+#[derive(Clone)]
 pub struct SparkAnalyzer<'a> {
     pub session: &'a Session,
 }
+
 impl SparkAnalyzer<'_> {
     pub fn new<'a>(session: &'a Session) -> SparkAnalyzer<'a> {
         SparkAnalyzer { session }
@@ -67,7 +69,7 @@ impl SparkAnalyzer<'_> {
                         .call1((py_micropartition,))?;
                     let py_plan_builder = py_plan_builder.getattr(pyo3::intern!(py, "_builder"))?;
                     let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
-                    
+
                     Ok::<_, eyre::Error>(dbg!(plan.builder))
                 })
             }
