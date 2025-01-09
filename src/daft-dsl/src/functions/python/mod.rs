@@ -8,6 +8,8 @@ use common_resource_request::ResourceRequest;
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use itertools::Itertools;
+#[cfg(feature = "python")]
+use pyo3::Python;
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
 
@@ -154,14 +156,15 @@ pub fn get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
 
 #[cfg(feature = "python")]
 fn py_udf_initialize(
-    func: pyo3::PyObject,
-    init_args: pyo3::PyObject,
+    py: Python<'_>,
+    func: Arc<pyo3::PyObject>,
+    init_args: Arc<pyo3::PyObject>,
 ) -> DaftResult<pyo3::PyObject> {
-    use pyo3::Python;
-
-    Ok(Python::with_gil(move |py| {
-        func.call_method1(py, pyo3::intern!(py, "initialize"), (init_args,))
-    })?)
+    Ok(func.call_method1(
+        py,
+        pyo3::intern!(py, "initialize"),
+        (init_args.clone_ref(py),),
+    )?)
 }
 
 /// Initializes all uninitialized UDFs in the expression
@@ -180,8 +183,9 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
                 ),
             inputs,
         } => {
-            let initialized_func =
-                py_udf_initialize(inner.clone().unwrap(), init_args.clone().unwrap())?;
+            let initialized_func = Python::with_gil(|py| {
+                py_udf_initialize(py, inner.clone().unwrap(), init_args.clone().unwrap())
+            })?;
 
             let initialized_expr = Expr::Function {
                 func: FunctionExpr::Python(PythonUDF {

@@ -16,6 +16,7 @@ pub struct FileInfo {
 #[pymethods]
 impl FileInfo {
     #[new]
+    #[pyo3(signature = (file_path, file_size=None, num_rows=None))]
     pub fn new(file_path: String, file_size: Option<i64>, num_rows: Option<i64>) -> Self {
         Self::new_internal(file_path, file_size, num_rows)
     }

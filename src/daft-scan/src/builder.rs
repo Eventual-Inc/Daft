@@ -280,12 +280,14 @@ pub fn delta_scan<T: AsRef<str>>(
         };
 
         // let py_io_config = PyIOConfig { config: io_config };
-        let delta_lake_scan = PyModule::import_bound(py, "daft.delta_lake.delta_lake_scan")?;
+        let delta_lake_scan = PyModule::import(py, "daft.delta_lake.delta_lake_scan")?;
         let delta_lake_scan_operator =
             delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
         let delta_lake_operator = delta_lake_scan_operator
             .call1((glob_path.as_ref(), storage_config))?
-            .to_object(py);
+            .into_pyobject(py)
+            .unwrap()
+            .into();
         let scan_operator_handle =
             ScanOperatorHandle::from_python_scan_operator(delta_lake_operator, py)?;
         LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)

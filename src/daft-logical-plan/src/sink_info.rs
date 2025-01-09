@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::{hash::Hash, sync::Arc};
 
 use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
@@ -57,14 +57,14 @@ pub struct IcebergCatalogInfo {
     )]
     #[derivative(PartialEq = "ignore")]
     #[derivative(Hash = "ignore")]
-    pub iceberg_schema: PyObject,
+    pub iceberg_schema: Arc<PyObject>,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
     #[derivative(PartialEq = "ignore")]
     #[derivative(Hash = "ignore")]
-    pub iceberg_properties: PyObject,
+    pub iceberg_properties: Arc<PyObject>,
     pub io_config: Option<IOConfig>,
 }
 
@@ -128,7 +128,7 @@ pub struct LanceCatalogInfo {
     )]
     #[derivative(PartialEq = "ignore")]
     #[derivative(Hash = "ignore")]
-    pub kwargs: PyObject,
+    pub kwargs: Arc<PyObject>,
 }
 
 #[cfg(feature = "python")]
