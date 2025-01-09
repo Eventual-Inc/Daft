@@ -309,7 +309,8 @@ pub fn physical_plan_to_pipeline(
                     // If stats are only available on the left side of the join, and the upper bound bytes on the left
                     // are under the broadcast join size threshold, we build on the left instead of the right.
                     (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
-                        left_stats.approx_stats.size_bytes < cfg.broadcast_join_size_bytes_threshold
+                        left_stats.approx_stats.size_bytes
+                            <= cfg.broadcast_join_size_bytes_threshold
                     }
                     _ => false,
                 },
@@ -341,7 +342,7 @@ pub fn physical_plan_to_pipeline(
                     ) => {
                         let left_size = left_stats.approx_stats.num_rows;
                         let right_size = right_stats.approx_stats.num_rows;
-                        right_size as f64 >= left_size as f64 * 1.5
+                        right_size as f64 > left_size as f64 * 1.5
                     }
                     // If stats are only available on the left side of the join, and the upper bound bytes on the left
                     // are under the broadcast join size threshold, we build on the left instead of the right.

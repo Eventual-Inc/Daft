@@ -25,7 +25,8 @@ impl Distinct {
         let input_stats = self.input.materialized_stats();
         let est_bytes_per_row =
             input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
-        let est_distinct_values = input_stats.approx_stats.num_rows / 5;
+        // Assume high cardinality, 80% of rows are distinct.
+        let est_distinct_values = input_stats.approx_stats.num_rows * 4 / 5;
         let approx_stats = ApproxStats {
             num_rows: est_distinct_values,
             size_bytes: est_distinct_values * est_bytes_per_row,

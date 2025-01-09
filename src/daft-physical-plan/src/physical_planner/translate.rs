@@ -480,10 +480,10 @@ pub(super) fn translate_single_logical_node(
 
             // For broadcast joins, ensure that the left side of the join is the smaller side.
             let (smaller_size_bytes, left_is_larger) =
-                if left_stats.size_bytes > right_stats.size_bytes {
-                    (left_stats.size_bytes, true)
+                if right_stats.size_bytes < left_stats.size_bytes {
+                    (right_stats.size_bytes, true)
                 } else {
-                    (right_stats.size_bytes, false)
+                    (left_stats.size_bytes, false)
                 };
             let is_larger_partitioned = if left_is_larger {
                 is_left_hash_partitioned || is_left_sort_partitioned

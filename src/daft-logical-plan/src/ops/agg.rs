@@ -72,8 +72,8 @@ impl Aggregate {
                 size_bytes: est_bytes_per_row,
             }
         } else {
-            // TODO: Make a better estimation. Currently we assume that the groupby reduces the number of rows by 20%
-            let est_num_groups = input_stats.approx_stats.num_rows / 5 * 4;
+            // Assume high cardinality for group by columns, and 80% of rows are unique.
+            let est_num_groups = input_stats.approx_stats.num_rows * 4 / 5;
             ApproxStats {
                 num_rows: est_num_groups,
                 size_bytes: est_bytes_per_row * est_num_groups,

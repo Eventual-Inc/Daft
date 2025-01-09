@@ -1362,8 +1362,10 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
             }
         }
 
-        // Common boolean operations
+        // Revert selectivity for NOT
         Expr::Not(expr) => 1.0 - estimated_selectivity(expr, schema),
+
+        // Fixed selectivity for IS NULL and IS NOT NULL, assume not many nulls
         Expr::IsNull(_) => 0.1,
         Expr::NotNull(_) => 0.9,
 

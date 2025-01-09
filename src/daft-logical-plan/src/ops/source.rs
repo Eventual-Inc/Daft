@@ -70,7 +70,6 @@ impl Source {
                 ScanState::Tasks(scan_tasks) => {
                     let mut approx_stats = ApproxStats::empty();
                     for st in scan_tasks.iter() {
-                        // approx_stats.num_rows += st.num_rows().unwrap_or_else(|| st.approx_num_rows(None).unwrap_or(0.0) as usize);
                         if let Some(num_rows) = st.num_rows() {
                             approx_stats.num_rows += num_rows;
                         } else if let Some(approx_num_rows) = st.approx_num_rows(None) {
