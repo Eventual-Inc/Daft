@@ -1,5 +1,8 @@
 # Ray
 
+!!! failure "todo(docs): add reference to daft launcher"
+
+
 [Ray](https://docs.ray.io/en/latest/ray-overview/index.html) is an open-source framework for distributed computing. Daft's native support for Ray enables you to run distributed DataFrame workloads at scale.
 
 ## Usage

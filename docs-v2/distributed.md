@@ -1,6 +1,6 @@
 # Distributed Computing
 
-!!! failure "todo(docs): add daft launcher docs and review order of information. should we pull this page out of advanced and add to L1 TOC?"
+!!! failure "todo(docs): add daft launcher docs and review order of information"
 
 By default, Daft runs using your local machine's resources and your operations are thus limited by the CPUs, memory and GPUs available to you in your single local development machine.
 
