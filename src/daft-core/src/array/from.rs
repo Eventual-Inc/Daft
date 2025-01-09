@@ -151,14 +151,15 @@ impl From<(&str, Box<arrow2::array::BooleanArray>)> for BooleanArray {
 }
 
 #[cfg(feature = "python")]
-impl From<(&str, Vec<pyo3::PyObject>)> for crate::datatypes::PythonArray {
-    fn from(item: (&str, Vec<pyo3::PyObject>)) -> Self {
+impl From<(&str, Vec<Arc<pyo3::PyObject>>)> for crate::datatypes::PythonArray {
+    fn from(item: (&str, Vec<Arc<pyo3::PyObject>>)) -> Self {
         use crate::array::pseudo_arrow::PseudoArrowArray;
 
         let (name, vec_pyobj) = item;
-        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(
-            PseudoArrowArray::<pyo3::PyObject>::from_pyobj_vec(vec_pyobj),
-        );
+        let arrow_array: Box<dyn arrow2::array::Array> =
+            Box::new(PseudoArrowArray::<Arc<pyo3::PyObject>>::from_pyobj_vec(
+                vec_pyobj,
+            ));
         let field = Field::new(name, DataType::Python);
         Self::new(field.into(), arrow_array).unwrap()
     }
@@ -227,7 +228,7 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
 impl
     TryFrom<(
         &str,
-        crate::array::pseudo_arrow::PseudoArrowArray<pyo3::PyObject>,
+        crate::array::pseudo_arrow::PseudoArrowArray<Arc<pyo3::PyObject>>,
     )> for crate::datatypes::PythonArray
 {
     type Error = DaftError;
@@ -235,7 +236,7 @@ impl
     fn try_from(
         item: (
             &str,
-            crate::array::pseudo_arrow::PseudoArrowArray<pyo3::PyObject>,
+            crate::array::pseudo_arrow::PseudoArrowArray<Arc<pyo3::PyObject>>,
         ),
     ) -> DaftResult<Self> {
         let (name, array) = item;

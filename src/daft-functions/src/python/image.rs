@@ -7,7 +7,7 @@ use crate::image::{decode::ImageDecode, encode::ImageEncode};
 simple_python_wrapper!(image_crop, crate::image::crop::crop, [expr: PyExpr, bbox: PyExpr]);
 simple_python_wrapper!(image_to_mode, crate::image::to_mode::image_to_mode, [expr: PyExpr, mode: ImageMode]);
 
-#[pyfunction]
+#[pyfunction(signature = (expr, raise_on_error=None, mode=None))]
 pub fn image_decode(
     expr: PyExpr,
     raise_on_error: Option<bool>,

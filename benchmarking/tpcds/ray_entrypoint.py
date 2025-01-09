@@ -1,4 +1,6 @@
 import argparse
+import json
+from datetime import datetime
 from pathlib import Path
 
 import daft
@@ -36,7 +38,7 @@ def register_catalog(scale_factor: int) -> SQLCatalog:
     return SQLCatalog(
         tables={
             table: daft.read_parquet(
-                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/{scale_factor}/{table}.parquet"
+                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/{scale_factor}/{table}"
             )
             for table in TABLE_NAMES
         }
@@ -51,11 +53,36 @@ def run(
     catalog = register_catalog(scale_factor)
     query_file = Path(__file__).parent / "queries" / f"{question:02}.sql"
     with open(query_file) as f:
-        query = f.read()
+        query_string = f.read()
 
-    daft.sql(query, catalog=catalog).explain(show_all=True)
+    info_path = Path("/tmp") / "ray" / "session_latest" / "logs" / "info"
+    info_path.mkdir(parents=True, exist_ok=True)
+    query = daft.sql(query_string, catalog=catalog)
+
+    explain_delta = None
+    with open(info_path / f"plan-{question}.txt", "w") as f:
+        explain_start = datetime.now()
+        query.explain(show_all=True, file=f, format="mermaid")
+        explain_end = datetime.now()
+        explain_delta = explain_end - explain_start
+
+    execute_delta = None
     if not dry_run:
-        daft.sql(query, catalog=catalog).collect()
+        execute_start = datetime.now()
+        query.collect()
+        execute_end = datetime.now()
+        execute_delta = execute_end - execute_start
+
+    with open(info_path / f"stats-{question}.txt", "w") as f:
+        stats = json.dumps(
+            {
+                "question": question,
+                "scale-factor": scale_factor,
+                "planning-time": explain_delta,
+                "execution-time": execute_delta,
+            }
+        )
+        f.write(stats)
 
 
 if __name__ == "__main__":

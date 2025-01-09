@@ -4,7 +4,7 @@ use daft_core::{
 };
 use pyo3::{exceptions::PyValueError, prelude::*};
 
-#[pyfunction]
+#[pyfunction(signature = (s, raise_error_on_failure, mode=None))]
 pub fn decode(
     s: &PySeries,
     raise_error_on_failure: bool,
@@ -43,7 +43,7 @@ pub fn to_mode(s: &PySeries, mode: &ImageMode) -> PyResult<PySeries> {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    let module = PyModule::new_bound(parent.py(), "image")?;
+    let module = PyModule::new(parent.py(), "image")?;
     module.add_wrapped(wrap_pyfunction!(decode))?;
     module.add_wrapped(wrap_pyfunction!(encode))?;
     module.add_wrapped(wrap_pyfunction!(resize))?;

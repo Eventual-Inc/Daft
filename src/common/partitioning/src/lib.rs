@@ -145,7 +145,7 @@ pub enum PartitionCacheEntry {
     )]
     #[cfg(feature = "python")]
     /// in python, the partition cache is a weakvalue dictionary, so it will store the entry as long as this reference exists.
-    Python(PyObject),
+    Python(Arc<PyObject>),
 
     Rust {
         key: String,

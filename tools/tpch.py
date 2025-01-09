@@ -17,7 +17,7 @@ TOTAL_NUMBER_OF_QUESTIONS = 22
 
 
 def run(
-    branch_name: str,
+    branch_name: Optional[str],
     questions: Optional[str],
     scale_factor: int,
     num_partitions: int,
