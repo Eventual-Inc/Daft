@@ -1339,14 +1339,16 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
                 Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.2,
 
                 // Logical operators with fixed estimates
+                // P(A and B) = P(A) * P(B)
                 Operator::And => left_selectivity * right_selectivity,
-                Operator::Or => {
-                    left_selectivity + right_selectivity - (left_selectivity * right_selectivity)
-                }
-                Operator::Xor => {
-                    left_selectivity + right_selectivity
-                        - 2.0 * (left_selectivity * right_selectivity)
-                }
+                // P(A or B) = P(A) + P(B) - P(A and B)
+                Operator::Or => left_selectivity
+                    .mul_add(-right_selectivity, left_selectivity + right_selectivity),
+                // P(A xor B) = P(A) + P(B) - 2 * P(A and B)
+                Operator::Xor => 2.0f64.mul_add(
+                    -(left_selectivity * right_selectivity),
+                    left_selectivity + right_selectivity,
+                ),
 
                 // Non-boolean operators don't filter
                 Operator::Plus
