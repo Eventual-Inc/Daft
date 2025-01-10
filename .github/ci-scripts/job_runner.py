@@ -89,7 +89,6 @@ def submit_job(
             timed_out = True
 
         status = client.get_job_status(job_id)
-        # assert status.is_terminal(), "Job should have terminated"
         end = datetime.now()
         duration = end - start
         error_msg = None
@@ -100,7 +99,7 @@ def submit_job(
                 job_info = client.get_job_info(job_id)
                 error_msg = job_info.message
 
-        result = Result(query=index, duration=duration, error_msg=error_msg)
+        result = Result(query=index + 1, duration=duration, error_msg=error_msg)
         results.append(result)
 
     output_file = output_dir / "out.csv"
