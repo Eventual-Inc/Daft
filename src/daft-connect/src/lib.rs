@@ -22,7 +22,7 @@ use spark_connect::{
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::{info, warn};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{display::SparkDisplay, session::Session, translation::SparkAnalyzer};
@@ -30,10 +30,14 @@ use crate::{display::SparkDisplay, session::Session, translation::SparkAnalyzer}
 mod config;
 mod display;
 mod err;
-mod op;
+mod execute;
+mod response_builder;
+
 mod session;
 mod translation;
 pub mod util;
+
+pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
 #[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct ConnectionHandle {
@@ -175,7 +179,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
         match plan {
             OpType::Root(relation) => {
-                let result = session.handle_root_command(relation, operation).await?;
+                let result = session.execute_command(relation, operation).await?;
                 return Ok(Response::new(result));
             }
             OpType::Command(command) => {
@@ -188,7 +192,7 @@ impl SparkConnectService for DaftSparkConnectService {
                         unimplemented_err!("RegisterFunction not implemented")
                     }
                     CommandType::WriteOperation(op) => {
-                        let result = session.handle_write_command(op, operation).await?;
+                        let result = session.execute_write_operation(op, operation).await?;
                         return Ok(Response::new(result));
                     }
                     CommandType::CreateDataframeView(_) => {
@@ -355,7 +359,7 @@ impl SparkConnectService for DaftSparkConnectService {
                 };
 
                 if let Some(level) = level {
-                    warn!("ignoring tree string level: {level:?}");
+                    debug!("ignoring tree string level: {level:?}");
                 };
 
                 let Some(op_type) = plan.op_type else {
@@ -368,7 +372,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 if let Some(common) = &input.common {
                     if common.origin.is_some() {
-                        warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+                        debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
                     }
                 }
                 let session = self.get_session(&session_id)?;

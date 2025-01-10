@@ -3,42 +3,53 @@ use daft_table::Table;
 use eyre::Context;
 use spark_connect::{
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
-    spark_connect_service_server::SparkConnectService,
     ExecutePlanResponse,
 };
 use uuid::Uuid;
 
-use crate::{DaftSparkConnectService, Session};
-
-mod root;
-mod write;
-
-pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
+use crate::Session;
 
 /// spark responses are stateful, so we need to keep track of the session id, operation id, and server side session id
+#[derive(Clone)]
 pub struct ResponseBuilder {
-    session_id: String,
-    operation_id: String,
-    server_side_session_id: String,
+    pub(crate) session: String,
+    pub(crate) operation_id: String,
+    pub(crate) server_side_session_id: String,
 }
 
 impl ResponseBuilder {
+    /// Create a new response builder
     pub fn new(
         client_side_session_id: impl Into<String>,
         server_side_session_id: impl Into<String>,
     ) -> Self {
+        Self::new_with_op_id(
+            client_side_session_id,
+            server_side_session_id,
+            Uuid::new_v4().to_string(),
+        )
+    }
+
+    pub fn new_with_op_id(
+        client_side_session_id: impl Into<String>,
+        server_side_session_id: impl Into<String>,
+        operation_id: impl Into<String>,
+    ) -> Self {
         let client_side_session_id = client_side_session_id.into();
         let server_side_session_id = server_side_session_id.into();
+        let operation_id = operation_id.into();
+
         Self {
-            session_id: client_side_session_id,
+            session: client_side_session_id,
             server_side_session_id,
-            operation_id: Uuid::new_v4().to_string(),
+            operation_id,
         }
     }
 
+    /// Send a result complete response to the client
     pub fn result_complete_response(&self) -> ExecutePlanResponse {
         ExecutePlanResponse {
-            session_id: self.session_id.to_string(),
+            session_id: self.session.to_string(),
             server_side_session_id: self.server_side_session_id.to_string(),
             operation_id: self.operation_id.to_string(),
             response_id: Uuid::new_v4().to_string(),
@@ -77,7 +88,7 @@ impl ResponseBuilder {
             .wrap_err("Failed to write Arrow chunk to stream writer")?;
 
         let response = ExecutePlanResponse {
-            session_id: self.session_id.to_string(),
+            session_id: self.session.to_string(),
             server_side_session_id: self.server_side_session_id.to_string(),
             operation_id: self.operation_id.to_string(),
             response_id: Uuid::new_v4().to_string(), // todo: implement this

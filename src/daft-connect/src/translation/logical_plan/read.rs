@@ -1,7 +1,7 @@
 use daft_logical_plan::LogicalPlanBuilder;
 use eyre::{bail, WrapErr};
 use spark_connect::read::ReadType;
-use tracing::warn;
+use tracing::debug;
 
 mod data_source;
 
@@ -11,7 +11,7 @@ pub async fn read(read: spark_connect::Read) -> eyre::Result<LogicalPlanBuilder>
         read_type,
     } = read;
 
-    warn!("Ignoring is_streaming: {is_streaming}");
+    debug!("Ignoring is_streaming: {is_streaming}");
 
     let Some(read_type) = read_type else {
         bail!("Read type is required");

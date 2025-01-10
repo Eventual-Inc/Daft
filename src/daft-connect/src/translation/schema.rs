@@ -3,7 +3,7 @@ use spark_connect::{
     data_type::{Kind, Struct, StructField},
     DataType, Relation,
 };
-use tracing::warn;
+use tracing::debug;
 
 use super::SparkAnalyzer;
 use crate::translation::to_spark_datatype;
@@ -39,7 +39,7 @@ impl SparkAnalyzer<'_> {
     pub async fn relation_to_daft_schema(&self, input: Relation) -> eyre::Result<SchemaRef> {
         if let Some(common) = &input.common {
             if common.origin.is_some() {
-                warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+                debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
             }
         }
 

@@ -1,3 +1,4 @@
+//! Wrapper around the python RayRunner class
 use common_error::{DaftError, DaftResult};
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{python::PyMicroPartition, MicroPartitionRef};
@@ -19,15 +20,15 @@ impl RayEngine {
         force_client_mode: Option<bool>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
-            let ray_runner_module = py.import_bound(intern!(py, "daft.runners.ray_runner"))?;
+            let ray_runner_module = py.import(intern!(py, "daft.runners.ray_runner"))?;
             let ray_runner = ray_runner_module.getattr(intern!(py, "RayRunner"))?;
-            let kwargs = PyDict::new_bound(py);
+            let kwargs = PyDict::new(py);
             kwargs.set_item(intern!(py, "address"), address)?;
             kwargs.set_item(intern!(py, "max_task_backlog"), max_task_backlog)?;
             kwargs.set_item(intern!(py, "force_client_mode"), force_client_mode)?;
 
             let instance = ray_runner.call((), Some(&kwargs))?;
-            let instance = instance.to_object(py);
+            let instance = instance.unbind();
 
             Ok(Self {
                 ray_runner: instance,
@@ -35,29 +36,27 @@ impl RayEngine {
         })
     }
 
-    pub fn run_iter_impl<'a>(
+    pub fn run_iter_impl(
         &self,
-        py: Python<'a>,
+        py: Python<'_>,
         lp: LogicalPlanBuilder,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<Vec<DaftResult<MicroPartitionRef>>> {
         let py_lp = PyLogicalPlanBuilder::new(lp);
-        let builder = py.import_bound(intern!(py, "daft.logical.builder"))?;
+        let builder = py.import(intern!(py, "daft.logical.builder"))?;
         let builder = builder.getattr(intern!(py, "LogicalPlanBuilder"))?;
         let builder = builder.call((py_lp,), None)?;
-        let result = self
-            .ray_runner
-            .call_method_bound(
-                py,
-                intern!(py, "run_iter_tables"),
-                (builder, results_buffer_size),
-                None,
-            )?
-            .into_bound(py);
+        let result = self.ray_runner.call_method(
+            py,
+            intern!(py, "run_iter_tables"),
+            (builder, results_buffer_size),
+            None,
+        )?;
 
-        let iter = PyIterator::from_bound_object(&result)?;
+        let result = result.bind(py);
+        let iter = PyIterator::from_object(result)?;
 
-        let iter = iter.into_iter().map(|item| {
+        let iter = iter.map(|item| {
             let item = item?;
             let partition = item.getattr(intern!(py, "_micropartition"))?;
             let partition = partition.extract::<PyMicroPartition>()?;

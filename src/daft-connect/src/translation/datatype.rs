@@ -1,7 +1,7 @@
 use daft_schema::{dtype::DataType, field::Field, time_unit::TimeUnit};
 use eyre::{bail, ensure, WrapErr};
 use spark_connect::data_type::Kind;
-use tracing::warn;
+use tracing::debug;
 
 pub fn to_spark_datatype(datatype: &DataType) -> spark_connect::DataType {
     match datatype {
@@ -73,7 +73,7 @@ pub fn to_spark_datatype(datatype: &DataType) -> spark_connect::DataType {
             })),
         },
         DataType::Timestamp(unit, _) => {
-            warn!("Ignoring time unit {unit:?} for timestamp type");
+            debug!("Ignoring time unit {unit:?} for timestamp type");
             spark_connect::DataType {
                 kind: Some(Kind::Timestamp(spark_connect::data_type::Timestamp {
                     type_variation_reference: 0,

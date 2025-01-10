@@ -13,9 +13,8 @@ use daft_micropartition::{
 use daft_table::Table;
 use eyre::{bail, Context};
 use futures::TryStreamExt;
-use pyo3::Python;
 use spark_connect::{relation::RelType, Limit, Relation, ShowString};
-use tracing::warn;
+use tracing::debug;
 
 use crate::{session::Session, Runner};
 
@@ -30,7 +29,7 @@ mod to_df;
 mod with_columns;
 mod with_columns_renamed;
 
-use pyo3::prelude::*;
+use pyo3::{intern, prelude::*};
 
 #[derive(Clone)]
 pub struct SparkAnalyzer<'a> {
@@ -38,7 +37,7 @@ pub struct SparkAnalyzer<'a> {
 }
 
 impl SparkAnalyzer<'_> {
-    pub fn new<'a>(session: &'a Session) -> SparkAnalyzer<'a> {
+    pub fn new(session: &Session) -> SparkAnalyzer<'_> {
         SparkAnalyzer { session }
     }
 
@@ -57,17 +56,17 @@ impl SparkAnalyzer<'_> {
                 Python::with_gil(|py| {
                     // Convert MicroPartition to a logical plan using Python interop.
                     let py_micropartition = py
-                        .import_bound(pyo3::intern!(py, "daft.table"))?
-                        .getattr(pyo3::intern!(py, "MicroPartition"))?
-                        .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
+                        .import(intern!(py, "daft.table"))?
+                        .getattr(intern!(py, "MicroPartition"))?
+                        .getattr(intern!(py, "_from_pymicropartition"))?
                         .call1((PyMicroPartition::from(mp),))?;
 
                     // ERROR:   2: AttributeError: 'daft.daft.PySchema' object has no attribute '_schema'
                     let py_plan_builder = py
-                        .import_bound(pyo3::intern!(py, "daft.dataframe.dataframe"))?
-                        .getattr(pyo3::intern!(py, "to_logical_plan_builder"))?
+                        .import(intern!(py, "daft.dataframe.dataframe"))?
+                        .getattr(intern!(py, "to_logical_plan_builder"))?
                         .call1((py_micropartition,))?;
-                    let py_plan_builder = py_plan_builder.getattr(pyo3::intern!(py, "_builder"))?;
+                    let py_plan_builder = py_plan_builder.getattr(intern!(py, "_builder"))?;
                     let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
 
                     Ok::<_, eyre::Error>(dbg!(plan.builder))
@@ -106,7 +105,7 @@ impl SparkAnalyzer<'_> {
         };
 
         if common.origin.is_some() {
-            warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+            debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
         }
 
         let Some(rel_type) = relation.rel_type else {
@@ -167,7 +166,7 @@ impl SparkAnalyzer<'_> {
                     .await
                     .wrap_err("Failed to show string")
             }
-            plan => bail!("Unsupported relation type: {plan:?}"),
+            plan => bail!("Unsupported relation type: \"{}\"", rel_name(&plan)),
         }
     }
 
@@ -228,5 +227,65 @@ impl SparkAnalyzer<'_> {
         let schema = tbl.schema.clone();
 
         self.create_in_memory_scan(plan_id as _, schema, vec![tbl])
+    }
+}
+
+fn rel_name(rel: &RelType) -> &str {
+    match rel {
+        RelType::Read(_) => "Read",
+        RelType::Project(_) => "Project",
+        RelType::Filter(_) => "Filter",
+        RelType::Join(_) => "Join",
+        RelType::SetOp(_) => "SetOp",
+        RelType::Sort(_) => "Sort",
+        RelType::Limit(_) => "Limit",
+        RelType::Aggregate(_) => "Aggregate",
+        RelType::Sql(_) => "Sql",
+        RelType::LocalRelation(_) => "LocalRelation",
+        RelType::Sample(_) => "Sample",
+        RelType::Offset(_) => "Offset",
+        RelType::Deduplicate(_) => "Deduplicate",
+        RelType::Range(_) => "Range",
+        RelType::SubqueryAlias(_) => "SubqueryAlias",
+        RelType::Repartition(_) => "Repartition",
+        RelType::ToDf(_) => "ToDf",
+        RelType::WithColumnsRenamed(_) => "WithColumnsRenamed",
+        RelType::ShowString(_) => "ShowString",
+        RelType::Drop(_) => "Drop",
+        RelType::Tail(_) => "Tail",
+        RelType::WithColumns(_) => "WithColumns",
+        RelType::Hint(_) => "Hint",
+        RelType::Unpivot(_) => "Unpivot",
+        RelType::ToSchema(_) => "ToSchema",
+        RelType::RepartitionByExpression(_) => "RepartitionByExpression",
+        RelType::MapPartitions(_) => "MapPartitions",
+        RelType::CollectMetrics(_) => "CollectMetrics",
+        RelType::Parse(_) => "Parse",
+        RelType::GroupMap(_) => "GroupMap",
+        RelType::CoGroupMap(_) => "CoGroupMap",
+        RelType::WithWatermark(_) => "WithWatermark",
+        RelType::ApplyInPandasWithState(_) => "ApplyInPandasWithState",
+        RelType::HtmlString(_) => "HtmlString",
+        RelType::CachedLocalRelation(_) => "CachedLocalRelation",
+        RelType::CachedRemoteRelation(_) => "CachedRemoteRelation",
+        RelType::CommonInlineUserDefinedTableFunction(_) => "CommonInlineUserDefinedTableFunction",
+        RelType::AsOfJoin(_) => "AsOfJoin",
+        RelType::CommonInlineUserDefinedDataSource(_) => "CommonInlineUserDefinedDataSource",
+        RelType::WithRelations(_) => "WithRelations",
+        RelType::Transpose(_) => "Transpose",
+        RelType::FillNa(_) => "FillNa",
+        RelType::DropNa(_) => "DropNa",
+        RelType::Replace(_) => "Replace",
+        RelType::Summary(_) => "Summary",
+        RelType::Crosstab(_) => "Crosstab",
+        RelType::Describe(_) => "Describe",
+        RelType::Cov(_) => "Cov",
+        RelType::Corr(_) => "Corr",
+        RelType::ApproxQuantile(_) => "ApproxQuantile",
+        RelType::FreqItems(_) => "FreqItems",
+        RelType::SampleBy(_) => "SampleBy",
+        RelType::Catalog(_) => "Catalog",
+        RelType::Extension(_) => "Extension",
+        RelType::Unknown(_) => "Unknown",
     }
 }

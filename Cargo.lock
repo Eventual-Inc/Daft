@@ -2025,6 +2025,7 @@ dependencies = [
  "itertools 0.11.0",
  "pyo3",
  "spark-connect",
+ "textwrap",
  "tokio",
  "tonic",
  "tracing",

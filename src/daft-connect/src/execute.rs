@@ -2,26 +2,30 @@ use std::{future::ready, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
+use common_file_formats::FileFormat;
 use daft_dsl::LiteralValue;
 use daft_local_execution::NativeExecutor;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_ray_execution::RayEngine;
 use daft_table::Table;
-use eyre::bail;
+use eyre::{bail, Context};
 use futures::{
     stream::{self, BoxStream},
-    TryStreamExt,
+    TryFutureExt, TryStreamExt,
 };
 use itertools::Itertools;
 use pyo3::Python;
-use spark_connect::{relation::RelType, ExecutePlanResponse, Relation, ShowString};
+use spark_connect::{
+    relation::RelType,
+    write_operation::{SaveMode, SaveType},
+    ExecutePlanResponse, Relation, ShowString, WriteOperation,
+};
 use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
+use tracing::debug;
 
 use crate::{
-    op::execute::{ExecuteStream, ResponseBuilder},
-    session::Session,
-    translation, Runner,
+    response_builder::ResponseBuilder, session::Session, translation, ExecuteStream, Runner,
 };
 
 impl Session {
@@ -45,13 +49,9 @@ impl Session {
             Runner::Ray => {
                 let runner = RayEngine::try_new(None, None, None)?;
                 let result_set = tokio::task::spawn_blocking(move || {
-                    Python::with_gil(|py| {
-                        let res = runner.run_iter_impl(py, lp, None).unwrap();
-
-                        res
-                    })
+                    Python::with_gil(|py| runner.run_iter_impl(py, lp, None))
                 })
-                .await?;
+                .await??;
 
                 Ok(Box::pin(stream::iter(result_set)))
             }
@@ -73,18 +73,18 @@ impl Session {
         }
     }
 
-    pub async fn handle_root_command(
+    pub async fn execute_command(
         &self,
         command: Relation,
         operation_id: String,
     ) -> Result<ExecuteStream, Status> {
         use futures::{StreamExt, TryStreamExt};
 
-        let response_builder = ResponseBuilder {
-            session_id: self.client_side_session_id().to_string(),
-            server_side_session_id: self.server_side_session_id().to_string(),
+        let response_builder = ResponseBuilder::new_with_op_id(
+            self.client_side_session_id(),
+            self.server_side_session_id(),
             operation_id,
-        };
+        );
 
         // fallback response
         let result_complete = response_builder.result_complete_response();
@@ -98,10 +98,11 @@ impl Session {
                 let translator = translation::SparkAnalyzer::new(&this);
                 match command.rel_type {
                     Some(RelType::ShowString(ss)) => {
-                        let response = this.show_string(*ss, response_builder).await;
-                        if tx.send(response).await.is_err() {
+                        let response = this.show_string(*ss, response_builder.clone()).await?;
+                        if tx.send(Ok(response)).await.is_err() {
                             return Ok(());
                         }
+
                         Ok(())
                     }
                     _ => {
@@ -131,8 +132,133 @@ impl Session {
         let stream = ReceiverStream::new(rx);
 
         let stream = stream
-            .map_err(|e| Status::internal(format!("Error in Daft server: {e:?}")))
+            .map_err(|e| {
+                Status::internal(
+                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
+                )
+            })
             .chain(stream::once(ready(Ok(result_complete))));
+
+        Ok(Box::pin(stream))
+    }
+
+    pub async fn execute_write_operation(
+        &self,
+        operation: WriteOperation,
+        operation_id: String,
+    ) -> Result<ExecuteStream, Status> {
+        use futures::StreamExt;
+
+        let response_builder = ResponseBuilder::new_with_op_id(
+            self.client_side_session_id(),
+            self.server_side_session_id(),
+            operation_id,
+        );
+
+        let finished = response_builder.result_complete_response();
+
+        let this = self.clone();
+
+        let result = async move {
+            let WriteOperation {
+                input,
+                source,
+                mode,
+                sort_column_names,
+                partitioning_columns,
+                bucket_by,
+                options,
+                clustering_columns,
+                save_type,
+            } = operation;
+
+            let Some(input) = input else {
+                bail!("Input is required");
+            };
+
+            let Some(source) = source else {
+                bail!("Source is required");
+            };
+
+            let file_format: FileFormat = source.parse()?;
+
+            let Ok(mode) = SaveMode::try_from(mode) else {
+                bail!("Invalid save mode: {mode}");
+            };
+
+            if !sort_column_names.is_empty() {
+                // todo(completeness): implement sort
+                debug!("Ignoring sort_column_names: {sort_column_names:?} (not yet implemented)");
+            }
+
+            if !partitioning_columns.is_empty() {
+                // todo(completeness): implement partitioning
+                debug!(
+                    "Ignoring partitioning_columns: {partitioning_columns:?} (not yet implemented)"
+                );
+            }
+
+            if let Some(bucket_by) = bucket_by {
+                // todo(completeness): implement bucketing
+                debug!("Ignoring bucket_by: {bucket_by:?} (not yet implemented)");
+            }
+
+            if !options.is_empty() {
+                // todo(completeness): implement options
+                debug!("Ignoring options: {options:?} (not yet implemented)");
+            }
+
+            if !clustering_columns.is_empty() {
+                // todo(completeness): implement clustering
+                debug!("Ignoring clustering_columns: {clustering_columns:?} (not yet implemented)");
+            }
+
+            match mode {
+                SaveMode::Unspecified => {}
+                SaveMode::Append => {}
+                SaveMode::Overwrite => {}
+                SaveMode::ErrorIfExists => {}
+                SaveMode::Ignore => {}
+            }
+
+            let Some(save_type) = save_type else {
+                bail!("Save type is required");
+            };
+
+            let path = match save_type {
+                SaveType::Path(path) => path,
+                SaveType::Table(table) => {
+                    let name = table.table_name;
+                    bail!("Tried to write to table {name} but it is not yet implemented. Try to write to a path instead.");
+                }
+            };
+
+            let translator = translation::SparkAnalyzer::new(&this);
+
+            let plan = translator.to_logical_plan(input).await?;
+
+            let plan = plan
+                .table_write(&path, file_format, None, None, None)
+                .wrap_err("Failed to create table write plan")?;
+
+            let mut result_stream = this.run_query(plan).await?;
+
+            // this is so we make sure the operation is actually done
+            // before we return
+            //
+            // an example where this is important is if we write to a parquet file
+            // and then read immediately after, we need to wait for the write to finish
+            while let Some(_result) = result_stream.next().await {}
+
+            Ok(())
+        };
+
+        let result = result.map_err(|e| {
+            Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
+        });
+
+        let future = result.and_then(|()| ready(Ok(finished)));
+        let stream = futures::stream::once(future);
 
         Ok(Box::pin(stream))
     }
