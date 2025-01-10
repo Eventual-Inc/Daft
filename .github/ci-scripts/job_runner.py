@@ -33,8 +33,12 @@ async def print_logs(logs):
         print(lines, end="")
 
 
-async def wait_on_job(logs, timeout_s):
-    await asyncio.wait_for(print_logs(logs), timeout=timeout_s)
+async def wait_on_job(logs, timeout_s) -> bool:
+    try:
+        await asyncio.wait_for(print_logs(logs), timeout=timeout_s)
+        return True
+    except TimeoutError:
+        return False
 
 
 @dataclass
@@ -82,11 +86,7 @@ def submit_job(
             },
         )
 
-        timed_out = False
-        try:
-            asyncio.run(wait_on_job(client.tail_job_logs(job_id), timeout_s=TIMEOUT_S))
-        except TimeoutError:
-            timed_out = True
+        timed_out = asyncio.run(wait_on_job(client.tail_job_logs(job_id), timeout_s=TIMEOUT_S))
 
         status = client.get_job_status(job_id)
         end = datetime.now()
