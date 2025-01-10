@@ -16,7 +16,6 @@ import github
 
 def run(
     branch_name: Optional[str],
-    arch: str,
     questions: Optional[str],
     scale_factor: int,
     cluster_profile: str,
@@ -34,7 +33,6 @@ def run(
         workflow=workflow,
         branch_name=branch_name,
         inputs={
-            "arch": arch,
             "cluster_profile": cluster_profile,
             "working_dir": "benchmarking/tpcds",
             "entrypoint_script": "ray_entrypoint.py",
@@ -47,14 +45,6 @@ def run(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref", type=str, required=False, help="The branch name to run on")
-    parser.add_argument(
-        "--arch",
-        choices=["x86", "arm"],
-        type=str,
-        required=False,
-        default="x86",
-        help="The architecture for which to build the wheel on",
-    )
     parser.add_argument("--questions", type=str, required=False, help="A comma separated list of questions to run")
     parser.add_argument(
         "--scale-factor",
@@ -101,7 +91,6 @@ if __name__ == "__main__":
 
     run(
         branch_name=args.ref,
-        arch=args.arch,
         questions=args.questions,
         scale_factor=args.scale_factor,
         cluster_profile=args.cluster_profile,
