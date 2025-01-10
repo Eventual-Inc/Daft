@@ -20,6 +20,7 @@ on:
         description: Cluster profile
         type: choice
         options:
+        - benchmarking-x86
         - medium-x86
         - debug_xs-x86
         required: false

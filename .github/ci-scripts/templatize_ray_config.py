@@ -60,6 +60,20 @@ profiles: dict[str, Optional[Profile]] = {
         sudo chmod 777 /tmp
     fi""",
     ),
+    "benchmarking-x86": Profile(
+        instance_type="i8.4xlarge",
+        image_id="ami-04dd23e62ed049936",
+        node_count=10,
+        ssh_user="ubuntu",
+        volume_mount=""" |
+    findmnt /tmp 1> /dev/null
+    code=$?
+    if [ $code -ne 0 ]; then
+        sudo mkfs.ext4 /dev/nvme0n1
+        sudo mount -t ext4 /dev/nvme0n1 /tmp
+        sudo chmod 777 /tmp
+    fi""",
+    ),
 }
 
 

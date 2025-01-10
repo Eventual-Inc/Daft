@@ -63,7 +63,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--cluster-profile",
-        choices=["debug_xs-x86", "medium-x86"],
+        choices=["debug_xs-x86", "medium-x86", "benchmarking-x86"],
         type=str,
         required=False,
         help="The ray cluster configuration to run on",
