@@ -62,7 +62,7 @@ profiles: dict[str, Optional[Profile]] = {
     ),
     "benchmarking-arm": Profile(
         instance_type="i8g.4xlarge",
-        image_id="ami-04dd23e62ed049936",
+        image_id="ami-0f2a7c7ff2ad40dc1",
         node_count=10,
         ssh_user="ubuntu",
         volume_mount=""" |
