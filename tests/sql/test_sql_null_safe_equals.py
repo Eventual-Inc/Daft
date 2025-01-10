@@ -11,7 +11,7 @@ from daft.sql import SQLCatalog
         ("SELECT * FROM df1 WHERE val <=> NULL", {"id": [3], "val": [None]}),
         (
             "SELECT df1.id, df1.val, df2.score FROM df1 JOIN df2 ON df1.id <=> df2.id",
-            {"id": [1, 2, None], "val": [10, 20, None], "score": [0.1, 0.2, 0.3]},
+            {"id": [1, 2, None], "val": [10, 20, 40], "score": [0.1, 0.2, 0.3]},
         ),
         (
             "SELECT * FROM df1 WHERE val <=> 10 OR val <=> NULL",

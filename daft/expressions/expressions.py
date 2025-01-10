@@ -1290,6 +1290,11 @@ class Expression:
     def _initialize_udfs(self) -> Expression:
         return Expression._from_pyexpr(initialize_udfs(self._expr))
 
+    def eq_null_safe(self, other: object) -> Expression:
+        """Null-safe equality comparison."""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr.eq_null_safe(expr._expr))
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
