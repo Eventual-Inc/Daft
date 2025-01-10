@@ -243,8 +243,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         ))
                     }
                 },
-                #[cfg(not(feature = "python"))]
-                SinkInfo::CatalogInfo(_) => unreachable!(),
             }
         }
         LogicalPlan::Explode(explode) => {

@@ -1,18 +1,23 @@
 //! Wrapper around the python RayRunner class
+#[cfg(feature = "python")]
 use common_error::{DaftError, DaftResult};
+#[cfg(feature = "python")]
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+#[cfg(feature = "python")]
 use daft_micropartition::{python::PyMicroPartition, MicroPartitionRef};
+#[cfg(feature = "python")]
 use pyo3::{
     intern,
     prelude::*,
     types::{PyDict, PyIterator},
 };
 
-#[pyclass]
+#[cfg(feature = "python")]
 pub struct RayEngine {
     ray_runner: PyObject,
 }
 
+#[cfg(feature = "python")]
 impl RayEngine {
     pub fn try_new(
         address: Option<String>,

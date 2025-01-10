@@ -1,8 +1,17 @@
 [dependencies]
-common-error = {workspace = true, features = ["python"]}
-daft-logical-plan = {workspace = true, features = ["python"]}
-daft-micropartition = {workspace = true, features = ["python"]}
-pyo3.workspace = true
+common-error = {workspace = true}
+daft-logical-plan = {workspace = true}
+daft-micropartition = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+
+[features]
+default = ["python"]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "daft-logical-plan/python",
+  "daft-micropartition/python"
+]
 
 [lints]
 workspace = true

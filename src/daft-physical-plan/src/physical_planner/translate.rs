@@ -775,8 +775,6 @@ pub(super) fn translate_single_logical_node(
                         .arced()),
                     }
                 }
-                #[cfg(not(feature = "python"))]
-                SinkInfo::CatalogInfo(_) => unreachable!(),
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {

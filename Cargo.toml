@@ -48,7 +48,6 @@ sysinfo = {workspace = true}
 [features]
 # maturin will turn this on
 python = [
-  "dep:daft-connect",
   "common-daft-config/python",
   "common-display/python",
   "common-partitioning/python",

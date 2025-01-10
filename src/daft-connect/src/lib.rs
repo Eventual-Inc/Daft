@@ -6,9 +6,29 @@
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
 
+#[cfg(feature = "python")]
+mod config;
+#[cfg(feature = "python")]
+mod display;
+#[cfg(feature = "python")]
+mod err;
+#[cfg(feature = "python")]
+mod execute;
+#[cfg(feature = "python")]
+mod response_builder;
+#[cfg(feature = "python")]
+mod session;
+#[cfg(feature = "python")]
+mod translation;
+#[cfg(feature = "python")]
+pub mod util;
+#[cfg(feature = "python")]
 use dashmap::DashMap;
+#[cfg(feature = "python")]
 use eyre::Context;
+#[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
+#[cfg(feature = "python")]
 use spark_connect::{
     analyze_plan_response,
     command::CommandType,
@@ -20,31 +40,25 @@ use spark_connect::{
     InterruptRequest, InterruptResponse, Plan, ReattachExecuteRequest, ReleaseExecuteRequest,
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
+#[cfg(feature = "python")]
 use tonic::{transport::Server, Request, Response, Status};
+#[cfg(feature = "python")]
 use tracing::{debug, info};
+#[cfg(feature = "python")]
 use uuid::Uuid;
 
+#[cfg(feature = "python")]
 use crate::{display::SparkDisplay, session::Session, translation::SparkAnalyzer};
-
-mod config;
-mod display;
-mod err;
-mod execute;
-mod response_builder;
-
-mod session;
-mod translation;
-pub mod util;
 
 pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
-#[pyo3::pyclass]
+#[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct ConnectionHandle {
     shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
     port: u16,
 }
 
-#[pyo3::pymethods]
+#[cfg_attr(feature = "python", pyo3::pymethods)]
 impl ConnectionHandle {
     pub fn shutdown(&mut self) {
         let Some(shutdown_signal) = self.shutdown_signal.take() else {
@@ -58,6 +72,7 @@ impl ConnectionHandle {
     }
 }
 
+#[cfg(feature = "python")]
 pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
     info!("Daft-Connect server listening on {addr}");
     let addr = util::parse_spark_connect_address(addr)?;
@@ -118,11 +133,13 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
     Ok(handle)
 }
 
+#[cfg(feature = "python")]
 #[derive(Default)]
 pub struct DaftSparkConnectService {
     client_to_session: DashMap<Uuid, Session>, // To track session data
 }
 
+#[cfg(feature = "python")]
 impl DaftSparkConnectService {
     fn get_session(
         &self,
@@ -143,6 +160,7 @@ impl DaftSparkConnectService {
     }
 }
 
+#[cfg(feature = "python")]
 #[tonic::async_trait]
 impl SparkConnectService for DaftSparkConnectService {
     type ExecutePlanStream = std::pin::Pin<
@@ -236,7 +254,9 @@ impl SparkConnectService for DaftSparkConnectService {
                     CommandType::MergeIntoTableCommand(_) => {
                         unimplemented_err!("MergeIntoTableCommand not implemented")
                     }
-                    CommandType::Extension(_) => unimplemented_err!("Extension not implemented"),
+                    CommandType::Extension(_) => {
+                        unimplemented_err!("Extension not implemented")
+                    }
                 }
             }
         }?
@@ -395,7 +415,9 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 Ok(Response::new(response))
             }
-            other => unimplemented_err!("Analyze plan operation is not yet implemented: {other:?}"),
+            other => {
+                unimplemented_err!("Analyze plan operation is not yet implemented: {other:?}")
+            }
         }
     }
 
@@ -458,17 +480,19 @@ impl SparkConnectService for DaftSparkConnectService {
     }
 }
 
+#[cfg(feature = "python")]
 pub enum Runner {
     Ray,
     Native,
 }
 
-#[pyo3::pyfunction]
+#[cfg_attr(feature = "python", pyo3::pyfunction)]
 #[pyo3(name = "connect_start", signature = (addr = "sc://0.0.0.0:0"))]
 pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
     start(addr).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
 }
 
+#[cfg(feature = "python")]
 pub fn register_modules(parent: &pyo3::Bound<pyo3::types::PyModule>) -> pyo3::PyResult<()> {
     parent.add_function(pyo3::wrap_pyfunction!(py_connect_start, parent)?)?;
     parent.add_class::<ConnectionHandle>()?;

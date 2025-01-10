@@ -390,8 +390,6 @@ async fn stream_scan_task(
             let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
             Box::pin(stream)
         }
-        #[cfg(not(feature = "python"))]
-        FileFormatConfig::Database(_) | FileFormatConfig::PythonFunction => unreachable!(),
     };
 
     Ok(table_stream.map(move |table| {
