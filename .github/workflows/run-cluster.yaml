@@ -3,14 +3,6 @@ name: run-cluster
 on:
   workflow_dispatch:
     inputs:
-      arch:
-        type: choice
-        options:
-        - x86
-        - arm
-        description: The machine architecture to build for
-        required: true
-        default: x86
       daft_wheel_url:
         description: Daft python-wheel URL
         type: string
@@ -58,7 +50,7 @@ jobs:
     uses: ./.github/workflows/build-commit.yaml
     if: ${{ inputs.daft_version == '' && inputs.daft_wheel_url == '' }}
     with:
-      arch: ${{ inputs.arch }}
+      arch: ${{ (inputs.cluster_profile == "debug_xs-x86" || inputs.cluster_profile == "medium-x86") && "x86" || "arm" }}
       python_version: ${{ inputs.python_version }}
     secrets:
       ACTIONS_AWS_ROLE_ARN: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
