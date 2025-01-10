@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use daft_dsl::{functions::python::get_resource_request, ExprRef};
 use daft_micropartition::MicroPartition;
+use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
@@ -56,6 +57,24 @@ impl IntermediateOperator for ProjectOperator {
 
     fn name(&self) -> &'static str {
         "ProjectOperator"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Project: {}",
+            self.projection.iter().map(|e| e.to_string()).join(", ")
+        ));
+        if let Some(resource_request) = get_resource_request(&self.projection) {
+            let multiline_display = resource_request.multiline_display();
+            res.push(format!(
+                "Resource request = {{ {} }}",
+                multiline_display.join(", ")
+            ));
+        } else {
+            res.push("Resource request = None".to_string());
+        }
+        res
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {

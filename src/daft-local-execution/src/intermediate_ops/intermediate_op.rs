@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
+use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
@@ -47,6 +48,7 @@ pub trait IntermediateOperator: Send + Sync {
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult;
     fn name(&self) -> &'static str;
+    fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(DefaultIntermediateOperatorState {}))
     }
@@ -78,26 +80,30 @@ pub struct IntermediateNode {
     intermediate_op: Arc<dyn IntermediateOperator>,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
+    plan_stats: StatsState,
 }
 
 impl IntermediateNode {
     pub(crate) fn new(
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
+        plan_stats: StatsState,
     ) -> Self {
         let rts = RuntimeStatsContext::new();
-        Self::new_with_runtime_stats(intermediate_op, children, rts)
+        Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats)
     }
 
     pub(crate) fn new_with_runtime_stats(
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
         runtime_stats: Arc<RuntimeStatsContext>,
+        plan_stats: StatsState,
     ) -> Self {
         Self {
             intermediate_op,
             children,
             runtime_stats,
+            plan_stats,
         }
     }
 
@@ -172,12 +178,23 @@ impl TreeDisplay for IntermediateNode {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-        writeln!(display, "{}", self.intermediate_op.name()).unwrap();
-        use common_display::DisplayLevel::Compact;
-        if matches!(level, Compact) {
-        } else {
-            let rt_result = self.runtime_stats.result();
-            rt_result.display(&mut display, true, true, true).unwrap();
+
+        use common_display::DisplayLevel;
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.intermediate_op.name()).unwrap();
+            }
+            level => {
+                let multiline_display = self.intermediate_op.multiline_display().join("\n");
+                writeln!(display, "{}", multiline_display).unwrap();
+                if let StatsState::Materialized(stats) = &self.plan_stats {
+                    writeln!(display, "Stats = {}", stats).unwrap();
+                }
+                if matches!(level, DisplayLevel::Verbose) {
+                    let rt_result = self.runtime_stats.result();
+                    rt_result.display(&mut display, true, true, true).unwrap();
+                }
+            }
         }
         display
     }

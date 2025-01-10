@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
@@ -64,6 +65,21 @@ impl IntermediateOperator for UnpivotOperator {
                 Span::current(),
             )
             .into()
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Unpivot: {}",
+            self.params.values.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!(
+            "Ids = {}",
+            self.params.ids.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!("Variable name = {}", self.params.variable_name));
+        res.push(format!("Value name = {}", self.params.value_name));
+        res
     }
 
     fn name(&self) -> &'static str {

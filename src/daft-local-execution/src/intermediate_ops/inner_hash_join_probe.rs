@@ -6,6 +6,7 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState};
 use indexmap::IndexSet;
+use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
 
 use super::intermediate_op::{
@@ -211,6 +212,21 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
 
     fn name(&self) -> &'static str {
         "InnerHashJoinProbeOperator"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("InnerHashJoinProbe".to_string());
+        res.push(format!(
+            "Probe on: [{}]",
+            self.params
+                .probe_on
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        res.push(format!("Build on left: {}", self.params.build_on_left));
+        res
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {

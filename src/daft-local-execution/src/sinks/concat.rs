@@ -39,6 +39,10 @@ impl StreamingSink for ConcatSink {
         "Concat"
     }
 
+    fn multiline_display(&self) -> Vec<String> {
+        vec!["Concat".to_string()]
+    }
+
     fn finalize(
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,

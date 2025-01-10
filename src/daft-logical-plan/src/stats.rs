@@ -46,7 +46,7 @@ impl Display for PlanStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{ Approx num rows = {}, Approx num bytes = {} }}",
+            "{{ Approx num rows = {}, Approx size bytes = {} }}",
             self.approx_stats.num_rows, self.approx_stats.size_bytes,
         )
     }

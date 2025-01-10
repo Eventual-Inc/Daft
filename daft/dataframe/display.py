@@ -1,6 +1,7 @@
 from typing import Optional
 
 from daft.context import get_context
+from daft.execution.native_executor import NativeExecutor
 
 
 class AsciiOptions:
@@ -60,10 +61,16 @@ class MermaidFormatter:
                 display_opts.with_subgraph_options(name="Optimized LogicalPlan", subgraph_id="optimized")
             )
             output += "\n"
-            physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-            output += physical_plan_scheduler._scheduler.repr_mermaid(
-                display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical")
-            )
+            if get_context().get_or_create_runner().name != "native":
+                physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+                output += physical_plan_scheduler._scheduler.repr_mermaid(
+                    display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical")
+                )
+            else:
+                native_executor = NativeExecutor.from_logical_plan_builder(builder)
+                output += native_executor._executor.repr_mermaid(
+                    display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical")
+                )
             output += "\n"
             output += "unoptimized --> optimized\n"
             output += "optimized --> physical\n"

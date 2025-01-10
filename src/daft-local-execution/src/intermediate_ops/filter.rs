@@ -43,6 +43,10 @@ impl IntermediateOperator for FilterOperator {
             .into()
     }
 
+    fn multiline_display(&self) -> Vec<String> {
+        vec![format!("Filter: {}", self.predicate)]
+    }
+
     fn name(&self) -> &'static str {
         "FilterOperator"
     }

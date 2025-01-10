@@ -37,6 +37,12 @@ impl Source for EmptyScanSource {
     fn name(&self) -> &'static str {
         "EmptyScanSource"
     }
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("EmptyScanSource:".to_string());
+        res.push(format!("Schema = {}", self.schema.short_string()));
+        res
+    }
     fn schema(&self) -> &SchemaRef {
         &self.schema
     }

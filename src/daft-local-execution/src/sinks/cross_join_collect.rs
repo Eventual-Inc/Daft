@@ -90,6 +90,10 @@ impl BlockingSink for CrossJoinCollectSink {
         Ok(Box::new(CrossJoinCollectState(Some(Vec::new()))))
     }
 
+    fn multiline_display(&self) -> Vec<String> {
+        vec!["CrossJoinCollectSink".to_string()]
+    }
+
     fn max_concurrency(&self) -> usize {
         1
     }

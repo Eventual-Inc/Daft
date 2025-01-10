@@ -5,10 +5,11 @@ use std::{
 
 use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
-use common_scan_info::Pushdowns;
+use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
@@ -120,11 +121,102 @@ impl Source for ScanTaskSource {
     }
 
     fn name(&self) -> &'static str {
-        "ScanTask"
+        "ScanTaskSource"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        self.display_as(DisplayLevel::Default)
+            .lines()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     fn schema(&self) -> &SchemaRef {
         &self.schema
+    }
+}
+
+impl TreeDisplay for ScanTaskSource {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        fn base_display(scan: &ScanTaskSource) -> String {
+            let num_scan_tasks = scan.scan_tasks.len();
+            let total_bytes: usize = scan
+                .scan_tasks
+                .iter()
+                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
+                .sum();
+
+            #[allow(unused_mut)]
+            let mut s = format!(
+                "TabularScan:
+Num Scan Tasks = {num_scan_tasks}
+Estimated Scan Bytes = {total_bytes}
+"
+            );
+            #[cfg(feature = "python")]
+            if let FileFormatConfig::Database(config) =
+                scan.scan_tasks[0].file_format_config().as_ref()
+            {
+                if num_scan_tasks == 1 {
+                    writeln!(s, "SQL Query = {}", &config.sql).unwrap();
+                } else {
+                    writeln!(s, "SQL Queries = [{},..]", &config.sql).unwrap();
+                }
+            }
+            s
+        }
+        match level {
+            DisplayLevel::Compact => self.get_name(),
+            DisplayLevel::Default => {
+                let mut s = base_display(self);
+                // We're only going to display the pushdowns and schema for the first scan task.
+                let pushdown = self.scan_tasks[0].pushdowns();
+                if !pushdown.is_empty() {
+                    s.push_str(&pushdown.display_as(DisplayLevel::Compact));
+                    s.push('\n');
+                }
+
+                let schema = self.scan_tasks[0].schema();
+                writeln!(
+                    s,
+                    "Schema: {{{}}}",
+                    schema.display_as(DisplayLevel::Compact)
+                )
+                .unwrap();
+
+                let tasks = self.scan_tasks.iter();
+
+                writeln!(s, "Scan Tasks: [").unwrap();
+                for (i, st) in tasks.enumerate() {
+                    if i < 3 || i >= self.scan_tasks.len() - 3 {
+                        writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Compact)).unwrap();
+                    } else if i == 3 {
+                        writeln!(s, "...").unwrap();
+                    }
+                }
+                writeln!(s, "]").unwrap();
+
+                s
+            }
+            DisplayLevel::Verbose => {
+                let mut s = base_display(self);
+                writeln!(s, "Scan Tasks: [").unwrap();
+
+                for st in &self.scan_tasks {
+                    writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Verbose)).unwrap();
+                }
+                s
+            }
+        }
+    }
+
+    fn get_name(&self) -> String {
+        "ScanTaskSource".to_string()
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![]
     }
 }
 

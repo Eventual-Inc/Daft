@@ -5,6 +5,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
+use itertools::Itertools;
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
@@ -117,7 +118,21 @@ impl HashJoinBuildSink {
 
 impl BlockingSink for HashJoinBuildSink {
     fn name(&self) -> &'static str {
-        "HashJoinBuildSink"
+        "HashJoinBuild"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut display = vec![];
+        display.push("HashJoinBuild".to_string());
+        display.push(format!("Track Indices: {}", self.track_indices));
+        display.push(format!("Key Schema: {}", self.key_schema.short_string()));
+        if let Some(null_equals_nulls) = &self.nulls_equal_aware {
+            display.push(format!(
+                "Null equals Nulls = [{}]",
+                null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
+            ));
+        };
+        display
     }
 
     fn sink(

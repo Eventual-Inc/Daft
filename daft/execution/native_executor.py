@@ -41,3 +41,14 @@ class NativeExecutor:
             LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
             for part in self._executor.run(psets_mp, daft_execution_config, results_buffer_size)
         )
+
+    def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
+        """Pretty prints the native executor's plan."""
+        from daft.dataframe.display import MermaidOptions
+
+        if format == "ascii":
+            return self._executor.repr_ascii(simple)
+        elif format == "mermaid":
+            return self._executor.repr_mermaid(MermaidOptions(simple))
+        else:
+            raise ValueError(f"Unknown format: {format}")

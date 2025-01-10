@@ -14,6 +14,7 @@ use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState, Table};
 use futures::{stream, StreamExt};
 use indexmap::IndexSet;
+use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
 
 use super::streaming_sink::{
@@ -624,6 +625,28 @@ impl StreamingSink for OuterHashJoinProbeSink {
 
     fn name(&self) -> &'static str {
         "OuterHashJoinProbeSink"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        match self.params.join_type {
+            JoinType::Left => res.push("Left Join".to_string()),
+            JoinType::Right => res.push("Right Join".to_string()),
+            JoinType::Outer => res.push("Outer Join".to_string()),
+            _ => unreachable!(
+                "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
+            ),
+        }
+        res.push(format!(
+            "Probe on: [{}]",
+            self.params
+                .probe_on
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        res.push(format!("Build on left: {}", self.params.build_on_left));
+        res
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {

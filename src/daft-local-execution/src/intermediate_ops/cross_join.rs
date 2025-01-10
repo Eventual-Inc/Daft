@@ -142,6 +142,13 @@ impl IntermediateOperator for CrossJoinOperator {
         "CrossJoinOperator"
     }
 
+    fn multiline_display(&self) -> Vec<String> {
+        vec![
+            "CrossJoin".to_string(),
+            format!("Stream Side = {:?}", self.stream_side),
+        ]
+    }
+
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(CrossJoinState::new(self.state_bridge.clone())))
     }

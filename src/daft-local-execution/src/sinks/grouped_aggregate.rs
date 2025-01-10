@@ -9,6 +9,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::{col, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
+use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -421,6 +422,27 @@ impl BlockingSink for GroupedAggregateSink {
 
     fn name(&self) -> &'static str {
         "GroupedAggregateSink"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut display = vec!["GroupedAggregateSink".to_string()];
+        display.push(format!(
+            "GroupedAggregateSink: {}",
+            self.grouped_aggregate_params
+                .original_aggregations
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        display.push(format!(
+            "Group by: {}",
+            self.grouped_aggregate_params
+                .group_by
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        display
     }
 
     fn max_concurrency(&self) -> usize {
