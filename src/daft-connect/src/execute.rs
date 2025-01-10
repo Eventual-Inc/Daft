@@ -47,7 +47,10 @@ impl Session {
     ) -> eyre::Result<BoxStream<DaftResult<Arc<MicroPartition>>>> {
         match self.get_runner()? {
             Runner::Ray => {
-                let runner = RayEngine::try_new(None, None, None)?;
+                let runner_address = self.config_values().get("daft.runner.ray.address");
+                let runner_address = runner_address.map(|s| s.to_string());
+
+                let runner = RayEngine::try_new(runner_address, None, None)?;
                 let result_set = tokio::task::spawn_blocking(move || {
                     Python::with_gil(|py| runner.run_iter_impl(py, lp, None))
                 })
