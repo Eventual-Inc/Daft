@@ -45,6 +45,14 @@ def run(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref", type=str, required=False, help="The branch name to run on")
+    parser.add_argument(
+        "--arch",
+        choices=["x86", "arm"],
+        type=str,
+        required=False,
+        default="x86",
+        help="The architecture for which to build the wheel on",
+    )
     parser.add_argument("--questions", type=str, required=False, help="A comma separated list of questions to run")
     parser.add_argument(
         "--scale-factor",
