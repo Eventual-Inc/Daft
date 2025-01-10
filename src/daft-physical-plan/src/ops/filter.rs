@@ -9,11 +9,20 @@ pub struct Filter {
     pub input: PhysicalPlanRef,
     // The Boolean expression to filter on.
     pub predicate: ExprRef,
+    pub estimated_selectivity: f64,
 }
 
 impl Filter {
-    pub(crate) fn new(input: PhysicalPlanRef, predicate: ExprRef) -> Self {
-        Self { input, predicate }
+    pub(crate) fn new(
+        input: PhysicalPlanRef,
+        predicate: ExprRef,
+        estimated_selectivity: f64,
+    ) -> Self {
+        Self {
+            input,
+            predicate,
+            estimated_selectivity,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

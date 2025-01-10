@@ -686,7 +686,9 @@ impl ScanTask {
             if self.pushdowns.filters.is_some() {
                 // HACK: This might not be a good idea? We could also just return None here
                 // Assume that filters filter out about 80% of the data
-                approx_total_num_rows_before_pushdowns / 5.
+                let estimated_selectivity =
+                    self.pushdowns.estimated_selectivity(self.schema.as_ref());
+                approx_total_num_rows_before_pushdowns * estimated_selectivity
             } else if let Some(limit) = self.pushdowns.limit {
                 (limit as f64).min(approx_total_num_rows_before_pushdowns)
             } else {

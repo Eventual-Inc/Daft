@@ -119,7 +119,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                             let left_stats = left.approximate_stats();
                             let right_stats = right.approximate_stats();
 
-                            if left_stats.lower_bound_bytes <= right_stats.lower_bound_bytes {
+                            if left_stats.size_bytes <= right_stats.size_bytes {
                                 RunNext::Left
                             } else {
                                 RunNext::Right

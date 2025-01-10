@@ -10,8 +10,8 @@ use common_file_formats::FileFormat;
 use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
-    Expr, ExprRef, SketchType,
+    col, estimated_selectivity, functions::agg::merge_mean, is_partition_compatible, AggExpr,
+    ApproxPercentileParams, Expr, ExprRef, SketchType,
 };
 use daft_functions::{list::unique_count, numeric::sqrt};
 use daft_logical_plan::{
@@ -116,9 +116,17 @@ pub(super) fn translate_single_logical_node(
             )?)
             .arced())
         }
-        LogicalPlan::Filter(LogicalFilter { predicate, .. }) => {
+        LogicalPlan::Filter(LogicalFilter {
+            predicate, input, ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::Filter(Filter::new(input_physical, predicate.clone())).arced())
+            let estimated_selectivity = estimated_selectivity(predicate, &input.schema());
+            Ok(PhysicalPlan::Filter(Filter::new(
+                input_physical,
+                predicate.clone(),
+                estimated_selectivity,
+            ))
+            .arced())
         }
         LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -472,17 +480,10 @@ pub(super) fn translate_single_logical_node(
 
             // For broadcast joins, ensure that the left side of the join is the smaller side.
             let (smaller_size_bytes, left_is_larger) =
-                match (left_stats.upper_bound_bytes, right_stats.upper_bound_bytes) {
-                    (Some(left_size_bytes), Some(right_size_bytes)) => {
-                        if right_size_bytes < left_size_bytes {
-                            (Some(right_size_bytes), true)
-                        } else {
-                            (Some(left_size_bytes), false)
-                        }
-                    }
-                    (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
-                    (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
-                    (None, None) => (None, false),
+                if right_stats.size_bytes < left_stats.size_bytes {
+                    (right_stats.size_bytes, true)
+                } else {
+                    (left_stats.size_bytes, false)
                 };
             let is_larger_partitioned = if left_is_larger {
                 is_left_hash_partitioned || is_left_sort_partitioned
@@ -518,7 +519,6 @@ pub(super) fn translate_single_logical_node(
 
                 // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join.
                 if !is_larger_partitioned
-                    && let Some(smaller_size_bytes) = smaller_size_bytes
                     && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold
                     && smaller_side_is_broadcastable
                 {

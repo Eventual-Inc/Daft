@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{ExprRef, ExprResolver};
+use daft_dsl::{estimated_selectivity, ExprRef, ExprResolver};
 use snafu::ResultExt;
 
 use crate::{
@@ -46,13 +46,12 @@ impl Filter {
         // Assume no row/column pruning in cardinality-affecting operations.
         // TODO(desmond): We can do better estimations here. For now, reuse the old logic.
         let input_stats = self.input.materialized_stats();
-        let upper_bound_rows = input_stats.approx_stats.upper_bound_rows;
-        let upper_bound_bytes = input_stats.approx_stats.upper_bound_bytes;
+        let estimated_selectivity = estimated_selectivity(&self.predicate, &self.input.schema());
         let approx_stats = ApproxStats {
-            lower_bound_rows: 0,
-            upper_bound_rows,
-            lower_bound_bytes: 0,
-            upper_bound_bytes,
+            num_rows: (input_stats.approx_stats.num_rows as f64 * estimated_selectivity).ceil()
+                as usize,
+            size_bytes: (input_stats.approx_stats.size_bytes as f64 * estimated_selectivity).ceil()
+                as usize,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self

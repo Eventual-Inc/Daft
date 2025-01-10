@@ -67,11 +67,10 @@ impl Explode {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let input_stats = self.input.materialized_stats();
+        let est_num_exploded_rows = input_stats.approx_stats.num_rows * 4;
         let approx_stats = ApproxStats {
-            lower_bound_rows: input_stats.approx_stats.lower_bound_rows,
-            upper_bound_rows: None,
-            lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes,
-            upper_bound_bytes: None,
+            num_rows: est_num_exploded_rows,
+            size_bytes: input_stats.approx_stats.size_bytes,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self

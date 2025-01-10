@@ -46,11 +46,8 @@ impl Display for PlanStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{ Lower bound rows = {}, Upper bound rows = {}, Lower bound bytes = {}, Upper bound bytes = {} }}",
-            self.approx_stats.lower_bound_rows,
-            self.approx_stats.upper_bound_rows.map_or("None".to_string(), |v| v.to_string()),
-            self.approx_stats.lower_bound_bytes,
-            self.approx_stats.upper_bound_bytes.map_or("None".to_string(), |v| v.to_string()),
+            "{{ Approx num rows = {}, Approx num bytes = {} }}",
+            self.approx_stats.num_rows, self.approx_stats.size_bytes,
         )
     }
 }
@@ -103,27 +100,21 @@ impl<T: Display> Display for AlwaysSame<T> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ApproxStats {
-    pub lower_bound_rows: usize,
-    pub upper_bound_rows: Option<usize>,
-    pub lower_bound_bytes: usize,
-    pub upper_bound_bytes: Option<usize>,
+    pub num_rows: usize,
+    pub size_bytes: usize,
 }
 
 impl ApproxStats {
     pub fn empty() -> Self {
         Self {
-            lower_bound_rows: 0,
-            upper_bound_rows: None,
-            lower_bound_bytes: 0,
-            upper_bound_bytes: None,
+            num_rows: 0,
+            size_bytes: 0,
         }
     }
     pub fn apply<F: Fn(usize) -> usize>(&self, f: F) -> Self {
         Self {
-            lower_bound_rows: f(self.lower_bound_rows),
-            upper_bound_rows: self.upper_bound_rows.map(&f),
-            lower_bound_bytes: f(self.lower_bound_rows),
-            upper_bound_bytes: self.upper_bound_bytes.map(&f),
+            num_rows: f(self.num_rows),
+            size_bytes: f(self.size_bytes),
         }
     }
 }
@@ -133,14 +124,8 @@ impl Add for &ApproxStats {
     type Output = ApproxStats;
     fn add(self, rhs: Self) -> Self::Output {
         ApproxStats {
-            lower_bound_rows: self.lower_bound_rows + rhs.lower_bound_rows,
-            upper_bound_rows: self
-                .upper_bound_rows
-                .and_then(|l_ub| rhs.upper_bound_rows.map(|v| v + l_ub)),
-            lower_bound_bytes: self.lower_bound_bytes + rhs.lower_bound_bytes,
-            upper_bound_bytes: self
-                .upper_bound_bytes
-                .and_then(|l_ub| rhs.upper_bound_bytes.map(|v| v + l_ub)),
+            num_rows: self.num_rows + rhs.num_rows,
+            size_bytes: self.size_bytes + rhs.size_bytes,
         }
     }
 }
