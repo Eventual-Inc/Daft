@@ -221,10 +221,11 @@ impl PhysicalPlan {
             Self::Limit(Limit { input, limit, .. }) => {
                 let input_stats = input.approximate_stats();
                 let limit = *limit as usize;
-                let est_bytes_per_row = input_stats.size_bytes / input_stats.num_rows.max(1);
                 ApproxStats {
                     num_rows: limit.min(input_stats.num_rows),
                     size_bytes: if input_stats.num_rows > limit {
+                        let est_bytes_per_row =
+                            input_stats.size_bytes / input_stats.num_rows.max(1);
                         limit * est_bytes_per_row
                     } else {
                         input_stats.size_bytes
