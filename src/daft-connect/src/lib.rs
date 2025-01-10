@@ -50,6 +50,7 @@ use uuid::Uuid;
 #[cfg(feature = "python")]
 use crate::{display::SparkDisplay, session::Session, translation::SparkAnalyzer};
 
+#[cfg(feature = "python")]
 pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
 #[cfg_attr(feature = "python", pyo3::pyclass)]
