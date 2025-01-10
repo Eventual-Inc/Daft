@@ -283,8 +283,8 @@ pub fn physical_plan_to_pipeline(
                         StatsState::Materialized(left_stats),
                         StatsState::Materialized(right_stats),
                     ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
+                        let left_size = left_stats.approx_stats.size_bytes;
+                        let right_size = right_stats.approx_stats.size_bytes;
                         left_size <= right_size
                     }
                     // If stats are only available on the right side of the join, and the upper bound bytes on the
@@ -302,8 +302,8 @@ pub fn physical_plan_to_pipeline(
                         StatsState::Materialized(left_stats),
                         StatsState::Materialized(right_stats),
                     ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
+                        let left_size = left_stats.approx_stats.size_bytes;
+                        let right_size = right_stats.approx_stats.size_bytes;
                         right_size as f64 >= left_size as f64 * 1.5
                     }
                     // If stats are only available on the left side of the join, and the upper bound bytes on the left
@@ -321,8 +321,8 @@ pub fn physical_plan_to_pipeline(
                         StatsState::Materialized(left_stats),
                         StatsState::Materialized(right_stats),
                     ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
+                        let left_size = left_stats.approx_stats.size_bytes;
+                        let right_size = right_stats.approx_stats.size_bytes;
                         (right_size as f64 * 1.5) >= left_size as f64
                     }
                     // If stats are only available on the right side of the join, and the upper bound bytes on the
@@ -340,8 +340,8 @@ pub fn physical_plan_to_pipeline(
                         StatsState::Materialized(left_stats),
                         StatsState::Materialized(right_stats),
                     ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
+                        let left_size = left_stats.approx_stats.size_bytes;
+                        let right_size = right_stats.approx_stats.size_bytes;
                         right_size as f64 > left_size as f64 * 1.5
                     }
                     // If stats are only available on the left side of the join, and the upper bound bytes on the left
