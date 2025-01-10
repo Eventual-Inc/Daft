@@ -27,6 +27,7 @@ pub fn unresolved_to_daft_expr(f: &UnresolvedFunction) -> eyre::Result<daft_dsl:
         "<" => handle_binary_op(arguments, daft_dsl::Operator::Lt),
         "<=" => handle_binary_op(arguments, daft_dsl::Operator::LtEq),
         "==" => handle_binary_op(arguments, daft_dsl::Operator::Eq),
+        "<=>" => handle_binary_op(arguments, daft_dsl::Operator::EqNullSafe),
         ">" => handle_binary_op(arguments, daft_dsl::Operator::Gt),
         ">=" => handle_binary_op(arguments, daft_dsl::Operator::GtEq),
         "count" => handle_count(arguments),

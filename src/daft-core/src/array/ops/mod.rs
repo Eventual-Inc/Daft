@@ -76,6 +76,9 @@ pub trait DaftCompare<Rhs> {
     /// equality.
     fn equal(&self, rhs: Rhs) -> Self::Output;
 
+    /// null-safe equality.
+    fn eq_null_safe(&self, rhs: Rhs) -> Self::Output;
+
     /// inequality.
     fn not_equal(&self, rhs: Rhs) -> Self::Output;
 

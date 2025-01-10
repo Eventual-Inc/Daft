@@ -69,6 +69,124 @@ where
         }
     }
 
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        println!("Starting eq_null_safe comparison");
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                println!("Arrays have equal length: {}", x);
+                let l_validity = self.as_arrow().validity();
+                let r_validity = rhs.as_arrow().validity();
+
+                println!("Left validity: {:?}", l_validity.is_some());
+                println!("Right validity: {:?}", r_validity.is_some());
+
+                // Create a bitmap for the result
+                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                    .values()
+                    .clone();
+
+                // Handle null cases:
+                // - If both values are null (neither valid) -> true
+                // - If one value is null (one valid, one not) -> false
+                // - If both values are valid -> use regular equality result
+                match (l_validity, r_validity) {
+                    (None, None) => {
+                        println!("Both arrays fully valid");
+                        // Both arrays are fully valid, use regular equality result
+                    }
+                    (None, Some(r_valid)) => {
+                        println!("Left array fully valid, right has nulls");
+                        // Left array is fully valid, right has nulls
+                        // Set false where right is null
+                        result_values = arrow2::bitmap::and(&result_values, r_valid);
+                    }
+                    (Some(l_valid), None) => {
+                        println!("Right array fully valid, left has nulls");
+                        // Right array is fully valid, left has nulls
+                        // Set false where left is null
+                        result_values = arrow2::bitmap::and(&result_values, l_valid);
+                    }
+                    (Some(l_valid), Some(r_valid)) => {
+                        println!("Both arrays have nulls");
+                        // Both arrays have nulls
+                        // Case 1: Both valid -> use regular equality result
+                        // Case 2: Both null -> set to true
+                        // Case 3: One null -> set to false
+                        let both_valid = arrow2::bitmap::and(l_valid, r_valid);
+                        let both_null = arrow2::bitmap::and(&l_valid.not(), &r_valid.not());
+
+                        // Start with regular equality where both valid
+                        result_values = arrow2::bitmap::and(&result_values, &both_valid);
+                        // Add true where both null
+                        result_values = arrow2::bitmap::or(&result_values, &both_null);
+                    }
+                }
+
+                println!("Created result array");
+                Ok(BooleanArray::from((
+                    self.name(),
+                    arrow2::array::BooleanArray::new(
+                        arrow2::datatypes::DataType::Boolean,
+                        result_values,
+                        None, // No nulls in result
+                    ),
+                )))
+            }
+            (l_size, 1) => {
+                println!("Left array length: {}, right array length: 1", l_size);
+                if let Some(value) = rhs.get(0) {
+                    println!("Right value is non-null: {:?}", value);
+                    Ok(self.eq_null_safe(value))
+                } else {
+                    println!("Right value is null");
+                    // When comparing with null, return true for null values and false for non-null values
+                    let result_values = match self.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(l_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (1, r_size) => {
+                println!("Left array length: 1, right array length: {}", r_size);
+                if let Some(value) = self.get(0) {
+                    println!("Left value is non-null: {:?}", value);
+                    Ok(rhs.equal(value))
+                } else {
+                    println!("Left value is null");
+                    // When comparing with null, return true for null values and false for non-null values
+                    let result_values = match rhs.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(r_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (l, r) => {
+                println!("Arrays have different lengths: {} vs {}", l, r);
+                Err(DaftError::ValueError(format!(
+                    "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                    self.name(),
+                    rhs.name()
+                )))
+            }
+        }
+    }
+
     fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
@@ -335,6 +453,34 @@ where
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
         self.compare_to_scalar(rhs, comparison::gt_eq_scalar)
     }
+
+    fn eq_null_safe(&self, rhs: Scalar) -> Self::Output {
+        println!("Starting eq_null_safe comparison (DaftCompare<Scalar> for DataArray<T>)");
+
+        let rhs: T::Native =
+            NumCast::from(rhs).expect("could not cast to underlying DataArray type");
+
+        let arrow_array = self.as_arrow();
+        let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
+
+        // For non-null scalar comparison, nulls in the array should result in false
+        let result_values = comparison::eq_scalar(arrow_array, &scalar).values().clone();
+
+        // If array has nulls, those positions should be false
+        let final_values = match arrow_array.validity() {
+            None => result_values,
+            Some(valid) => arrow2::bitmap::and(&result_values, valid),
+        };
+
+        BooleanArray::from((
+            self.name(),
+            arrow2::array::BooleanArray::new(
+                arrow2::datatypes::DataType::Boolean,
+                final_values,
+                None, // No nulls in result
+            ),
+        ))
+    }
 }
 
 impl DaftCompare<&Self> for BooleanArray {
@@ -531,6 +677,12 @@ impl DaftCompare<&Self> for BooleanArray {
             ))),
         }
     }
+
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        println!("Starting eq_null_safe comparison (DaftCompare<Self> for BooleanArray)");
+
+        self.equal(rhs)
+    }
 }
 
 impl DaftCompare<bool> for BooleanArray {
@@ -582,6 +734,12 @@ impl DaftCompare<bool> for BooleanArray {
             comparison::boolean::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
         Ok(Self::from((self.name(), arrow_result)))
+    }
+
+    fn eq_null_safe(&self, rhs: bool) -> Self::Output {
+        println!("Starting eq_null_safe comparison (DaftCompare<Scalar>)");
+
+        self.equal(rhs)
     }
 }
 
@@ -819,6 +977,7 @@ impl DaftCompare<&Self> for NullArray {
     null_array_comparison_method!(lte);
     null_array_comparison_method!(gt);
     null_array_comparison_method!(gte);
+    null_array_comparison_method!(eq_null_safe);
 }
 
 impl DaftLogical<bool> for BooleanArray {
@@ -1104,6 +1263,12 @@ impl DaftCompare<&Self> for Utf8Array {
             ))),
         }
     }
+
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        println!("Starting eq_null_safe comparison (DaftCompare<Self> for Utf8Array)");
+
+        self.equal(rhs)
+    }
 }
 
 impl DaftCompare<&str> for Utf8Array {
@@ -1155,6 +1320,12 @@ impl DaftCompare<&str> for Utf8Array {
             comparison::utf8::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
+    }
+
+    fn eq_null_safe(&self, rhs: &str) -> Self::Output {
+        println!("Starting eq_null_safe comparison (DaftCompare<Scalar> for Utf8Array)");
+
+        self.equal(rhs)
     }
 }
 
@@ -1400,6 +1571,12 @@ impl DaftCompare<&Self> for BinaryArray {
             ))),
         }
     }
+
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        println!("Starting eq_null_safe comparison (DaftCompare<Self> for BinaryArray)");
+
+        self.equal(rhs)
+    }
 }
 
 impl DaftCompare<&[u8]> for BinaryArray {
@@ -1451,6 +1628,12 @@ impl DaftCompare<&[u8]> for BinaryArray {
             comparison::binary::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
+    }
+
+    fn eq_null_safe(&self, rhs: &[u8]) -> Self::Output {
+        println!("Starting eq_null_safe comparison (DaftCompare<Scalar> for BinaryArray)");
+
+        self.equal(rhs)
     }
 }
 
@@ -1711,6 +1894,12 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
             ))),
         }
     }
+
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        println!("Starting eq_null_safe comparison (DaftCompare<Self> for FixedSizeBinaryArray)");
+
+        self.equal(rhs)
+    }
 }
 
 impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
@@ -1738,6 +1927,12 @@ impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
 
     fn gte(&self, rhs: &[u8]) -> Self::Output {
         cmp_fixed_size_binary_scalar(self, rhs, |lhs, rhs| lhs >= rhs)
+    }
+
+    fn eq_null_safe(&self, rhs: &[u8]) -> Self::Output {
+        println!("Starting eq_null_safe comparison (DaftCompare<&[u8]> for FixedSizeBinaryArray)");
+
+        self.equal(rhs)
     }
 }
 

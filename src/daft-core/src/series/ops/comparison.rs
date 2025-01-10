@@ -65,4 +65,9 @@ impl DaftCompare<&Self> for Series {
     impl_compare_method!(lte, le);
     impl_compare_method!(gt, gt);
     impl_compare_method!(gte, ge);
+    impl_compare_method!(eq_null_safe, eq_null_safe);
+
+    // fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+    //     self.equal(rhs)
+    // }
 }

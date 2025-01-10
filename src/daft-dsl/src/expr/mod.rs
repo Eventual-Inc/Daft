@@ -999,7 +999,8 @@ impl Expr {
                     | Operator::Eq
                     | Operator::NotEq
                     | Operator::LtEq
-                    | Operator::GtEq => {
+                    | Operator::GtEq
+                    | Operator::EqNullSafe => {
                         let (result_type, _intermediate, _comp_type) =
                             InferDataType::from(&left_field.dtype)
                                 .comparison_op(&InferDataType::from(&right_field.dtype))?;
@@ -1153,6 +1154,7 @@ impl Expr {
                     to_sql_inner(left, buffer)?;
                     let op = match op {
                         Operator::Eq => "=",
+                        Operator::EqNullSafe => "<=>",
                         Operator::NotEq => "!=",
                         Operator::Lt => "<",
                         Operator::LtEq => "<=",
@@ -1219,12 +1221,18 @@ impl Expr {
             _ => None,
         }
     }
+
+    pub fn eq_null_safe(self: ExprRef, other: ExprRef) -> ExprRef {
+        binary_op(Operator::EqNullSafe, self, other)
+    }
 }
 
 #[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Operator {
     #[display("==")]
     Eq,
+    #[display("<=>")]
+    EqNullSafe,
     #[display("!=")]
     NotEq,
     #[display("<")]
@@ -1265,6 +1273,7 @@ impl Operator {
         matches!(
             self,
             Self::Eq
+                | Self::EqNullSafe
                 | Self::NotEq
                 | Self::Lt
                 | Self::LtEq
