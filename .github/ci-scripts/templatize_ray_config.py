@@ -64,7 +64,7 @@ profiles: dict[str, Optional[Profile]] = {
         instance_type="i8g.4xlarge",
         image_id="ami-0f2a7c7ff2ad40dc1",
         node_count=10,
-        ssh_user="ubuntu",
+        ssh_user="ec2-user",
         volume_mount=""" |
     findmnt /tmp 1> /dev/null
     code=$?
