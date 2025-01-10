@@ -50,7 +50,7 @@ jobs:
     uses: ./.github/workflows/build-commit.yaml
     if: ${{ inputs.daft_version == '' && inputs.daft_wheel_url == '' }}
     with:
-      arch: ${{ (inputs.cluster_profile == "debug_xs-x86" || inputs.cluster_profile == "medium-x86") && "x86" || "arm" }}
+      arch: ${{ (inputs.cluster_profile == 'debug_xs-x86' || inputs.cluster_profile == 'medium-x86') && 'x86' || 'arm' }}
       python_version: ${{ inputs.python_version }}
     secrets:
       ACTIONS_AWS_ROLE_ARN: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
