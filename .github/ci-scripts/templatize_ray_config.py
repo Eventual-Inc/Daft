@@ -62,9 +62,9 @@ profiles: dict[str, Optional[Profile]] = {
     ),
     "benchmarking-arm": Profile(
         instance_type="i8g.4xlarge",
-        image_id="ami-0f2a7c7ff2ad40dc1",
+        image_id="ami-0d4eea77bb23270f4",
         node_count=10,
-        ssh_user="ec2-user",
+        ssh_user="ubuntu",
         volume_mount=""" |
     findmnt /tmp 1> /dev/null
     code=$?
