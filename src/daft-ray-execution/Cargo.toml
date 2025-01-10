@@ -1,16 +1,13 @@
-[package]
-name = "daft-ray-execution"
-edition.workspace = true
-version.workspace = true
-
 [dependencies]
-common-error = { workspace = true, features = ["python"] }
-common-partitioning = { version = "0.3.0-dev0", path = "../common/partitioning", features = ["python"] }
-daft-logical-plan = { workspace = true, features = ["python"] }
-daft-micropartition = { workspace = true, features = ["python"] }
-futures.workspace = true
-log.workspace = true
+common-error = {workspace = true, features = ["python"]}
+daft-logical-plan = {workspace = true, features = ["python"]}
+daft-micropartition = {workspace = true, features = ["python"]}
 pyo3.workspace = true
 
 [lints]
 workspace = true
+
+[package]
+name = "daft-ray-execution"
+edition.workspace = true
+version.workspace = true

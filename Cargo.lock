@@ -2481,11 +2481,8 @@ name = "daft-ray-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-partitioning",
  "daft-logical-plan",
  "daft-micropartition",
- "futures",
- "log",
  "pyo3",
 ]
 
