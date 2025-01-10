@@ -8,7 +8,6 @@
 
 use dashmap::DashMap;
 use eyre::Context;
-#[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
 use spark_connect::{
     analyze_plan_response,
@@ -39,13 +38,13 @@ pub mod util;
 
 pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[pyo3::pyclass]
 pub struct ConnectionHandle {
     shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
     port: u16,
 }
 
-#[cfg_attr(feature = "python", pyo3::pymethods)]
+#[pyo3::pymethods]
 impl ConnectionHandle {
     pub fn shutdown(&mut self) {
         let Some(shutdown_signal) = self.shutdown_signal.take() else {
@@ -464,14 +463,12 @@ pub enum Runner {
     Native,
 }
 
-#[cfg(feature = "python")]
 #[pyo3::pyfunction]
 #[pyo3(name = "connect_start", signature = (addr = "sc://0.0.0.0:0"))]
 pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
     start(addr).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
 }
 
-#[cfg(feature = "python")]
 pub fn register_modules(parent: &pyo3::Bound<pyo3::types::PyModule>) -> pyo3::PyResult<()> {
     parent.add_function(pyo3::wrap_pyfunction!(py_connect_start, parent)?)?;
     parent.add_class::<ConnectionHandle>()?;

@@ -18,28 +18,13 @@ dashmap = "6.1.0"
 eyre = "0.6.12"
 futures = "0.3.31"
 itertools = {workspace = true}
-pyo3 = {workspace = true, optional = true}
+pyo3 = {workspace = true}
 spark-connect = {workspace = true}
 textwrap = "0.16.1"
 tokio = {version = "1.40.0", features = ["full"]}
 tonic = "0.12.3"
 tracing = {workspace = true}
 uuid = {version = "1.10.0", features = ["v4"]}
-
-[features]
-python = [
-  "dep:pyo3",
-  "common-error/python",
-  "common-daft-config/python",
-  "daft-local-execution/python",
-  "daft-logical-plan/python",
-  "daft-scan/python",
-  "daft-table/python",
-  "daft-dsl/python",
-  "daft-schema/python",
-  "daft-core/python",
-  "daft-micropartition/python"
-]
 
 [lints]
 workspace = true
