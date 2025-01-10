@@ -60,7 +60,7 @@ profiles: dict[str, Optional[Profile]] = {
         sudo chmod 777 /tmp
     fi""",
     ),
-    "benchmarking-x86": Profile(
+    "benchmarking-arm": Profile(
         instance_type="i8g.4xlarge",
         image_id="ami-04dd23e62ed049936",
         node_count=10,
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     parser.add_argument("--daft-wheel-url")
     parser.add_argument("--daft-version")
     parser.add_argument("--python-version", required=True)
-    parser.add_argument("--cluster-profile", required=True, choices=["debug_xs-x86", "medium-x86", "benchmarking-x86"])
+    parser.add_argument("--cluster-profile", required=True, choices=["debug_xs-x86", "medium-x86", "benchmarking-arm"])
     parser.add_argument("--working-dir", required=True)
     parser.add_argument("--entrypoint-script", required=True)
     args = parser.parse_args()
