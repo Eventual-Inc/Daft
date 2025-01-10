@@ -16,6 +16,7 @@ import github
 
 def run(
     branch_name: Optional[str],
+    arch: str,
     questions: Optional[str],
     scale_factor: int,
     cluster_profile: str,
@@ -33,6 +34,7 @@ def run(
         workflow=workflow,
         branch_name=branch_name,
         inputs={
+            "arch": arch,
             "cluster_profile": cluster_profile,
             "working_dir": "benchmarking/tpcds",
             "entrypoint_script": "ray_entrypoint.py",
@@ -99,6 +101,7 @@ if __name__ == "__main__":
 
     run(
         branch_name=args.ref,
+        arch=args.arch,
         questions=args.questions,
         scale_factor=args.scale_factor,
         cluster_profile=args.cluster_profile,
