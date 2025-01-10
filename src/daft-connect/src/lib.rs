@@ -486,6 +486,7 @@ pub enum Runner {
     Native,
 }
 
+#[cfg(feature = "python")]
 #[cfg_attr(feature = "python", pyo3::pyfunction)]
 #[pyo3(name = "connect_start", signature = (addr = "sc://0.0.0.0:0"))]
 pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
