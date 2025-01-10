@@ -2367,6 +2367,7 @@ dependencies = [
  "indexmap 2.7.0",
  "itertools 0.11.0",
  "log",
+ "num-format",
  "pretty_assertions",
  "pyo3",
  "rand 0.8.5",

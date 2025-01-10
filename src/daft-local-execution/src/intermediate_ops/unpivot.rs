@@ -83,6 +83,6 @@ impl IntermediateOperator for UnpivotOperator {
     }
 
     fn name(&self) -> &'static str {
-        "UnpivotOperator"
+        "Unpivot"
     }
 }

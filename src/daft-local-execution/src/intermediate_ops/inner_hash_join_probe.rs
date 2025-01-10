@@ -211,12 +211,12 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
     }
 
     fn name(&self) -> &'static str {
-        "InnerHashJoinProbeOperator"
+        "InnerHashJoinProbe"
     }
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("InnerHashJoinProbe".to_string());
+        res.push("InnerHashJoinProbe:".to_string());
         res.push(format!(
             "Probe on: [{}]",
             self.params

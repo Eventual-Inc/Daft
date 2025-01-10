@@ -70,6 +70,6 @@ impl IntermediateOperator for SampleOperator {
     }
 
     fn name(&self) -> &'static str {
-        "SampleOperator"
+        "Sample"
     }
 }

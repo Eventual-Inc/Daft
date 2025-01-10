@@ -137,12 +137,12 @@ impl BlockingSink for AggregateSink {
     }
 
     fn name(&self) -> &'static str {
-        "AggregateSink"
+        "Aggregate"
     }
 
     fn multiline_display(&self) -> Vec<String> {
         vec![format!(
-            "AggregateSink: {}",
+            "Aggregate: {}",
             self.agg_sink_params
                 .sink_agg_exprs
                 .iter()

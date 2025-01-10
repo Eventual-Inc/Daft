@@ -123,7 +123,7 @@ impl BlockingSink for HashJoinBuildSink {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut display = vec![];
-        display.push("HashJoinBuild".to_string());
+        display.push("HashJoinBuild:".to_string());
         display.push(format!("Track Indices: {}", self.track_indices));
         display.push(format!("Key Schema: {}", self.key_schema.short_string()));
         if let Some(null_equals_nulls) = &self.nulls_equal_aware {

@@ -149,7 +149,7 @@ impl TreeDisplay for ScanTaskSource {
 
             #[allow(unused_mut)]
             let mut s = format!(
-                "TabularScan:
+                "ScanTaskSource:
 Num Scan Tasks = {num_scan_tasks}
 Estimated Scan Bytes = {total_bytes}
 "

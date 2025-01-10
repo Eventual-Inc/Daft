@@ -133,12 +133,12 @@ impl BlockingSink for PivotSink {
     }
 
     fn name(&self) -> &'static str {
-        "PivotSink"
+        "Pivot"
     }
 
     fn multiline_display(&self) -> Vec<String> {
         let mut display = vec![];
-        display.push("PivotSink:".to_string());
+        display.push("Pivot:".to_string());
         display.push(format!(
             "Group by = {}",
             self.pivot_params

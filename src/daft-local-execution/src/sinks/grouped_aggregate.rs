@@ -421,13 +421,13 @@ impl BlockingSink for GroupedAggregateSink {
     }
 
     fn name(&self) -> &'static str {
-        "GroupedAggregateSink"
+        "GroupedAggregate"
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        let mut display = vec!["GroupedAggregateSink".to_string()];
+        let mut display = vec![];
         display.push(format!(
-            "GroupedAggregateSink: {}",
+            "GroupedAggregate: {}",
             self.grouped_aggregate_params
                 .original_aggregations
                 .iter()

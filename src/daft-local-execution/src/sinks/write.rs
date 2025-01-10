@@ -159,7 +159,7 @@ impl BlockingSink for WriteSink {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![];
-        lines.push(format!("WriteSink: {:?}", self.write_format));
+        lines.push(format!("Write: {:?}", self.write_format));
         if let Some(partition_by) = &self.partition_by {
             lines.push(format!("Partition by: {:?}", partition_by));
         }

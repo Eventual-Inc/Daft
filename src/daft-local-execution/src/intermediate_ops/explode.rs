@@ -55,6 +55,6 @@ impl IntermediateOperator for ExplodeOperator {
     }
 
     fn name(&self) -> &'static str {
-        "ExplodeOperator"
+        "Explode"
     }
 }

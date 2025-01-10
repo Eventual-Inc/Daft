@@ -111,7 +111,7 @@ impl BlockingSink for SortSink {
     }
 
     fn name(&self) -> &'static str {
-        "SortSink"
+        "Sort"
     }
 
     fn multiline_display(&self) -> Vec<String> {

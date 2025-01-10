@@ -48,6 +48,6 @@ impl IntermediateOperator for FilterOperator {
     }
 
     fn name(&self) -> &'static str {
-        "FilterOperator"
+        "Filter"
     }
 }

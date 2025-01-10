@@ -191,6 +191,7 @@ impl TreeDisplay for IntermediateNode {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 if matches!(level, DisplayLevel::Verbose) {
+                    writeln!(display).unwrap();
                     let rt_result = self.runtime_stats.result();
                     rt_result.display(&mut display, true, true, true).unwrap();
                 }

@@ -56,7 +56,7 @@ impl IntermediateOperator for ProjectOperator {
     }
 
     fn name(&self) -> &'static str {
-        "ProjectOperator"
+        "Project"
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -80,7 +80,7 @@ impl TreeDisplay for SourceNode {
                     let bytes_read = self.io_stats.load_bytes_read();
                     writeln!(
                         display,
-                        "bytes read = {}",
+                        "Bytes read = {}",
                         bytes_to_human_readable(bytes_read)
                     )
                     .unwrap();

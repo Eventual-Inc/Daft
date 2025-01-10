@@ -35,11 +35,11 @@ impl Source for EmptyScanSource {
         Ok(Box::pin(futures::stream::once(async { Ok(empty) })))
     }
     fn name(&self) -> &'static str {
-        "EmptyScanSource"
+        "EmptyScan"
     }
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("EmptyScanSource:".to_string());
+        res.push("EmptyScan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res
     }

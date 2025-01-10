@@ -271,14 +271,14 @@ impl StreamingSink for AntiSemiProbeSink {
     }
 
     fn name(&self) -> &'static str {
-        "AntiSemiProbeSink"
+        "AntiSemiHashJoinProbe"
     }
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if self.params.is_semi {
             res.push(format!(
-                "Semi Join Probe: {}",
+                "SemiHashJoinProbe: {}",
                 self.params
                     .probe_on
                     .iter()
@@ -287,7 +287,7 @@ impl StreamingSink for AntiSemiProbeSink {
             ));
         } else {
             res.push(format!(
-                "Anti Join Probe: {}",
+                "AntiHashJoinProbe: {}",
                 self.params
                     .probe_on
                     .iter()

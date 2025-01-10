@@ -139,12 +139,12 @@ impl IntermediateOperator for CrossJoinOperator {
     }
 
     fn name(&self) -> &'static str {
-        "CrossJoinOperator"
+        "CrossJoin"
     }
 
     fn multiline_display(&self) -> Vec<String> {
         vec![
-            "CrossJoin".to_string(),
+            "CrossJoin:".to_string(),
             format!("Stream Side = {:?}", self.stream_side),
         ]
     }

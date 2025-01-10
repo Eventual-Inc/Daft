@@ -1,5 +1,6 @@
 use std::{fmt::Display, hash::Hash, ops::Deref};
 
+use common_display::utils::bytes_to_human_readable;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -44,10 +45,12 @@ impl Default for PlanStats {
 
 impl Display for PlanStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use num_format::{Locale, ToFormattedString};
         write!(
             f,
             "{{ Approx num rows = {}, Approx size bytes = {} }}",
-            self.approx_stats.num_rows, self.approx_stats.size_bytes,
+            self.approx_stats.num_rows.to_formatted_string(&Locale::en),
+            bytes_to_human_readable(self.approx_stats.size_bytes),
         )
     }
 }

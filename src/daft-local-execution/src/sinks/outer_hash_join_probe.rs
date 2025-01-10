@@ -624,15 +624,15 @@ impl StreamingSink for OuterHashJoinProbeSink {
     }
 
     fn name(&self) -> &'static str {
-        "OuterHashJoinProbeSink"
+        "OuterHashJoinProbe"
     }
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         match self.params.join_type {
-            JoinType::Left => res.push("Left Join".to_string()),
-            JoinType::Right => res.push("Right Join".to_string()),
-            JoinType::Outer => res.push("Outer Join".to_string()),
+            JoinType::Left => res.push("LeftHashJoinProbe:".to_string()),
+            JoinType::Right => res.push("RightHashJoinProbe:".to_string()),
+            JoinType::Outer => res.push("OuterHashJoinProbe:".to_string()),
             _ => unreachable!(
                 "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
             ),

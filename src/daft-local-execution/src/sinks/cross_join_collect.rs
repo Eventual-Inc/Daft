@@ -31,7 +31,7 @@ impl CrossJoinCollectSink {
 
 impl BlockingSink for CrossJoinCollectSink {
     fn name(&self) -> &'static str {
-        "CrossJoinCollectSink"
+        "CrossJoinCollect"
     }
 
     fn sink(
@@ -91,7 +91,7 @@ impl BlockingSink for CrossJoinCollectSink {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec!["CrossJoinCollectSink".to_string()]
+        vec!["CrossJoinCollect".to_string()]
     }
 
     fn max_concurrency(&self) -> usize {
