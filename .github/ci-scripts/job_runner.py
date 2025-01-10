@@ -39,7 +39,7 @@ async def wait_on_job(logs, timeout_s):
 
 @dataclass
 class Result:
-    query: int
+    arguments: str
     duration: timedelta
     error_msg: Optional[str]
 
@@ -70,7 +70,7 @@ def submit_job(
 
     results = []
 
-    for index, args in enumerate(list_of_entrypoint_args):
+    for args in list_of_entrypoint_args:
         entrypoint = f"DAFT_RUNNER=ray python {entrypoint_script} {args}"
         print(f"{entrypoint=}")
         start = datetime.now()
@@ -99,7 +99,7 @@ def submit_job(
                 job_info = client.get_job_info(job_id)
                 error_msg = job_info.message
 
-        result = Result(query=index + 1, duration=duration, error_msg=error_msg)
+        result = Result(arguments=args, duration=duration, error_msg=error_msg)
         results.append(result)
 
     output_file = output_dir / "out.csv"
