@@ -36,11 +36,9 @@ async def print_logs(logs):
 async def wait_on_job(logs, timeout_s) -> bool:
     try:
         await asyncio.wait_for(print_logs(logs), timeout=timeout_s)
-        return True
+        return False
     except asyncio.exceptions.TimeoutError:
-        return False
-    except TimeoutError:
-        return False
+        return True
 
 
 @dataclass
