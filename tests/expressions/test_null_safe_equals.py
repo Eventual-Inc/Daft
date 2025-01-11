@@ -49,17 +49,30 @@ def test_null_safe_equals_basic(data, value, expected_values):
         ("boolean", True, [(1, True), (2, None), (3, False)], [True, False, False]),
         ("float", 1.5, [(1, 1.5), (2, None), (3, 2.5)], [True, False, False]),
         ("binary", b"hello", [(1, b"hello"), (2, None), (3, b"world")], [True, False, False]),
+        ("fixed_size_binary", b"aaa", [(1, b"aaa"), (2, None), (3, b"bbb")], [True, False, False]),
     ],
 )
 def test_null_safe_equals_types(type_name, test_value, test_data, expected_values):
     """Test null-safe equality with different data types."""
+    import pyarrow as pa
+
     # Create a table with the test data
-    table = MicroPartition.from_pydict(
-        {
-            "id": [x[0] for x in test_data],
-            "value": [x[1] for x in test_data],
-        }
-    )
+    if type_name == "fixed_size_binary":
+        # Convert to PyArrow array for fixed size binary
+        value_array = pa.array([x[1] for x in test_data], type=pa.binary(3))
+        table = MicroPartition.from_pydict(
+            {
+                "id": [x[0] for x in test_data],
+                "value": value_array.to_pylist(),
+            }
+        )
+    else:
+        table = MicroPartition.from_pydict(
+            {
+                "id": [x[0] for x in test_data],
+                "value": [x[1] for x in test_data],
+            }
+        )
 
     # Apply the null-safe equals operation
     result = table.eval_expression_list([col("value").eq_null_safe(lit(test_value))])
@@ -86,30 +99,36 @@ def test_null_safe_equals_types(type_name, test_value, test_data, expected_value
         ("boolean", True, [(1, True), (2, None), (3, False)], [True, False, False]),
         ("float", 1.5, [(1, 1.5), (2, None), (3, 2.5)], [True, False, False]),
         ("binary", b"hello", [(1, b"hello"), (2, None), (3, b"world")], [True, False, False]),
+        ("fixed_size_binary", b"aaa", [(1, b"aaa"), (2, None), (3, b"bbb")], [True, False, False]),
         ("null", None, [(1, 10), (2, None), (3, 20)], [False, True, False]),
     ],
 )
 def test_null_safe_equals_scalar_both_directions(type_name, test_value, test_data, expected_values):
     """Test null-safe equality with scalars on both LHS and RHS of the comparison."""
+    import pyarrow as pa
+
     # Create a table with the test data
-    table = MicroPartition.from_pydict(
-        {
-            "id": [x[0] for x in test_data],
-            "value": [x[1] for x in test_data],
-        }
-    )
+    if type_name == "fixed_size_binary":
+        # Convert to PyArrow array for fixed size binary
+        value_array = pa.array([x[1] for x in test_data], type=pa.binary(3))
+        table = MicroPartition.from_pydict(
+            {
+                "id": [x[0] for x in test_data],
+                "value": value_array.to_pylist(),
+            }
+        )
+    else:
+        table = MicroPartition.from_pydict(
+            {
+                "id": [x[0] for x in test_data],
+                "value": [x[1] for x in test_data],
+            }
+        )
 
     # Test scalar on RHS: col <=> lit(scalar)
     result = table.eval_expression_list([col("value").eq_null_safe(lit(test_value))])
     result_values = result.get_column("value").to_pylist()
     assert result_values == expected_values, f"Failed for {type_name} with scalar on RHS"
-
-    # LHS literals are not yet supported (in regular equality nor null safe)
-    # Test scalar on LHS: lit(scalar) <=> col
-    # result = table.eval_expression_list([lit(test_value) == col("value")])
-    # result = table.eval_expression_list([lit(test_value).eq_null_safe(col("value"))])
-    # result_values = result.get_column("literal").to_pylist()  # When literal is on LHS, the column is named "literal"
-    # assert result_values == expected_values, f"Failed for {type_name} with scalar on LHS"
 
 
 @pytest.mark.parametrize(
@@ -126,17 +145,37 @@ def test_null_safe_equals_scalar_both_directions(type_name, test_value, test_dat
             [(b"hello", b"hello"), (None, None), (b"hello", None), (None, b"hello"), (b"hello", b"world")],
             [True, True, False, False, False],
         ),
+        (
+            [(b"aaa", b"aaa"), (None, None), (b"aaa", None), (None, b"aaa"), (b"aaa", b"bbb")],
+            [True, True, False, False, False],
+        ),
     ],
 )
 def test_null_safe_equals_column_comparison(data, expected_values):
     """Test null-safe equality between two columns."""
+    import pyarrow as pa
+
+    # Check if this is a fixed-size binary test case
+    is_fixed_binary = isinstance(data[0][0], bytes) and len(data[0][0]) == 3
+
     # Create a table with the test data
-    table = MicroPartition.from_pydict(
-        {
-            "left": [x[0] for x in data],
-            "right": [x[1] for x in data],
-        }
-    )
+    if is_fixed_binary:
+        # Convert to PyArrow arrays for fixed size binary
+        left_array = pa.array([x[0] for x in data], type=pa.binary(3))
+        right_array = pa.array([x[1] for x in data], type=pa.binary(3))
+        table = MicroPartition.from_pydict(
+            {
+                "left": left_array.to_pylist(),
+                "right": right_array.to_pylist(),
+            }
+        )
+    else:
+        table = MicroPartition.from_pydict(
+            {
+                "left": [x[0] for x in data],
+                "right": [x[1] for x in data],
+            }
+        )
 
     # Apply the null-safe equals operation
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
@@ -286,12 +325,25 @@ def test_null_safe_equals_fixed_size_binary():
 )
 def test_no_nulls_all_types(type_name, left_data, right_data, expected_values):
     """Test null-safe equality with no nulls in either array for all data types."""
-    table = MicroPartition.from_pydict(
-        {
-            "left": left_data,
-            "right": right_data,
-        }
-    )
+    import pyarrow as pa
+
+    if type_name == "fixed_size_binary":
+        # Convert to PyArrow arrays for fixed size binary
+        left_array = pa.array(left_data, type=pa.binary(3))
+        right_array = pa.array(right_data, type=pa.binary(3))
+        table = MicroPartition.from_pydict(
+            {
+                "left": left_array.to_pylist(),
+                "right": right_array.to_pylist(),
+            }
+        )
+    else:
+        table = MicroPartition.from_pydict(
+            {
+                "left": left_data,
+                "right": right_data,
+            }
+        )
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
     result_values = result.get_column("left").to_pylist()
@@ -321,12 +373,25 @@ def test_no_nulls_all_types(type_name, left_data, right_data, expected_values):
 )
 def test_right_nulls_all_types(type_name, left_data, right_data, expected_values):
     """Test null-safe equality where left array has no nulls and right array has some nulls."""
-    table = MicroPartition.from_pydict(
-        {
-            "left": left_data,
-            "right": right_data,
-        }
-    )
+    import pyarrow as pa
+
+    if type_name == "fixed_size_binary":
+        # Convert to PyArrow arrays for fixed size binary
+        left_array = pa.array(left_data, type=pa.binary(3))
+        right_array = pa.array(right_data, type=pa.binary(3))
+        table = MicroPartition.from_pydict(
+            {
+                "left": left_array.to_pylist(),
+                "right": right_array.to_pylist(),
+            }
+        )
+    else:
+        table = MicroPartition.from_pydict(
+            {
+                "left": left_data,
+                "right": right_data,
+            }
+        )
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
     result_values = result.get_column("left").to_pylist()
@@ -356,12 +421,25 @@ def test_right_nulls_all_types(type_name, left_data, right_data, expected_values
 )
 def test_left_nulls_all_types(type_name, left_data, right_data, expected_values):
     """Test null-safe equality where left array has some nulls and right array has no nulls."""
-    table = MicroPartition.from_pydict(
-        {
-            "left": left_data,
-            "right": right_data,
-        }
-    )
+    import pyarrow as pa
+
+    if type_name == "fixed_size_binary":
+        # Convert to PyArrow arrays for fixed size binary
+        left_array = pa.array(left_data, type=pa.binary(3))
+        right_array = pa.array(right_data, type=pa.binary(3))
+        table = MicroPartition.from_pydict(
+            {
+                "left": left_array.to_pylist(),
+                "right": right_array.to_pylist(),
+            }
+        )
+    else:
+        table = MicroPartition.from_pydict(
+            {
+                "left": left_data,
+                "right": right_data,
+            }
+        )
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
     result_values = result.get_column("left").to_pylist()
