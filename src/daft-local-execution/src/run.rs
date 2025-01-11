@@ -69,21 +69,24 @@ impl PyNativeExecutor {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
+        cfg: PyDaftExecutionConfig,
         py: Python,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
             Ok(Self {
-                executor: NativeExecutor::from_logical_plan_builder(&logical_plan_builder.builder)?,
+                executor: NativeExecutor::from_logical_plan_builder(
+                    &logical_plan_builder.builder,
+                    cfg.config,
+                )?,
             })
         })
     }
 
-    #[pyo3(signature = (psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (psets, results_buffer_size=None))]
     pub fn run<'a>(
         &self,
         py: Python<'a>,
         psets: HashMap<String, Vec<PyMicroPartition>>,
-        cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
@@ -104,7 +107,7 @@ impl PyNativeExecutor {
         let psets = InMemoryPartitionSetCache::new(&native_psets);
         let out = py.allow_threads(|| {
             self.executor
-                .run(&psets, cfg.config, results_buffer_size)
+                .run(&psets, results_buffer_size)
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
@@ -130,18 +133,21 @@ impl PyNativeExecutor {
 
 pub struct NativeExecutor {
     local_physical_plan: Arc<LocalPhysicalPlan>,
+    cfg: Arc<DaftExecutionConfig>,
     cancel: CancellationToken,
 }
 
 impl NativeExecutor {
     pub fn from_logical_plan_builder(
         logical_plan_builder: &LogicalPlanBuilder,
+        cfg: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
         let logical_plan = logical_plan_builder.build();
         let local_physical_plan = translate(&logical_plan)?;
 
         Ok(Self {
             local_physical_plan,
+            cfg,
             cancel: CancellationToken::new(),
         })
     }
@@ -149,13 +155,12 @@ impl NativeExecutor {
     pub fn run(
         &self,
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
-        cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
         run_local(
             &self.local_physical_plan,
             psets,
-            cfg,
+            self.cfg.clone(),
             results_buffer_size,
             self.cancel.clone(),
         )
@@ -165,7 +170,7 @@ impl NativeExecutor {
         let pipeline_node = physical_plan_to_pipeline(
             &self.local_physical_plan,
             &InMemoryPartitionSetCache::empty(),
-            &Arc::new(DaftExecutionConfig::default()),
+            &self.cfg,
         )
         .unwrap();
 
@@ -176,7 +181,7 @@ impl NativeExecutor {
         let pipeline_node = physical_plan_to_pipeline(
             &self.local_physical_plan,
             &InMemoryPartitionSetCache::empty(),
-            &Arc::new(DaftExecutionConfig::default()),
+            &self.cfg,
         )
         .unwrap();
 

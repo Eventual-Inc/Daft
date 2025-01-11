@@ -181,8 +181,8 @@ impl SparkAnalyzer<'_> {
             .unwrap()?;
 
         let cfg = Arc::new(DaftExecutionConfig::default());
-        let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-        let result_stream = native_executor.run(self.psets, cfg, None)?.into_stream();
+        let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan, cfg)?;
+        let result_stream = native_executor.run(self.psets, None)?.into_stream();
         let batch = result_stream.try_collect::<Vec<_>>().await?;
         let single_batch = MicroPartition::concat(batch)?;
         let tbls = single_batch.get_tables()?;

@@ -67,7 +67,7 @@ class MermaidFormatter:
                     display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical")
                 )
             else:
-                native_executor = NativeExecutor.from_logical_plan_builder(builder)
+                native_executor = NativeExecutor.from_logical_plan_builder(builder, get_context().daft_execution_config)
                 output += native_executor._executor.repr_mermaid(
                     display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical")
                 )

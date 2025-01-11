@@ -22,14 +22,15 @@ class NativeExecutor:
         self._executor = executor
 
     @classmethod
-    def from_logical_plan_builder(cls, builder: LogicalPlanBuilder) -> NativeExecutor:
-        executor = _NativeExecutor.from_logical_plan_builder(builder._builder)
+    def from_logical_plan_builder(
+        cls, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig
+    ) -> NativeExecutor:
+        executor = _NativeExecutor.from_logical_plan_builder(builder._builder, daft_execution_config)
         return cls(executor)
 
     def run(
         self,
         psets: dict[str, list[MaterializedResult[PartitionT]]],
-        daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
     ) -> Iterator[LocalMaterializedResult]:
         from daft.runners.partitioning import LocalMaterializedResult
@@ -39,7 +40,7 @@ class NativeExecutor:
         }
         return (
             LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-            for part in self._executor.run(psets_mp, daft_execution_config, results_buffer_size)
+            for part in self._executor.run(psets_mp, results_buffer_size)
         )
 
     def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:

@@ -214,7 +214,7 @@ class DataFrame:
                 physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
                 print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
             else:
-                native_executor = NativeExecutor.from_logical_plan_builder(builder)
+                native_executor = NativeExecutor.from_logical_plan_builder(builder, get_context().daft_execution_config)
                 print_to_file(native_executor.pretty_print(simple, format=format))
         else:
             print_to_file(

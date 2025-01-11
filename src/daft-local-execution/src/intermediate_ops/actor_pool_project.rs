@@ -206,9 +206,6 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         } else {
             res.push("Resource request = None".to_string());
         }
-        // if let StatsState::Materialized(stats) = &self.stats_state {
-        //     res.push(format!("Stats = {}", stats));
-        // }
         res
     }
 
