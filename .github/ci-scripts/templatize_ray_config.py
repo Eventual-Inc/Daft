@@ -63,7 +63,7 @@ profiles: dict[str, Optional[Profile]] = {
     "benchmarking-arm": Profile(
         instance_type="i8g.4xlarge",
         image_id="ami-0d4eea77bb23270f4",
-        node_count=10,
+        node_count=8,
         ssh_user="ubuntu",
         volume_mount=""" |
     findmnt /tmp 1> /dev/null
