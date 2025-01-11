@@ -1334,3 +1334,77 @@ pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
         })
         .sum()
 }
+
+pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
+    match expr {
+        // Boolean operations that filter rows
+        Expr::BinaryOp { op, left, right } => {
+            let left_selectivity = estimated_selectivity(left, schema);
+            let right_selectivity = estimated_selectivity(right, schema);
+            match op {
+                // Fixed selectivity for all common comparisons
+                Operator::Eq => 0.1,
+                Operator::EqNullSafe => 0.1,
+                Operator::NotEq => 0.9,
+                Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.2,
+
+                // Logical operators with fixed estimates
+                // P(A and B) = P(A) * P(B)
+                Operator::And => left_selectivity * right_selectivity,
+                // P(A or B) = P(A) + P(B) - P(A and B)
+                Operator::Or => left_selectivity
+                    .mul_add(-right_selectivity, left_selectivity + right_selectivity),
+                // P(A xor B) = P(A) + P(B) - 2 * P(A and B)
+                Operator::Xor => 2.0f64.mul_add(
+                    -(left_selectivity * right_selectivity),
+                    left_selectivity + right_selectivity,
+                ),
+
+                // Non-boolean operators don't filter
+                Operator::Plus
+                | Operator::Minus
+                | Operator::Multiply
+                | Operator::TrueDivide
+                | Operator::FloorDivide
+                | Operator::Modulus
+                | Operator::ShiftLeft
+                | Operator::ShiftRight => 1.0,
+            }
+        }
+
+        // Revert selectivity for NOT
+        Expr::Not(expr) => 1.0 - estimated_selectivity(expr, schema),
+
+        // Fixed selectivity for IS NULL and IS NOT NULL, assume not many nulls
+        Expr::IsNull(_) => 0.1,
+        Expr::NotNull(_) => 0.9,
+
+        // All membership operations use same selectivity
+        Expr::IsIn(_, _) | Expr::Between(_, _, _) | Expr::InSubquery(_, _) | Expr::Exists(_) => 0.2,
+
+        // Pass through for expressions that wrap other expressions
+        Expr::Cast(expr, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
+
+        // Boolean literals
+        Expr::Literal(lit) => match lit {
+            lit::LiteralValue::Boolean(true) => 1.0,
+            lit::LiteralValue::Boolean(false) => 0.0,
+            _ => 1.0,
+        },
+
+        // Everything else that could be boolean gets 0.2, non-boolean gets 1.0
+        Expr::ScalarFunction(_)
+        | Expr::Function { .. }
+        | Expr::Column(_)
+        | Expr::OuterReferenceColumn(_)
+        | Expr::IfElse { .. }
+        | Expr::FillNull(_, _) => match expr.to_field(schema) {
+            Ok(field) if field.dtype == DataType::Boolean => 0.2,
+            _ => 1.0,
+        },
+
+        // Everything else doesn't filter
+        Expr::Subquery(_) => 1.0,
+        Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
+    }
+}

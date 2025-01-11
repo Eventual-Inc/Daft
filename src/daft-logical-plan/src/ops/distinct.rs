@@ -23,14 +23,13 @@ impl Distinct {
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         // TODO(desmond): We can simply use NDVs here. For now, do a naive estimation.
         let input_stats = self.input.materialized_stats();
-        let est_bytes_per_row_lower = input_stats.approx_stats.lower_bound_bytes
-            / (input_stats.approx_stats.lower_bound_rows.max(1));
+        let est_bytes_per_row =
+            input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
+        // Assume high cardinality, 80% of rows are distinct.
+        let est_distinct_values = input_stats.approx_stats.num_rows * 4 / 5;
         let approx_stats = ApproxStats {
-            lower_bound_rows: input_stats.approx_stats.lower_bound_rows.min(1),
-            upper_bound_rows: input_stats.approx_stats.upper_bound_rows,
-            lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes.min(1)
-                * est_bytes_per_row_lower,
-            upper_bound_bytes: input_stats.approx_stats.upper_bound_bytes,
+            num_rows: est_distinct_values,
+            size_bytes: est_distinct_values * est_bytes_per_row,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
