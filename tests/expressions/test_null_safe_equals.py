@@ -271,3 +271,135 @@ def test_null_safe_equals_fixed_size_binary():
             True if test_value is None else False,  # Sixth value is None
         ]
         assert result_values == expected_reverse, f"Failed for reverse test value: {test_value}"
+
+
+@pytest.mark.parametrize(
+    "type_name,left_data,right_data,expected_values",
+    [
+        ("int", [1, 2, 3], [1, 2, 4], [True, True, False]),
+        ("float", [1.0, 2.0, 3.0], [1.0, 2.0, 4.0], [True, True, False]),
+        ("boolean", [True, False, True], [True, False, False], [True, True, False]),
+        ("string", ["a", "b", "c"], ["a", "b", "d"], [True, True, False]),
+        ("binary", [b"a", b"b", b"c"], [b"a", b"b", b"d"], [True, True, False]),
+        ("fixed_size_binary", [b"aaa", b"bbb", b"ccc"], [b"aaa", b"bbb", b"ddd"], [True, True, False]),
+    ],
+)
+def test_no_nulls_all_types(type_name, left_data, right_data, expected_values):
+    """Test null-safe equality with no nulls in either array for all data types."""
+    table = MicroPartition.from_pydict(
+        {
+            "left": left_data,
+            "right": right_data,
+        }
+    )
+
+    result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
+    result_values = result.get_column("left").to_pylist()
+
+    # Print full comparison for debugging
+    print("\nFull comparison:")
+    print("Result values:")
+    for left, right, res in zip(left_data, right_data, result_values):
+        print(f"  left={left}, right={right}, eq_value={res}")
+    print("\nExpected values:")
+    for left, right, exp in zip(left_data, right_data, expected_values):
+        print(f"  left={left}, right={right}, expected={exp}")
+
+    assert result_values == expected_values, f"Failed for {type_name} comparison"
+
+
+@pytest.mark.parametrize(
+    "type_name,left_data,right_data,expected_values",
+    [
+        ("int", [1, 2, 3], [1, None, 3], [True, False, True]),
+        ("float", [1.0, 2.0, 3.0], [1.0, None, 3.0], [True, False, True]),
+        ("boolean", [True, False, True], [True, None, True], [True, False, True]),
+        ("string", ["a", "b", "c"], ["a", None, "c"], [True, False, True]),
+        ("binary", [b"a", b"b", b"c"], [b"a", None, b"c"], [True, False, True]),
+        ("fixed_size_binary", [b"aaa", b"bbb", b"ccc"], [b"aaa", None, b"ccc"], [True, False, True]),
+    ],
+)
+def test_right_nulls_all_types(type_name, left_data, right_data, expected_values):
+    """Test null-safe equality where left array has no nulls and right array has some nulls."""
+    table = MicroPartition.from_pydict(
+        {
+            "left": left_data,
+            "right": right_data,
+        }
+    )
+
+    result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
+    result_values = result.get_column("left").to_pylist()
+
+    # Print full comparison for debugging
+    print("\nFull comparison:")
+    print("Result values:")
+    for left, right, res in zip(left_data, right_data, result_values):
+        print(f"  left={left}, right={right}, eq_value={res}")
+    print("\nExpected values:")
+    for left, right, exp in zip(left_data, right_data, expected_values):
+        print(f"  left={left}, right={right}, expected={exp}")
+
+    assert result_values == expected_values, f"Failed for {type_name} comparison"
+
+
+@pytest.mark.parametrize(
+    "type_name,left_data,right_data,expected_values",
+    [
+        ("int", [1, None, 3], [1, 2, 3], [True, False, True]),
+        ("float", [1.0, None, 3.0], [1.0, 2.0, 3.0], [True, False, True]),
+        ("boolean", [True, None, True], [True, False, True], [True, False, True]),
+        ("string", ["a", None, "c"], ["a", "b", "c"], [True, False, True]),
+        ("binary", [b"a", None, b"c"], [b"a", b"b", b"c"], [True, False, True]),
+        ("fixed_size_binary", [b"aaa", None, b"ccc"], [b"aaa", b"bbb", b"ccc"], [True, False, True]),
+    ],
+)
+def test_left_nulls_all_types(type_name, left_data, right_data, expected_values):
+    """Test null-safe equality where left array has some nulls and right array has no nulls."""
+    table = MicroPartition.from_pydict(
+        {
+            "left": left_data,
+            "right": right_data,
+        }
+    )
+
+    result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
+    result_values = result.get_column("left").to_pylist()
+
+    # Print full comparison for debugging
+    print("\nFull comparison:")
+    print("Result values:")
+    for left, right, res in zip(left_data, right_data, result_values):
+        print(f"  left={left}, right={right}, eq_value={res}")
+    print("\nExpected values:")
+    for left, right, exp in zip(left_data, right_data, expected_values):
+        print(f"  left={left}, right={right}, expected={exp}")
+
+    assert result_values == expected_values, f"Failed for {type_name} comparison"
+
+
+@pytest.mark.parametrize(
+    "type_name,left_data,right_data",
+    [
+        ("int", [1, 2, 3], [1, 2]),
+        ("float", [1.0, 2.0, 3.0], [1.0, 2.0]),
+        ("boolean", [True, False, True], [True, False]),
+        ("string", ["a", "b", "c"], ["a", "b"]),
+        ("binary", [b"a", b"b", b"c"], [b"a", b"b"]),
+        ("fixed_size_binary", [b"aaa", b"bbb", b"ccc"], [b"aaa", b"bbb"]),
+    ],
+)
+def test_length_mismatch_all_types(type_name, left_data, right_data):
+    """Test that length mismatches raise appropriate error for all data types."""
+    # Create two separate tables
+    left_table = MicroPartition.from_pydict({"value": left_data})
+    right_table = MicroPartition.from_pydict({"value": right_data})
+
+    with pytest.raises(ValueError) as exc_info:
+        result = left_table.eval_expression_list([col("value").eq_null_safe(right_table.get_column("value"))])
+        # Force evaluation by accessing the result
+        result.get_column("value").to_pylist()
+
+    # Verify error message format
+    error_msg = str(exc_info.value)
+    assert "trying to compare different length arrays" in error_msg

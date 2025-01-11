@@ -45,7 +45,6 @@ impl DaftCompare<&Self> for ColumnRangeStatistics {
     }
 
     fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
-        // TODO: Implement proper null-safe equals for ColumnRangeStatistics
         self.equal(rhs)
     }
 
