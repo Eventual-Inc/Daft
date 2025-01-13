@@ -3,18 +3,18 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use aws_credential_types::{
-    provider::{error::CredentialsError, ProvideCredentials},
-    Credentials,
-};
 use chrono::{DateTime, Utc};
+use common_error::DaftResult;
 use common_py_serde::{
     deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
 };
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{config, s3::S3CredentialsProvider};
+use crate::{
+    config,
+    s3::{S3CredentialsProvider, S3CredentialsProviderWrapper},
+};
 
 /// Create configurations to be used when accessing an S3-compatible system
 ///
@@ -285,8 +285,9 @@ impl S3Config {
                 access_key: access_key.map(std::convert::Into::into).or(def.access_key),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
-                            as Box<dyn S3CredentialsProvider>)
+                        Ok::<_, PyErr>(S3CredentialsProviderWrapper::new(
+                            PyS3CredentialsProvider::new(p)?,
+                        ))
                     })
                     .transpose()?
                     .or(def.credentials_provider),
@@ -348,8 +349,9 @@ impl S3Config {
                     .or_else(|| self.config.access_key.clone()),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
-                            as Box<dyn S3CredentialsProvider>)
+                        Ok::<_, PyErr>(S3CredentialsProviderWrapper::new(
+                            PyS3CredentialsProvider::new(p)?,
+                        ))
                     })
                     .transpose()?
                     .or_else(|| self.config.credentials_provider.clone()),
@@ -443,7 +445,8 @@ impl S3Config {
     #[getter]
     pub fn credentials_provider(&self, py: Python) -> PyResult<Option<Py<PyAny>>> {
         Ok(self.config.credentials_provider.as_ref().and_then(|p| {
-            p.as_any()
+            p.provider
+                .as_any()
                 .downcast_ref::<PyS3CredentialsProvider>()
                 .map(|p| p.provider.clone_ref(py))
         }))
@@ -526,6 +529,18 @@ impl S3Config {
     pub fn profile_name(&self) -> PyResult<Option<String>> {
         Ok(self.config.profile_name.clone())
     }
+
+    pub fn provide_cached_credentials(&self) -> PyResult<Option<S3Credentials>> {
+        self.config
+            .credentials_provider
+            .as_ref()
+            .map(|provider| {
+                Ok(S3Credentials {
+                    credentials: provider.get_cached_credentials()?,
+                })
+            })
+            .transpose()
+    }
 }
 
 #[pymethods]
@@ -596,32 +611,6 @@ impl PyS3CredentialsProvider {
     }
 }
 
-impl ProvideCredentials for PyS3CredentialsProvider {
-    fn provide_credentials<'a>(
-        &'a self,
-    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        aws_credential_types::provider::future::ProvideCredentials::ready(
-            Python::with_gil(|py| {
-                let py_creds = self.provider.call0(py)?;
-                py_creds.extract::<S3Credentials>(py)
-            })
-            .map_err(|e| CredentialsError::provider_error(Box::new(e)))
-            .map(|creds| {
-                Credentials::new(
-                    creds.credentials.key_id,
-                    creds.credentials.access_key,
-                    creds.credentials.session_token,
-                    creds.credentials.expiry.map(|e| e.into()),
-                    "daft_custom_provider",
-                )
-            }),
-        )
-    }
-}
-
 impl PartialEq for PyS3CredentialsProvider {
     fn eq(&self, other: &Self) -> bool {
         self.hash == other.hash
@@ -655,6 +644,13 @@ impl S3CredentialsProvider for PyS3CredentialsProvider {
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {
         self.hash(&mut state);
+    }
+
+    fn provide_credentials(&self) -> DaftResult<crate::S3Credentials> {
+        Python::with_gil(|py| {
+            let py_creds = self.provider.call0(py)?;
+            Ok(py_creds.extract::<S3Credentials>(py)?.credentials)
+        })
     }
 }
 
