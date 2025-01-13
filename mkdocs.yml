@@ -25,17 +25,10 @@ nav:
         # - SQL: core_concepts/sql.md
         # - Aggregations and Grouping: core_concepts/aggregations.md
         # - User-Defined Functions (UDF): core_concepts/udf.md
-<<<<<<< HEAD
   - Distributed Computing: distributed.md
   - Advanced:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
-=======
-  - Advanced:
-    - Managing Memory Usage: advanced/memory.md
-    - Partitioning: advanced/partitioning.md
-    - Distributed Computing: advanced/distributed.md
->>>>>>> bb85070a9c582695946b03f30adde6480c58db56
   - Integrations:
     - Ray: integrations/ray.md
     - Unity Catalog: integrations/unity_catalog.md
