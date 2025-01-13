@@ -4,7 +4,10 @@ pub mod catalog;
 pub mod error;
 pub mod functions;
 mod modules;
+
 mod planner;
+pub use planner::*;
+
 #[cfg(feature = "python")]
 pub mod python;
 mod table_provider;
@@ -15,9 +18,9 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyCatalog>()?;
-    parent.add_function(wrap_pyfunction_bound!(python::sql, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::sql_expr, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::list_sql_functions, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::sql, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::sql_expr, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::list_sql_functions, parent)?)?;
     Ok(())
 }
 

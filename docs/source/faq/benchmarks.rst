@@ -133,7 +133,7 @@ Benchmarking Code
 Our benchmarking scripts and code can be found in the `distributed-query-benchmarks <https://github.com/Eventual-Inc/distributed-query-benchmarking>`_ GitHub repository.
 
 * TPC-H queries for Daft were written by us.
-* TPC-H queries for SparkSQL was adapted from `this repository <https://github.com/Bodo-inc/Bodo-examples/blob/master/06-Compare-Bodo-with-Spark/tpch/pyspark_notebook.ipynb>`_.
+* TPC-H queries for SparkSQL was adapted from `this repository <https://github.com/bodo-ai/Bodo/blob/main/benchmarks/tpch/pyspark_notebook.ipynb>`_.
 * TPC-H queries for Dask and Modin were adapted from these repositories for questions `Q1-7 <https://github.com/pola-rs/tpch>`_ and `Q8-10 <https://github.com/xprobe-inc/benchmarks/tree/main/tpch>`_.
 
 Infrastructure

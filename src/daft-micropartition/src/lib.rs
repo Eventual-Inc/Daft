@@ -7,7 +7,7 @@ use snafu::Snafu;
 mod micropartition;
 mod ops;
 
-pub use micropartition::MicroPartition;
+pub use micropartition::{MicroPartition, MicroPartitionRef};
 
 #[cfg(feature = "python")]
 pub mod python;

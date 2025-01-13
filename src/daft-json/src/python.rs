@@ -9,7 +9,15 @@ pub mod pylib {
     use crate::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 
     #[allow(clippy::too_many_arguments)]
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uri,
+        convert_options=None,
+        parse_options=None,
+        read_options=None,
+        io_config=None,
+        multithreaded_io=None,
+        max_chunks_in_flight=None
+    ))]
     pub fn read_json(
         py: Python,
         uri: &str,
@@ -41,7 +49,13 @@ pub mod pylib {
         })
     }
 
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uri,
+        parse_options=None,
+        max_bytes=None,
+        io_config=None,
+        multithreaded_io=None
+    ))]
     pub fn read_json_schema(
         py: Python,
         uri: &str,

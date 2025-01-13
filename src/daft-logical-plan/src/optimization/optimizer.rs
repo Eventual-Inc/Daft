@@ -6,9 +6,10 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, EliminateCrossJoin, EnrichWithStats, LiftProjectFromAgg, MaterializeScans,
-        OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection, SimplifyExpressionsRule,
-        SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery,
+        DropRepartition, EliminateCrossJoin, EnrichWithStats, FilterNullJoinKey,
+        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownFilter, PushDownLimit,
+        PushDownProjection, ReorderJoins, SimplifyExpressionsRule, SplitActorPoolProjects,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -79,6 +80,118 @@ pub enum RuleExecutionStrategy {
     FixedPoint(Option<usize>),
 }
 
+pub struct OptimizerBuilder {
+    // Batches of rules for the optimizer to apply.
+    rule_batches: Vec<RuleBatch>,
+    // Config for optimizer.
+    config: OptimizerConfig,
+}
+
+impl Default for OptimizerBuilder {
+    fn default() -> Self {
+        Self {
+            rule_batches: vec![
+                // --- Rewrite rules ---
+                RuleBatch::new(
+                    vec![
+                        Box::new(LiftProjectFromAgg::new()),
+                        Box::new(UnnestScalarSubquery::new()),
+                        Box::new(UnnestPredicateSubquery::new()),
+                        Box::new(SplitActorPoolProjects::new()),
+                    ],
+                    RuleExecutionStrategy::FixedPoint(None),
+                ),
+                // we want to simplify expressions first to make the rest of the rules easier
+                RuleBatch::new(
+                    vec![Box::new(SimplifyExpressionsRule::new())],
+                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                ),
+                // --- Filter out null join keys ---
+                // This rule should be run once, before any filter pushdown rules.
+                RuleBatch::new(
+                    vec![Box::new(FilterNullJoinKey::new())],
+                    RuleExecutionStrategy::Once,
+                ),
+                // --- Bulk of our rules ---
+                RuleBatch::new(
+                    vec![
+                        Box::new(DropRepartition::new()),
+                        Box::new(PushDownFilter::new()),
+                        Box::new(PushDownProjection::new()),
+                        Box::new(EliminateCrossJoin::new()),
+                    ],
+                    // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
+                    // at the current node, which would require another batch application in order to have a chance to push
+                    // that Filter node through upstream nodes.
+                    // TODO(Clark): Refine this fixed-point policy.
+                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                ),
+                // --- Limit pushdowns ---
+                // This needs to be separate from PushDownProjection because otherwise the limit and
+                // projection just keep swapping places, preventing optimization
+                // (see https://github.com/Eventual-Inc/Daft/issues/2616)
+                RuleBatch::new(
+                    vec![Box::new(PushDownLimit::new())],
+                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                ),
+                // --- Materialize scan nodes ---
+                RuleBatch::new(
+                    vec![Box::new(MaterializeScans::new())],
+                    RuleExecutionStrategy::Once,
+                ),
+                // --- Enrich logical plan with stats ---
+                RuleBatch::new(
+                    vec![Box::new(EnrichWithStats::new())],
+                    RuleExecutionStrategy::Once,
+                ),
+            ],
+            config: Default::default(),
+        }
+    }
+}
+
+impl OptimizerBuilder {
+    pub fn reorder_joins(mut self) -> Self {
+        self.rule_batches.push(RuleBatch::new(
+            vec![
+                Box::new(ReorderJoins::new()),
+                Box::new(EnrichWithStats::new()),
+            ],
+            RuleExecutionStrategy::Once,
+        ));
+        self
+    }
+
+    pub fn simplify_expressions(mut self) -> Self {
+        // Try to simplify expressions again as other rules could introduce new exprs.
+        self.rule_batches.push(RuleBatch::new(
+            vec![Box::new(SimplifyExpressionsRule::new())],
+            RuleExecutionStrategy::FixedPoint(Some(3)),
+        ));
+        self
+    }
+
+    pub fn with_optimizer_config(mut self, config: OptimizerConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn build(self) -> Optimizer {
+        Optimizer {
+            rule_batches: self.rule_batches,
+            config: self.config,
+        }
+    }
+
+    pub fn when(self, condition: bool, f: impl FnOnce(Self) -> Self) -> Self {
+        if condition {
+            f(self)
+        } else {
+            self
+        }
+    }
+}
+
 /// Logical rule-based optimizer.
 pub struct Optimizer {
     // Batches of rules for the optimizer to apply.
@@ -88,65 +201,6 @@ pub struct Optimizer {
 }
 
 impl Optimizer {
-    pub fn new(config: OptimizerConfig) -> Self {
-        let rule_batches = vec![
-            // --- Rewrite rules ---
-            RuleBatch::new(
-                vec![
-                    Box::new(LiftProjectFromAgg::new()),
-                    Box::new(UnnestScalarSubquery::new()),
-                    Box::new(UnnestPredicateSubquery::new()),
-                    Box::new(SplitActorPoolProjects::new()),
-                ],
-                RuleExecutionStrategy::FixedPoint(None),
-            ),
-            // we want to simplify expressions first to make the rest of the rules easier
-            RuleBatch::new(
-                vec![Box::new(SimplifyExpressionsRule::new())],
-                RuleExecutionStrategy::FixedPoint(Some(3)),
-            ),
-            // --- Bulk of our rules ---
-            RuleBatch::new(
-                vec![
-                    Box::new(DropRepartition::new()),
-                    Box::new(PushDownFilter::new()),
-                    Box::new(PushDownProjection::new()),
-                    Box::new(EliminateCrossJoin::new()),
-                ],
-                // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
-                // at the current node, which would require another batch application in order to have a chance to push
-                // that Filter node through upstream nodes.
-                // TODO(Clark): Refine this fixed-point policy.
-                RuleExecutionStrategy::FixedPoint(Some(3)),
-            ),
-            // --- Limit pushdowns ---
-            // This needs to be separate from PushDownProjection because otherwise the limit and
-            // projection just keep swapping places, preventing optimization
-            // (see https://github.com/Eventual-Inc/Daft/issues/2616)
-            RuleBatch::new(
-                vec![Box::new(PushDownLimit::new())],
-                RuleExecutionStrategy::FixedPoint(Some(3)),
-            ),
-            // --- Materialize scan nodes ---
-            RuleBatch::new(
-                vec![Box::new(MaterializeScans::new())],
-                RuleExecutionStrategy::Once,
-            ),
-            // --- Enrich logical plan with stats ---
-            RuleBatch::new(
-                vec![Box::new(EnrichWithStats::new())],
-                RuleExecutionStrategy::Once,
-            ),
-            // try to simplify expressions again as other rules could introduce new exprs
-            RuleBatch::new(
-                vec![Box::new(SimplifyExpressionsRule::new())],
-                RuleExecutionStrategy::FixedPoint(Some(3)),
-            ),
-        ];
-
-        Self::with_rule_batches(rule_batches, config)
-    }
-
     pub fn with_rule_batches(rule_batches: Vec<RuleBatch>, config: OptimizerConfig) -> Self {
         Self {
             rule_batches,

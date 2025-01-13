@@ -46,13 +46,25 @@ impl PyFileFormatConfig {
 
     /// Get the underlying data source config.
     #[getter]
-    fn get_config(&self, py: Python) -> PyObject {
+    fn get_config(&self, py: Python) -> PyResult<PyObject> {
         match self.0.as_ref() {
-            FileFormatConfig::Parquet(config) => config.clone().into_py(py),
-            FileFormatConfig::Csv(config) => config.clone().into_py(py),
-            FileFormatConfig::Json(config) => config.clone().into_py(py),
-            FileFormatConfig::Database(config) => config.clone().into_py(py),
-            FileFormatConfig::PythonFunction => py.None(),
+            FileFormatConfig::Parquet(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Csv(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Json(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Database(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::PythonFunction => Ok(py.None()),
         }
     }
 

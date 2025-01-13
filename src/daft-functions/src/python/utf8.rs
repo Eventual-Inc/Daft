@@ -53,7 +53,7 @@ pub fn utf8_to_date(expr: PyExpr, format: &str) -> PyResult<PyExpr> {
     Ok(crate::utf8::to_date(expr.into(), format).into())
 }
 
-#[pyfunction]
+#[pyfunction(signature = (expr, format, timezone=None))]
 pub fn utf8_to_datetime(expr: PyExpr, format: &str, timezone: Option<&str>) -> PyResult<PyExpr> {
     Ok(crate::utf8::to_datetime(expr.into(), format, timezone).into())
 }

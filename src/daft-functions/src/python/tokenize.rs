@@ -2,7 +2,14 @@ use daft_dsl::python::PyExpr;
 use daft_io::python::IOConfig;
 use pyo3::{pyfunction, PyResult};
 
-#[pyfunction]
+#[pyfunction(signature = (
+    expr,
+    tokens_path,
+    use_special_tokens,
+    io_config=None,
+    pattern=None,
+    special_tokens=None
+))]
 pub fn tokenize_encode(
     expr: PyExpr,
     tokens_path: &str,
@@ -22,7 +29,13 @@ pub fn tokenize_encode(
     .into())
 }
 
-#[pyfunction]
+#[pyfunction(signature = (
+    expr,
+    tokens_path,
+    io_config=None,
+    pattern=None,
+    special_tokens=None
+))]
 pub fn tokenize_decode(
     expr: PyExpr,
     tokens_path: &str,

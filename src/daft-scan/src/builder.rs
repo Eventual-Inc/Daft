@@ -10,10 +10,7 @@ use daft_schema::{field::Field, schema::SchemaRef};
 #[cfg(feature = "python")]
 use {crate::python::pylib::ScanOperatorHandle, pyo3::prelude::*};
 
-use crate::{
-    glob::GlobScanOperator,
-    storage_config::{NativeStorageConfig, StorageConfig},
-};
+use crate::{glob::GlobScanOperator, storage_config::StorageConfig};
 
 pub struct ParquetScanBuilder {
     pub glob_paths: Vec<String>,
@@ -109,9 +106,10 @@ impl ParquetScanBuilder {
             GlobScanOperator::try_new(
                 self.glob_paths,
                 Arc::new(FileFormatConfig::Parquet(cfg)),
-                Arc::new(StorageConfig::Native(Arc::new(
-                    NativeStorageConfig::new_internal(self.multithreaded, self.io_config),
-                ))),
+                Arc::new(StorageConfig::new_internal(
+                    self.multithreaded,
+                    self.io_config,
+                )),
                 self.infer_schema,
                 self.schema,
                 self.file_path_column,
@@ -144,7 +142,6 @@ pub struct CsvScanBuilder {
     pub allow_variable_columns: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
-    pub use_native_downloader: bool,
     pub schema_hints: Option<SchemaRef>,
 }
 
@@ -172,7 +169,6 @@ impl CsvScanBuilder {
             allow_variable_columns: false,
             buffer_size: None,
             chunk_size: None,
-            use_native_downloader: true,
             schema_hints: None,
         }
     }
@@ -236,10 +232,6 @@ impl CsvScanBuilder {
         self.schema_hints = Some(schema_hints);
         self
     }
-    pub fn use_native_downloader(mut self, use_native_downloader: bool) -> Self {
-        self.use_native_downloader = use_native_downloader;
-        self
-    }
 
     pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = CsvSourceConfig {
@@ -258,9 +250,7 @@ impl CsvScanBuilder {
             GlobScanOperator::try_new(
                 self.glob_paths,
                 Arc::new(FileFormatConfig::Csv(cfg)),
-                Arc::new(StorageConfig::Native(Arc::new(
-                    NativeStorageConfig::new_internal(false, self.io_config),
-                ))),
+                Arc::new(StorageConfig::new_internal(false, self.io_config)),
                 self.infer_schema,
                 self.schema,
                 self.file_path_column,
@@ -279,26 +269,25 @@ pub fn delta_scan<T: AsRef<str>>(
     io_config: Option<IOConfig>,
     multithreaded_io: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
-    use crate::storage_config::{NativeStorageConfig, PyStorageConfig, StorageConfig};
+    use crate::storage_config::StorageConfig;
 
     Python::with_gil(|py| {
         let io_config = io_config.unwrap_or_default();
 
-        let native_storage_config = NativeStorageConfig {
+        let storage_config = StorageConfig {
             io_config: Some(io_config),
             multithreaded_io,
         };
 
-        let py_storage_config: PyStorageConfig =
-            Arc::new(StorageConfig::Native(Arc::new(native_storage_config))).into();
-
         // let py_io_config = PyIOConfig { config: io_config };
-        let delta_lake_scan = PyModule::import_bound(py, "daft.delta_lake.delta_lake_scan")?;
+        let delta_lake_scan = PyModule::import(py, "daft.delta_lake.delta_lake_scan")?;
         let delta_lake_scan_operator =
             delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
         let delta_lake_operator = delta_lake_scan_operator
-            .call1((glob_path.as_ref(), py_storage_config))?
-            .to_object(py);
+            .call1((glob_path.as_ref(), storage_config))?
+            .into_pyobject(py)
+            .unwrap()
+            .into();
         let scan_operator_handle =
             ScanOperatorHandle::from_python_scan_operator(delta_lake_operator, py)?;
         LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)

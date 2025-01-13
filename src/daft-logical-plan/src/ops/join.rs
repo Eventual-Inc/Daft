@@ -317,16 +317,14 @@ impl Join {
         let left_stats = self.left.materialized_stats();
         let right_stats = self.right.materialized_stats();
         let approx_stats = ApproxStats {
-            lower_bound_rows: 0,
-            upper_bound_rows: left_stats
+            num_rows: left_stats
                 .approx_stats
-                .upper_bound_rows
-                .and_then(|l| right_stats.approx_stats.upper_bound_rows.map(|r| l.max(r))),
-            lower_bound_bytes: 0,
-            upper_bound_bytes: left_stats
+                .num_rows
+                .max(right_stats.approx_stats.num_rows),
+            size_bytes: left_stats
                 .approx_stats
-                .upper_bound_bytes
-                .and_then(|l| right_stats.approx_stats.upper_bound_bytes.map(|r| l.max(r))),
+                .size_bytes
+                .max(right_stats.approx_stats.size_bytes),
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self

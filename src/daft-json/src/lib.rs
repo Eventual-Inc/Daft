@@ -71,10 +71,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<JsonConvertOptions>()?;
     parent.add_class::<JsonParseOptions>()?;
     parent.add_class::<JsonReadOptions>()?;
-    parent.add_function(wrap_pyfunction_bound!(python::pylib::read_json, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(
-        python::pylib::read_json_schema,
-        parent
-    )?)?;
+    parent.add_function(wrap_pyfunction!(python::pylib::read_json, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::pylib::read_json_schema, parent)?)?;
     Ok(())
 }

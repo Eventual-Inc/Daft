@@ -53,8 +53,9 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         &self,
         page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
+        is_parent_nullable: bool,
     ) -> Result<Self::State> {
-        let is_optional =
+        let is_optional = is_parent_nullable ||
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
@@ -145,6 +146,7 @@ pub struct NestedIter<O: Offset, I: Pages> {
     chunk_size: Option<usize>,
     rows_remaining: usize,
     values_remaining: usize,
+    is_parent_nullable: bool,
 }
 
 impl<O: Offset, I: Pages> NestedIter<O, I> {
@@ -155,6 +157,7 @@ impl<O: Offset, I: Pages> NestedIter<O, I> {
         num_rows: usize,
         chunk_size: Option<usize>,
         num_values: usize,
+        is_parent_nullable: bool,
     ) -> Self {
         Self {
             iter,
@@ -165,6 +168,7 @@ impl<O: Offset, I: Pages> NestedIter<O, I> {
             chunk_size,
             rows_remaining: num_rows,
             values_remaining: num_values,
+            is_parent_nullable,
         }
     }
 }
@@ -182,6 +186,7 @@ impl<O: Offset, I: Pages> Iterator for NestedIter<O, I> {
                 &mut self.values_remaining,
                 &self.init,
                 self.chunk_size,
+                self.is_parent_nullable,
                 &BinaryDecoder::<O>::default(),
             );
             match maybe_state {

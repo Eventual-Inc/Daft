@@ -23,22 +23,20 @@ pub fn unresolved_to_daft_expr(f: &UnresolvedFunction) -> eyre::Result<daft_dsl:
     }
 
     match function_name.as_str() {
-        "count" => handle_count(arguments).wrap_err("Failed to handle count function"),
-        "<" => handle_binary_op(arguments, daft_dsl::Operator::Lt)
-            .wrap_err("Failed to handle < function"),
-        ">" => handle_binary_op(arguments, daft_dsl::Operator::Gt)
-            .wrap_err("Failed to handle > function"),
-        "<=" => handle_binary_op(arguments, daft_dsl::Operator::LtEq)
-            .wrap_err("Failed to handle <= function"),
-        ">=" => handle_binary_op(arguments, daft_dsl::Operator::GtEq)
-            .wrap_err("Failed to handle >= function"),
-        "%" => handle_binary_op(arguments, daft_dsl::Operator::Modulus)
-            .wrap_err("Failed to handle % function"),
-        "sum" => handle_sum(arguments).wrap_err("Failed to handle sum function"),
-        "isnotnull" => handle_isnotnull(arguments).wrap_err("Failed to handle isnotnull function"),
-        "isnull" => handle_isnull(arguments).wrap_err("Failed to handle isnull function"),
-        n => bail!("Unresolved function {n} not yet supported"),
+        "%" => handle_binary_op(arguments, daft_dsl::Operator::Modulus),
+        "<" => handle_binary_op(arguments, daft_dsl::Operator::Lt),
+        "<=" => handle_binary_op(arguments, daft_dsl::Operator::LtEq),
+        "==" => handle_binary_op(arguments, daft_dsl::Operator::Eq),
+        ">" => handle_binary_op(arguments, daft_dsl::Operator::Gt),
+        ">=" => handle_binary_op(arguments, daft_dsl::Operator::GtEq),
+        "count" => handle_count(arguments),
+        "isnotnull" => handle_isnotnull(arguments),
+        "isnull" => handle_isnull(arguments),
+        "not" => not(arguments),
+        "sum" => handle_sum(arguments),
+        n => bail!("Unresolved function {n:?} not yet supported"),
     }
+    .wrap_err_with(|| format!("Failed to handle function {function_name:?}"))
 }
 
 pub fn handle_sum(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
@@ -51,6 +49,25 @@ pub fn handle_sum(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::E
 
     let [arg] = arguments;
     Ok(arg.sum())
+}
+
+/// If the arguments are exactly one, return it. Otherwise, return an error.
+pub fn to_single(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
+    let arguments: [daft_dsl::ExprRef; 1] = match arguments.try_into() {
+        Ok(arguments) => arguments,
+        Err(arguments) => {
+            bail!("requires exactly one argument; got {arguments:?}");
+        }
+    };
+
+    let [arg] = arguments;
+
+    Ok(arg)
+}
+
+pub fn not(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
+    let arg = to_single(arguments)?;
+    Ok(arg.not())
 }
 
 pub fn handle_binary_op(

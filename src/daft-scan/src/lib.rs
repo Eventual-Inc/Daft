@@ -686,7 +686,9 @@ impl ScanTask {
             if self.pushdowns.filters.is_some() {
                 // HACK: This might not be a good idea? We could also just return None here
                 // Assume that filters filter out about 80% of the data
-                approx_total_num_rows_before_pushdowns / 5.
+                let estimated_selectivity =
+                    self.pushdowns.estimated_selectivity(self.schema.as_ref());
+                approx_total_num_rows_before_pushdowns * estimated_selectivity
             } else if let Some(limit) = self.pushdowns.limit {
                 (limit as f64).min(approx_total_num_rows_before_pushdowns)
             } else {
@@ -769,8 +771,7 @@ impl ScanTask {
         let storage_config = self.storage_config.multiline_display();
         if !storage_config.is_empty() {
             res.push(format!(
-                "{} storage config = {{ {} }}",
-                self.storage_config.var_name(),
+                "storage config = {{ {} }}",
                 storage_config.join(", ")
             ));
         }
@@ -841,11 +842,7 @@ mod test {
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
     use itertools::Itertools;
 
-    use crate::{
-        glob::GlobScanOperator,
-        storage_config::{NativeStorageConfig, StorageConfig},
-        DataSource, ScanTask,
-    };
+    use crate::{glob::GlobScanOperator, storage_config::StorageConfig, DataSource, ScanTask};
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
@@ -872,9 +869,7 @@ mod test {
             sources,
             Arc::new(file_format_config),
             Arc::new(Schema::empty()),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(false, None),
-            ))),
+            Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
             None,
         )
@@ -897,9 +892,7 @@ mod test {
         let glob_scan_operator: GlobScanOperator = GlobScanOperator::try_new(
             sources,
             Arc::new(file_format_config),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(false, None),
-            ))),
+            Arc::new(StorageConfig::new_internal(false, None)),
             false,
             Some(Arc::new(Schema::empty())),
             None,

@@ -125,7 +125,7 @@ def run_udf(
 
         return args, kwargs
 
-    if batch_size is None:
+    if batch_size is None or len(evaluated_expressions[0]) <= batch_size:
         args, kwargs = get_args_for_slice(0, len(evaluated_expressions[0]))
         try:
             results = [func(*args, **kwargs)]

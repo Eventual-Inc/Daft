@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
 use common_error::DaftResult;
+use daft_algebra::boolean::split_conjunction;
 use daft_dsl::{
     col,
     common_treenode::{Transformed, TreeNode, TreeNodeRecursion},
     functions::{partitioning, FunctionExpr},
-    null_lit,
-    optimization::split_conjuction,
-    Expr, ExprRef, Operator,
+    null_lit, Expr, ExprRef, Operator,
 };
 
 use crate::{PartitionField, PartitionTransform};
@@ -93,7 +92,7 @@ pub fn rewrite_predicate_for_partitioning(
     // Before rewriting predicate for partition filter pushdown, partition predicate clauses into groups that will need
     // to be applied at the data level (i.e. any clauses that aren't pure partition predicates with identity
     // transformations).
-    let data_split = split_conjuction(predicate);
+    let data_split = split_conjunction(predicate);
     // Predicates that reference both partition columns and data columns.
     let mut needs_filter_op_preds: Vec<ExprRef> = vec![];
     // Predicates that only reference data columns (no partition column references) or only reference partition columns
@@ -332,7 +331,7 @@ pub fn rewrite_predicate_for_partitioning(
     let with_part_cols = with_part_cols.data;
 
     // Filter to predicate clauses that only involve partition columns.
-    let split = split_conjuction(&with_part_cols);
+    let split = split_conjunction(&with_part_cols);
     let mut part_preds: Vec<ExprRef> = vec![];
     for e in split {
         let mut all_part_keys = true;

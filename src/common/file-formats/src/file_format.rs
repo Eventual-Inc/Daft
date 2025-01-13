@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 /// Format of a file, e.g. Parquet, CSV, JSON.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
 pub enum FileFormat {
     Parquet,
     Csv,

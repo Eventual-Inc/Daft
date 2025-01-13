@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     hash::{Hash, Hasher},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -157,6 +158,7 @@ pub struct HTTPConfig {
 impl IOConfig {
     #[new]
     #[must_use]
+    #[pyo3(signature = (s3=None, azure=None, gcs=None, http=None))]
     pub fn new(
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
@@ -174,6 +176,7 @@ impl IOConfig {
     }
 
     #[must_use]
+    #[pyo3(signature = (s3=None, azure=None, gcs=None, http=None))]
     pub fn replace(
         &self,
         s3: Option<S3Config>,
@@ -250,6 +253,28 @@ impl_bincode_py_state_serialization!(IOConfig);
 impl S3Config {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (
+        region_name=None,
+        endpoint_url=None,
+        key_id=None,
+        session_token=None,
+        access_key=None,
+        credentials_provider=None,
+        buffer_time=None,
+        max_connections=None,
+        retry_initial_backoff_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        num_tries=None,
+        retry_mode=None,
+        anonymous=None,
+        use_ssl=None,
+        verify_ssl=None,
+        check_hostname_ssl=None,
+        requester_pays=None,
+        force_virtual_addressing=None,
+        profile_name=None
+    ))]
     pub fn new(
         region_name: Option<String>,
         endpoint_url: Option<String>,
@@ -311,6 +336,28 @@ impl S3Config {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        region_name=None,
+        endpoint_url=None,
+        key_id=None,
+        session_token=None,
+        access_key=None,
+        credentials_provider=None,
+        buffer_time=None,
+        max_connections=None,
+        retry_initial_backoff_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        num_tries=None,
+        retry_mode=None,
+        anonymous=None,
+        use_ssl=None,
+        verify_ssl=None,
+        check_hostname_ssl=None,
+        requester_pays=None,
+        force_virtual_addressing=None,
+        profile_name=None
+    ))]
     pub fn replace(
         &self,
         region_name: Option<String>,
@@ -378,7 +425,7 @@ impl S3Config {
     #[staticmethod]
     pub fn from_env(py: Python) -> PyResult<Self> {
         let io_config_from_env_func = py
-            .import_bound(pyo3::intern!(py, "daft"))?
+            .import(pyo3::intern!(py, "daft"))?
             .getattr(pyo3::intern!(py, "daft"))?
             .getattr(pyo3::intern!(py, "s3_config_from_env"))?;
         io_config_from_env_func.call0().map(|pyany| {
@@ -530,6 +577,7 @@ impl S3Config {
 #[pymethods]
 impl S3Credentials {
     #[new]
+    #[pyo3(signature = (key_id, access_key, session_token=None, expiry=None))]
     pub fn new(
         py: Python,
         key_id: String,
@@ -579,7 +627,7 @@ impl S3Credentials {
         self.credentials
             .expiry
             .map(|e| {
-                let datetime = py.import_bound(pyo3::intern!(py, "datetime"))?;
+                let datetime = py.import(pyo3::intern!(py, "datetime"))?;
 
                 datetime
                     .getattr(pyo3::intern!(py, "datetime"))?
@@ -600,7 +648,7 @@ pub struct PyS3CredentialsProvider {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub provider: PyObject,
+    pub provider: Arc<PyObject>,
     pub hash: isize,
 }
 
@@ -608,7 +656,7 @@ impl PyS3CredentialsProvider {
     pub fn new(provider: Bound<PyAny>) -> PyResult<Self> {
         let hash = provider.hash()?;
         Ok(Self {
-            provider: provider.into(),
+            provider: Arc::new(provider.into()),
             hash,
         })
     }
@@ -681,6 +729,19 @@ impl AzureConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[must_use]
+    #[pyo3(signature = (
+        storage_account=None,
+        access_key=None,
+        sas_token=None,
+        bearer_token=None,
+        tenant_id=None,
+        client_id=None,
+        client_secret=None,
+        use_fabric_endpoint=None,
+        anonymous=None,
+        endpoint_url=None,
+        use_ssl=None
+    ))]
     pub fn new(
         storage_account: Option<String>,
         access_key: Option<String>,
@@ -716,6 +777,19 @@ impl AzureConfig {
 
     #[allow(clippy::too_many_arguments)]
     #[must_use]
+    #[pyo3(signature = (
+        storage_account=None,
+        access_key=None,
+        sas_token=None,
+        bearer_token=None,
+        tenant_id=None,
+        client_id=None,
+        client_secret=None,
+        use_fabric_endpoint=None,
+        anonymous=None,
+        endpoint_url=None,
+        use_ssl=None
+    ))]
     pub fn replace(
         &self,
         storage_account: Option<String>,
@@ -834,6 +908,17 @@ impl GCSConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[must_use]
+    #[pyo3(signature = (
+        project_id=None,
+        credentials=None,
+        token=None,
+        anonymous=None,
+        max_connections=None,
+        retry_initial_backoff_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        num_tries=None
+    ))]
     pub fn new(
         project_id: Option<String>,
         credentials: Option<String>,
@@ -866,6 +951,17 @@ impl GCSConfig {
     }
     #[allow(clippy::too_many_arguments)]
     #[must_use]
+    #[pyo3(signature = (
+        project_id=None,
+        credentials=None,
+        token=None,
+        anonymous=None,
+        max_connections=None,
+        retry_initial_backoff_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        num_tries=None
+    ))]
     pub fn replace(
         &self,
         project_id: Option<String>,
@@ -965,6 +1061,7 @@ impl From<config::IOConfig> for IOConfig {
 impl HTTPConfig {
     #[new]
     #[must_use]
+    #[pyo3(signature = (bearer_token=None))]
     pub fn new(bearer_token: Option<String>) -> Self {
         Self {
             config: crate::HTTPConfig::new(bearer_token),
