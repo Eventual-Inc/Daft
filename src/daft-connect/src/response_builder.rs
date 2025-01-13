@@ -7,7 +7,7 @@ use spark_connect::{
 };
 use uuid::Uuid;
 
-use crate::Session;
+use crate::session::Session;
 
 /// spark responses are stateful, so we need to keep track of the session id, operation id, and server side session id
 #[derive(Clone)]
@@ -19,13 +19,10 @@ pub struct ResponseBuilder {
 
 impl ResponseBuilder {
     /// Create a new response builder
-    pub fn new(
-        client_side_session_id: impl Into<String>,
-        server_side_session_id: impl Into<String>,
-    ) -> Self {
+    pub fn new(session: &Session) -> Self {
         Self::new_with_op_id(
-            client_side_session_id,
-            server_side_session_id,
+            session.client_side_session_id(),
+            session.server_side_session_id(),
             Uuid::new_v4().to_string(),
         )
     }
@@ -105,5 +102,3 @@ impl ResponseBuilder {
         Ok(response)
     }
 }
-
-impl Session {}

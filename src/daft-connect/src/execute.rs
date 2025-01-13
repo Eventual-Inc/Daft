@@ -9,10 +9,10 @@ use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_ray_execution::RayEngine;
 use daft_table::Table;
-use eyre::{bail, Context};
+use eyre::bail;
 use futures::{
     stream::{self, BoxStream},
-    TryFutureExt, TryStreamExt,
+    StreamExt, TryFutureExt, TryStreamExt,
 };
 use itertools::Itertools;
 use pyo3::Python;
@@ -25,7 +25,8 @@ use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 use tracing::debug;
 
 use crate::{
-    response_builder::ResponseBuilder, session::Session, translation, ExecuteStream, Runner,
+    nyi, response_builder::ResponseBuilder, session::Session, translation, util::FromOptionalField,
+    ExecuteStream, Runner,
 };
 
 impl Session {
@@ -150,7 +151,51 @@ impl Session {
         operation: WriteOperation,
         operation_id: String,
     ) -> Result<ExecuteStream, Status> {
-        use futures::StreamExt;
+        fn check_write_operation(write_op: &WriteOperation) -> Result<(), Status> {
+            if !write_op.sort_column_names.is_empty() {
+                // todo(completeness): implement sort
+                debug!(
+                    "Ignoring sort_column_names: {:?} (not yet implemented)",
+                    write_op.sort_column_names
+                );
+            }
+
+            if !write_op.partitioning_columns.is_empty() {
+                // todo(completeness): implement partitioning
+                debug!(
+                    "Ignoring partitioning_columns: {:?} (not yet implemented)",
+                    write_op.partitioning_columns
+                );
+            }
+
+            if let Some(bucket_by) = &write_op.bucket_by {
+                // todo(completeness): implement bucketing
+                debug!("Ignoring bucket_by: {bucket_by:?} (not yet implemented)");
+            }
+            if !write_op.options.is_empty() {
+                // todo(completeness): implement options
+                debug!(
+                    "Ignoring options: {:?} (not yet implemented)",
+                    write_op.options
+                );
+            }
+
+            if !write_op.clustering_columns.is_empty() {
+                // todo(completeness): implement clustering
+                debug!(
+                    "Ignoring clustering_columns: {:?} (not yet implemented)",
+                    write_op.clustering_columns
+                );
+            }
+            let mode = SaveMode::try_from(write_op.mode)
+                .map_err(|_| Status::internal("invalid write mode"))?;
+
+            if mode == SaveMode::Unspecified {
+                Ok(())
+            } else {
+                nyi!("save mode: {}:", mode.as_str_name())
+            }
+        }
 
         let response_builder = ResponseBuilder::new_with_op_id(
             self.client_side_session_id(),
@@ -163,66 +208,19 @@ impl Session {
         let this = self.clone();
 
         let result = async move {
+            check_write_operation(&operation)?;
+
             let WriteOperation {
                 input,
                 source,
-                mode,
-                sort_column_names,
-                partitioning_columns,
-                bucket_by,
-                options,
-                clustering_columns,
                 save_type,
+                ..
             } = operation;
 
-            let Some(input) = input else {
-                bail!("Input is required");
-            };
-
-            let Some(source) = source else {
-                bail!("Source is required");
-            };
+            let input = input.required("input")?;
+            let source = source.required("source")?;
 
             let file_format: FileFormat = source.parse()?;
-
-            let Ok(mode) = SaveMode::try_from(mode) else {
-                bail!("Invalid save mode: {mode}");
-            };
-
-            if !sort_column_names.is_empty() {
-                // todo(completeness): implement sort
-                debug!("Ignoring sort_column_names: {sort_column_names:?} (not yet implemented)");
-            }
-
-            if !partitioning_columns.is_empty() {
-                // todo(completeness): implement partitioning
-                debug!(
-                    "Ignoring partitioning_columns: {partitioning_columns:?} (not yet implemented)"
-                );
-            }
-
-            if let Some(bucket_by) = bucket_by {
-                // todo(completeness): implement bucketing
-                debug!("Ignoring bucket_by: {bucket_by:?} (not yet implemented)");
-            }
-
-            if !options.is_empty() {
-                // todo(completeness): implement options
-                debug!("Ignoring options: {options:?} (not yet implemented)");
-            }
-
-            if !clustering_columns.is_empty() {
-                // todo(completeness): implement clustering
-                debug!("Ignoring clustering_columns: {clustering_columns:?} (not yet implemented)");
-            }
-
-            match mode {
-                SaveMode::Unspecified => {}
-                SaveMode::Append => {}
-                SaveMode::Overwrite => {}
-                SaveMode::ErrorIfExists => {}
-                SaveMode::Ignore => {}
-            }
 
             let Some(save_type) = save_type else {
                 bail!("Save type is required");
@@ -230,19 +228,14 @@ impl Session {
 
             let path = match save_type {
                 SaveType::Path(path) => path,
-                SaveType::Table(table) => {
-                    let name = table.table_name;
-                    bail!("Tried to write to table {name} but it is not yet implemented. Try to write to a path instead.");
-                }
+                SaveType::Table(_) => return nyi!("write to table").map_err(|e| e.into()),
             };
 
             let translator = translation::SparkAnalyzer::new(&this);
 
             let plan = translator.to_logical_plan(input).await?;
 
-            let plan = plan
-                .table_write(&path, file_format, None, None, None)
-                .wrap_err("Failed to create table write plan")?;
+            let plan = plan.table_write(&path, file_format, None, None, None)?;
 
             let mut result_stream = this.run_query(plan).await?;
 
@@ -284,9 +277,7 @@ impl Session {
             bail!("Vertical show string is not supported");
         }
 
-        let Some(input) = input else {
-            bail!("input must be set");
-        };
+        let input = input.required("input")?;
 
         let plan = Box::pin(translator.to_logical_plan(*input)).await?;
         let plan = plan.limit(num_rows as i64, true)?;

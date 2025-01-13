@@ -1,0 +1,316 @@
+use dashmap::DashMap;
+use spark_connect::{
+    analyze_plan_response, command::CommandType, plan::OpType,
+    spark_connect_service_server::SparkConnectService, AddArtifactsRequest, AddArtifactsResponse,
+    AnalyzePlanRequest, AnalyzePlanResponse, ArtifactStatusesRequest, ArtifactStatusesResponse,
+    ConfigRequest, ConfigResponse, ExecutePlanRequest, ExecutePlanResponse,
+    FetchErrorDetailsRequest, FetchErrorDetailsResponse, InterruptRequest, InterruptResponse, Plan,
+    ReattachExecuteRequest, ReleaseExecuteRequest, ReleaseExecuteResponse, ReleaseSessionRequest,
+    ReleaseSessionResponse,
+};
+use tonic::{Request, Response, Status};
+use tracing::debug;
+use uuid::Uuid;
+
+use crate::{
+    display::SparkDisplay,
+    invalid_argument_err, nyi,
+    session::Session,
+    translation::{self, SparkAnalyzer},
+    util::FromOptionalField,
+};
+
+#[derive(Default)]
+pub struct DaftSparkConnectService {
+    client_to_session: DashMap<Uuid, Session>, // To track session data
+}
+
+impl DaftSparkConnectService {
+    fn get_session(
+        &self,
+        session_id: &str,
+    ) -> Result<dashmap::mapref::one::RefMut<Uuid, Session>, Status> {
+        let Ok(uuid) = Uuid::parse_str(session_id) else {
+            return Err(Status::invalid_argument(
+                "Invalid session_id format, must be a UUID",
+            ));
+        };
+
+        let res = self
+            .client_to_session
+            .entry(uuid)
+            .or_insert_with(|| Session::new(session_id.to_string()));
+
+        Ok(res)
+    }
+}
+
+#[tonic::async_trait]
+impl SparkConnectService for DaftSparkConnectService {
+    type ExecutePlanStream = std::pin::Pin<
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
+    >;
+    type ReattachExecuteStream = std::pin::Pin<
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
+    >;
+
+    #[tracing::instrument(skip_all)]
+    async fn execute_plan(
+        &self,
+        request: Request<ExecutePlanRequest>,
+    ) -> Result<Response<Self::ExecutePlanStream>, Status> {
+        let request = request.into_inner();
+
+        let session = self.get_session(&request.session_id)?;
+        let operation = request.operation_id.required("operation_id")?;
+
+        // Proceed with executing the plan...
+        let plan = request.plan.required("plan")?;
+        let plan = plan.op_type.required("op_type")?;
+
+        match plan {
+            OpType::Root(relation) => {
+                let result = session.execute_command(relation, operation).await?;
+                return Ok(Response::new(result));
+            }
+            OpType::Command(command) => {
+                let command = command.command_type.required("command_type")?;
+
+                match command {
+                    CommandType::WriteOperation(op) => {
+                        let result = session.execute_write_operation(op, operation).await?;
+                        return Ok(Response::new(result));
+                    }
+                    other => nyi!("Command type: {}", command_type_to_str(&other)),
+                }
+            }
+        }?
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn config(
+        &self,
+        request: Request<ConfigRequest>,
+    ) -> Result<Response<ConfigResponse>, Status> {
+        let request = request.into_inner();
+
+        let mut session = self.get_session(&request.session_id)?;
+
+        let Some(operation) = request.operation.and_then(|op| op.op_type) else {
+            return Err(Status::invalid_argument("Missing operation"));
+        };
+
+        use spark_connect::config_request::operation::OpType;
+
+        let response = match operation {
+            OpType::Set(op) => session.set(op),
+            OpType::Get(op) => session.get(op),
+            OpType::GetWithDefault(op) => session.get_with_default(op),
+            OpType::GetOption(op) => session.get_option(op),
+            OpType::GetAll(op) => session.get_all(op),
+            OpType::Unset(op) => session.unset(op),
+            OpType::IsModifiable(op) => session.is_modifiable(op),
+        }?;
+
+        Ok(Response::new(response))
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn add_artifacts(
+        &self,
+        _request: Request<tonic::Streaming<AddArtifactsRequest>>,
+    ) -> Result<Response<AddArtifactsResponse>, Status> {
+        nyi!("add_artifacts operation")
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn analyze_plan(
+        &self,
+        request: Request<AnalyzePlanRequest>,
+    ) -> Result<Response<AnalyzePlanResponse>, Status> {
+        use spark_connect::analyze_plan_request::*;
+        let request = request.into_inner();
+
+        let AnalyzePlanRequest {
+            session_id,
+            analyze,
+            ..
+        } = request;
+
+        let analyze = analyze.required("analyze")?;
+
+        match analyze {
+            Analyze::Schema(Schema { plan }) => {
+                let Plan { op_type } = plan.required("plan")?;
+
+                let OpType::Root(relation) = op_type.required("op_type")? else {
+                    return invalid_argument_err!("op_type must be Root");
+                };
+
+                let session = self.get_session(&session_id)?;
+                let translator = SparkAnalyzer::new(&session);
+
+                let result = match translator.relation_to_spark_schema(relation).await {
+                    Ok(schema) => schema,
+                    Err(e) => {
+                        return invalid_argument_err!(
+                            "Failed to translate relation to schema: {e:?}"
+                        );
+                    }
+                };
+
+                let schema = analyze_plan_response::Schema {
+                    schema: Some(result),
+                };
+
+                let response = AnalyzePlanResponse {
+                    session_id,
+                    server_side_session_id: String::new(),
+                    result: Some(analyze_plan_response::Result::Schema(schema)),
+                };
+
+                Ok(Response::new(response))
+            }
+            Analyze::DdlParse(DdlParse { ddl_string }) => {
+                let daft_schema = match daft_sql::sql_schema(&ddl_string) {
+                    Ok(daft_schema) => daft_schema,
+                    Err(e) => return invalid_argument_err!("{e}"),
+                };
+
+                let daft_schema = daft_schema.to_struct();
+
+                let schema = translation::to_spark_datatype(&daft_schema);
+
+                let schema = analyze_plan_response::Schema {
+                    schema: Some(schema),
+                };
+
+                let response = AnalyzePlanResponse {
+                    session_id,
+                    server_side_session_id: String::new(),
+                    result: Some(analyze_plan_response::Result::Schema(schema)),
+                };
+
+                Ok(Response::new(response))
+            }
+            Analyze::TreeString(TreeString { plan, level }) => {
+                let plan = plan.required("plan")?;
+
+                if let Some(level) = level {
+                    debug!("ignoring tree string level: {level:?}");
+                };
+
+                let OpType::Root(input) = plan.op_type.required("op_type")? else {
+                    return invalid_argument_err!("op_type must be Root");
+                };
+
+                if let Some(common) = &input.common {
+                    if common.origin.is_some() {
+                        debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+                    }
+                }
+                let session = self.get_session(&session_id)?;
+
+                let translator = SparkAnalyzer::new(&session);
+                let plan = Box::pin(translator.to_logical_plan(input))
+                    .await
+                    .unwrap()
+                    .build();
+
+                let schema = plan.schema();
+                let tree_string = schema.repr_spark_string();
+
+                let response = AnalyzePlanResponse {
+                    session_id,
+                    server_side_session_id: String::new(),
+                    result: Some(analyze_plan_response::Result::TreeString(
+                        analyze_plan_response::TreeString { tree_string },
+                    )),
+                };
+
+                Ok(Response::new(response))
+            }
+            other => nyi!("Analyze '{other:?}'"),
+        }
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn artifact_status(
+        &self,
+        _request: Request<ArtifactStatusesRequest>,
+    ) -> Result<Response<ArtifactStatusesResponse>, Status> {
+        nyi!("artifact_status operation")
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn interrupt(
+        &self,
+        _request: Request<InterruptRequest>,
+    ) -> Result<Response<InterruptResponse>, Status> {
+        nyi!("interrupt operation")
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn reattach_execute(
+        &self,
+        _request: Request<ReattachExecuteRequest>,
+    ) -> Result<Response<Self::ReattachExecuteStream>, Status> {
+        nyi!("reattach_execute operation")
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn release_execute(
+        &self,
+        request: Request<ReleaseExecuteRequest>,
+    ) -> Result<Response<ReleaseExecuteResponse>, Status> {
+        let request = request.into_inner();
+
+        let session = self.get_session(&request.session_id)?;
+
+        let response = ReleaseExecuteResponse {
+            session_id: session.client_side_session_id().to_string(),
+            server_side_session_id: session.server_side_session_id().to_string(),
+            operation_id: None, // todo: set but not strictly required
+        };
+
+        Ok(Response::new(response))
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn release_session(
+        &self,
+        _request: Request<ReleaseSessionRequest>,
+    ) -> Result<Response<ReleaseSessionResponse>, Status> {
+        nyi!("release_session operation")
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn fetch_error_details(
+        &self,
+        _request: Request<FetchErrorDetailsRequest>,
+    ) -> Result<Response<FetchErrorDetailsResponse>, Status> {
+        nyi!("fetch_error_details operation")
+    }
+}
+
+fn command_type_to_str(cmd_type: &CommandType) -> &str {
+    match cmd_type {
+        CommandType::RegisterFunction(_) => "RegisterFunction",
+        CommandType::WriteOperation(_) => "WriteOperation",
+        CommandType::CreateDataframeView(_) => "CreateDataframeView",
+        CommandType::WriteOperationV2(_) => "WriteOperationV2",
+        CommandType::SqlCommand(_) => "SqlCommand",
+        CommandType::WriteStreamOperationStart(_) => "WriteStreamOperationStart",
+        CommandType::StreamingQueryCommand(_) => "StreamingQueryCommand",
+        CommandType::GetResourcesCommand(_) => "GetResourcesCommand",
+        CommandType::StreamingQueryManagerCommand(_) => "StreamingQueryManagerCommand",
+        CommandType::RegisterTableFunction(_) => "RegisterTableFunction",
+        CommandType::StreamingQueryListenerBusCommand(_) => "StreamingQueryListenerBusCommand",
+        CommandType::RegisterDataSource(_) => "RegisterDataSource",
+        CommandType::CreateResourceProfileCommand(_) => "CreateResourceProfileCommand",
+        CommandType::CheckpointCommand(_) => "CheckpointCommand",
+        CommandType::RemoveCachedRemoteRelationCommand(_) => "RemoveCachedRemoteRelationCommand",
+        CommandType::MergeIntoTableCommand(_) => "MergeIntoTableCommand",
+        CommandType::Extension(_) => "Extension",
+    }
+}

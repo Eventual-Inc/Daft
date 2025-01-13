@@ -1,4 +1,6 @@
 use daft_core::count_mode::CountMode;
+use daft_dsl::col;
+use daft_schema::dtype::DataType;
 use eyre::{bail, Context};
 use spark_connect::expression::UnresolvedFunction;
 
@@ -95,8 +97,13 @@ pub fn handle_count(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl:
     };
 
     let [arg] = arguments;
+    let arg = if arg.as_literal().and_then(|l| l.as_i32()) == Some(1) {
+        col("*")
+    } else {
+        arg
+    };
 
-    let count = arg.count(CountMode::All);
+    let count = arg.count(CountMode::All).cast(&DataType::Int64);
 
     Ok(count)
 }
