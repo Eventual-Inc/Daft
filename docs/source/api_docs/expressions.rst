@@ -169,6 +169,22 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.tokenize_decode
    Expression.str.count_matches
 
+.. _api-binary-expression-operations:
+
+Binary
+######
+
+The following methods are available under the ``expr.binary`` attribute.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+   Expression.binary.concat
+   Expression.binary.length
+   Expression.binary.slice
+
 .. _api-float-expression-operations:
 
 Floats

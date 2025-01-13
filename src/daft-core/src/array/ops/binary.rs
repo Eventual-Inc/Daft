@@ -88,6 +88,15 @@ impl BinaryArray {
         let self_arrow = self.as_arrow();
         let other_arrow = other.as_arrow();
 
+        if self_arrow.len() == 0 || other_arrow.len() == 0 {
+            return Ok(Self::from((
+                self.name(),
+                Box::new(arrow2::array::BinaryArray::<i64>::new_empty(
+                    self_arrow.data_type().clone(),
+                )),
+            )));
+        }
+
         let output_len = if self_arrow.len() == 1 || other_arrow.len() == 1 {
             std::cmp::max(self_arrow.len(), other_arrow.len())
         } else {

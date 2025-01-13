@@ -29,6 +29,7 @@ impl ScalarUDF for BinaryConcat {
                 let right_field = right.to_field(schema)?;
                 match (&left_field.dtype, &right_field.dtype) {
                     (DataType::Binary, DataType::Binary) => Ok(Field::new(left_field.name, DataType::Binary)),
+                    (DataType::Binary, DataType::Null) | (DataType::Null, DataType::Binary) => Ok(Field::new(left_field.name, DataType::Binary)),
                     _ => Err(DaftError::TypeError(format!(
                         "Expects inputs to concat to be binary, but received {left_field} and {right_field}",
                     ))),
@@ -42,10 +43,20 @@ impl ScalarUDF for BinaryConcat {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let left_array = inputs[0].downcast::<BinaryArray>()?;
-        let right_array = inputs[1].downcast::<BinaryArray>()?;
-        let result = left_array.binary_concat(right_array)?;
-        Ok(result.into_series())
+        match (inputs[0].data_type(), inputs[1].data_type()) {
+            (DataType::Binary, DataType::Binary) => {
+                let left_array = inputs[0].downcast::<BinaryArray>()?;
+                let right_array = inputs[1].downcast::<BinaryArray>()?;
+                let result = left_array.binary_concat(right_array)?;
+                Ok(result.into_series())
+            }
+            (DataType::Binary, DataType::Null) | (DataType::Null, DataType::Binary) => {
+                // If either input is null, return a null array of the same length
+                let len = inputs[0].len();
+                Ok(Series::full_null(inputs[0].name(), &DataType::Binary, len))
+            }
+            _ => unreachable!("Type checking done in to_field"),
+        }
     }
 }
 
