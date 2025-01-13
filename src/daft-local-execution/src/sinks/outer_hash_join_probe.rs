@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::{
     prelude::{
         bitmap::{and, Bitmap, MutableBitmap},
@@ -15,7 +14,7 @@ use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState, Table};
 use futures::{stream, StreamExt};
 use indexmap::IndexSet;
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Span};
 
 use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
@@ -24,15 +23,15 @@ use super::streaming_sink::{
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-struct IndexBitmapBuilder {
+pub(crate) struct IndexBitmapBuilder {
     mutable_bitmaps: Vec<MutableBitmap>,
 }
 
 impl IndexBitmapBuilder {
-    fn new(tables: &[Table]) -> Self {
+    pub fn new(tables: &[Table]) -> Self {
         Self {
             mutable_bitmaps: tables
                 .iter()
@@ -42,23 +41,23 @@ impl IndexBitmapBuilder {
     }
 
     #[inline]
-    fn mark_used(&mut self, table_idx: usize, row_idx: usize) {
+    pub fn mark_used(&mut self, table_idx: usize, row_idx: usize) {
         self.mutable_bitmaps[table_idx].set(row_idx, false);
     }
 
-    fn build(self) -> IndexBitmap {
+    pub fn build(self) -> IndexBitmap {
         IndexBitmap {
             bitmaps: self.mutable_bitmaps.into_iter().map(|b| b.into()).collect(),
         }
     }
 }
 
-struct IndexBitmap {
+pub(crate) struct IndexBitmap {
     bitmaps: Vec<Bitmap>,
 }
 
 impl IndexBitmap {
-    fn merge(&self, other: &Self) -> Self {
+    pub fn merge(&self, other: &Self) -> Self {
         Self {
             bitmaps: self
                 .bitmaps
@@ -69,7 +68,13 @@ impl IndexBitmap {
         }
     }
 
-    fn convert_to_boolean_arrays(self) -> impl Iterator<Item = BooleanArray> {
+    pub fn negate(&self) -> Self {
+        Self {
+            bitmaps: self.bitmaps.iter().map(|b| !b).collect(),
+        }
+    }
+
+    pub fn convert_to_boolean_arrays(self) -> impl Iterator<Item = BooleanArray> {
         self.bitmaps
             .into_iter()
             .map(|b| BooleanArray::from(("bitmap", b)))
@@ -546,7 +551,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
-        runtime_ref: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -555,62 +560,65 @@ impl StreamingSink for OuterHashJoinProbeSink {
 
         let needs_bitmap = self.needs_bitmap;
         let params = self.params.clone();
-        runtime_ref
-            .spawn(async move {
-                let outer_join_state = state
-                    .as_any_mut()
-                    .downcast_mut::<OuterHashJoinState>()
-                    .expect("OuterHashJoinProbeSink should have OuterHashJoinProbeState");
-                let probe_state = outer_join_state.get_or_build_probe_state().await;
-                let out = match params.join_type {
-                    JoinType::Left | JoinType::Right if needs_bitmap => {
-                        Self::probe_left_right_with_bitmap(
+        spawner
+            .spawn(
+                async move {
+                    let outer_join_state = state
+                        .as_any_mut()
+                        .downcast_mut::<OuterHashJoinState>()
+                        .expect("OuterHashJoinProbeSink should have OuterHashJoinProbeState");
+                    let probe_state = outer_join_state.get_or_build_probe_state().await;
+                    let out = match params.join_type {
+                        JoinType::Left | JoinType::Right if needs_bitmap => {
+                            Self::probe_left_right_with_bitmap(
+                                &input,
+                                outer_join_state
+                                    .get_or_build_bitmap()
+                                    .await
+                                    .as_mut()
+                                    .expect("bitmap should be set"),
+                                &probe_state,
+                                params.join_type,
+                                &params.probe_on,
+                                &params.common_join_keys,
+                                &params.left_non_join_columns,
+                                &params.right_non_join_columns,
+                            )
+                        }
+                        JoinType::Left | JoinType::Right => Self::probe_left_right(
                             &input,
-                            outer_join_state
-                                .get_or_build_bitmap()
-                                .await
-                                .as_mut()
-                                .expect("bitmap should be set"),
                             &probe_state,
                             params.join_type,
                             &params.probe_on,
                             &params.common_join_keys,
                             &params.left_non_join_columns,
                             &params.right_non_join_columns,
-                        )
-                    }
-                    JoinType::Left | JoinType::Right => Self::probe_left_right(
-                        &input,
-                        &probe_state,
-                        params.join_type,
-                        &params.probe_on,
-                        &params.common_join_keys,
-                        &params.left_non_join_columns,
-                        &params.right_non_join_columns,
-                    ),
-                    JoinType::Outer => {
-                        let bitmap_builder = outer_join_state
-                            .get_or_build_bitmap()
-                            .await
-                            .as_mut()
-                            .expect("bitmap should be set");
-                        Self::probe_outer(
-                            &input,
-                            &probe_state,
-                            bitmap_builder,
-                            &params.probe_on,
-                            &params.common_join_keys,
-                            &params.left_non_join_columns,
-                            &params.right_non_join_columns,
-                            params.build_on_left,
-                        )
-                    }
-                    _ => unreachable!(
+                        ),
+                        JoinType::Outer => {
+                            let bitmap_builder = outer_join_state
+                                .get_or_build_bitmap()
+                                .await
+                                .as_mut()
+                                .expect("bitmap should be set");
+                            Self::probe_outer(
+                                &input,
+                                &probe_state,
+                                bitmap_builder,
+                                &params.probe_on,
+                                &params.common_join_keys,
+                                &params.left_non_join_columns,
+                                &params.right_non_join_columns,
+                                params.build_on_left,
+                            )
+                        }
+                        _ => unreachable!(
                         "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
                     ),
-                }?;
-                Ok((state, StreamingSinkOutput::NeedMoreInput(Some(out))))
-            })
+                    }?;
+                    Ok((state, StreamingSinkOutput::NeedMoreInput(Some(out))))
+                },
+                Span::current(),
+            )
             .into()
     }
 
@@ -625,16 +633,18 @@ impl StreamingSink for OuterHashJoinProbeSink {
         ))
     }
 
+    #[instrument(skip_all, name = "OuterHashJoinProbeSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn StreamingSinkState>>,
-        runtime_ref: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         if self.needs_bitmap {
             let params = self.params.clone();
-            runtime_ref
-                .spawn(async move {
-                    match params.join_type {
+            spawner
+                .spawn(
+                    async move {
+                        match params.join_type {
                         JoinType::Left => Self::finalize_left(
                             states,
                             &params.common_join_keys,
@@ -650,18 +660,20 @@ impl StreamingSink for OuterHashJoinProbeSink {
                         )
                         .await,
                         JoinType::Outer => Self::finalize_outer(
-                            states,
-                            &params.common_join_keys,
-                            &params.left_non_join_columns,
-                            &params.right_non_join_schema,
-                            params.build_on_left,
-                        )
-                        .await,
+                                states,
+                                &params.common_join_keys,
+                                &params.left_non_join_columns,
+                                &params.right_non_join_schema,
+                                params.build_on_left,
+                            )
+                            .await,
                         _ => unreachable!(
                             "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
                         ),
                     }
-                })
+                    },
+                    Span::current(),
+                )
                 .into()
         } else {
             Ok(None).into()

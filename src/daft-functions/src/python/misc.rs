@@ -42,7 +42,7 @@ pub fn minhash(
     Ok(expr.into())
 }
 
-#[pyfunction]
+#[pyfunction(signature = (expr, seed=None))]
 pub fn hash(expr: PyExpr, seed: Option<PyExpr>) -> PyResult<PyExpr> {
     Ok(crate::hash::hash(expr.into(), seed.map(Into::into)).into())
 }

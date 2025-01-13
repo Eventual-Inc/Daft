@@ -133,7 +133,7 @@ pub fn py_json_query(expr: PyExpr, query: &str) -> PyResult<PyExpr> {
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction_bound!(py_json_query, parent)?)?;
+    parent.add_function(wrap_pyfunction!(py_json_query, parent)?)?;
     Ok(())
 }
 

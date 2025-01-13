@@ -7,7 +7,7 @@ use common_treenode::{
 };
 use daft_logical_plan::{
     ops::Source,
-    optimization::Optimizer,
+    optimization::OptimizerBuilder,
     source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
     LogicalPlan, LogicalPlanRef,
 };
@@ -119,7 +119,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                             let left_stats = left.approximate_stats();
                             let right_stats = right.approximate_stats();
 
-                            if left_stats.lower_bound_bytes <= right_stats.lower_bound_bytes {
+                            if left_stats.size_bytes <= right_stats.size_bytes {
                                 RunNext::Left
                             } else {
                                 RunNext::Right
@@ -358,7 +358,7 @@ impl AdaptivePlanner {
 
         self.logical_plan = result.data;
 
-        let optimizer = Optimizer::new(Default::default());
+        let optimizer = OptimizerBuilder::default().simplify_expressions().build();
 
         self.logical_plan = optimizer.optimize(
             self.logical_plan.clone(),

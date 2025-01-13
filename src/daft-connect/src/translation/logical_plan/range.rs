@@ -33,7 +33,7 @@ impl SparkAnalyzer<'_> {
             ensure!(step > 0, "step must be greater than 0");
 
             let plan = Python::with_gil(|py| {
-                let range_module = PyModule::import_bound(py, "daft.io._range")
+                let range_module = PyModule::import(py, "daft.io._range")
                     .wrap_err("Failed to import range module")?;
 
                 let range = range_module
@@ -43,7 +43,9 @@ impl SparkAnalyzer<'_> {
                 let range = range
                     .call1((start, end, step, partitions))
                     .wrap_err("Failed to create range scan operator")?
-                    .to_object(py);
+                    .into_pyobject(py)
+                    .unwrap()
+                    .unbind();
 
                 let scan_operator_handle =
                     ScanOperatorHandle::from_python_scan_operator(range, py)?;

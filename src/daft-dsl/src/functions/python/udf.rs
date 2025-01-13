@@ -21,7 +21,7 @@ fn run_udf(
     use daft_core::python::{PyDataType, PySeries};
 
     // Convert input Rust &[Series] to wrapped Python Vec<Bound<PyAny>>
-    let py_series_module = PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?;
+    let py_series_module = PyModule::import(py, pyo3::intern!(py, "daft.series"))?;
     let py_series_class = py_series_module.getattr(pyo3::intern!(py, "Series"))?;
     let pyseries: PyResult<Vec<Bound<PyAny>>> = inputs
         .iter()
@@ -36,7 +36,7 @@ fn run_udf(
     let pyseries = pyseries?;
 
     // Run the function on the converted Vec<Bound<PyAny>>
-    let py_udf_module = PyModule::import_bound(py, pyo3::intern!(py, "daft.udf"))?;
+    let py_udf_module = PyModule::import(py, pyo3::intern!(py, "daft.udf"))?;
     let run_udf_func = py_udf_module.getattr(pyo3::intern!(py, "run_udf"))?;
     let result = run_udf_func.call1((
         func,                                   // Function to run
@@ -73,21 +73,21 @@ impl PythonUDF {
             )));
         }
 
-        let func = match &self.func {
-            MaybeInitializedUDF::Initialized(func) => func.clone().unwrap(),
-            MaybeInitializedUDF::Uninitialized { inner, init_args } => {
-                // TODO(Kevin): warn user if initialization is taking too long and ask them to use actor pool UDFs
-
-                py_udf_initialize(inner.clone().unwrap(), init_args.clone().unwrap())?
-            }
-        };
-
         Python::with_gil(|py| {
+            let func = match &self.func {
+                MaybeInitializedUDF::Initialized(func) => func.clone().unwrap().clone_ref(py),
+                MaybeInitializedUDF::Uninitialized { inner, init_args } => {
+                    // TODO(Kevin): warn user if initialization is taking too long and ask them to use actor pool UDFs
+
+                    py_udf_initialize(py, inner.clone().unwrap(), init_args.clone().unwrap())?
+                }
+            };
+
             run_udf(
                 py,
                 inputs,
                 func,
-                self.bound_args.clone().unwrap(),
+                self.bound_args.clone().unwrap().clone_ref(py),
                 &self.return_dtype,
                 self.batch_size,
             )

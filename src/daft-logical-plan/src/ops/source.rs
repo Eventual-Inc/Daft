@@ -60,10 +60,8 @@ impl Source {
                 num_rows,
                 ..
             }) => ApproxStats {
-                lower_bound_rows: *num_rows,
-                upper_bound_rows: Some(*num_rows),
-                lower_bound_bytes: *size_bytes,
-                upper_bound_bytes: Some(*size_bytes),
+                num_rows: *num_rows,
+                size_bytes: *size_bytes,
             },
             SourceInfo::Physical(physical_scan_info) => match &physical_scan_info.scan_state {
                 ScanState::Operator(_) => {
@@ -72,23 +70,13 @@ impl Source {
                 ScanState::Tasks(scan_tasks) => {
                     let mut approx_stats = ApproxStats::empty();
                     for st in scan_tasks.iter() {
-                        approx_stats.lower_bound_rows += st.num_rows().unwrap_or(0);
-                        let in_memory_size = st.estimate_in_memory_size_bytes(None);
-                        approx_stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
-                        if let Some(st_ub) = st.upper_bound_rows() {
-                            if let Some(ub) = approx_stats.upper_bound_rows {
-                                approx_stats.upper_bound_rows = Some(ub + st_ub);
-                            } else {
-                                approx_stats.upper_bound_rows = st.upper_bound_rows();
-                            }
+                        if let Some(num_rows) = st.num_rows() {
+                            approx_stats.num_rows += num_rows;
+                        } else if let Some(approx_num_rows) = st.approx_num_rows(None) {
+                            approx_stats.num_rows += approx_num_rows as usize;
                         }
-                        if let Some(st_ub) = in_memory_size {
-                            if let Some(ub) = approx_stats.upper_bound_bytes {
-                                approx_stats.upper_bound_bytes = Some(ub + st_ub);
-                            } else {
-                                approx_stats.upper_bound_bytes = in_memory_size;
-                            }
-                        }
+                        approx_stats.size_bytes +=
+                            st.estimate_in_memory_size_bytes(None).unwrap_or(0);
                     }
                     approx_stats
                 }
