@@ -8,6 +8,7 @@
 
 #[cfg(feature = "python")]
 mod config;
+
 #[cfg(feature = "python")]
 mod connect_service;
 
@@ -25,6 +26,8 @@ mod session;
 mod translation;
 #[cfg(feature = "python")]
 pub mod util;
+
+#[cfg(feature = "python")]
 use connect_service::DaftSparkConnectService;
 #[cfg(feature = "python")]
 use eyre::Context;
