@@ -79,13 +79,20 @@ impl ShuffleExchange {
                     target_num_partitions,
                 ));
             }
-            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
+            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                target_spec,
+                pre_shuffle_merge_threshold,
+            } => {
                 res.push("Strategy: MapReduceWithPreShuffleMerge".to_string());
                 res.push(format!("Target Spec: {:?}", target_spec));
                 res.push(format!(
                     "Number of Partitions: {} → {}",
                     self.input.clustering_spec().num_partitions(),
                     target_spec.num_partitions(),
+                ));
+                res.push(format!(
+                    "Pre-Shuffle Merge Threshold: {}",
+                    pre_shuffle_merge_threshold
                 ));
             }
         }
