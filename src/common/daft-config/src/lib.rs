@@ -87,7 +87,7 @@ impl Default for DaftExecutionConfig {
             enable_aqe: false,
             enable_native_executor: false,
             default_morsel_size: 128 * 1024,
-            shuffle_algorithm: "map_reduce".to_string(),
+            shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
