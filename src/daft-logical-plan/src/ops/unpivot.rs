@@ -101,13 +101,8 @@ impl Unpivot {
         let input_stats = self.input.materialized_stats();
         let num_values = self.values.len();
         let approx_stats = ApproxStats {
-            lower_bound_rows: input_stats.approx_stats.lower_bound_rows * num_values,
-            upper_bound_rows: input_stats
-                .approx_stats
-                .upper_bound_rows
-                .map(|v| v * num_values),
-            lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes,
-            upper_bound_bytes: input_stats.approx_stats.upper_bound_bytes,
+            num_rows: input_stats.approx_stats.num_rows * num_values,
+            size_bytes: input_stats.approx_stats.size_bytes,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self

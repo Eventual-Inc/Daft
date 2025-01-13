@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use common_display::DisplayAs;
-use daft_dsl::ExprRef;
+use daft_dsl::{estimated_selectivity, ExprRef};
+use daft_schema::schema::Schema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -102,6 +103,14 @@ impl Pushdowns {
             res.push(format!("Limit pushdown = {limit}"));
         }
         res
+    }
+
+    pub fn estimated_selectivity(&self, schema: &Schema) -> f64 {
+        if let Some(filters) = &self.filters {
+            estimated_selectivity(filters, schema)
+        } else {
+            1.0
+        }
     }
 }
 
