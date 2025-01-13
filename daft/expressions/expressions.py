@@ -3593,7 +3593,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.binary_length(self._expr))
 
-    def concat(self, other: Expression | bytes) -> Expression:
+    def concat(self, other: Expression) -> Expression:
         r"""Concatenates two binary strings.
 
         Example:
@@ -3625,9 +3625,8 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         Returns:
             Expression: A binary expression containing the concatenated strings
         """
-        if isinstance(other, bytes):
-            other = lit(other)
-        return Expression._from_pyexpr(native.binary_concat(self._expr, other._expr))
+        other_expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(native.binary_concat(self._expr, other_expr._expr))
 
     def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
         r"""Returns a substring of each binary string.

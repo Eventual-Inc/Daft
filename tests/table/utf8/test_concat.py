@@ -188,9 +188,17 @@ def test_utf8_concat_very_large() -> None:
             "☃😉🌈",  # Snowman + Winking face + Rainbow
             ["Hello☃😉🌈", "Test☃😉🌈", "Goodbye☃😉🌈"],
         ),
+        # Broadcasting with literal None
+        (
+            ["Hello", None, "Test", ""],
+            None,
+            [None, None, None, None],  # Any concat with None should result in None
+        ),
     ],
 )
-def test_utf8_concat_broadcast(input_data: list[str | None], literal: str, expected_result: list[str | None]) -> None:
+def test_utf8_concat_broadcast(
+    input_data: list[str | None], literal: str | None, expected_result: list[str | None]
+) -> None:
     # Test right-side broadcasting
     table = MicroPartition.from_pydict({"a": input_data})
     result = table.eval_expression_list([col("a").str.concat(literal)])
@@ -199,11 +207,15 @@ def test_utf8_concat_broadcast(input_data: list[str | None], literal: str, expec
     # Test left-side broadcasting
     table = MicroPartition.from_pydict({"b": input_data})
     result = table.eval_expression_list([lit(literal).str.concat(col("b"))])
-    assert result.to_pydict() == {
-        "literal": [
-            lit + data if data is not None else None for lit, data in zip([literal] * len(input_data), input_data)
-        ]
-    }
+    if literal is None:
+        # When literal is None, all results should be None
+        assert result.to_pydict() == {"literal": [None] * len(input_data)}
+    else:
+        assert result.to_pydict() == {
+            "literal": [
+                lit + data if data is not None else None for lit, data in zip([literal] * len(input_data), input_data)
+            ]
+        }
 
 
 def test_utf8_concat_edge_cases() -> None:

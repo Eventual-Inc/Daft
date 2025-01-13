@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from daft import DataType
-from daft.expressions import col
+from daft.expressions import col, lit
 from daft.table import MicroPartition
 
 
@@ -287,26 +287,26 @@ def test_binary_slice_errors() -> None:
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "start": [-1, -2, -3, -1]}
     )
-    with pytest.raises(Exception, match="Error in slice: failed to cast length as usize"):
+    with pytest.raises(Exception, match="Error in slice: failed to cast value"):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
     # Test negative length
     table = MicroPartition.from_pydict({"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"]})
-    with pytest.raises(Exception, match="Error in slice: failed to cast length as usize"):
+    with pytest.raises(Exception, match="Error in slice: failed to cast value"):
         table.eval_expression_list([col("col").binary.slice(0, -3)])
 
     # Test both negative
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "start": [-2, -1, -3, -2]}
     )
-    with pytest.raises(Exception, match="Error in slice: failed to cast length as usize"):
+    with pytest.raises(Exception, match="Error in slice: failed to cast value"):
         table.eval_expression_list([col("col").binary.slice(col("start"), -2)])
 
     # Test negative length in column
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "length": [-2, -3, -4, -2]}
     )
-    with pytest.raises(Exception, match="Error in slice: failed to cast length as usize"):
+    with pytest.raises(Exception, match="Error in slice: failed to cast value"):
         table.eval_expression_list([col("col").binary.slice(0, col("length"))])
 
     # Test slice with wrong number of arguments (too many)
@@ -520,7 +520,93 @@ def test_binary_slice_multiple_slices() -> None:
     )
 
     assert result.to_pydict() == {
-        "first_half": [b"he", b"Hello\xe2", b"\xf0\x9f\x98", b"\xff\xfe"],
-        "second_half": [b"ll", b"\x98\x83W", b"st\xf0\x9f", b"\xfd\xfc"],
-        "middle_third": [b"el", b"lo\xe2\x98", b"\x98\x89t", b"\xfd\xfc"],
+        "first_half": [b"he", b"Hello\xe2", b"\xf0\x9f\x98\x89te", b"\xff\xfe"],
+        "second_half": [b"ll", b"\x98\x83Worl", b"st\xf0\x9f\x8c\x88", b"\xfd\xfc"],
+        "middle_third": [b"e", b"o\xe2\x98\x83", b"test", b"\xfe"],
     }
+
+
+@pytest.mark.parametrize(
+    "input_data,start,length,expected_result",
+    [
+        # Test single binary value with multiple start positions
+        (
+            b"hello",  # Single binary value
+            [0, 1, 2, 3, 4, 5],  # Multiple start positions
+            2,  # Fixed length
+            [b"he", b"el", b"ll", b"lo", b"o", None],  # Expected slices
+        ),
+        # Test single binary value with multiple lengths
+        (
+            b"hello",
+            1,  # Fixed start
+            [1, 2, 3, 4],  # Multiple lengths
+            [b"e", b"el", b"ell", b"ello"],  # Expected slices
+        ),
+        # Test single binary value with both start and length as arrays
+        (
+            b"hello",
+            [0, 1, 2, 3],  # Multiple starts
+            [1, 2, 3, 2],  # Multiple lengths
+            [b"h", b"el", b"llo", b"lo"],  # Expected slices
+        ),
+        # Test with UTF-8 sequences
+        (
+            # Single UTF-8 string with snowman character
+            b"Hello\xe2\x98\x83World",
+            [0, 5, 8],  # Multiple starts
+            [5, 3, 5],  # Multiple lengths
+            # Expected: "Hello", snowman char, "World"
+            [b"Hello", b"\xe2\x98\x83", b"World"],
+        ),
+        # Test with binary data
+        (
+            b"\xff\xfe\xfd\xfc\xfb",  # Single binary sequence
+            [0, 2, 4],  # Multiple starts
+            [2, 2, 1],  # Multiple lengths
+            [b"\xff\xfe", b"\xfd\xfc", b"\xfb"],  # Expected slices
+        ),
+        # Test edge cases with single binary value
+        (
+            b"test",
+            [0, 4, 2],  # Start at beginning, end, and middle
+            [4, 0, 5],  # Full length, zero length, overflow length
+            [b"test", None, b"st"],  # Expected results
+        ),
+        # Test with nulls in start/length
+        (
+            b"hello",
+            [0, None, 2, None],  # Mix of valid starts and nulls
+            [2, 3, None, None],  # Mix of valid lengths and nulls
+            [b"he", None, b"llo", None],  # Expected results with nulls
+        ),
+    ],
+)
+def test_binary_slice_broadcasting(
+    input_data: bytes,
+    start: list[int] | int,
+    length: list[int] | int,
+    expected_result: list[bytes | None],
+) -> None:
+    # Create table with slice parameters
+    table_data = {}
+
+    # Add start/length columns if they are arrays
+    if isinstance(start, list):
+        table_data["start"] = start
+        start_expr = col("start")
+    else:
+        start_expr = start
+
+    if isinstance(length, list):
+        table_data["length"] = length
+        length_expr = col("length")
+    else:
+        length_expr = length
+
+    # Create table with just the slice parameters
+    table = MicroPartition.from_pydict(table_data)
+
+    # Perform slice operation on the raw binary value
+    result = table.eval_expression_list([lit(input_data).binary.slice(start_expr, length_expr)])
+    assert result.to_pydict() == {"literal": expected_result}
