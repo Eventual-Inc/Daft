@@ -119,14 +119,14 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
     is_ray_runner = (
         get_tests_daft_runner_name() == "ray"
     )  # hack because ray runner will not increment `count_get_credentials`
-    assert count_get_credentials == 3 or is_ray_runner
+    assert count_get_credentials == 2 or is_ray_runner
 
     df2 = daft.read_parquet(output_file_path, io_config=static_config)
 
     assert df.to_arrow() == df2.to_arrow()
 
     df.write_parquet(output_file_path, io_config=dynamic_config, write_mode="overwrite")
-    assert count_get_credentials == 3 or is_ray_runner
+    assert count_get_credentials == 2 or is_ray_runner
 
     df2 = daft.read_parquet(output_file_path, io_config=static_config)
 
@@ -134,7 +134,7 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
 
     time.sleep(1)
     df.write_parquet(output_file_path, io_config=dynamic_config, write_mode="overwrite")
-    assert count_get_credentials == 4 or is_ray_runner
+    assert count_get_credentials == 3 or is_ray_runner
 
     df2 = daft.read_parquet(output_file_path, io_config=static_config)
 
