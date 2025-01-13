@@ -28,18 +28,18 @@ impl Series {
         self.with_binary_array(|arr| Ok(arr.binary_concat(other.binary()?)?.into_series()))
     }
 
-    pub fn binary_substr(&self, start: &Self, length: &Self) -> DaftResult<Self> {
+    pub fn binary_slice(&self, start: &Self, length: &Self) -> DaftResult<Self> {
         self.with_binary_array(|arr| {
             with_match_integer_daft_types!(start.data_type(), |$T| {
                 if length.data_type().is_integer() {
                     with_match_integer_daft_types!(length.data_type(), |$U| {
-                        Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
+                        Ok(arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
                     })
                 } else if length.data_type().is_null() {
-                    Ok(arr.substr(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
+                    Ok(arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
                 } else {
                     Err(DaftError::TypeError(format!(
-                        "Substr not implemented for length type {}",
+                        "slice not implemented for length type {}",
                         length.data_type()
                     )))
                 }

@@ -10,15 +10,15 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct BinarySubstr {}
+pub struct BinarySlice {}
 
 #[typetag::serde]
-impl ScalarUDF for BinarySubstr {
+impl ScalarUDF for BinarySlice {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
     fn name(&self) -> &'static str {
-        "binary_substr"
+        "binary_slice"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
@@ -35,7 +35,7 @@ impl ScalarUDF for BinarySubstr {
                     Ok(Field::new(data.name, DataType::Binary))
                 } else {
                     Err(DaftError::TypeError(format!(
-                        "Expects inputs to binary_substr to be binary, integer and integer or null but received {}, {} and {}",
+                        "Expects inputs to binary_slice to be binary, integer and integer or null but received {}, {} and {}",
                         data.dtype, start.dtype, length.dtype
                     )))
                 }
@@ -51,11 +51,11 @@ impl ScalarUDF for BinarySubstr {
         let data = &inputs[0];
         let start = &inputs[1];
         let length = &inputs[2];
-        data.binary_substr(start, length)
+        data.binary_slice(start, length)
     }
 }
 
 #[must_use]
-pub fn binary_substr(input: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
-    ScalarFunction::new(BinarySubstr {}, vec![input, start, length]).into()
+pub fn binary_slice(input: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
+    ScalarFunction::new(BinarySlice {}, vec![input, start, length]).into()
 }

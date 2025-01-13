@@ -1,7 +1,7 @@
 pub mod concat;
 pub mod length;
-pub mod substr;
+pub mod slice;
 
 pub use concat::{binary_concat, BinaryConcat};
 pub use length::{binary_length, BinaryLength};
-pub use substr::{binary_substr, BinarySubstr};
+pub use slice::{binary_slice, BinarySlice};

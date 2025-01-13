@@ -293,3 +293,64 @@ def test_utf8_substr_computed() -> None:
         ]
     )
     assert result.to_pydict() == {"col": ["llo", "hon pr", "ta s", "tif", "tell", "llo", "est", "est"]}
+
+
+def test_utf8_substr_multiple_slices() -> None:
+    # Test taking multiple different substrings from the same string data
+    table = MicroPartition.from_pydict(
+        {
+            "col": [
+                "hello",  # Simple ASCII
+                "Hello☃World",  # With UTF-8 character
+                "😉test🌈",  # Multiple UTF-8 characters
+                "data science",  # With space
+            ]
+        }
+    )
+
+    # Get multiple slices
+    result = table.eval_expression_list(
+        [
+            col("col").str.substr(1, 3).alias("slice1"),  # Middle slice
+            col("col").str.substr(0, 1).alias("slice2"),  # First character
+            col("col").str.substr(2, 2).alias("slice3"),  # Another middle slice
+            col("col")
+            .str.substr((col("col").str.length().cast(DataType.int64()) - 1), 1)
+            .alias("slice4"),  # Last character
+        ]
+    )
+
+    assert result.to_pydict() == {
+        "slice1": ["ell", "ell", "tes", "ata"],
+        "slice2": ["h", "H", "😉", "d"],
+        "slice3": ["ll", "ll", "es", "ta"],
+        "slice4": ["o", "d", "🌈", "e"],
+    }
+
+    # Test with computed indices
+    result = table.eval_expression_list(
+        [
+            # First half
+            col("col").str.substr(0, (col("col").str.length() / 2).cast(DataType.int32())).alias("first_half"),
+            # Second half
+            col("col")
+            .str.substr(
+                (col("col").str.length() / 2).cast(DataType.int32()),
+                (col("col").str.length() / 2).cast(DataType.int32()),
+            )
+            .alias("second_half"),
+            # Middle third
+            col("col")
+            .str.substr(
+                (col("col").str.length() / 3).cast(DataType.int32()),
+                (col("col").str.length() / 3).cast(DataType.int32()),
+            )
+            .alias("middle_third"),
+        ]
+    )
+
+    assert result.to_pydict() == {
+        "first_half": ["he", "Hello", "😉te", "data s"],
+        "second_half": ["ll", "☃Worl", "st🌈", "cience"],
+        "middle_third": ["e", "lo☃", "es", " sci"],
+    }

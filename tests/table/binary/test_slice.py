@@ -7,7 +7,7 @@ from daft.expressions import col
 from daft.table import MicroPartition
 
 
-def test_binary_substr() -> None:
+def test_binary_slice() -> None:
     table = MicroPartition.from_pydict(
         {
             "col": [
@@ -27,7 +27,7 @@ def test_binary_substr() -> None:
             ]
         }
     )
-    result = table.eval_expression_list([col("col").binary.substr(0, 5)])
+    result = table.eval_expression_list([col("col").binary.slice(0, 5)])
     assert result.to_pydict() == {
         "col": [
             b"foo",
@@ -142,7 +142,7 @@ def test_binary_substr() -> None:
         ),
     ],
 )
-def test_binary_substr_with_columns(
+def test_binary_slice_with_columns(
     input_data: list[bytes | None],
     start_data: list[int | None] | int,
     length_data: list[int | None] | int,
@@ -162,7 +162,7 @@ def test_binary_substr_with_columns(
         length = length_data
 
     table = MicroPartition.from_pydict(table_data)
-    result = table.eval_expression_list([col("col").binary.substr(start, length)])
+    result = table.eval_expression_list([col("col").binary.slice(start, length)])
     assert result.to_pydict() == {"col": expected_result}
 
 
@@ -271,63 +271,63 @@ def test_binary_substr_with_columns(
         ),
     ],
 )
-def test_binary_substr_edge_cases(
+def test_binary_slice_edge_cases(
     input_data: list[bytes],
     start: list[int],
     length: int,
     expected_result: list[bytes | None],
 ) -> None:
     table = MicroPartition.from_pydict({"col": input_data, "start": start})
-    result = table.eval_expression_list([col("col").binary.substr(col("start"), length)])
+    result = table.eval_expression_list([col("col").binary.slice(col("start"), length)])
     assert result.to_pydict() == {"col": expected_result}
 
 
-def test_binary_substr_errors() -> None:
+def test_binary_slice_errors() -> None:
     # Test negative start
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "start": [-1, -2, -3, -1]}
     )
-    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize"):
-        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+    with pytest.raises(Exception, match="Error in slice: failed to cast length as usize"):
+        table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
     # Test negative length
     table = MicroPartition.from_pydict({"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"]})
-    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize"):
-        table.eval_expression_list([col("col").binary.substr(0, -3)])
+    with pytest.raises(Exception, match="Error in slice: failed to cast length as usize"):
+        table.eval_expression_list([col("col").binary.slice(0, -3)])
 
     # Test both negative
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "start": [-2, -1, -3, -2]}
     )
-    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize"):
-        table.eval_expression_list([col("col").binary.substr(col("start"), -2)])
+    with pytest.raises(Exception, match="Error in slice: failed to cast length as usize"):
+        table.eval_expression_list([col("col").binary.slice(col("start"), -2)])
 
     # Test negative length in column
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "length": [-2, -3, -4, -2]}
     )
-    with pytest.raises(Exception, match="Error in substr: failed to cast length as usize"):
-        table.eval_expression_list([col("col").binary.substr(0, col("length"))])
+    with pytest.raises(Exception, match="Error in slice: failed to cast length as usize"):
+        table.eval_expression_list([col("col").binary.slice(0, col("length"))])
 
-    # Test substr with wrong number of arguments (too many)
+    # Test slice with wrong number of arguments (too many)
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world"], "start": [1, 2], "length": [2, 3], "extra": [4, 5]}
     )
     with pytest.raises(
         Exception,
-        match="(?:ExpressionBinaryNamespace.)?substr\\(\\) takes from 2 to 3 positional arguments but 4 were given",
+        match="(?:ExpressionBinaryNamespace.)?slice\\(\\) takes from 2 to 3 positional arguments but 4 were given",
     ):
-        table.eval_expression_list([col("col").binary.substr(col("start"), col("length"), col("extra"))])
+        table.eval_expression_list([col("col").binary.slice(col("start"), col("length"), col("extra"))])
 
-    # Test substr with wrong number of arguments (too few)
+    # Test slice with wrong number of arguments (too few)
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [1, 2]})
     with pytest.raises(
-        Exception, match="(?:ExpressionBinaryNamespace.)?substr\\(\\) missing 1 required positional argument: 'start'"
+        Exception, match="(?:ExpressionBinaryNamespace.)?slice\\(\\) missing 1 required positional argument: 'start'"
     ):
-        table.eval_expression_list([col("col").binary.substr()])
+        table.eval_expression_list([col("col").binary.slice()])
 
 
-def test_binary_substr_computed() -> None:
+def test_binary_slice_computed() -> None:
     # Test with computed start index (length - 5)
     table = MicroPartition.from_pydict(
         {
@@ -346,7 +346,7 @@ def test_binary_substr_computed() -> None:
     )
     result = table.eval_expression_list(
         [
-            col("col").binary.substr(
+            col("col").binary.slice(
                 (col("col").binary.length() - 5).cast(DataType.int32()),  # start 5 chars from end
                 3,  # take 3 chars
             )
@@ -374,7 +374,7 @@ def test_binary_substr_computed() -> None:
     )
     result = table.eval_expression_list(
         [
-            col("col").binary.substr(
+            col("col").binary.slice(
                 0,  # start from beginning
                 (col("col").binary.length() / 2).cast(DataType.int32()),  # take half of string
             )
@@ -412,7 +412,7 @@ def test_binary_substr_computed() -> None:
     )
     result = table.eval_expression_list(
         [
-            col("col").binary.substr(
+            col("col").binary.slice(
                 (col("col").binary.length() / 5).cast(DataType.int32()),  # start at 1/5 of string
                 (col("col").binary.length() / 3).cast(DataType.int32()),  # take 1/3 of string
             )
@@ -423,43 +423,104 @@ def test_binary_substr_computed() -> None:
     }
 
 
-def test_binary_substr_type_errors() -> None:
-    # Test substr with string start type
+def test_binary_slice_type_errors() -> None:
+    # Test slice with string start type
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": ["1", "2"]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Utf8 and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Utf8 and Int32",
     ):
-        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+        table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
-    # Test substr with float start type
+    # Test slice with float start type
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [1.5, 2.5]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Float64 and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Float64 and Int32",
     ):
-        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+        table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
-    # Test substr with boolean start type
+    # Test slice with boolean start type
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [True, False]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Boolean and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Boolean and Int32",
     ):
-        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+        table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
-    # Test substr with binary start type
+    # Test slice with binary start type
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [b"1", b"2"]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Binary and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Binary and Int32",
     ):
-        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+        table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
-    # Test substr with null start type
+    # Test slice with null start type
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [None, None]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_substr to be binary, integer and integer or null but received Binary, Null and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Null and Int32",
     ):
-        table.eval_expression_list([col("col").binary.substr(col("start"), 2)])
+        table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
+
+
+def test_binary_slice_multiple_slices() -> None:
+    # Test taking multiple different slices from the same binary data
+    table = MicroPartition.from_pydict(
+        {
+            "col": [
+                b"hello",  # Simple ASCII
+                b"Hello\xe2\x98\x83World",  # With UTF-8 character
+                b"\xf0\x9f\x98\x89test\xf0\x9f\x8c\x88",  # Multiple UTF-8 sequences
+                b"\xff\xfe\xfd\xfc\xfb",  # Raw bytes
+            ]
+        }
+    )
+
+    # Get multiple slices
+    result = table.eval_expression_list(
+        [
+            col("col").binary.slice(1, 3).alias("slice1"),  # Middle slice
+            col("col").binary.slice(0, 1).alias("slice2"),  # First byte
+            col("col").binary.slice(2, 2).alias("slice3"),  # Another middle slice
+            col("col")
+            .binary.slice((col("col").binary.length().cast(DataType.int64()) - 1), 1)
+            .alias("slice4"),  # Last byte
+        ]
+    )
+
+    assert result.to_pydict() == {
+        "slice1": [b"ell", b"ell", b"\x9f\x98\x89", b"\xfe\xfd\xfc"],
+        "slice2": [b"h", b"H", b"\xf0", b"\xff"],
+        "slice3": [b"ll", b"ll", b"\x98\x89", b"\xfd\xfc"],
+        "slice4": [b"o", b"d", b"\x88", b"\xfb"],
+    }
+
+    # Test with computed indices
+    result = table.eval_expression_list(
+        [
+            # First half
+            col("col").binary.slice(0, (col("col").binary.length() / 2).cast(DataType.int32())).alias("first_half"),
+            # Second half
+            col("col")
+            .binary.slice(
+                (col("col").binary.length() / 2).cast(DataType.int32()),
+                (col("col").binary.length() / 2).cast(DataType.int32()),
+            )
+            .alias("second_half"),
+            # Middle third
+            col("col")
+            .binary.slice(
+                (col("col").binary.length() / 3).cast(DataType.int32()),
+                (col("col").binary.length() / 3).cast(DataType.int32()),
+            )
+            .alias("middle_third"),
+        ]
+    )
+
+    assert result.to_pydict() == {
+        "first_half": [b"he", b"Hello\xe2", b"\xf0\x9f\x98", b"\xff\xfe"],
+        "second_half": [b"ll", b"\x98\x83W", b"st\xf0\x9f", b"\xfd\xfc"],
+        "middle_third": [b"el", b"lo\xe2\x98", b"\x98\x89t", b"\xfd\xfc"],
+    }

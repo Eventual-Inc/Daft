@@ -58,7 +58,7 @@ impl BinaryArray {
         Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
 
-    pub fn substr<I, J>(
+    pub fn binary_slice<I, J>(
         &self,
         start: &DataArray<I>,
         length: Option<&DataArray<J>>,
@@ -79,7 +79,7 @@ impl BinaryArray {
                     x.map(|x| {
                         (*x).try_into().map_err(|_| {
                             DaftError::ComputeError(
-                                "Error in substr: failed to cast length as usize".to_string(),
+                                "Error in slice: failed to cast length as usize".to_string(),
                             )
                         })
                     })
@@ -95,7 +95,7 @@ impl BinaryArray {
                         x.map(|x| {
                             (*x).try_into().map_err(|_| {
                                 DaftError::ComputeError(
-                                    "Error in substr: failed to cast length as usize".to_string(),
+                                    "Error in slice: failed to cast length as usize".to_string(),
                                 )
                             })
                         })
@@ -114,7 +114,7 @@ impl BinaryArray {
                             x.map(|x| {
                                 (*x).try_into().map_err(|_| {
                                     DaftError::ComputeError(
-                                        "Error in substr: failed to cast length as usize"
+                                        "Error in slice: failed to cast length as usize"
                                             .to_string(),
                                     )
                                 })
@@ -131,7 +131,7 @@ impl BinaryArray {
                                 x.map(|x| {
                                     (*x).try_into().map_err(|_| {
                                         DaftError::ComputeError(
-                                            "Error in substr: failed to cast length as usize"
+                                            "Error in slice: failed to cast length as usize"
                                                 .to_string(),
                                         )
                                     })
@@ -156,8 +156,8 @@ impl BinaryArray {
                         validity.push(false);
                     } else {
                         let end = (start + length).min(val.len());
-                        let substr = &val[start..end];
-                        builder.push(Some(substr));
+                        let slice = &val[start..end];
+                        builder.push(Some(slice));
                         validity.push(true);
                     }
                 }
@@ -166,8 +166,8 @@ impl BinaryArray {
                         builder.push::<&[u8]>(None);
                         validity.push(false);
                     } else {
-                        let substr = &val[start..];
-                        builder.push(Some(substr));
+                        let slice = &val[start..];
+                        builder.push(Some(slice));
                         validity.push(true);
                     }
                 }

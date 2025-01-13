@@ -3629,13 +3629,13 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             other = lit(other)
         return Expression._from_pyexpr(native.binary_concat(self._expr, other._expr))
 
-    def substr(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
+    def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
         r"""Returns a substring of each binary string.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
-            >>> df = df.select(df["x"].binary.substr(1, 3))
+            >>> df = df.select(df["x"].binary.slice(1, 3))
             >>> df.show()
             ╭─────────────╮
             │ x           │
@@ -3660,4 +3660,4 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         """
         start_expr = Expression._to_expression(start)
         length_expr = Expression._to_expression(length)
-        return Expression._from_pyexpr(native.binary_substr(self._expr, start_expr._expr, length_expr._expr))
+        return Expression._from_pyexpr(native.binary_slice(self._expr, start_expr._expr, length_expr._expr))
