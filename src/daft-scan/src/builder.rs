@@ -1,7 +1,9 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
-use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
+use common_file_formats::{
+    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
+};
 use common_io_config::IOConfig;
 use common_scan_info::ScanOperatorRef;
 use daft_core::prelude::TimeUnit;
@@ -259,6 +261,101 @@ impl CsvScanBuilder {
             .await?,
         );
 
+        LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
+    }
+}
+
+/// An argument builder for a JSON scan operator.
+pub struct JsonScanBuilder {
+    pub glob_paths: Vec<String>,
+    pub infer_schema: bool,
+    pub io_config: Option<IOConfig>,
+    pub schema: Option<SchemaRef>,
+    pub file_path_column: Option<String>,
+    pub hive_partitioning: bool,
+    pub schema_hints: Option<SchemaRef>,
+    pub buffer_size: Option<usize>,
+    pub chunk_size: Option<usize>,
+}
+
+impl JsonScanBuilder {
+    pub fn new<T: IntoGlobPath>(glob_paths: T) -> Self {
+        let glob_paths = glob_paths.into_glob_path();
+        Self::new_impl(glob_paths)
+    }
+
+    fn new_impl(glob_paths: Vec<String>) -> Self {
+        Self {
+            glob_paths,
+            infer_schema: true,
+            schema: None,
+            io_config: None,
+            file_path_column: None,
+            hive_partitioning: false,
+            buffer_size: None,
+            chunk_size: None,
+            schema_hints: None,
+        }
+    }
+
+    pub fn infer_schema(mut self, infer_schema: bool) -> Self {
+        self.infer_schema = infer_schema;
+        self
+    }
+
+    pub fn io_config(mut self, io_config: IOConfig) -> Self {
+        self.io_config = Some(io_config);
+        self
+    }
+
+    pub fn schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+
+    pub fn file_path_column(mut self, file_path_column: String) -> Self {
+        self.file_path_column = Some(file_path_column);
+        self
+    }
+
+    pub fn hive_partitioning(mut self, hive_partitioning: bool) -> Self {
+        self.hive_partitioning = hive_partitioning;
+        self
+    }
+
+    pub fn schema_hints(mut self, schema_hints: SchemaRef) -> Self {
+        self.schema_hints = Some(schema_hints);
+        self
+    }
+
+    pub fn buffer_size(mut self, buffer_size: usize) -> Self {
+        self.buffer_size = Some(buffer_size);
+        self
+    }
+
+    pub fn chunk_size(mut self, chunk_size: usize) -> Self {
+        self.chunk_size = Some(chunk_size);
+        self
+    }
+
+    /// Creates a logical table scan backed by a JSON scan operator.
+    pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
+        let cfg = JsonSourceConfig {
+            buffer_size: self.buffer_size,
+            chunk_size: self.chunk_size,
+        };
+        let operator = Arc::new(
+            GlobScanOperator::try_new(
+                self.glob_paths,
+                Arc::new(FileFormatConfig::Json(cfg)),
+                Arc::new(StorageConfig::new_internal(false, self.io_config)),
+                self.infer_schema,
+                self.schema,
+                self.file_path_column,
+                self.hive_partitioning,
+            )
+            .await?,
+        );
         LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
     }
 }

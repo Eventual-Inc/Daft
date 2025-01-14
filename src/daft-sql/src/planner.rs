@@ -1065,6 +1065,7 @@ impl<'a> SQLPlanner<'a> {
         let func = match Path::new(path).extension() {
             Some(ext) if ext.eq_ignore_ascii_case("csv") => "read_csv",
             Some(ext) if ext.eq_ignore_ascii_case("json") => "read_json",
+            Some(ext) if ext.eq_ignore_ascii_case("jsonl") => "read_json",
             Some(ext) if ext.eq_ignore_ascii_case("parquet") => "read_parquet",
             Some(_) => invalid_operation_err!("unsupported file path extension: {}", name),
             None => invalid_operation_err!("unsupported file path, no extension: {}", name),
