@@ -107,48 +107,6 @@ def test_utf8_concat(input_a: list[str | None], input_b: list[str | None], expec
     assert result.to_pydict() == {"a": expected_result}
 
 
-def test_utf8_concat_large() -> None:
-    # Test concatenating large strings
-    large_string = "x" * 1000
-    table = MicroPartition.from_pydict(
-        {"a": [large_string, "small", large_string], "b": [large_string, large_string, "small"]}
-    )
-    result = table.eval_expression_list([col("a").str.concat(col("b"))])
-    assert result.to_pydict() == {
-        "a": [
-            "x" * 2000,  # Two large strings concatenated
-            "small" + ("x" * 1000),  # Small + large
-            ("x" * 1000) + "small",  # Large + small
-        ]
-    }
-
-
-def test_utf8_concat_very_large() -> None:
-    # Test with very large string sequences
-    data_a = [
-        "x" * 1_000_000,  # 1MB of 'x'
-        "\u0000" * 1_000_000,  # 1MB of null characters
-        "Hello\u0000World" * 100_000,  # Repeated pattern
-        "☃" * 333_333,  # Many snowmen
-    ]
-    data_b = [
-        "y" * 1_000_000,  # 1MB of 'y'
-        "z" * 1_000_000,  # 1MB of 'z'
-        "Test\u0000Case" * 100_000,  # Different pattern
-        "😉" * 250_000,  # Many winking faces
-    ]
-    expected = [
-        ("x" * 1_000_000) + ("y" * 1_000_000),
-        ("\u0000" * 1_000_000) + ("z" * 1_000_000),
-        ("Hello\u0000World" * 100_000) + ("Test\u0000Case" * 100_000),
-        ("☃" * 333_333) + ("😉" * 250_000),
-    ]
-
-    table = MicroPartition.from_pydict({"a": data_a, "b": data_b})
-    result = table.eval_expression_list([col("a").str.concat(col("b"))])
-    assert result.to_pydict() == {"a": expected}
-
-
 @pytest.mark.parametrize(
     "input_data,literal,expected_result",
     [

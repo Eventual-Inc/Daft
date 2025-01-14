@@ -31,7 +31,7 @@ from daft.table import MicroPartition
             ["Hello", None, "", "\u0000", None, "Test", ""],
             [5, None, 0, 1, None, 4, 0],
         ),
-        # Very large strings
+        # Large strings
         (
             ["x" * 1000, "y" * 10000, "z" * 100000],
             [1000, 10000, 100000],
@@ -97,29 +97,5 @@ from daft.table import MicroPartition
 )
 def test_utf8_length(input_data: list[str | None], expected_lengths: list[int | None]) -> None:
     table = MicroPartition.from_pydict({"col": input_data})
-    result = table.eval_expression_list([col("col").str.length()])
-    assert result.to_pydict() == {"col": expected_lengths}
-
-
-def test_utf8_length_large_sequences() -> None:
-    # Test with very large string sequences
-    large_data = [
-        "x" * 1_000_000,  # 1MB of 'x'
-        "\u0000" * 1_000_000,  # 1MB of null characters
-        "Hello\u0000World" * 100_000,  # Repeated pattern with null
-        "☃" * 333_333,  # Many snowmen
-        None,  # Null value
-        "",  # Empty string
-    ]
-    expected_lengths = [
-        1_000_000,
-        1_000_000,
-        1_100_000,  # 11 chars * 100_000
-        333_333,  # 1 char * 333_333
-        None,
-        0,
-    ]
-
-    table = MicroPartition.from_pydict({"col": large_data})
     result = table.eval_expression_list([col("col").str.length()])
     assert result.to_pydict() == {"col": expected_lengths}

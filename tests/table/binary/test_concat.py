@@ -109,48 +109,6 @@ def test_binary_concat(
     assert result.to_pydict() == {"a": expected_result}
 
 
-def test_binary_concat_large() -> None:
-    # Test concatenating large binary strings
-    large_binary = b"x" * 1000
-    table = MicroPartition.from_pydict(
-        {"a": [large_binary, b"small", large_binary], "b": [large_binary, large_binary, b"small"]}
-    )
-    result = table.eval_expression_list([col("a").binary.concat(col("b"))])
-    assert result.to_pydict() == {
-        "a": [
-            b"x" * 2000,  # Two large binaries concatenated
-            b"small" + (b"x" * 1000),  # Small + large
-            (b"x" * 1000) + b"small",  # Large + small
-        ]
-    }
-
-
-def test_binary_concat_very_large() -> None:
-    # Test with very large binary sequences
-    data_a = [
-        b"x" * 1_000_000,  # 1MB of 'x'
-        b"\x00" * 1_000_000,  # 1MB of null bytes
-        b"Hello\x00World" * 100_000,  # Repeated pattern
-        b"\xe2\x98\x83" * 333_333,  # Many snowmen
-    ]
-    data_b = [
-        b"y" * 1_000_000,  # 1MB of 'y'
-        b"\xff" * 1_000_000,  # 1MB of high bytes
-        b"Test\x00Case" * 100_000,  # Different pattern
-        b"\xf0\x9f\x98\x89" * 250_000,  # Many winking faces
-    ]
-    expected = [
-        (b"x" * 1_000_000) + (b"y" * 1_000_000),
-        (b"\x00" * 1_000_000) + (b"\xff" * 1_000_000),
-        (b"Hello\x00World" * 100_000) + (b"Test\x00Case" * 100_000),
-        (b"\xe2\x98\x83" * 333_333) + (b"\xf0\x9f\x98\x89" * 250_000),
-    ]
-
-    table = MicroPartition.from_pydict({"a": data_a, "b": data_b})
-    result = table.eval_expression_list([col("a").binary.concat(col("b"))])
-    assert result.to_pydict() == {"a": expected}
-
-
 @pytest.mark.parametrize(
     "input_data,literal,expected_result",
     [

@@ -3629,7 +3629,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.binary_concat(self._expr, other_expr._expr))
 
     def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
-        r"""Returns a substring of each binary string.
+        r"""Returns a slice of each binary string.
 
         Example:
             >>> import daft
@@ -3651,11 +3651,11 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         Args:
-            start: The starting position (0-based) of the substring.
-            length: The length of the substring. If None, returns all characters from start to the end.
+            start: The starting position (0-based) of the slice.
+            length: The length of the slice. If None, returns all characters from start to the end.
 
         Returns:
-            A new expression representing the substring.
+            A new expression representing the slice.
         """
         start_expr = Expression._to_expression(start)
         length_expr = Expression._to_expression(length)
