@@ -16,7 +16,7 @@ use futures::TryStreamExt;
 use spark_connect::{relation::RelType, Limit, Relation, ShowString};
 use tracing::debug;
 
-use crate::{nyi, session::Session, Runner};
+use crate::{not_yet_implemented, session::Session, Runner};
 
 mod aggregate;
 mod drop;
@@ -135,7 +135,7 @@ impl SparkAnalyzer<'_> {
                 };
                 self.show_string(plan_id, *ss).await
             }
-            plan => nyi!("Unimplemented relation type: \"{}\"", rel_name(&plan))?,
+            plan => not_yet_implemented!("relation type: \"{}\"", rel_name(&plan))?,
         }
     }
 

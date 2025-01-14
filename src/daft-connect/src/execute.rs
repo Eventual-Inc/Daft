@@ -25,8 +25,8 @@ use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 use tracing::debug;
 
 use crate::{
-    nyi, response_builder::ResponseBuilder, session::Session, translation, util::FromOptionalField,
-    ExecuteStream, Runner,
+    not_yet_implemented, response_builder::ResponseBuilder, session::Session, translation,
+    util::FromOptionalField, ExecuteStream, Runner,
 };
 
 impl Session {
@@ -193,7 +193,7 @@ impl Session {
             if mode == SaveMode::Unspecified {
                 Ok(())
             } else {
-                nyi!("save mode: {}:", mode.as_str_name())
+                not_yet_implemented!("save mode: {}:", mode.as_str_name())
             }
         }
 
@@ -228,7 +228,9 @@ impl Session {
 
             let path = match save_type {
                 SaveType::Path(path) => path,
-                SaveType::Table(_) => return nyi!("write to table").map_err(|e| e.into()),
+                SaveType::Table(_) => {
+                    return not_yet_implemented!("write to table").map_err(|e| e.into())
+                }
             };
 
             let translator = translation::SparkAnalyzer::new(&this);

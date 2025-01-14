@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     display::SparkDisplay,
-    invalid_argument_err, nyi,
+    invalid_argument_err, not_yet_implemented,
     session::Session,
     translation::{self, SparkAnalyzer},
     util::FromOptionalField,
@@ -81,7 +81,7 @@ impl SparkConnectService for DaftSparkConnectService {
                         let result = session.execute_write_operation(op, operation).await?;
                         return Ok(Response::new(result));
                     }
-                    other => nyi!("Command type: {}", command_type_to_str(&other)),
+                    other => not_yet_implemented!("Command type: {}", command_type_to_str(&other)),
                 }
             }
         }?
@@ -120,7 +120,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<tonic::Streaming<AddArtifactsRequest>>,
     ) -> Result<Response<AddArtifactsResponse>, Status> {
-        nyi!("add_artifacts operation")
+        not_yet_implemented!("add_artifacts operation")
     }
 
     #[tracing::instrument(skip_all)]
@@ -230,7 +230,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 Ok(Response::new(response))
             }
-            other => nyi!("Analyze '{other:?}'"),
+            other => not_yet_implemented!("Analyze '{other:?}'"),
         }
     }
 
@@ -239,7 +239,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<ArtifactStatusesRequest>,
     ) -> Result<Response<ArtifactStatusesResponse>, Status> {
-        nyi!("artifact_status operation")
+        not_yet_implemented!("artifact_status operation")
     }
 
     #[tracing::instrument(skip_all)]
@@ -247,7 +247,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<InterruptRequest>,
     ) -> Result<Response<InterruptResponse>, Status> {
-        nyi!("interrupt operation")
+        not_yet_implemented!("interrupt operation")
     }
 
     #[tracing::instrument(skip_all)]
@@ -255,7 +255,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<ReattachExecuteRequest>,
     ) -> Result<Response<Self::ReattachExecuteStream>, Status> {
-        nyi!("reattach_execute operation")
+        not_yet_implemented!("reattach_execute operation")
     }
 
     #[tracing::instrument(skip_all)]
@@ -281,7 +281,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<ReleaseSessionRequest>,
     ) -> Result<Response<ReleaseSessionResponse>, Status> {
-        nyi!("release_session operation")
+        not_yet_implemented!("release_session operation")
     }
 
     #[tracing::instrument(skip_all)]
@@ -289,7 +289,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<FetchErrorDetailsRequest>,
     ) -> Result<Response<FetchErrorDetailsResponse>, Status> {
-        nyi!("fetch_error_details operation")
+        not_yet_implemented!("fetch_error_details operation")
     }
 }
 
