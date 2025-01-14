@@ -200,7 +200,6 @@ impl SparkConnectService for DaftSparkConnectService {
                         debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
                     }
                 }
-                let session = self.get_session(&session_id)?;
 
                 let translator = SparkAnalyzer::new(&session);
                 let plan = Box::pin(translator.to_logical_plan(input))
