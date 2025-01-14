@@ -8,7 +8,7 @@ def test_print_schema_range(spark_session, capsys) -> None:
     df.printSchema()
 
     captured = capsys.readouterr()
-    expected = "root\n" " |-- id: long (nullable = true)\n\n"
+    expected = "root\n |-- id: long (nullable = true)\n\n"
     assert captured.out == expected
 
 
@@ -18,7 +18,7 @@ def test_print_schema_simple_df(spark_session, capsys) -> None:
     df.printSchema()
 
     captured = capsys.readouterr()
-    expected = "root\n" " |-- value: long (nullable = true)\n\n"
+    expected = "root\n |-- value: long (nullable = true)\n\n"
     assert captured.out == expected
 
 
@@ -43,7 +43,7 @@ def test_print_schema_floating_point(spark_session, capsys) -> None:
     df.printSchema()
 
     captured = capsys.readouterr()
-    expected = "root\n" " |-- amount: double (nullable = true)\n\n"
+    expected = "root\n |-- amount: double (nullable = true)\n\n"
     assert captured.out == expected
 
 
@@ -53,7 +53,7 @@ def test_print_schema_with_nulls(spark_session, capsys) -> None:
     df.printSchema()
 
     captured = capsys.readouterr()
-    expected = "root\n" " |-- id: long (nullable = true)\n" " |-- value: string (nullable = true)\n\n"
+    expected = "root\n |-- id: long (nullable = true)\n |-- value: string (nullable = true)\n\n"
     assert captured.out == expected
 
 
