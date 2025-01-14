@@ -1,7 +1,7 @@
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use eyre::{bail, ensure, WrapErr};
-use tracing::warn;
+use tracing::debug;
 
 pub async fn data_source(
     data_source: spark_connect::read::DataSource,
@@ -21,15 +21,15 @@ pub async fn data_source(
     ensure!(!paths.is_empty(), "Paths are required");
 
     if let Some(schema) = schema {
-        warn!("Ignoring schema: {schema:?}; not yet implemented");
+        debug!("Ignoring schema: {schema:?}; not yet implemented");
     }
 
     if !options.is_empty() {
-        warn!("Ignoring options: {options:?}; not yet implemented");
+        debug!("Ignoring options: {options:?}; not yet implemented");
     }
 
     if !predicates.is_empty() {
-        warn!("Ignoring predicates: {predicates:?}; not yet implemented");
+        debug!("Ignoring predicates: {predicates:?}; not yet implemented");
     }
 
     let plan = match &*format {

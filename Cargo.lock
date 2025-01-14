@@ -1941,6 +1941,7 @@ dependencies = [
  "daft-minhash",
  "daft-parquet",
  "daft-physical-plan",
+ "daft-ray-execution",
  "daft-scan",
  "daft-scheduler",
  "daft-sql",
@@ -2006,12 +2007,14 @@ dependencies = [
  "arrow2",
  "async-stream",
  "common-daft-config",
+ "common-error",
  "common-file-formats",
  "daft-core",
  "daft-dsl",
  "daft-local-execution",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-ray-execution",
  "daft-scan",
  "daft-schema",
  "daft-sql",
@@ -2022,6 +2025,7 @@ dependencies = [
  "itertools 0.11.0",
  "pyo3",
  "spark-connect",
+ "textwrap",
  "tokio",
  "tonic",
  "tracing",
@@ -2470,6 +2474,16 @@ dependencies = [
  "log",
  "rstest",
  "serde",
+]
+
+[[package]]
+name = "daft-ray-execution"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-logical-plan",
+ "daft-micropartition",
+ "pyo3",
 ]
 
 [[package]]

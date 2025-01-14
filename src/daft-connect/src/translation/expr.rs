@@ -9,7 +9,7 @@ use spark_connect::{
     },
     Expression,
 };
-use tracing::warn;
+use tracing::debug;
 use unresolved_function::unresolved_to_daft_expr;
 
 use crate::translation::{to_daft_datatype, to_daft_literal};
@@ -19,7 +19,7 @@ mod unresolved_function;
 pub fn to_daft_expr(expression: &Expression) -> eyre::Result<daft_dsl::ExprRef> {
     if let Some(common) = &expression.common {
         if common.origin.is_some() {
-            warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+            debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
         }
     };
 
@@ -37,11 +37,11 @@ pub fn to_daft_expr(expression: &Expression) -> eyre::Result<daft_dsl::ExprRef> 
             } = attr;
 
             if let Some(plan_id) = plan_id {
-                warn!("Ignoring plan_id {plan_id} for attribute expressions; not yet implemented");
+                debug!("Ignoring plan_id {plan_id} for attribute expressions; not yet implemented");
             }
 
             if let Some(is_metadata_column) = is_metadata_column {
-                warn!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
+                debug!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
             }
 
             Ok(daft_dsl::col(unparsed_identifier.as_str()))
@@ -109,7 +109,7 @@ pub fn to_daft_expr(expression: &Expression) -> eyre::Result<daft_dsl::ExprRef> 
             let eval_mode = EvalMode::try_from(*eval_mode)
                 .wrap_err_with(|| format!("Invalid cast eval mode: {eval_mode}"))?;
 
-            warn!("Ignoring cast eval mode: {eval_mode:?}");
+            debug!("Ignoring cast eval mode: {eval_mode:?}");
 
             Ok(expr.cast(&data_type))
         }

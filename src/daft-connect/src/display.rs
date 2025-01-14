@@ -114,7 +114,6 @@ fn type_to_string(dtype: &DataType) -> String {
         DataType::FixedShapeTensor(_, _) => "daft.fixed_shape_tensor".to_string(),
         DataType::SparseTensor(_) => "daft.sparse_tensor".to_string(),
         DataType::FixedShapeSparseTensor(_, _) => "daft.fixed_shape_sparse_tensor".to_string(),
-        #[cfg(feature = "python")]
         DataType::Python => "daft.python".to_string(),
         DataType::Unknown => "unknown".to_string(),
         DataType::UInt8 => "arrow.uint8".to_string(),
