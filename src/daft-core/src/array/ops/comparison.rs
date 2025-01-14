@@ -88,11 +88,8 @@ where
                         result_values = arrow2::bitmap::and(&result_values, l_valid);
                     }
                     (Some(l_valid), Some(r_valid)) => {
-                        let both_valid = arrow2::bitmap::and(l_valid, r_valid);
-                        let both_null = arrow2::bitmap::and(&l_valid.not(), &r_valid.not());
-
-                        result_values = arrow2::bitmap::and(&result_values, &both_valid);
-                        result_values = arrow2::bitmap::or(&result_values, &both_null);
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
                     }
                 }
 
@@ -655,11 +652,8 @@ impl DaftCompare<&Self> for BooleanArray {
                         result_values = arrow2::bitmap::and(&result_values, l_valid);
                     }
                     (Some(l_valid), Some(r_valid)) => {
-                        let both_valid = arrow2::bitmap::and(l_valid, r_valid);
-                        let both_null = arrow2::bitmap::and(&l_valid.not(), &r_valid.not());
-
-                        result_values = arrow2::bitmap::and(&result_values, &both_valid);
-                        result_values = arrow2::bitmap::or(&result_values, &both_null);
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
                     }
                 }
 
@@ -805,6 +799,9 @@ impl Not for &BooleanArray {
 impl DaftLogical<&Self> for BooleanArray {
     type Output = DaftResult<Self>;
     fn and(&self, rhs: &Self) -> Self::Output {
+        // When performing a logical AND with a NULL value:
+        // - If the non-null value is false, the result is false (not null)
+        // - If the non-null value is true, the result is null
         fn and_with_null(name: &str, arr: &BooleanArray) -> BooleanArray {
             let values = arr.as_arrow().values();
 
@@ -828,6 +825,7 @@ impl DaftLogical<&Self> for BooleanArray {
                 let l_values = self.as_arrow().values();
                 let r_values = rhs.as_arrow().values();
 
+                // (false & NULL) should be false, compute validity to ensure that
                 let validity = match (self.as_arrow().validity(), rhs.as_arrow().validity()) {
                     (None, None) => None,
                     (None, Some(r_valid)) => Some(arrow2::bitmap::or(&l_values.not(), r_valid)),
@@ -874,6 +872,9 @@ impl DaftLogical<&Self> for BooleanArray {
     }
 
     fn or(&self, rhs: &Self) -> Self::Output {
+        // When performing a logical OR with a NULL value:
+        // - If the non-null value is false, the result is null
+        // - If the non-null value is true, the result is true (not null)
         fn or_with_null(name: &str, arr: &BooleanArray) -> BooleanArray {
             let values = arr.as_arrow().values();
 
@@ -897,6 +898,7 @@ impl DaftLogical<&Self> for BooleanArray {
                 let l_values = self.as_arrow().values();
                 let r_values = rhs.as_arrow().values();
 
+                // (true | NULL) should be true, compute validity to ensure that
                 let validity = match (self.as_arrow().validity(), rhs.as_arrow().validity()) {
                     (None, None) => None,
                     (None, Some(r_valid)) => Some(arrow2::bitmap::or(l_values, r_valid)),
@@ -1029,7 +1031,7 @@ impl DaftLogical<bool> for BooleanArray {
                 arrow2::array::BooleanArray::new(
                     arrow2::datatypes::DataType::Boolean,
                     arrow2::bitmap::Bitmap::new_zeroed(self.len()),
-                    None,
+                    None, // false & x is always valid false for any x
                 ),
             )))
         }
@@ -1042,7 +1044,7 @@ impl DaftLogical<bool> for BooleanArray {
                 arrow2::array::BooleanArray::new(
                     arrow2::datatypes::DataType::Boolean,
                     arrow2::bitmap::Bitmap::new_trued(self.len()),
-                    None,
+                    None, // true | x is always valid true for any x
                 ),
             )))
         } else {
@@ -1321,11 +1323,8 @@ impl DaftCompare<&Self> for Utf8Array {
                         result_values = arrow2::bitmap::and(&result_values, l_valid);
                     }
                     (Some(l_valid), Some(r_valid)) => {
-                        let both_valid = arrow2::bitmap::and(l_valid, r_valid);
-                        let both_null = arrow2::bitmap::and(&l_valid.not(), &r_valid.not());
-
-                        result_values = arrow2::bitmap::and(&result_values, &both_valid);
-                        result_values = arrow2::bitmap::or(&result_values, &both_null);
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
                     }
                 }
 
@@ -1719,11 +1718,8 @@ impl DaftCompare<&Self> for BinaryArray {
                         result_values = arrow2::bitmap::and(&result_values, l_valid);
                     }
                     (Some(l_valid), Some(r_valid)) => {
-                        let both_valid = arrow2::bitmap::and(l_valid, r_valid);
-                        let both_null = arrow2::bitmap::and(&l_valid.not(), &r_valid.not());
-
-                        result_values = arrow2::bitmap::and(&result_values, &both_valid);
-                        result_values = arrow2::bitmap::or(&result_values, &both_null);
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
                     }
                 }
 
@@ -2134,11 +2130,8 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
                         result_values = arrow2::bitmap::and(&result_values, l_valid);
                     }
                     (Some(l_valid), Some(r_valid)) => {
-                        let both_valid = arrow2::bitmap::and(l_valid, r_valid);
-                        let both_null = arrow2::bitmap::and(&l_valid.not(), &r_valid.not());
-
-                        result_values = arrow2::bitmap::and(&result_values, &both_valid);
-                        result_values = arrow2::bitmap::or(&result_values, &both_null);
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
                     }
                 }
 

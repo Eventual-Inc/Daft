@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pyarrow as pa
 import pytest
 
 from daft.expressions import col, lit
@@ -28,15 +29,6 @@ def test_null_safe_equals_basic(data, value, expected_values):
     result = table.eval_expression_list([col("value").eq_null_safe(lit(value))])
     result_values = result.get_column("value").to_pylist()
 
-    # Print full comparison for debugging
-    print("\nFull comparison:")
-    print("Result values:")
-    for val, res in zip([x[1] for x in data], result_values):
-        print(f"  value={val}, eq_value={res}")
-    print("\nExpected values:")
-    for val, exp in zip([x[1] for x in data], expected_values):
-        print(f"  value={val}, expected={exp}")
-
     # Verify results
     assert result_values == expected_values
 
@@ -50,12 +42,11 @@ def test_null_safe_equals_basic(data, value, expected_values):
         ("float", 1.5, [(1, 1.5), (2, None), (3, 2.5)], [True, False, False]),
         ("binary", b"hello", [(1, b"hello"), (2, None), (3, b"world")], [True, False, False]),
         ("fixed_size_binary", b"aaa", [(1, b"aaa"), (2, None), (3, b"bbb")], [True, False, False]),
+        ("null", None, [(1, 10), (2, None), (3, 20)], [False, True, False]),
     ],
 )
 def test_null_safe_equals_types(type_name, test_value, test_data, expected_values):
     """Test null-safe equality with different data types."""
-    import pyarrow as pa
-
     # Create a table with the test data
     if type_name == "fixed_size_binary":
         # Convert to PyArrow array for fixed size binary
@@ -78,57 +69,8 @@ def test_null_safe_equals_types(type_name, test_value, test_data, expected_value
     result = table.eval_expression_list([col("value").eq_null_safe(lit(test_value))])
     result_values = result.get_column("value").to_pylist()
 
-    # Print full comparison for debugging
-    print("\nFull comparison:")
-    print("Result values:")
-    for val, res in zip([x[1] for x in test_data], result_values):
-        print(f"  value={val}, eq_value={res}")
-    print("\nExpected values:")
-    for val, exp in zip([x[1] for x in test_data], expected_values):
-        print(f"  value={val}, expected={exp}")
-
     # Verify results
     assert result_values == expected_values, f"Failed for {type_name} comparison"
-
-
-@pytest.mark.parametrize(
-    "type_name,test_value,test_data,expected_values",
-    [
-        ("int", 10, [(1, 10), (2, None), (3, 20)], [True, False, False]),
-        ("string", "hello", [(1, "hello"), (2, None), (3, "world")], [True, False, False]),
-        ("boolean", True, [(1, True), (2, None), (3, False)], [True, False, False]),
-        ("float", 1.5, [(1, 1.5), (2, None), (3, 2.5)], [True, False, False]),
-        ("binary", b"hello", [(1, b"hello"), (2, None), (3, b"world")], [True, False, False]),
-        ("fixed_size_binary", b"aaa", [(1, b"aaa"), (2, None), (3, b"bbb")], [True, False, False]),
-        ("null", None, [(1, 10), (2, None), (3, 20)], [False, True, False]),
-    ],
-)
-def test_null_safe_equals_scalar_both_directions(type_name, test_value, test_data, expected_values):
-    """Test null-safe equality with scalars on both LHS and RHS of the comparison."""
-    import pyarrow as pa
-
-    # Create a table with the test data
-    if type_name == "fixed_size_binary":
-        # Convert to PyArrow array for fixed size binary
-        value_array = pa.array([x[1] for x in test_data], type=pa.binary(3))
-        table = MicroPartition.from_pydict(
-            {
-                "id": [x[0] for x in test_data],
-                "value": value_array.to_pylist(),
-            }
-        )
-    else:
-        table = MicroPartition.from_pydict(
-            {
-                "id": [x[0] for x in test_data],
-                "value": [x[1] for x in test_data],
-            }
-        )
-
-    # Test scalar on RHS: col <=> lit(scalar)
-    result = table.eval_expression_list([col("value").eq_null_safe(lit(test_value))])
-    result_values = result.get_column("value").to_pylist()
-    assert result_values == expected_values, f"Failed for {type_name} with scalar on RHS"
 
 
 @pytest.mark.parametrize(
@@ -153,8 +95,6 @@ def test_null_safe_equals_scalar_both_directions(type_name, test_value, test_dat
 )
 def test_null_safe_equals_column_comparison(data, expected_values):
     """Test null-safe equality between two columns."""
-    import pyarrow as pa
-
     # Check if this is a fixed-size binary test case
     is_fixed_binary = isinstance(data[0][0], bytes) and len(data[0][0]) == 3
 
@@ -181,15 +121,6 @@ def test_null_safe_equals_column_comparison(data, expected_values):
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
     result_values = result.get_column("left").to_pylist()
 
-    # Print full comparison for debugging
-    print("\nFull comparison:")
-    print("Result values:")
-    for left, right, res in zip([x[0] for x in data], [x[1] for x in data], result_values):
-        print(f"  left={left}, right={right}, eq_value={res}")
-    print("\nExpected values:")
-    for left, right, exp in zip([x[0] for x in data], [x[1] for x in data], expected_values):
-        print(f"  left={left}, right={right}, expected={exp}")
-
     # Verify results
     assert result_values == expected_values
 
@@ -215,11 +146,6 @@ def test_null_safe_equals_in_filter(filter_value, data, expected_ids):
     # Apply the filter with null-safe equals
     result = table.filter([col("value").eq_null_safe(lit(filter_value))])
     result_ids = set(result.get_column("id").to_pylist())
-
-    # Print full comparison for debugging
-    print("\nFull comparison:")
-    print("Result IDs:", result_ids)
-    print("Expected IDs:", expected_ids)
 
     # Verify results
     assert result_ids == expected_ids
@@ -252,23 +178,12 @@ def test_null_safe_equals_chained_operations(operation, test_value, data, expect
 
     result_values = result.get_column("value").to_pylist()
 
-    # Print full comparison for debugging
-    print("\nFull comparison:")
-    print("Result values:")
-    for val, res in zip([x[1] for x in data], result_values):
-        print(f"  value={val}, result={res}")
-    print("\nExpected values:")
-    for val, exp in zip([x[1] for x in data], expected_values):
-        print(f"  value={val}, expected={exp}")
-
     # Verify results
     assert result_values == expected_values
 
 
 def test_null_safe_equals_fixed_size_binary():
     """Test null-safe equality specifically for fixed-size binary arrays."""
-    import pyarrow as pa
-
     # Create arrays with fixed size binary data
     l_arrow = pa.array([b"11111", b"22222", b"33333", None, b"12345", None], type=pa.binary(5))
     r_arrow = pa.array([b"11111", b"33333", b"11111", b"12345", None, None], type=pa.binary(5))
@@ -325,8 +240,6 @@ def test_null_safe_equals_fixed_size_binary():
 )
 def test_no_nulls_all_types(type_name, left_data, right_data, expected_values):
     """Test null-safe equality with no nulls in either array for all data types."""
-    import pyarrow as pa
-
     if type_name == "fixed_size_binary":
         # Convert to PyArrow arrays for fixed size binary
         left_array = pa.array(left_data, type=pa.binary(3))
@@ -347,15 +260,6 @@ def test_no_nulls_all_types(type_name, left_data, right_data, expected_values):
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
     result_values = result.get_column("left").to_pylist()
-
-    # Print full comparison for debugging
-    print("\nFull comparison:")
-    print("Result values:")
-    for left, right, res in zip(left_data, right_data, result_values):
-        print(f"  left={left}, right={right}, eq_value={res}")
-    print("\nExpected values:")
-    for left, right, exp in zip(left_data, right_data, expected_values):
-        print(f"  left={left}, right={right}, expected={exp}")
 
     assert result_values == expected_values, f"Failed for {type_name} comparison"
 
@@ -373,8 +277,6 @@ def test_no_nulls_all_types(type_name, left_data, right_data, expected_values):
 )
 def test_right_nulls_all_types(type_name, left_data, right_data, expected_values):
     """Test null-safe equality where left array has no nulls and right array has some nulls."""
-    import pyarrow as pa
-
     if type_name == "fixed_size_binary":
         # Convert to PyArrow arrays for fixed size binary
         left_array = pa.array(left_data, type=pa.binary(3))
@@ -395,15 +297,6 @@ def test_right_nulls_all_types(type_name, left_data, right_data, expected_values
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
     result_values = result.get_column("left").to_pylist()
-
-    # Print full comparison for debugging
-    print("\nFull comparison:")
-    print("Result values:")
-    for left, right, res in zip(left_data, right_data, result_values):
-        print(f"  left={left}, right={right}, eq_value={res}")
-    print("\nExpected values:")
-    for left, right, exp in zip(left_data, right_data, expected_values):
-        print(f"  left={left}, right={right}, expected={exp}")
 
     assert result_values == expected_values, f"Failed for {type_name} comparison"
 
@@ -421,8 +314,6 @@ def test_right_nulls_all_types(type_name, left_data, right_data, expected_values
 )
 def test_left_nulls_all_types(type_name, left_data, right_data, expected_values):
     """Test null-safe equality where left array has some nulls and right array has no nulls."""
-    import pyarrow as pa
-
     if type_name == "fixed_size_binary":
         # Convert to PyArrow arrays for fixed size binary
         left_array = pa.array(left_data, type=pa.binary(3))
@@ -443,15 +334,6 @@ def test_left_nulls_all_types(type_name, left_data, right_data, expected_values)
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
     result_values = result.get_column("left").to_pylist()
-
-    # Print full comparison for debugging
-    print("\nFull comparison:")
-    print("Result values:")
-    for left, right, res in zip(left_data, right_data, result_values):
-        print(f"  left={left}, right={right}, eq_value={res}")
-    print("\nExpected values:")
-    for left, right, exp in zip(left_data, right_data, expected_values):
-        print(f"  left={left}, right={right}, expected={exp}")
 
     assert result_values == expected_values, f"Failed for {type_name} comparison"
 
@@ -481,3 +363,40 @@ def test_length_mismatch_all_types(type_name, left_data, right_data):
     # Verify error message format
     error_msg = str(exc_info.value)
     assert "trying to compare different length arrays" in error_msg
+
+
+@pytest.mark.parametrize(
+    "type_name,left_data,right_data,expected_values",
+    [
+        ("int", [None, None, 1], [None, None, 2], [True, True, False]),
+        ("float", [None, None, 1.0], [None, None, 2.0], [True, True, False]),
+        ("boolean", [None, None, True], [None, None, False], [True, True, False]),
+        ("string", [None, None, "a"], [None, None, "b"], [True, True, False]),
+        ("binary", [None, None, b"a"], [None, None, b"b"], [True, True, False]),
+        ("fixed_size_binary", [None, None, b"aaa"], [None, None, b"bbb"], [True, True, False]),
+    ],
+)
+def test_null_equals_null_all_types(type_name, left_data, right_data, expected_values):
+    """Test that NULL <=> NULL returns True for all data types."""
+    if type_name == "fixed_size_binary":
+        # Convert to PyArrow arrays for fixed size binary
+        left_array = pa.array(left_data, type=pa.binary(3))
+        right_array = pa.array(right_data, type=pa.binary(3))
+        table = MicroPartition.from_pydict(
+            {
+                "left": left_array.to_pylist(),
+                "right": right_array.to_pylist(),
+            }
+        )
+    else:
+        table = MicroPartition.from_pydict(
+            {
+                "left": left_data,
+                "right": right_data,
+            }
+        )
+
+    result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
+    result_values = result.get_column("left").to_pylist()
+
+    assert result_values == expected_values, f"Failed for {type_name} comparison"

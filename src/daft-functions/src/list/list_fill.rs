@@ -125,8 +125,6 @@ mod tests {
             vec![Some(1), Some(0), Some(10)].into_iter(),
         )
         .into_series();
-        let _str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
-            .into_series();
 
         let error = fill.evaluate(&[num.clone()]).unwrap_err();
         assert_eq!(
