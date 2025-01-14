@@ -273,15 +273,6 @@ class Expression:
         """Access methods that work on columns of json."""
         return ExpressionJsonNamespace.from_expression(self)
 
-    @property
-    def binary(self) -> ExpressionBinaryNamespace:
-        """Access binary string operations for this expression.
-
-        Returns:
-            ExpressionBinaryNamespace: A namespace containing binary string operations
-        """
-        return ExpressionBinaryNamespace.from_expression(self)
-
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)

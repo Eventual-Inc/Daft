@@ -1,5 +1,4 @@
 #![feature(async_closure)]
-pub mod binary;
 pub mod coalesce;
 pub mod count_matches;
 pub mod distance;

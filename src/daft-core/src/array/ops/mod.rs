@@ -7,7 +7,6 @@ mod arithmetic;
 pub mod arrow2;
 pub mod as_arrow;
 mod between;
-mod binary;
 mod bitwise;
 pub(crate) mod broadcast;
 pub(crate) mod cast;

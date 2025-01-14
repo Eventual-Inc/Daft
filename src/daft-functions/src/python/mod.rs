@@ -12,7 +12,6 @@ macro_rules! simple_python_wrapper {
     };
 }
 
-mod binary;
 mod coalesce;
 mod distance;
 mod float;
@@ -39,7 +38,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
 
     add!(coalesce::coalesce);
     add!(distance::cosine_distance);
-    add!(binary::binary_length);
 
     add!(float::is_inf);
     add!(float::is_nan);

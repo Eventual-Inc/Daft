@@ -1201,11 +1201,6 @@ def utf8_normalize(
     expr: PyExpr, remove_punct: bool, lowercase: bool, nfd_unicode: bool, white_space: bool
 ) -> PyExpr: ...
 
-# ---
-# expr.binary namespace
-# ---
-def binary_length(expr: PyExpr) -> PyExpr: ...
-
 class PyCatalog:
     @staticmethod
     def new() -> PyCatalog: ...
