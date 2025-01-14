@@ -7,7 +7,7 @@ use std::{io::Cursor, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::series::Series;
-use daft_dsl::{col, LiteralValue};
+use daft_dsl::col;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{
     partitioning::{
@@ -22,7 +22,6 @@ use daft_table::Table;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
 use eyre::{bail, ensure, Context};
-use futures::TryStreamExt;
 use itertools::zip_eq;
 use literal::to_daft_literal;
 use pyo3::{intern, prelude::*};
@@ -37,7 +36,7 @@ use spark_connect::{
     },
     read::ReadType,
     relation::RelType,
-    Deduplicate, Expression, Limit, Range, Relation, ShowString, Sort,
+    Deduplicate, Expression, Limit, Range, Relation, Sort,
 };
 use tracing::debug;
 
@@ -142,10 +141,7 @@ impl SparkAnalyzer<'_> {
             RelType::Read(r) => self.read(r).await,
             RelType::Drop(d) => self.drop(*d).await,
             RelType::Filter(f) => self.filter(*f).await,
-            RelType::ShowString(ss) => {
-                let plan_id = common.plan_id.required("plan_id")?;
-                self.show_string(plan_id, *ss).await
-            }
+            RelType::ShowString(_) => unreachable!("should already be handled in execute"),
             RelType::Deduplicate(rel) => self.deduplicate(*rel).await,
             RelType::Sort(rel) => self.sort(*rel).await,
             plan => not_yet_implemented!("relation type: \"{}\"", rel_name(&plan))?,
@@ -162,52 +158,6 @@ impl SparkAnalyzer<'_> {
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
         plan.limit(i64::from(limit), false).map_err(Into::into)
-    }
-
-    /// right now this just naively applies a limit to the logical plan
-    /// In the future, we want this to more closely match our daft implementation
-    async fn show_string(
-        &self,
-        plan_id: i64,
-        show_string: ShowString,
-    ) -> eyre::Result<LogicalPlanBuilder> {
-        let ShowString {
-            input,
-            num_rows,
-            truncate: _,
-            vertical,
-        } = show_string;
-
-        if vertical {
-            bail!("Vertical show string is not supported");
-        }
-
-        let Some(input) = input else {
-            bail!("input must be set");
-        };
-
-        let plan = Box::pin(self.to_logical_plan(*input)).await?;
-        let plan = plan.limit(num_rows as i64, true)?;
-
-        let results = self.session.run_query(plan).await?;
-        let results = results.try_collect::<Vec<_>>().await?;
-        let single_batch = results
-            .into_iter()
-            .next()
-            .ok_or_else(|| eyre::eyre!("No results"))?;
-
-        let tbls = single_batch.get_tables()?;
-        let tbl = Table::concat(&tbls)?;
-        let output = tbl.to_comfy_table(None).to_string();
-
-        let s = LiteralValue::Utf8(output)
-            .into_single_value_series()?
-            .rename("show_string");
-
-        let tbl = Table::from_nonempty_columns(vec![s])?;
-        let schema = tbl.schema.clone();
-
-        self.create_in_memory_scan(plan_id as _, schema, vec![tbl])
     }
 
     async fn deduplicate(&self, deduplicate: Deduplicate) -> eyre::Result<LogicalPlanBuilder> {
@@ -503,6 +453,7 @@ impl SparkAnalyzer<'_> {
     ) -> eyre::Result<LogicalPlanBuilder> {
         // We can ignore spark schema. The true schema is sent in the
         // arrow data. (see read_stream_metadata)
+        // the schema inside the plan is actually wrong. See https://issues.apache.org/jira/browse/SPARK-50627
         let spark_connect::LocalRelation { data, schema: _ } = plan;
 
         let data = data.required("data")?;
