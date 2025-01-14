@@ -4,67 +4,28 @@ use spark_connect::data_type::Kind;
 use tracing::debug;
 
 pub fn to_spark_datatype(datatype: &DataType) -> spark_connect::DataType {
+    macro_rules! simple_spark_type {
+        ($kind:ident) => {
+            spark_connect::DataType {
+                kind: Some(Kind::$kind(spark_connect::data_type::$kind {
+                    type_variation_reference: 0,
+                })),
+            }
+        };
+    }
     match datatype {
-        DataType::Null => spark_connect::DataType {
-            kind: Some(Kind::Null(spark_connect::data_type::Null {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::Boolean => spark_connect::DataType {
-            kind: Some(Kind::Boolean(spark_connect::data_type::Boolean {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::Int8 => spark_connect::DataType {
-            kind: Some(Kind::Byte(spark_connect::data_type::Byte {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::Int16 => spark_connect::DataType {
-            kind: Some(Kind::Short(spark_connect::data_type::Short {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::Int32 => spark_connect::DataType {
-            kind: Some(Kind::Integer(spark_connect::data_type::Integer {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::Int64 => spark_connect::DataType {
-            kind: Some(Kind::Long(spark_connect::data_type::Long {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::UInt8 => spark_connect::DataType {
-            kind: Some(Kind::Byte(spark_connect::data_type::Byte {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::UInt16 => spark_connect::DataType {
-            kind: Some(Kind::Short(spark_connect::data_type::Short {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::UInt32 => spark_connect::DataType {
-            kind: Some(Kind::Integer(spark_connect::data_type::Integer {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::UInt64 => spark_connect::DataType {
-            kind: Some(Kind::Long(spark_connect::data_type::Long {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::Float32 => spark_connect::DataType {
-            kind: Some(Kind::Float(spark_connect::data_type::Float {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::Float64 => spark_connect::DataType {
-            kind: Some(Kind::Double(spark_connect::data_type::Double {
-                type_variation_reference: 0,
-            })),
-        },
+        DataType::Null => simple_spark_type!(Null),
+        DataType::Boolean => simple_spark_type!(Boolean),
+        DataType::Int8 => simple_spark_type!(Byte),
+        DataType::Int16 => simple_spark_type!(Short),
+        DataType::Int32 => simple_spark_type!(Integer),
+        DataType::Int64 => simple_spark_type!(Long),
+        DataType::UInt8 => simple_spark_type!(Byte),
+        DataType::UInt16 => simple_spark_type!(Short),
+        DataType::UInt32 => simple_spark_type!(Integer),
+        DataType::UInt64 => simple_spark_type!(Long),
+        DataType::Float32 => simple_spark_type!(Float),
+        DataType::Float64 => simple_spark_type!(Double),
         DataType::Decimal128(precision, scale) => spark_connect::DataType {
             kind: Some(Kind::Decimal(spark_connect::data_type::Decimal {
                 scale: Some(*scale as i32),
@@ -80,16 +41,8 @@ pub fn to_spark_datatype(datatype: &DataType) -> spark_connect::DataType {
                 })),
             }
         }
-        DataType::Date => spark_connect::DataType {
-            kind: Some(Kind::Date(spark_connect::data_type::Date {
-                type_variation_reference: 0,
-            })),
-        },
-        DataType::Binary => spark_connect::DataType {
-            kind: Some(Kind::Binary(spark_connect::data_type::Binary {
-                type_variation_reference: 0,
-            })),
-        },
+        DataType::Date => simple_spark_type!(Date),
+        DataType::Binary => simple_spark_type!(Binary),
         DataType::Utf8 => spark_connect::DataType {
             kind: Some(Kind::String(spark_connect::data_type::String {
                 type_variation_reference: 0,
@@ -122,42 +75,40 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
 
     let type_variation_err = "Custom type variation reference not supported";
 
+    macro_rules! simple_type_case {
+        ($value:expr, $dtype:expr) => {{
+            ensure!($value.type_variation_reference == 0, type_variation_err);
+            Ok($dtype)
+        }};
+    }
+
     match kind {
         Kind::Null(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Null)
+            simple_type_case!(value, DataType::Null)
         }
         Kind::Binary(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Binary)
+            simple_type_case!(value, DataType::Binary)
         }
         Kind::Boolean(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Boolean)
+            simple_type_case!(value, DataType::Boolean)
         }
         Kind::Byte(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Int8)
+            simple_type_case!(value, DataType::Int8)
         }
         Kind::Short(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Int16)
+            simple_type_case!(value, DataType::Int16)
         }
         Kind::Integer(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Int32)
+            simple_type_case!(value, DataType::Int32)
         }
         Kind::Long(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Int64)
+            simple_type_case!(value, DataType::Int64)
         }
         Kind::Float(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Float32)
+            simple_type_case!(value, DataType::Float32)
         }
         Kind::Double(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Float64)
+            simple_type_case!(value, DataType::Float64)
         }
         Kind::Decimal(value) => {
             ensure!(value.type_variation_reference == 0, type_variation_err);
@@ -179,20 +130,16 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
             Ok(DataType::Decimal128(precision, scale))
         }
         Kind::String(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Utf8)
+            simple_type_case!(value, DataType::Utf8)
         }
         Kind::Char(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Utf8)
+            simple_type_case!(value, DataType::Utf8)
         }
         Kind::VarChar(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Utf8)
+            simple_type_case!(value, DataType::Utf8)
         }
         Kind::Date(value) => {
-            ensure!(value.type_variation_reference == 0, type_variation_err);
-            Ok(DataType::Date)
+            simple_type_case!(value, DataType::Date)
         }
         Kind::Timestamp(value) => {
             ensure!(value.type_variation_reference == 0, type_variation_err);

@@ -13,6 +13,9 @@ mod config;
 mod connect_service;
 
 #[cfg(feature = "python")]
+mod functions;
+
+#[cfg(feature = "python")]
 mod display;
 #[cfg(feature = "python")]
 mod err;
@@ -23,7 +26,7 @@ mod response_builder;
 #[cfg(feature = "python")]
 mod session;
 #[cfg(feature = "python")]
-mod translation;
+mod spark_analyzer;
 #[cfg(feature = "python")]
 pub mod util;
 

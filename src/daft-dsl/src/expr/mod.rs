@@ -5,6 +5,7 @@ use std::{
     any::Any,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -1278,6 +1279,32 @@ impl Operator {
 
     pub(crate) fn is_arithmetic(&self) -> bool {
         !(self.is_comparison())
+    }
+}
+
+impl FromStr for Operator {
+    type Err = DaftError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "==" => Ok(Self::Eq),
+            "!=" => Ok(Self::NotEq),
+            "<" => Ok(Self::Lt),
+            "<=" => Ok(Self::LtEq),
+            ">" => Ok(Self::Gt),
+            ">=" => Ok(Self::GtEq),
+            "+" => Ok(Self::Plus),
+            "-" => Ok(Self::Minus),
+            "*" => Ok(Self::Multiply),
+            "/" => Ok(Self::TrueDivide),
+            "//" => Ok(Self::FloorDivide),
+            "%" => Ok(Self::Modulus),
+            "&" => Ok(Self::And),
+            "|" => Ok(Self::Or),
+            "^" => Ok(Self::Xor),
+            "<<" => Ok(Self::ShiftLeft),
+            ">>" => Ok(Self::ShiftRight),
+            _ => Err(DaftError::ComputeError(format!("Invalid operator: {}", s))),
+        }
     }
 }
 

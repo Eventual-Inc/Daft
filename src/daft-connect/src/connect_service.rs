@@ -16,7 +16,7 @@ use crate::{
     invalid_argument_err, not_yet_implemented,
     response_builder::ResponseBuilder,
     session::Session,
-    translation::{self, SparkAnalyzer},
+    spark_analyzer::{to_spark_datatype, SparkAnalyzer},
     util::FromOptionalField,
 };
 
@@ -180,7 +180,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 let daft_schema = daft_schema.to_struct();
 
-                let schema = translation::to_spark_datatype(&daft_schema);
+                let schema = to_spark_datatype(&daft_schema);
 
                 Ok(Response::new(rb.schema_response(schema)))
             }

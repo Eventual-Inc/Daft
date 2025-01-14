@@ -2023,6 +2023,7 @@ dependencies = [
  "eyre",
  "futures",
  "itertools 0.11.0",
+ "once_cell",
  "pyo3",
  "spark-connect",
  "textwrap",
