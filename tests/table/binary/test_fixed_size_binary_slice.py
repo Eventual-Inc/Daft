@@ -62,11 +62,11 @@ def test_fixed_size_binary_slice(
         }
     )
     # Verify input is FixedSizeBinary before slicing
-    assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size}]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
     result = table.eval_expression_list([col("a").binary.slice(col("start"), col("length"))])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be regular Binary since slice might be smaller
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
 
 @pytest.mark.parametrize(
@@ -95,11 +95,11 @@ def test_fixed_size_binary_slice_no_length(
         }
     )
     # Verify input is FixedSizeBinary before slicing
-    assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size}]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
     result = table.eval_expression_list([col("a").binary.slice(col("start"))])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be regular Binary since slice might be smaller
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
 
 def test_fixed_size_binary_slice_computed() -> None:
@@ -119,7 +119,7 @@ def test_fixed_size_binary_slice_computed() -> None:
         }
     )
     # Verify input is FixedSizeBinary
-    assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size}]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
 
     # Test with computed start (size - 2) and fixed length
     result = table.eval_expression_list(
@@ -131,7 +131,7 @@ def test_fixed_size_binary_slice_computed() -> None:
         ]
     )
     assert result.to_pydict() == {"a": [b"cd", b"\xfd\xfc", b"\x02\x03", b"\x83\x00"]}
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with fixed start and computed length (size - start)
     result = table.eval_expression_list(
@@ -143,7 +143,7 @@ def test_fixed_size_binary_slice_computed() -> None:
         ]
     )
     assert result.to_pydict() == {"a": [b"bcd", b"\xfe\xfd\xfc", b"\x01\x02\x03", b"\x98\x83\x00"]}
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
 
 def test_fixed_size_binary_slice_edge_cases() -> None:
@@ -184,10 +184,10 @@ def test_fixed_size_binary_slice_edge_cases() -> None:
             }
         )
         # Verify input is FixedSizeBinary
-        assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size}]"
+        assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
         result = table.eval_expression_list([col("a").binary.slice(col("start"), col("length"))])
         assert result.to_pydict() == {"a": expected}
-        assert str(result.schema()["a"].dtype) == "Binary"
+        assert result.schema()["a"].dtype == DataType.binary()
 
 
 def test_fixed_size_binary_slice_with_literals() -> None:
@@ -197,27 +197,27 @@ def test_fixed_size_binary_slice_with_literals() -> None:
         }
     )
     # Verify input is FixedSizeBinary before slicing
-    assert str(table.schema()["a"].dtype) == "FixedSizeBinary[3]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(3)
 
     # Test with literal start and length
     result = table.eval_expression_list([col("a").binary.slice(lit(1), lit(1))])
     assert result.to_pydict() == {"a": [b"b", b"e", None]}
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with only start
     result = table.eval_expression_list([col("a").binary.slice(lit(0))])
     assert result.to_pydict() == {"a": [b"abc", b"def", None]}
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with start beyond length
     result = table.eval_expression_list([col("a").binary.slice(lit(3), lit(1))])
     assert result.to_pydict() == {"a": [None, None, None]}
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with zero length
     result = table.eval_expression_list([col("a").binary.slice(lit(0), lit(0))])
     assert result.to_pydict() == {"a": [None, None, None]}
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
 
 def test_fixed_size_binary_slice_errors() -> None:

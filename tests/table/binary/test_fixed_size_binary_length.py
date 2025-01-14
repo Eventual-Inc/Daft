@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+from daft import DataType
 from daft.expressions import col
 from daft.table import MicroPartition
 
@@ -49,11 +50,11 @@ def test_fixed_size_binary_length(
         }
     )
     # Verify input is FixedSizeBinary before getting length
-    assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size}]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
     result = table.eval_expression_list([col("a").binary.length()])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be UInt64 since length can't be negative
-    assert str(result.schema()["a"].dtype) == "UInt64"
+    assert result.schema()["a"].dtype == DataType.uint64()
 
 
 def test_fixed_size_binary_length_large() -> None:
@@ -75,10 +76,10 @@ def test_fixed_size_binary_length_large() -> None:
         }
     )
     # Verify input is FixedSizeBinary
-    assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size}]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
     result = table.eval_expression_list([col("a").binary.length()])
     assert result.to_pydict() == {"a": expected_result}
-    assert str(result.schema()["a"].dtype) == "UInt64"
+    assert result.schema()["a"].dtype == DataType.uint64()
 
 
 def test_fixed_size_binary_length_edge_cases() -> None:
@@ -101,10 +102,10 @@ def test_fixed_size_binary_length_edge_cases() -> None:
             }
         )
         # Verify input is FixedSizeBinary
-        assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size}]"
+        assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
         result = table.eval_expression_list([col("a").binary.length()])
         assert result.to_pydict() == {"a": expected_result}
-        assert str(result.schema()["a"].dtype) == "UInt64"
+        assert result.schema()["a"].dtype == DataType.uint64()
 
 
 def test_fixed_size_binary_length_errors() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+from daft import DataType
 from daft.expressions import col, lit
 from daft.table import MicroPartition
 
@@ -62,12 +63,12 @@ def test_fixed_size_binary_concat(
         }
     )
     # Verify inputs are FixedSizeBinary before concatenating
-    assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size1}]"
-    assert str(table.schema()["b"].dtype) == f"FixedSizeBinary[{size2}]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(size1)
+    assert table.schema()["b"].dtype == DataType.fixed_size_binary(size2)
     result = table.eval_expression_list([col("a").binary.concat(col("b"))])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be FixedSizeBinary with combined size when both inputs are FixedSizeBinary
-    assert str(result.schema()["a"].dtype) == f"FixedSizeBinary[{size1 + size2}]"
+    assert result.schema()["a"].dtype == DataType.fixed_size_binary(size1 + size2)
 
 
 def test_fixed_size_binary_concat_large() -> None:
@@ -84,8 +85,8 @@ def test_fixed_size_binary_concat_large() -> None:
     )
 
     # Verify inputs are FixedSizeBinary
-    assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size1}]"
-    assert str(table.schema()["b"].dtype) == f"FixedSizeBinary[{size2}]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(size1)
+    assert table.schema()["b"].dtype == DataType.fixed_size_binary(size2)
 
     result = table.eval_expression_list([col("a").binary.concat(col("b"))])
     assert result.to_pydict() == {
@@ -96,7 +97,7 @@ def test_fixed_size_binary_concat_large() -> None:
         ]
     }
     # Result should be FixedSizeBinary with combined size
-    assert str(result.schema()["a"].dtype) == f"FixedSizeBinary[{size1 + size2}]"
+    assert result.schema()["a"].dtype == DataType.fixed_size_binary(size1 + size2)
 
 
 @pytest.mark.parametrize(
@@ -134,19 +135,19 @@ def test_fixed_size_binary_concat_broadcast(
         }
     )
     # Verify input is FixedSizeBinary
-    assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size}]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
 
     # Test right-side broadcasting
     result = table.eval_expression_list([col("a").binary.concat(lit(literal))])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be Binary when using literals
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
     # Test left-side broadcasting
     result = table.eval_expression_list([lit(literal).binary.concat(col("a"))])
     assert result.to_pydict() == {"literal": [literal + data if data is not None else None for data in input_data]}
     # Result should be Binary when using literals
-    assert str(result.schema()["literal"].dtype) == "Binary"
+    assert result.schema()["literal"].dtype == DataType.binary()
 
 
 def test_fixed_size_binary_concat_edge_cases() -> None:
@@ -180,12 +181,12 @@ def test_fixed_size_binary_concat_edge_cases() -> None:
             }
         )
         # Verify inputs are FixedSizeBinary
-        assert str(table.schema()["a"].dtype) == f"FixedSizeBinary[{size1}]"
-        assert str(table.schema()["b"].dtype) == f"FixedSizeBinary[{size2}]"
+        assert table.schema()["a"].dtype == DataType.fixed_size_binary(size1)
+        assert table.schema()["b"].dtype == DataType.fixed_size_binary(size2)
         result = table.eval_expression_list([col("a").binary.concat(col("b"))])
         assert result.to_pydict() == {"a": expected_result}
         # Result should be FixedSizeBinary with combined size
-        assert str(result.schema()["a"].dtype) == f"FixedSizeBinary[{size1 + size2}]"
+        assert result.schema()["a"].dtype == DataType.fixed_size_binary(size1 + size2)
 
 
 def test_fixed_size_binary_concat_with_binary() -> None:
@@ -197,20 +198,20 @@ def test_fixed_size_binary_concat_with_binary() -> None:
         }
     )
     # Verify first input is FixedSizeBinary
-    assert str(table.schema()["a"].dtype) == "FixedSizeBinary[3]"
-    assert str(table.schema()["b"].dtype) == "Binary"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(3)
+    assert table.schema()["b"].dtype == DataType.binary()
 
     # Test FixedSizeBinary + Binary
     result = table.eval_expression_list([col("a").binary.concat(col("b"))])
     assert result.to_pydict() == {"a": [b"abcx", b"defyz", None]}
     # Result should be Binary when mixing types
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
     # Test Binary + FixedSizeBinary
     result = table.eval_expression_list([col("b").binary.concat(col("a"))])
     assert result.to_pydict() == {"b": [b"xabc", b"yzdef", None]}
     # Result should be Binary when mixing types
-    assert str(result.schema()["b"].dtype) == "Binary"
+    assert result.schema()["b"].dtype == DataType.binary()
 
 
 def test_fixed_size_binary_concat_with_literals() -> None:
@@ -220,19 +221,19 @@ def test_fixed_size_binary_concat_with_literals() -> None:
         }
     )
     # Verify input is FixedSizeBinary
-    assert str(table.schema()["a"].dtype) == "FixedSizeBinary[3]"
+    assert table.schema()["a"].dtype == DataType.fixed_size_binary(3)
 
     # Test with literal
     result = table.eval_expression_list([col("a").binary.concat(lit(b"xyz"))])
     assert result.to_pydict() == {"a": [b"abcxyz", b"defxyz", None]}
     # Result should be Binary when using literals
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with null literal
     result = table.eval_expression_list([col("a").binary.concat(lit(None))])
     assert result.to_pydict() == {"a": [None, None, None]}
     # Result should be Binary when using literals
-    assert str(result.schema()["a"].dtype) == "Binary"
+    assert result.schema()["a"].dtype == DataType.binary()
 
 
 def test_fixed_size_binary_concat_errors() -> None:
