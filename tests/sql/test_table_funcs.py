@@ -13,14 +13,12 @@ def sample_schema():
     return {"a": daft.DataType.float32(), "b": daft.DataType.string()}
 
 
-# @pytest.mark.skip("read_json table function not supported (yet) see github #3196")
 def test_sql_read_json():
     df = daft.sql("SELECT * FROM read_json('tests/assets/json-data/small.jsonl')").collect()
     expected = daft.read_json("tests/assets/json-data/small.jsonl").collect()
     assert df.to_pydict() == expected.to_pydict()
 
 
-# @pytest.mark.skip("read_json table function not supported (yet) see github #3196")
 def test_sql_read_json_path():
     df = daft.sql("SELECT * FROM 'tests/assets/json-data/small.jsonl'").collect()
     expected = daft.read_json("tests/assets/json-data/small.jsonl").collect()
