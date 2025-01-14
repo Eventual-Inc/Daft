@@ -47,9 +47,6 @@ fn intersect_or_except_plan(
         Some(vec![true; left_on_size]),
         join_type,
         None,
-        None,
-        None,
-        false,
     );
     join.map(|j| Distinct::new(j.into()).into())
 }

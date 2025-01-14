@@ -10,7 +10,7 @@ use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use daft_core::join::{JoinStrategy, JoinType};
-use daft_dsl::{col, ExprRef};
+use daft_dsl::{col, ExprRef, ExprResolver};
 use daft_schema::schema::{Schema, SchemaRef};
 #[cfg(feature = "python")]
 use {
@@ -188,11 +188,19 @@ impl LogicalPlanBuilder {
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
+
+        let (to_select, _) = expr_resolver.resolve(to_select, &self.schema())?;
+
         let logical_plan: LogicalPlan = ops::Project::try_new(self.plan.clone(), to_select)?.into();
         Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn with_columns(&self, columns: Vec<ExprRef>) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
+
+        let (columns, _) = expr_resolver.resolve(columns, &self.schema())?;
+
         let fields = &self.schema().fields;
         let current_col_names = fields
             .iter()
@@ -245,6 +253,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::default();
+
+        let (predicate, _) = expr_resolver.resolve_single(predicate, &self.schema())?;
+
         let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(self.with_new_plan(logical_plan))
     }
@@ -438,17 +450,35 @@ impl LogicalPlanBuilder {
         join_prefix: Option<&str>,
         keep_join_keys: bool,
     ) -> DaftResult<Self> {
+        let left_plan = self.plan.clone();
+        let right_plan = right.into();
+
+        let expr_resolver = ExprResolver::default();
+
+        let (left_on, _) = expr_resolver.resolve(left_on, &left_plan.schema())?;
+        let (right_on, _) = expr_resolver.resolve(right_on, &right_plan.schema())?;
+
+        let (left_on, right_on) = ops::Join::rename_join_keys(left_on, right_on);
+
+        let (right_plan, right_on) = ops::Join::rename_right_columns(
+            left_plan.clone(),
+            right_plan,
+            left_on.clone(),
+            right_on,
+            join_type,
+            join_suffix,
+            join_prefix,
+            keep_join_keys,
+        )?;
+
         let logical_plan: LogicalPlan = ops::Join::try_new(
-            self.plan.clone(),
-            right.into(),
+            left_plan,
+            right_plan,
             left_on,
             right_on,
             null_equals_nulls,
             join_type,
             join_strategy,
-            join_suffix,
-            join_prefix,
-            keep_join_keys,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))

@@ -303,12 +303,12 @@ fn find_inner_join(
         if !join_keys.is_empty() {
             all_join_keys.insert_all(join_keys.iter());
             let right_input = rights.remove(i);
-            let join_schema = left_input
-                .schema()
-                .non_distinct_union(right_input.schema().as_ref());
 
             let (left_keys, right_keys) = join_keys.iter().cloned().unzip();
-            return Ok(LogicalPlan::Join(Join::new(
+
+            let (left_keys, right_keys) = Join::rename_join_keys(left_keys, right_keys);
+
+            return Ok(LogicalPlan::Join(Join::try_new(
                 left_input,
                 right_input,
                 left_keys,
@@ -316,8 +316,7 @@ fn find_inner_join(
                 None,
                 JoinType::Inner,
                 None,
-                Arc::new(join_schema),
-            ))
+            )?)
             .arced());
         }
     }
@@ -325,11 +324,8 @@ fn find_inner_join(
     // no matching right plan had any join keys, cross join with the first right
     // plan
     let right = rights.remove(0);
-    let join_schema = left_input
-        .schema()
-        .non_distinct_union(right.schema().as_ref());
 
-    Ok(LogicalPlan::Join(Join::new(
+    Ok(LogicalPlan::Join(Join::try_new(
         left_input,
         right,
         vec![],
@@ -337,8 +333,7 @@ fn find_inner_join(
         None,
         JoinType::Inner,
         None,
-        Arc::new(join_schema),
-    ))
+    )?)
     .arced())
 }
 

@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use common_treenode::Transformed;
 use daft_core::prelude::*;
-use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef, ExprResolver};
+use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -24,15 +25,14 @@ pub struct Project {
 
 impl Project {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
-        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
-
-        let (projection, fields) = expr_resolver
-            .resolve(projection, &input.schema())
-            .context(CreationSnafu)?;
-
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
             Self::try_factor_subexpressions(input, projection)?;
+
+        let fields = factored_projection
+            .iter()
+            .map(|expr| expr.to_field(&factored_input.schema()))
+            .collect::<DaftResult<_>>()?;
 
         let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
 

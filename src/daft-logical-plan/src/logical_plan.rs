@@ -361,9 +361,6 @@ impl LogicalPlan {
                     null_equals_nulls.clone(),
                     *join_type,
                     *join_strategy,
-                    None,  // The suffix is already eagerly computed in the constructor
-                    None,  // the prefix is already eagerly computed in the constructor
-                    false // this is already eagerly computed in the constructor
                 ).unwrap()),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
