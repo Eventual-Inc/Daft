@@ -81,13 +81,16 @@ impl S3CredentialsProviderWrapper {
     }
 
     pub fn get_cached_credentials(&self) -> DaftResult<S3Credentials> {
-        let cached_creds = self.cached_creds.lock().unwrap();
+        let mut cached_creds = self.cached_creds.lock().unwrap();
+
         if let Some(creds) = cached_creds.clone()
             && creds.expiry.map_or(true, |expiry| expiry > Utc::now())
         {
             Ok(creds)
         } else {
-            self.get_new_credentials()
+            let creds = self.provider.provide_credentials()?;
+            *cached_creds = Some(creds.clone());
+            Ok(creds)
         }
     }
 }
