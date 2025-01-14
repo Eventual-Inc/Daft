@@ -22,9 +22,9 @@ use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
-        ExactNumberInfo, ExcludeSelectItem, GroupByExpr, Ident, Query, SelectItem, SetExpr,
-        Statement, StructField, Subscript, TableAlias, TableWithJoins, TimezoneInfo, UnaryOperator,
-        Value, WildcardAdditionalOptions, With,
+        ExactNumberInfo, ExcludeSelectItem, GroupByExpr, Ident, ObjectName, Query, SelectItem,
+        SetExpr, Statement, StructField, Subscript, TableAlias, TableWithJoins, TimezoneInfo,
+        UnaryOperator, Value, WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -1002,21 +1002,11 @@ impl<'a> SQLPlanner<'a> {
                 alias,
                 ..
             } => {
-                let table_name = name.to_string();
-                let Some(rel) = self
-                    .table_map
-                    .get(&table_name)
-                    .cloned()
-                    .or_else(|| self.cte_map().get(&table_name).cloned())
-                    .or_else(|| {
-                        self.catalog()
-                            .get_table(&table_name)
-                            .map(|table| Relation::new(table.into(), table_name.clone()))
-                    })
-                else {
-                    table_not_found_err!(table_name)
+                let rel = if is_table_path(name) {
+                    self.plan_relation_path(name)?
+                } else {
+                    self.plan_relation_table(name)?
                 };
-
                 (rel, alias.clone())
             }
             sqlparser::ast::TableFactor::Derived {
@@ -1064,6 +1054,30 @@ impl<'a> SQLPlanner<'a> {
         } else {
             Ok(rel)
         }
+    }
+
+    /// Plan a `FROM 'path/to/file.extension'` table factor.
+    fn plan_relation_path(&self, _name: &ObjectName) -> SQLPlannerResult<Relation> {
+        unsupported_sql_err!("Unsupported table factor: Path")
+    }
+
+    /// Plan a `FROM <table>` table factor.
+    fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
+        let table_name = name.to_string();
+        let Some(rel) = self
+            .table_map
+            .get(&table_name)
+            .cloned()
+            .or_else(|| self.cte_map().get(&table_name).cloned())
+            .or_else(|| {
+                self.catalog()
+                    .get_table(&table_name)
+                    .map(|table| Relation::new(table.into(), table_name.clone()))
+            })
+        else {
+            table_not_found_err!(table_name)
+        };
+        Ok(rel)
     }
 
     fn plan_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<ExprRef> {
@@ -2206,6 +2220,24 @@ fn idents_to_str(idents: &[Ident]) -> String {
         .map(ident_to_str)
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// Returns true iff the ObjectName is a string literal (single-quoted identifier e.g. 'path/to/file.extension').
+///
+/// # Examples
+///
+/// ```
+/// 'file.ext'           -> true
+/// 'path/to/file.ext'   -> true
+/// 'a'.'b'.'c'         -> false (multiple identifiers)
+/// "path/to/file.ext"   -> false (double-quotes)
+/// hello               -> false (not single-quoted)
+/// ```
+fn is_table_path(name: &ObjectName) -> bool {
+    if name.0.len() != 1 {
+        return false;
+    }
+    matches!(name.0[0].quote_style, Some('\''))
 }
 
 /// unresolves an alias in a projection
