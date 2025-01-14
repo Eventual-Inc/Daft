@@ -72,14 +72,9 @@ where
                 .take(len)
                 .map(|x| -> DaftResult<Option<I>> {
                     x.map(|x| {
-                        if *x < T::Native::zero() {
-                            return Err(DaftError::ComputeError(
-                                "Start index must be non-negative".to_string(),
-                            ));
-                        }
                         (*x).try_into().map_err(|_| {
                             DaftError::ComputeError(
-                                "Error in slice: failed to cast value".to_string(),
+                                "Failed to cast numeric value to target type".to_string(),
                             )
                         })
                     })
@@ -89,13 +84,10 @@ where
     } else {
         Box::new(arr.as_arrow().iter().map(|x| -> DaftResult<Option<I>> {
             x.map(|x| {
-                if *x < T::Native::zero() {
-                    return Err(DaftError::ComputeError(
-                        "Start index must be non-negative".to_string(),
-                    ));
-                }
                 (*x).try_into().map_err(|_| {
-                    DaftError::ComputeError("Error in slice: failed to cast value".to_string())
+                    DaftError::ComputeError(
+                        "Failed to cast numeric value to target type".to_string(),
+                    )
                 })
             })
             .transpose()
