@@ -3,43 +3,55 @@ use daft_table::Table;
 use eyre::Context;
 use spark_connect::{
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
-    spark_connect_service_server::SparkConnectService,
     ExecutePlanResponse,
 };
 use uuid::Uuid;
 
-use crate::{DaftSparkConnectService, Session};
+use crate::Session;
 
-mod root;
-mod write;
-
-pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
-
-pub struct PlanIds {
-    session: String,
-    server_side_session: String,
-    operation: String,
+/// spark responses are stateful, so we need to keep track of the session id, operation id, and server side session id
+#[derive(Clone)]
+pub struct ResponseBuilder {
+    pub(crate) session: String,
+    pub(crate) operation_id: String,
+    pub(crate) server_side_session_id: String,
 }
 
-impl PlanIds {
+impl ResponseBuilder {
+    /// Create a new response builder
     pub fn new(
         client_side_session_id: impl Into<String>,
         server_side_session_id: impl Into<String>,
     ) -> Self {
+        Self::new_with_op_id(
+            client_side_session_id,
+            server_side_session_id,
+            Uuid::new_v4().to_string(),
+        )
+    }
+
+    pub fn new_with_op_id(
+        client_side_session_id: impl Into<String>,
+        server_side_session_id: impl Into<String>,
+        operation_id: impl Into<String>,
+    ) -> Self {
         let client_side_session_id = client_side_session_id.into();
         let server_side_session_id = server_side_session_id.into();
+        let operation_id = operation_id.into();
+
         Self {
             session: client_side_session_id,
-            server_side_session: server_side_session_id,
-            operation: Uuid::new_v4().to_string(),
+            server_side_session_id,
+            operation_id,
         }
     }
 
-    pub fn finished(&self) -> ExecutePlanResponse {
+    /// Send a result complete response to the client
+    pub fn result_complete_response(&self) -> ExecutePlanResponse {
         ExecutePlanResponse {
             session_id: self.session.to_string(),
-            server_side_session_id: self.server_side_session.to_string(),
-            operation_id: self.operation.to_string(),
+            server_side_session_id: self.server_side_session_id.to_string(),
+            operation_id: self.operation_id.to_string(),
             response_id: Uuid::new_v4().to_string(),
             metrics: None,
             observed_metrics: vec![],
@@ -48,7 +60,8 @@ impl PlanIds {
         }
     }
 
-    pub fn gen_response(&self, table: &Table) -> eyre::Result<ExecutePlanResponse> {
+    /// Send an arrow batch response to the client
+    pub fn arrow_batch_response(&self, table: &Table) -> eyre::Result<ExecutePlanResponse> {
         let mut data = Vec::new();
 
         let mut writer = StreamWriter::new(
@@ -76,8 +89,8 @@ impl PlanIds {
 
         let response = ExecutePlanResponse {
             session_id: self.session.to_string(),
-            server_side_session_id: self.server_side_session.to_string(),
-            operation_id: self.operation.to_string(),
+            server_side_session_id: self.server_side_session_id.to_string(),
+            operation_id: self.operation_id.to_string(),
             response_id: Uuid::new_v4().to_string(), // todo: implement this
             metrics: None,                           // todo: implement this
             observed_metrics: vec![],

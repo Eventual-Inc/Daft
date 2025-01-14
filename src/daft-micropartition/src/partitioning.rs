@@ -25,6 +25,7 @@ impl Partition for MicroPartition {
 pub struct MicroPartitionSet {
     pub partitions: DashMap<PartitionId, MicroPartitionRef>,
 }
+
 impl From<Vec<MicroPartitionRef>> for MicroPartitionSet {
     fn from(value: Vec<MicroPartitionRef>) -> Self {
         let partitions = value

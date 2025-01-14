@@ -6,11 +6,29 @@
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
 
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
+#[cfg(feature = "python")]
+mod config;
+#[cfg(feature = "python")]
+mod display;
+#[cfg(feature = "python")]
+mod err;
+#[cfg(feature = "python")]
+mod execute;
+#[cfg(feature = "python")]
+mod response_builder;
+#[cfg(feature = "python")]
+mod session;
+#[cfg(feature = "python")]
+mod translation;
+#[cfg(feature = "python")]
+pub mod util;
+#[cfg(feature = "python")]
 use dashmap::DashMap;
+#[cfg(feature = "python")]
 use eyre::Context;
 #[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
+#[cfg(feature = "python")]
 use spark_connect::{
     analyze_plan_response,
     command::CommandType,
@@ -22,20 +40,18 @@ use spark_connect::{
     InterruptRequest, InterruptResponse, Plan, ReattachExecuteRequest, ReleaseExecuteRequest,
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
+#[cfg(feature = "python")]
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::{info, warn};
+#[cfg(feature = "python")]
+use tracing::{debug, info};
+#[cfg(feature = "python")]
 use uuid::Uuid;
 
+#[cfg(feature = "python")]
 use crate::{display::SparkDisplay, session::Session, translation::SparkAnalyzer};
 
-mod config;
-mod display;
-mod err;
-mod op;
-
-mod session;
-mod translation;
-pub mod util;
+#[cfg(feature = "python")]
+pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
 #[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct ConnectionHandle {
@@ -57,6 +73,7 @@ impl ConnectionHandle {
     }
 }
 
+#[cfg(feature = "python")]
 pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
     info!("Daft-Connect server listening on {addr}");
     let addr = util::parse_spark_connect_address(addr)?;
@@ -117,11 +134,13 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
     Ok(handle)
 }
 
+#[cfg(feature = "python")]
 #[derive(Default)]
 pub struct DaftSparkConnectService {
     client_to_session: DashMap<Uuid, Session>, // To track session data
 }
 
+#[cfg(feature = "python")]
 impl DaftSparkConnectService {
     fn get_session(
         &self,
@@ -142,6 +161,7 @@ impl DaftSparkConnectService {
     }
 }
 
+#[cfg(feature = "python")]
 #[tonic::async_trait]
 impl SparkConnectService for DaftSparkConnectService {
     type ExecutePlanStream = std::pin::Pin<
@@ -177,7 +197,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
         match plan {
             OpType::Root(relation) => {
-                let result = session.handle_root_command(relation, operation).await?;
+                let result = session.execute_command(relation, operation).await?;
                 return Ok(Response::new(result));
             }
             OpType::Command(command) => {
@@ -190,7 +210,7 @@ impl SparkConnectService for DaftSparkConnectService {
                         unimplemented_err!("RegisterFunction not implemented")
                     }
                     CommandType::WriteOperation(op) => {
-                        let result = session.handle_write_command(op, operation).await?;
+                        let result = session.execute_write_operation(op, operation).await?;
                         return Ok(Response::new(result));
                     }
                     CommandType::CreateDataframeView(_) => {
@@ -235,7 +255,9 @@ impl SparkConnectService for DaftSparkConnectService {
                     CommandType::MergeIntoTableCommand(_) => {
                         unimplemented_err!("MergeIntoTableCommand not implemented")
                     }
-                    CommandType::Extension(_) => unimplemented_err!("Extension not implemented"),
+                    CommandType::Extension(_) => {
+                        unimplemented_err!("Extension not implemented")
+                    }
                 }
             }
         }?
@@ -305,7 +327,10 @@ impl SparkConnectService for DaftSparkConnectService {
                     return Err(Status::invalid_argument("op_type is required to be root"));
                 };
 
-                let result = match translation::relation_to_spark_schema(relation).await {
+                let session = self.get_session(&session_id)?;
+                let translator = SparkAnalyzer::new(&session);
+
+                let result = match translator.relation_to_spark_schema(relation).await {
                     Ok(schema) => schema,
                     Err(e) => {
                         return invalid_argument_err!(
@@ -354,7 +379,7 @@ impl SparkConnectService for DaftSparkConnectService {
                 };
 
                 if let Some(level) = level {
-                    warn!("ignoring tree string level: {level:?}");
+                    debug!("ignoring tree string level: {level:?}");
                 };
 
                 let Some(op_type) = plan.op_type else {
@@ -367,13 +392,12 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 if let Some(common) = &input.common {
                     if common.origin.is_some() {
-                        warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+                        debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
                     }
                 }
+                let session = self.get_session(&session_id)?;
 
-                // We're just checking the schema here, so we don't need to use a persistent cache as it won't be used
-                let pset = InMemoryPartitionSetCache::empty();
-                let translator = SparkAnalyzer::new(&pset);
+                let translator = SparkAnalyzer::new(&session);
                 let plan = Box::pin(translator.to_logical_plan(input))
                     .await
                     .unwrap()
@@ -392,7 +416,9 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 Ok(Response::new(response))
             }
-            other => unimplemented_err!("Analyze plan operation is not yet implemented: {other:?}"),
+            other => {
+                unimplemented_err!("Analyze plan operation is not yet implemented: {other:?}")
+            }
         }
     }
 
@@ -456,7 +482,13 @@ impl SparkConnectService for DaftSparkConnectService {
 }
 
 #[cfg(feature = "python")]
-#[pyo3::pyfunction]
+pub enum Runner {
+    Ray,
+    Native,
+}
+
+#[cfg(feature = "python")]
+#[cfg_attr(feature = "python", pyo3::pyfunction)]
 #[pyo3(name = "connect_start", signature = (addr = "sc://0.0.0.0:0"))]
 pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
     start(addr).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
