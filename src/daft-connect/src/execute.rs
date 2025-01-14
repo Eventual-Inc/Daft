@@ -80,18 +80,12 @@ impl Session {
     pub async fn execute_command(
         &self,
         command: Relation,
-        operation_id: String,
+        res: ResponseBuilder<ExecutePlanResponse>,
     ) -> Result<ExecuteStream, Status> {
         use futures::{StreamExt, TryStreamExt};
 
-        let response_builder = ResponseBuilder::new_with_op_id(
-            self.client_side_session_id(),
-            self.server_side_session_id(),
-            operation_id,
-        );
-
         // fallback response
-        let result_complete = response_builder.result_complete_response();
+        let result_complete = res.result_complete_response();
 
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
 
@@ -102,7 +96,7 @@ impl Session {
                 let translator = translation::SparkAnalyzer::new(&this);
                 match command.rel_type {
                     Some(RelType::ShowString(ss)) => {
-                        let response = this.show_string(*ss, response_builder.clone()).await?;
+                        let response = this.show_string(*ss, res.clone()).await?;
                         if tx.send(Ok(response)).await.is_err() {
                             return Ok(());
                         }
@@ -118,7 +112,7 @@ impl Session {
                             let result = result?;
                             let tables = result.get_tables()?;
                             for table in tables.as_slice() {
-                                let response = response_builder.arrow_batch_response(table)?;
+                                let response = res.arrow_batch_response(table)?;
                                 if tx.send(Ok(response)).await.is_err() {
                                     return Ok(());
                                 }
@@ -149,29 +143,23 @@ impl Session {
     pub async fn execute_write_operation(
         &self,
         operation: WriteOperation,
-        operation_id: String,
+        response_builder: ResponseBuilder<ExecutePlanResponse>,
     ) -> Result<ExecuteStream, Status> {
         fn check_write_operation(write_op: &WriteOperation) -> Result<(), Status> {
             if !write_op.sort_column_names.is_empty() {
-                // todo(completeness): implement sort
-                debug!(
-                    "Ignoring sort_column_names: {:?} (not yet implemented)",
-                    write_op.sort_column_names
-                );
+                return not_yet_implemented!("Sort with column names");
             }
-
             if !write_op.partitioning_columns.is_empty() {
-                // todo(completeness): implement partitioning
-                debug!(
-                    "Ignoring partitioning_columns: {:?} (not yet implemented)",
-                    write_op.partitioning_columns
-                );
+                return not_yet_implemented!("Partitioning with column names");
+            }
+            if !write_op.clustering_columns.is_empty() {
+                return not_yet_implemented!("Clustering with column names");
             }
 
             if let Some(bucket_by) = &write_op.bucket_by {
-                // todo(completeness): implement bucketing
-                debug!("Ignoring bucket_by: {bucket_by:?} (not yet implemented)");
+                return not_yet_implemented!("Bucketing by: {:?}", bucket_by);
             }
+
             if !write_op.options.is_empty() {
                 // todo(completeness): implement options
                 debug!(
@@ -180,28 +168,15 @@ impl Session {
                 );
             }
 
-            if !write_op.clustering_columns.is_empty() {
-                // todo(completeness): implement clustering
-                debug!(
-                    "Ignoring clustering_columns: {:?} (not yet implemented)",
-                    write_op.clustering_columns
-                );
-            }
             let mode = SaveMode::try_from(write_op.mode)
                 .map_err(|_| Status::internal("invalid write mode"))?;
 
             if mode == SaveMode::Unspecified {
                 Ok(())
             } else {
-                not_yet_implemented!("save mode: {}:", mode.as_str_name())
+                not_yet_implemented!("save mode: {}", mode.as_str_name())
             }
         }
-
-        let response_builder = ResponseBuilder::new_with_op_id(
-            self.client_side_session_id(),
-            self.server_side_session_id(),
-            operation_id,
-        );
 
         let finished = response_builder.result_complete_response();
 
@@ -264,7 +239,7 @@ impl Session {
     async fn show_string(
         &self,
         show_string: ShowString,
-        response_builder: ResponseBuilder,
+        response_builder: ResponseBuilder<ExecutePlanResponse>,
     ) -> eyre::Result<ExecutePlanResponse> {
         let translator = translation::SparkAnalyzer::new(self);
 
@@ -300,7 +275,6 @@ impl Session {
             .rename("show_string");
 
         let tbl = Table::from_nonempty_columns(vec![s])?;
-        let response = response_builder.arrow_batch_response(&tbl)?;
-        Ok(response)
+        response_builder.arrow_batch_response(&tbl)
     }
 }

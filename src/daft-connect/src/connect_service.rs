@@ -1,12 +1,11 @@
 use dashmap::DashMap;
 use spark_connect::{
-    analyze_plan_response, command::CommandType, plan::OpType,
-    spark_connect_service_server::SparkConnectService, AddArtifactsRequest, AddArtifactsResponse,
-    AnalyzePlanRequest, AnalyzePlanResponse, ArtifactStatusesRequest, ArtifactStatusesResponse,
-    ConfigRequest, ConfigResponse, ExecutePlanRequest, ExecutePlanResponse,
-    FetchErrorDetailsRequest, FetchErrorDetailsResponse, InterruptRequest, InterruptResponse, Plan,
-    ReattachExecuteRequest, ReleaseExecuteRequest, ReleaseExecuteResponse, ReleaseSessionRequest,
-    ReleaseSessionResponse,
+    command::CommandType, plan::OpType, spark_connect_service_server::SparkConnectService,
+    AddArtifactsRequest, AddArtifactsResponse, AnalyzePlanRequest, AnalyzePlanResponse,
+    ArtifactStatusesRequest, ArtifactStatusesResponse, ConfigRequest, ConfigResponse,
+    ExecutePlanRequest, ExecutePlanResponse, FetchErrorDetailsRequest, FetchErrorDetailsResponse,
+    InterruptRequest, InterruptResponse, Plan, ReattachExecuteRequest, ReleaseExecuteRequest,
+    ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{Request, Response, Status};
 use tracing::debug;
@@ -15,6 +14,7 @@ use uuid::Uuid;
 use crate::{
     display::SparkDisplay,
     invalid_argument_err, not_yet_implemented,
+    response_builder::ResponseBuilder,
     session::Session,
     translation::{self, SparkAnalyzer},
     util::FromOptionalField,
@@ -62,7 +62,11 @@ impl SparkConnectService for DaftSparkConnectService {
         let request = request.into_inner();
 
         let session = self.get_session(&request.session_id)?;
-        let operation = request.operation_id.required("operation_id")?;
+        let operation_id = request
+            .operation_id
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        let rb = ResponseBuilder::new(&session, operation_id);
 
         // Proceed with executing the plan...
         let plan = request.plan.required("plan")?;
@@ -70,21 +74,26 @@ impl SparkConnectService for DaftSparkConnectService {
 
         match plan {
             OpType::Root(relation) => {
-                let result = session.execute_command(relation, operation).await?;
-                return Ok(Response::new(result));
+                let result = session.execute_command(relation, rb).await?;
+                Ok(Response::new(result))
             }
             OpType::Command(command) => {
                 let command = command.command_type.required("command_type")?;
 
                 match command {
                     CommandType::WriteOperation(op) => {
-                        let result = session.execute_write_operation(op, operation).await?;
-                        return Ok(Response::new(result));
+                        let result = session.execute_write_operation(op, rb).await?;
+                        Ok(Response::new(result))
                     }
-                    other => not_yet_implemented!("Command type: {}", command_type_to_str(&other)),
+                    other => {
+                        return not_yet_implemented!(
+                            "Command type: {}",
+                            command_type_to_str(&other)
+                        )
+                    }
                 }
             }
-        }?
+        }
     }
 
     #[tracing::instrument(skip_all)]
@@ -96,9 +105,10 @@ impl SparkConnectService for DaftSparkConnectService {
 
         let mut session = self.get_session(&request.session_id)?;
 
-        let Some(operation) = request.operation.and_then(|op| op.op_type) else {
-            return Err(Status::invalid_argument("Missing operation"));
-        };
+        let operation = request
+            .operation
+            .and_then(|op| op.op_type)
+            .required("operation.op_type")?;
 
         use spark_connect::config_request::operation::OpType;
 
@@ -137,6 +147,9 @@ impl SparkConnectService for DaftSparkConnectService {
             ..
         } = request;
 
+        let session = self.get_session(&session_id)?;
+        let rb = ResponseBuilder::new(&session, Uuid::new_v4().to_string());
+
         let analyze = analyze.required("analyze")?;
 
         match analyze {
@@ -147,7 +160,6 @@ impl SparkConnectService for DaftSparkConnectService {
                     return invalid_argument_err!("op_type must be Root");
                 };
 
-                let session = self.get_session(&session_id)?;
                 let translator = SparkAnalyzer::new(&session);
 
                 let result = match translator.relation_to_spark_schema(relation).await {
@@ -158,18 +170,7 @@ impl SparkConnectService for DaftSparkConnectService {
                         );
                     }
                 };
-
-                let schema = analyze_plan_response::Schema {
-                    schema: Some(result),
-                };
-
-                let response = AnalyzePlanResponse {
-                    session_id,
-                    server_side_session_id: String::new(),
-                    result: Some(analyze_plan_response::Result::Schema(schema)),
-                };
-
-                Ok(Response::new(response))
+                Ok(Response::new(rb.schema_response(result)))
             }
             Analyze::DdlParse(DdlParse { ddl_string }) => {
                 let daft_schema = match daft_sql::sql_schema(&ddl_string) {
@@ -181,17 +182,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 let schema = translation::to_spark_datatype(&daft_schema);
 
-                let schema = analyze_plan_response::Schema {
-                    schema: Some(schema),
-                };
-
-                let response = AnalyzePlanResponse {
-                    session_id,
-                    server_side_session_id: String::new(),
-                    result: Some(analyze_plan_response::Result::Schema(schema)),
-                };
-
-                Ok(Response::new(response))
+                Ok(Response::new(rb.schema_response(schema)))
             }
             Analyze::TreeString(TreeString { plan, level }) => {
                 let plan = plan.required("plan")?;
@@ -219,16 +210,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
                 let schema = plan.schema();
                 let tree_string = schema.repr_spark_string();
-
-                let response = AnalyzePlanResponse {
-                    session_id,
-                    server_side_session_id: String::new(),
-                    result: Some(analyze_plan_response::Result::TreeString(
-                        analyze_plan_response::TreeString { tree_string },
-                    )),
-                };
-
-                Ok(Response::new(response))
+                Ok(Response::new(rb.treestring_response(tree_string)))
             }
             other => not_yet_implemented!("Analyze '{other:?}'"),
         }
