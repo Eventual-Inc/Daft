@@ -44,7 +44,7 @@ impl ScalarUDF for BinaryLength {
                 let result = binary_array.length()?;
                 Ok(result.into_series())
             }
-            DataType::FixedSizeBinary(size) => {
+            DataType::FixedSizeBinary(_size) => {
                 let binary_array = inputs[0].downcast::<FixedSizeBinaryArray>()?;
                 let result = binary_array.length()?;
                 Ok(result.into_series())

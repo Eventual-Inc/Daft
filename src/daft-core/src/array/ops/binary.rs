@@ -290,10 +290,7 @@ impl FixedSizeBinaryArray {
         Ok(BinaryArray::from((self.name(), Box::new(builder.into()))))
     }
 
-    pub fn binary_concat(
-        &self,
-        other: &FixedSizeBinaryArray,
-    ) -> std::result::Result<FixedSizeBinaryArray, DaftError> {
+    pub fn binary_concat(&self, other: &Self) -> std::result::Result<Self, DaftError> {
         let self_arrow = self.as_arrow();
         let other_arrow = other.as_arrow();
         let self_size = self_arrow.size();
@@ -328,7 +325,7 @@ impl FixedSizeBinaryArray {
             Some(validity.into()),
         )?;
 
-        Ok(FixedSizeBinaryArray::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
     }
 
     pub fn into_binary(&self) -> std::result::Result<BinaryArray, DaftError> {
