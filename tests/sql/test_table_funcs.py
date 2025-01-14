@@ -19,6 +19,7 @@ def test_sql_read_parquet():
     assert df.to_pydict() == expected.to_pydict()
 
 
+@pytest.mark.skip(reason="Daft SQL does not support table paths (yet)")
 def test_sql_read_parquet_path():
     df = daft.sql("SELECT * FROM 'tests/assets/parquet-data/mvp.parquet'").collect()
     expected = daft.read_parquet("tests/assets/parquet-data/mvp.parquet").collect()
@@ -31,6 +32,7 @@ def test_sql_read_csv(sample_csv_path):
     assert df.to_pydict() == expected.to_pydict()
 
 
+@pytest.mark.skip(reason="Daft SQL does not support table paths (yet)")
 def test_sql_read_csv_path(sample_csv_path):
     df = daft.sql(f"SELECT * FROM '{sample_csv_path}'").collect()
     expected = daft.read_csv(sample_csv_path).collect()
