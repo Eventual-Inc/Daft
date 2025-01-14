@@ -85,9 +85,9 @@ impl ResponseBuilder {
             .wrap_err("Failed to write Arrow chunk to stream writer")?;
 
         let response = ExecutePlanResponse {
-            session_id: self.session.to_string(),
-            server_side_session_id: self.server_side_session_id.to_string(),
-            operation_id: self.operation_id.to_string(),
+            session_id: self.session.clone(),
+            server_side_session_id: self.server_side_session_id.clone(),
+            operation_id: self.operation_id.clone(),
             response_id: Uuid::new_v4().to_string(), // todo: implement this
             metrics: None,                           // todo: implement this
             observed_metrics: vec![],
