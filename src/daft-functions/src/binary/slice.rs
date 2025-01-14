@@ -28,16 +28,21 @@ impl ScalarUDF for BinarySlice {
                 let start = start.to_field(schema)?;
                 let length = length.to_field(schema)?;
 
-                if data.dtype == DataType::Binary
-                    && start.dtype.is_integer()
-                    && (length.dtype.is_integer() || length.dtype.is_null())
-                {
-                    Ok(Field::new(data.name, DataType::Binary))
-                } else {
-                    Err(DaftError::TypeError(format!(
+                match &data.dtype {
+                    DataType::Binary | DataType::FixedSizeBinary(_) => {
+                        if start.dtype.is_integer() && (length.dtype.is_integer() || length.dtype.is_null()) {
+                            Ok(Field::new(data.name, DataType::Binary))
+                        } else {
+                            Err(DaftError::TypeError(format!(
+                                "Expects inputs to binary_slice to be binary, integer and integer or null but received {}, {} and {}",
+                                data.dtype, start.dtype, length.dtype
+                            )))
+                        }
+                    }
+                    _ => Err(DaftError::TypeError(format!(
                         "Expects inputs to binary_slice to be binary, integer and integer or null but received {}, {} and {}",
                         data.dtype, start.dtype, length.dtype
-                    )))
+                    ))),
                 }
             }
             _ => Err(DaftError::SchemaMismatch(format!(

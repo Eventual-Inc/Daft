@@ -287,26 +287,26 @@ def test_binary_slice_errors() -> None:
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "start": [-1, -2, -3, -1]}
     )
-    with pytest.raises(Exception, match="Error in slice: failed to cast value"):
+    with pytest.raises(Exception, match="DaftError::ComputeError Start index must be non-negative"):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
     # Test negative length
     table = MicroPartition.from_pydict({"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"]})
-    with pytest.raises(Exception, match="Error in slice: failed to cast value"):
+    with pytest.raises(Exception, match="DaftError::ComputeError Start index must be non-negative"):
         table.eval_expression_list([col("col").binary.slice(0, -3)])
 
     # Test both negative
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "start": [-2, -1, -3, -2]}
     )
-    with pytest.raises(Exception, match="Error in slice: failed to cast value"):
+    with pytest.raises(Exception, match="DaftError::ComputeError Start index must be non-negative"):
         table.eval_expression_list([col("col").binary.slice(col("start"), -2)])
 
     # Test negative length in column
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "length": [-2, -3, -4, -2]}
     )
-    with pytest.raises(Exception, match="Error in slice: failed to cast value"):
+    with pytest.raises(Exception, match="DaftError::ComputeError Start index must be non-negative"):
         table.eval_expression_list([col("col").binary.slice(0, col("length"))])
 
     # Test slice with wrong number of arguments (too many)

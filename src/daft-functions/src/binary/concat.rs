@@ -1,6 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::{BinaryArray, DataType, Field},
+    array::ops::as_arrow::AsArrow,
+    datatypes::{BinaryArray, DataType, Field, FixedSizeBinaryArray},
     prelude::Schema,
     series::{IntoSeries, Series},
 };
@@ -28,10 +29,27 @@ impl ScalarUDF for BinaryConcat {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;
                 match (&left_field.dtype, &right_field.dtype) {
-                    (DataType::Binary, DataType::Binary) => Ok(Field::new(left_field.name, DataType::Binary)),
-                    (DataType::Binary, DataType::Null) | (DataType::Null, DataType::Binary) => Ok(Field::new(left_field.name, DataType::Binary)),
+                    (DataType::Binary, DataType::Binary) => {
+                        Ok(Field::new(left_field.name, DataType::Binary))
+                    }
+                    (DataType::Binary, DataType::Null) | (DataType::Null, DataType::Binary) => {
+                        Ok(Field::new(left_field.name, DataType::Binary))
+                    }
+                    (DataType::FixedSizeBinary(size1), DataType::FixedSizeBinary(size2)) => Ok(
+                        Field::new(left_field.name, DataType::FixedSizeBinary(size1 + size2)),
+                    ),
+                    (DataType::FixedSizeBinary(_), DataType::Binary)
+                    | (DataType::Binary, DataType::FixedSizeBinary(_)) => {
+                        Ok(Field::new(left_field.name, DataType::Binary))
+                    }
+                    (DataType::FixedSizeBinary(_), DataType::Null)
+                    | (DataType::Null, DataType::FixedSizeBinary(_)) => {
+                        Ok(Field::new(left_field.name, DataType::Binary))
+                    }
                     _ => Err(DaftError::TypeError(format!(
-                        "Expects inputs to concat to be binary, but received {left_field} and {right_field}",
+                        "Expects inputs to concat to be binary, but received {} and {}",
+                        format_field_type_for_error(&left_field),
+                        format_field_type_for_error(&right_field),
                     ))),
                 }
             }
@@ -43,17 +61,56 @@ impl ScalarUDF for BinaryConcat {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+        let result_name = inputs[0].name();
         match (inputs[0].data_type(), inputs[1].data_type()) {
             (DataType::Binary, DataType::Binary) => {
                 let left_array = inputs[0].downcast::<BinaryArray>()?;
                 let right_array = inputs[1].downcast::<BinaryArray>()?;
                 let result = left_array.binary_concat(right_array)?;
-                Ok(result.into_series())
+                Ok(
+                    BinaryArray::from((result_name, Box::new(result.as_arrow().clone())))
+                        .into_series(),
+                )
             }
             (DataType::Binary, DataType::Null) | (DataType::Null, DataType::Binary) => {
                 // If either input is null, return a null array of the same length
                 let len = inputs[0].len();
-                Ok(Series::full_null(inputs[0].name(), &DataType::Binary, len))
+                Ok(Series::full_null(result_name, &DataType::Binary, len))
+            }
+            (DataType::FixedSizeBinary(_), DataType::FixedSizeBinary(_)) => {
+                let left_array = inputs[0].downcast::<FixedSizeBinaryArray>()?;
+                let right_array = inputs[1].downcast::<FixedSizeBinaryArray>()?;
+                let result = left_array.binary_concat(right_array)?;
+                Ok(
+                    FixedSizeBinaryArray::from((result_name, Box::new(result.as_arrow().clone())))
+                        .into_series(),
+                )
+            }
+            (DataType::FixedSizeBinary(_), DataType::Binary)
+            | (DataType::Binary, DataType::FixedSizeBinary(_)) => {
+                let left_array = match inputs[0].data_type() {
+                    DataType::FixedSizeBinary(_) => inputs[0]
+                        .downcast::<FixedSizeBinaryArray>()?
+                        .into_binary()?,
+                    _ => inputs[0].downcast::<BinaryArray>()?.clone(),
+                };
+                let right_array = match inputs[1].data_type() {
+                    DataType::FixedSizeBinary(_) => inputs[1]
+                        .downcast::<FixedSizeBinaryArray>()?
+                        .into_binary()?,
+                    _ => inputs[1].downcast::<BinaryArray>()?.clone(),
+                };
+                let result = left_array.binary_concat(&right_array)?;
+                Ok(
+                    BinaryArray::from((result_name, Box::new(result.as_arrow().clone())))
+                        .into_series(),
+                )
+            }
+            (DataType::FixedSizeBinary(_), DataType::Null)
+            | (DataType::Null, DataType::FixedSizeBinary(_)) => {
+                // If either input is null, return a null array of the same length
+                let len = inputs[0].len();
+                Ok(Series::full_null(result_name, &DataType::Binary, len))
             }
             _ => unreachable!("Type checking done in to_field"),
         }
@@ -62,4 +119,11 @@ impl ScalarUDF for BinaryConcat {
 
 pub fn binary_concat(left: ExprRef, right: ExprRef) -> ExprRef {
     ScalarFunction::new(BinaryConcat {}, vec![left, right]).into()
+}
+
+fn format_field_type_for_error(field: &Field) -> String {
+    match field.dtype {
+        DataType::FixedSizeBinary(_) => format!("{}#Binary", field.name),
+        _ => format!("{}#{}", field.name, field.dtype),
+    }
 }

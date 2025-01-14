@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::{BinaryArray, DataType, Field},
+    datatypes::{BinaryArray, DataType, Field, FixedSizeBinaryArray},
     prelude::Schema,
     series::{IntoSeries, Series},
 };
@@ -26,7 +26,9 @@ impl ScalarUDF for BinaryLength {
         let data = &inputs[0];
         match data.to_field(schema) {
             Ok(data_field) => match &data_field.dtype {
-                DataType::Binary => Ok(Field::new(data_field.name, DataType::UInt64)),
+                DataType::Binary | DataType::FixedSizeBinary(_) => {
+                    Ok(Field::new(data_field.name, DataType::UInt64))
+                }
                 _ => Err(DaftError::TypeError(format!(
                     "Expects input to length to be binary, but received {data_field}",
                 ))),
@@ -36,9 +38,19 @@ impl ScalarUDF for BinaryLength {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let binary_array = inputs[0].downcast::<BinaryArray>()?;
-        let result = binary_array.length()?;
-        Ok(result.into_series())
+        match inputs[0].data_type() {
+            DataType::Binary => {
+                let binary_array = inputs[0].downcast::<BinaryArray>()?;
+                let result = binary_array.length()?;
+                Ok(result.into_series())
+            }
+            DataType::FixedSizeBinary(size) => {
+                let binary_array = inputs[0].downcast::<FixedSizeBinaryArray>()?;
+                let result = binary_array.length()?;
+                Ok(result.into_series())
+            }
+            _ => unreachable!("Type checking is done in to_field"),
+        }
     }
 }
 
