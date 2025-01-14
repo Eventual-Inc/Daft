@@ -23,7 +23,7 @@ use spark_connect::{
 };
 use tracing::debug;
 
-use crate::{nyi, session::Session, util::FromOptionalField, Runner};
+use crate::{not_yet_implemented, session::Session, util::FromOptionalField, Runner};
 
 mod aggregate;
 mod drop;
@@ -146,7 +146,7 @@ impl SparkAnalyzer<'_> {
             }
             RelType::Deduplicate(rel) => self.deduplicate(*rel).await,
             RelType::Sort(rel) => self.sort(*rel).await,
-            plan => nyi!("Unimplemented relation type: \"{}\"", rel_name(&plan))?,
+            plan => not_yet_implemented!("relation type: \"{}\"", rel_name(&plan))?,
         }
     }
 
@@ -216,7 +216,7 @@ impl SparkAnalyzer<'_> {
         } = deduplicate;
 
         if !column_names.is_empty() {
-            nyi!("Deduplicate with column names")?;
+            not_yet_implemented!("Deduplicate with column names")?;
         }
 
         let input = input.required("input")?;
@@ -236,7 +236,7 @@ impl SparkAnalyzer<'_> {
         let input = input.required("input")?;
 
         if is_global == Some(false) {
-            nyi!("Non Global sort")?;
+            not_yet_implemented!("Non Global sort")?;
         }
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
