@@ -1,6 +1,7 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
     collections::{HashMap, HashSet},
+    path::Path,
     rc::Rc,
     sync::Arc,
 };
@@ -21,10 +22,11 @@ use daft_functions::{
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
-        ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
-        ExactNumberInfo, ExcludeSelectItem, GroupByExpr, Ident, ObjectName, Query, SelectItem,
-        SetExpr, Statement, StructField, Subscript, TableAlias, TableWithJoins, TimezoneInfo,
-        UnaryOperator, Value, WildcardAdditionalOptions, With,
+        self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
+        ExactNumberInfo, ExcludeSelectItem, FunctionArg, FunctionArgExpr, GroupByExpr, Ident,
+        ObjectName, Query, SelectItem, SetExpr, Statement, StructField, Subscript, TableAlias,
+        TableFunctionArgs, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
+        WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -1056,9 +1058,24 @@ impl<'a> SQLPlanner<'a> {
         }
     }
 
-    /// Plan a `FROM 'path/to/file.extension'` table factor.
-    fn plan_relation_path(&self, _name: &ObjectName) -> SQLPlannerResult<Relation> {
-        unsupported_sql_err!("Unsupported table factor: Path")
+    /// Plan a `FROM <path>` table factor by rewriting to relevant table-value function.
+    fn plan_relation_path(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
+        let path = name.to_string();
+        let path = &path[1..path.len() - 1]; // strip single-quotes ' '
+        let func = match Path::new(path).extension() {
+            Some(ext) if ext.eq_ignore_ascii_case("csv") => "read_csv",
+            Some(ext) if ext.eq_ignore_ascii_case("json") => "read_json",
+            Some(ext) if ext.eq_ignore_ascii_case("parquet") => "read_parquet",
+            Some(_) => invalid_operation_err!("unsupported file path extension: {}", name),
+            None => invalid_operation_err!("unsupported file path, no extension: {}", name),
+        };
+        let args = TableFunctionArgs {
+            args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(
+                ast::Expr::Value(Value::SingleQuotedString(path.to_string())),
+            ))],
+            settings: None,
+        };
+        self.plan_table_function(func, &args)
     }
 
     /// Plan a `FROM <table>` table factor.
@@ -2280,8 +2297,9 @@ fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> SQLPlannerResult<Ex
 #[cfg(test)]
 mod tests {
     use daft_core::prelude::*;
+    use sqlparser::ast::{Ident, ObjectName};
 
-    use crate::sql_schema;
+    use crate::{planner::is_table_path, sql_schema};
 
     #[test]
     fn test_sql_schema_creates_expected_schema() {
@@ -2323,5 +2341,28 @@ mod tests {
         let result = sql_schema("col1 INT").unwrap();
         let expected = Schema::new(vec![Field::new("col1", DataType::Int32)]).unwrap();
         assert_eq!(&*result, &expected);
+    }
+
+    #[test]
+    fn test_is_table_path() {
+        // single-quoted path should return true
+        assert!(is_table_path(&ObjectName(vec![Ident {
+            value: "path/to/file.ext".to_string(),
+            quote_style: Some('\'')
+        }])));
+        // multiple identifiers should return false
+        assert!(!is_table_path(&ObjectName(vec![
+            Ident::new("a"),
+            Ident::new("b")
+        ])));
+        // double-quoted identifier should return false
+        assert!(!is_table_path(&ObjectName(vec![Ident {
+            value: "path/to/file.ext".to_string(),
+            quote_style: Some('"')
+        }])));
+        // unquoted identifier should return false
+        assert!(!is_table_path(&ObjectName(vec![Ident::new(
+            "path/to/file.ext"
+        )])));
     }
 }

@@ -30,7 +30,8 @@ repos:
       (?x)^(
           tutorials/.*\.ipynb|
           docs/.*\.ipynb|
-          docs/source/user_guide/fotw/data/
+          docs/source/user_guide/fotw/data/|
+          .*\.jsonl
       )$
     args:
     - --autofix
