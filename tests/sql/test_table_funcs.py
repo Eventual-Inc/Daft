@@ -13,14 +13,40 @@ def sample_schema():
     return {"a": daft.DataType.float32(), "b": daft.DataType.string()}
 
 
+@pytest.mark.skip("read_json table function not supported (yet) see github #3196")
+def test_sql_read_json():
+    df = daft.sql("SELECT * FROM read_json('tests/assets/json-data/small.jsonl')").collect()
+    expected = daft.read_json("tests/assets/json-data/small.jsonl").collect()
+    assert df.to_pydict() == expected.to_pydict()
+
+
+@pytest.mark.skip("read_json table function not supported (yet) see github #3196")
+def test_sql_read_json_path():
+    df = daft.sql("SELECT * FROM 'tests/assets/json-data/small.jsonl'").collect()
+    expected = daft.read_json("tests/assets/json-data/small.jsonl").collect()
+    assert df.to_pydict() == expected.to_pydict()
+
+
 def test_sql_read_parquet():
     df = daft.sql("SELECT * FROM read_parquet('tests/assets/parquet-data/mvp.parquet')").collect()
     expected = daft.read_parquet("tests/assets/parquet-data/mvp.parquet").collect()
     assert df.to_pydict() == expected.to_pydict()
 
 
+def test_sql_read_parquet_path():
+    df = daft.sql("SELECT * FROM 'tests/assets/parquet-data/mvp.parquet'").collect()
+    expected = daft.read_parquet("tests/assets/parquet-data/mvp.parquet").collect()
+    assert df.to_pydict() == expected.to_pydict()
+
+
 def test_sql_read_csv(sample_csv_path):
     df = daft.sql(f"SELECT * FROM read_csv('{sample_csv_path}')").collect()
+    expected = daft.read_csv(sample_csv_path).collect()
+    assert df.to_pydict() == expected.to_pydict()
+
+
+def test_sql_read_csv_path(sample_csv_path):
+    df = daft.sql(f"SELECT * FROM '{sample_csv_path}'").collect()
     expected = daft.read_csv(sample_csv_path).collect()
     assert df.to_pydict() == expected.to_pydict()
 
