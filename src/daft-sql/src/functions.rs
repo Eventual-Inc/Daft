@@ -14,7 +14,7 @@ use crate::{
         coalesce::SQLCoalesce, hashing, SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleFloat,
         SQLModuleImage, SQLModuleJson, SQLModuleList, SQLModuleMap, SQLModuleNumeric,
         SQLModulePartitioning, SQLModulePython, SQLModuleSketch, SQLModuleStructs,
-        SQLModuleTemporal, SQLModuleUtf8,
+        SQLModuleTemporal, SQLModuleUri, SQLModuleUtf8,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -36,6 +36,7 @@ pub(crate) static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
     functions.register::<SQLModuleTemporal>();
+    functions.register::<SQLModuleUri>();
     functions.register::<SQLModuleUtf8>();
     functions.register::<SQLModuleConfig>();
     functions.add_fn("coalesce", SQLCoalesce {});
@@ -373,5 +374,33 @@ impl<'a> SQLPlanner<'a> {
             FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),
         }
+    }
+}
+
+/// A namespace for function argument parsing helpers.
+pub(crate) mod args {
+    use common_io_config::IOConfig;
+
+    use super::SQLFunctionArguments;
+    use crate::{error::PlannerError, modules::config::expr_to_iocfg, unsupported_sql_err};
+
+    /// Parses on_error => Literal['raise', 'null'] = 'raise' or err.
+    pub(crate) fn parse_on_error(args: &SQLFunctionArguments) -> Result<bool, PlannerError> {
+        match args.try_get_named::<String>("on_error")?.as_deref() {
+            None => Ok(true),
+            Some("raise") => Ok(true),
+            Some("null") => Ok(false),
+            Some(other) => {
+                unsupported_sql_err!("Expected on_error to be 'raise' or 'null', found '{other}'")
+            }
+        }
+    }
+
+    /// Parses io_config which is used in several SQL functions.
+    pub(crate) fn parse_io_config(args: &SQLFunctionArguments) -> Result<IOConfig, PlannerError> {
+        args.get_named("io_config")
+            .map(expr_to_iocfg)
+            .transpose()
+            .map(|op| op.unwrap_or_default())
     }
 }
