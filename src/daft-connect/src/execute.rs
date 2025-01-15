@@ -1,7 +1,7 @@
 use std::{future::ready, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use daft_dsl::LiteralValue;
 use daft_local_execution::NativeExecutor;
@@ -62,16 +62,15 @@ impl Session {
 
             Runner::Native => {
                 let this = self.clone();
-                let result_stream = tokio::task::spawn_blocking(move || {
-                    let plan = lp.optimize()?;
-                    let cfg = Arc::new(DaftExecutionConfig::default());
-                    let native_executor = NativeExecutor::default();
 
-                    let results = native_executor.run(&plan, &*this.psets, cfg, None)?;
-                    let it = results.into_iter();
-                    Ok::<_, DaftError>(it.collect_vec())
-                })
-                .await??;
+                let plan = lp.optimize()?;
+                let cfg = Arc::new(DaftExecutionConfig::default());
+                let rt = common_runtime::get_compute_runtime();
+                let native_executor = NativeExecutor::default().with_runtime(rt.runtime.clone());
+
+                let results = native_executor.run(&plan, &*this.psets, cfg, None)?;
+                let it = results.into_iter();
+                let result_stream = it.collect_vec();
 
                 Ok(Box::pin(stream::iter(result_stream)))
             }
@@ -91,8 +90,9 @@ impl Session {
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
 
         let this = self.clone();
+        let rt = common_runtime::get_compute_runtime();
 
-        tokio::spawn(async move {
+        rt.spawn(async move {
             let execution_fut = async {
                 let translator = translation::SparkAnalyzer::new(&this);
                 match command.rel_type {

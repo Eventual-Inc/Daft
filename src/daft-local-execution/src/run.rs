@@ -9,7 +9,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
-use daft_local_plan::{translate, LocalPhysicalPlan};
+use daft_local_plan::translate;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
     partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
@@ -60,6 +60,12 @@ impl LocalPartitionIterator {
 )]
 pub struct PyNativeExecutor {
     executor: NativeExecutor,
+}
+
+impl Default for PyNativeExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(feature = "python")]
@@ -125,6 +131,7 @@ pub struct NativeExecutor {
     cancel: CancellationToken,
     runtime: Option<Arc<tokio::runtime::Runtime>>,
     pb_manager: Option<Arc<dyn ProgressBarManager>>,
+    enable_explain_analyze: bool,
 }
 
 impl Default for NativeExecutor {
@@ -132,22 +139,29 @@ impl Default for NativeExecutor {
         Self {
             cancel: CancellationToken::new(),
             runtime: None,
-            pb_manager: None,
+            pb_manager: should_enable_progress_bar().then(make_progress_bar_manager),
+            enable_explain_analyze: should_enable_explain_analyze(),
         }
     }
 }
+
 impl NativeExecutor {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn with_runtime(mut self, runtime: tokio::runtime::Runtime) -> Self {
-        self.runtime = Some(Arc::new(runtime));
+    pub fn with_runtime(mut self, runtime: Arc<tokio::runtime::Runtime>) -> Self {
+        self.runtime = Some(runtime);
         self
     }
 
     pub fn with_progress_bar_manager(mut self, pb_manager: Arc<dyn ProgressBarManager>) -> Self {
         self.pb_manager = Some(pb_manager);
+        self
+    }
+
+    pub fn enable_explain_analyze(mut self, b: bool) -> Self {
+        self.enable_explain_analyze = b;
         self
     }
 
@@ -164,10 +178,12 @@ impl NativeExecutor {
         let cancel = self.cancel.clone();
         let pipeline = physical_plan_to_pipeline(&physical_plan, psets, &cfg)?;
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
+
         let rt = self.runtime.clone();
+        let pb_manager = self.pb_manager.clone();
+        let enable_explain_analyze = self.enable_explain_analyze;
 
         let handle = std::thread::spawn(move || {
-            let pb_manager = should_enable_progress_bar().then(make_progress_bar_manager);
             let runtime = rt.unwrap_or_else(|| {
                 Arc::new(
                     tokio::runtime::Builder::new_current_thread()
@@ -204,7 +220,7 @@ impl NativeExecutor {
                         _ => {}
                     }
                 }
-                if should_enable_explain_analyze() {
+                if enable_explain_analyze {
                     let curr_ms = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .expect("Time went backwards")
@@ -356,83 +372,4 @@ impl IntoIterator for ExecutionEngineResult {
             handle: Some(self.handle),
         }
     }
-}
-
-pub fn run_local(
-    physical_plan: &LocalPhysicalPlan,
-    psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
-    cfg: Arc<DaftExecutionConfig>,
-    results_buffer_size: Option<usize>,
-    cancel: CancellationToken,
-) -> DaftResult<ExecutionEngineResult> {
-    refresh_chrome_trace();
-    let pipeline = physical_plan_to_pipeline(physical_plan, psets, &cfg)?;
-    let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
-    let handle = std::thread::spawn(move || {
-        let pb_manager = should_enable_progress_bar().then(make_progress_bar_manager);
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create tokio runtime");
-        let execution_task = async {
-            let memory_manager = get_or_init_memory_manager();
-            let mut runtime_handle = ExecutionRuntimeContext::new(
-                cfg.default_morsel_size,
-                memory_manager.clone(),
-                pb_manager,
-            );
-            let receiver = pipeline.start(true, &mut runtime_handle)?;
-
-            while let Some(val) = receiver.recv().await {
-                if tx.send(val).await.is_err() {
-                    break;
-                }
-            }
-
-            while let Some(result) = runtime_handle.join_next().await {
-                match result {
-                    Ok(Err(e)) => {
-                        runtime_handle.shutdown().await;
-                        return DaftResult::Err(e.into());
-                    }
-                    Err(e) => {
-                        runtime_handle.shutdown().await;
-                        return DaftResult::Err(Error::JoinError { source: e }.into());
-                    }
-                    _ => {}
-                }
-            }
-            if should_enable_explain_analyze() {
-                let curr_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_millis();
-                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                let mut file = File::create(file_name)?;
-                writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
-            }
-            Ok(())
-        };
-
-        let local_set = tokio::task::LocalSet::new();
-        local_set.block_on(&runtime, async {
-            tokio::select! {
-                biased;
-                () = cancel.cancelled() => {
-                    log::info!("Execution engine cancelled");
-                    Ok(())
-                }
-                _ = tokio::signal::ctrl_c() => {
-                    log::info!("Received Ctrl-C, shutting down execution engine");
-                    Ok(())
-                }
-                result = execution_task => result,
-            }
-        })
-    });
-
-    Ok(ExecutionEngineResult {
-        handle,
-        receiver: rx,
-    })
 }

@@ -81,10 +81,10 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
         shutdown_signal: Some(shutdown_signal),
         port,
     };
+    let runtime = common_runtime::get_io_runtime(true);
 
     std::thread::spawn(move || {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(async {
+        let result = runtime.runtime.block_on(async {
             let incoming = {
                 let listener = tokio::net::TcpListener::from_std(listener)
                     .wrap_err("Failed to create TcpListener from std::net::TcpListener")?;

@@ -26,7 +26,7 @@ use common_runtime::{RuntimeRef, RuntimeTask};
 use lazy_static::lazy_static;
 use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
 use resource_manager::MemoryManager;
-pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
+pub use run::{ExecutionEngineResult, NativeExecutor};
 use runtime_stats::{RuntimeStatsContext, TimedFuture};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 use tracing::Instrument;
