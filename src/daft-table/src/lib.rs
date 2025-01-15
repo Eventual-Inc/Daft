@@ -566,6 +566,7 @@ impl Table {
                     Lt => Ok(lhs.lt(&rhs)?.into_series()),
                     LtEq => Ok(lhs.lte(&rhs)?.into_series()),
                     Eq => Ok(lhs.equal(&rhs)?.into_series()),
+                    EqNullSafe => Ok(lhs.eq_null_safe(&rhs)?.into_series()),
                     NotEq => Ok(lhs.not_equal(&rhs)?.into_series()),
                     GtEq => Ok(lhs.gte(&rhs)?.into_series()),
                     Gt => Ok(lhs.gt(&rhs)?.into_series()),

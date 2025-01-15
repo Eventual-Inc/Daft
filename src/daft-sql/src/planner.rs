@@ -1822,6 +1822,7 @@ impl<'a> SQLPlanner<'a> {
             BinaryOperator::Multiply => Ok(Operator::Multiply),
             BinaryOperator::Divide => Ok(Operator::TrueDivide),
             BinaryOperator::Eq => Ok(Operator::Eq),
+            BinaryOperator::Spaceship => Ok(Operator::EqNullSafe),
             BinaryOperator::Modulo => Ok(Operator::Modulus),
             BinaryOperator::Gt => Ok(Operator::Gt),
             BinaryOperator::Lt => Ok(Operator::Lt),
