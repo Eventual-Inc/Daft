@@ -62,6 +62,7 @@ See also [DataFrame Creation](https://www.getdaft.io/projects/docs/en/stable/api
 
 
 (Showing first 4 of 4 rows)
+
 ```
 
 You just created your first DataFrame!
