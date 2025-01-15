@@ -457,7 +457,7 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr == expr._expr)
 
-    def eq_null_safe(self, other: object) -> Expression:
+    def eq_null_safe(self, other: Expression) -> Expression:
         """Performs a null-safe equality comparison between two expressions.
 
         Unlike regular equality (==), null-safe equality (<=> or IS NOT DISTINCT FROM):
