@@ -1512,41 +1512,25 @@ def reduce(
 
     Then, the reduce instruction is applied to each `i`th slice across the child lists.
     """
-    pending_materializations: dict[str, MultiOutputPartitionTask[PartitionT]] = {}
-    inputs_to_reduce = []
-    metadatas = []
+    materializations = list()
     stage_id = next(stage_id_counter)
 
     # Dispatch all fanouts.
     for step in fanout_plan:
-        # Check any completed materializations, collect their partitions and metadatas, and add to reduce inputs
-        newly_completed = [(i, m) for i, m in pending_materializations.items() if m.done()]
-        for i, completed in newly_completed:
-            del pending_materializations[i]
-            inputs_to_reduce.append(deque(completed.partitions()))
-            metadatas.append(deque(completed.partition_metadatas()))
-
-        # Process another step in the fanout plan
         if isinstance(step, PartitionTaskBuilder):
-            finalized_step = step.finalize_partition_task_multi_output(stage_id=stage_id)
-            pending_materializations[finalized_step.id()] = finalized_step
-            yield finalized_step
-        else:
-            yield step
+            step = step.finalize_partition_task_multi_output(stage_id=stage_id)
+            materializations.append(step)
+        yield step
 
     # All fanouts dispatched. Wait for all of them to materialize
     # (since we need all of them to emit even a single reduce).
-    while pending_materializations:
-        newly_completed = [(i, m) for i, m in pending_materializations.items() if m.done()]
-        for i, completed in newly_completed:
-            del pending_materializations[i]
-            inputs_to_reduce.append(deque(completed.partitions()))
-            metadatas.append(deque(completed.partition_metadatas()))
+    while any(not _.done() for _ in materializations):
+        logger.debug("reduce blocked on completion of all sources in: %s", materializations)
+        yield None
 
-        if pending_materializations:
-            logger.debug("reduce blocked on completion of all sources in: %s", pending_materializations)
-            yield None
-
+    inputs_to_reduce = [deque(_.partitions()) for _ in materializations]
+    metadatas = [deque(_.partition_metadatas()) for _ in materializations]
+    del materializations
     if not isinstance(reduce_instructions, list):
         reduce_instructions = [reduce_instructions] * len(inputs_to_reduce[0])
     reduce_instructions_ = deque(reduce_instructions)
@@ -1697,7 +1681,7 @@ def _best_effort_next_step(
         return (None, False)
     else:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output(stage_id=stage_id)
+            step = step.finalize_partition_task_single_output(stage_id=stage_id, cache_metadata_on_done=False)
             return (step, True)
         elif isinstance(step, PartitionTask):
             return (step, False)
@@ -1787,7 +1771,7 @@ class Materialize:
             try:
                 step = next(self.child_plan)
                 if isinstance(step, PartitionTaskBuilder):
-                    step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                    step = step.finalize_partition_task_single_output(stage_id=stage_id, cache_metadata_on_done=False)
                     self.materializations.append(step)
                     num_final_yielded += 1
                     logger.debug("[plan-%s] YIELDING final task (%s so far)", stage_id, num_final_yielded)
