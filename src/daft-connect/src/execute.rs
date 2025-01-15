@@ -12,7 +12,7 @@ use daft_table::Table;
 use eyre::bail;
 use futures::{
     stream::{self, BoxStream},
-    StreamExt, TryFutureExt, TryStreamExt,
+    StreamExt, TryStreamExt,
 };
 use itertools::Itertools;
 use pyo3::Python;
@@ -64,14 +64,14 @@ impl Session {
                 let this = self.clone();
 
                 let plan = lp.optimize()?;
+
                 let cfg = Arc::new(DaftExecutionConfig::default());
-                let rt = common_runtime::get_compute_runtime();
-                let native_executor = NativeExecutor::default().with_runtime(rt.runtime.clone());
+                let native_executor =
+                    NativeExecutor::default().with_runtime(self.compute_runtime.runtime.clone());
 
                 let results = native_executor.run(&plan, &*this.psets, cfg, None)?;
                 let it = results.into_iter();
                 let result_stream = it.collect_vec();
-
                 Ok(Box::pin(stream::iter(result_stream)))
             }
         }
@@ -90,9 +90,7 @@ impl Session {
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
 
         let this = self.clone();
-        let rt = common_runtime::get_compute_runtime();
-
-        rt.spawn(async move {
+        self.compute_runtime.spawn(async move {
             let execution_fut = async {
                 let translator = translation::SparkAnalyzer::new(&this);
                 match command.rel_type {
@@ -144,7 +142,7 @@ impl Session {
     pub async fn execute_write_operation(
         &self,
         operation: WriteOperation,
-        response_builder: ResponseBuilder<ExecutePlanResponse>,
+        res: ResponseBuilder<ExecutePlanResponse>,
     ) -> Result<ExecuteStream, Status> {
         fn check_write_operation(write_op: &WriteOperation) -> Result<(), Status> {
             if !write_op.sort_column_names.is_empty() {
@@ -179,60 +177,70 @@ impl Session {
             }
         }
 
-        let finished = response_builder.result_complete_response();
+        let finished = res.result_complete_response();
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
 
         let this = self.clone();
 
-        let result = async move {
-            check_write_operation(&operation)?;
+        tokio::spawn(async move {
+            let result = async {
+                check_write_operation(&operation)?;
 
-            let WriteOperation {
-                input,
-                source,
-                save_type,
-                ..
-            } = operation;
+                let WriteOperation {
+                    input,
+                    source,
+                    save_type,
+                    ..
+                } = operation;
 
-            let input = input.required("input")?;
-            let source = source.required("source")?;
+                let input = input.required("input")?;
+                let source = source.required("source")?;
 
-            let file_format: FileFormat = source.parse()?;
+                let file_format: FileFormat = source.parse()?;
 
-            let Some(save_type) = save_type else {
-                bail!("Save type is required");
+                let Some(save_type) = save_type else {
+                    bail!("Save type is required");
+                };
+
+                let path = match save_type {
+                    SaveType::Path(path) => path,
+                    SaveType::Table(_) => {
+                        return not_yet_implemented!("write to table").map_err(|e| e.into())
+                    }
+                };
+
+                let translator = translation::SparkAnalyzer::new(&this);
+
+                let plan = translator.to_logical_plan(input).await?;
+
+                let plan = plan.table_write(&path, file_format, None, None, None)?;
+
+                let mut result_stream = this.run_query(plan).await?;
+
+                // this is so we make sure the operation is actually done
+                // before we return
+                //
+                // an example where this is important is if we write to a parquet file
+                // and then read immediately after, we need to wait for the write to finish
+                while let Some(_result) = result_stream.next().await {}
+
+                Ok(())
             };
 
-            let path = match save_type {
-                SaveType::Path(path) => path,
-                SaveType::Table(_) => {
-                    return not_yet_implemented!("write to table").map_err(|e| e.into())
-                }
-            };
-
-            let translator = translation::SparkAnalyzer::new(&this);
-
-            let plan = translator.to_logical_plan(input).await?;
-
-            let plan = plan.table_write(&path, file_format, None, None, None)?;
-
-            let mut result_stream = this.run_query(plan).await?;
-
-            // this is so we make sure the operation is actually done
-            // before we return
-            //
-            // an example where this is important is if we write to a parquet file
-            // and then read immediately after, we need to wait for the write to finish
-            while let Some(_result) = result_stream.next().await {}
-
-            Ok(())
-        };
-
-        let result = result.map_err(|e| {
-            Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
+            if let Err(e) = result.await {
+                let _ = tx.send(Err(e)).await;
+            }
         });
+        let stream = ReceiverStream::new(rx);
 
-        let future = result.and_then(|()| ready(Ok(finished)));
-        let stream = futures::stream::once(future);
+        let stream = stream
+            .map_err(|e| {
+                Status::internal(
+                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
+                )
+            })
+            .chain(stream::once(ready(Ok(finished))));
 
         Ok(Box::pin(stream))
     }

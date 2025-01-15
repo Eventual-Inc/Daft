@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use common_runtime::RuntimeRef;
 use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use uuid::Uuid;
 
@@ -15,6 +16,7 @@ pub struct Session {
     /// MicroPartitionSet associated with this session
     /// this will be filled up as the user runs queries
     pub(crate) psets: Arc<InMemoryPartitionSetCache>,
+    pub(crate) compute_runtime: RuntimeRef,
 }
 
 impl Session {
@@ -34,6 +36,7 @@ impl Session {
             id,
             server_side_session_id,
             psets: Arc::new(InMemoryPartitionSetCache::empty()),
+            compute_runtime: common_runtime::get_compute_runtime(),
         }
     }
 

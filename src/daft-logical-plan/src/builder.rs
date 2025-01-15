@@ -615,39 +615,47 @@ impl LogicalPlanBuilder {
     }
 
     pub fn optimize(&self) -> DaftResult<Self> {
-        let optimizer = OptimizerBuilder::default()
-            .when(
-                self.config
-                    .as_ref()
-                    .map_or(false, |conf| conf.enable_join_reordering),
-                |builder| builder.reorder_joins(),
-            )
-            .simplify_expressions()
-            .build();
+        let cfg = self.config.clone();
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
-        let optimized_plan = optimizer.optimize(
-            unoptimized_plan,
-            |new_plan, rule_batch, pass, transformed, seen| {
-                if transformed {
-                    log::debug!(
-                        "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
-                        rule_batch,
-                        pass,
-                        if seen { "an already seen" } else { "a new" },
-                        new_plan.repr_ascii(true),
-                    );
-                } else {
-                    log::debug!(
-                        "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
-                        rule_batch,
-                        pass,
-                        new_plan.repr_ascii(true),
-                    );
-                }
-            },
-        )?;
+
+        // we run this in a separate thread to avoid blocking the main thread while optimizing
+        // TODO: remove the `block_on`s that are currently blocking the thread.
+        let optimized_plan = std::thread::spawn(move || {
+            let optimizer = OptimizerBuilder::default()
+                .when(
+                    cfg
+                        .as_ref()
+                        .map_or(false, |conf| conf.enable_join_reordering),
+                    |builder| builder.reorder_joins(),
+                )
+                .simplify_expressions()
+                .build();
+
+            let optimized_plan = optimizer.optimize(
+                unoptimized_plan,
+                |new_plan, rule_batch, pass, transformed, seen| {
+                    if transformed {
+                        log::debug!(
+                            "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
+                            rule_batch,
+                            pass,
+                            if seen { "an already seen" } else { "a new" },
+                            new_plan.repr_ascii(true),
+                        );
+                    } else {
+                        log::debug!(
+                            "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
+                            rule_batch,
+                            pass,
+                            new_plan.repr_ascii(true),
+                        );
+                    }
+                },
+            )?;
+            Ok::<_, DaftError>(optimized_plan)
+        }).join().map_err(|e| DaftError::InternalError(format!("Error optimizing logical plan: {:?}", e)))??;
 
         let builder = Self::new(optimized_plan, self.config.clone());
         Ok(builder)
