@@ -146,7 +146,7 @@ impl SparkAnalyzer<'_> {
             }
             RelType::Deduplicate(rel) => self.deduplicate(*rel).await,
             RelType::Sort(rel) => self.sort(*rel).await,
-            plan => not_yet_implemented!("relation type: \"{}\"", rel_name(&plan))?,
+            plan => not_yet_implemented!(r#"relation type: "{}""#, rel_name(&plan))?,
         }
     }
 
