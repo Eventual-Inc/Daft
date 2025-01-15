@@ -7,8 +7,6 @@ import pytest
 import daft
 from tests.conftest import get_tests_daft_runner_name
 
-PYARROW_GE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (8, 0, 0)
-
 
 class MockException(Exception):
     pass
@@ -100,9 +98,6 @@ def test_iter_rows(make_df, materialized):
     ],
 )
 def test_iter_rows_column_formats(make_df, format, data, expected):
-    # Test that df.__iter__ produces the correct rows in the correct order.
-    # It should work regardless of whether the dataframe has already been materialized or not.
-
     df = make_df({"a": data})
 
     rows = list(df.iter_rows(column_format=format))
