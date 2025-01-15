@@ -441,14 +441,38 @@ impl JoinGraphBuilder {
     /// Joins that added conditions to `join_conds_to_resolve` will pop them off the stack after they have been resolved.
     /// Combining each of their resolved `left_on` conditions with their respective resolved `right_on` conditions produces
     /// a join edge between the relation used in the left condition and the relation used in the right condition.
-    fn process_node(&mut self, plan: &LogicalPlanRef) {
-        let mut cur_node = plan;
+    fn process_node(&mut self, mut plan: &LogicalPlanRef) {
         // Go down the linear chain of Projects and Filters until we hit a join or an unreorderable operator.
         // If we hit a join, we should process all the Projects and Filters that we encountered before the join.
-        // If we hit an unreorderable operator, the plan at the top of this linear chain becomes a relation for
+        // If we hit an unreorderable operator, the root plan at the top of this linear chain becomes a relation for
         // join ordering.
+        //
+        // For example, consider this query tree:
+        //
+        //                InnerJoin (a = d)
+        //                    /        \
+        //                   /       Project
+        //                  /        (d, quad <- double + double)
+        //                 /               \
+        //     InnerJoin (a = b)    InnerJoin (c = d)
+        //        /        \           /         \
+        // Scan(a)      Scan(b)   Filter        Scan(d)
+        //                        (c < 5)
+        //                           |
+        //                        Project
+        //                        (c <- c_prime, double <- c_prime + c_prime)
+        //                           |
+        //                        Filter
+        //                        (c_prime > 0)
+        //                           |
+        //                        Scan(c_prime)
+        //
+        // In between InnerJoin(c=d) and Scan(c_prime) there are Filter and Project nodes. Since there is no join below InnerJoin(c=d),
+        // we take the Filter(c<5) operator as the relation to pass into the join (as opposed to using Scan(c_prime) and pushing up
+        // the Projects and Filters above it).
+        let root_plan = plan;
         loop {
-            match &**cur_node {
+            match &**plan {
                 // TODO(desmond): There are potentially more reorderable nodes. For example, we can move repartitions around.
                 LogicalPlan::Project(Project {
                     input, projection, ..
@@ -460,7 +484,7 @@ impl JoinGraphBuilder {
                     // To be able to reorder through the current projection, all unresolved columns must either have a
                     // zero-computation projection, or must not be projected by the current Project node (i.e. it should be
                     // resolved from some other branch in the query tree).
-                    let schema = cur_node.schema();
+                    let schema = plan.schema();
                     let reorderable_project =
                         self.join_conds_to_resolve.iter().all(|(name, _, done)| {
                             *done
@@ -468,22 +492,25 @@ impl JoinGraphBuilder {
                                 || projection_input_mapping.contains_key(name.as_str())
                         });
                     if reorderable_project {
-                        cur_node = input;
+                        plan = input;
                     } else {
-                        self.process_leaf_relation(plan);
+                        // Encountered a non-reorderable Project. Add the root plan at the top of the current linear chain as a relation to join.
+                        self.add_relation(root_plan);
                         break;
                     }
                 }
-                LogicalPlan::Filter(Filter { input, .. }) => cur_node = input,
-                // Since we hit a join,
+                LogicalPlan::Filter(Filter { input, .. }) => plan = input,
+                // Since we hit a join, we need to process the linear chain of Projects and Filters that were encountered starting
+                // from the plan at the root of the linear chain to the current plan.
                 LogicalPlan::Join(Join {
                     left_on, join_type, ..
                 }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
-                    self.process_linear_chain(plan, cur_node);
+                    self.process_linear_chain(root_plan, plan);
                     break;
                 }
                 _ => {
-                    self.process_leaf_relation(plan);
+                    // Encountered a non-reorderable node. Add the root plan at the top of the current linear chain as a relation to join.
+                    self.add_relation(root_plan);
                     break;
                 }
             }
@@ -501,7 +528,7 @@ impl JoinGraphBuilder {
         ending_node: &LogicalPlanRef,
     ) {
         let mut cur_node = starting_node;
-        while cur_node != ending_node {
+        while !Arc::ptr_eq(cur_node, ending_node) {
             match &**cur_node {
                 LogicalPlan::Project(Project {
                     input, projection, ..
@@ -543,7 +570,7 @@ impl JoinGraphBuilder {
                     // Continue to children.
                     cur_node = input;
                 }
-                _ => unreachable!(),
+                _ => unreachable!("process_linear_chain is only called with a linear chain of Project and Filters that end with a Join"),
             }
         }
         match &**cur_node {
@@ -614,7 +641,7 @@ impl JoinGraphBuilder {
 
     /// `process_leaf_relation` is a helper function that processes an unreorderable node that sits below some
     /// Join node(s). `plan` will become one of the relations involved in join ordering.
-    fn process_leaf_relation(&mut self, plan: &LogicalPlanRef) {
+    fn add_relation(&mut self, plan: &LogicalPlanRef) {
         // All unresolved columns coming out of this node should be marked as resolved.
         // TODO(desmond): At this point we should perform a fresh join reorder optimization starting from this
         // node as the root node. We can do this once we add the optimizer rule.
