@@ -6,6 +6,12 @@ site_name: Daft Documentation
 
 docs_dir: docs-v2
 
+# Scarf pixel for tracking analytics
+image:
+  referrerpolicy: "no-referrer-when-downgrade"
+  src: "https://static.scarf.sh/a.png?x-pxid=c9065f3a-a090-4243-8f69-145d5de7bfca"
+
+
 # Repository
 repo_name: Daft
 repo_url: https://github.com/Eventual-Inc/Daft
