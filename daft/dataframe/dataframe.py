@@ -552,7 +552,7 @@ class DataFrame:
         self,
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
-        write_mode: Literal["append", "overwrite"] = "append",
+        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -566,7 +566,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. `overwrite-partitions` will overwrite only the partitions that are being written. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -576,8 +576,12 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
-        if write_mode not in ["append", "overwrite"]:
-            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+            raise ValueError(
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+            )
+        if write_mode == "overwrite-partitions" and partition_cols is None:
+            raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -598,7 +602,9 @@ class DataFrame:
         assert write_df._result is not None
 
         if write_mode == "overwrite":
-            overwrite_files(write_df, root_dir, io_config)
+            overwrite_files(write_df, root_dir, io_config, False)
+        elif write_mode == "overwrite-partitions":
+            overwrite_files(write_df, root_dir, io_config, True)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -624,7 +630,7 @@ class DataFrame:
     def write_csv(
         self,
         root_dir: Union[str, pathlib.Path],
-        write_mode: Literal["append", "overwrite"] = "append",
+        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -637,15 +643,19 @@ class DataFrame:
 
         Args:
             root_dir (str): root file path to write parquet files to.
-            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. `overwrite-partitions` will overwrite only the partitions that are being written. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
-        if write_mode not in ["append", "overwrite"]:
-            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+            raise ValueError(
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+            )
+        if write_mode == "overwrite-partitions" and partition_cols is None:
+            raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -665,7 +675,9 @@ class DataFrame:
         assert write_df._result is not None
 
         if write_mode == "overwrite":
-            overwrite_files(write_df, root_dir, io_config)
+            overwrite_files(write_df, root_dir, io_config, False)
+        elif write_mode == "overwrite-partitions":
+            overwrite_files(write_df, root_dir, io_config, True)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
