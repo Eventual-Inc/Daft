@@ -7,7 +7,7 @@ import pathlib
 import sys
 import urllib.parse
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from daft.convert import from_pydict
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
@@ -20,7 +20,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHED_FSES: dict[tuple[str, IOConfig | None], tuple[pafs.FileSystem, datetime | None]] = {}
+
+@dataclasses.dataclass(frozen=True)
+class PyArrowFSWithExpiry:
+    fs: pafs.FileSystem
+    expiry: datetime | None
+
+
+_CACHED_FSES: dict[tuple[str, IOConfig | None], PyArrowFSWithExpiry] = {}
 
 
 def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
@@ -31,10 +38,10 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSy
     global _CACHED_FSES
 
     if (protocol, io_config) in _CACHED_FSES:
-        fs, expiry = _CACHED_FSES[(protocol, io_config)]
+        fs = _CACHED_FSES[(protocol, io_config)]
 
-        if expiry is None or expiry > datetime.now(timezone.utc):
-            return fs
+        if fs.expiry is None or fs.expiry > datetime.now(timezone.utc):
+            return fs.fs
 
     return None
 
@@ -43,15 +50,7 @@ def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | N
     """Put pyarrow filesystem in cache under provided protocol."""
     global _CACHED_FSES
 
-    _CACHED_FSES[(protocol, io_config)] = (fs, expiry)
-
-
-@dataclasses.dataclass(frozen=True)
-class ListingInfo:
-    path: str
-    size: int
-    type: Literal["file", "directory"]
-    rows: int | None = None
+    _CACHED_FSES[(protocol, io_config)] = PyArrowFSWithExpiry(fs, expiry)
 
 
 def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
@@ -328,7 +327,7 @@ def glob_path_with_stats(
     file_format: FileFormat | None,
     io_config: IOConfig | None,
 ) -> FileInfos:
-    """Glob a path, returning a list ListingInfo."""
+    """Glob a path, returning a FileInfos."""
     files = io_glob(path, io_config=io_config)
     filepaths_to_infos = {f["path"]: {"size": f["size"], "type": f["type"]} for f in files}
 
