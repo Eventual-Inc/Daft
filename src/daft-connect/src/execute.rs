@@ -65,8 +65,9 @@ impl Session {
                 let result_stream = tokio::task::spawn_blocking(move || {
                     let plan = lp.optimize()?;
                     let cfg = Arc::new(DaftExecutionConfig::default());
-                    let native_executor = NativeExecutor::from_logical_plan_builder(&plan)?;
-                    let results = native_executor.run(&*this.psets, cfg, None)?;
+                    let native_executor = NativeExecutor::default();
+
+                    let results = native_executor.run(&plan, &*this.psets, cfg, None)?;
                     let it = results.into_iter();
                     Ok::<_, DaftError>(it.collect_vec())
                 })

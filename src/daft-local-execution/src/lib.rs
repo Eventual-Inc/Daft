@@ -124,7 +124,7 @@ pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
-    progress_bar_manager: Option<Box<dyn ProgressBarManager>>,
+    progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
 }
 
 impl ExecutionRuntimeContext {
@@ -132,7 +132,7 @@ impl ExecutionRuntimeContext {
     pub fn new(
         default_morsel_size: usize,
         memory_manager: Arc<MemoryManager>,
-        progress_bar_manager: Option<Box<dyn ProgressBarManager>>,
+        progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
     ) -> Self {
         Self {
             worker_set: TaskSet::new(),

@@ -31,7 +31,7 @@ use {
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
-    progress_bar::make_progress_bar_manager,
+    progress_bar::{make_progress_bar_manager, ProgressBarManager},
     resource_manager::get_or_init_memory_manager,
     Error, ExecutionRuntimeContext,
 };
@@ -65,22 +65,18 @@ pub struct PyNativeExecutor {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyNativeExecutor {
-    #[staticmethod]
-    pub fn from_logical_plan_builder(
-        logical_plan_builder: &PyLogicalPlanBuilder,
-        py: Python,
-    ) -> PyResult<Self> {
-        py.allow_threads(|| {
-            Ok(Self {
-                executor: NativeExecutor::from_logical_plan_builder(&logical_plan_builder.builder)?,
-            })
-        })
+    #[new]
+    pub fn new() -> Self {
+        Self {
+            executor: NativeExecutor::new(),
+        }
     }
 
-    #[pyo3(signature = (psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (logical_plan_builder, psets, cfg, results_buffer_size=None))]
     pub fn run<'a>(
         &self,
         py: Python<'a>,
+        logical_plan_builder: &PyLogicalPlanBuilder,
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
@@ -103,7 +99,12 @@ impl PyNativeExecutor {
         let psets = InMemoryPartitionSetCache::new(&native_psets);
         let out = py.allow_threads(|| {
             self.executor
-                .run(&psets, cfg.config, results_buffer_size)
+                .run(
+                    &logical_plan_builder.builder,
+                    &psets,
+                    cfg.config,
+                    results_buffer_size,
+                )
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
@@ -119,37 +120,123 @@ impl PyNativeExecutor {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct NativeExecutor {
-    local_physical_plan: Arc<LocalPhysicalPlan>,
     cancel: CancellationToken,
+    runtime: Option<Arc<tokio::runtime::Runtime>>,
+    pb_manager: Option<Arc<dyn ProgressBarManager>>,
 }
 
-impl NativeExecutor {
-    pub fn from_logical_plan_builder(
-        logical_plan_builder: &LogicalPlanBuilder,
-    ) -> DaftResult<Self> {
-        let logical_plan = logical_plan_builder.build();
-        let local_physical_plan = translate(&logical_plan)?;
-
-        Ok(Self {
-            local_physical_plan,
+impl Default for NativeExecutor {
+    fn default() -> Self {
+        Self {
             cancel: CancellationToken::new(),
-        })
+            runtime: None,
+            pb_manager: None,
+        }
+    }
+}
+impl NativeExecutor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_runtime(mut self, runtime: tokio::runtime::Runtime) -> Self {
+        self.runtime = Some(Arc::new(runtime));
+        self
+    }
+
+    pub fn with_progress_bar_manager(mut self, pb_manager: Arc<dyn ProgressBarManager>) -> Self {
+        self.pb_manager = Some(pb_manager);
+        self
     }
 
     pub fn run(
         &self,
+        logical_plan_builder: &LogicalPlanBuilder,
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
-        run_local(
-            &self.local_physical_plan,
-            psets,
-            cfg,
-            results_buffer_size,
-            self.cancel.clone(),
-        )
+        let logical_plan = logical_plan_builder.build();
+        let physical_plan = translate(&logical_plan)?;
+        refresh_chrome_trace();
+        let cancel = self.cancel.clone();
+        let pipeline = physical_plan_to_pipeline(&physical_plan, psets, &cfg)?;
+        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
+        let rt = self.runtime.clone();
+
+        let handle = std::thread::spawn(move || {
+            let pb_manager = should_enable_progress_bar().then(make_progress_bar_manager);
+            let runtime = rt.unwrap_or_else(|| {
+                Arc::new(
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("Failed to create tokio runtime"),
+                )
+            });
+            let execution_task = async {
+                let memory_manager = get_or_init_memory_manager();
+                let mut runtime_handle = ExecutionRuntimeContext::new(
+                    cfg.default_morsel_size,
+                    memory_manager.clone(),
+                    pb_manager,
+                );
+                let receiver = pipeline.start(true, &mut runtime_handle)?;
+
+                while let Some(val) = receiver.recv().await {
+                    if tx.send(val).await.is_err() {
+                        break;
+                    }
+                }
+
+                while let Some(result) = runtime_handle.join_next().await {
+                    match result {
+                        Ok(Err(e)) => {
+                            runtime_handle.shutdown().await;
+                            return DaftResult::Err(e.into());
+                        }
+                        Err(e) => {
+                            runtime_handle.shutdown().await;
+                            return DaftResult::Err(Error::JoinError { source: e }.into());
+                        }
+                        _ => {}
+                    }
+                }
+                if should_enable_explain_analyze() {
+                    let curr_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Time went backwards")
+                        .as_millis();
+                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                    let mut file = File::create(file_name)?;
+                    writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
+                }
+                Ok(())
+            };
+
+            let local_set = tokio::task::LocalSet::new();
+            local_set.block_on(&runtime, async {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => {
+                        log::info!("Execution engine cancelled");
+                        Ok(())
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        log::info!("Received Ctrl-C, shutting down execution engine");
+                        Ok(())
+                    }
+                    result = execution_task => result,
+                }
+            })
+        });
+
+        Ok(ExecutionEngineResult {
+            handle,
+            receiver: rx,
+        })
     }
 }
 
