@@ -135,7 +135,7 @@ impl SparkAnalyzer<'_> {
                 };
                 self.show_string(plan_id, *ss).await
             }
-            plan => not_yet_implemented!("relation type: \"{}\"", rel_name(&plan))?,
+            plan => not_yet_implemented!(r#"relation type: "{}""#, rel_name(&plan))?,
         }
     }
 
