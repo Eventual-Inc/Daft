@@ -2148,7 +2148,6 @@ dependencies = [
  "bytes",
  "common-error",
  "common-hashable-float-wrapper",
- "common-io-config",
  "common-runtime",
  "daft-core",
  "daft-dsl",
