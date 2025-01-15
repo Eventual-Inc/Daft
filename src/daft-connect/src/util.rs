@@ -1,5 +1,7 @@
 use std::net::ToSocketAddrs;
 
+use tonic::Status;
+
 pub fn parse_spark_connect_address(addr: &str) -> eyre::Result<std::net::SocketAddr> {
     // Check if address starts with "sc://"
     if !addr.starts_with("sc://") {
@@ -17,6 +19,26 @@ pub fn parse_spark_connect_address(addr: &str) -> eyre::Result<std::net::SocketA
         .into_iter()
         .next()
         .ok_or_else(|| eyre::eyre!("No addresses found for hostname"))
+}
+
+/// An extension trait that adds the method `required` to any Option.
+/// Useful for extracting the values out of protobuf fields as they are always wrapped in options
+pub trait FromOptionalField<T> {
+    /// Converts an optional protobuf field to a different type, returning an
+    /// error if None.
+    fn required(self, field: impl Into<String>) -> Result<T, Status>;
+}
+
+impl<T> FromOptionalField<T> for Option<T> {
+    fn required(self, field: impl Into<String>) -> Result<T, Status> {
+        match self {
+            None => Err(Status::internal(format!(
+                "Required field '{}' is missing",
+                field.into()
+            ))),
+            Some(t) => Ok(t),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -11,12 +11,12 @@ use daft_micropartition::{
     MicroPartition,
 };
 use daft_table::Table;
-use eyre::{bail, Context};
+use eyre::bail;
 use futures::TryStreamExt;
 use spark_connect::{relation::RelType, Limit, Relation, ShowString};
 use tracing::debug;
 
-use crate::{session::Session, Runner};
+use crate::{not_yet_implemented, session::Session, Runner};
 
 mod aggregate;
 mod drop;
@@ -113,60 +113,29 @@ impl SparkAnalyzer<'_> {
         };
 
         match rel_type {
-            RelType::Limit(l) => self
-                .limit(*l)
-                .await
-                .wrap_err("Failed to apply limit to logical plan"),
-            RelType::Range(r) => self
-                .range(r)
-                .wrap_err("Failed to apply range to logical plan"),
-            RelType::Project(p) => self
-                .project(*p)
-                .await
-                .wrap_err("Failed to apply project to logical plan"),
-            RelType::Aggregate(a) => self
-                .aggregate(*a)
-                .await
-                .wrap_err("Failed to apply aggregate to logical plan"),
-            RelType::WithColumns(w) => self
-                .with_columns(*w)
-                .await
-                .wrap_err("Failed to apply with_columns to logical plan"),
-            RelType::ToDf(t) => self
-                .to_df(*t)
-                .await
-                .wrap_err("Failed to apply to_df to logical plan"),
+            RelType::Limit(l) => self.limit(*l).await,
+            RelType::Range(r) => self.range(r),
+            RelType::Project(p) => self.project(*p).await,
+            RelType::Aggregate(a) => self.aggregate(*a).await,
+            RelType::WithColumns(w) => self.with_columns(*w).await,
+            RelType::ToDf(t) => self.to_df(*t).await,
             RelType::LocalRelation(l) => {
                 let Some(plan_id) = common.plan_id else {
                     bail!("Plan ID is required for LocalRelation");
                 };
                 self.local_relation(plan_id, l)
-                    .wrap_err("Failed to apply local_relation to logical plan")
             }
-            RelType::WithColumnsRenamed(w) => self
-                .with_columns_renamed(*w)
-                .await
-                .wrap_err("Failed to apply with_columns_renamed to logical plan"),
-            RelType::Read(r) => read::read(r)
-                .await
-                .wrap_err("Failed to apply read to logical plan"),
-            RelType::Drop(d) => self
-                .drop(*d)
-                .await
-                .wrap_err("Failed to apply drop to logical plan"),
-            RelType::Filter(f) => self
-                .filter(*f)
-                .await
-                .wrap_err("Failed to apply filter to logical plan"),
+            RelType::WithColumnsRenamed(w) => self.with_columns_renamed(*w).await,
+            RelType::Read(r) => read::read(r).await,
+            RelType::Drop(d) => self.drop(*d).await,
+            RelType::Filter(f) => self.filter(*f).await,
             RelType::ShowString(ss) => {
                 let Some(plan_id) = common.plan_id else {
                     bail!("Plan ID is required for LocalRelation");
                 };
-                self.show_string(plan_id, *ss)
-                    .await
-                    .wrap_err("Failed to show string")
+                self.show_string(plan_id, *ss).await
             }
-            plan => bail!("Unsupported relation type: \"{}\"", rel_name(&plan)),
+            plan => not_yet_implemented!(r#"relation type: "{}""#, rel_name(&plan))?,
         }
     }
 
@@ -179,8 +148,7 @@ impl SparkAnalyzer<'_> {
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        plan.limit(i64::from(limit), false)
-            .wrap_err("Failed to apply limit to logical plan")
+        plan.limit(i64::from(limit), false).map_err(Into::into)
     }
 
     /// right now this just naively applies a limit to the logical plan

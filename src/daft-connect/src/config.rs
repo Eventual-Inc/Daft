@@ -6,7 +6,7 @@ use spark_connect::{
 };
 use tonic::Status;
 
-use crate::Session;
+use crate::session::Session;
 
 impl Session {
     fn config_response(&self) -> ConfigResponse {

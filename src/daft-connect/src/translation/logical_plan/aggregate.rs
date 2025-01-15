@@ -1,9 +1,9 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use eyre::{bail, WrapErr};
+use eyre::bail;
 use spark_connect::aggregate::GroupType;
 
 use super::SparkAnalyzer;
-use crate::translation::to_daft_expr;
+use crate::{translation::to_daft_expr, util::FromOptionalField};
 
 impl SparkAnalyzer<'_> {
     pub async fn aggregate(
@@ -19,14 +19,11 @@ impl SparkAnalyzer<'_> {
             grouping_sets,
         } = aggregate;
 
-        let Some(input) = input else {
-            bail!("input is required");
-        };
+        let input = input.required("input")?;
 
         let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        let group_type = GroupType::try_from(group_type)
-            .wrap_err_with(|| format!("Invalid group type: {group_type:?}"))?;
+        let group_type = GroupType::try_from(group_type)?;
 
         assert_groupby(group_type)?;
 
@@ -48,9 +45,7 @@ impl SparkAnalyzer<'_> {
             .map(to_daft_expr)
             .try_collect()?;
 
-        plan = plan
-        .aggregate(aggregate_expressions.clone(), grouping_expressions.clone())
-        .wrap_err_with(|| format!("Failed to apply aggregate to logical plan aggregate_expressions={aggregate_expressions:?} grouping_expressions={grouping_expressions:?}"))?;
+        plan = plan.aggregate(aggregate_expressions, grouping_expressions)?;
 
         Ok(plan)
     }
