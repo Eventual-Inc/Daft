@@ -458,7 +458,8 @@ impl LogicalPlanBuilder {
         let (left_on, _) = expr_resolver.resolve(left_on, &left_plan.schema())?;
         let (right_on, _) = expr_resolver.resolve(right_on, &right_plan.schema())?;
 
-        let (left_on, right_on) = ops::Join::rename_join_keys(left_on, right_on);
+        // TODO(kevin): we should do this, but it has not been properly used before and is nondeterministic, which causes some tests to break
+        // let (left_on, right_on) = ops::Join::rename_join_keys(left_on, right_on);
 
         let (right_plan, right_on) = ops::Join::rename_right_columns(
             left_plan.clone(),

@@ -306,8 +306,6 @@ fn find_inner_join(
 
             let (left_keys, right_keys) = join_keys.iter().cloned().unzip();
 
-            let (left_keys, right_keys) = Join::rename_join_keys(left_keys, right_keys);
-
             return Ok(LogicalPlan::Join(Join::try_new(
                 left_input,
                 right_input,

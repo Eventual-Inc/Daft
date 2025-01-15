@@ -119,8 +119,6 @@ impl UnnestScalarSubquery {
                 let (decorrelated_subquery, subquery_on, input_on) =
                     pull_up_correlated_cols(subquery_plan)?;
 
-                let (input_on, subquery_on) = Join::rename_join_keys(input_on, subquery_on);
-
                 if subquery_on.is_empty() {
                     // uncorrelated scalar subquery
                     Ok(Arc::new(LogicalPlan::Join(Join::try_new(
@@ -322,8 +320,6 @@ impl OptimizerRule for UnnestPredicateSubquery {
                     if subquery_on.is_empty() {
                         return Err(DaftError::ValueError("Expected IN/EXISTS subquery to be correlated, found uncorrelated subquery.".to_string()));
                     }
-
-                    let (input_on, subquery_on) = Join::rename_join_keys(input_on, subquery_on);
 
                     Ok(Arc::new(LogicalPlan::Join(Join::try_new(
                         curr_input,

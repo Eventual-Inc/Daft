@@ -105,6 +105,8 @@ impl Join {
         })
     }
 
+    /// Add a project under the right side plan when necessary in order to resolve naming conflicts
+    /// between left and right side columns.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn rename_right_columns(
         left: LogicalPlanRef,
@@ -222,7 +224,7 @@ impl Join {
     /// ```
     ///
     /// For more details, see [issue #2649](https://github.com/Eventual-Inc/Daft/issues/2649).
-
+    #[allow(dead_code)]
     pub(crate) fn rename_join_keys(
         left_exprs: Vec<Arc<Expr>>,
         right_exprs: Vec<Arc<Expr>>,
