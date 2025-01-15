@@ -10,6 +10,8 @@ import boto3
 import pytest
 
 import daft
+import daft.context
+from tests.conftest import get_tests_daft_runner_name
 from tests.io.mock_aws_server import start_service, stop_process
 
 
@@ -72,7 +74,7 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
             key_id=aws_credentials["AWS_ACCESS_KEY_ID"],
             access_key=aws_credentials["AWS_SECRET_ACCESS_KEY"],
             session_token=aws_credentials["AWS_SESSION_TOKEN"],
-            expiry=(datetime.datetime.now() + datetime.timedelta(seconds=1)),
+            expiry=(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=1)),
         )
 
     static_config = daft.io.IOConfig(
@@ -113,7 +115,26 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
     assert count_get_credentials == 2
 
     df.write_parquet(output_file_path, io_config=dynamic_config)
-    assert count_get_credentials == 2
+
+    is_ray_runner = (
+        get_tests_daft_runner_name() == "ray"
+    )  # hack because ray runner will not increment `count_get_credentials`
+    assert count_get_credentials == 2 or is_ray_runner
+
+    df2 = daft.read_parquet(output_file_path, io_config=static_config)
+
+    assert df.to_arrow() == df2.to_arrow()
+
+    df.write_parquet(output_file_path, io_config=dynamic_config, write_mode="overwrite")
+    assert count_get_credentials == 2 or is_ray_runner
+
+    df2 = daft.read_parquet(output_file_path, io_config=static_config)
+
+    assert df.to_arrow() == df2.to_arrow()
+
+    time.sleep(1)
+    df.write_parquet(output_file_path, io_config=dynamic_config, write_mode="overwrite")
+    assert count_get_credentials == 3 or is_ray_runner
 
     df2 = daft.read_parquet(output_file_path, io_config=static_config)
 

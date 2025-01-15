@@ -1518,7 +1518,9 @@ version = "0.3.0-dev0"
 dependencies = [
  "aws-credential-types",
  "chrono",
+ "common-error",
  "common-py-serde",
+ "derivative",
  "derive_more",
  "pyo3",
  "secrecy",
@@ -5281,6 +5283,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e484fd2c8b4cb67ab05a318f1fd6fa8f199fcc30819f08f07d200809dba26c15"
 dependencies = [
  "cfg-if",
+ "chrono",
  "indexmap 2.7.0",
  "indoc",
  "inventory",
