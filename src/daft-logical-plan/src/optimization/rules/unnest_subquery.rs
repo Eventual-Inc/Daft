@@ -119,29 +119,33 @@ impl UnnestScalarSubquery {
                 let (decorrelated_subquery, subquery_on, input_on) =
                     pull_up_correlated_cols(subquery_plan)?;
 
-                if subquery_on.is_empty() {
-                    // uncorrelated scalar subquery
-                    Ok(Arc::new(LogicalPlan::Join(Join::try_new(
-                        curr_input,
-                        decorrelated_subquery,
-                        vec![],
-                        vec![],
-                        None,
-                        JoinType::Inner,
-                        None,
-                    )?)))
+                // use inner join when uncorrelated so that filter can be pushed into join and other optimizations
+                let join_type = if subquery_on.is_empty() {
+                    JoinType::Inner
                 } else {
-                    // correlated scalar subquery
-                    Ok(Arc::new(LogicalPlan::Join(Join::try_new(
-                        curr_input,
-                        decorrelated_subquery,
-                        input_on,
-                        subquery_on,
-                        None,
-                        JoinType::Left,
-                        None,
-                    )?)))
-                }
+                    JoinType::Left
+                };
+
+                let (decorrelated_subquery, subquery_on) = Join::rename_right_columns(
+                    curr_input.clone(),
+                    decorrelated_subquery,
+                    input_on.clone(),
+                    subquery_on,
+                    join_type,
+                    None,
+                    None,
+                    false,
+                )?;
+
+                Ok(Arc::new(LogicalPlan::Join(Join::try_new(
+                    curr_input,
+                    decorrelated_subquery,
+                    input_on,
+                    subquery_on,
+                    None,
+                    join_type,
+                    None,
+                )?)))
             })?;
 
         Ok(Transformed::yes((new_input, new_exprs)))
