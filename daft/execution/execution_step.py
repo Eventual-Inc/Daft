@@ -149,7 +149,9 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         """Whether this partition task is guaranteed to result in an empty partition."""
         return len(self.partial_metadatas) > 0 and all(meta.num_rows == 0 for meta in self.partial_metadatas)
 
-    def finalize_partition_task_single_output(self, stage_id: int, cache_metadata_on_done: bool = True) -> SingleOutputPartitionTask[PartitionT]:
+    def finalize_partition_task_single_output(
+        self, stage_id: int, cache_metadata_on_done: bool = True
+    ) -> SingleOutputPartitionTask[PartitionT]:
         """Create a SingleOutputPartitionTask from this PartitionTaskBuilder.
 
         Returns a "frozen" version of this PartitionTask that cannot have instructions added.
@@ -174,7 +176,9 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             cache_metadata_on_done=cache_metadata_on_done,
         )
 
-    def finalize_partition_task_multi_output(self, stage_id: int, cache_metadata_on_done: bool = True) -> MultiOutputPartitionTask[PartitionT]:
+    def finalize_partition_task_multi_output(
+        self, stage_id: int, cache_metadata_on_done: bool = True
+    ) -> MultiOutputPartitionTask[PartitionT]:
         """Create a MultiOutputPartitionTask from this PartitionTaskBuilder.
 
         Same as finalize_partition_task_single_output, except the output of this PartitionTask is a list of partitions.
@@ -236,7 +240,7 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._result is not None, "Cannot cache metadata without a result"
         if self._partition_metadata is not None:
             return
-        
+
         [partial_metadata] = self.partial_metadatas
         self._partition_metadata = self.result().metadata().merge_with_partial(partial_metadata)
 
@@ -303,7 +307,7 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         """
         self.cache_metadata()
         assert self._partition_metadatas is not None
-        return self._partition_metadatas        
+        return self._partition_metadatas
 
     def micropartition(self, index: int) -> MicroPartition:
         """Get the raw vPartition of the result."""
