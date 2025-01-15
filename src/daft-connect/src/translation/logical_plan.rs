@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::Schema;
-use daft_dsl::LiteralValue;
+use daft_dsl::{col, LiteralValue};
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{
     partitioning::{
@@ -11,12 +11,19 @@ use daft_micropartition::{
     MicroPartition,
 };
 use daft_table::Table;
-use eyre::bail;
+use eyre::{bail, Context};
 use futures::TryStreamExt;
-use spark_connect::{relation::RelType, Limit, Relation, ShowString};
+use spark_connect::{
+    expression::{
+        sort_order::{NullOrdering, SortDirection},
+        SortOrder,
+    },
+    relation::RelType,
+    Deduplicate, Limit, Relation, ShowString, Sort,
+};
 use tracing::debug;
 
-use crate::{not_yet_implemented, session::Session, Runner};
+use crate::{not_yet_implemented, session::Session, util::FromOptionalField, Runner};
 
 mod aggregate;
 mod drop;
@@ -30,6 +37,8 @@ mod with_columns;
 mod with_columns_renamed;
 
 use pyo3::{intern, prelude::*};
+
+use super::to_daft_expr;
 
 #[derive(Clone)]
 pub struct SparkAnalyzer<'a> {
@@ -135,6 +144,8 @@ impl SparkAnalyzer<'_> {
                 };
                 self.show_string(plan_id, *ss).await
             }
+            RelType::Deduplicate(rel) => self.deduplicate(*rel).await,
+            RelType::Sort(rel) => self.sort(*rel).await,
             plan => not_yet_implemented!(r#"relation type: "{}""#, rel_name(&plan))?,
         }
     }
@@ -195,6 +206,82 @@ impl SparkAnalyzer<'_> {
         let schema = tbl.schema.clone();
 
         self.create_in_memory_scan(plan_id as _, schema, vec![tbl])
+    }
+
+    async fn deduplicate(&self, deduplicate: Deduplicate) -> eyre::Result<LogicalPlanBuilder> {
+        let Deduplicate {
+            input,
+            column_names,
+            ..
+        } = deduplicate;
+
+        if !column_names.is_empty() {
+            not_yet_implemented!("Deduplicate with column names")?;
+        }
+
+        let input = input.required("input")?;
+
+        let plan = Box::pin(self.to_logical_plan(*input)).await?;
+
+        plan.distinct().map_err(Into::into)
+    }
+
+    async fn sort(&self, sort: Sort) -> eyre::Result<LogicalPlanBuilder> {
+        let Sort {
+            input,
+            order,
+            is_global,
+        } = sort;
+
+        let input = input.required("input")?;
+
+        if is_global == Some(false) {
+            not_yet_implemented!("Non Global sort")?;
+        }
+
+        let plan = Box::pin(self.to_logical_plan(*input)).await?;
+        if order.is_empty() {
+            return plan
+                .sort(vec![col("*")], vec![false], vec![false])
+                .map_err(Into::into);
+        }
+        let mut sort_by = Vec::with_capacity(order.len());
+        let mut descending = Vec::with_capacity(order.len());
+        let mut nulls_first = Vec::with_capacity(order.len());
+
+        for SortOrder {
+            child,
+            direction,
+            null_ordering,
+        } in order
+        {
+            let expr = child.required("child")?;
+            let expr = to_daft_expr(&expr)?;
+
+            let sort_direction = SortDirection::try_from(direction)
+                .wrap_err_with(|| format!("Invalid sort direction: {direction}"))?;
+
+            let desc = match sort_direction {
+                SortDirection::Ascending => false,
+                SortDirection::Descending | SortDirection::Unspecified => true,
+            };
+
+            let null_ordering = NullOrdering::try_from(null_ordering)
+                .wrap_err_with(|| format!("Invalid sort nulls: {null_ordering}"))?;
+
+            let nf = match null_ordering {
+                NullOrdering::SortNullsUnspecified => desc,
+                NullOrdering::SortNullsFirst => true,
+                NullOrdering::SortNullsLast => false,
+            };
+
+            sort_by.push(expr);
+            descending.push(desc);
+            nulls_first.push(nf);
+        }
+
+        plan.sort(sort_by, descending, nulls_first)
+            .map_err(Into::into)
     }
 }
 
