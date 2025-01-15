@@ -62,6 +62,7 @@ pub struct PyNativeExecutor {
     executor: NativeExecutor,
 }
 
+#[cfg(feature = "python")]
 impl Default for PyNativeExecutor {
     fn default() -> Self {
         Self::new()
