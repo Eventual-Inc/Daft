@@ -1,7 +1,9 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{DataType, Field, Schema},
+    datatypes::DataType,
+    prelude::{Field, IntoSeries, Schema},
     series::Series,
+    with_match_integer_daft_types,
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
@@ -56,7 +58,46 @@ impl ScalarUDF for BinarySlice {
         let data = &inputs[0];
         let start = &inputs[1];
         let length = &inputs[2];
-        data.binary_slice(start, length)
+
+        match data.data_type() {
+            DataType::Binary => data.with_binary_array(|arr| {
+                with_match_integer_daft_types!(start.data_type(), |$T| {
+                    if length.data_type().is_integer() {
+                        with_match_integer_daft_types!(length.data_type(), |$U| {
+                            Ok(arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
+                        })
+                    } else if length.data_type().is_null() {
+                        Ok(arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
+                    } else {
+                        Err(DaftError::TypeError(format!(
+                            "slice not implemented for length type {}",
+                            length.data_type()
+                        )))
+                    }
+                })
+            }),
+            DataType::FixedSizeBinary(_) => {
+                let fixed_arr = data.fixed_size_binary()?;
+                with_match_integer_daft_types!(start.data_type(), |$T| {
+                    if length.data_type().is_integer() {
+                        with_match_integer_daft_types!(length.data_type(), |$U| {
+                            Ok(fixed_arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
+                        })
+                    } else if length.data_type().is_null() {
+                        Ok(fixed_arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
+                    } else {
+                        Err(DaftError::TypeError(format!(
+                            "slice not implemented for length type {}",
+                            length.data_type()
+                        )))
+                    }
+                })
+            }
+            DataType::Null => Ok(data.clone()),
+            dt => Err(DaftError::TypeError(format!(
+                "Operation not implemented for type {dt}"
+            ))),
+        }
     }
 }
 

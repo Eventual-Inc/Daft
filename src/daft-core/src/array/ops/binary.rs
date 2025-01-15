@@ -7,7 +7,8 @@ use num_traits::Zero;
 use crate::{
     array::ops::as_arrow::AsArrow,
     datatypes::{
-        BinaryArray, DaftIntegerType, DaftNumericType, DataArray, FixedSizeBinaryArray, UInt64Array,
+        BinaryArray, DaftIntegerType, DaftNumericType, DataArray, DataType, FixedSizeBinaryArray,
+        UInt64Array,
     },
 };
 
@@ -235,54 +236,9 @@ impl FixedSizeBinaryArray {
         J: DaftIntegerType,
         <J as DaftNumericType>::Native: Ord + TryInto<usize>,
     {
-        let self_arrow = self.as_arrow();
-        let output_len = if self_arrow.len() == 1 {
-            std::cmp::max(start.len(), length.map_or(1, |l| l.len()))
-        } else {
-            self_arrow.len()
-        };
-
-        let self_iter = create_broadcasted_fixed_size_binary_iter(self, output_len);
-        let start_iter = create_broadcasted_numeric_iter::<I, usize>(start, output_len);
-        let length_iter = match length {
-            Some(length) => create_broadcasted_numeric_iter::<J, usize>(length, output_len),
-            None => Box::new(iter::repeat_with(|| Ok(None))),
-        };
-
-        let mut builder = arrow2::array::MutableBinaryArray::<i64>::new();
-        let mut validity = arrow2::bitmap::MutableBitmap::new();
-
-        for ((val, start), length) in self_iter.zip(start_iter).zip(length_iter) {
-            match (val, start?, length?) {
-                (Some(val), Some(start), Some(length)) => {
-                    if start >= val.len() || length == 0 {
-                        builder.push::<&[u8]>(None);
-                        validity.push(false);
-                    } else {
-                        let end = (start + length).min(val.len());
-                        let slice = &val[start..end];
-                        builder.push(Some(slice));
-                        validity.push(true);
-                    }
-                }
-                (Some(val), Some(start), None) => {
-                    if start >= val.len() {
-                        builder.push::<&[u8]>(None);
-                        validity.push(false);
-                    } else {
-                        let slice = &val[start..];
-                        builder.push(Some(slice));
-                        validity.push(true);
-                    }
-                }
-                _ => {
-                    builder.push::<&[u8]>(None);
-                    validity.push(false);
-                }
-            }
-        }
-
-        Ok(BinaryArray::from((self.name(), Box::new(builder.into()))))
+        let binary_series = self.cast(&DataType::Binary)?;
+        let binary_array = binary_series.binary()?;
+        binary_array.binary_slice(start, length)
     }
 
     pub fn binary_concat(&self, other: &Self) -> std::result::Result<Self, DaftError> {

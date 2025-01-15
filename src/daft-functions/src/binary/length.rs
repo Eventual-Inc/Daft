@@ -52,6 +52,11 @@ impl ScalarUDF for BinaryLength {
             _ => unreachable!("Type checking is done in to_field"),
         }
     }
+
+    // fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    //     let result = inputs[0].downcast::<BinaryArray>()?.length()?;
+    //     Ok(result.into_series())
+    // }
 }
 
 #[must_use]

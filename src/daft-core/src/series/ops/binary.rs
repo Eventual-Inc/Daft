@@ -1,10 +1,6 @@
 use common_error::{DaftError, DaftResult};
 
-use crate::{
-    datatypes::*,
-    series::{array_impl::IntoSeries, Series},
-    with_match_integer_daft_types,
-};
+use crate::{datatypes::*, series::Series};
 
 impl Series {
     pub fn with_binary_array(
@@ -17,63 +13,6 @@ impl Series {
                 "Operation not implemented for type {}",
                 self.data_type()
             ))),
-            DataType::Null => Ok(self.clone()),
-            dt => Err(DaftError::TypeError(format!(
-                "Operation not implemented for type {dt}"
-            ))),
-        }
-    }
-
-    pub fn binary_length(&self) -> DaftResult<Self> {
-        match self.data_type() {
-            DataType::Binary => self.with_binary_array(|arr| Ok(arr.length()?.into_series())),
-            DataType::FixedSizeBinary(_) => Ok(self.fixed_size_binary()?.length()?.into_series()),
-            DataType::Null => Ok(self.clone()),
-            dt => Err(DaftError::TypeError(format!(
-                "Operation not implemented for type {dt}"
-            ))),
-        }
-    }
-
-    pub fn binary_concat(&self, other: &Self) -> DaftResult<Self> {
-        self.with_binary_array(|arr| Ok(arr.binary_concat(other.binary()?)?.into_series()))
-    }
-
-    pub fn binary_slice(&self, start: &Self, length: &Self) -> DaftResult<Self> {
-        match self.data_type() {
-            DataType::Binary => self.with_binary_array(|arr| {
-                with_match_integer_daft_types!(start.data_type(), |$T| {
-                    if length.data_type().is_integer() {
-                        with_match_integer_daft_types!(length.data_type(), |$U| {
-                            Ok(arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
-                        })
-                    } else if length.data_type().is_null() {
-                        Ok(arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
-                    } else {
-                        Err(DaftError::TypeError(format!(
-                            "slice not implemented for length type {}",
-                            length.data_type()
-                        )))
-                    }
-                })
-            }),
-            DataType::FixedSizeBinary(_) => {
-                let fixed_arr = self.fixed_size_binary()?;
-                with_match_integer_daft_types!(start.data_type(), |$T| {
-                    if length.data_type().is_integer() {
-                        with_match_integer_daft_types!(length.data_type(), |$U| {
-                            Ok(fixed_arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
-                        })
-                    } else if length.data_type().is_null() {
-                        Ok(fixed_arr.binary_slice(start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
-                    } else {
-                        Err(DaftError::TypeError(format!(
-                            "slice not implemented for length type {}",
-                            length.data_type()
-                        )))
-                    }
-                })
-            }
             DataType::Null => Ok(self.clone()),
             dt => Err(DaftError::TypeError(format!(
                 "Operation not implemented for type {dt}"
