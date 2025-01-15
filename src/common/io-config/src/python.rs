@@ -2,20 +2,20 @@ use std::{
     any::Any,
     hash::{Hash, Hasher},
     sync::Arc,
-    time::{Duration, SystemTime},
 };
 
-use aws_credential_types::{
-    provider::{error::CredentialsError, ProvideCredentials},
-    Credentials,
-};
+use chrono::{DateTime, Utc};
+use common_error::DaftResult;
 use common_py_serde::{
     deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
 };
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{config, s3::S3CredentialsProvider};
+use crate::{
+    config,
+    s3::{S3CredentialsProvider, S3CredentialsProviderWrapper},
+};
 
 /// Create configurations to be used when accessing an S3-compatible system
 ///
@@ -60,10 +60,11 @@ pub struct S3Config {
 ///     expiry (datetime.datetime, optional): Expiry time of the credentials, credentials are assumed to be permanent if not provided
 ///
 /// Example:
+///     >>> from datetime import datetime, timedelta, timezone
 ///     >>> get_credentials = lambda: S3Credentials(
 ///     ...     key_id="xxx",
 ///     ...     access_key="xxx",
-///     ...     expiry=(datetime.datetime.now() + datetime.timedelta(hours=1))
+///     ...     expiry=(datetime.now(timezone.utc) + timedelta(hours=1))
 ///     ... )
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
@@ -309,8 +310,9 @@ impl S3Config {
                 access_key: access_key.map(std::convert::Into::into).or(def.access_key),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
-                            as Box<dyn S3CredentialsProvider>)
+                        Ok::<_, PyErr>(S3CredentialsProviderWrapper::new(
+                            PyS3CredentialsProvider::new(p)?,
+                        ))
                     })
                     .transpose()?
                     .or(def.credentials_provider),
@@ -394,8 +396,9 @@ impl S3Config {
                     .or_else(|| self.config.access_key.clone()),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
-                            as Box<dyn S3CredentialsProvider>)
+                        Ok::<_, PyErr>(S3CredentialsProviderWrapper::new(
+                            PyS3CredentialsProvider::new(p)?,
+                        ))
                     })
                     .transpose()?
                     .or_else(|| self.config.credentials_provider.clone()),
@@ -489,7 +492,8 @@ impl S3Config {
     #[getter]
     pub fn credentials_provider(&self, py: Python) -> PyResult<Option<Py<PyAny>>> {
         Ok(self.config.credentials_provider.as_ref().and_then(|p| {
-            p.as_any()
+            p.provider
+                .as_any()
                 .downcast_ref::<PyS3CredentialsProvider>()
                 .map(|p| p.provider.clone_ref(py))
         }))
@@ -572,6 +576,18 @@ impl S3Config {
     pub fn profile_name(&self) -> PyResult<Option<String>> {
         Ok(self.config.profile_name.clone())
     }
+
+    pub fn provide_cached_credentials(&self) -> PyResult<Option<S3Credentials>> {
+        self.config
+            .credentials_provider
+            .as_ref()
+            .map(|provider| {
+                Ok(S3Credentials {
+                    credentials: provider.get_cached_credentials()?,
+                })
+            })
+            .transpose()
+    }
 }
 
 #[pymethods]
@@ -579,66 +595,47 @@ impl S3Credentials {
     #[new]
     #[pyo3(signature = (key_id, access_key, session_token=None, expiry=None))]
     pub fn new(
-        py: Python,
         key_id: String,
         access_key: String,
         session_token: Option<String>,
-        expiry: Option<Bound<PyAny>>,
-    ) -> PyResult<Self> {
-        // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
-        let expiry = expiry
-            .map(|e| {
-                let ts = e.call_method0(pyo3::intern!(py, "timestamp"))?.extract()?;
-
-                Ok::<_, PyErr>(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(ts))
-            })
-            .transpose()?;
-
-        Ok(Self {
+        expiry: Option<DateTime<Utc>>,
+    ) -> Self {
+        Self {
             credentials: crate::S3Credentials {
                 key_id,
                 access_key,
                 session_token,
                 expiry,
             },
-        })
+        }
     }
 
-    pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.credentials))
+    pub fn __repr__(&self) -> String {
+        format!("{}", self.credentials)
     }
 
     /// AWS Access Key ID
     #[getter]
-    pub fn key_id(&self) -> PyResult<String> {
-        Ok(self.credentials.key_id.clone())
+    pub fn key_id(&self) -> &str {
+        &self.credentials.key_id
     }
 
     /// AWS Secret Access Key
     #[getter]
-    pub fn access_key(&self) -> PyResult<String> {
-        Ok(self.credentials.access_key.clone())
+    pub fn access_key(&self) -> &str {
+        &self.credentials.access_key
     }
 
     /// AWS Session Token
     #[getter]
-    pub fn expiry<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
-        // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
-        self.credentials
-            .expiry
-            .map(|e| {
-                let datetime = py.import(pyo3::intern!(py, "datetime"))?;
+    pub fn session_token(&self) -> Option<&str> {
+        self.credentials.session_token.as_deref()
+    }
 
-                datetime
-                    .getattr(pyo3::intern!(py, "datetime"))?
-                    .call_method1(
-                        pyo3::intern!(py, "fromtimestamp"),
-                        (e.duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs_f64(),),
-                    )
-            })
-            .transpose()
+    /// AWS Credentials Expiry
+    #[getter]
+    pub fn expiry(&self) -> Option<DateTime<Utc>> {
+        self.credentials.expiry
     }
 }
 
@@ -659,32 +656,6 @@ impl PyS3CredentialsProvider {
             provider: Arc::new(provider.into()),
             hash,
         })
-    }
-}
-
-impl ProvideCredentials for PyS3CredentialsProvider {
-    fn provide_credentials<'a>(
-        &'a self,
-    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        aws_credential_types::provider::future::ProvideCredentials::ready(
-            Python::with_gil(|py| {
-                let py_creds = self.provider.call0(py)?;
-                py_creds.extract::<S3Credentials>(py)
-            })
-            .map_err(|e| CredentialsError::provider_error(Box::new(e)))
-            .map(|creds| {
-                Credentials::new(
-                    creds.credentials.key_id,
-                    creds.credentials.access_key,
-                    creds.credentials.session_token,
-                    creds.credentials.expiry,
-                    "daft_custom_provider",
-                )
-            }),
-        )
     }
 }
 
@@ -721,6 +692,13 @@ impl S3CredentialsProvider for PyS3CredentialsProvider {
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {
         self.hash(&mut state);
+    }
+
+    fn provide_credentials(&self) -> DaftResult<crate::S3Credentials> {
+        Python::with_gil(|py| {
+            let py_creds = self.provider.call0(py)?;
+            Ok(py_creds.extract::<S3Credentials>(py)?.credentials)
+        })
     }
 }
 

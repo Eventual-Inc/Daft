@@ -461,6 +461,10 @@ class S3Config:
         """Creates an S3Config, retrieving credentials and configurations from the current environment."""
         ...
 
+    def provide_cached_credentials(self) -> S3Credentials | None:
+        """Wrapper around call to `S3Config.credentials_provider` to cache credentials until expiry."""
+        ...
+
 class S3Credentials:
     key_id: str
     access_key: str

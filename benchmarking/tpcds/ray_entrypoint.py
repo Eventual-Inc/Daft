@@ -78,8 +78,8 @@ def run(
             {
                 "question": question,
                 "scale-factor": scale_factor,
-                "planning-time": explain_delta,
-                "execution-time": execute_delta,
+                "planning-time": str(explain_delta),
+                "execution-time": str(execute_delta),
             }
         )
         f.write(stats)
