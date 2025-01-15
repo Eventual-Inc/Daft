@@ -91,16 +91,16 @@ impl ScalarUDF for BinaryConcat {
                 let left_array = match inputs[0].data_type() {
                     DataType::FixedSizeBinary(_) => inputs[0]
                         .downcast::<FixedSizeBinaryArray>()?
-                        .into_binary()?,
-                    _ => inputs[0].downcast::<BinaryArray>()?.clone(),
+                        .cast(&DataType::Binary)?,
+                    _ => inputs[0].downcast::<BinaryArray>()?.clone().into_series(),
                 };
                 let right_array = match inputs[1].data_type() {
                     DataType::FixedSizeBinary(_) => inputs[1]
                         .downcast::<FixedSizeBinaryArray>()?
-                        .into_binary()?,
-                    _ => inputs[1].downcast::<BinaryArray>()?.clone(),
+                        .cast(&DataType::Binary)?,
+                    _ => inputs[1].downcast::<BinaryArray>()?.clone().into_series(),
                 };
-                let result = left_array.binary_concat(&right_array)?;
+                let result = left_array.binary()?.binary_concat(right_array.binary()?)?;
                 Ok(
                     BinaryArray::from((result_name, Box::new(result.as_arrow().clone())))
                         .into_series(),

@@ -95,6 +95,18 @@ where
     }
 }
 
+fn create_broadcasted_fixed_size_binary_iter(
+    arr: &FixedSizeBinaryArray,
+    len: usize,
+) -> BroadcastedFixedSizeBinaryIter<'_> {
+    let self_arrow = arr.as_arrow();
+    if self_arrow.len() == 1 {
+        BroadcastedFixedSizeBinaryIter::Repeat(iter::repeat(self_arrow.get(0)).take(len))
+    } else {
+        BroadcastedFixedSizeBinaryIter::NonRepeat(self_arrow.iter())
+    }
+}
+
 impl BinaryArray {
     pub fn length(&self) -> DaftResult<UInt64Array> {
         let self_arrow = self.as_arrow();
@@ -212,15 +224,6 @@ impl FixedSizeBinaryArray {
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
 
-    fn create_broadcasted_iter(&self, len: usize) -> BroadcastedFixedSizeBinaryIter<'_> {
-        let self_arrow = self.as_arrow();
-        if self_arrow.len() == 1 {
-            BroadcastedFixedSizeBinaryIter::Repeat(iter::repeat(self_arrow.get(0)).take(len))
-        } else {
-            BroadcastedFixedSizeBinaryIter::NonRepeat(self_arrow.iter())
-        }
-    }
-
     pub fn binary_slice<I, J>(
         &self,
         start: &DataArray<I>,
@@ -239,7 +242,7 @@ impl FixedSizeBinaryArray {
             self_arrow.len()
         };
 
-        let self_iter = self.create_broadcasted_iter(output_len);
+        let self_iter = create_broadcasted_fixed_size_binary_iter(self, output_len);
         let start_iter = create_broadcasted_numeric_iter::<I, usize>(start, output_len);
         let length_iter = match length {
             Some(length) => create_broadcasted_numeric_iter::<J, usize>(length, output_len),
@@ -293,8 +296,14 @@ impl FixedSizeBinaryArray {
         let mut values = Vec::with_capacity(self_arrow.len() * combined_size);
         let mut validity = arrow2::bitmap::MutableBitmap::new();
 
-        let self_iter = self_arrow.iter();
-        let other_iter = other_arrow.iter();
+        let output_len = if self_arrow.len() == 1 || other_arrow.len() == 1 {
+            std::cmp::max(self_arrow.len(), other_arrow.len())
+        } else {
+            self_arrow.len()
+        };
+
+        let self_iter = create_broadcasted_fixed_size_binary_iter(self, output_len);
+        let other_iter = create_broadcasted_fixed_size_binary_iter(other, output_len);
 
         for (val1, val2) in self_iter.zip(other_iter) {
             match (val1, val2) {
@@ -318,25 +327,5 @@ impl FixedSizeBinaryArray {
         )?;
 
         Ok(Self::from((self.name(), Box::new(result))))
-    }
-
-    pub fn into_binary(&self) -> std::result::Result<BinaryArray, DaftError> {
-        let mut builder = arrow2::array::MutableBinaryArray::<i64>::new();
-        let mut validity = arrow2::bitmap::MutableBitmap::new();
-
-        for val in self.as_arrow() {
-            match val {
-                Some(val) => {
-                    builder.push(Some(val));
-                    validity.push(true);
-                }
-                None => {
-                    builder.push::<&[u8]>(None);
-                    validity.push(false);
-                }
-            }
-        }
-
-        Ok(BinaryArray::from((self.name(), Box::new(builder.into()))))
     }
 }
