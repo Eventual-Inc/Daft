@@ -267,6 +267,9 @@ class DataFrame:
         Each row will be a Python dictionary of the form { "key" : value, ... }. If you are instead looking to iterate over
         entire partitions of data, see: :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`.
 
+        By default, Daft will convert the columns to Python lists for easy consumption. However, for nested data such as List or Struct arrays, this can be expensive.
+        You may wish to set `column_format` to "arrow" or "numpy" such that the nested data is returned as Arrow or Numpy arrays respectively.
+
         .. NOTE::
             A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
 
@@ -313,17 +316,18 @@ class DataFrame:
                 yield row
 
         def numpy_iter_rows(table: "pyarrow.Table") -> Iterator[Dict[str, Any]]:
-            np_columns = [(col._name, col.to_numpy(zero_copy_only=False)) for col in table.columns]
-            for i in range(len(table)):
-                row = {name: col[i] for name, col in np_columns}
-                yield row
+            batches = table.to_batches()
+            for batch in batches:
+                np_columns = [(col._name, col.to_numpy(zero_copy_only=False)) for col in batch.columns]
+                for i in range(len(table)):
+                    row = {name: col[i] for name, col in np_columns}
+                    yield row
 
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
             if column_format == "python":
-                pydict = self._result.to_pydict()
-                yield from python_iter_rows(pydict, len(self))
+                yield from python_iter_rows(self.to_pydict(), len(self))
             elif column_format == "arrow":
                 yield from arrow_iter_rows(self.to_arrow())
             elif column_format == "numpy":

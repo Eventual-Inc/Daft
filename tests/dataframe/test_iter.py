@@ -7,6 +7,8 @@ import pytest
 import daft
 from tests.conftest import get_tests_daft_runner_name
 
+PYARROW_GE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (8, 0, 0)
+
 
 class MockException(Exception):
     pass
@@ -126,7 +128,7 @@ def test_iter_rows_column_formats(make_df, format, data, expected):
     ],
 )
 def test_iter_rows_column_format_not_compatible(format):
-    df = daft.from_pydict({"a": [object()]})
+    df = daft.from_pydict({"a": [object()]})  # Object type is not supported by arrow or numpy
 
     with pytest.raises(ValueError):
         list(df.iter_rows(column_format=format))
