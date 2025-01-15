@@ -86,12 +86,15 @@ impl Display for JoinNode {
 pub(super) struct JoinCondition {
     pub left_on: String,
     pub right_on: String,
+    // Estimated total domain of this edge, i.e. the number of distinct values in a join.
+    // For a pk-fk join, this would be the number of primary keys.
+    pub total_domain: usize,
 }
 
 pub(super) struct JoinAdjList {
     pub max_id: usize,
     plan_to_id: HashMap<*const LogicalPlan, usize>,
-    id_to_plan: HashMap<usize, LogicalPlanRef>,
+    pub id_to_plan: HashMap<usize, LogicalPlanRef>,
     pub edges: HashMap<usize, HashMap<usize, Vec<JoinCondition>>>,
 }
 
@@ -160,9 +163,27 @@ impl JoinAdjList {
     }
 
     fn add_unidirectional_edge(&mut self, left: &JoinNode, right: &JoinNode) {
+        let left_rows = left.plan.materialized_stats().approx_stats.num_rows;
+        let right_rows = right.plan.materialized_stats().approx_stats.num_rows;
         let join_condition = JoinCondition {
             left_on: left.relation_name.clone(),
             right_on: right.relation_name.clone(),
+            // Assuming a pk-fk join, the total domain would be the number of distinct values of the
+            // primary key. We assume the smaller side is the primary key side.
+            total_domain: left_rows.min(right_rows),
+        };
+        let left_id = self.get_or_create_plan_id(&left.plan);
+        let right_id = self.get_or_create_plan_id(&right.plan);
+        self.add_join_condition(left_id, right_id, join_condition);
+    }
+
+    fn add_unidirectional_edge_with_td(&mut self, left: &JoinNode, right: &JoinNode, td: usize) {
+        let join_condition = JoinCondition {
+            left_on: left.relation_name.clone(),
+            right_on: right.relation_name.clone(),
+            // Assuming a pk-fk join, the total domain would be the number of distinct values of the
+            // primary key. We assume the smaller side is the primary key side.
+            total_domain: td,
         };
         let left_id = self.get_or_create_plan_id(&left.plan);
         let right_id = self.get_or_create_plan_id(&right.plan);
@@ -172,6 +193,16 @@ impl JoinAdjList {
     pub(super) fn add_bidirectional_edge(&mut self, node1: JoinNode, node2: JoinNode) {
         self.add_unidirectional_edge(&node1, &node2);
         self.add_unidirectional_edge(&node2, &node1);
+    }
+
+    pub(super) fn add_bidirectional_edge_with_td(
+        &mut self,
+        node1: JoinNode,
+        node2: JoinNode,
+        td: usize,
+    ) {
+        self.add_unidirectional_edge_with_td(&node1, &node2, td);
+        self.add_unidirectional_edge_with_td(&node2, &node1, td);
     }
 
     pub(super) fn get_connections(

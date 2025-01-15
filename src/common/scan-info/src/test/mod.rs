@@ -17,14 +17,14 @@ use crate::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeR
 struct DummyScanTask {
     pub schema: SchemaRef,
     pub pushdowns: Pushdowns,
-    pub in_memory_size: Option<usize>,
+    pub num_rows: Option<usize>,
 }
 
 #[derive(Debug)]
 pub struct DummyScanOperator {
     pub schema: SchemaRef,
     pub num_scan_tasks: u32,
-    pub in_memory_size_per_task: Option<usize>,
+    pub num_rows_per_task: Option<usize>,
 }
 
 #[typetag::serde]
@@ -53,7 +53,7 @@ impl ScanTaskLike for DummyScanTask {
     }
 
     fn num_rows(&self) -> Option<usize> {
-        None
+        self.num_rows
     }
 
     fn approx_num_rows(&self, _: Option<&DaftExecutionConfig>) -> Option<f64> {
@@ -69,7 +69,7 @@ impl ScanTaskLike for DummyScanTask {
     }
 
     fn estimate_in_memory_size_bytes(&self, _: Option<&DaftExecutionConfig>) -> Option<usize> {
-        self.in_memory_size
+        None
     }
 
     fn file_format_config(&self) -> Arc<FileFormatConfig> {
@@ -138,7 +138,7 @@ impl ScanOperator for DummyScanOperator {
         let scan_task = Arc::new(DummyScanTask {
             schema: self.schema.clone(),
             pushdowns,
-            in_memory_size: self.in_memory_size_per_task,
+            num_rows: self.num_rows_per_task,
         });
 
         Ok((0..self.num_scan_tasks)
