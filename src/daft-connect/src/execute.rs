@@ -73,6 +73,9 @@ impl Session {
                 let it = results.into_iter();
                 let result_stream = it.collect_vec();
                 Ok(Box::pin(stream::iter(result_stream)))
+
+                // todo: use into_stream once it works as expected
+                // Ok(results.into_stream().boxed())
             }
         }
     }
