@@ -94,6 +94,7 @@ Logical
     Expression.__lt__
     Expression.__le__
     Expression.__eq__
+    Expression.eq_null_safe
     Expression.__ne__
     Expression.__gt__
     Expression.__ge__

@@ -457,6 +457,23 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr == expr._expr)
 
+    def eq_null_safe(self, other: Expression) -> Expression:
+        """Performs a null-safe equality comparison between two expressions.
+
+        Unlike regular equality (==), null-safe equality (<=> or IS NOT DISTINCT FROM):
+        - Returns True when comparing NULL <=> NULL
+        - Returns False when comparing NULL <=> any_value
+        - Behaves like regular equality for non-NULL values
+
+        Args:
+            other: The expression to compare with
+
+        Returns:
+            Expression: A boolean expression indicating if the values are equal
+        """
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr.eq_null_safe(expr._expr))
+
     def __ne__(self, other: Expression) -> Expression:  # type: ignore
         """Compares if an expression is not equal to another (``e1 != e2``)."""
         expr = Expression._to_expression(other)

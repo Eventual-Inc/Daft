@@ -1060,11 +1060,11 @@ impl<'a> SQLPlanner<'a> {
 
     /// Plan a `FROM <path>` table factor by rewriting to relevant table-value function.
     fn plan_relation_path(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
-        let path = name.to_string();
-        let path = &path[1..path.len() - 1]; // strip single-quotes ' '
+        let path = name.0[0].value.as_str();
         let func = match Path::new(path).extension() {
             Some(ext) if ext.eq_ignore_ascii_case("csv") => "read_csv",
             Some(ext) if ext.eq_ignore_ascii_case("json") => "read_json",
+            Some(ext) if ext.eq_ignore_ascii_case("jsonl") => "read_json",
             Some(ext) if ext.eq_ignore_ascii_case("parquet") => "read_parquet",
             Some(_) => invalid_operation_err!("unsupported file path extension: {}", name),
             None => invalid_operation_err!("unsupported file path, no extension: {}", name),
@@ -1822,6 +1822,7 @@ impl<'a> SQLPlanner<'a> {
             BinaryOperator::Multiply => Ok(Operator::Multiply),
             BinaryOperator::Divide => Ok(Operator::TrueDivide),
             BinaryOperator::Eq => Ok(Operator::Eq),
+            BinaryOperator::Spaceship => Ok(Operator::EqNullSafe),
             BinaryOperator::Modulo => Ok(Operator::Modulus),
             BinaryOperator::Gt => Ok(Operator::Gt),
             BinaryOperator::Lt => Ok(Operator::Lt),
