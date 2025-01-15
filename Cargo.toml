@@ -279,7 +279,7 @@ features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap"]
+features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono"]
 version = "0.23.3"
 
 [workspace.dependencies.pyo3-log]
