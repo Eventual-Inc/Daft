@@ -35,7 +35,7 @@ def test_binary_slice() -> None:
             b"barba",
             b"quux",
             b"1",
-            None,
+            b"",
             b"Hello",  # Should handle UTF-8 correctly
             b"\xf0\x9f\x98\x89t",  # Should include full UTF-8 sequence
             b"test\xf0",  # Should split UTF-8 sequence
@@ -140,6 +140,36 @@ def test_binary_slice() -> None:
             [2, 3, None, None, 2, None, 2],
             [b"el", None, None, None, None, None, None],
         ),
+        # Test with all nulls in start column
+        (
+            [
+                b"hello",
+                b"world",
+                b"test",
+                b"Hello\xe2\x98\x83World",
+                b"\xf0\x9f\x98\x89test",
+                b"test\xf0\x9f\x8c\x88",
+                b"\xff\xfe\xfd",
+            ],
+            [1, None, None, None, None, None, None],
+            [2, 3, 1, 2, 3, 1, 3],
+            [b"el", None, None, None, None, None, None],
+        ),
+        # Test with all nulls in length column
+        (
+            [
+                b"hello",
+                b"world",
+                b"test",
+                b"Hello\xe2\x98\x83World",
+                b"\xf0\x9f\x98\x89test",
+                b"test\xf0\x9f\x8c\x88",
+                b"\xff\xfe\xfd",
+            ],
+            [1, 0, 2, 5, 1, 4, 0],
+            [2, None, None, None, None, None, None],
+            [b"el", None, None, None, None, None, None],
+        ),
     ],
 )
 def test_binary_slice_with_columns(
@@ -181,7 +211,7 @@ def test_binary_slice_with_columns(
             ],
             [10, 20, 15, 10, 10, 5],
             2,
-            [None, None, None, None, None, None],
+            [b"", b"", b"", b"", b"", b""],
         ),
         # Test start way beyond string length
         (
@@ -193,7 +223,7 @@ def test_binary_slice_with_columns(
             ],
             [100, 1000, 50, 25],
             5,
-            [None, None, None, None],
+            [b"", b"", b"", b""],
         ),
         # Test start beyond length with None length
         (
@@ -205,7 +235,7 @@ def test_binary_slice_with_columns(
             ],
             [10, 20, 15, 8],
             None,
-            [None, None, None, None],
+            [b"", b"", b"", b""],
         ),
         # Test zero length
         (
@@ -219,7 +249,7 @@ def test_binary_slice_with_columns(
             ],
             [1, 0, 5, 0, 4, 2],
             0,
-            [None, None, None, None, None, None],
+            [b"", b"", b"", b"", b"", b""],
         ),
         # Test very large length
         (
@@ -240,7 +270,7 @@ def test_binary_slice_with_columns(
             [b"", b"", b"", b""],
             [0, 1, 2, 3],
             3,
-            [None, None, None, None],
+            [b"", b"", b"", b""],
         ),
         # Test start + length overflow
         (
@@ -534,7 +564,7 @@ def test_binary_slice_multiple_slices() -> None:
             b"hello",  # Single binary value
             [0, 1, 2, 3, 4, 5],  # Multiple start positions
             2,  # Fixed length
-            [b"he", b"el", b"ll", b"lo", b"o", None],  # Expected slices
+            [b"he", b"el", b"ll", b"lo", b"o", b""],  # Expected slices
         ),
         # Test single binary value with multiple lengths
         (
@@ -571,7 +601,7 @@ def test_binary_slice_multiple_slices() -> None:
             b"test",
             [0, 4, 2],  # Start at beginning, end, and middle
             [4, 0, 5],  # Full length, zero length, overflow length
-            [b"test", None, b"st"],  # Expected results
+            [b"test", b"", b"st"],  # Expected results
         ),
         # Test with nulls in start/length
         (

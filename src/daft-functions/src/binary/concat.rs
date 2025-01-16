@@ -72,11 +72,6 @@ impl ScalarUDF for BinaryConcat {
                         .into_series(),
                 )
             }
-            (DataType::Binary, DataType::Null) | (DataType::Null, DataType::Binary) => {
-                // If either input is null, return a null array of the same length
-                let len = inputs[0].len();
-                Ok(Series::full_null(result_name, &DataType::Binary, len))
-            }
             (DataType::FixedSizeBinary(_), DataType::FixedSizeBinary(_)) => {
                 let left_array = inputs[0].downcast::<FixedSizeBinaryArray>()?;
                 let right_array = inputs[1].downcast::<FixedSizeBinaryArray>()?;
@@ -106,10 +101,8 @@ impl ScalarUDF for BinaryConcat {
                         .into_series(),
                 )
             }
-            (DataType::FixedSizeBinary(_), DataType::Null)
-            | (DataType::Null, DataType::FixedSizeBinary(_)) => {
-                // If either input is null, return a null array of the same length
-                let len = inputs[0].len();
+            (_, DataType::Null) | (DataType::Null, _) => {
+                let len = inputs[0].len().max(inputs[1].len());
                 Ok(Series::full_null(result_name, &DataType::Binary, len))
             }
             _ => unreachable!("Type checking done in to_field"),

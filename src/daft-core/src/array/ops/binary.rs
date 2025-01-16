@@ -204,7 +204,6 @@ impl BinaryArray {
         let start_iter = create_broadcasted_numeric_iter::<I, usize>(start, output_len);
 
         let mut builder = arrow2::array::MutableBinaryArray::<i64>::new();
-        let mut validity = arrow2::bitmap::MutableBitmap::new();
 
         let arrow_result = match length {
             Some(length) => {
@@ -214,18 +213,15 @@ impl BinaryArray {
                     match (val, start?, length?) {
                         (Some(val), Some(start), Some(length)) => {
                             if start >= val.len() || length == 0 {
-                                builder.push::<&[u8]>(None);
-                                validity.push(false);
+                                builder.push(Some(&[]));
                             } else {
                                 let end = (start + length).min(val.len());
                                 let slice = &val[start..end];
                                 builder.push(Some(slice));
-                                validity.push(true);
                             }
                         }
                         _ => {
                             builder.push::<&[u8]>(None);
-                            validity.push(false);
                         }
                     }
                 }
@@ -236,17 +232,14 @@ impl BinaryArray {
                     match (val, start?) {
                         (Some(val), Some(start)) => {
                             if start >= val.len() {
-                                builder.push::<&[u8]>(None);
-                                validity.push(false);
+                                builder.push(Some(&[]));
                             } else {
                                 let slice = &val[start..];
                                 builder.push(Some(slice));
-                                validity.push(true);
                             }
                         }
                         _ => {
                             builder.push::<&[u8]>(None);
-                            validity.push(false);
                         }
                     }
                 }

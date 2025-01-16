@@ -22,7 +22,7 @@ from daft.table import MicroPartition
             [b"abc", b"def", b"ghi"],
             [3, 2, 1],  # Start at or beyond length
             [1, 2, 3],
-            [None, b"f", b"hi"],
+            [b"", b"f", b"hi"],
             3,
         ),
         # UTF-8 sequences
@@ -163,7 +163,7 @@ def test_fixed_size_binary_slice_edge_cases() -> None:
             [b"\x00\x01", b"\xff\xfe", b"ab", None],  # input
             [1, 2, 0, 1],  # start
             [1, 0, 2, 1],  # length
-            [b"\x01", None, b"ab", None],  # expected
+            [b"\x01", b"", b"ab", None],  # expected
         ),
         # Four byte values with various slices
         (
@@ -211,12 +211,12 @@ def test_fixed_size_binary_slice_with_literals() -> None:
 
     # Test with start beyond length
     result = table.eval_expression_list([col("a").binary.slice(lit(3), lit(1))])
-    assert result.to_pydict() == {"a": [None, None, None]}
+    assert result.to_pydict() == {"a": [b"", b"", None]}
     assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with zero length
     result = table.eval_expression_list([col("a").binary.slice(lit(0), lit(0))])
-    assert result.to_pydict() == {"a": [None, None, None]}
+    assert result.to_pydict() == {"a": [b"", b"", None]}
     assert result.schema()["a"].dtype == DataType.binary()
 
 
