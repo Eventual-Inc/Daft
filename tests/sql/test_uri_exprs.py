@@ -2,10 +2,21 @@ import os
 import tempfile
 
 import daft
-from daft import col
+from daft import col, lit
 
 
 def test_url_download():
+    df = daft.from_pydict({"one": [1]})  # just have a single row, doesn't matter what it is
+    url = "https://raw.githubusercontent.com/Eventual-Inc/Daft/refs/heads/main/LICENSE"
+
+    # download one
+    df_actual = daft.sql(f"SELECT url_download('{url}') as downloaded FROM df").collect().to_pydict()
+    df_expect = df.select(lit(url).url.download().alias("downloaded")).collect().to_pydict()
+
+    assert df_actual == df_expect
+
+
+def test_url_download_multi():
     df = daft.from_pydict(
         {
             "urls": [
