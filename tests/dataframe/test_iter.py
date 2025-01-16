@@ -36,7 +36,6 @@ def test_iter_rows(make_df, materialized):
             [pa.scalar(1), pa.scalar(2), pa.scalar(3)],
             id="arrow_ints",
         ),
-        pytest.param("numpy", [1, 2, 3], [1, 2, 3], id="numpy_ints"),
         ### Strings
         pytest.param("python", ["a", "b", "c"], ["a", "b", "c"], id="python_strs"),
         pytest.param(
@@ -49,7 +48,6 @@ def test_iter_rows(make_df, materialized):
             ],
             id="arrow_strs",
         ),
-        pytest.param("numpy", ["a", "b", "c"], ["a", "b", "c"], id="numpy_strs"),
         ### Lists
         pytest.param("python", [[1, 2], [3, 4]], [[1, 2], [3, 4]], id="python_lists"),
         pytest.param(
@@ -60,12 +58,6 @@ def test_iter_rows(make_df, materialized):
                 pa.scalar([3, 4], pa.large_list(pa.int64())),
             ],
             id="arrow_lists",
-        ),
-        pytest.param(
-            "numpy",
-            [[1, 2], [3, 4]],
-            [np.array([1, 2]), np.array([3, 4])],
-            id="numpy_lists",
         ),
         ### Structs
         pytest.param(
@@ -88,12 +80,6 @@ def test_iter_rows(make_df, materialized):
                 ),
             ],
             id="arrow_structs",
-        ),
-        pytest.param(
-            "numpy",
-            [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
-            [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
-            id="numpy_structs",
         ),
     ],
 )

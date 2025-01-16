@@ -260,7 +260,7 @@ class DataFrame:
     def iter_rows(
         self,
         results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
-        column_format: Literal["python", "arrow", "numpy"] = "python",
+        column_format: Literal["python", "arrow"] = "python",
     ) -> Iterator[Dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
 
@@ -268,7 +268,7 @@ class DataFrame:
         entire partitions of data, see: :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`.
 
         By default, Daft will convert the columns to Python lists for easy consumption. However, for nested data such as List or Struct arrays, this can be expensive.
-        You may wish to set `column_format` to "arrow" or "numpy" such that the nested data is returned as Arrow or Numpy arrays respectively.
+        You may wish to set `column_format` to "arrow" such that the nested data is returned as an Arrow array.
 
         .. NOTE::
             A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
@@ -315,14 +315,6 @@ class DataFrame:
                 row = {key: value[i] for (key, value) in pydict.items()}
                 yield row
 
-        def numpy_iter_rows(table: "pyarrow.Table") -> Iterator[Dict[str, Any]]:
-            batches = table.to_batches()
-            for batch in batches:
-                np_columns = [(col._name, col.to_numpy(zero_copy_only=False)) for col in batch.columns]
-                for i in range(len(table)):
-                    row = {name: col[i] for name, col in np_columns}
-                    yield row
-
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
@@ -330,8 +322,10 @@ class DataFrame:
                 yield from python_iter_rows(self.to_pydict(), len(self))
             elif column_format == "arrow":
                 yield from arrow_iter_rows(self.to_arrow())
-            elif column_format == "numpy":
-                yield from numpy_iter_rows(self.to_arrow())
+            else:
+                raise ValueError(
+                    f"Unsupported column_format: {column_format}, supported formats are 'python' and 'arrow'"
+                )
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
@@ -345,8 +339,10 @@ class DataFrame:
                     yield from python_iter_rows(partition.to_pydict(), len(partition))
                 elif column_format == "arrow":
                     yield from arrow_iter_rows(partition.to_arrow())
-                elif column_format == "numpy":
-                    yield from numpy_iter_rows(partition.to_arrow())
+                else:
+                    raise ValueError(
+                        f"Unsupported column_format: {column_format}, supported formats are 'python' and 'arrow'"
+                    )
 
     @DataframePublicAPI
     def to_arrow_iter(
