@@ -87,13 +87,12 @@ impl Session {
     ) -> Result<ExecuteStream, Status> {
         use futures::{StreamExt, TryStreamExt};
 
-        // fallback response
         let result_complete = res.result_complete_response();
 
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
 
         let this = self.clone();
-        self.compute_runtime.spawn(async move {
+        self.compute_runtime.runtime.spawn(async move {
             let execution_fut = async {
                 let translator = translation::SparkAnalyzer::new(&this);
                 match command.rel_type {
