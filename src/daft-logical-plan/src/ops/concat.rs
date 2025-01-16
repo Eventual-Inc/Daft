@@ -18,14 +18,6 @@ pub struct Concat {
 }
 
 impl Concat {
-    pub(crate) fn new(input: Arc<LogicalPlan>, other: Arc<LogicalPlan>) -> Self {
-        Self {
-            input,
-            other,
-            stats_state: StatsState::NotMaterialized,
-        }
-    }
-
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         other: Arc<LogicalPlan>,
@@ -39,6 +31,7 @@ impl Concat {
             )))
             .context(CreationSnafu);
         }
+
         Ok(Self {
             input,
             other,

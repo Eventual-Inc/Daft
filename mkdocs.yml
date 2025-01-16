@@ -6,6 +6,12 @@ site_name: Daft Documentation
 
 docs_dir: docs-v2
 
+# Scarf pixel for tracking analytics
+image:
+  referrerpolicy: "no-referrer-when-downgrade"
+  src: "https://static.scarf.sh/a.png?x-pxid=c9065f3a-a090-4243-8f69-145d5de7bfca"
+
+
 # Repository
 repo_name: Daft
 repo_url: https://github.com/Eventual-Inc/Daft
@@ -18,17 +24,10 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
-        # - DataFrame: core_concepts/dataframe.md
-        # - Expressions: core_concepts/expressions.md
-        # - Reading/Writing Data: core_concepts/read_write.md
-        # - DataTypes: core_concepts/datatypes.md
-        # - SQL: core_concepts/sql.md
-        # - Aggregations and Grouping: core_concepts/aggregations.md
-        # - User-Defined Functions (UDF): core_concepts/udf.md
+  - Distributed Computing: distributed.md
   - Advanced:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
-    - Distributed Computing: advanced/distributed.md
   - Integrations:
     - Ray: integrations/ray.md
     - Unity Catalog: integrations/unity_catalog.md

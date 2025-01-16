@@ -1431,6 +1431,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
         # if the user gave an expression, we assume that each row has a specific url to upload to.
+        # Consider moving the check for is_single_folder to a lower IR.
         is_single_folder = isinstance(location, str)
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
         return Expression._from_pyexpr(

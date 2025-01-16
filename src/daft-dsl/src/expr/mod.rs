@@ -5,6 +5,7 @@ use std::{
     any::Any,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -1290,6 +1291,32 @@ impl Operator {
     }
 }
 
+impl FromStr for Operator {
+    type Err = DaftError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "==" => Ok(Self::Eq),
+            "!=" => Ok(Self::NotEq),
+            "<" => Ok(Self::Lt),
+            "<=" => Ok(Self::LtEq),
+            ">" => Ok(Self::Gt),
+            ">=" => Ok(Self::GtEq),
+            "+" => Ok(Self::Plus),
+            "-" => Ok(Self::Minus),
+            "*" => Ok(Self::Multiply),
+            "/" => Ok(Self::TrueDivide),
+            "//" => Ok(Self::FloorDivide),
+            "%" => Ok(Self::Modulus),
+            "&" => Ok(Self::And),
+            "|" => Ok(Self::Or),
+            "^" => Ok(Self::Xor),
+            "<<" => Ok(Self::ShiftLeft),
+            ">>" => Ok(Self::ShiftRight),
+            _ => Err(DaftError::ComputeError(format!("Invalid operator: {}", s))),
+        }
+    }
+}
+
 // Check if one set of columns is a reordering of the other
 pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
     // sort a and b by name
@@ -1407,4 +1434,12 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::Subquery(_) => 1.0,
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
     }
+}
+
+pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult<SchemaRef> {
+    let fields = exprs
+        .iter()
+        .map(|e| e.to_field(&input_schema))
+        .collect::<DaftResult<_>>()?;
+    Ok(Arc::new(Schema::new(fields)?))
 }

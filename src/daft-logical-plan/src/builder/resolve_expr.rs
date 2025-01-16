@@ -1,6 +1,3 @@
-#[cfg(test)]
-mod tests;
-
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashMap, HashSet},
@@ -10,15 +7,16 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TransformedResult, TreeNode};
 use daft_core::prelude::*;
+#[cfg(feature = "python")]
+use daft_core::python::PySchema;
+use daft_dsl::{col, functions::FunctionExpr, has_agg, is_actor_pool_udf, AggExpr, Expr, ExprRef};
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 use typed_builder::TypedBuilder;
-
-use crate::{
-    col, expr::has_agg, functions::FunctionExpr, is_actor_pool_udf, AggExpr, Expr, ExprRef,
-};
 
 // Calculates all the possible struct get expressions in a schema.
 // For each sugared string, calculates all possible corresponding expressions, in order of priority.
-fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, Vec<ExprRef>> {
+pub fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, Vec<ExprRef>> {
     #[derive(PartialEq, Eq)]
     struct BfsState<'a> {
         name: String,
@@ -61,7 +59,7 @@ fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, Vec<ExprRef>> {
             for child in children {
                 pq.push(BfsState {
                     name: format!("{}.{}", name, child.name),
-                    expr: crate::functions::struct_::get(expr.clone(), &child.name),
+                    expr: daft_dsl::functions::struct_::get(expr.clone(), &child.name),
                     field: child,
                 });
             }
@@ -76,7 +74,7 @@ fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, Vec<ExprRef>> {
 ///
 /// For example, if col("a.b.c") could be interpreted as either col("a.b").struct.get("c")
 /// or col("a").struct.get("b.c"), this function will resolve it to col("a.b").struct.get("c").
-fn transform_struct_gets(
+pub fn transform_struct_gets(
     expr: ExprRef,
     struct_expr_map: &HashMap<String, Vec<ExprRef>>,
 ) -> DaftResult<ExprRef> {
@@ -103,7 +101,10 @@ fn transform_struct_gets(
 
 // Finds the names of all the wildcard expressions in an expression tree.
 // Needs the schema because column names with stars must not count as wildcards
-fn find_wildcards(expr: ExprRef, struct_expr_map: &HashMap<String, Vec<ExprRef>>) -> Vec<Arc<str>> {
+pub fn find_wildcards(
+    expr: ExprRef,
+    struct_expr_map: &HashMap<String, Vec<ExprRef>>,
+) -> Vec<Arc<str>> {
     match expr.as_ref() {
         Expr::Column(name) => {
             if name.contains('*') {
@@ -346,7 +347,7 @@ impl<'a> ExprResolver<'a> {
     }
 }
 
-pub fn check_column_name_validity(name: &str, schema: &Schema) -> DaftResult<()> {
+fn check_column_name_validity(name: &str, schema: &Schema) -> DaftResult<()> {
     let struct_expr_map = calculate_struct_expr_map(schema);
 
     let names = if name == "*" || name.ends_with(".*") {
@@ -370,4 +371,10 @@ pub fn check_column_name_validity(name: &str, schema: &Schema) -> DaftResult<()>
     }
 
     Ok(())
+}
+
+#[cfg(feature = "python")]
+#[pyfunction(name = "check_column_name_validity")]
+pub fn py_check_column_name_validity(name: &str, schema: &PySchema) -> PyResult<()> {
+    Ok(check_column_name_validity(name, &schema.schema)?)
 }

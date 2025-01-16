@@ -117,7 +117,7 @@ Dask supports the same data types as pandas. Daft is built to support many more 
 
 ## Distributed Computing and Remote Clusters
 
-Both Dask and Daft support distributed computing on remote clusters. In Dask, you create a Dask cluster either locally or remotely and perform computations in parallel there. Currently, Daft supports distributed cluster computing [with Ray](../advanced/distributed.md). Support for running Daft computations on Dask clusters is on the roadmap.
+Both Dask and Daft support distributed computing on remote clusters. In Dask, you create a Dask cluster either locally or remotely and perform computations in parallel there. Currently, Daft supports distributed cluster computing [with Ray](../distributed.md). Support for running Daft computations on Dask clusters is on the roadmap.
 
 Cloud support for both Dask and Daft is the same.
 
