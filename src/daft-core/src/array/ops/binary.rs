@@ -6,8 +6,7 @@ use common_error::{DaftError, DaftResult};
 use crate::{
     array::ops::as_arrow::AsArrow,
     datatypes::{
-        BinaryArray, DaftIntegerType, DaftNumericType, DataArray, DataType, FixedSizeBinaryArray,
-        UInt64Array,
+        BinaryArray, DaftIntegerType, DaftNumericType, DataArray, FixedSizeBinaryArray, UInt64Array,
     },
 };
 
@@ -268,22 +267,6 @@ impl FixedSizeBinaryArray {
         )
         .with_validity(self_arrow.validity().cloned());
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
-    }
-
-    pub fn binary_slice<I, J>(
-        &self,
-        start: &DataArray<I>,
-        length: Option<&DataArray<J>>,
-    ) -> DaftResult<BinaryArray>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: Ord + TryInto<usize>,
-        J: DaftIntegerType,
-        <J as DaftNumericType>::Native: Ord + TryInto<usize>,
-    {
-        let binary_series = self.cast(&DataType::Binary)?;
-        let binary_array = binary_series.binary()?;
-        binary_array.binary_slice(start, length)
     }
 
     pub fn binary_concat(&self, other: &Self) -> std::result::Result<Self, DaftError> {
