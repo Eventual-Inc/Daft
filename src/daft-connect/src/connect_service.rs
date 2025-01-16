@@ -84,7 +84,6 @@ impl SparkConnectService for DaftSparkConnectService {
                         let result = session.execute_write_operation(op, rb).await?;
                         Ok(Response::new(result))
                     }
-                    CommandType::RegisterFunction(_) => todo!(),
                     CommandType::CreateDataframeView(create_dataframe) => {
                         let result = session
                             .execute_create_dataframe_view(create_dataframe, rb)
