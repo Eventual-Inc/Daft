@@ -78,6 +78,7 @@ impl PyDaftExecutionConfig {
     #[pyo3(signature = (
         scan_tasks_min_size_bytes=None,
         scan_tasks_max_size_bytes=None,
+        max_files_per_scan_task=None,
         broadcast_join_size_bytes_threshold=None,
         parquet_split_row_groups_max_files=None,
         sort_merge_join_sort_with_aligned_boundaries=None,
@@ -105,6 +106,7 @@ impl PyDaftExecutionConfig {
         &self,
         scan_tasks_min_size_bytes: Option<usize>,
         scan_tasks_max_size_bytes: Option<usize>,
+        max_files_per_scan_task: Option<usize>,
         broadcast_join_size_bytes_threshold: Option<usize>,
         parquet_split_row_groups_max_files: Option<usize>,
         sort_merge_join_sort_with_aligned_boundaries: Option<bool>,
@@ -135,6 +137,9 @@ impl PyDaftExecutionConfig {
         }
         if let Some(scan_tasks_min_size_bytes) = scan_tasks_min_size_bytes {
             config.scan_tasks_min_size_bytes = scan_tasks_min_size_bytes;
+        }
+        if let Some(max_files_per_scan_task) = max_files_per_scan_task {
+            config.max_files_per_scan_task = max_files_per_scan_task;
         }
         if let Some(broadcast_join_size_bytes_threshold) = broadcast_join_size_bytes_threshold {
             config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
@@ -234,6 +239,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_scan_tasks_max_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.scan_tasks_max_size_bytes)
+    }
+
+    #[getter]
+    fn get_max_files_per_scan_task(&self) -> PyResult<usize> {
+        Ok(self.config.max_files_per_scan_task)
     }
 
     #[getter]

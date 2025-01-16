@@ -1406,5 +1406,5 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         // Everything else doesn't filter
         Expr::Subquery(_) => 1.0,
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
-    }
+    }.max(0.01)
 }
