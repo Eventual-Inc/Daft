@@ -1,4 +1,11 @@
-use super::*;
+use std::sync::Arc;
+
+use common_error::{DaftError, DaftResult};
+use daft_core::prelude::Schema;
+use daft_dsl::{col, ExprRef};
+use daft_schema::{dtype::DataType, field::Field};
+
+use super::resolve_expr::*;
 
 fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
     let struct_expr_map = calculate_struct_expr_map(schema);
@@ -7,7 +14,7 @@ fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<Ex
 
 #[test]
 fn test_substitute_expr_getter_sugar() -> DaftResult<()> {
-    use crate::functions::struct_::get as struct_get;
+    use daft_dsl::functions::struct_::get as struct_get;
 
     let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)])?);
 

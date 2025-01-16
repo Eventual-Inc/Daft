@@ -1435,3 +1435,11 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
     }
 }
+
+pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult<SchemaRef> {
+    let fields = exprs
+        .iter()
+        .map(|e| e.to_field(&input_schema))
+        .collect::<DaftResult<_>>()?;
+    Ok(Arc::new(Schema::new(fields)?))
+}

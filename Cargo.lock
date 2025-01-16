@@ -2133,10 +2133,8 @@ dependencies = [
  "derive_more",
  "indexmap 2.7.0",
  "itertools 0.11.0",
- "log",
  "pyo3",
  "serde",
- "typed-builder 0.20.0",
  "typetag",
 ]
 
@@ -2379,6 +2377,7 @@ dependencies = [
  "serde",
  "snafu",
  "test-log",
+ "typed-builder 0.20.0",
  "uuid 1.11.0",
 ]
 
