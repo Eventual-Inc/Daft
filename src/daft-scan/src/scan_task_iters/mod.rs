@@ -58,7 +58,7 @@ fn merge_by_sizes<'a>(
                     target_upper_bound_size_bytes: (limit_bytes * 1.5) as usize,
                     target_lower_bound_size_bytes: (limit_bytes / 2.) as usize,
                     accumulator: None,
-                    max_source_count: cfg.max_files_per_scan_task,
+                    max_source_count: cfg.max_sources_per_scan_task,
                 }) as BoxScanTaskIter;
             }
         }
@@ -71,7 +71,7 @@ fn merge_by_sizes<'a>(
             target_upper_bound_size_bytes: cfg.scan_tasks_max_size_bytes,
             target_lower_bound_size_bytes: cfg.scan_tasks_min_size_bytes,
             accumulator: None,
-            max_source_count: cfg.max_files_per_scan_task,
+            max_source_count: cfg.max_sources_per_scan_task,
         }) as BoxScanTaskIter
     }
 }
