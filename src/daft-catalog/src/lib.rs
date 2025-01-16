@@ -50,7 +50,7 @@ static DEFAULT_CATALOG_NAME: &str = "default";
 ///
 /// Users of Daft can register various [`DataCatalog`] with Daft, enabling
 /// discovery of tables across various [`DataCatalog`] implementations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DaftMetaCatalog {
     /// Map of catalog names to the DataCatalog impls.
     ///
@@ -59,15 +59,6 @@ pub struct DaftMetaCatalog {
 
     /// LogicalPlans that were "named" and registered with Daft
     named_tables: HashMap<String, LogicalPlanBuilder>,
-}
-
-impl Default for DaftMetaCatalog {
-    fn default() -> Self {
-        Self {
-            data_catalogs: default::Default::default(),
-            named_tables: default::Default::default(),
-        }
-    }
 }
 
 impl DaftMetaCatalog {
@@ -117,6 +108,12 @@ impl DaftMetaCatalog {
         }
         self.named_tables.insert(name.to_string(), view.into());
         Ok(())
+    }
+
+    /// Check if a named table is registered in the DaftMetaCatalog
+    ///
+    pub fn contains_named_table(&self, name: &str) -> bool {
+        self.named_tables.contains_key(name)
     }
 
     /// Provides high-level functionality for reading a table of data against a [`DaftMetaCatalog`]

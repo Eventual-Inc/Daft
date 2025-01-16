@@ -1,5 +1,9 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+};
 
+use daft_catalog::DaftMetaCatalog;
 use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use uuid::Uuid;
 
@@ -15,6 +19,7 @@ pub struct Session {
     /// MicroPartitionSet associated with this session
     /// this will be filled up as the user runs queries
     pub(crate) psets: Arc<InMemoryPartitionSetCache>,
+    pub(crate) catalog: Arc<RwLock<DaftMetaCatalog>>,
 }
 
 impl Session {
@@ -34,6 +39,7 @@ impl Session {
             id,
             server_side_session_id,
             psets: Arc::new(InMemoryPartitionSetCache::empty()),
+            catalog: Arc::new(RwLock::new(DaftMetaCatalog::default())),
         }
     }
 

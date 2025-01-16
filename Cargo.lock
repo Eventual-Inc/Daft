@@ -2011,6 +2011,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-file-formats",
+ "daft-catalog",
  "daft-core",
  "daft-dsl",
  "daft-local-execution",

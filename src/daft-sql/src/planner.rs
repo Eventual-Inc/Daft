@@ -73,18 +73,10 @@ impl Relation {
 }
 
 /// Context that is shared across a query and its subqueries
+#[derive(Default)]
 struct PlannerContext {
     catalog: DaftMetaCatalog,
     cte_map: HashMap<String, Relation>,
-}
-
-impl Default for PlannerContext {
-    fn default() -> Self {
-        Self {
-            catalog: DaftMetaCatalog::default(),
-            cte_map: Default::default(),
-        }
-    }
 }
 
 #[derive(Default)]
@@ -1090,7 +1082,7 @@ impl<'a> SQLPlanner<'a> {
                 self.catalog()
                     .read_table(&table_name)
                     .ok()
-                    .map(|table| Relation::new(table.into(), table_name.clone()))
+                    .map(|table| Relation::new(table, table_name.clone()))
             })
         else {
             table_not_found_err!(table_name)

@@ -18,6 +18,7 @@ use daft_micropartition::{
 };
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
+use daft_sql::SQLPlanner;
 use daft_table::Table;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
@@ -36,7 +37,7 @@ use spark_connect::{
     },
     read::ReadType,
     relation::RelType,
-    Deduplicate, Expression, Limit, Range, Relation, Sort,
+    Deduplicate, Expression, Limit, Range, Relation, Sort, Sql,
 };
 use tracing::debug;
 
@@ -144,6 +145,7 @@ impl SparkAnalyzer<'_> {
             RelType::ShowString(_) => unreachable!("should already be handled in execute"),
             RelType::Deduplicate(rel) => self.deduplicate(*rel).await,
             RelType::Sort(rel) => self.sort(*rel).await,
+            RelType::Sql(sql) => self.sql(sql).await,
             plan => not_yet_implemented!("relation type: \"{}\"", rel_name(&plan))?,
         }
     }
@@ -642,6 +644,40 @@ impl SparkAnalyzer<'_> {
         let result = plan.schema();
 
         Ok(result)
+    }
+
+    #[allow(deprecated)]
+    async fn sql(&self, sql: Sql) -> eyre::Result<LogicalPlanBuilder> {
+        let Sql {
+            query,
+            args,
+            pos_args,
+            named_arguments,
+            pos_arguments,
+        } = sql;
+        if !args.is_empty() {
+            not_yet_implemented!("args")?;
+        }
+        if !pos_args.is_empty() {
+            not_yet_implemented!("pos_args")?;
+        }
+        if !named_arguments.is_empty() {
+            not_yet_implemented!("named_arguments")?;
+        }
+        if !pos_arguments.is_empty() {
+            not_yet_implemented!("pos_arguments")?;
+        }
+
+        let catalog = self
+            .session
+            .catalog
+            .read()
+            .map_err(|e| eyre::eyre!("Failed to read catalog: {e}"))?;
+        let catalog = catalog.clone();
+
+        let mut planner = SQLPlanner::new(catalog);
+        let plan = planner.plan_sql(&query)?;
+        Ok(plan.into())
     }
 
     pub fn to_daft_expr(&self, expression: &Expression) -> eyre::Result<daft_dsl::ExprRef> {
