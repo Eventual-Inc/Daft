@@ -123,7 +123,7 @@ def test_binary_slice() -> None:
             ],
             1,
             [2, None, 4, None, 2, None, None],
-            [b"el", b"orld", b"est", b"ello\xe2\x98\x83World", b"\x9f\x98", b"est\xf0\x9f\x8c\x88", b"\xfe\xfd"],
+            [b"el", None, b"est", None, b"\x9f\x98", None, None],
         ),
         # Test with nulls in both columns
         (
@@ -138,7 +138,7 @@ def test_binary_slice() -> None:
             ],
             [1, None, 2, 5, None, 4, None],
             [2, 3, None, None, 2, None, 2],
-            [b"el", None, b"st", b"\xe2\x98\x83World", None, b"\xf0\x9f\x8c\x88", None],
+            [b"el", None, None, None, None, None, None],
         ),
     ],
 )
@@ -578,7 +578,7 @@ def test_binary_slice_multiple_slices() -> None:
             b"hello",
             [0, None, 2, None],  # Mix of valid starts and nulls
             [2, 3, None, None],  # Mix of valid lengths and nulls
-            [b"he", None, b"llo", None],  # Expected results with nulls
+            [b"he", None, None, None],  # Expected results with nulls
         ),
     ],
 )
