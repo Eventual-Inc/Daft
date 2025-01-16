@@ -8,7 +8,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_algebra::boolean::combine_conjunction;
-use daft_catalog::DaftMetaCatalog;
+use daft_catalog::DaftCatalog;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
@@ -75,7 +75,7 @@ impl Relation {
 /// Context that is shared across a query and its subqueries
 #[derive(Default)]
 struct PlannerContext {
-    catalog: DaftMetaCatalog,
+    catalog: DaftCatalog,
     cte_map: HashMap<String, Relation>,
 }
 
@@ -92,7 +92,7 @@ pub struct SQLPlanner<'a> {
 }
 
 impl<'a> SQLPlanner<'a> {
-    pub fn new(catalog: DaftMetaCatalog) -> Self {
+    pub fn new(catalog: DaftCatalog) -> Self {
         let context = Rc::new(RefCell::new(PlannerContext {
             catalog,
             ..Default::default()
@@ -138,7 +138,7 @@ impl<'a> SQLPlanner<'a> {
         Ref::map(self.context.borrow(), |i| &i.cte_map)
     }
 
-    fn catalog(&self) -> Ref<'_, DaftMetaCatalog> {
+    fn catalog(&self) -> Ref<'_, DaftCatalog> {
         Ref::map(self.context.borrow(), |i| &i.catalog)
     }
 

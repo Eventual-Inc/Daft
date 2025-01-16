@@ -1,5 +1,5 @@
 use common_daft_config::PyDaftPlanningConfig;
-use daft_catalog::DaftMetaCatalog;
+use daft_catalog::DaftCatalog;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::prelude::*;
@@ -69,7 +69,7 @@ pub fn list_sql_functions() -> Vec<SQLFunctionStub> {
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone)]
 pub struct PyCatalog {
-    catalog: DaftMetaCatalog,
+    catalog: DaftCatalog,
 }
 
 #[pymethods]
@@ -78,7 +78,7 @@ impl PyCatalog {
     #[staticmethod]
     pub fn new() -> Self {
         Self {
-            catalog: DaftMetaCatalog::default(),
+            catalog: DaftCatalog::default(),
         }
     }
 
@@ -89,7 +89,7 @@ impl PyCatalog {
         dataframe: &mut PyLogicalPlanBuilder,
     ) -> PyResult<()> {
         let plan = dataframe.builder.build();
-        self.catalog.register_named_table(name, plan)?;
+        self.catalog.register_table(name, plan)?;
         Ok(())
     }
 

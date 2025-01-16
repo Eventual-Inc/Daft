@@ -265,14 +265,14 @@ impl Session {
 
         {
             let catalog = self.catalog.read().unwrap();
-            if !replace && catalog.contains_named_table(&name) {
+            if !replace && catalog.contains_table(&name) {
                 return Err(Status::internal("Dataframe view already exists"));
             }
         }
 
         let mut catalog = self.catalog.write().unwrap();
 
-        catalog.register_named_table(&name, input).map_err(|e| {
+        catalog.register_table(&name, input).map_err(|e| {
             Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
         })?;
 
