@@ -1,6 +1,5 @@
 #![feature(let_chains)]
 
-pub mod catalog;
 pub mod error;
 pub mod functions;
 mod modules;
@@ -28,7 +27,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use catalog::SQLCatalog;
+    use daft_catalog::DaftMetaCatalog;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
@@ -113,11 +112,11 @@ mod tests {
 
     #[fixture]
     fn planner() -> SQLPlanner<'static> {
-        let mut catalog = SQLCatalog::new();
+        let mut catalog = DaftMetaCatalog::default();
 
-        catalog.register_table("tbl1", tbl_1());
-        catalog.register_table("tbl2", tbl_2());
-        catalog.register_table("tbl3", tbl_3());
+        catalog.register_named_table("tbl1", tbl_1());
+        catalog.register_named_table("tbl2", tbl_2());
+        catalog.register_named_table("tbl3", tbl_3());
 
         SQLPlanner::new(catalog)
     }

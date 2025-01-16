@@ -50,6 +50,7 @@ static DEFAULT_CATALOG_NAME: &str = "default";
 ///
 /// Users of Daft can register various [`DataCatalog`] with Daft, enabling
 /// discovery of tables across various [`DataCatalog`] implementations.
+#[derive(Debug, Clone)]
 pub struct DaftMetaCatalog {
     /// Map of catalog names to the DataCatalog impls.
     ///
@@ -58,6 +59,15 @@ pub struct DaftMetaCatalog {
 
     /// LogicalPlans that were "named" and registered with Daft
     named_tables: HashMap<String, LogicalPlanBuilder>,
+}
+
+impl Default for DaftMetaCatalog {
+    fn default() -> Self {
+        Self {
+            data_catalogs: default::Default::default(),
+            named_tables: default::Default::default(),
+        }
+    }
 }
 
 impl DaftMetaCatalog {
@@ -95,13 +105,17 @@ impl DaftMetaCatalog {
     }
 
     /// Registers a LogicalPlan with a name in the DaftMetaCatalog
-    pub fn register_named_table(&mut self, name: &str, view: LogicalPlanBuilder) -> Result<()> {
+    pub fn register_named_table(
+        &mut self,
+        name: &str,
+        view: impl Into<LogicalPlanBuilder>,
+    ) -> Result<()> {
         if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
             return Err(Error::InvalidTableName {
                 name: name.to_string(),
             });
         }
-        self.named_tables.insert(name.to_string(), view);
+        self.named_tables.insert(name.to_string(), view.into());
         Ok(())
     }
 
@@ -145,6 +159,15 @@ impl DaftMetaCatalog {
             catalog_name: searched_catalog_name.to_string(),
             table_id: searched_table_name.to_string(),
         })
+    }
+    /// Copy from another catalog, using tables from other in case of conflict
+    pub fn copy_from(&mut self, other: &Self) {
+        for (name, plan) in &other.named_tables {
+            self.named_tables.insert(name.clone(), plan.clone());
+        }
+        for (name, catalog) in &other.data_catalogs {
+            self.data_catalogs.insert(name.clone(), catalog.clone());
+        }
     }
 }
 

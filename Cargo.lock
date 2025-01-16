@@ -2587,6 +2587,7 @@ dependencies = [
  "common-io-config",
  "common-runtime",
  "daft-algebra",
+ "daft-catalog",
  "daft-core",
  "daft-dsl",
  "daft-functions",
