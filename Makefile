@@ -70,6 +70,10 @@ test: .venv build  ## Run tests
 dsdgen: .venv ## Generate TPC-DS data
 	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpcds-gen-folder=$(OUTPUT_DIR)
 
+.PHONY: docs
+docs: .venv ## Serve docs
+	uv pip install -r requirements-docs.txt; $(VENV_BIN)/mkdocs serve
+
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
