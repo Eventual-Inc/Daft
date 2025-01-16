@@ -92,6 +92,7 @@ pub trait SQLFunction: Send + Sync {
             .collect::<SQLPlannerResult<Vec<_>>>()
     }
 
+    // nit cleanup: argument consistency with SQLTableFunction
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef>;
 
     /// Produce the docstrings for this SQL function, parametrized by an alias which is the function name to invoke this in SQL

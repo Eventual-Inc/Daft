@@ -1,11 +1,16 @@
-pub mod read_csv;
-pub mod read_json;
-pub mod read_parquet;
+mod read_csv;
+mod read_deltalake;
+mod read_iceberg;
+mod read_json;
+mod read_parquet;
+
 use std::{collections::HashMap, sync::Arc};
 
 use daft_logical_plan::LogicalPlanBuilder;
 use once_cell::sync::Lazy;
 use read_csv::ReadCsvFunction;
+use read_deltalake::ReadDeltalakeFunction;
+use read_iceberg::ReadIcebergFunction;
 use read_json::ReadJsonFunction;
 use read_parquet::ReadParquetFunction;
 use sqlparser::ast::TableFunctionArgs;
@@ -20,10 +25,10 @@ use crate::{
 pub(crate) static SQL_TABLE_FUNCTIONS: Lazy<SQLTableFunctions> = Lazy::new(|| {
     let mut functions = SQLTableFunctions::new();
     functions.add_fn("read_csv", ReadCsvFunction);
+    functions.add_fn("read_deltalake", ReadDeltalakeFunction);
+    functions.add_fn("read_iceberg", ReadIcebergFunction);
     functions.add_fn("read_json", ReadJsonFunction);
     functions.add_fn("read_parquet", ReadParquetFunction);
-    #[cfg(feature = "python")]
-    functions.add_fn("read_deltalake", ReadDeltalakeFunction);
     functions
 });
 
@@ -70,50 +75,11 @@ impl<'a> SQLPlanner<'a> {
     }
 }
 
+// nit cleanup: switch param order and rename to `to_logical_plan` for consistency with SQLFunction.
 pub(crate) trait SQLTableFunction: Send + Sync {
     fn plan(
         &self,
         planner: &SQLPlanner,
         args: &TableFunctionArgs,
     ) -> SQLPlannerResult<LogicalPlanBuilder>;
-}
-
-pub struct ReadDeltalakeFunction;
-
-#[cfg(feature = "python")]
-impl SQLTableFunction for ReadDeltalakeFunction {
-    fn plan(
-        &self,
-        planner: &SQLPlanner,
-        args: &TableFunctionArgs,
-    ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        let (uri, io_config) = match args.args.as_slice() {
-            [uri] => (uri, None),
-            [uri, io_config] => {
-                let args = planner.parse_function_args(&[io_config.clone()], &["io_config"], 0)?;
-                let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
-
-                (uri, io_config)
-            }
-            _ => unsupported_sql_err!("Expected one or two arguments"),
-        };
-        let uri = planner.plan_function_arg(uri)?;
-
-        let Some(uri) = uri.as_literal().and_then(|lit| lit.as_str()) else {
-            unsupported_sql_err!("Expected a string literal for the first argument");
-        };
-
-        daft_scan::builder::delta_scan(uri, io_config, true).map_err(From::from)
-    }
-}
-
-#[cfg(not(feature = "python"))]
-impl SQLTableFunction for ReadDeltalakeFunction {
-    fn plan(
-        &self,
-        planner: &SQLPlanner,
-        args: &TableFunctionArgs,
-    ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        unsupported_sql_err!("`read_deltalake` function is not supported. Enable the `python` feature to use this function.")
-    }
 }
