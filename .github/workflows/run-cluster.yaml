@@ -136,8 +136,8 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs ray-daft-logs
-        find ray-daft-logs -depth -name '*:*' -exec bash -c '
+        ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs ray-logs
+        find ray-logs -depth -name '*:*' -exec bash -c '
         for filepath; do
           dir=$(dirname "$filepath")
           base=$(basename "$filepath")
@@ -172,5 +172,5 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: ray-daft-logs
-        path: ray-daft-logs
+        name: ray-logs
+        path: ray-logs
