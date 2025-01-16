@@ -53,7 +53,6 @@ def submit_job(
     entrypoint_script: str,
     entrypoint_args: str,
     env_vars: str,
-    enable_ray_tracing: bool,
 ):
     if "GHA_OUTPUT_DIR" not in os.environ:
         raise RuntimeError("Output directory environment variable not found; don't know where to store outputs")
@@ -61,8 +60,6 @@ def submit_job(
     output_dir.mkdir(exist_ok=True, parents=True)
 
     env_vars_dict = parse_env_var_str(env_vars)
-    if enable_ray_tracing:
-        env_vars_dict["DAFT_ENABLE_RAY_TRACING"] = "1"
 
     client = JobSubmissionClient(address="http://localhost:8265")
 
@@ -116,7 +113,6 @@ if __name__ == "__main__":
     parser.add_argument("--entrypoint-script", type=str, required=True)
     parser.add_argument("--entrypoint-args", type=str, required=True)
     parser.add_argument("--env-vars", type=str, required=True)
-    parser.add_argument("--enable-ray-tracing", action="store_true")
 
     args = parser.parse_args()
 
@@ -132,5 +128,4 @@ if __name__ == "__main__":
         entrypoint_script=args.entrypoint_script,
         entrypoint_args=args.entrypoint_args,
         env_vars=args.env_vars,
-        enable_ray_tracing=args.enable_ray_tracing,
     )
