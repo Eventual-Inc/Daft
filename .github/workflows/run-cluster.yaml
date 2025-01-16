@@ -145,6 +145,12 @@ jobs:
           mv "$filepath" "$dir/$new_base"
         done
         ' _ {} +
+
+    - name: Down trace files from ray cluster
+      run: |
+        source .venv/bin/activate
+        JOB_ID=$()
+
     - name: Kill connection to ray cluster
       run: |
         PID=$(lsof -t -i:8265)
