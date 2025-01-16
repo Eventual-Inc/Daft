@@ -100,8 +100,9 @@ impl<'a> MergeByFileSize<'a> {
         // Emit the accumulator as soon as it is bigger than the specified `target_lower_bound_size_bytes`
         if let Some(acc) = &self.accumulator {
             acc.sources.len() >= self.max_source_count
-            || acc.estimate_in_memory_size_bytes(Some(self.cfg))
-                .map_or(false, |bytes| bytes >= self.target_lower_bound_size_bytes)
+                || acc
+                    .estimate_in_memory_size_bytes(Some(self.cfg))
+                    .map_or(false, |bytes| bytes >= self.target_lower_bound_size_bytes)
         } else {
             false
         }
