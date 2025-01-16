@@ -89,8 +89,7 @@ impl Join {
             &left_on,
             &right_on,
             join_type,
-        )
-        .context(CreationSnafu)?;
+        )?;
 
         Ok(Self {
             left,

@@ -257,11 +257,6 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
     Ok(expr1.expr == expr2.expr)
 }
 
-#[pyfunction]
-pub fn check_column_name_validity(name: &str, schema: &PySchema) -> PyResult<()> {
-    Ok(crate::check_column_name_validity(name, &schema.schema)?)
-}
-
 #[derive(FromPyObject)]
 pub enum ApproxPercentileInput {
     Single(f64),

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{ExprRef, ExprResolver};
+use daft_dsl::{exprs_to_schema, ExprRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
@@ -32,15 +32,10 @@ impl Sort {
             .context(CreationSnafu);
         }
 
-        let expr_resolver = ExprResolver::default();
+        // TODO(Kevin): make sort by expression names unique so that we can do things like sort(col("a"), col("a") + col("b"))
+        let sort_by_schema = exprs_to_schema(&sort_by, input.schema())?;
 
-        let (sort_by, sort_by_fields) = expr_resolver
-            .resolve(sort_by, &input.schema())
-            .context(CreationSnafu)?;
-
-        let sort_by_resolved_schema = Schema::new(sort_by_fields).context(CreationSnafu)?;
-
-        for (field, expr) in sort_by_resolved_schema.fields.values().zip(sort_by.iter()) {
+        for (field, expr) in sort_by_schema.fields.values().zip(sort_by.iter()) {
             // Disallow sorting by null, binary, and boolean columns.
             // TODO(Clark): This is a port of an existing constraint, we should look at relaxing this.
             if let dt @ (DataType::Null | DataType::Binary) = &field.dtype {

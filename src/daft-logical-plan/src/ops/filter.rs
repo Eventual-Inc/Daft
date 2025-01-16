@@ -6,7 +6,7 @@ use daft_dsl::{estimated_selectivity, ExprRef};
 use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{CreationSnafu, Result},
+    logical_plan::{self, CreationSnafu},
     stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
@@ -21,7 +21,10 @@ pub struct Filter {
 }
 
 impl Filter {
-    pub(crate) fn try_new(input: Arc<LogicalPlan>, predicate: ExprRef) -> Result<Self> {
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
+        predicate: ExprRef,
+    ) -> logical_plan::Result<Self> {
         let dtype = predicate.to_field(&input.schema())?.dtype;
 
         if !matches!(dtype, DataType::Boolean) {

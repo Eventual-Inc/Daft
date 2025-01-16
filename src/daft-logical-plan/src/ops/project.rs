@@ -6,10 +6,9 @@ use daft_core::prelude::*;
 use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{CreationSnafu, Result},
+    logical_plan::{self},
     stats::StatsState,
     LogicalPlan,
 };
@@ -24,7 +23,10 @@ pub struct Project {
 }
 
 impl Project {
-    pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
+        projection: Vec<ExprRef>,
+    ) -> logical_plan::Result<Self> {
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
             Self::try_factor_subexpressions(input, projection)?;
@@ -34,7 +36,7 @@ impl Project {
             .map(|expr| expr.to_field(&factored_input.schema()))
             .collect::<DaftResult<_>>()?;
 
-        let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
+        let projected_schema = Schema::new(fields)?.into();
 
         Ok(Self {
             input: factored_input,
@@ -45,7 +47,10 @@ impl Project {
     }
 
     /// Create a new Projection using the specified output schema
-    pub(crate) fn new_from_schema(input: Arc<LogicalPlan>, schema: SchemaRef) -> Result<Self> {
+    pub(crate) fn new_from_schema(
+        input: Arc<LogicalPlan>,
+        schema: SchemaRef,
+    ) -> logical_plan::Result<Self> {
         let expr: Vec<ExprRef> = schema
             .names()
             .into_iter()
@@ -75,7 +80,7 @@ impl Project {
     fn try_factor_subexpressions(
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,
-    ) -> Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
+    ) -> logical_plan::Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
         // Given construction parameters for a projection,
         // see if we can factor out common subexpressions.
         // Returns a new set of projection parameters
