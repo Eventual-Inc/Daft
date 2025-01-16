@@ -1,6 +1,6 @@
 # Terminology
 
-!!! failure "todo(docs): Should the terms below include a link to its respective section under "Core Concepts"? (Except Query Plan doesn't have a section)"
+!!! failure "todo(docs): For each term, included a link to its respective section under "Core Concepts" (except Query Plan doesn't have a section)"
 
 Daft is a distributed data engine. The main abstraction in Daft is the [`DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame), which conceptually can be thought of as a "table" of data with rows and columns.
 
@@ -14,9 +14,13 @@ The [`DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_ge
 
 Daft DataFrames are lazy. This means that calling most methods on a DataFrame will not execute that operation immediately - instead, DataFrames expose explicit methods such as [`daft.DataFrame.show`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.show.html#daft.DataFrame.show) and [`daft.DataFrame.write_parquet`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.write_parquet.html#daft.DataFrame.write_parquet) which will actually trigger computation of the DataFrame.
 
+> Learn more at [DataFrame](core_concepts.md#dataframe)
+
 ## Expressions
 
 An [`Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html) is a fundamental concept in Daft that allows you to define computations on DataFrame columns. They are the building blocks for transforming and manipulating data within your DataFrame and will be your best friend if you are working with Daft primarily using the Python API.
+
+> Learn more at [Expressions](core_concepts.md#expressions)
 
 ## Query Plan
 
@@ -83,9 +87,13 @@ You can examine a logical plan using [`df.explain()`](https://www.getdaft.io/pro
 |   Clustering spec = { Num partitions = 1 }
 ```
 
+> Learn more at [Planning](resources/architecture.md#2-planning)
+
 ## Structured Query Language (SQL)
 
 SQL is a common query language for expressing queries over tables of data. Daft exposes a SQL API as an alternative (but often also complementary API) to the Python [`DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame) and
 [`Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html) APIs for building queries.
 
 You can use SQL in Daft via the [`daft.sql()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql) function, and Daft will also convert many SQL-compatible strings into Expressions via [`daft.sql_expr()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql_expr) for easy interoperability with DataFrames.
+
+> Learn more at [SQL](core_concepts.md#sql)

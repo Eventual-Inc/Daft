@@ -46,7 +46,7 @@ nav:
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
-- API Docs
+- API Docs: ../docs/source/api_docs
 
 # Configuration
 theme:
