@@ -132,7 +132,6 @@ jobs:
           --entrypoint-script='${{ inputs.entrypoint_script }}' \
           --entrypoint-args='${{ inputs.entrypoint_args }}' \
           --env-vars='${{ inputs.env_vars }}' \
-          --enable-ray-tracing
     - name: Download log files from ray cluster
       if: always()
       run: |
