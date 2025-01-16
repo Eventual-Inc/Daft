@@ -1,3 +1,7 @@
+mod resolve_expr;
+#[cfg(test)]
+mod tests;
+
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -12,6 +16,10 @@ use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{col, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
+use indexmap::IndexSet;
+#[cfg(feature = "python")]
+pub use resolve_expr::py_check_column_name_validity;
+use resolve_expr::ExprResolver;
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
@@ -188,11 +196,19 @@ impl LogicalPlanBuilder {
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
+
+        let (to_select, _) = expr_resolver.resolve(to_select, &self.schema())?;
+
         let logical_plan: LogicalPlan = ops::Project::try_new(self.plan.clone(), to_select)?.into();
         Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn with_columns(&self, columns: Vec<ExprRef>) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
+
+        let (columns, _) = expr_resolver.resolve(columns, &self.schema())?;
+
         let fields = &self.schema().fields;
         let current_col_names = fields
             .iter()
@@ -245,6 +261,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::default();
+
+        let (predicate, _) = expr_resolver.resolve_single(predicate, &self.schema())?;
+
         let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(self.with_new_plan(logical_plan))
     }
@@ -255,6 +275,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::default();
+
+        let (to_explode, _) = expr_resolver.resolve(to_explode, &self.schema())?;
+
         let logical_plan: LogicalPlan =
             ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
         Ok(self.with_new_plan(logical_plan))
@@ -264,25 +288,24 @@ impl LogicalPlanBuilder {
         &self,
         ids: Vec<ExprRef>,
         values: Vec<ExprRef>,
-        variable_name: &str,
-        value_name: &str,
+        variable_name: String,
+        value_name: String,
     ) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::default();
+        let (values, _) = expr_resolver.resolve(values, &self.schema())?;
+        let (ids, _) = expr_resolver.resolve(ids, &self.schema())?;
+
         let values = if values.is_empty() {
-            let ids_set = HashSet::<_>::from_iter(ids.iter());
+            let ids_set = IndexSet::<_>::from_iter(ids.iter().cloned());
 
-            self.schema()
+            let columns_set = self
+                .schema()
                 .fields
-                .iter()
-                .filter_map(|(name, _)| {
-                    let column = col(name.clone());
+                .keys()
+                .map(|name| col(name.clone()))
+                .collect::<IndexSet<_>>();
 
-                    if ids_set.contains(&column) {
-                        None
-                    } else {
-                        Some(column)
-                    }
-                })
-                .collect()
+            columns_set.difference(&ids_set).cloned().collect()
         } else {
             values
         };
@@ -299,6 +322,10 @@ impl LogicalPlanBuilder {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
     ) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::default();
+
+        let (sort_by, _) = expr_resolver.resolve(sort_by, &self.schema())?;
+
         let logical_plan: LogicalPlan =
             ops::Sort::try_new(self.plan.clone(), sort_by, descending, nulls_first)?.into();
         Ok(self.with_new_plan(logical_plan))
@@ -309,28 +336,32 @@ impl LogicalPlanBuilder {
         num_partitions: Option<usize>,
         partition_by: Vec<ExprRef>,
     ) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Repartition::try_new(
+        let expr_resolver = ExprResolver::default();
+
+        let (partition_by, _) = expr_resolver.resolve(partition_by, &self.schema())?;
+
+        let logical_plan: LogicalPlan = ops::Repartition::new(
             self.plan.clone(),
             RepartitionSpec::Hash(HashRepartitionConfig::new(num_partitions, partition_by)),
-        )?
+        )
         .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn random_shuffle(&self, num_partitions: Option<usize>) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Repartition::try_new(
+        let logical_plan: LogicalPlan = ops::Repartition::new(
             self.plan.clone(),
             RepartitionSpec::Random(RandomShuffleConfig::new(num_partitions)),
-        )?
+        )
         .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
     pub fn into_partitions(&self, num_partitions: usize) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Repartition::try_new(
+        let logical_plan: LogicalPlan = ops::Repartition::new(
             self.plan.clone(),
             RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(num_partitions)),
-        )?
+        )
         .into();
         Ok(self.with_new_plan(logical_plan))
     }
@@ -356,6 +387,12 @@ impl LogicalPlanBuilder {
         agg_exprs: Vec<ExprRef>,
         groupby_exprs: Vec<ExprRef>,
     ) -> DaftResult<Self> {
+        let groupby_resolver = ExprResolver::default();
+        let (groupby_exprs, _) = groupby_resolver.resolve(groupby_exprs, &self.schema())?;
+
+        let agg_resolver = ExprResolver::builder().groupby(&groupby_exprs).build();
+        let (agg_exprs, _) = agg_resolver.resolve(agg_exprs, &self.schema())?;
+
         let logical_plan: LogicalPlan =
             ops::Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
         Ok(self.with_new_plan(logical_plan))
@@ -369,6 +406,14 @@ impl LogicalPlanBuilder {
         agg_expr: ExprRef,
         names: Vec<String>,
     ) -> DaftResult<Self> {
+        let agg_resolver = ExprResolver::builder().groupby(&group_by).build();
+        let (agg_expr, _) = agg_resolver.resolve_single(agg_expr, &self.schema())?;
+
+        let expr_resolver = ExprResolver::default();
+        let (group_by, _) = expr_resolver.resolve(group_by, &self.schema())?;
+        let (pivot_column, _) = expr_resolver.resolve_single(pivot_column, &self.schema())?;
+        let (value_column, _) = expr_resolver.resolve_single(value_column, &self.schema())?;
+
         let pivot_logical_plan: LogicalPlan = ops::Pivot::try_new(
             self.plan.clone(),
             group_by,
@@ -438,17 +483,36 @@ impl LogicalPlanBuilder {
         join_prefix: Option<&str>,
         keep_join_keys: bool,
     ) -> DaftResult<Self> {
+        let left_plan = self.plan.clone();
+        let right_plan = right.into();
+
+        let expr_resolver = ExprResolver::default();
+
+        let (left_on, _) = expr_resolver.resolve(left_on, &left_plan.schema())?;
+        let (right_on, _) = expr_resolver.resolve(right_on, &right_plan.schema())?;
+
+        // TODO(kevin): we should do this, but it has not been properly used before and is nondeterministic, which causes some tests to break
+        // let (left_on, right_on) = ops::Join::rename_join_keys(left_on, right_on);
+
+        let (right_plan, right_on) = ops::Join::rename_right_columns(
+            left_plan.clone(),
+            right_plan,
+            left_on.clone(),
+            right_on,
+            join_type,
+            join_suffix,
+            join_prefix,
+            keep_join_keys,
+        )?;
+
         let logical_plan: LogicalPlan = ops::Join::try_new(
-            self.plan.clone(),
-            right.into(),
+            left_plan,
+            right_plan,
             left_on,
             right_on,
             null_equals_nulls,
             join_type,
             join_strategy,
-            join_suffix,
-            join_prefix,
-            keep_join_keys,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))
@@ -501,7 +565,7 @@ impl LogicalPlanBuilder {
 
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::MonotonicallyIncreasingId::new(self.plan.clone(), column_name).into();
+            ops::MonotonicallyIncreasingId::try_new(self.plan.clone(), column_name)?.into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -513,6 +577,16 @@ impl LogicalPlanBuilder {
         compression: Option<String>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
+        let partition_cols = partition_cols
+            .map(|cols| {
+                let expr_resolver = ExprResolver::default();
+
+                expr_resolver
+                    .resolve(cols, &self.schema())
+                    .map(|(resolved_cols, _)| resolved_cols)
+            })
+            .transpose()?;
+
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
             root_dir.into(),
             file_format,
@@ -760,8 +834,8 @@ impl PyLogicalPlanBuilder {
         &self,
         ids: Vec<PyExpr>,
         values: Vec<PyExpr>,
-        variable_name: &str,
-        value_name: &str,
+        variable_name: String,
+        value_name: String,
     ) -> PyResult<Self> {
         let ids_exprs = ids
             .iter()

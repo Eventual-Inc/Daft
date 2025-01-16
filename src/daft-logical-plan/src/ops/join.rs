@@ -9,7 +9,7 @@ use daft_dsl::{
     col,
     join::{get_common_join_keys, infer_join_schema},
     optimization::replace_columns_with_expressions,
-    Expr, ExprRef, ExprResolver,
+    Expr, ExprRef,
 };
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -19,7 +19,7 @@ use crate::{
     logical_plan::{self, CreationSnafu},
     ops::Project,
     stats::{ApproxStats, PlanStats, StatsState},
-    LogicalPlan,
+    LogicalPlan, LogicalPlanRef,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,30 +52,6 @@ impl std::hash::Hash for Join {
 
 impl Join {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
-        left: Arc<LogicalPlan>,
-        right: Arc<LogicalPlan>,
-        left_on: Vec<ExprRef>,
-        right_on: Vec<ExprRef>,
-        null_equals_nulls: Option<Vec<bool>>,
-        join_type: JoinType,
-        join_strategy: Option<JoinStrategy>,
-        output_schema: SchemaRef,
-    ) -> Self {
-        Self {
-            left,
-            right,
-            left_on,
-            right_on,
-            null_equals_nulls,
-            join_type,
-            join_strategy,
-            output_schema,
-            stats_state: StatsState::NotMaterialized,
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         left: Arc<LogicalPlan>,
         right: Arc<LogicalPlan>,
@@ -84,45 +60,11 @@ impl Join {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
-        // if true, then duplicate column names will be kept
-        // ex: select * from a left join b on a.id = b.id
-        // if true, then the resulting schema will have two columns named id (id, and b.id)
-        // In SQL the join column is always kept, while in dataframes it is not
-        keep_join_keys: bool,
     ) -> logical_plan::Result<Self> {
-        let expr_resolver = ExprResolver::default();
-
-        let (left_on, _) = expr_resolver
-            .resolve(left_on, &left.schema())
-            .context(CreationSnafu)?;
-        let (right_on, _) = expr_resolver
-            .resolve(right_on, &right.schema())
-            .context(CreationSnafu)?;
-
-        let (unique_left_on, unique_right_on) =
-            Self::rename_join_keys(left_on.clone(), right_on.clone());
-
-        let left_fields: Vec<Field> = unique_left_on
-            .iter()
-            .map(|e| e.to_field(&left.schema()))
-            .collect::<DaftResult<Vec<Field>>>()
-            .context(CreationSnafu)?;
-
-        let right_fields: Vec<Field> = unique_right_on
-            .iter()
-            .map(|e| e.to_field(&right.schema()))
-            .collect::<DaftResult<Vec<Field>>>()
-            .context(CreationSnafu)?;
-
-        for (on_exprs, on_fields) in [
-            (&unique_left_on, &left_fields),
-            (&unique_right_on, &right_fields),
-        ] {
-            for (field, expr) in on_fields.iter().zip(on_exprs.iter()) {
+        for (on_exprs, side) in [(&left_on, &left), (&right_on, &right)] {
+            for expr in on_exprs {
                 // Null type check for both fields and expressions
-                if matches!(field.dtype, DataType::Null) {
+                if matches!(expr.to_field(&side.schema())?.dtype, DataType::Null) {
                     return Err(DaftError::ValueError(format!(
                         "Can't join on null type expressions: {expr}"
                     )))
@@ -141,22 +83,42 @@ impl Join {
             }
         }
 
+        let output_schema = infer_join_schema(
+            &left.schema(),
+            &right.schema(),
+            &left_on,
+            &right_on,
+            join_type,
+        )?;
+
+        Ok(Self {
+            left,
+            right,
+            left_on,
+            right_on,
+            null_equals_nulls,
+            join_type,
+            join_strategy,
+            output_schema,
+            stats_state: StatsState::NotMaterialized,
+        })
+    }
+
+    /// Add a project under the right side plan when necessary in order to resolve naming conflicts
+    /// between left and right side columns.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn rename_right_columns(
+        left: LogicalPlanRef,
+        right: LogicalPlanRef,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
+        join_type: JoinType,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
+        keep_join_keys: bool,
+    ) -> DaftResult<(LogicalPlanRef, Vec<ExprRef>)> {
         if matches!(join_type, JoinType::Anti | JoinType::Semi) {
-            // The output schema is the same as the left input schema for anti and semi joins.
-
-            let output_schema = left.schema();
-
-            Ok(Self {
-                left,
-                right,
-                left_on,
-                right_on,
-                null_equals_nulls,
-                join_type,
-                join_strategy,
-                output_schema,
-                stats_state: StatsState::NotMaterialized,
-            })
+            Ok((right, right_on))
         } else {
             let common_join_keys: HashSet<_> =
                 get_common_join_keys(left_on.as_slice(), right_on.as_slice())
@@ -202,8 +164,8 @@ impl Join {
                 })
                 .collect();
 
-            let (right, right_on) = if right_rename_mapping.is_empty() {
-                (right, right_on)
+            if right_rename_mapping.is_empty() {
+                Ok((right, right_on))
             } else {
                 // projection to update the right side with the new column names
                 let new_right_projection: Vec<_> = right_names
@@ -230,29 +192,8 @@ impl Join {
                     .map(|expr| replace_columns_with_expressions(expr, &right_on_replace_map))
                     .collect::<Vec<_>>();
 
-                (new_right.into(), new_right_on)
-            };
-
-            let output_schema = infer_join_schema(
-                &left.schema(),
-                &right.schema(),
-                &left_on,
-                &right_on,
-                join_type,
-            )
-            .context(CreationSnafu)?;
-
-            Ok(Self {
-                left,
-                right,
-                left_on,
-                right_on,
-                null_equals_nulls,
-                join_type,
-                join_strategy,
-                output_schema,
-                stats_state: StatsState::NotMaterialized,
-            })
+                Ok((new_right.into(), new_right_on))
+            }
         }
     }
 
@@ -282,8 +223,8 @@ impl Join {
     /// ```
     ///
     /// For more details, see [issue #2649](https://github.com/Eventual-Inc/Daft/issues/2649).
-
-    fn rename_join_keys(
+    #[allow(dead_code)]
+    pub(crate) fn rename_join_keys(
         left_exprs: Vec<Arc<Expr>>,
         right_exprs: Vec<Arc<Expr>>,
     ) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {

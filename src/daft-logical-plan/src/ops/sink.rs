@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
 use daft_core::prelude::*;
-use daft_dsl::ExprResolver;
 
 #[cfg(feature = "python")]
 use crate::sink_info::CatalogType;
 use crate::{
+    logical_plan::{self},
     sink_info::SinkInfo,
     stats::{PlanStats, StatsState},
-    LogicalPlan, OutputFileInfo,
+    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,40 +22,11 @@ pub struct Sink {
 }
 
 impl Sink {
-    pub(crate) fn try_new(input: Arc<LogicalPlan>, sink_info: Arc<SinkInfo>) -> DaftResult<Self> {
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
+        sink_info: Arc<SinkInfo>,
+    ) -> logical_plan::Result<Self> {
         let schema = input.schema();
-
-        // replace partition columns with resolved columns
-        let sink_info = match sink_info.as_ref() {
-            SinkInfo::OutputFileInfo(OutputFileInfo {
-                root_dir,
-                file_format,
-                partition_cols,
-                compression,
-                io_config,
-            }) => {
-                let expr_resolver = ExprResolver::default();
-
-                let resolved_partition_cols = partition_cols
-                    .clone()
-                    .map(|cols| {
-                        expr_resolver
-                            .resolve(cols, &schema)
-                            .map(|(resolved_cols, _)| resolved_cols)
-                    })
-                    .transpose()?;
-
-                Arc::new(SinkInfo::OutputFileInfo(OutputFileInfo {
-                    root_dir: root_dir.clone(),
-                    file_format: *file_format,
-                    partition_cols: resolved_partition_cols,
-                    compression: compression.clone(),
-                    io_config: io_config.clone(),
-                }))
-            }
-            #[cfg(feature = "python")]
-            SinkInfo::CatalogInfo(_) => sink_info,
-        };
 
         let fields = match sink_info.as_ref() {
             SinkInfo::OutputFileInfo(output_file_info) => {
