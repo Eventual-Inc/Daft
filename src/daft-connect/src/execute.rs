@@ -25,8 +25,8 @@ use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 use tracing::debug;
 
 use crate::{
-    not_yet_implemented, response_builder::ResponseBuilder, session::Session, translation,
-    util::FromOptionalField, ExecuteStream, Runner,
+    not_yet_implemented, response_builder::ResponseBuilder, session::Session,
+    spark_analyzer::SparkAnalyzer, util::FromOptionalField, ExecuteStream, Runner,
 };
 
 impl Session {
@@ -94,7 +94,7 @@ impl Session {
         let this = self.clone();
         self.compute_runtime.runtime.spawn(async move {
             let execution_fut = async {
-                let translator = translation::SparkAnalyzer::new(&this);
+                let translator = SparkAnalyzer::new(&this);
                 match command.rel_type {
                     Some(RelType::ShowString(ss)) => {
                         let response = this.show_string(*ss, res.clone()).await?;
@@ -212,7 +212,7 @@ impl Session {
                     }
                 };
 
-                let translator = translation::SparkAnalyzer::new(&this);
+                let translator = SparkAnalyzer::new(&this);
 
                 let plan = translator.to_logical_plan(input).await?;
 
@@ -252,7 +252,7 @@ impl Session {
         show_string: ShowString,
         response_builder: ResponseBuilder<ExecutePlanResponse>,
     ) -> eyre::Result<ExecutePlanResponse> {
-        let translator = translation::SparkAnalyzer::new(self);
+        let translator = SparkAnalyzer::new(self);
 
         let ShowString {
             input,

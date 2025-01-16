@@ -18,6 +18,7 @@ dashmap = "6.1.0"
 eyre = "0.6.12"
 futures = "0.3.31"
 itertools = {workspace = true}
+once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 spark-connect = {workspace = true}
 textwrap = "0.16.1"

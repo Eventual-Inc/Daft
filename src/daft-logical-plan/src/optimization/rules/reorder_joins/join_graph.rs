@@ -55,7 +55,6 @@ pub(super) trait JoinOrderer {
 pub(super) struct JoinNode {
     relation_name: String,
     plan: LogicalPlanRef,
-    final_name: String,
 }
 
 // TODO(desmond): We should also take into account user provided values for:
@@ -65,21 +64,15 @@ pub(super) struct JoinNode {
 /// JoinNodes represent a relation (i.e. a non-reorderable logical plan node), the column
 /// that's being accessed from the relation, and the final name of the column in the output.
 impl JoinNode {
-    pub(super) fn new(relation_name: String, plan: LogicalPlanRef, final_name: String) -> Self {
+    pub(super) fn new(relation_name: String, plan: LogicalPlanRef) -> Self {
         Self {
             relation_name,
             plan,
-            final_name,
         }
     }
 
     fn simple_repr(&self) -> String {
-        format!(
-            "{}#{}({})",
-            self.final_name,
-            self.plan.name(),
-            self.relation_name
-        )
+        format!("{}({})", self.plan.name(), self.relation_name)
     }
 }
 
@@ -168,8 +161,8 @@ impl JoinAdjList {
 
     fn add_unidirectional_edge(&mut self, left: &JoinNode, right: &JoinNode) {
         let join_condition = JoinCondition {
-            left_on: left.final_name.clone(),
-            right_on: right.final_name.clone(),
+            left_on: left.relation_name.clone(),
+            right_on: right.relation_name.clone(),
         };
         let left_id = self.get_or_create_plan_id(&left.plan);
         let right_id = self.get_or_create_plan_id(&right.plan);
@@ -448,78 +441,140 @@ impl JoinGraphBuilder {
     /// Joins that added conditions to `join_conds_to_resolve` will pop them off the stack after they have been resolved.
     /// Combining each of their resolved `left_on` conditions with their respective resolved `right_on` conditions produces
     /// a join edge between the relation used in the left condition and the relation used in the right condition.
-    fn process_node(&mut self, plan: &LogicalPlanRef) {
-        let schema = plan.schema();
-        for (name, node, done) in &mut self.join_conds_to_resolve {
-            if !*done && schema.has_field(name) {
-                *node = plan.clone();
-            }
-        }
-        match &**plan {
-            LogicalPlan::Project(Project {
-                input, projection, ..
-            }) => {
-                // Get the mapping from input->output for projections that don't need computation.
-                let projection_input_mapping = projection
-                    .iter()
-                    .filter_map(|e| e.input_mapping().map(|s| (e.name().to_string(), col(s))))
-                    .collect::<HashMap<String, _>>();
-                // To be able to reorder through the current projection, all unresolved columns must either have a
-                // zero-computation projection, or must not be projected by the current Project node (i.e. it should be
-                // resolved from some other branch in the query tree).
-                let reorderable_project =
-                    self.join_conds_to_resolve.iter().all(|(name, _, done)| {
-                        *done
-                            || !schema.has_field(name)
-                            || projection_input_mapping.contains_key(name.as_str())
-                    });
-                if reorderable_project {
-                    let mut non_join_names: HashSet<String> = schema.names().into_iter().collect();
-                    for (name, _, done) in &mut self.join_conds_to_resolve {
-                        if !*done {
-                            if let Some(new_expr) = projection_input_mapping.get(name) {
-                                // Remove the current name from the list of schema names so that we can produce
-                                // a set of non-join-key names for the current Project's schema.
-                                non_join_names.remove(name);
-                                // If we haven't updated the corresponding entry in the final name map, do so now.
-                                if let Some(final_name) = self.final_name_map.remove(name) {
-                                    self.final_name_map
-                                        .insert(new_expr.name().to_string(), final_name);
-                                }
-                                *name = new_expr.name().to_string();
-                            }
-                        }
-                    }
-                    // Keep track of non-join-key projections so that we can reapply them once we've reordered the query tree.
-                    let non_join_key_projections = projection
+    fn process_node(&mut self, mut plan: &LogicalPlanRef) {
+        // Go down the linear chain of Projects and Filters until we hit a join or an unreorderable operator.
+        // If we hit a join, we should process all the Projects and Filters that we encountered before the join.
+        // If we hit an unreorderable operator, the root plan at the top of this linear chain becomes a relation for
+        // join ordering.
+        //
+        // For example, consider this query tree:
+        //
+        //                InnerJoin (a = d)
+        //                    /        \
+        //                   /       Project
+        //                  /        (d, quad <- double + double)
+        //                 /               \
+        //     InnerJoin (a = b)    InnerJoin (c = d)
+        //        /        \           /         \
+        // Scan(a)      Scan(b)   Filter        Scan(d)
+        //                        (c < 5)
+        //                           |
+        //                        Project
+        //                        (c <- c_prime, double <- c_prime + c_prime)
+        //                           |
+        //                        Filter
+        //                        (c_prime > 0)
+        //                           |
+        //                        Scan(c_prime)
+        //
+        // In between InnerJoin(c=d) and Scan(c_prime) there are Filter and Project nodes. Since there is no join below InnerJoin(c=d),
+        // we take the Filter(c<5) operator as the relation to pass into the join (as opposed to using Scan(c_prime) and pushing up
+        // the Projects and Filters above it).
+        let root_plan = plan;
+        loop {
+            match &**plan {
+                // TODO(desmond): There are potentially more reorderable nodes. For example, we can move repartitions around.
+                LogicalPlan::Project(Project {
+                    input, projection, ..
+                }) => {
+                    let projection_input_mapping = projection
                         .iter()
-                        .filter(|e| non_join_names.contains(e.name()))
-                        .map(|e| replace_columns_with_expressions(e.clone(), &self.final_name_map))
-                        .collect::<Vec<_>>();
-                    if !non_join_key_projections.is_empty() {
-                        self.final_projections_and_filters
-                            .push(ProjectionOrFilter::Projection(non_join_key_projections));
-                    }
-                    // Continue to children.
-                    self.process_node(input);
-                } else {
-                    for (name, _, done) in &mut self.join_conds_to_resolve {
-                        if schema.has_field(name) {
-                            *done = true;
-                        }
+                        .filter_map(|e| e.input_mapping().map(|s| (e.name().to_string(), s)))
+                        .collect::<HashMap<String, _>>();
+                    // To be able to reorder through the current projection, all unresolved columns must either have a
+                    // zero-computation projection, or must not be projected by the current Project node (i.e. it should be
+                    // resolved from some other branch in the query tree).
+                    let schema = plan.schema();
+                    let reorderable_project =
+                        self.join_conds_to_resolve.iter().all(|(name, _, done)| {
+                            *done
+                                || !schema.has_field(name)
+                                || projection_input_mapping.contains_key(name.as_str())
+                        });
+                    if reorderable_project {
+                        plan = input;
+                    } else {
+                        // Encountered a non-reorderable Project. Add the root plan at the top of the current linear chain as a relation to join.
+                        self.add_relation(root_plan);
+                        break;
                     }
                 }
+                LogicalPlan::Filter(Filter { input, .. }) => plan = input,
+                // Since we hit a join, we need to process the linear chain of Projects and Filters that were encountered starting
+                // from the plan at the root of the linear chain to the current plan.
+                LogicalPlan::Join(Join {
+                    left_on, join_type, ..
+                }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
+                    self.process_linear_chain(root_plan, plan);
+                    break;
+                }
+                _ => {
+                    // Encountered a non-reorderable node. Add the root plan at the top of the current linear chain as a relation to join.
+                    self.add_relation(root_plan);
+                    break;
+                }
             }
-            LogicalPlan::Filter(Filter {
-                input, predicate, ..
-            }) => {
-                let new_predicate =
-                    replace_columns_with_expressions(predicate.clone(), &self.final_name_map);
-                self.final_projections_and_filters
-                    .push(ProjectionOrFilter::Filter(new_predicate));
-                self.process_node(input);
+        }
+    }
+
+    /// `process_linear_chain` is a helper function that pushes up the Projects and Filters from `starting_node` to
+    /// `ending_node`. `ending_node` MUST be an inner join.
+    ///
+    /// After pushing up Projects and Filters, `process_linear_chain` will call `process_node` on the left and right
+    /// children of the Join node in `ending_node`.
+    fn process_linear_chain(
+        &mut self,
+        starting_node: &LogicalPlanRef,
+        ending_node: &LogicalPlanRef,
+    ) {
+        let mut cur_node = starting_node;
+        while !Arc::ptr_eq(cur_node, ending_node) {
+            match &**cur_node {
+                LogicalPlan::Project(Project {
+                    input, projection, ..
+                }) => {
+                    // Get the mapping from input->output for projections that don't need computation.
+                    let mut compute_projections = vec![];
+                    let projection_input_mapping = projection
+                        .iter()
+                        .filter_map(|e| {
+                            let input_mapping = e.input_mapping();
+                            if input_mapping.is_none() {
+                                compute_projections.push(e.clone());
+                            }
+                            input_mapping.map(|s| (e.name().to_string(), s))
+                        })
+                        .collect::<HashMap<String, _>>();
+                    for (output, input) in &projection_input_mapping {
+                        if let Some(final_name) = self.final_name_map.remove(output) {
+                            self.final_name_map.insert(input.clone(), final_name);
+                        } else {
+                            self.final_name_map
+                                .insert(input.clone(), col(output.clone()));
+                        }
+                    }
+                    if !compute_projections.is_empty() {
+                        self.final_projections_and_filters
+                            .push(ProjectionOrFilter::Projection(compute_projections.clone()));
+                    }
+                    // Continue to children.
+                    cur_node = input;
+                }
+                LogicalPlan::Filter(Filter {
+                    input, predicate, ..
+                }) => {
+                    let new_predicate =
+                        replace_columns_with_expressions(predicate.clone(), &self.final_name_map);
+                    self.final_projections_and_filters
+                        .push(ProjectionOrFilter::Filter(new_predicate));
+                    // Continue to children.
+                    cur_node = input;
+                }
+                _ => unreachable!("process_linear_chain is only called with a linear chain of Project and Filters that end with a Join"),
             }
-            // Only reorder inner joins with non-empty join conditions.
+        }
+        match &**cur_node {
+            // The cur_node is now at the ending_node which MUST be a join node.
             LogicalPlan::Join(Join {
                 left,
                 right,
@@ -530,11 +585,17 @@ impl JoinGraphBuilder {
             }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
                 for l in left_on {
                     let name = l.name();
-                    if !self.final_name_map.contains_key(name) {
+                    let final_name = if let Some(final_name) = self.final_name_map.get(name) {
+                        final_name.name()
+                    } else {
                         self.final_name_map.insert(name.to_string(), col(name));
-                    }
-                    self.join_conds_to_resolve
-                        .push((name.to_string(), plan.clone(), false));
+                        name
+                    };
+                    self.join_conds_to_resolve.push((
+                        final_name.to_string(),
+                        cur_node.clone(),
+                        false,
+                    ));
                 }
                 self.process_node(left);
                 let mut ready_left = vec![];
@@ -543,11 +604,17 @@ impl JoinGraphBuilder {
                 }
                 for r in right_on {
                     let name = r.name();
-                    if !self.final_name_map.contains_key(name) {
+                    let final_name = if let Some(final_name) = self.final_name_map.get(name) {
+                        final_name.name()
+                    } else {
                         self.final_name_map.insert(name.to_string(), col(name));
-                    }
-                    self.join_conds_to_resolve
-                        .push((name.to_string(), plan.clone(), false));
+                        name
+                    };
+                    self.join_conds_to_resolve.push((
+                        final_name.to_string(),
+                        cur_node.clone(),
+                        false,
+                    ));
                 }
                 self.process_node(right);
                 let mut ready_right = vec![];
@@ -558,62 +625,65 @@ impl JoinGraphBuilder {
                     ready_left.into_iter().zip(ready_right.into_iter())
                 {
                     if ldone && rdone {
-                        let node1 = JoinNode::new(
-                            lname.clone(),
-                            lnode.clone(),
-                            self.final_name_map.get(&lname).unwrap().name().to_string(),
-                        );
-                        let node2 = JoinNode::new(
-                            rname.clone(),
-                            rnode.clone(),
-                            self.final_name_map.get(&rname).unwrap().name().to_string(),
-                        );
+                        let node1 = JoinNode::new(lname.clone(), lnode.clone());
+                        let node2 = JoinNode::new(rname.clone(), rnode.clone());
                         self.adj_list.add_bidirectional_edge(node1, node2);
                     } else {
                         panic!("Join conditions were unresolved");
                     }
                 }
             }
-            // TODO(desmond): There are potentially more reorderable nodes. For example, we can move repartitions around.
             _ => {
-                // This is an unreorderable node. All unresolved columns coming out of this node should be marked as resolved.
-                // TODO(desmond): At this point we should perform a fresh join reorder optimization starting from this
-                // node as the root node. We can do this once we add the optimizer rule.
-                let mut projections = vec![];
-                let mut needs_projection = false;
-                let mut seen_names = HashSet::new();
-                for (name, _, done) in &mut self.join_conds_to_resolve {
-                    if schema.has_field(name) && !*done && !seen_names.contains(name) {
-                        if let Some(final_name) = self.final_name_map.get(name) {
-                            let final_name = final_name.name().to_string();
-                            if final_name != *name {
-                                needs_projection = true;
-                                projections.push(col(name.clone()).alias(final_name));
-                            } else {
-                                projections.push(col(name.clone()));
-                            }
-                        } else {
-                            projections.push(col(name.clone()));
-                        }
-                        seen_names.insert(name);
-                    }
-                }
-                // Apply projections and return the new plan as the relation for the appropriate join conditions.
-                let projected_plan = if needs_projection {
-                    let projected_plan = LogicalPlanBuilder::from(plan.clone())
-                        .select(projections)
-                        .expect("Computed projections could not be applied to relation")
-                        .build();
-                    Arc::new(Arc::unwrap_or_clone(projected_plan).with_materialized_stats())
+                panic!("Expected a join node")
+            }
+        }
+    }
+
+    /// `process_leaf_relation` is a helper function that processes an unreorderable node that sits below some
+    /// Join node(s). `plan` will become one of the relations involved in join ordering.
+    fn add_relation(&mut self, plan: &LogicalPlanRef) {
+        // All unresolved columns coming out of this node should be marked as resolved.
+        // TODO(desmond): At this point we should perform a fresh join reorder optimization starting from this
+        // node as the root node. We can do this once we add the optimizer rule.
+        let schema = plan.schema();
+
+        let mut projections = vec![];
+        let names = schema.names();
+        let mut seen_names = HashSet::new();
+        let mut needs_projection = false;
+        for (input, final_name) in &self.final_name_map {
+            if names.contains(input) {
+                seen_names.insert(input);
+                let final_name = final_name.name().to_string();
+                if final_name != *input {
+                    projections.push(col(input.clone()).alias(final_name));
+                    needs_projection = true;
                 } else {
-                    plan.clone()
-                };
-                for (name, node, done) in &mut self.join_conds_to_resolve {
-                    if schema.has_field(name) && !*done {
-                        *done = true;
-                        *node = projected_plan.clone();
-                    }
+                    projections.push(col(input.clone()));
                 }
+            }
+        }
+        // Apply projections and return the new plan as the relation for the appropriate join conditions.
+        let projected_plan = if needs_projection {
+            // Add the non-join-key columns to the projection.
+            for name in &schema.names() {
+                if !seen_names.contains(name) {
+                    projections.push(col(name.clone()));
+                }
+            }
+            let projected_plan = LogicalPlanBuilder::from(plan.clone())
+                .select(projections)
+                .expect("Computed projections could not be applied to relation")
+                .build();
+            Arc::new(Arc::unwrap_or_clone(projected_plan).with_materialized_stats())
+        } else {
+            plan.clone()
+        };
+        let projected_schema = projected_plan.schema();
+        for (name, node, done) in &mut self.join_conds_to_resolve {
+            if projected_schema.has_field(name) && !*done {
+                *done = true;
+                *node = projected_plan.clone();
             }
         }
     }
@@ -781,12 +851,12 @@ mod tests {
 
     #[test]
     fn test_create_join_graph_multiple_renames() {
-        //                InnerJoin (a_beta = b)
+        //                InnerJoin (a_beta = c)
         //                 /          \
         //            Project        Scan(c)
         //            (a_beta <- a_alpha)
         //             /
-        //     InnerJoin (a = c)
+        //     InnerJoin (a_alpha = b)
         //        /             \
         //    Project            Scan(b)
         //    (a_alpha <- a)
@@ -912,10 +982,6 @@ mod tests {
             "Project(c) <-> Source(d)",
             "Source(a) <-> Source(d)"
         ]));
-        // Check for non-join projections at the end.
-        // `c_prime` gets renamed to `c` in the final projection
-        let double_proj = col("c").add(col("c")).alias("double");
-        assert!(join_graph.contains_projections_and_filters(vec![&double_proj]));
     }
 
     #[test]
@@ -1003,19 +1069,12 @@ mod tests {
         assert!(join_graph.num_edges() == 3);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
-            "Project(c) <-> Source(d)",
+            "Filter(c) <-> Source(d)",
             "Source(a) <-> Source(d)",
         ]));
         // Check for non-join projections and filters at the end.
-        // `c_prime` gets renamed to `c` in the final projection
-        let double_proj = col("c").add(col("c")).alias("double");
-        let filter_c_prime = col("c").gt(Arc::new(Expr::Literal(LiteralValue::Int64(0))));
-        assert!(join_graph.contains_projections_and_filters(vec![
-            &quad_proj,
-            &filter_c,
-            &double_proj,
-            &filter_c_prime,
-        ]));
+        // The join graph should only keep track of projections and filters that sit between joins.
+        assert!(join_graph.contains_projections_and_filters(vec![&quad_proj,]));
     }
 
     #[test]

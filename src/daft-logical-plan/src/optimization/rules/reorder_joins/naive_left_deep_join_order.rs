@@ -80,7 +80,7 @@ mod tests {
                 .iter()
                 .map(|name| {
                     let scan_node = create_scan_node(name, Some(100));
-                    JoinNode::new(name.to_string(), scan_node, name.to_string())
+                    JoinNode::new(name.to_string(), scan_node)
                 })
                 .collect();
             let graph = create_join_graph_with_edges(nodes.clone(), $edges);
