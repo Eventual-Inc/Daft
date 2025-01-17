@@ -751,7 +751,6 @@ impl LogicalPlanBuilder {
 
         let cfg = self.config.clone();
 
-        // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
 
         let optimizer = OptimizerBuilder::default()
