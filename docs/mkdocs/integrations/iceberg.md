@@ -5,12 +5,12 @@
 Daft currently natively supports:
 
 1. **Distributed Reads:** Daft will fully distribute the I/O of reads over your compute resources (whether Ray or on multithreading on the local PyRunner)
-2. **Skipping Filtered Data:** Daft uses [`df.where(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.where.html) filter calls to only read data that matches your predicates
+2. **Skipping Filtered Data:** Daft uses [`df.where(...)`](../{{ api_path }}/dataframe_methods/daft.DataFrame.where.html) filter calls to only read data that matches your predicates
 3. **All Catalogs From PyIceberg:** Daft is natively integrated with PyIceberg, and supports all the catalogs that PyIceberg does
 
 ## Reading a Table
 
-To read from the Apache Iceberg table format, use the [`daft.read_iceberg`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_iceberg.html#daft.read_iceberg) function.
+To read from the Apache Iceberg table format, use the [`daft.read_iceberg`](../{{ api_path }}/io_functions/daft.read_iceberg.html#daft.read_iceberg) function.
 
 We integrate closely with [PyIceberg](https://py.iceberg.apache.org/) (the official Python implementation for Apache Iceberg) and allow the reading of Daft dataframes easily from PyIceberg's Table objects. The following is an example snippet of loading an example table, but for more information please consult the [PyIceberg Table loading documentation](https://py.iceberg.apache.org/api/#load-a-table).
 
@@ -47,7 +47,7 @@ Any subsequent filter operations on the Daft `df` DataFrame object will be corre
 
 ## Writing to a Table
 
-To write to an Apache Iceberg table, use the [`daft.DataFrame.write_iceberg`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.write_iceberg.html) method.
+To write to an Apache Iceberg table, use the [`daft.DataFrame.write_iceberg`](../{{ api_path }}/dataframe_methods/daft.DataFrame.write_iceberg.html) method.
 
 The following is an example of appending data to an Iceberg table:
 
@@ -80,24 +80,24 @@ When reading from an Iceberg table into Daft:
 | Iceberg               | Daft                          |
 | --------------------- | ----------------------------- |
 | **Primitive Types** |
-| `boolean` | [`daft.DataType.bool()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.bool) |
-| `int` | [`daft.DataType.int32()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int32) |
-| `long` | [`daft.DataType.int64()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int64) |
-| `float` | [`daft.DataType.float32()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.float32) |
-| `double` | [`daft.DataType.float64()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.float64) |
-| `decimal(precision, scale)` | [`daft.DataType.decimal128(precision, scale)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.decimal128) |
-| `date` | [`daft.DataType.date()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.date) |
-| `time` | [`daft.DataType.int64()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int64) |
-| `timestamp` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.timestamp) |
-| `timestampz`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.timestamp) |
-| `string` | [`daft.DataType.string()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.string) |
-| `uuid` | [`daft.DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary) |
-| `fixed(L)` | [`daft.DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary)
-| `binary` | [`daft.DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary) |
+| `boolean` | [`daft.DataType.bool()`](../api_docs/datatype.html#daft.DataType.bool) |
+| `int` | [`daft.DataType.int32()`](../api_docs/datatype.html#daft.DataType.int32) |
+| `long` | [`daft.DataType.int64()`](../api_docs/datatype.html#daft.DataType.int64) |
+| `float` | [`daft.DataType.float32()`](../api_docs/datatype.html#daft.DataType.float32) |
+| `double` | [`daft.DataType.float64()`](../api_docs/datatype.html#daft.DataType.float64) |
+| `decimal(precision, scale)` | [`daft.DataType.decimal128(precision, scale)`](../api_docs/datatype.html#daft.DataType.decimal128) |
+| `date` | [`daft.DataType.date()`](../api_docs/datatype.html#daft.DataType.date) |
+| `time` | [`daft.DataType.int64()`](../api_docs/datatype.html#daft.DataType.int64) |
+| `timestamp` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](../api_docs/datatype.html#daft.DataType.timestamp) |
+| `timestampz`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](../api_docs/datatype.html#daft.DataType.timestamp) |
+| `string` | [`daft.DataType.string()`](../api_docs/datatype.html#daft.DataType.string) |
+| `uuid` | [`daft.DataType.binary()`](../api_docs/datatype.html#daft.DataType.binary) |
+| `fixed(L)` | [`daft.DataType.binary()`](../api_docs/datatype.html#daft.DataType.binary)
+| `binary` | [`daft.DataType.binary()`](../api_docs/datatype.html#daft.DataType.binary) |
 | **Nested Types** |
-| `struct(fields)` | [`daft.DataType.struct(fields)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.struct) |
-| `list(child_type)` | [`daft.DataType.list(child_type)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.list) |
-| `map(K, V)` | [`daft.DataType.struct({"key": K, "value": V})`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.struct) |
+| `struct(fields)` | [`daft.DataType.struct(fields)`](../api_docs/datatype.html#daft.DataType.struct) |
+| `list(child_type)` | [`daft.DataType.list(child_type)`](../api_docs/datatype.html#daft.DataType.list) |
+| `map(K, V)` | [`daft.DataType.struct({"key": K, "value": V})`](../api_docs/datatype.html#daft.DataType.struct) |
 
 ## Roadmap
 

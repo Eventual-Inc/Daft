@@ -73,4 +73,4 @@ Ray Datasets make it easy to feed data really efficiently into Ray's model train
 
 However, Ray Datasets are not a fully-fledged Dataframe abstraction (and [it is explicit in not being an ETL framework for data science](https://docs.ray.io/en/latest/data/overview.html#ray-data-overview)) which means that it lacks key features in data querying, visualization and aggregations.
 
-Instead, Ray Data is a perfect destination for processed data from DaFt Dataframes to be sent to with a simple [`df.to_ray_dataset()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.to_ray_dataset.html#daft.DataFrame.to_ray_dataset) call. This is useful as an entrypoint into your model training and inference ecosystem!
+Instead, Ray Data is a perfect destination for processed data from DaFt Dataframes to be sent to with a simple [`df.to_ray_dataset()`](../{{ api_path }}/dataframe_methods/daft.DataFrame.to_ray_dataset.html) call. This is useful as an entrypoint into your model training and inference ecosystem!

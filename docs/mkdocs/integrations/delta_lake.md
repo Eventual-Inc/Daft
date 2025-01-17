@@ -6,7 +6,7 @@ Daft currently supports:
 
 1. **Parallel + Distributed Reads:** Daft parallelizes Delta Lake table reads over all cores of your machine, if using the default multithreading runner, or all cores + machines of your Ray cluster, if using the [distributed Ray runner](../distributed.md).
 
-2. **Skipping Filtered Data:** Daft ensures that only data that matches your [`df.where(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.where.html#daft.DataFrame.where) filter will be read, often skipping entire files/partitions.
+2. **Skipping Filtered Data:** Daft ensures that only data that matches your [`df.where(...)`](../{{ api_path }}/dataframe_methods/daft.DataFrame.where.html) filter will be read, often skipping entire files/partitions.
 
 3. **Multi-cloud Support:** Daft supports reading Delta Lake tables from AWS S3, Azure Blob Store, and GCS, as well as local files.
 
@@ -20,7 +20,7 @@ pip install -U "getdaft[deltalake]"
 
 ## Reading a Table
 
-A Delta Lake table can be read by providing [`daft.read_deltalake`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_deltalake.html#daft.read_deltalake) with the URI for your table.
+A Delta Lake table can be read by providing [`daft.read_deltalake`](../{{ api_path }}/io_functions/daft.read_deltalake.html) with the URI for your table.
 
 The below example uses the [deltalake](https://pypi.org/project/deltalake/) Python package to create a local Delta Lake table for Daft to read, but Daft can also read Delta Lake tables from all of the major cloud stores.
 
@@ -76,7 +76,7 @@ Filters on non-partition columns will still benefit from automatic file pruning 
 
 ## Write to Delta Lake
 
-You can use [`df.write_deltalake`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.write_deltalake.html) to write a Daft DataFrame to a Delta table:
+You can use [`df.write_deltalake`](../{{ api_path }}/dataframe_methods/daft.DataFrame.write_deltalake.html) to write a Daft DataFrame to a Delta table:
 
 === "🐍 Python"
 
@@ -84,7 +84,7 @@ You can use [`df.write_deltalake`](https://www.getdaft.io/projects/docs/en/stabl
     df.write_deltalake("tmp/daft-table", mode="overwrite")
     ```
 
-Daft supports multiple write modes. See the API docs for [`daft.DataFrame.write_deltalake`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.write_deltalake.html) for more details.
+Daft supports multiple write modes. See the API docs for [`daft.DataFrame.write_deltalake`](../{{ api_path }}/dataframe_methods/daft.DataFrame.write_deltalake.html) for more details.
 
 ## Type System
 
@@ -95,23 +95,23 @@ When reading from a Delta Lake table into Daft:
 | Delta Lake               | Daft                          |
 | --------------------- | ----------------------------- |
 | **Primitive Types** |
-| `boolean` | [`daft.DataType.bool()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.bool) |
-| `byte` | [`daft.DataType.int8()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int8) |
-| `short` | [`daft.DataType.int16()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int16)|
-| `int` | [`daft.DataType.int32()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int32) |
-| `long` | [`daft.DataType.int64()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int64) |
-| `float` | [`daft.DataType.float32()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.float32) |
-| `double` | [`daft.DataType.float64()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.float64) |
-| `decimal(precision, scale)` | [`daft.DataType.decimal128(precision, scale)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.decimal128) |
-| `date` | [`daft.DataType.date()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.date) |
-| `timestamp` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.timestamp) |
-| `timestampz`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.timestamp) |
-| `string` | [`daft.DataType.string()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.string) |
-| `binary` | [`daft.DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary) |
+| `boolean` | [`daft.DataType.bool()`](../api_docs/datatype.html) |
+| `byte` | [`daft.DataType.int8()`](../api_docs/datatype.html#daft.DataType.int8) |
+| `short` | [`daft.DataType.int16()`](../api_docs/datatype.html#daft.DataType.int16)|
+| `int` | [`daft.DataType.int32()`](../api_docs/datatype.html#daft.DataType.int32) |
+| `long` | [`daft.DataType.int64()`](../api_docs/datatype.html#daft.DataType.int64) |
+| `float` | [`daft.DataType.float32()`](../api_docs/datatype.html#daft.DataType.float32) |
+| `double` | [`daft.DataType.float64()`](../api_docs/datatype.html#daft.DataType.float64) |
+| `decimal(precision, scale)` | [`daft.DataType.decimal128(precision, scale)`](../api_docs/datatype.html#daft.DataType.decimal128) |
+| `date` | [`daft.DataType.date()`](../api_docs/datatype.html#daft.DataType.date) |
+| `timestamp` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](../api_docs/datatype.html#daft.DataType.timestamp) |
+| `timestampz`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](../api_docs/datatype.html#daft.DataType.timestamp) |
+| `string` | [`daft.DataType.string()`](../api_docs/datatype.html#daft.DataType.string) |
+| `binary` | [`daft.DataType.binary()`](../api_docs/datatype.html#daft.DataType.binary) |
 | **Nested Types** |
-| `struct(fields)` | [`daft.DataType.struct(fields)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.struct) |
-| `list(child_type)` | [`daft.DataType.list(child_type)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.list) |
-| `map(K, V)` | [`daft.DataType.struct({"key": K, "value": V})`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.struct) |
+| `struct(fields)` | [`daft.DataType.struct(fields)`](../api_docs/datatype.html#daft.DataType.struct) |
+| `list(child_type)` | [`daft.DataType.list(child_type)`](../api_docs/datatype.html#daft.DataType.list) |
+| `map(K, V)` | [`daft.DataType.struct({"key": K, "value": V})`](../api_docs/datatype.html#daft.DataType.struct) |
 
 ## Roadmap
 

@@ -30,7 +30,7 @@ If instead you wish to have Daft use credentials from the "driver", you may wish
 
 You may also choose to pass these values into your Daft I/O function calls using an [`daft.io.AzureConfig`](../{{ api_path }}/io_configs/daft.io.AzureConfig.html) config object.
 
-<!-- add SQL AzureConfig https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/sql_funcs/daft.sql._sql_funcs.AzureConfig.html#daft.sql._sql_funcs.AzureConfig -->
+!!! failure "todo(docs): add SQL AzureConfig https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/sql_funcs/daft.sql._sql_funcs.AzureConfig.html#daft.sql._sql_funcs.AzureConfig"
 
 [`daft.set_planning_config`](../{{ api_path }}/configuration_functions/daft.set_planning_config.html) is a convenient way to set your [`daft.io.IOConfig`](../{{ api_path }}/io_configs/daft.io.IOConfig.html) as the default config to use on any subsequent Daft method calls.
 
