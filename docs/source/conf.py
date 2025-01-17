@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.abspath("ext"))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "Daft"
-copyright = "2023, Eventual"
+copyright = "2025, Eventual"
 author = "Eventual"
 # html_logo = "_static/daft-logo.png"
 html_favicon = "_static/daft-favicon.png"
