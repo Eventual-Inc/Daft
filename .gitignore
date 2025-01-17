@@ -32,7 +32,10 @@ log/
 .benchmarks
 
 # docs autogen
-/docs/source/api_docs/doc_gen/
+/docs/source/doc_gen/
+/docs/sphinx/_build/
+/docs/sphinx/source/doc_gen/
+/docs/site/
 
 # Added by pyenv
 .python-version
