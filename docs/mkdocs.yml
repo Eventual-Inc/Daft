@@ -115,7 +115,7 @@ extra:
   api_path: api_docs/doc_gen
 
 extra_css:
-  - /css/extra.css
+- /css/extra.css
 
 # Extensions
 markdown_extensions:
@@ -149,4 +149,4 @@ plugins:
 - macros
 - mkdocs-simple-hooks:
     hooks:
-        on_pre_build: "docs.hooks:make_api_docs"
+      on_pre_build: "docs.hooks:make_api_docs"
