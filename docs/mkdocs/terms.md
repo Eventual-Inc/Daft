@@ -87,13 +87,7 @@ You can examine a logical plan using [`df.explain()`](https://www.getdaft.io/pro
 |   Clustering spec = { Num partitions = 1 }
 ```
 
-<<<<<<< HEAD:docs/mkdocs/terms.md
-> Learn more at [Planning](resources/architecture.md#2-planning)
-
-## Structured Query Language (SQL)
-=======
 ## SQL
->>>>>>> a7dd7ef5885b96fba4d67748cc53504a8873eda1:docs-v2/terms.md
 
 [SQL (Structured Query Language)](https://en.wikipedia.org/wiki/SQL) is a common query language for expressing queries over tables of data. Daft exposes a SQL API as an alternative (but often also complementary API) to the Python [`DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame) and
 [`Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html) APIs for building queries.
