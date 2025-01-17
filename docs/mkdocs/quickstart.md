@@ -4,7 +4,7 @@
 
 !!! failure "todo(docs): Incorporate SQL examples"
 
-!!! failure "todo(docs): Add link to notebook to DIY (notebook is in docs-v2 dir, but idk how to host on colab)."
+!!! failure "todo(docs): Add link to notebook to DIY (notebook is in mkdocs dir, but idk how to host on colab)."
 
 !!! failure "todo(docs): What does the actual output look like for some of these examples?"
 
