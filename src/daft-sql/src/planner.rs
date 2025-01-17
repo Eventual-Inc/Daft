@@ -8,6 +8,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_algebra::boolean::combine_conjunction;
+use daft_catalog::DaftCatalog;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
@@ -34,8 +35,7 @@ use sqlparser::{
 };
 
 use crate::{
-    catalog::SQLCatalog, column_not_found_err, error::*, invalid_operation_err,
-    table_not_found_err, unsupported_sql_err,
+    column_not_found_err, error::*, invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
 
 /// A named logical plan
@@ -73,18 +73,10 @@ impl Relation {
 }
 
 /// Context that is shared across a query and its subqueries
+#[derive(Default)]
 struct PlannerContext {
-    catalog: SQLCatalog,
+    catalog: DaftCatalog,
     cte_map: HashMap<String, Relation>,
-}
-
-impl Default for PlannerContext {
-    fn default() -> Self {
-        Self {
-            catalog: SQLCatalog::new(),
-            cte_map: Default::default(),
-        }
-    }
 }
 
 #[derive(Default)]
@@ -100,7 +92,7 @@ pub struct SQLPlanner<'a> {
 }
 
 impl<'a> SQLPlanner<'a> {
-    pub fn new(catalog: SQLCatalog) -> Self {
+    pub fn new(catalog: DaftCatalog) -> Self {
         let context = Rc::new(RefCell::new(PlannerContext {
             catalog,
             ..Default::default()
@@ -146,7 +138,7 @@ impl<'a> SQLPlanner<'a> {
         Ref::map(self.context.borrow(), |i| &i.cte_map)
     }
 
-    fn catalog(&self) -> Ref<'_, SQLCatalog> {
+    fn catalog(&self) -> Ref<'_, DaftCatalog> {
         Ref::map(self.context.borrow(), |i| &i.catalog)
     }
 
@@ -1088,8 +1080,9 @@ impl<'a> SQLPlanner<'a> {
             .or_else(|| self.cte_map().get(&table_name).cloned())
             .or_else(|| {
                 self.catalog()
-                    .get_table(&table_name)
-                    .map(|table| Relation::new(table.into(), table_name.clone()))
+                    .read_table(&table_name)
+                    .ok()
+                    .map(|table| Relation::new(table, table_name.clone()))
             })
         else {
             table_not_found_err!(table_name)
