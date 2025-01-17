@@ -337,7 +337,7 @@ You can **sort** a DataFrame with the [`df.sort()`]({{ api_path }}/dataframe_met
 
 ## Group and Aggregate Data
 
-You can **group** and **aggregate** your data using the [`df.groupby()`]({{ api_path }}/dataframe_methods/daft.DataFrame.groupby.html) and the [`df.agg()`](/dataframe_methods/daft.DataFrame.agg.html) methods. A groupby aggregation operation over a dataset happens in 2 steps:
+You can **group** and **aggregate** your data using the [`df.groupby()`]({{ api_path }}/dataframe_methods/daft.DataFrame.groupby.html) and the [`df.agg()`]({{ api_path }}/dataframe_methods/daft.DataFrame.agg.html) methods. A groupby aggregation operation over a dataset happens in 2 steps:
 
 1. Split the data into groups based on some criteria using [`df.groupby()`]({{ api_path }}/dataframe_methods/daft.DataFrame.groupby.html)
 2. Specify how to aggregate the data for each group using [`df.agg()`]({{ api_path }}/dataframe_methods/daft.DataFrame.agg.html)
