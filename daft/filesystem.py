@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 from daft.convert import from_pydict
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
-from daft.datatype import DataType
 from daft.dependencies import fsspec, pafs
 from daft.expressions.expressions import col, lit
 from daft.table import MicroPartition
@@ -372,32 +371,40 @@ def overwrite_files(
     overwrite_partitions: bool,
 ) -> None:
     [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
-    file_selector = pafs.FileSelector(resolved_path, recursive=True)
-    try:
-        paths = [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
-    except FileNotFoundError:
-        # The root directory does not exist, so there are no files to delete.
-        return
-    all_file_paths_df = from_pydict({"path": paths})
 
     assert manifest._result is not None
     written_file_paths = manifest._result._get_merged_micropartition().get_column("path")
-    if overwrite_partitions:
-        # Extract directories of written files
-        written_dirs = set(str(pathlib.Path(path).parent) for path in written_file_paths.to_pylist())
 
-        # Filter existing files to only those in directories where we wrote new files
-        to_delete = all_file_paths_df.where(
-            (~(col("path").is_in(lit(written_file_paths))))
-            & (
-                col("path")
-                .apply(lambda x: str(pathlib.Path(x).parent), return_dtype=DataType.string())
-                .is_in(list(written_dirs))
-            )
-        )
+    all_file_paths = []
+    if overwrite_partitions:
+        # Get all files in ONLY the directories that were written to.
+
+        written_dirs = set(str(pathlib.Path(path).parent) for path in written_file_paths.to_pylist())
+        for dir in written_dirs:
+            file_selector = pafs.FileSelector(dir, recursive=True)
+            try:
+                all_file_paths.extend(
+                    [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+                )
+            except FileNotFoundError:
+                # The root directory does not exist, so there are no files to delete.
+                continue
     else:
-        # If we are not overwriting partitions, we only want to delete files that were written
-        to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths))))
+        # Get all files in the root directory.
+
+        file_selector = pafs.FileSelector(resolved_path, recursive=True)
+        try:
+            all_file_paths.extend(
+                [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+            )
+        except FileNotFoundError:
+            # The root directory does not exist, so there are no files to delete.
+            return
+
+    all_file_paths_df = from_pydict({"path": all_file_paths})
+
+    # Find the files that were not written to in this run and delete them.
+    to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths))))
 
     # TODO: Look into parallelizing this
     for entry in to_delete:
