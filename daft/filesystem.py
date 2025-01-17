@@ -368,19 +368,41 @@ def overwrite_files(
     manifest: DataFrame,
     root_dir: str | pathlib.Path,
     io_config: IOConfig | None,
+    overwrite_partitions: bool,
 ) -> None:
     [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
-    file_selector = pafs.FileSelector(resolved_path, recursive=True)
-    try:
-        paths = [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
-    except FileNotFoundError:
-        # The root directory does not exist, so there are no files to delete.
-        return
-
-    all_file_paths_df = from_pydict({"path": paths})
 
     assert manifest._result is not None
     written_file_paths = manifest._result._get_merged_micropartition().get_column("path")
+
+    all_file_paths = []
+    if overwrite_partitions:
+        # Get all files in ONLY the directories that were written to.
+
+        written_dirs = set(str(pathlib.Path(path).parent) for path in written_file_paths.to_pylist())
+        for dir in written_dirs:
+            file_selector = pafs.FileSelector(dir, recursive=True)
+            try:
+                all_file_paths.extend(
+                    [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+                )
+            except FileNotFoundError:
+                continue
+    else:
+        # Get all files in the root directory.
+
+        file_selector = pafs.FileSelector(resolved_path, recursive=True)
+        try:
+            all_file_paths.extend(
+                [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+            )
+        except FileNotFoundError:
+            # The root directory does not exist, so there are no files to delete.
+            return
+
+    all_file_paths_df = from_pydict({"path": all_file_paths})
+
+    # Find the files that were not written to in this run and delete them.
     to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths))))
 
     # TODO: Look into parallelizing this
