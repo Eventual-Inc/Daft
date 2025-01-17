@@ -90,6 +90,11 @@ jobs:
         mkdir -p $GHA_OUTPUT_DIR
         echo "Output dir is set to $GHA_OUTPUT_DIR"
         echo "GHA_OUTPUT_DIR=$GHA_OUTPUT_DIR" >> $GITHUB_ENV
+    - name: Install prometheus
+      run: |
+        source .venv/bin/activate
+        sudo apt update
+        sudo apt install prometheus
     - name: Dynamically update ray config file
       run: |
         source .venv/bin/activate
