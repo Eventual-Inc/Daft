@@ -29,7 +29,7 @@ For more advanced installation options, please see [Installation](install.md).
 
 !!! failure "todo(docs): Simplify this example, take from "dataframe" section, but will they be too similar now?"
 
-See also [DataFrame Creation](https://www.getdaft.io/projects/docs/en/stable/api_docs/creation.html#df-input-output). Let's create a DataFrame from a dictionary of columns:
+See also [DataFrame Creation](api_docs/creation.html#df-input-output). Let's create a DataFrame from a dictionary of columns:
 
 === "🐍 Python"
     ```python
@@ -71,14 +71,14 @@ You just created your first DataFrame!
 
 Daft supports both local paths as well as paths to object storage such as AWS S3:
 
-- CSV files: [`daft.read_csv("s3://path/to/bucket/*.csv")`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_csv.html#daft.read_csv)
-- Parquet files: [`daft.read_parquet("/path/*.parquet")`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_parquet.html#daft.read_parquet)
-- JSON line-delimited files: [`daft.read_json("/path/*.json")`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_json.html#daft.read_json)
-- Files on disk: [`daft.from_glob_path("/path/*.jpeg")`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.from_glob_path.html#daft.from_glob_path)
+- CSV files: [`daft.read_csv("s3://path/to/bucket/*.csv")`]({{ api_path }}/io_functions/daft.read_csv.html)
+- Parquet files: [`daft.read_parquet("/path/*.parquet")`]({{ api_path }}/io_functions/daft.read_parquet.html)
+- JSON line-delimited files: [`daft.read_json("/path/*.json")`]({{ api_path }}/io_functions/daft.read_json.html)
+- Files on disk: [`daft.from_glob_path("/path/*.jpeg")`]({{ api_path }}/io_functions/daft.from_glob_path.html)
 
 !!! tip "Note"
 
-    See [Integrations](https://www.getdaft.io/projects/docs/en/stable/user_guide/integrations.html) to learn more about working with other formats like Delta Lake and Iceberg.
+    To work with other formats like [Delta Lake](integrations/delta_lake.md) and [Iceberg](integrations/iceberg.md), check out their respective pages.
 
 Let’s read in a Parquet file from a public S3 bucket. Note that this Parquet file is partitioned on the column `country`. This will be important later on.
 
@@ -112,7 +112,7 @@ Why does it say `(No data to display: Dataframe not materialized)` and where are
 
 Daft DataFrames are **lazy** by default. This means that the contents will not be computed (“materialized”) unless you explicitly tell Daft to do so. This is best practice for working with larger-than-memory datasets and parallel/distributed architectures.
 
-The file we have just loaded only has 5 rows. You can materialize the whole DataFrame in memory easily using the [`df.collect()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.collect.html#daft.DataFrame.collect]) method:
+The file we have just loaded only has 5 rows. You can materialize the whole DataFrame in memory easily using the [`df.collect()`]({{ api_path }}/dataframe_methods/daft.DataFrame.collect.html) method:
 
 !!! failure "todo(docs): How does SQL materialize the DataFrame?"
 
@@ -137,7 +137,7 @@ The file we have just loaded only has 5 rows. You can materialize the whole Data
 (Showing first 5 of 5 rows)
 ```
 
-To view just the first few rows, you can use the [`df.show()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.show.html#daft.DataFrame.show) method:
+To view just the first few rows, you can use the [`df.show()`]({{ api_path }}/dataframe_methods/daft.DataFrame.show.html) method:
 
 === "🐍 Python"
 
@@ -165,7 +165,7 @@ Now let's take a look at some common DataFrame operations.
 
 !!! failure "todo(docs): SQL equivalent?"
 
-You can **select** specific columns from your DataFrame with the [`df.select()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.select.html#daft.DataFrame.select) method:
+You can **select** specific columns from your DataFrame with the [`df.select()`]({{ api_path }}/dataframe_methods/daft.DataFrame.select.html) method:
 
 === "🐍 Python"
 
@@ -190,7 +190,7 @@ You can **select** specific columns from your DataFrame with the [`df.select()`]
 ```
 ## Select Rows
 
-You can **filter** rows using the [`df.where()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.where.html#daft.DataFrame.where) method that takes an Logical Expression predicate input. In this case, we call the [`df.col()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.col.html#daft.col) method that refers to the column with the provided name `age`:
+You can **filter** rows using the [`df.where()`]({{ api_path }}/dataframe_methods/daft.DataFrame.where.html) method that takes an Logical Expression predicate input. In this case, we call the [`df.col()`]({{ api_path }}/expression_methods/daft.col.html) method that refers to the column with the provided name `age`:
 
 === "🐍 Python"
 
@@ -218,7 +218,7 @@ Filtering can give you powerful optimization when you are working with partition
 
 ## Exclude Data
 
-You can **limit** the number of rows in a DataFrame by calling the [`df.limit()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.limit.html#daft.DataFrame.limit) method:
+You can **limit** the number of rows in a DataFrame by calling the [`df.limit()`]({{ api_path }}/dataframe_methods/daft.DataFrame.limit.html) method:
 
 === "🐍 Python"
 
@@ -237,7 +237,7 @@ You can **limit** the number of rows in a DataFrame by calling the [`df.limit()`
 (Showing first 1 of 1 rows)
 ```
 
-To **drop** columns from the DataFrame, use the [`df.exclude()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.exclude.html#daft.DataFrame.exclude) method.
+To **drop** columns from the DataFrame, use the [`df.exclude()`]({{ api_path }}/dataframe_methods/daft.DataFrame.exclude.html) method.
 
 === "🐍 Python"
 
@@ -263,7 +263,7 @@ To **drop** columns from the DataFrame, use the [`df.exclude()`](https://www.get
 
 ## Transform Columns with Expressions
 
-[Expressions](core_concepts.md#expressions) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.col.html#daft.col) expressions together with the [`with_column`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.with_column.html#daft.DataFrame.with_column) method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
+[Expressions](core_concepts.md#expressions) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`]({{ api_path }}/expression_methods/daft.col.html) expressions together with the [`with_column`]({{ api_path }}/dataframe_methods/daft.DataFrame.with_column.html) method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
 
 === "🐍 Python"
 
@@ -287,7 +287,7 @@ To **drop** columns from the DataFrame, use the [`df.exclude()`](https://www.get
 (Showing first 5 of 5 rows)
 ```
 
-Alternatively, you can also run your column transformation using Expressions directly inside your [`df.select()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.select.html#daft.DataFrame.select) method*:
+Alternatively, you can also run your column transformation using Expressions directly inside your [`df.select()`]({{ api_path }}/dataframe_methods/daft.DataFrame.select.html) method*:
 
 === "🐍 Python"
 
@@ -312,7 +312,7 @@ Alternatively, you can also run your column transformation using Expressions dir
 
 ## Sort Data
 
-You can **sort** a DataFrame with the [`df.sort()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.sort.html#daft.DataFrame.sort), in this example we chose to sort in ascending order:
+You can **sort** a DataFrame with the [`df.sort()`]({{ api_path }}/dataframe_methods/daft.DataFrame.sort.html), in this example we chose to sort in ascending order:
 
 === "🐍 Python"
 
@@ -337,10 +337,10 @@ You can **sort** a DataFrame with the [`df.sort()`](https://www.getdaft.io/proje
 
 ## Group and Aggregate Data
 
-You can **group** and **aggregate** your data using the [`df.groupby()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.groupby.html#daft.DataFrame.groupby) and the [`df.agg()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.agg.html#daft.DataFrame.agg) methods. A groupby aggregation operation over a dataset happens in 2 steps:
+You can **group** and **aggregate** your data using the [`df.groupby()`]({{ api_path }}/dataframe_methods/daft.DataFrame.groupby.html) and the [`df.agg()`](/dataframe_methods/daft.DataFrame.agg.html) methods. A groupby aggregation operation over a dataset happens in 2 steps:
 
-1. Split the data into groups based on some criteria using [`df.groupby()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.groupby.html#daft.DataFrame.groupby)
-2. Specify how to aggregate the data for each group using [`df.agg()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.agg.html#daft.DataFrame.agg)
+1. Split the data into groups based on some criteria using [`df.groupby()`]({{ api_path }}/dataframe_methods/daft.DataFrame.groupby.html)
+2. Specify how to aggregate the data for each group using [`df.agg()`]({{ api_path }}/dataframe_methods/daft.DataFrame.agg.html)
 
 === "🐍 Python"
 
@@ -366,7 +366,7 @@ You can **group** and **aggregate** your data using the [`df.groupby()`](https:/
 
 !!! tip "Note"
 
-    The [`df.alias()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.alias.html#daft.Expression.alias) method renames the given column.
+    The [`df.alias()`]({{ api_path }}/expression_methods/daft.Expression.alias.html) method renames the given column.
 
 
 ## What's Next?

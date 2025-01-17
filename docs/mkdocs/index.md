@@ -50,9 +50,9 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
     The Daft User Guide is a useful resource to take deeper dives into specific Daft concepts, but if you are ready to jump into code you may wish to take a look at these resources:
 
-    1. [10 minute Quickstart](https://www.getdaft.io/projects/docs/en/stable/10-min.html): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
+    1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
 
-    2. [API Documentation](https://www.getdaft.io/projects/docs/en/stable/api_docs/index.html): Searchable documentation and reference material to Daft’s public API.
+    2. [API Documentation](api_docs/index.html): Searchable documentation and reference material to Daft’s public API.
 
 ### Get Started
 
