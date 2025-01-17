@@ -9,7 +9,7 @@ use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_ray_execution::RayEngine;
 use daft_table::Table;
-use eyre::bail;
+use eyre::{bail, Context};
 use futures::{
     stream::{self, BoxStream},
     StreamExt, TryFutureExt, TryStreamExt,
@@ -19,7 +19,8 @@ use pyo3::Python;
 use spark_connect::{
     relation::RelType,
     write_operation::{SaveMode, SaveType},
-    ExecutePlanResponse, Relation, ShowString, WriteOperation,
+    CreateDataFrameViewCommand, ExecutePlanResponse, Relation, ShowString, SqlCommand,
+    WriteOperation,
 };
 use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 use tracing::debug;
@@ -232,6 +233,136 @@ impl Session {
 
         let future = result.and_then(|()| ready(Ok(finished)));
         let stream = futures::stream::once(future);
+
+        Ok(Box::pin(stream))
+    }
+
+    pub async fn execute_create_dataframe_view(
+        &self,
+        create_dataframe: CreateDataFrameViewCommand,
+        rb: ResponseBuilder<ExecutePlanResponse>,
+    ) -> Result<ExecuteStream, Status> {
+        let CreateDataFrameViewCommand {
+            input,
+            name,
+            is_global,
+            replace,
+        } = create_dataframe;
+
+        if is_global {
+            return not_yet_implemented!("Global dataframe view");
+        }
+
+        let input = input.required("input")?;
+        let input = SparkAnalyzer::new(self)
+            .to_logical_plan(input)
+            .await
+            .map_err(|e| {
+                Status::internal(
+                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
+                )
+            })?;
+
+        {
+            let catalog = self.catalog.read().unwrap();
+            if !replace && catalog.contains_table(&name) {
+                return Err(Status::internal("Dataframe view already exists"));
+            }
+        }
+
+        let mut catalog = self.catalog.write().unwrap();
+
+        catalog.register_table(&name, input).map_err(|e| {
+            Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
+        })?;
+
+        let response = rb.result_complete_response();
+        let stream = stream::once(ready(Ok(response)));
+        Ok(Box::pin(stream))
+    }
+
+    #[allow(deprecated)]
+    pub async fn execute_sql_command(
+        &self,
+        SqlCommand {
+            sql,
+            args,
+            pos_args,
+            named_arguments,
+            pos_arguments,
+            input,
+        }: SqlCommand,
+        res: ResponseBuilder<ExecutePlanResponse>,
+    ) -> Result<ExecuteStream, Status> {
+        if !args.is_empty() {
+            return not_yet_implemented!("Named arguments");
+        }
+        if !pos_args.is_empty() {
+            return not_yet_implemented!("Positional arguments");
+        }
+        if !named_arguments.is_empty() {
+            return not_yet_implemented!("Named arguments");
+        }
+        if !pos_arguments.is_empty() {
+            return not_yet_implemented!("Positional arguments");
+        }
+
+        if input.is_some() {
+            return not_yet_implemented!("Input");
+        }
+
+        let catalog = self.catalog.read().unwrap();
+        let catalog = catalog.clone();
+
+        let mut planner = daft_sql::SQLPlanner::new(catalog);
+
+        let plan = planner
+            .plan_sql(&sql)
+            .wrap_err("Error planning SQL")
+            .map_err(|e| {
+                Status::internal(
+                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
+                )
+            })?;
+
+        let plan = LogicalPlanBuilder::from(plan);
+
+        // TODO: code duplication
+        let result_complete = res.result_complete_response();
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
+
+        let this = self.clone();
+
+        tokio::spawn(async move {
+            let execution_fut = async {
+                let mut result_stream = this.run_query(plan).await?;
+                while let Some(result) = result_stream.next().await {
+                    let result = result?;
+                    let tables = result.get_tables()?;
+                    for table in tables.as_slice() {
+                        let response = res.arrow_batch_response(table)?;
+                        if tx.send(Ok(response)).await.is_err() {
+                            return Ok(());
+                        }
+                    }
+                }
+                Ok(())
+            };
+            if let Err(e) = execution_fut.await {
+                let _ = tx.send(Err(e)).await;
+            }
+        });
+
+        let stream = ReceiverStream::new(rx);
+
+        let stream = stream
+            .map_err(|e| {
+                Status::internal(
+                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
+                )
+            })
+            .chain(stream::once(ready(Ok(result_complete))));
 
         Ok(Box::pin(stream))
     }

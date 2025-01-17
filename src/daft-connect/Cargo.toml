@@ -4,6 +4,7 @@ async-stream = "0.3.6"
 common-daft-config = {workspace = true, optional = true, features = ["python"]}
 common-error = {workspace = true, optional = true, features = ["python"]}
 common-file-formats = {workspace = true, optional = true, features = ["python"]}
+daft-catalog = {path = "../daft-catalog", optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
 daft-local-execution = {workspace = true, optional = true, features = ["python"]}
@@ -43,7 +44,8 @@ python = [
   "dep:daft-scan",
   "dep:daft-schema",
   "dep:daft-sql",
-  "dep:daft-table"
+  "dep:daft-table",
+  "dep:daft-catalog"
 ]
 
 [lints]

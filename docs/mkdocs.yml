@@ -57,6 +57,7 @@ theme:
   features:
   - search.suggest
   - search.highlight
+  - content.code.copy   # add copy button to code sections
   - content.tabs.link   # If one tab switches Python to SQL, all tabs switch
   - toc.follow
   - toc.integrate   # adds page subsections to left-hand menu (instead of right-hand menu)

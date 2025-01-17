@@ -27,7 +27,7 @@ Note that named tables take precedence over the default catalog's table names wh
 ```python
 df = daft.from_pydict({"foo": [1, 2, 3]})
 
-daft.catalog.register_named_table(
+daft.catalog.register_table(
     "my_table",
     df,
 )
