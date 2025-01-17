@@ -2,8 +2,6 @@
 
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
-from pyiceberg.table import StaticTable
-
 from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle, StorageConfig
@@ -84,11 +82,13 @@ def read_iceberg(
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table
     """
+    import pyiceberg
+
     from daft.iceberg.iceberg_scan import IcebergScanOperator
 
     # support for read_iceberg('path/to/metadata.json')
     if isinstance(table, str):
-        table = StaticTable.from_metadata(metadata_location=table)
+        table = pyiceberg.table.StaticTable.from_metadata(metadata_location=table)
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
