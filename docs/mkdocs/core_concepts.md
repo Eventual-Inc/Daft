@@ -23,8 +23,8 @@ For a full comparison between Daft and other DataFrame Libraries, see [DataFrame
 
 Common data operations that you would perform on DataFrames are:
 
-1. [**Filtering rows:**](core_concepts.md#selecting-rows) Use [`df.where(...)`][`df.explain(show_all=True)`]({{ api_path }}/dataframe_methods/daft.DataFrame.where.html) to keep only the rows that meet certain conditions.
-2. **Creating new columns:** Use [`df.with_column(...)`][`df.explain(show_all=True)`]({{ api_path }}/dataframe_methods/daft.DataFrame.with_column.html)( to add a new column based on calculations from existing ones.
+1. [**Filtering rows:**](core_concepts.md#selecting-rows) Use [`df.where(...)`]({{ api_path }}/dataframe_methods/daft.DataFrame.where.html) to keep only the rows that meet certain conditions.
+2. **Creating new columns:** Use [`df.with_column(...)`]({{ api_path }}/dataframe_methods/daft.DataFrame.with_column.html) to add a new column based on calculations from existing ones.
 3. [**Joining DataFrames:**](core_concepts.md#combining-dataframes) Use [`df.join(other_df, ...)`]({{ api_path }}/dataframe_methods/daft.DataFrame.join.html) to combine two DataFrames based on common columns.
 4. [**Sorting:**](core_concepts.md#reordering-rows) Use [`df.sort(...)`]({{ api_path }}/dataframe_methods/daft.DataFrame.sort.html) to arrange your data based on values in one or more columns.
 5. [**Grouping and aggregating:**](core_concepts.md#aggregations-and-grouping) Use [`df.groupby(...).agg(...)`]({{ api_path }}/dataframe_methods/daft.DataFrame.groupby.html) to summarize your data by groups.
