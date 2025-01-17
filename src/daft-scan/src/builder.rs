@@ -399,3 +399,46 @@ pub fn delta_scan<T: IntoGlobPath>(
 ) -> DaftResult<LogicalPlanBuilder> {
     panic!("Delta Lake scan requires the 'python' feature to be enabled.")
 }
+
+/// Creates a logical scan operator from a Python IcebergScanOperator.
+/// ex:
+/// ```python
+/// iceberg_table = pyiceberg.table.StaticTable.from_metadata(metadata_location)
+/// iceberg_scan = daft.iceberg.iceberg_scan.IcebergScanOperator(iceberg_table, snapshot_id, storage_config)
+/// ```
+#[cfg(feature = "python")]
+pub fn iceberg_scan<T: AsRef<str>>(
+    metadata_location: T,
+    snapshot_id: Option<usize>,
+    io_config: Option<IOConfig>,
+) -> DaftResult<LogicalPlanBuilder> {
+    use pyo3::IntoPyObjectExt;
+    let storage_config: StorageConfig = io_config.unwrap_or_default().into();
+    let scan_operator = Python::with_gil(|py| -> DaftResult<ScanOperatorHandle> {
+        // iceberg_table = pyiceberg.table.StaticTable.from_metadata(metadata_location)
+        let iceberg_table_module = PyModule::import(py, "pyiceberg.table")?;
+        let iceberg_static_table = iceberg_table_module.getattr("StaticTable")?;
+        let iceberg_table =
+            iceberg_static_table.call_method1("from_metadata", (metadata_location.as_ref(),))?;
+        // iceberg_scan = daft.iceberg.iceberg_scan.IcebergScanOperator(iceberg_table, snapshot_id, storage_config)
+        let iceberg_scan_module = PyModule::import(py, "daft.iceberg.iceberg_scan")?;
+        let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
+        let iceberg_scan = iceberg_scan_class
+            .call1((iceberg_table, snapshot_id, storage_config))?
+            .into_py_any(py)?;
+        Ok(ScanOperatorHandle::from_python_scan_operator(
+            iceberg_scan,
+            py,
+        )?)
+    })?;
+    LogicalPlanBuilder::table_scan(scan_operator.into(), None)
+}
+
+#[cfg(not(feature = "python"))]
+pub fn iceberg_scan<T: AsRef<str>>(
+    uri: T,
+    snapshot_id: Option<usize>,
+    io_config: Option<IOConfig>,
+) -> DaftResult<LogicalPlanBuilder> {
+    panic!("Iceberg scan requires the 'python' feature to be enabled.")
+}

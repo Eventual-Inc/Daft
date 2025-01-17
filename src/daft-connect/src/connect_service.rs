@@ -79,17 +79,23 @@ impl SparkConnectService for DaftSparkConnectService {
             }
             OpType::Command(command) => {
                 let command = command.command_type.required("command_type")?;
-
                 match command {
                     CommandType::WriteOperation(op) => {
                         let result = session.execute_write_operation(op, rb).await?;
                         Ok(Response::new(result))
                     }
+                    CommandType::CreateDataframeView(create_dataframe) => {
+                        let result = session
+                            .execute_create_dataframe_view(create_dataframe, rb)
+                            .await?;
+                        Ok(Response::new(result))
+                    }
+                    CommandType::SqlCommand(sql) => {
+                        let result = session.execute_sql_command(sql, rb).await?;
+                        Ok(Response::new(result))
+                    }
                     other => {
-                        return not_yet_implemented!(
-                            "Command type: {}",
-                            command_type_to_str(&other)
-                        )
+                        not_yet_implemented!("CommandType '{:?}'", command_type_to_str(&other))
                     }
                 }
             }
