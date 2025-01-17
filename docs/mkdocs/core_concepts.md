@@ -23,11 +23,11 @@ For a full comparison between Daft and other DataFrame Libraries, see [DataFrame
 
 Common data operations that you would perform on DataFrames are:
 
-1. [**Filtering rows:**](core_concepts.md#selecting-rows) Use [`df.where(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.where.html#daft.DataFrame.where) to keep only the rows that meet certain conditions.
-2. **Creating new columns:** Use [`df.with_column(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.with_column.html#daft.DataFrame.with_column) to add a new column based on calculations from existing ones.
-3. [**Joining DataFrames:**](core_concepts.md#combining-dataframes) Use [`df.join(other_df, ...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.join.html#daft.DataFrame.join) to combine two DataFrames based on common columns.
-4. [**Sorting:**](core_concepts.md#reordering-rows) Use [`df.sort(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.sort.html#daft.DataFrame.sort) to arrange your data based on values in one or more columns.
-5. [**Grouping and aggregating:**](core_concepts.md#aggregations-and-grouping) Use [`df.groupby(...).agg(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.groupby.html#daft.DataFrame.groupby) to summarize your data by groups.
+1. [**Filtering rows:**](core_concepts.md#selecting-rows) Use [`df.where(...)`][`df.explain(show_all=True)`]({{ api_path }}/dataframe_methods/daft.DataFrame.where.html) to keep only the rows that meet certain conditions.
+2. **Creating new columns:** Use [`df.with_column(...)`][`df.explain(show_all=True)`]({{ api_path }}/dataframe_methods/daft.DataFrame.with_column.html)( to add a new column based on calculations from existing ones.
+3. [**Joining DataFrames:**](core_concepts.md#combining-dataframes) Use [`df.join(other_df, ...)`]({{ api_path }}/dataframe_methods/daft.DataFrame.join.html) to combine two DataFrames based on common columns.
+4. [**Sorting:**](core_concepts.md#reordering-rows) Use [`df.sort(...)`]({{ api_path }}/dataframe_methods/daft.DataFrame.sort.html) to arrange your data based on values in one or more columns.
+5. [**Grouping and aggregating:**](core_concepts.md#aggregations-and-grouping) Use [`df.groupby(...).agg(...)`]({{ api_path }}/dataframe_methods/daft.DataFrame.groupby.html) to summarize your data by groups.
 
 ### Creating a Dataframe
 
@@ -110,7 +110,7 @@ In this case, Daft is just deferring the work required to read the data and sele
 
 !!! info "Info"
 
-    When you call methods on a Daft Dataframe, it defers the work by adding to an internal "plan". You can examine the current plan of a DataFrame by calling [`df.explain()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.explain.html#daft.DataFrame.explain)!
+    When you call methods on a Daft Dataframe, it defers the work by adding to an internal "plan". You can examine the current plan of a DataFrame by calling [`df.explain()`]({{ api_path }}/dataframe_methods/daft.DataFrame.explain.html)!
 
     Passing the `show_all=True` argument will show you the plan after Daft applies its query optimizations and the physical (lower-level) plan.
 
@@ -146,7 +146,7 @@ In this case, Daft is just deferring the work required to read the data and sele
     |   Clustering spec = { Num partitions = 1 }
     ```
 
-We can tell Daft to execute our DataFrame and store the results in-memory using [`df.collect()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.collect.html#daft.DataFrame.collect):
+We can tell Daft to execute our DataFrame and store the results in-memory using [`df.collect()`]({{ api_path }}/dataframe_methods/daft.DataFrame.collect.html):
 
 === "🐍 Python"
     ``` python
@@ -178,14 +178,14 @@ Any subsequent operations on `df` will avoid recomputations, and just use this m
 
 ### When should I materialize my DataFrame?
 
-If you "eagerly" call [`df.collect()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.collect.html#daft.DataFrame.collect) immediately on every DataFrame, you may run into issues:
+If you "eagerly" call [`df.collect()`]({{ api_path }}/dataframe_methods/daft.DataFrame.collect.html) immediately on every DataFrame, you may run into issues:
 
 1. If data is too large at any step, materializing all of it may cause memory issues
 2. Optimizations are not possible since we cannot "predict future operations"
 
 However, data science is all about experimentation and trying different things on the same data. This means that materialization is crucial when working interactively with DataFrames, since it speeds up all subsequent experimentation on that DataFrame.
 
-We suggest materializing DataFrames using [`df.collect()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.collect.html#daft.DataFrame.collect) when they contain expensive operations (e.g. sorts or expensive function calls) and have to be called multiple times by downstream code:
+We suggest materializing DataFrames using [`df.collect()`]({{ api_path }}/dataframe_methods/daft.DataFrame.collect.html) when they contain expensive operations (e.g. sorts or expensive function calls) and have to be called multiple times by downstream code:
 
 === "🐍 Python"
     ``` python
@@ -248,11 +248,11 @@ We suggest materializing DataFrames using [`df.collect()`](https://www.getdaft.i
 (Showing first 4 of 4 rows)
 ```
 
-In many other cases however, there are better options than materializing your entire DataFrame with [`df.collect()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.collect.html#daft.DataFrame.collect):
+In many other cases however, there are better options than materializing your entire DataFrame with [`df.collect()`]({{ api_path }}/dataframe_methods/daft.DataFrame.collect.html):
 
-1. **Peeking with df.show(N)**: If you only want to "peek" at the first few rows of your data for visualization purposes, you can use [`df.show(N)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.show.html#daft.DataFrame.show), which processes and shows only the first `N` rows.
+1. **Peeking with df.show(N)**: If you only want to "peek" at the first few rows of your data for visualization purposes, you can use [`df.show(N)`]({{ api_path }}/dataframe_methods/daft.DataFrame.show.html), which processes and shows only the first `N` rows.
 2. **Writing to disk**: The `df.write_*` methods will process and write your data to disk per-partition, avoiding materializing it all in memory at once.
-3. **Pruning data**: You can materialize your DataFrame after performing a [`df.limit()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.limit.html#daft.DataFrame.limit), [`df.where()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.where.html#daft.DataFrame.where) or [`df.select()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.select.html#daft.DataFrame.select) operation which processes your data or prune it down to a smaller size.
+3. **Pruning data**: You can materialize your DataFrame after performing a [`df.limit()`]({{ api_path }}/dataframe_methods/daft.DataFrame.limit.html), [`df.where()`]({{ api_path }}/dataframe_methods/daft.DataFrame.where.html) or [`df.select()`]({{ api_path }}/dataframe_methods/daft.DataFrame.select.html) operation which processes your data or prune it down to a smaller size.
 
 ### Schemas and Types
 
@@ -268,7 +268,7 @@ Daft can display your DataFrame's schema without materializing it. Under the hoo
 
 To run computations on data in our DataFrame, we use Expressions.
 
-The following statement will [`df.show()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.show.html#daft.DataFrame.show) a DataFrame that has only one column - the column `A` from our original DataFrame but with every row incremented by 1.
+The following statement will [`df.show()`]({{ api_path }}/dataframe_methods/daft.DataFrame.show.html) a DataFrame that has only one column - the column `A` from our original DataFrame but with every row incremented by 1.
 
 === "🐍 Python"
     ``` python
@@ -301,7 +301,7 @@ The following statement will [`df.show()`](https://www.getdaft.io/projects/docs/
 
 !!! info "Info"
 
-    A common pattern is to create a new columns using [`DataFrame.with_column`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.with_column.html):
+    A common pattern is to create a new columns using [`DataFrame.with_column`]({{ api_path }}/dataframe_methods/daft.DataFrame.with_column.html):
 
     === "🐍 Python"
         ``` python
@@ -348,7 +348,7 @@ This section of the user guide covers these operations, and how to use them. -->
 
 ### Selecting Rows
 
-We can limit the rows to the first ``N`` rows using [`df.limit(N)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.limit.html#daft.DataFrame.limit):
+We can limit the rows to the first ``N`` rows using [`df.limit(N)`]({{ api_path }}/dataframe_methods/daft.DataFrame.limit.html):
 
 === "🐍 Python"
     ``` python
@@ -375,7 +375,7 @@ We can limit the rows to the first ``N`` rows using [`df.limit(N)`](https://www.
 (Showing first 3 rows)
 ```
 
-We can also filter rows using [`df.where()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.where.html#daft.DataFrame.where), which takes an input a Logical Expression predicate:
+We can also filter rows using [`df.where()`]({{ api_path }}/dataframe_methods/daft.DataFrame.where.html), which takes an input a Logical Expression predicate:
 
 === "🐍 Python"
     ``` python
@@ -397,7 +397,7 @@ We can also filter rows using [`df.where()`](https://www.getdaft.io/projects/doc
 
 ### Selecting Columns
 
-Select specific columns in a DataFrame using [`df.select()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.select.html#daft.DataFrame.select), which also takes Expressions as an input.
+Select specific columns in a DataFrame using [`df.select()`]({{ api_path }}/dataframe_methods/daft.DataFrame.select.html), which also takes Expressions as an input.
 
 === "🐍 Python"
     ``` python
@@ -423,7 +423,7 @@ Select specific columns in a DataFrame using [`df.select()`](https://www.getdaft
 (Showing first 3 rows)
 ```
 
-A useful alias for [`df.select()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.select.html#daft.DataFrame.select) is indexing a DataFrame with a list of column names or Expressions:
+A useful alias for [`df.select()`]({{ api_path }}/dataframe_methods/daft.DataFrame.select.html) is indexing a DataFrame with a list of column names or Expressions:
 
 === "🐍 Python"
     ``` python
@@ -445,7 +445,7 @@ A useful alias for [`df.select()`](https://www.getdaft.io/projects/docs/en/stabl
 (Showing first 3 rows)
 ```
 
-Sometimes, it may be useful to exclude certain columns from a DataFrame. This can be done with [`df.exclude()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.exclude.html#daft.DataFrame.exclude):
+Sometimes, it may be useful to exclude certain columns from a DataFrame. This can be done with [`df.exclude()`]({{ api_path }}/dataframe_methods/daft.DataFrame.exclude.html):
 
 === "🐍 Python"
     ``` python
@@ -467,7 +467,7 @@ Sometimes, it may be useful to exclude certain columns from a DataFrame. This ca
 (Showing first 3 rows)
 ```
 
-Adding a new column can be achieved with [`df.with_column()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.with_column.html#daft.DataFrame.with_column):
+Adding a new column can be achieved with [`df.with_column()`]({{ api_path }}/dataframe_methods/daft.DataFrame.with_column.html):
 
 === "🐍 Python"
     ``` python
@@ -491,7 +491,7 @@ Adding a new column can be achieved with [`df.with_column()`](https://www.getdaf
 
 #### Selecting Columns Using Wildcards
 
-We can select multiple columns at once using wildcards. The expression [`.col(*)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.col.html#daft.col) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
+We can select multiple columns at once using wildcards. The expression [`.col(*)`]({{ api_path }}/expression_methods/daft.col.html) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
 
 === "🐍 Python"
     ``` python
@@ -549,7 +549,7 @@ Under the hood, wildcards work by finding all of the columns that match, then co
 
 ### Combining DataFrames
 
-Two DataFrames can be column-wise joined using [`df.join()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.join.html#daft.DataFrame.join).
+Two DataFrames can be column-wise joined using [`df.join()`]({{ api_path }}/dataframe_methods/daft.DataFrame.join.html).
 
 This requires a "join key", which can be supplied as the `on` argument if both DataFrames have the same name for their key columns, or the `left_on` and `right_on` argument if the key column has different names in each DataFrame.
 
@@ -580,7 +580,7 @@ Daft also supports multi-column joins if you have a join key comprising of multi
 
 ### Reordering Rows
 
-Rows in a DataFrame can be reordered based on some column using [`df.sort()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.sort.html#daft.DataFrame.sort). Daft also supports multi-column sorts for sorting on multiple columns at once.
+Rows in a DataFrame can be reordered based on some column using [`df.sort()`]({{ api_path }}/dataframe_methods/daft.DataFrame.sort.html). Daft also supports multi-column sorts for sorting on multiple columns at once.
 
 === "🐍 Python"
     ``` python
@@ -609,7 +609,7 @@ Rows in a DataFrame can be reordered based on some column using [`df.sort()`](ht
 
 ### Exploding Columns
 
-The [`df.explode()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.explode.html#daft.DataFrame.explode) method can be used to explode a column containing a list of values into multiple rows. All other rows will be **duplicated**.
+The [`df.explode()`]({{ api_path }}/dataframe_methods/daft.DataFrame.explode.html) method can be used to explode a column containing a list of values into multiple rows. All other rows will be **duplicated**.
 
 === "🐍 Python"
     ``` python
@@ -667,7 +667,7 @@ Expressions are how you can express computations that should be run over columns
 
 #### Referring to a column in a DataFrame
 
-Most commonly you will be creating expressions by using the [`daft.col`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.col.html#daft.col) function.
+Most commonly you will be creating expressions by using the [`daft.col`]({{ api_path }}/expression_methods/daft.col.html) function.
 
 === "🐍 Python"
     ``` python
@@ -700,11 +700,11 @@ Daft can also parse valid SQL as expressions.
 col(A) + lit(1)
 ```
 
-The above code will create an expression representing "the column named 'x' incremented by 1". For many APIs, [`sql_expr`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql_expr) will actually be applied for you as syntactic sugar!
+The above code will create an expression representing "the column named 'x' incremented by 1". For many APIs, [`sql_expr`](api_docs/sql.html#daft.sql_expr) will actually be applied for you as syntactic sugar!
 
 #### Literals
 
-You may find yourself needing to hardcode a "single value" oftentimes as an expression. Daft provides a [`lit()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.lit.html) helper to do so:
+You may find yourself needing to hardcode a "single value" oftentimes as an expression. Daft provides a [`lit()`]({{ api_path }}/expression_methods/daft.lit.html) helper to do so:
 
 === "🐍 Python"
     ``` python
@@ -728,7 +728,7 @@ This special :func:`~daft.expressions.lit` expression we just created evaluates 
 
 #### Wildcard Expressions
 
-You can create expressions on multiple columns at once using a wildcard. The expression [`col("*")`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.col.html#daft.col)) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
+You can create expressions on multiple columns at once using a wildcard. The expression [`col("*")`]({{ api_path }}/expression_methods/daft.col.html)) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
 
 === "🐍 Python"
     ``` python
@@ -857,9 +857,9 @@ Since column "A" is an integer, we can run numeric computation such as addition,
 (Showing first 3 of 3 rows)
 ```
 
-Notice that the returned types of these operations are also well-typed according to their input types. For example, calling ``df["A"] > 1`` returns a column of type [`Boolean`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.bool).
+Notice that the returned types of these operations are also well-typed according to their input types. For example, calling ``df["A"] > 1`` returns a column of type [`Boolean`](api_docs/datatype.html#daft.DataType.bool).
 
-Both the [`Float`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.float32) and [`Int`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int16) types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the [Expressions API Reference](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html#numeric).
+Both the [`Float`](api_docs/datatype.html#daft.DataType.float32) and [`Int`](api_docs/datatype.html#daft.DataType.int16) types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the [Expressions API Reference](api_docs/expressions.html#numeric).
 
 #### String Expressions
 
@@ -915,9 +915,9 @@ Unlike the numeric types, the string type does not support arithmetic operations
 (Showing first 3 rows)
 ```
 
-There are also many string operators that are accessed through a separate [`.str.*`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html#strings) "method namespace".
+There are also many string operators that are accessed through a separate [`.str.*`](api_docs/expressions.html#strings) "method namespace".
 
-For example, to check if each element in column "B" contains the substring "a", we can use the [`.str.contains`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.str.contains.html#daft.Expression.str.contains) method:
+For example, to check if each element in column "B" contains the substring "a", we can use the [`.str.contains`]({{ api_path }}/expression_methods/daft.Expression.str.contains.html) method:
 
 === "🐍 Python"
     ``` python
@@ -946,13 +946,13 @@ For example, to check if each element in column "B" contains the substring "a", 
 (Showing first 3 rows)
 ```
 
-You may find a full list of string operations in the [Expressions API Reference](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html).
+You may find a full list of string operations in the [Expressions API Reference](api_docs/expressions.html).
 
 #### URL Expressions
 
 One special case of a String column you may find yourself working with is a column of URL strings.
 
-Daft provides the [`.url.*`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html) method namespace with functionality for working with URL strings. For example, to download data from URLs:
+Daft provides the [`.url.*`](api_docs/expressions.html#url-expressions) method namespace with functionality for working with URL strings. For example, to download data from URLs:
 
 === "🐍 Python"
     ``` python
@@ -1006,7 +1006,7 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 
 #### JSON Expressions
 
-If you have a column of JSON strings, Daft provides the [`.json.*`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html#json) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
+If you have a column of JSON strings, Daft provides the [`.json.*`](api_docs/expressions.html#json) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
 
 === "🐍 Python"
     ``` python
@@ -1056,7 +1056,7 @@ Daft uses [jaq](https://github.com/01mf02/jaq/tree/main) as the underlying execu
 
 #### Logical Expressions
 
-Logical Expressions are an expression that refers to a column of type [`Boolean`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.bool), and can only take on the values True or False.
+Logical Expressions are an expression that refers to a column of type [`Boolean`](api_docs/datatype.html#daft.DataType.bool), and can only take on the values True or False.
 
 === "🐍 Python"
     ``` python
@@ -1112,11 +1112,11 @@ For example, here we can compare if each element in column "A" is equal to eleme
 (Showing first 3 of 3 rows)
 ```
 
-Other useful comparisons can be found in the [Expressions API Reference](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html#numeric).
+Other useful comparisons can be found in the [Expressions API Reference](api_docs/expressions.html#numeric).
 
 ### If Else Pattern
 
-The [`.if_else()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.if_else.html#daft.Expression.if_else) method is a useful expression to have up your sleeve for choosing values between two other expressions based on a logical expression:
+The [`.if_else()`]({{ api_path }}/expression_methods/daft.Expression.if_else.html) method is a useful expression to have up your sleeve for choosing values between two other expressions based on a logical expression:
 
 === "🐍 Python"
     ``` python
@@ -1239,7 +1239,7 @@ You can perform arithmetic operations with timestamps and durations, such as add
 
 ##### Temporal Component Extraction
 
-The [`.dt.*`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html#temporal) method namespace provides extraction methods for the components of a timestamp, such as year, month, day, hour, minute, and second:
+The [`.dt.*`](api_docs/expressions.html#temporal) method namespace provides extraction methods for the components of a timestamp, such as year, month, day, hour, minute, and second:
 
 === "🐍 Python"
     ``` python
@@ -1365,7 +1365,7 @@ You can parse strings as timestamps with time zones and convert between differen
 
 ##### Temporal Truncation
 
-The [`.dt.truncate()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.dt.truncate.html#daft.Expression.dt.truncate) method allows you to truncate timestamps to specific time units. This can be useful for grouping data by time periods. For example, to truncate timestamps to the nearest hour:
+The [`.dt.truncate()`]({{ api_path }}/expression_methods/daft.Expression.dt.truncate.html) method allows you to truncate timestamps to specific time units. This can be useful for grouping data by time periods. For example, to truncate timestamps to the nearest hour:
 
 === "🐍 Python"
     ``` python
@@ -1435,15 +1435,15 @@ Daft supports file paths to a single file, a directory of files, and wildcards. 
     df = daft.read_csv("s3://mybucket/path/to/*.csv")
     ```
 
-To learn more about each of these constructors, as well as the options that they support, consult the API documentation on [`creating DataFrames from files`](https://www.getdaft.io/projects/docs/en/stable/api_docs/creation.html#df-io-files).
+To learn more about each of these constructors, as well as the options that they support, consult the API documentation on [`creating DataFrames from files`](api_docs/creation.html#df-io-files).
 
 ### From Data Catalogs
 
-If you use catalogs such as Apache Iceberg or Hive, you may wish to consult our user guide on integrations with Data Catalogs: [`Daft integration with Data Catalogs`](https://www.getdaft.io/projects/docs/en/stable/user_guide/integrations.html).
+If you use catalogs such as [Apache Iceberg](integrations/iceberg.md) or [Apache Hudi](integrations/hudi.md), you can check out their dedicated integration pages.
 
 ### From File Paths
 
-Daft also provides an easy utility to create a DataFrame from globbing a path. You can use the [`daft.from_glob_path`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.from_glob_path.html#daft.from_glob_path) method which will read a DataFrame of globbed filepaths.
+Daft also provides an easy utility to create a DataFrame from globbing a path. You can use the [`daft.from_glob_path`]({{ api_path }}/io_functions/daft.from_glob_path.html) method which will read a DataFrame of globbed filepaths.
 
 === "🐍 Python"
     ``` python
@@ -1455,7 +1455,7 @@ Daft also provides an easy utility to create a DataFrame from globbing a path. Y
     #   ...
     ```
 
-This is especially useful for reading things such as a folder of images or documents into Daft. A common pattern is to then download data from these files into your DataFrame as bytes, using the [`.url.download()`](https://getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.url.download.html#daft.Expression.url.download) method.
+This is especially useful for reading things such as a folder of images or documents into Daft. A common pattern is to then download data from these files into your DataFrame as bytes, using the [`.url.download()`]({{ api_path }}/expression_methods/daft.Expression.url.download.html) method.
 
 
 ### From Memory
@@ -1471,11 +1471,11 @@ For testing, or small datasets that fit in memory, you may also create DataFrame
     df = daft.from_pylist([{"A": 1, "B": "foo"}, {"A": 2, "B": "bar"}, {"A": 3, "B": "baz"}])
     ```
 
-To learn more, consult the API documentation on [`creating DataFrames from in-memory data structures`](https://www.getdaft.io/projects/docs/en/stable/api_docs/creation.html#df-io-in-memory).
+To learn more, consult the API documentation on [`creating DataFrames from in-memory data structures`](api_docs/creation.html#df-io-in-memory).
 
 ### From Databases
 
-Daft can also read data from a variety of databases, including PostgreSQL, MySQL, Trino, and SQLite using the [`daft.read_sql`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_sql.html#daft.read_sql) method. In order to partition the data, you can specify a partition column, which will allow Daft to read the data in parallel.
+Daft can also read data from a variety of databases, including PostgreSQL, MySQL, Trino, and SQLite using the [`daft.read_sql`]({{ api_path }}/io_functions/daft.read_sql.html#daft.read_sql) method. In order to partition the data, you can specify a partition column, which will allow Daft to read the data in parallel.
 
 === "🐍 Python"
     ``` python
@@ -1487,11 +1487,11 @@ Daft can also read data from a variety of databases, including PostgreSQL, MySQL
     df = daft.read_sql("SELECT * FROM my_table", partition_col="date", uri)
     ```
 
-To learn more, consult the [`SQL User Guide`](https://www.getdaft.io/projects/docs/en/stable/user_guide/integrations/sql.html) or the API documentation on [`daft.read_sql`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/io_functions/daft.read_sql.html#daft.read_sql).
+To learn more, consult the [`SQL Integration Page`](integrations/sql.md) or the API documentation on [`daft.read_sql`]({{ api_path }}/io_functions/daft.read_sql.html#daft.read_sql).
 
 ### Reading a column of URLs
 
-Daft provides a convenient way to read data from a column of URLs using the [`.url.download()`](https://getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.url.download.html#daft.Expression.url.download) method. This is particularly useful when you have a DataFrame with a column containing URLs pointing to external resources that you want to fetch and incorporate into your DataFrame.
+Daft provides a convenient way to read data from a column of URLs using the [`.url.download()`]({{ api_path }}/expression_methods/daft.Expression.url.download.html#daft.Expression.url.download) method. This is particularly useful when you have a DataFrame with a column containing URLs pointing to external resources that you want to fetch and incorporate into your DataFrame.
 
 Here's an example of how to use this feature:
 
@@ -1531,7 +1531,7 @@ This approach allows you to efficiently download and process data from a large n
 
 ## Writing Data
 
-Writing data will execute your DataFrame and write the results out to the specified backend. The [`df.write_*(...)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/dataframe.html#df-write-data) methods are used to write DataFrames to files or other destinations.
+Writing data will execute your DataFrame and write the results out to the specified backend. The [`df.write_*(...)`](api_docs/dataframe.html#df-write-data) methods are used to write DataFrames to files or other destinations.
 
 === "🐍 Python"
     ``` python
@@ -1557,7 +1557,7 @@ Daft provides simple DataTypes that are ubiquituous in many DataFrames such as n
 
 !!! tip "Tip"
 
-    For a full overview on all the DataTypes that Daft supports, see the [DataType API Reference](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html).
+    For a full overview on all the DataTypes that Daft supports, see the [DataType API Reference](api_docs/datatype.html).
 
 
 ### Numeric DataTypes
@@ -1567,31 +1567,31 @@ Numeric DataTypes allows Daft to represent numbers. These numbers can differ in 
 
 Examples:
 
-1. [`DataType.int8()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.int8): represents an 8-bit signed integer (-128 to 127)
-2. [`DataType.float32()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.float32): represents a 32-bit float (a float number with about 7 decimal digits of precision)
+1. [`DataType.int8()`](api_docs/datatype.html#daft.DataType.int8): represents an 8-bit signed integer (-128 to 127)
+2. [`DataType.float32()`](api_docs/datatype.html#daft.DataType.float32): represents a 32-bit float (a float number with about 7 decimal digits of precision)
 
 Columns/expressions with these datatypes can be operated on with many numeric expressions such as `+` and `*`.
 
-See also: [Numeric Expressions](https://www.getdaft.io/projects/docs/en/stable/user_guide/expressions.html#userguide-numeric-expressions)
+See also: [Numeric Expressions](core_concepts.md#numeric-expressions)
 
 ### Logical DataTypes
 
-The [`Boolean`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.bool) DataType represents values which are boolean values: `True`, `False` or `Null`.
+The [`Boolean`](api_docs/datatype.html#daft.DataType.bool) DataType represents values which are boolean values: `True`, `False` or `Null`.
 
-Columns/expressions with this dtype can be operated on using logical expressions such as ``&`` and [`.if_else()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.if_else.html#daft.Expression.if_else).
+Columns/expressions with this dtype can be operated on using logical expressions such as ``&`` and [`.if_else()`]({{ api_path }}/expression_methods/daft.Expression.if_else.html).
 
-See also: [Logical Expressions](https://www.getdaft.io/projects/docs/en/stable/user_guide/expressions.html#userguide-logical-expressions)
+See also: [Logical Expressions](core_concepts.md#logical-expressions)
 
 ### String Types
 
 Daft has string types, which represent a variable-length string of characters.
 
-As a convenience method, string types also support the `+` Expression, which has been overloaded to support concatenation of elements between two [`DataType.string()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.string) columns.
+As a convenience method, string types also support the `+` Expression, which has been overloaded to support concatenation of elements between two [`DataType.string()`](api_docs/datatype.html#daft.DataType.string) columns.
 
-1. [`DataType.string()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.string): represents a string of UTF-8 characters
-2. [`DataType.binary()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.binary): represents a string of bytes
+1. [`DataType.string()`](api_docs/datatype.html#daft.DataType.string): represents a string of UTF-8 characters
+2. [`DataType.binary()`](api_docs/datatype.html#daft.DataType.binary): represents a string of bytes
 
-See also: [String Expressions](https://www.getdaft.io/projects/docs/en/stable/user_guide/expressions.html#userguide-string-expressions)
+See also: [String Expressions](core_concepts.md#string-expressions)
 
 ### Temporal DataTypes
 
@@ -1599,10 +1599,10 @@ Temporal DataTypes represent data that have to do with time.
 
 Examples:
 
-1. [`DataType.date()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.date): represents a Date (year, month and day)
-2. [`DataType.timestamp()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.timestamp): represents a Timestamp (particular instance in time)
+1. [`DataType.date()`](api_docs/datatype.html#daft.DataType.date): represents a Date (year, month and day)
+2. [`DataType.timestamp()`](api_docs/datatype.html#daft.DataType.timestamp): represents a Timestamp (particular instance in time)
 
-See also: [Temporal Expressions](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html#api-expressions-temporal)
+See also: [Temporal Expressions](core_concepts.md#temporal-expressions)
 
 ### Nested DataTypes
 
@@ -1610,12 +1610,12 @@ Nested DataTypes wrap other DataTypes, allowing you to compose types into comple
 
 Examples:
 
-1. [`DataType.list(child_dtype)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.list): represents a list where each element is of the child `dtype`
-2. [`DataType.struct({"field_name": child_dtype})`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.struct): represents a structure that has children `dtype`s, each mapped to a field name
+1. [`DataType.list(child_dtype)`](api_docs/datatype.html#daft.DataType.list): represents a list where each element is of the child `dtype`
+2. [`DataType.struct({"field_name": child_dtype})`](api_docs/datatype.html#daft.DataType.struct): represents a structure that has children `dtype`s, each mapped to a field name
 
 ### Python DataType
 
-The [`DataType.python()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.python) DataType represent items that are Python objects.
+The [`DataType.python()`](api_docs/datatype.html#daft.DataType.python) DataType represent items that are Python objects.
 
 !!! warning "Warning"
 
@@ -1634,17 +1634,17 @@ Python is AWESOME because it's so flexible, but it's also slow and memory ineffi
 
 Daft supports many more interesting complex DataTypes, for example:
 
-* [`DataType.tensor()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.tensor): Multi-dimensional (potentially uniformly-shaped) tensors of data
-* [`DataType.embedding()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.embedding): Lower-dimensional vector representation of data (e.g. words)
-* [`DataType.image()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType.image): NHWC images
+* [`DataType.tensor()`](api_docs/datatype.html#daft.DataType.tensor): Multi-dimensional (potentially uniformly-shaped) tensors of data
+* [`DataType.embedding()`](api_docs/datatype.html#daft.DataType.embedding): Lower-dimensional vector representation of data (e.g. words)
+* [`DataType.image()`](api_docs/datatype.html#daft.DataType.image): NHWC images
 
-Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the [image expressions API reference](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html#api-expressions-images). For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
+Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the [image expressions API reference](api_docs/expressions.html#api-expressions-images). For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
 
 Please add suggestions for new DataTypes to our Github Discussions page!
 
 ## SQL
 
-Daft supports Structured Query Language (SQL) as a way of constructing query plans (represented in Python as a [`daft.DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame)) and expressions ([`daft.Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame)).
+Daft supports Structured Query Language (SQL) as a way of constructing query plans (represented in Python as a [`daft.DataFrame`]({{ api_path }}/dataframe_methods/daft.DataFrame.html)) and expressions ([`daft.Expression`]({{ api_path }}/dataframe_methods/daft.DataFrame.html)).
 
 SQL is a human-readable way of constructing these query plans, and can often be more ergonomic than using DataFrames for writing queries.
 
@@ -1655,7 +1655,7 @@ SQL is a human-readable way of constructing these query plans, and can often be 
 
 ### Running SQL on DataFrames
 
-Daft's [`daft.sql`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql) function will automatically detect any [`daft.DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame) objects in your current Python environment to let you query them easily by name.
+Daft's [`daft.sql`](api_docs/sql.html#daft.sql) function will automatically detect any [`daft.DataFrame`]({{ api_path }}/dataframe_methods/daft.DataFrame.html) objects in your current Python environment to let you query them easily by name.
 
 === "⚙️ SQL"
     ```python
@@ -1755,7 +1755,7 @@ In the above query, both the SQL version of the query and the DataFrame version 
 
 Under the hood, they run the same Expression `col("A") + col("B")`!
 
-One really cool trick you can do is to use the [`daft.sql_expr`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql_expr) function as a helper to easily create Expressions. The following are equivalent:
+One really cool trick you can do is to use the [`daft.sql_expr`](api_docs/sql.html#daft.sql_expr) function as a helper to easily create Expressions. The following are equivalent:
 
 === "⚙️ SQL"
     ```python
@@ -1816,13 +1816,13 @@ Pretty sweet! Of course, this support for running Expressions on your columns ex
 
 ### SQL Functions
 
-SQL also has access to all of Daft's powerful [`daft.Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame) functionality through SQL functions.
+SQL also has access to all of Daft's powerful [`daft.Expression`]({{ api_path }}/dataframe_methods/daft.DataFrame.html#daft.DataFrame) functionality through SQL functions.
 
 However, unlike the Python Expression API which encourages method-chaining (e.g. `col("a").url.download().image.decode()`), in SQL you have to do function nesting instead (e.g. `"image_decode(url_download(a))"`).
 
 !!! note "Note"
 
-    A full catalog of the available SQL Functions in Daft is available in the [`../api_docs/sql`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html).
+    A full catalog of the available SQL Functions in Daft is available in the [`SQL API Docs`](api_docs/sql.html).
 
     Note that it closely mirrors the Python API, with some function naming differences vs the available Python methods.
     We also have some aliased functions for ANSI SQL-compliance or familiarity to users coming from other common SQL dialects such as PostgreSQL and SparkSQL to easily find their functionality.
@@ -1901,7 +1901,7 @@ An aggregation can be applied on an entire DataFrame, for example to get the mea
 (Showing first 1 of 1 rows)
 ```
 
-For a full list of available Dataframe aggregations, see [Aggregations](https://www.getdaft.io/projects/docs/en/stable/api_docs/dataframe.html#df-aggregations).
+For a full list of available Dataframe aggregations, see [Aggregations](api_docs/dataframe.html#df-aggregations).
 
 Aggregations can also be mixed and matched across columns, via the `agg` method:
 
@@ -1927,7 +1927,7 @@ Aggregations can also be mixed and matched across columns, via the `agg` method:
 (Showing first 1 of 1 rows)
 ```
 
-For a full list of available aggregation expressions, see [Aggregation Expressions](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html#api-aggregation-expression)
+For a full list of available aggregation expressions, see [Aggregation Expressions](api_docs/expressions.html#api-aggregation-expression)
 
 ### Grouped Aggregations
 
@@ -2000,9 +2000,9 @@ Let's first create a dataframe that will be used as a running example throughout
     ```
 
 
-### Per-column per-row functions using [`.apply`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.apply.html)
+### Per-column per-row functions using [`.apply`]({{ api_path }}/expression_methods/daft.Expression.apply.html)
 
-You can use [`.apply`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.apply.html) to run a Python function on every row in a column.
+You can use [`.apply`]({{ api_path }}/expression_methods/daft.Expression.apply.html) to run a Python function on every row in a column.
 
 For example, the following example creates a new `flattened_image` column by calling `.flatten()` on every object in the `image` column.
 
@@ -2033,14 +2033,14 @@ For example, the following example creates a new `flattened_image` column by cal
 
 Note here that we use the `return_dtype` keyword argument to specify that our returned column type is a Python column!
 
-### Multi-column per-partition functions using [`@udf`](https://www.getdaft.io/projects/docs/en/stable/api_docs/udf.html#creating-udfs)
+### Multi-column per-partition functions using [`@udf`](api_docs/udf.html#creating-udfs)
 
-[`.apply`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.apply.html) is great for convenience, but has two main limitations:
+[`.apply`]({{ api_path }}/expression_methods/daft.Expression.apply.html) is great for convenience, but has two main limitations:
 
 1. It can only run on single columns
 2. It can only run on single items at a time
 
-Daft provides the [`@udf`](https://www.getdaft.io/projects/docs/en/stable/api_docs/udf.html#creating-udfs) decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
+Daft provides the [`@udf`](api_docs/udf.html#creating-udfs) decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
 
 For example, let's try writing a function that will crop all our images in the `image` column by its corresponding value in the `crop` column:
 
@@ -2089,22 +2089,22 @@ There's a few things happening here, let's break it down:
 
     c. An integer indicating how much padding to apply to the right and bottom of the cropping: `padding`
 
-2. To allow Daft to pass column data into the `images` and `crops` arguments, we decorate the function with [`@udf`](https://www.getdaft.io/projects/docs/en/stable/api_docs/udf.html#creating-udfs)
+2. To allow Daft to pass column data into the `images` and `crops` arguments, we decorate the function with [`@udf`](api_docs/udf.html#creating-udfs)
 
     a. `return_dtype` defines the returned data type. In this case, we return a column containing Python objects of numpy arrays
 
-    b. At runtime, because we call the UDF on the `image` and `crop` columns, the UDF will receive a [`daft.Series`](https://www.getdaft.io/projects/docs/en/stable/api_docs/series.html#daft.Series) object for each argument.
+    b. At runtime, because we call the UDF on the `image` and `crop` columns, the UDF will receive a [`daft.Series`](api_docs/series.html) object for each argument.
 
-3. We can create a new column in our DataFrame by applying our UDF on the `"image"` and `"crop"` columns inside of a [`df.with_column()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.with_column.html#daft.DataFrame.with_column) call.
+3. We can create a new column in our DataFrame by applying our UDF on the `"image"` and `"crop"` columns inside of a [`df.with_column()`]({{ api_path }}/dataframe_methods/daft.DataFrame.with_column.html) call.
 
 #### UDF Inputs
 
-When you specify an Expression as an input to a UDF, Daft will calculate the result of that Expression and pass it into your function as a [`daft.Series`](https://www.getdaft.io/projects/docs/en/stable/api_docs/series.html#daft.Series) object.
+When you specify an Expression as an input to a UDF, Daft will calculate the result of that Expression and pass it into your function as a [`daft.Series`](api_docs/series.html) object.
 
-The Daft [`daft.Series`](https://www.getdaft.io/projects/docs/en/stable/api_docs/series.html#daft.Series) is just an abstraction on a "column" of data! You can obtain several different data representations from a [`daft.Series`](https://www.getdaft.io/projects/docs/en/stable/api_docs/series.html#daft.Series):
+The Daft [`daft.Series`](api_docs/series.html) is just an abstraction on a "column" of data! You can obtain several different data representations from a [`daft.Series`](api_docs/series.html#daft.Series):
 
-1. PyArrow Arrays (`pa.Array`): [`s.to_arrow()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/series.html#daft.Series.to_arrow)
-2. Python lists (`list`): [`s.to_pylist()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/series.html#daft.Series.to_pylist)
+1. PyArrow Arrays (`pa.Array`): [`s.to_arrow()`](api_docs/series.html#daft.Series.to_arrow)
+2. Python lists (`list`): [`s.to_pylist()`](api_docs/series.html#daft.Series.to_pylist)
 
 Depending on your application, you may choose a different data representation that is more performant or more convenient!
 
@@ -2120,7 +2120,7 @@ Depending on your application, you may choose a different data representation th
 
 #### Return Types
 
-The `return_dtype` argument specifies what type of column your UDF will return. Types can be specified using the [`daft.DataType`](https://www.getdaft.io/projects/docs/en/stable/api_docs/datatype.html#daft.DataType) class.
+The `return_dtype` argument specifies what type of column your UDF will return. Types can be specified using the [`daft.DataType`](api_docs/datatype.html#daft.DataType) class.
 
 Your UDF function itself needs to return a batch of columnar data, and can do so as any one of the following array types:
 
@@ -2251,7 +2251,7 @@ Now you're ready to call this function on the `urls` column and store the output
 
 ## Multimodal Data
 
-Daft is built to work comfortably with multimodal data types, including URLs and images. You can use the [`url.download()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.url.download.html#daft.Expression.url.download) expression to download the bytes from a URL. Let’s store them in a new column using the `with_column` method:
+Daft is built to work comfortably with multimodal data types, including URLs and images. You can use the [`url.download()`]({{ api_path }}/expression_methods/daft.Expression.url.download.html) expression to download the bytes from a URL. Let’s store them in a new column using the `with_column` method:
 
 !!! failure "todo(docs): This example is originally from 10min quickstart"
 
@@ -2276,7 +2276,7 @@ Daft is built to work comfortably with multimodal data types, including URLs and
 (Showing first 5 of 5 rows)
 ```
 
-Let’s turn the bytes into human-readable images using [`image.decode()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/expression_methods/daft.Expression.image.decode.html):
+Let’s turn the bytes into human-readable images using [`image.decode()`]({{ api_path }}/expression_methods/daft.Expression.image.decode.html):
 
 === "🐍 Python"
 
