@@ -2,23 +2,23 @@
 
 !!! failure "todo(docs): For each term, included a link to its respective section under "Core Concepts" (except Query Plan doesn't have a section)"
 
-Daft is a distributed data engine. The main abstraction in Daft is the [`DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame), which conceptually can be thought of as a "table" of data with rows and columns.
+Daft is a distributed data engine. The main abstraction in Daft is the [`DataFrame`]({{ api_path }}/dataframe_methods/daft.DataFrame.html), which conceptually can be thought of as a "table" of data with rows and columns.
 
-Daft also exposes a [`SQL`](https://www.getdaft.io/projects/docs/en/stable/user_guide/sql.html) interface which interoperates closely with the DataFrame interface, allowing you to express data transformations and queries on your tables as SQL strings.
+Daft also exposes a [`SQL`](core_concepts.md#sql) interface which interoperates closely with the DataFrame interface, allowing you to express data transformations and queries on your tables as SQL strings.
 
 ![Daft python dataframes make it easy to load any data such as PDF documents, images, protobufs, csv, parquet and audio files into a table dataframe structure for easy querying](img/daft_diagram.png)
 
 ## DataFrames
 
-The [`DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame) is the core concept in Daft. Think of it as a table with rows and columns, similar to a spreadsheet or a database table. It's designed to handle large amounts of data efficiently.
+The [`DataFrame`]({{ api_path }}/dataframe_methods/daft.DataFrame.html) is the core concept in Daft. Think of it as a table with rows and columns, similar to a spreadsheet or a database table. It's designed to handle large amounts of data efficiently.
 
-Daft DataFrames are lazy. This means that calling most methods on a DataFrame will not execute that operation immediately - instead, DataFrames expose explicit methods such as [`daft.DataFrame.show`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.show.html#daft.DataFrame.show) and [`daft.DataFrame.write_parquet`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.write_parquet.html#daft.DataFrame.write_parquet) which will actually trigger computation of the DataFrame.
+Daft DataFrames are lazy. This means that calling most methods on a DataFrame will not execute that operation immediately - instead, DataFrames expose explicit methods such as [`daft.DataFrame.show`]({{ api_path }}/dataframe_methods/daft.DataFrame.show.html) and [`daft.DataFrame.write_parquet`]({{ api_path }}/dataframe_methods/daft.DataFrame.write_parquet.html) which will actually trigger computation of the DataFrame.
 
 > Learn more at [DataFrame](core_concepts.md#dataframe)
 
 ## Expressions
 
-An [`Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html) is a fundamental concept in Daft that allows you to define computations on DataFrame columns. They are the building blocks for transforming and manipulating data within your DataFrame and will be your best friend if you are working with Daft primarily using the Python API.
+An [`Expression`](api_docs/expressions.html) is a fundamental concept in Daft that allows you to define computations on DataFrame columns. They are the building blocks for transforming and manipulating data within your DataFrame and will be your best friend if you are working with Daft primarily using the Python API.
 
 > Learn more at [Expressions](core_concepts.md#expressions)
 
@@ -26,7 +26,7 @@ An [`Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expres
 
 As mentioned earlier, Daft DataFrames are lazy. Under the hood, each DataFrame in Daft is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results.
 
-You can examine a logical plan using [`df.explain()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.explain.html#daft.DataFrame.explain), here's an example:
+You can examine a logical plan using [`df.explain()`]({{ api_path }}/dataframe_methods/daft.DataFrame.explain.html), here's an example:
 
 === "🐍 Python"
 
@@ -89,9 +89,9 @@ You can examine a logical plan using [`df.explain()`](https://www.getdaft.io/pro
 
 ## SQL
 
-[SQL (Structured Query Language)](https://en.wikipedia.org/wiki/SQL) is a common query language for expressing queries over tables of data. Daft exposes a SQL API as an alternative (but often also complementary API) to the Python [`DataFrame`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.html#daft.DataFrame) and
-[`Expression`](https://www.getdaft.io/projects/docs/en/stable/api_docs/expressions.html) APIs for building queries.
+[SQL (Structured Query Language)](https://en.wikipedia.org/wiki/SQL) is a common query language for expressing queries over tables of data. Daft exposes a SQL API as an alternative (but often also complementary API) to the Python [`DataFrame`]({{ api_path }}/dataframe_methods/daft.DataFrame.html) and
+[`Expression`](api_docs/expressions.html) APIs for building queries.
 
-You can use SQL in Daft via the [`daft.sql()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql) function, and Daft will also convert many SQL-compatible strings into Expressions via [`daft.sql_expr()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/sql.html#daft.sql_expr) for easy interoperability with DataFrames.
+You can use SQL in Daft via the [`daft.sql()`](api_docs/sql.html#daft.sql) function, and Daft will also convert many SQL-compatible strings into Expressions via [`daft.sql_expr()`](api_docs/sql.html#daft.sql_expr) for easy interoperability with DataFrames.
 
 > Learn more at [SQL](core_concepts.md#sql)
