@@ -387,7 +387,6 @@ def overwrite_files(
                     [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
                 )
             except FileNotFoundError:
-                # The root directory does not exist, so there are no files to delete.
                 continue
     else:
         # Get all files in the root directory.
