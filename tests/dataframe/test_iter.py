@@ -101,18 +101,11 @@ def test_iter_rows_column_formats(make_df, format, data, expected):
         assert compare_values(actual_row, expected_row)
 
 
-@pytest.mark.parametrize(
-    "format",
-    [
-        "arrow",
-        "numpy",
-    ],
-)
-def test_iter_rows_column_format_not_compatible(format):
+def test_iter_rows_arrow_column_format_not_compatible():
     df = daft.from_pydict({"a": [object()]})  # Object type is not supported by arrow or numpy
 
     with pytest.raises(ValueError):
-        list(df.iter_rows(column_format=format))
+        list(df.iter_rows(column_format="arrow"))
 
 
 @pytest.mark.parametrize("materialized", [False, True])

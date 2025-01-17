@@ -268,7 +268,7 @@ class DataFrame:
         entire partitions of data, see: :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`.
 
         By default, Daft will convert the columns to Python lists for easy consumption. However, for nested data such as List or Struct arrays, this can be expensive.
-        You may wish to set `column_format` to "arrow" such that the nested data is returned as an Arrow array.
+        You may wish to set `column_format` to "arrow" such that the nested data is returned as Arrow scalars.
 
         .. NOTE::
             A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
@@ -296,7 +296,7 @@ class DataFrame:
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
                 available on the machine).
-            column_format: the format of the columns to iterate over. One of "python", "arrow", or "numpy". Defaults to "python".
+            column_format: the format of the columns to iterate over. One of "python" or "arrow". Defaults to "python".
 
         .. seealso::
             :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`: iterator over entire partitions instead of single rows
