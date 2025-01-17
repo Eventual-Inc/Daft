@@ -2379,6 +2379,7 @@ dependencies = [
  "serde",
  "snafu",
  "test-log",
+ "tokio",
  "typed-builder 0.20.0",
  "uuid 1.11.0",
 ]

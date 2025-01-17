@@ -61,7 +61,7 @@ impl Session {
             Runner::Native => {
                 let this = self.clone();
 
-                let plan = lp.optimize()?;
+                let plan = lp.optimize_async().await?;
 
                 let results = this
                     .engine
