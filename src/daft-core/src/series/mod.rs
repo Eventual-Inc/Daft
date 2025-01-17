@@ -100,6 +100,77 @@ impl Series {
         Ok(probe_table)
     }
 
+    /// Build a hashset of the [`IndexHash`]s of each element in this [`Series`], including nulls.
+    ///
+    /// The returned hashset can be used to probe for the existence of a given element in this [`Series`].
+    /// Its length can also be used to determine the *exact* number of unique elements in this [`Series`].
+    ///
+    /// # Note
+    /// 1. This function returns a `HashMap<X, ()>` rather than a `HashSet<X>`. These two types are functionally equivalent.
+    ///
+    /// 2. `NULL`s *are* inserted into the returned hashset. They will be counted towards the final number of unique elements.
+    pub fn build_probe_table_with_nulls(
+        &self,
+    ) -> DaftResult<HashMap<IndexHash, (), IdentityBuildHasher>> {
+        // Building a comparator function over a series of type `NULL` will result in a failure.
+        // (I.e., `let comparator = build_is_equal(..)` will fail).
+        //
+        // Therefore, exit early with an empty hashmap.
+        if matches!(self.data_type(), DataType::Null) {
+            return Ok(HashMap::default());
+        };
+
+        const DEFAULT_SIZE: usize = 20;
+        let hashed_series = self.hash_with_validity(None)?;
+        let array = self.to_arrow();
+        let comparator = build_is_equal(&*array, &*array, true, false)?;
+
+        let mut probe_table =
+            HashMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
+                DEFAULT_SIZE,
+                Default::default(),
+            );
+
+        for (idx, hash) in hashed_series.as_arrow().iter().enumerate() {
+            let hash = match hash {
+                Some(&hash) => hash,
+                None => {
+                    // For nulls, use a special hash value and insert it if not already present
+                    let null_hash = u64::MAX; // Special hash for nulls
+                    let entry = probe_table
+                        .raw_entry_mut()
+                        .from_hash(null_hash, |other| other.hash == null_hash);
+                    if let RawEntryMut::Vacant(entry) = entry {
+                        entry.insert_hashed_nocheck(
+                            null_hash,
+                            IndexHash {
+                                idx: idx as u64,
+                                hash: null_hash,
+                            },
+                            (),
+                        );
+                    }
+                    continue;
+                }
+            };
+            let entry = probe_table.raw_entry_mut().from_hash(hash, |other| {
+                (hash == other.hash) && comparator(idx, other.idx as _)
+            });
+            if let RawEntryMut::Vacant(entry) = entry {
+                entry.insert_hashed_nocheck(
+                    hash,
+                    IndexHash {
+                        idx: idx as u64,
+                        hash,
+                    },
+                    (),
+                );
+            };
+        }
+
+        Ok(probe_table)
+    }
+
     /// Exports this Series into an Arrow arrow that is corrected for the Arrow type system.
     /// For example, Daft's TimestampArray is a logical type that is backed by an Int64Array Physical array.
     /// If we were to call `.as_arrow()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.

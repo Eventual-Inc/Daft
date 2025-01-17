@@ -3231,29 +3231,34 @@ class ExpressionListNamespace(ExpressionNamespace):
             nulls_first = Expression._to_expression(nulls_first)
         return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
 
-    def unique(self) -> Expression:
-        """Returns a list of unique elements from each list.
-
-        Returns:
-            Expression: A List expression with each list containing only unique elements.
+    def unique(self, include_nulls: bool = False) -> Expression:
+        """Returns a list of unique elements in each list, preserving order of first occurrence.
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
-            >>> df.with_column("unique", df["letters"].list.unique()).collect()
-            ╭──────────────┬──────────────╮
-            │ letters      ┆ unique       │
-            │ ---          ┆ ---          │
-            │ List[Utf8]   ┆ List[Utf8]   │
-            ╞══════════════╪══════════════╡
-            │ [a, b, a]    ┆ [a, b]       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ [b, c, b, c] ┆ [b, c]       │
-            ╰──────────────┴──────────────╯
+            >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1]]})
+            >>> df.select(df["a"].list.unique()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ [1, 2, 3]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [4, 6, 2]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [6, 7, 1]   │
+            ╰─────────────╯
             <BLANKLINE>
-            (Showing first 2 of 2 rows)
+            (Showing first 3 of 3 rows)
+
+        Args:
+            include_nulls: Whether to include null values in the result. Defaults to False.
+
+        Returns:
+            Expression: An expression with lists containing only unique elements
         """
-        return Expression._from_pyexpr(native.list_unique(self._expr))
+        return Expression._from_pyexpr(native.list_unique(self._expr, include_nulls))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):

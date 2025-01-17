@@ -526,7 +526,7 @@ impl Table {
             AggExpr::List(expr) => self.eval_expression(expr)?.agg_list(groups),
             AggExpr::Set(expr) => {
                 let list = self.eval_expression(expr)?.agg_list(groups)?;
-                let unique_expr = unique(col(list.name()));
+                let unique_expr = unique(col(list.name()), false);
                 self.eval_expression(&unique_expr)
             }
             AggExpr::Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
