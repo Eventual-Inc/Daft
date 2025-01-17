@@ -1,7 +1,5 @@
 # Terminology
 
-!!! failure "todo(docs): For each term, included a link to its respective section under "Core Concepts" (except Query Plan doesn't have a section)"
-
 Daft is a distributed data engine. The main abstraction in Daft is the [`DataFrame`]({{ api_path }}/dataframe_methods/daft.DataFrame.html), which conceptually can be thought of as a "table" of data with rows and columns.
 
 Daft also exposes a [`SQL`](core_concepts.md#sql) interface which interoperates closely with the DataFrame interface, allowing you to express data transformations and queries on your tables as SQL strings.
