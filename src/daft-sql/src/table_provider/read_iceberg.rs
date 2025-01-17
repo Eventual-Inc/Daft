@@ -69,6 +69,6 @@ impl SQLTableFunction for SqlReadIceberg {
         planner: &SQLPlanner,
         args: &TableFunctionArgs,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        unsupported_sql_err!("`read_iceberg` function is not supported. Enable the `python` feature to use this function.")
+        crate::unsupported_sql_err!("`read_iceberg` function is not supported. Enable the `python` feature to use this function.")
     }
 }
