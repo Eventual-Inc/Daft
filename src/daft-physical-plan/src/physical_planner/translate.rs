@@ -13,7 +13,10 @@ use daft_dsl::{
     col, estimated_selectivity, functions::agg::merge_mean, is_partition_compatible, AggExpr,
     ApproxPercentileParams, Expr, ExprRef, SketchType,
 };
-use daft_functions::{list::unique_count, numeric::sqrt};
+use daft_functions::{
+    list::{unique, unique_count},
+    numeric::sqrt,
+};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
@@ -843,6 +846,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::AnyValue(Expr::Alias(e, name.clone()).into(), ignore_nulls)
                 }
                 AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Set(e) => AggExpr::Set(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
                 AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,
@@ -1093,6 +1097,18 @@ pub fn populate_aggregation_stages(
                         col(list_id.clone()).alias(concat_of_list_id.clone()),
                     ));
                 final_exprs.push(col(concat_of_list_id.clone()).alias(output_name));
+            }
+            AggExpr::Set(e) => {
+                let list_agg_id =
+                    add_to_stage(AggExpr::List, e.clone(), schema, &mut first_stage_aggs);
+                let list_concat_id = add_to_stage(
+                    AggExpr::Concat,
+                    col(list_agg_id.clone()),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+                let result = unique(col(list_concat_id.clone())).alias(output_name);
+                final_exprs.push(result);
             }
             AggExpr::Concat(e) => {
                 let concat_id = agg_expr.semantic_id(schema).id;

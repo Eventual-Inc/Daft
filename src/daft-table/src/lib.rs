@@ -23,6 +23,7 @@ use daft_dsl::{
     col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
     LiteralValue, SketchType,
 };
+use daft_functions::list::unique;
 use daft_logical_plan::FileInfos;
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
@@ -523,8 +524,13 @@ impl Table {
                 self.eval_expression(expr)?.any_value(groups, ignore_nulls)
             }
             AggExpr::List(expr) => self.eval_expression(expr)?.agg_list(groups),
+            AggExpr::Set(expr) => {
+                let list = self.eval_expression(expr)?.agg_list(groups)?;
+                let unique_expr = unique(col(list.name()));
+                self.eval_expression(&unique_expr)
+            }
             AggExpr::Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
-            AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
+            &AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
         }

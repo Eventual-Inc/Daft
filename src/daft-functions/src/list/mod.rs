@@ -10,6 +10,7 @@ mod min;
 mod slice;
 mod sort;
 mod sum;
+mod unique;
 mod unique_count;
 mod value_counts;
 
@@ -25,5 +26,6 @@ pub use min::{list_min as min, ListMin};
 pub use slice::{list_slice as slice, ListSlice};
 pub use sort::{list_sort as sort, ListSort};
 pub use sum::{list_sum as sum, ListSum};
+pub use unique::{list_unique as unique, ListUnique};
 pub use unique_count::{list_unique_count as unique_count, ListUniqueCount};
 pub use value_counts::list_value_counts as value_counts;

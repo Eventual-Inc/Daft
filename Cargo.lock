@@ -2630,6 +2630,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-functions",
  "daft-image",
  "daft-logical-plan",
  "html-escape",

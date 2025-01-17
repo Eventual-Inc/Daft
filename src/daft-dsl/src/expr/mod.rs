@@ -235,6 +235,9 @@ pub enum AggExpr {
     #[display("list({_0})")]
     List(ExprRef),
 
+    #[display("set({_0})")]
+    Set(ExprRef),
+
     #[display("list({_0})")]
     Concat(ExprRef),
 
@@ -275,6 +278,7 @@ impl AggExpr {
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr)
             | Self::Concat(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
@@ -347,6 +351,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_list()"))
             }
+            Self::Set(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_set()"))
+            }
             Self::Concat(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat()"))
@@ -370,6 +378,7 @@ impl AggExpr {
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr)
             | Self::Concat(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
@@ -392,6 +401,7 @@ impl AggExpr {
             Self::Max(_) => Self::Max(first_child()),
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
             Self::List(_) => Self::List(first_child()),
+            Self::Set(_) => Self::Set(first_child()),
             Self::Concat(_) => Self::Concat(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
@@ -505,7 +515,7 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
-            Self::List(expr) => expr.to_field(schema)?.to_list_field(),
+            Self::List(expr) | Self::Set(expr) => expr.to_field(schema)?.to_list_field(),
             Self::Concat(expr) => {
                 let field = expr.to_field(schema)?;
                 match field.dtype {

@@ -3231,6 +3231,30 @@ class ExpressionListNamespace(ExpressionNamespace):
             nulls_first = Expression._to_expression(nulls_first)
         return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
 
+    def unique(self) -> Expression:
+        """Returns a list of unique elements from each list.
+
+        Returns:
+            Expression: A List expression with each list containing only unique elements.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
+            >>> df.with_column("unique", df["letters"].list.unique()).collect()
+            ╭──────────────┬──────────────╮
+            │ letters      ┆ unique       │
+            │ ---          ┆ ---          │
+            │ List[Utf8]   ┆ List[Utf8]   │
+            ╞══════════════╪══════════════╡
+            │ [a, b, a]    ┆ [a, b]       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [b, c, b, c] ┆ [b, c]       │
+            ╰──────────────┴──────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+        """
+        return Expression._from_pyexpr(native.list_unique(self._expr))
+
 
 class ExpressionStructNamespace(ExpressionNamespace):
     def get(self, name: str) -> Expression:
