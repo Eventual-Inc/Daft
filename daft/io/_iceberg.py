@@ -1,6 +1,8 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+
+from pyiceberg.table import StaticTable
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -53,7 +55,7 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
 
 @PublicAPI
 def read_iceberg(
-    table: "pyiceberg.table.Table",
+    table: Union[str, "pyiceberg.table.Table"],
     snapshot_id: Optional[int] = None,
     io_config: Optional["IOConfig"] = None,
 ) -> DataFrame:
@@ -75,7 +77,7 @@ def read_iceberg(
         official project for Python.
 
     Args:
-        table (pyiceberg.table.Table): `PyIceberg Table <https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table>`__ created using the PyIceberg library
+        table (str or pyiceberg.table.Table): `PyIceberg Table <https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table>`__ created using the PyIceberg library
         snapshot_id (int, optional): Snapshot ID of the table to query
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
 
@@ -83,6 +85,10 @@ def read_iceberg(
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table
     """
     from daft.iceberg.iceberg_scan import IcebergScanOperator
+
+    # support for read_iceberg('path/to/metadata.json')
+    if isinstance(table, str):
+        table = StaticTable.from_metadata(metadata_location=table)
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
