@@ -35,6 +35,8 @@ into nicely-sized partitions based on their estimated in-memory data sizes.
 
 To interrogate the partitioning of your current DataFrame, you may use the [`df.explain(show_all=True)`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.explain.html#daft.DataFrame.explain) method. Here is an example output from a simple `df = daft.read_parquet(...)` call on a fairly large number of Parquet files.
 
+[`df.explain(show_all=True)`]({{ api_path }}/dataframe_methods/daft.DataFrame.explain.html)
+
 === "🐍 Python"
 
     ```python

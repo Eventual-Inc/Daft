@@ -21,11 +21,12 @@ sys.path.insert(0, os.path.abspath("ext"))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
-project = "Daft API Documentation"
+project = "Daft API"
 copyright = "2025, Eventual"
 author = "Eventual"
 # html_logo = "_static/daft-logo.png"
 html_favicon = "_static/daft-favicon.png"
+html_title = "Daft API Documentation"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -92,22 +93,6 @@ html_baseurl = "https://www.getdaft.io/projects/docs/en/stable/"
 copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
 copybutton_prompt_is_regexp = True
 
-# -- Options for redirecting URLs
-redirects = {
-    "learn/install": "../install.html",
-    "learn/user_guides/dataframes": "intro-dataframes.html",
-    "learn/user_guides/types_and_ops": "intro-dataframes.html",
-    "learn/user_guides/remote_cluster_execution": "distributed-computing.html",
-    "learn/quickstart": "learn/10-min.html",
-    "learn/10-min": "../10-min.html",
-    "user_guide/basic_concepts/expressions": "user_guide/expressions",
-    "user_guide/basic_concepts/dataframe_introduction": "user_guide/basic_concepts",
-    "user_guide/basic_concepts/introduction": "user_guide/basic_concepts",
-    "user_guide/daft_in_depth/aggregations": "user_guide/aggregations",
-    "user_guide/daft_in_depth/dataframe-operations": "user_guide/dataframe-operations",
-    "user_guide/daft_in_depth/datatypes": "user_guide/datatypes",
-    "user_guide/daft_in_depth/udf": "user_guide/udf",
-}
 
 # Resolving code links to github
 # Adapted from: https://github.com/aaugustin/websockets/blob/778a1ca6936ac67e7a3fe1bbe585db2eafeaa515/docs/conf.py#L100-L134

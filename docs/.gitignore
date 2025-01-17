@@ -1,0 +1,3 @@
+sphinx/source/_build
+site
+mkdocs/api_docs

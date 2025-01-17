@@ -46,7 +46,7 @@ nav:
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
-- API Docs: html/api_docs/index.html
+- API Docs: api_docs/index.html
 
 # Configuration
 theme:
@@ -109,6 +109,11 @@ extra:
   - icon: fontawesome/brands/x-twitter
     link: https://x.com/daft_dataframe
 
+  # This is a macro you should use to refer to paths
+  # When referring to methods, the syntax is {{ api_path }}/path/to/method
+  api_path: /api_docs/doc_gen
+
+
 # Extensions
 markdown_extensions:
 - admonition
@@ -138,3 +143,7 @@ plugins:
     include_source: true
 - search:
     separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+- macros
+- mkdocs-simple-hooks:
+    hooks:
+        on_pre_build: "docs.hooks:make_api_docs"

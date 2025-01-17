@@ -51,7 +51,7 @@ def generate_stub(name: str):
 
 def generate_files(app):
     # Determine where to write .rst files to
-    output_dir = os.path.join(app.srcdir, "api_docs", TOCTREE)
+    output_dir = os.path.join(app.srcdir, TOCTREE)
     os.makedirs(output_dir, exist_ok=True)
 
     # Write stubfiles
