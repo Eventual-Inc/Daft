@@ -1,6 +1,5 @@
 use std::{future::ready, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use daft_dsl::LiteralValue;
@@ -64,9 +63,9 @@ impl Session {
 
                 let plan = lp.optimize()?;
 
-                let cfg = Arc::new(DaftExecutionConfig::default());
-
-                let results = this.engine.run(&plan, &*this.psets, cfg, None)?;
+                let results = this
+                    .engine
+                    .run(&plan, &*this.psets, Default::default(), None)?;
                 Ok(results.into_stream().boxed())
             }
         }
