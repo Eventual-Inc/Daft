@@ -13,7 +13,10 @@ use daft_dsl::{
     col, estimated_selectivity, functions::agg::merge_mean, is_partition_compatible, AggExpr,
     ApproxPercentileParams, Expr, ExprRef, SketchType,
 };
-use daft_functions::{list::unique, numeric::sqrt};
+use daft_functions::{
+    list::{unique, unique_count},
+    numeric::sqrt,
+};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
@@ -926,7 +929,7 @@ pub fn populate_aggregation_stages(
                 );
 
                 // Final projection
-                let result = unique(col(list_concat_id.clone()), false).alias(output_name);
+                let result = unique_count(col(list_concat_id.clone())).alias(output_name);
                 final_exprs.push(result);
             }
             AggExpr::Sum(e) => {

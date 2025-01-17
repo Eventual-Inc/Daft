@@ -26,6 +26,7 @@ from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_sort as _list_sort
+from daft.daft import list_unique as _list_unique
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
@@ -3258,7 +3259,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with lists containing only unique elements
         """
-        return Expression._from_pyexpr(native.list_unique(self._expr, include_nulls))
+        return Expression._from_pyexpr(_list_unique(self._expr, include_nulls))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):
