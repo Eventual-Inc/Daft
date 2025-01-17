@@ -111,9 +111,10 @@ impl Session {
 
                         while let Some(result) = result_stream.next().await {
                             let result = result?;
-                            let tables = result.get_tables()?;
-                            for table in tables.as_slice() {
-                                let response = res.arrow_batch_response(table)?;
+                            let mut tables_stream = result.into_stream()?;
+
+                            while let Some(Ok(table)) = tables_stream.next().await {
+                                let response = res.arrow_batch_response(&table)?;
                                 if tx.send(Ok(response)).await.is_err() {
                                     return Ok(());
                                 }

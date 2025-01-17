@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::as_arrow::AsArrow,
@@ -79,7 +81,7 @@ impl Table {
         let capacity_expected = exploded_columns.first().unwrap().len();
         let take_idx = lengths_to_indices(&first_len, capacity_expected)?.into_series();
 
-        let mut new_series = self.columns.clone();
+        let mut new_series = Arc::unwrap_or_clone(self.columns.clone());
 
         for i in 0..self.num_columns() {
             let name = new_series.get(i).unwrap().name();
