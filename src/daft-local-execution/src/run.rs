@@ -183,7 +183,8 @@ impl NativeExecutor {
         let rt = self.runtime.clone();
         let pb_manager = self.pb_manager.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
-
+        // todo: split this into a run and run_async method
+        // the run_async should spawn a task instead of a thread like this
         let handle = std::thread::spawn(move || {
             let runtime = rt.unwrap_or_else(|| {
                 Arc::new(

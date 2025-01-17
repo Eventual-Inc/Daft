@@ -4,7 +4,6 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use daft_dsl::LiteralValue;
-use daft_local_execution::NativeExecutor;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_ray_execution::RayEngine;
@@ -14,7 +13,6 @@ use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
 };
-use itertools::Itertools;
 use pyo3::Python;
 use spark_connect::{
     relation::RelType,
@@ -67,16 +65,9 @@ impl Session {
                 let plan = lp.optimize()?;
 
                 let cfg = Arc::new(DaftExecutionConfig::default());
-                let native_executor =
-                    NativeExecutor::default().with_runtime(self.compute_runtime.runtime.clone());
 
-                let results = native_executor.run(&plan, &*this.psets, cfg, None)?;
-                let it = results.into_iter();
-                let result_stream = it.collect_vec();
-                Ok(Box::pin(stream::iter(result_stream)))
-
-                // todo: use into_stream once it works as expected
-                // Ok(results.into_stream().boxed())
+                let results = this.engine.run(&plan, &*this.psets, cfg, None)?;
+                Ok(results.into_stream().boxed())
             }
         }
     }
@@ -186,7 +177,7 @@ impl Session {
 
         let this = self.clone();
 
-        tokio::spawn(async move {
+        self.compute_runtime.runtime.spawn(async move {
             let result = async {
                 check_write_operation(&operation)?;
 
