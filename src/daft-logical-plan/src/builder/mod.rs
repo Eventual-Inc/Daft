@@ -13,7 +13,10 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
-use daft_core::join::{JoinStrategy, JoinType};
+use daft_core::{
+    join::{JoinStrategy, JoinType},
+    prelude::CountMode,
+};
 use daft_dsl::{col, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
@@ -735,6 +738,45 @@ impl LogicalPlanBuilder {
         self.plan.schema()
     }
 
+    pub fn describe(&self, to_describe: Vec<ExprRef>) -> DaftResult<Self> {
+        let mut agg_exprs = Vec::new();
+        // If no columns are specified, describe all columns.
+        let to_describe = if to_describe.is_empty() {
+            let schema = self.schema();
+            schema
+                .fields
+                .iter()
+                .map(|(name, _)| col(name.as_str()))
+                .collect()
+        } else {
+            let expr_resolver = ExprResolver::default();
+            let (to_describe, _) = expr_resolver.resolve(to_describe, &self.schema())?;
+            to_describe
+        };
+        // For each column, aggregate the count, nulls, approx distinct, min, and max.
+        for expr in &to_describe {
+            let name = expr.name();
+            agg_exprs.push(
+                expr.clone()
+                    .count(CountMode::All)
+                    .alias(format!("{}_count", name).as_str()),
+            );
+            agg_exprs.push(
+                expr.clone()
+                    .count(CountMode::Null)
+                    .alias(format!("{}_nulls", name).as_str()),
+            );
+            agg_exprs.push(
+                expr.clone()
+                    .approx_count_distinct()
+                    .alias(format!("{}_approx_distinct", name).as_str()),
+            );
+            agg_exprs.push(expr.clone().min().alias(format!("{}_min", name).as_str()));
+            agg_exprs.push(expr.clone().max().alias(format!("{}_max", name).as_str()));
+        }
+        self.aggregate(agg_exprs, vec![])
+    }
+
     pub fn repr_ascii(&self, simple: bool) -> String {
         self.plan.repr_ascii(simple)
     }
@@ -1103,6 +1145,14 @@ impl PyLogicalPlanBuilder {
     }
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(self.builder.schema().into())
+    }
+
+    pub fn describe(&self, to_describe: Vec<PyExpr>) -> PyResult<Self> {
+        let to_describe_exprs = to_describe
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<ExprRef>>();
+        Ok(self.builder.describe(to_describe_exprs)?.into())
     }
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
