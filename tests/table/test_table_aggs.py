@@ -327,15 +327,42 @@ def test_table_any_value(case, expected_nulls, expected_no_nulls):
 test_table_agg_global_cases = [
     (
         [],
-        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[]]},
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+            "list": [[]],
+            "set_no_nulls": [[]],  # Empty since DataFrame is empty
+            "set_with_nulls": [[]],  # Empty since DataFrame is empty
+        },
     ),
     (
         [None],
-        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[None]]},
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+            "list": [[None]],
+            "set_no_nulls": [[]],  # Empty since no non-null values
+            "set_with_nulls": [[None]],  # Single null since all values are null
+        },
     ),
     (
         [None, None, None],
-        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[None, None, None]]},
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+            "list": [[None, None, None]],
+            "set_no_nulls": [[]],  # Empty since no non-null values
+            "set_with_nulls": [[None]],  # Single null since all values are null
+        },
     ),
     (
         [None, 3, None, None, 1, 2, 0, None],
@@ -346,6 +373,8 @@ test_table_agg_global_cases = [
             "min": [0],
             "max": [3],
             "list": [[None, 3, None, None, 1, 2, 0, None]],
+            "set_no_nulls": [[0, 1, 2, 3]],  # Only non-null values, preserving order
+            "set_with_nulls": [[None, 0, 1, 2, 3]],  # All unique values including null
         },
     ),
 ]
@@ -364,12 +393,47 @@ def test_table_agg_global(case) -> None:
             col("input").cast(DataType.int32()).alias("min").min(),
             col("input").cast(DataType.int32()).alias("max").max(),
             col("input").cast(DataType.int32()).alias("list").agg_list(),
+            col("input").cast(DataType.int32()).alias("set_no_nulls").agg_set(),
+            col("input").cast(DataType.int32()).alias("set_with_nulls").agg_set(include_nulls=True),
         ]
     )
 
     result = daft_table.to_pydict()
+
+    # Handle list and set results separately
+    res_list = result.pop("list")
+    exp_list = expected.pop("list")
+    res_set_no_nulls = result.pop("set_no_nulls")
+    exp_set_no_nulls = expected.pop("set_no_nulls")
+    res_set_with_nulls = result.pop("set_with_nulls")
+    exp_set_with_nulls = expected.pop("set_with_nulls")
+
+    # Check regular aggregations
     for key, value in expected.items():
         assert result[key] == value
+
+    # Check list result
+    assert len(res_list) == 1
+    assert res_list[0] == exp_list[0]
+
+    # Check set without nulls
+    assert len(res_set_no_nulls) == 1
+    assert len(res_set_no_nulls[0]) == len(
+        set(x for x in res_set_no_nulls[0] if x is not None)
+    ), "Result should contain no duplicates"
+    assert set(x for x in res_set_no_nulls[0] if x is not None) == set(
+        x for x in exp_set_no_nulls[0] if x is not None
+    ), "Sets should contain same non-null elements"
+    assert None not in res_set_no_nulls[0], "Result should not contain nulls when include_nulls=False"
+
+    # Check set with nulls
+    assert len(res_set_with_nulls) == 1
+    assert len(res_set_with_nulls[0]) == len(
+        set(x for x in res_set_with_nulls[0])
+    ), "Result should contain no duplicates"
+    assert set(res_set_with_nulls[0]) == set(exp_set_with_nulls[0]), "Sets should contain same elements including nulls"
+    if None in exp_set_with_nulls[0]:
+        assert None in res_set_with_nulls[0], "Result should contain null when include_nulls=True and nulls exist"
 
 
 @pytest.mark.parametrize(
@@ -399,12 +463,16 @@ test_table_agg_groupby_cases = [
             col("cookies").alias("sum").sum(),
             col("name").alias("count").count(),
             col("cookies").alias("list").agg_list(),
+            col("cookies").alias("set_no_nulls").agg_set(),
+            col("cookies").alias("set_with_nulls").agg_set(include_nulls=True),
         ],
         "expected": {
             "name": ["Alice", "Bob", None],
             "sum": [None, 10, 7],
             "count": [4, 4, 0],
             "list": [[None] * 4, [None, None, 5, 5], [None, 5, None, 2]],
+            "set_no_nulls": [[], [5], [2, 5]],
+            "set_with_nulls": [[None], [None, 5], [None, 5, 2]],
         },
     },
     {
@@ -1001,3 +1069,346 @@ def test_agg_concat_on_string_groupby_null_list() -> None:
     expected = [None, None]
     assert res["a"] == expected
     assert len(res["a"]) == len(expected)
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_global_set_aggs(dtype) -> None:
+    input = [None, 0, 1, 2, None, 4, 2, 1, None]
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+    daft_table = MicroPartition.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
+
+    # Test without nulls
+    result_no_nulls = daft_table.eval_expression_list([col("input").alias("set").agg_set()])
+    assert result_no_nulls.get_column("set").datatype() == DataType.list(dtype)
+    expected_no_nulls = sorted([x for x in set(input) if x is not None])
+    assert sorted(result_no_nulls.to_pydict()["set"][0]) == expected_no_nulls
+
+    # Test with nulls
+    result_with_nulls = daft_table.eval_expression_list([col("input").alias("set").agg_set(include_nulls=True)])
+    assert result_with_nulls.get_column("set").datatype() == DataType.list(dtype)
+    expected_with_nulls = sorted([x for x in set(input)], key=lambda x: (x is None, x if x is not None else 0))
+    assert (
+        sorted(result_with_nulls.to_pydict()["set"][0], key=lambda x: (x is None, x if x is not None else 0))
+        == expected_with_nulls
+    )
+
+
+def test_global_pyobj_set_aggs() -> None:
+    obj1, obj2, obj3 = object(), object(), object()
+    input = [obj1, obj2, None, obj3, obj1, None, obj2]
+    table = MicroPartition.from_pydict({"input": input})
+
+    # Test without nulls
+    result_no_nulls = table.eval_expression_list([col("input").alias("set").agg_set()])
+    assert result_no_nulls.get_column("set").datatype() == DataType.python()
+    result_set_no_nulls = set(result_no_nulls.to_pydict()["set"][0])
+    assert result_set_no_nulls == {obj1, obj2, obj3}
+    assert None not in result_set_no_nulls
+
+    # Test with nulls
+    result_with_nulls = table.eval_expression_list([col("input").alias("set").agg_set(include_nulls=True)])
+    assert result_with_nulls.get_column("set").datatype() == DataType.python()
+    result_set_with_nulls = set(result_with_nulls.to_pydict()["set"][0])
+    assert result_set_with_nulls == {obj1, obj2, obj3, None}
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_grouped_set_aggs(dtype) -> None:
+    groups = [1, 2, 1, 2, 1, 2]
+    input = [None, 0, 1, 2, None, 2]
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
+
+    # Test without nulls
+    result_no_nulls = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort(
+        [col("groups")]
+    )
+    assert result_no_nulls.get_column("set").datatype() == DataType.list(dtype)
+
+    # Group 1 should have {1}, Group 2 should have {0, 2}
+    result_dict_no_nulls = result_no_nulls.to_pydict()
+    assert sorted(result_dict_no_nulls["groups"]) == [1, 2]
+    group1_set = set(result_dict_no_nulls["set"][0])
+    group2_set = set(result_dict_no_nulls["set"][1])
+    assert group1_set == {1}
+    assert group2_set == {0, 2}
+    assert None not in group1_set and None not in group2_set
+
+    # Test with nulls
+    result_with_nulls = daft_table.agg(
+        [col("input").alias("set").agg_set(include_nulls=True)], group_by=[col("groups")]
+    ).sort([col("groups")])
+    assert result_with_nulls.get_column("set").datatype() == DataType.list(dtype)
+
+    # Group 1 should have {None, 1}, Group 2 should have {0, 2}
+    result_dict_with_nulls = result_with_nulls.to_pydict()
+    assert sorted(result_dict_with_nulls["groups"]) == [1, 2]
+    group1_set_with_nulls = set(result_dict_with_nulls["set"][0])
+    group2_set_with_nulls = set(result_dict_with_nulls["set"][1])
+    assert group1_set_with_nulls == {None, 1}
+    assert group2_set_with_nulls == {0, 2}
+
+
+def test_grouped_pyobj_set_aggs() -> None:
+    obj1, obj2, obj3 = object(), object(), object()
+    groups = [1, 2, 1, 2, 1, 2]
+    input = [obj1, obj2, None, obj3, obj1, None]
+
+    table = MicroPartition.from_pydict({"groups": groups, "input": input})
+
+    # Test without nulls
+    result_no_nulls = table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
+    assert result_no_nulls.get_column("set").datatype() == DataType.python()
+
+    result_dict_no_nulls = result_no_nulls.to_pydict()
+    assert sorted(result_dict_no_nulls["groups"]) == [1, 2]
+    group1_set = set(result_dict_no_nulls["set"][0])
+    group2_set = set(result_dict_no_nulls["set"][1])
+    assert group1_set == {obj1}
+    assert group2_set == {obj2, obj3}
+    assert None not in group1_set and None not in group2_set
+
+    # Test with nulls
+    result_with_nulls = table.agg(
+        [col("input").alias("set").agg_set(include_nulls=True)], group_by=[col("groups")]
+    ).sort([col("groups")])
+    assert result_with_nulls.get_column("set").datatype() == DataType.python()
+
+    result_dict_with_nulls = result_with_nulls.to_pydict()
+    assert sorted(result_dict_with_nulls["groups"]) == [1, 2]
+    group1_set_with_nulls = set(result_dict_with_nulls["set"][0])
+    group2_set_with_nulls = set(result_dict_with_nulls["set"][1])
+    assert group1_set_with_nulls == {obj1, None}
+    assert group2_set_with_nulls == {obj2, obj3, None}
+
+
+def test_grouped_list_set_aggs() -> None:
+    groups = [None, 1, None, 1, 2, 2]
+    input = [[1], [2, 3, 4], [5, None], None, [], [8, 9], [2, 3, 4]]  # Added duplicate list
+    expected_idx = [[1, 3], [4, 5], [0, 2]]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
+
+    # Test without nulls
+    result_no_nulls = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort(
+        [col("groups")]
+    )
+    assert result_no_nulls.get_column("set").datatype() == DataType.list(DataType.list(DataType.int64()))
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    expected_groups_no_nulls = [
+        sorted(set([input_as_dtype[i] for i in group if input_as_dtype[i] is not None])) for group in expected_idx
+    ]
+    assert result_no_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
+
+    # Test with nulls
+    result_with_nulls = daft_table.agg(
+        [col("input").alias("set").agg_set(include_nulls=True)], group_by=[col("groups")]
+    ).sort([col("groups")])
+    assert result_with_nulls.get_column("set").datatype() == DataType.list(DataType.list(DataType.int64()))
+    expected_groups_with_nulls = [sorted(set([input_as_dtype[i] for i in group])) for group in expected_idx]
+    assert result_with_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_with_nulls}
+
+
+def test_grouped_fixed_size_list_set_aggs() -> None:
+    groups = [None, 1, None, 1, 2, 2]
+    input = Series.from_pylist([[1, 2], [3, 4], [5, None], None, [6, 7], [8, 9], [3, 4]]).cast(  # Added duplicate list
+        DataType.fixed_size_list(DataType.int64(), 2)
+    )
+    expected_idx = [[1, 3], [4, 5], [0, 2]]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
+
+    # Test without nulls
+    result_no_nulls = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort(
+        [col("groups")]
+    )
+    assert result_no_nulls.get_column("set").datatype() == DataType.list(DataType.fixed_size_list(DataType.int64(), 2))
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    expected_groups_no_nulls = [
+        sorted(set([input_as_dtype[i] for i in group if input_as_dtype[i] is not None])) for group in expected_idx
+    ]
+    assert result_no_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
+
+    # Test with nulls
+    result_with_nulls = daft_table.agg(
+        [col("input").alias("set").agg_set(include_nulls=True)], group_by=[col("groups")]
+    ).sort([col("groups")])
+    assert result_with_nulls.get_column("set").datatype() == DataType.list(
+        DataType.fixed_size_list(DataType.int64(), 2)
+    )
+    expected_groups_with_nulls = [sorted(set([input_as_dtype[i] for i in group])) for group in expected_idx]
+    assert result_with_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_with_nulls}
+
+
+def test_grouped_struct_set_aggs() -> None:
+    groups = [None, 1, None, 1, 2, 2]
+    input = [
+        {"x": 1, "y": 2},
+        {"x": 3, "y": 4},
+        {"x": 5, "y": None},
+        None,
+        {"x": 6, "y": 7},
+        {"x": 8, "y": 9},
+        {"x": 3, "y": 4},  # Added duplicate struct
+    ]
+    expected_idx = [[1, 3], [4, 5], [0, 2]]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
+
+    # Test without nulls
+    result_no_nulls = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort(
+        [col("groups")]
+    )
+    assert result_no_nulls.get_column("set").datatype() == DataType.list(
+        DataType.struct({"x": DataType.int64(), "y": DataType.int64()})
+    )
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    expected_groups_no_nulls = [
+        sorted(set([input_as_dtype[i] for i in group if input_as_dtype[i] is not None])) for group in expected_idx
+    ]
+    assert result_no_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
+
+    # Test with nulls
+    result_with_nulls = daft_table.agg(
+        [col("input").alias("set").agg_set(include_nulls=True)], group_by=[col("groups")]
+    ).sort([col("groups")])
+    assert result_with_nulls.get_column("set").datatype() == DataType.list(
+        DataType.struct({"x": DataType.int64(), "y": DataType.int64()})
+    )
+    expected_groups_with_nulls = [sorted(set([input_as_dtype[i] for i in group])) for group in expected_idx]
+    assert result_with_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_with_nulls}
+
+
+def test_set_aggs_empty() -> None:
+    daft_table = MicroPartition.from_pydict({"col_A": [], "col_B": []})
+
+    # Test without nulls
+    result_no_nulls = daft_table.agg(
+        [col("col_A").cast(DataType.int32()).alias("set").agg_set()],
+        group_by=[col("col_B")],
+    )
+    assert result_no_nulls.get_column("set").datatype() == DataType.list(DataType.int32())
+    assert result_no_nulls.to_pydict() == {"col_B": [], "set": []}
+
+    # Test with nulls
+    result_with_nulls = daft_table.agg(
+        [col("col_A").cast(DataType.int32()).alias("set").agg_set(include_nulls=True)],
+        group_by=[col("col_B")],
+    )
+    assert result_with_nulls.get_column("set").datatype() == DataType.list(DataType.int32())
+    assert result_with_nulls.to_pydict() == {"col_B": [], "set": []}
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_groupby_list_set(dtype) -> None:
+    df = from_pydict(
+        {
+            "a": [[1, 2, 3], [1, 2, 3], [1, 2], None, [1, 2, 3], None, [1, 2]],
+            "b": [0, 1, 2, 3, 4, 5, 6],
+        }
+    ).with_column("a", col("a").cast(DataType.list(dtype)))
+
+    # Test without nulls
+    res_no_nulls = df.groupby("a").agg([col("b").alias("set").agg_set()]).to_pydict()
+    expected_no_nulls = {
+        "[1, 2, 3]": [0, 1, 4],  # Group for [1, 2, 3]
+        "[1, 2]": [2, 6],  # Group for [1, 2]
+    }
+    for key, values in expected_no_nulls.items():
+        assert set(values) in [set(x) for x in res_no_nulls["set"]]
+
+    # Test with nulls
+    res_with_nulls = df.groupby("a").agg([col("b").alias("set").agg_set(include_nulls=True)]).to_pydict()
+    expected_with_nulls = {
+        "[1, 2, 3]": [0, 1, 4],  # Group for [1, 2, 3]
+        "[1, 2]": [2, 6],  # Group for [1, 2]
+        None: [3, 5],  # Group for None
+    }
+    for key, values in expected_with_nulls.items():
+        assert set(values) in [set(x) for x in res_with_nulls["set"]]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_groupby_fixed_size_list_set(dtype) -> None:
+    df = from_pydict(
+        {
+            "a": [
+                [1, 2, 3],
+                [1, 2, 3],
+                [1, 2, 4],
+                None,
+                [1, 2, 3],
+                None,
+                [1, 2, 4],
+            ],
+            "b": [0, 1, 2, 3, 4, 5, 6],
+        }
+    ).with_column("a", col("a").cast(DataType.fixed_size_list(dtype, 3)))
+
+    # Test without nulls
+    res_no_nulls = df.groupby("a").agg([col("b").alias("set").agg_set()]).to_pydict()
+    expected_no_nulls = {
+        "[1, 2, 3]": [0, 1, 4],  # Group for [1, 2, 3]
+        "[1, 2, 4]": [2, 6],  # Group for [1, 2, 4]
+    }
+    for key, values in expected_no_nulls.items():
+        assert set(values) in [set(x) for x in res_no_nulls["set"]]
+
+    # Test with nulls
+    res_with_nulls = df.groupby("a").agg([col("b").alias("set").agg_set(include_nulls=True)]).to_pydict()
+    expected_with_nulls = {
+        "[1, 2, 3]": [0, 1, 4],  # Group for [1, 2, 3]
+        "[1, 2, 4]": [2, 6],  # Group for [1, 2, 4]
+        None: [3, 5],  # Group for None
+    }
+    for key, values in expected_with_nulls.items():
+        assert set(values) in [set(x) for x in res_with_nulls["set"]]
+
+
+@pytest.mark.parametrize("dtype", daft_numeric_types)
+def test_groupby_struct_set(dtype) -> None:
+    df = from_pydict(
+        {
+            "a": [
+                {"c": 1, "d": "hi"},
+                {"c": 1, "d": "hi"},
+                {"c": 1, "d": "hello"},
+                None,
+                {"c": 1, "d": "hi"},
+                None,
+                {"c": 1, "d": "hello"},
+            ],
+            "b": [0, 1, 2, 3, 4, 5, 6],
+        }
+    ).with_column("a", col("a").cast(DataType.struct({"c": dtype, "d": DataType.string()})))
+
+    # Test without nulls
+    res_no_nulls = df.groupby("a").agg([col("b").alias("set").agg_set()]).to_pydict()
+    expected_no_nulls = {
+        '{"c": 1, "d": "hi"}': [0, 1, 4],  # Group for {"c": 1, "d": "hi"}
+        '{"c": 1, "d": "hello"}': [2, 6],  # Group for {"c": 1, "d": "hello"}
+    }
+    for key, values in expected_no_nulls.items():
+        assert set(values) in [set(x) for x in res_no_nulls["set"]]
+
+    # Test with nulls
+    res_with_nulls = df.groupby("a").agg([col("b").alias("set").agg_set(include_nulls=True)]).to_pydict()
+    expected_with_nulls = {
+        '{"c": 1, "d": "hi"}': [0, 1, 4],  # Group for {"c": 1, "d": "hi"}
+        '{"c": 1, "d": "hello"}': [2, 6],  # Group for {"c": 1, "d": "hello"}
+        None: [3, 5],  # Group for None
+    }
+    for key, values in expected_with_nulls.items():
+        assert set(values) in [set(x) for x in res_with_nulls["set"]]
