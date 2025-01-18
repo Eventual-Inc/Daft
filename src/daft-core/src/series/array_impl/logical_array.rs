@@ -165,6 +165,14 @@ macro_rules! impl_series_like_for_logical_array {
                 )
                 .into_series())
             }
+
+            fn agg_set(
+                &self,
+                groups: Option<&GroupIndices>,
+                _include_nulls: bool,
+            ) -> DaftResult<Series> {
+                self.agg_list(groups)
+            }
         }
     };
 }

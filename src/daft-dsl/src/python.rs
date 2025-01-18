@@ -347,6 +347,10 @@ impl PyExpr {
         Ok(self.expr.clone().agg_list().into())
     }
 
+    pub fn agg_set(&self, include_nulls: bool) -> PyResult<Self> {
+        Ok(self.expr.clone().agg_set(include_nulls).into())
+    }
+
     pub fn agg_concat(&self) -> PyResult<Self> {
         Ok(self.expr.clone().agg_concat().into())
     }

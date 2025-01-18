@@ -70,6 +70,14 @@ macro_rules! impl_series_like_for_nested_arrays {
                 }
             }
 
+            fn agg_set(
+                &self,
+                groups: Option<&GroupIndices>,
+                _include_nulls: bool,
+            ) -> DaftResult<Series> {
+                self.agg_list(groups)
+            }
+
             fn broadcast(&self, num: usize) -> DaftResult<Series> {
                 Ok(self.0.broadcast(num)?.into_series())
             }

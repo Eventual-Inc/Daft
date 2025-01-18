@@ -846,7 +846,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::AnyValue(Expr::Alias(e, name.clone()).into(), ignore_nulls)
                 }
                 AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
-                AggExpr::Set(e) => AggExpr::Set(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Set(e, _include_nulls) => AggExpr::Set(Expr::Alias(e, name.clone()).into(), _include_nulls),
                 AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
                 AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,
@@ -1098,7 +1098,7 @@ pub fn populate_aggregation_stages(
                     ));
                 final_exprs.push(col(concat_of_list_id.clone()).alias(output_name));
             }
-            AggExpr::Set(e) => {
+            AggExpr::Set(e, _include_nulls) => {
                 let list_agg_id =
                     add_to_stage(AggExpr::List, e.clone(), schema, &mut first_stage_aggs);
                 let list_concat_id = add_to_stage(

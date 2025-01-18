@@ -983,6 +983,11 @@ class Expression:
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
 
+    def agg_set(self, include_nulls: bool = False) -> Expression:
+        """Aggregates the values in the expression into a set."""
+        expr = self._expr.agg_set(include_nulls)
+        return Expression._from_pyexpr(expr)
+
     def agg_concat(self) -> Expression:
         """Aggregates the values in the expression into a single string by concatenating them."""
         expr = self._expr.agg_concat()

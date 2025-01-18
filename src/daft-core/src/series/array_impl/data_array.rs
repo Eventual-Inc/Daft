@@ -159,6 +159,14 @@ macro_rules! impl_series_like_for_data_array {
                     None => Ok(self.0.list()?.into_series()),
                 }
             }
+
+            fn agg_set(
+                &self,
+                groups: Option<&GroupIndices>,
+                _include_nulls: bool,
+            ) -> DaftResult<Series> {
+                self.agg_list(groups)
+            }
         }
     };
 }
