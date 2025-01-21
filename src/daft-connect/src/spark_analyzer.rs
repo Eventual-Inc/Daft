@@ -723,7 +723,9 @@ impl SparkAnalyzer<'_> {
                     name,
                     metadata,
                 } = &**alias;
-                let expr = expr.required("expr")?;
+                let Some(expr) = expr else {
+                    invalid_argument_err!("Alias expression is required");
+                };
 
                 let [name] = name.as_slice() else {
                     invalid_argument_err!("Alias name is required and currently only works with a single string; got {name:?}");
@@ -752,7 +754,9 @@ impl SparkAnalyzer<'_> {
 
                 let expr = self.to_daft_expr(&*expr)?;
 
-                let cast_to_type = cast_to_type.required("cast_to_type")?;
+                let Some(cast_to_type) = cast_to_type else {
+                    invalid_argument_err!("Cast to type is required");
+                };
 
                 let data_type = match &cast_to_type {
                     CastToType::Type(kind) => to_daft_datatype(kind)?,
@@ -763,7 +767,7 @@ impl SparkAnalyzer<'_> {
                     }
                 };
 
-                let eval_mode = EvalMode::try_from(eval_mode).map_err(|e| {
+                let eval_mode = EvalMode::try_from(*eval_mode).map_err(|e| {
                     ConnectError::invalid_relation(format!("Unknown eval mode: {e}"))
                 })?;
 

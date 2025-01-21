@@ -25,6 +25,13 @@ pub enum ConnectError {
 
     #[snafu(display("Internal error: {msg}"))]
     InternalError { msg: String },
+
+    #[snafu(whatever, display("{message}"))]
+    Whatever {
+        message: String,
+        #[snafu(source(from(Box<dyn std::error::Error + 'static + Send + Sync>, Some)))]
+        source: Option<Box<dyn std::error::Error + 'static + Send + Sync>>,
+    },
 }
 
 impl From<daft_micropartition::Error> for ConnectError {

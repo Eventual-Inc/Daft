@@ -4,7 +4,7 @@ use tracing::debug;
 
 use crate::{
     ensure,
-    error::{ConnectResult, Context},
+    error::{ConnectError, ConnectResult, Context},
     invalid_argument_err, not_yet_implemented,
 };
 
@@ -168,7 +168,7 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> ConnectResult<Dat
                 value
                     .element_type
                     .as_ref()
-                    .ok_or_else(|| invalid_argument_err!("Array element type is required"))?,
+                    .ok_or_else(|| ConnectError::invalid_argument("Array element type"))?,
             )?;
             Ok(DataType::List(Box::new(element_type)))
         }
@@ -178,10 +178,9 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> ConnectResult<Dat
                 .fields
                 .iter()
                 .map(|f| {
-                    let field_type =
-                        to_daft_datatype(f.data_type.as_ref().ok_or_else(|| {
-                            invalid_argument_err!("Struct field type is required")
-                        })?)?;
+                    let field_type = to_daft_datatype(f.data_type.as_ref().ok_or_else(|| {
+                        ConnectError::invalid_argument("Struct field type is required")
+                    })?)?;
                     Ok(Field::new(&f.name, field_type))
                 })
                 .collect::<ConnectResult<Vec<_>>>()?;
@@ -193,14 +192,12 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> ConnectResult<Dat
                 value
                     .key_type
                     .as_ref()
-                    .ok_or_else(|| invalid_argument_err!("Map key type is required"))?,
+                    .ok_or_else(|| ConnectError::invalid_argument("Map key type is required"))?,
             )?;
-            let value_type = to_daft_datatype(
-                value
-                    .value_type
-                    .as_ref()
-                    .ok_or_else(|| invalid_argument_err!("Map value type is required"))?,
-            )?;
+            let value_type =
+                to_daft_datatype(value.value_type.as_ref().ok_or_else(|| {
+                    ConnectError::invalid_argument("Map value type is required")
+                })?)?;
 
             let map = DataType::Map {
                 key: Box::new(key_type),

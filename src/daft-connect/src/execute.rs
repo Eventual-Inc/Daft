@@ -7,7 +7,6 @@ use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_ray_execution::RayEngine;
 use daft_table::Table;
-use eyre::{bail, Context};
 use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
@@ -23,7 +22,7 @@ use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 use tracing::debug;
 
 use crate::{
-    error::{ConnectError, ConnectResult},
+    error::{ConnectError, ConnectResult, Context},
     invalid_argument_err, not_yet_implemented,
     response_builder::ResponseBuilder,
     session::Session,
@@ -293,7 +292,7 @@ impl Session {
             input,
         }: SqlCommand,
         res: ResponseBuilder<ExecutePlanResponse>,
-    ) -> Result<ExecuteStream, Status> {
+    ) -> ConnectResult<ExecuteStream> {
         if !args.is_empty() {
             not_yet_implemented!("Named arguments");
         }
@@ -316,14 +315,7 @@ impl Session {
 
         let mut planner = daft_sql::SQLPlanner::new(catalog);
 
-        let plan = planner
-            .plan_sql(&sql)
-            .wrap_err("Error planning SQL")
-            .map_err(|e| {
-                Status::internal(
-                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
-                )
-            })?;
+        let plan = planner.plan_sql(&sql).wrap_err("Error planning SQL")?;
 
         let plan = LogicalPlanBuilder::from(plan);
 
@@ -357,11 +349,7 @@ impl Session {
         let stream = ReceiverStream::new(rx);
 
         let stream = stream
-            .map_err(|e| {
-                Status::internal(
-                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
-                )
-            })
+            .map_err(|e| Status::internal(e.to_string()))
             .chain(stream::once(ready(Ok(result_complete))));
 
         Ok(Box::pin(stream))
