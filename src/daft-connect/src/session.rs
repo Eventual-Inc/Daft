@@ -1,8 +1,13 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+};
 
+use daft_catalog::DaftCatalog;
 use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct Session {
     /// so order is preserved, and so we can efficiently do a prefix search
     ///
@@ -13,7 +18,8 @@ pub struct Session {
     server_side_session_id: String,
     /// MicroPartitionSet associated with this session
     /// this will be filled up as the user runs queries
-    pub(crate) psets: InMemoryPartitionSetCache,
+    pub(crate) psets: Arc<InMemoryPartitionSetCache>,
+    pub(crate) catalog: Arc<RwLock<DaftCatalog>>,
 }
 
 impl Session {
@@ -32,7 +38,8 @@ impl Session {
             config_values: Default::default(),
             id,
             server_side_session_id,
-            psets: InMemoryPartitionSetCache::empty(),
+            psets: Arc::new(InMemoryPartitionSetCache::empty()),
+            catalog: Arc::new(RwLock::new(DaftCatalog::default())),
         }
     }
 

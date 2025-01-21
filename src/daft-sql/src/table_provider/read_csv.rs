@@ -16,6 +16,10 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
     type Error = PlannerError;
 
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
+        // TODO validations (unsure if should carry over from python API)
+        // - schema_hints is deprecated
+        // - ensure infer_schema is true if schema is None.
+
         let delimiter = args.try_get_named("delimiter")?;
         let has_headers: bool = args.try_get_named("has_headers")?.unwrap_or(true);
         let double_quote: bool = args.try_get_named("double_quote")?.unwrap_or(true);

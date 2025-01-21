@@ -86,6 +86,7 @@ impl DataCatalogTable for PythonTable {
 }
 
 /// Wrapper around a `daft.catalog.python_catalog.PythonCatalog`
+#[derive(Debug)]
 pub struct PythonCatalog {
     python_catalog_pyobj: PyObject,
 }

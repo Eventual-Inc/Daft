@@ -257,11 +257,6 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
     Ok(expr1.expr == expr2.expr)
 }
 
-#[pyfunction]
-pub fn check_column_name_validity(name: &str, schema: &PySchema) -> PyResult<()> {
-    Ok(crate::check_column_name_validity(name, &schema.schema)?)
-}
-
 #[derive(FromPyObject)]
 pub enum ApproxPercentileInput {
     Single(f64),
@@ -428,6 +423,10 @@ impl PyExpr {
 
     pub fn fill_null(&self, fill_value: &Self) -> PyResult<Self> {
         Ok(self.expr.clone().fill_null(fill_value.expr.clone()).into())
+    }
+
+    pub fn eq_null_safe(&self, other: &Self) -> PyResult<Self> {
+        Ok(crate::binary_op(crate::Operator::EqNullSafe, self.into(), other.into()).into())
     }
 
     pub fn is_in(&self, other: Vec<Self>) -> PyResult<Self> {

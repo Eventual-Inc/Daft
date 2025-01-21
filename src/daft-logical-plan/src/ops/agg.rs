@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use daft_dsl::{ExprRef, ExprResolver};
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_dsl::{exprs_to_schema, ExprRef};
+use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
-use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{self, CreationSnafu},
+    logical_plan::{self},
     stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
@@ -36,21 +35,10 @@ impl Aggregate {
         aggregations: Vec<ExprRef>,
         groupby: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
-        let upstream_schema = input.schema();
-
-        let agg_resolver = ExprResolver::builder().groupby(&groupby).build();
-        let (aggregations, aggregation_fields) = agg_resolver
-            .resolve(aggregations, &upstream_schema)
-            .context(CreationSnafu)?;
-
-        let groupby_resolver = ExprResolver::default();
-        let (groupby, groupby_fields) = groupby_resolver
-            .resolve(groupby, &upstream_schema)
-            .context(CreationSnafu)?;
-
-        let fields = [groupby_fields, aggregation_fields].concat();
-
-        let output_schema = Schema::new(fields).context(CreationSnafu)?.into();
+        let output_schema = exprs_to_schema(
+            &[groupby.as_slice(), aggregations.as_slice()].concat(),
+            input.schema(),
+        )?;
 
         Ok(Self {
             input,

@@ -47,9 +47,6 @@ fn intersect_or_except_plan(
         Some(vec![true; left_on_size]),
         join_type,
         None,
-        None,
-        None,
-        false,
     );
     join.map(|j| Distinct::new(j.into()).into())
 }
@@ -303,8 +300,7 @@ impl Union {
         } else {
             (self.lhs.clone(), self.rhs.clone())
         };
-        // we don't want to use `try_new` as we have already checked the schema
-        let concat = LogicalPlan::Concat(Concat::new(lhs, rhs));
+        let concat = LogicalPlan::Concat(Concat::try_new(lhs, rhs)?);
         if self.is_all {
             Ok(concat)
         } else {

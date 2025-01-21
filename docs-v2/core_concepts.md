@@ -2330,6 +2330,6 @@ Let’s turn the bytes into human-readable images using [`image.decode()`](https
 
 - [:material-memory: **Managing Memory Usage**](advanced/memory.md)
 - [:fontawesome-solid-equals: **Partitioning**](advanced/partitioning.md)
-- [:material-distribute-vertical-center: **Distributed Computing**](advanced/distributed.md)
+- [:material-distribute-vertical-center: **Distributed Computing**](distributed.md)
 
 </div>
