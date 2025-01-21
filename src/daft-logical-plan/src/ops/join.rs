@@ -135,16 +135,26 @@ impl Join {
             let right_rename_mapping: HashMap<_, _> = right_names
                 .iter()
                 .filter_map(|name| {
-                    if !names_so_far.contains(name) || (merged_cols.contains(name.as_str())) {
+                    if !names_so_far.contains(name) || merged_cols.contains(name.as_str()) {
                         names_so_far.insert(name.clone());
                         None
                     } else {
                         let mut new_name = name.clone();
                         while names_so_far.contains(&new_name) {
-                            new_name = format!(
-                                "{}{}{}",
-                                renaming_params.prefix, new_name, renaming_params.suffix
-                            );
+                            new_name = match (&renaming_params.prefix, &renaming_params.suffix) {
+                                (Some(prefix), Some(suffix)) => {
+                                    format!("{}{}{}", prefix, new_name, suffix)
+                                }
+                                (Some(prefix), None) => {
+                                    format!("{}{}", prefix, new_name)
+                                }
+                                (None, Some(suffix)) => {
+                                    format!("{}{}", new_name, suffix)
+                                }
+                                (None, None) => {
+                                    format!("right.{}", new_name)
+                                }
+                            };
                         }
                         names_so_far.insert(new_name.clone());
 
@@ -250,23 +260,17 @@ impl Join {
 }
 
 #[cfg_attr(feature = "python", pyclass)]
-#[derive(Clone, TypedBuilder)]
+#[derive(Clone, TypedBuilder, Default)]
 #[builder(field_defaults(setter(into)))]
 pub struct JoinColumnRenamingParams {
-    #[builder(default = "right.".into())]
-    pub prefix: String,
-    #[builder(default = String::new())]
-    pub suffix: String,
+    #[builder(default, setter(strip_option))]
+    pub prefix: Option<String>,
+    #[builder(default, setter(strip_option))]
+    pub suffix: Option<String>,
     /// For join predicates in the form col(a) = col(a),
     /// merge column "a" from both sides into one column.
-    #[builder(default = false)]
+    #[builder(default)]
     pub merge_matching_join_keys: bool,
-}
-
-impl Default for JoinColumnRenamingParams {
-    fn default() -> Self {
-        Self::builder().build()
-    }
 }
 
 #[cfg(feature = "python")]
@@ -274,21 +278,19 @@ impl Default for JoinColumnRenamingParams {
 impl JoinColumnRenamingParams {
     #[new]
     #[pyo3(signature = (
-        prefix=None,
-        suffix=None,
-        merge_matching_join_keys=None,
+        prefix,
+        suffix,
+        merge_matching_join_keys,
     ))]
     pub fn new(
         prefix: Option<String>,
         suffix: Option<String>,
-        merge_matching_join_keys: Option<bool>,
+        merge_matching_join_keys: bool,
     ) -> Self {
-        let default = Self::default();
         Self {
-            prefix: prefix.unwrap_or(default.prefix),
-            suffix: suffix.unwrap_or(default.suffix),
-            merge_matching_join_keys: merge_matching_join_keys
-                .unwrap_or(default.merge_matching_join_keys),
+            prefix,
+            suffix,
+            merge_matching_join_keys,
         }
     }
 }

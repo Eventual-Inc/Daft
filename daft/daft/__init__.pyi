@@ -1586,7 +1586,7 @@ class AdaptivePhysicalPlanScheduler:
 
 class JoinColumnRenamingParams:
     def __new__(
-        cls, prefix: str | None = None, suffix: str | None = None, merge_matching_join_keys: bool | None = None
+        cls, prefix: str | None, suffix: str | None, merge_matching_join_keys: bool
     ) -> JoinColumnRenamingParams: ...
 
 class LogicalPlanBuilder:

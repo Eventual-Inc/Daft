@@ -368,13 +368,16 @@ pub fn physical_plan_to_pipeline(
                     .iter()
                     .map(|e| e.to_field(probe_schema))
                     .collect::<DaftResult<Vec<_>>>()?;
-                let build_key_schema = Arc::new(Schema::new(build_key_fields)?);
-                let probe_key_schema = Arc::new(Schema::new(probe_key_fields)?);
-                if build_key_schema != probe_key_schema {
-                    return Err(DaftError::SchemaMismatch(
-                        format!("Expected bhild and probe key field datatypes to match, found: {build_key_schema} vs {probe_key_schema}")
-                    ));
+
+                for (build_field, probe_field) in build_key_fields.iter().zip(probe_key_fields.iter()) {
+                    if build_field.dtype != probe_field.dtype {
+                        return Err(DaftError::SchemaMismatch(
+                            format!("Expected build and probe key field datatypes to match, found: {} vs {}", build_field.dtype, probe_field.dtype)
+                        ));
+                    }
                 }
+                let key_schema = Arc::new(Schema::new(build_key_fields)?);
+
                 // we should move to a builder pattern
                 let probe_state_bridge = BroadcastStateBridge::new();
                 let track_indices = if matches!(join_type, JoinType::Anti | JoinType::Semi) {
@@ -383,7 +386,7 @@ pub fn physical_plan_to_pipeline(
                     true
                 };
                 let build_sink = HashJoinBuildSink::new(
-                    build_key_schema,
+                    key_schema,
                     build_on.clone(),
                     null_equals_null.clone(),
                     track_indices,

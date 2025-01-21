@@ -6,7 +6,6 @@ import pytest
 import daft
 from daft import col
 from daft.datatype import DataType
-from daft.errors import ExpressionTypeError
 from tests.conftest import get_tests_daft_runner_name
 from tests.utils import sort_arrow_table
 
@@ -725,8 +724,23 @@ def test_join_all_null(join_strategy, join_type, expected, make_df, repartition_
     [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
     indirect=True,
 )
-@pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_join_null_type_column(join_strategy, join_type, make_df, with_morsel_size):
+@pytest.mark.parametrize(
+    "join_type,expected",
+    [
+        ("inner", {"id": [], "values_left": [], "values_right": []}),
+        ("left", {"id": [None, None, None], "values_left": ["a1", "b1", "c1"], "values_right": [None, None, None]}),
+        ("right", {"id": [None, None, None], "values_left": [None, None, None], "values_right": ["a2", "b2", "c2"]}),
+        (
+            "outer",
+            {
+                "id": [None, None, None, None, None, None],
+                "values_left": ["a1", "b1", "c1", None, None, None],
+                "values_right": [None, None, None, "a2", "b2", "c2"],
+            },
+        ),
+    ],
+)
+def test_join_null_type_column(join_strategy, join_type, expected, make_df, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df = make_df(
@@ -742,8 +756,10 @@ def test_join_null_type_column(join_strategy, join_type, make_df, with_morsel_si
         }
     )
 
-    with pytest.raises((ExpressionTypeError, ValueError)):
-        daft_df.join(daft_df2, on="id", how=join_type, strategy=join_strategy)
+    daft_df = daft_df.join(daft_df2, on="id", how=join_type, strategy=join_strategy).sort(
+        ["values_left", "values_right"]
+    )
+    assert pa.Table.from_pydict(daft_df.to_pydict()) == pa.Table.from_pydict(expected)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -860,8 +876,44 @@ def test_join_semi_anti_different_names(
     )
 
 
-@pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_join_true_join_keys(join_type, make_df, with_morsel_size):
+@pytest.mark.parametrize(
+    "join_type,expected_dtypes",
+    [
+        (
+            "inner",
+            {
+                "id": DataType.int64(),
+                "values": DataType.string(),
+                "right.values": DataType.string(),
+            },
+        ),
+        (
+            "left",
+            {
+                "id": DataType.int64(),
+                "values": DataType.string(),
+                "right.values": DataType.string(),
+            },
+        ),
+        (
+            "right",
+            {
+                "id": DataType.float64(),
+                "values": DataType.string(),
+                "right.values": DataType.string(),
+            },
+        ),
+        (
+            "outer",
+            {
+                "id": DataType.float64(),
+                "values": DataType.string(),
+                "right.values": DataType.string(),
+            },
+        ),
+    ],
+)
+def test_join_true_join_keys(join_type, expected_dtypes, make_df, with_morsel_size):
     daft_df = make_df(
         {
             "id": [1, 2, 3],
@@ -878,9 +930,9 @@ def test_join_true_join_keys(join_type, make_df, with_morsel_size):
     result = daft_df.join(daft_df2, left_on=["id", "values"], right_on=["id", col("values").str.left(1)], how=join_type)
 
     assert result.schema().column_names() == ["id", "values", "right.values"]
-    assert result.schema()["id"].dtype == daft_df.schema()["id"].dtype
-    assert result.schema()["values"].dtype == daft_df.schema()["values"].dtype
-    assert result.schema()["right.values"].dtype == daft_df2.schema()["values"].dtype
+    assert result.schema()["id"].dtype == expected_dtypes["id"]
+    assert result.schema()["values"].dtype == expected_dtypes["values"]
+    assert result.schema()["right.values"].dtype == expected_dtypes["right.values"]
 
 
 @pytest.mark.parametrize(
