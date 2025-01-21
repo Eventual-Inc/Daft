@@ -1,7 +1,6 @@
 from typing import Optional
 
 from daft.context import get_context
-from daft.execution.native_executor import NativeExecutor
 
 
 class AsciiOptions:
@@ -67,6 +66,8 @@ class MermaidFormatter:
                     display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical")
                 )
             else:
+                from daft.execution.native_executor import NativeExecutor
+
                 native_executor = NativeExecutor()
                 output += native_executor._executor.repr_mermaid(
                     builder._builder,
