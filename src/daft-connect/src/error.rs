@@ -1,4 +1,5 @@
 use common_error::DaftError;
+use daft_sql::error::PlannerError;
 use snafu::Snafu;
 use tonic::Status;
 
@@ -26,10 +27,44 @@ pub enum ConnectError {
     InternalError { msg: String },
 }
 
+impl From<daft_micropartition::Error> for ConnectError {
+    fn from(value: daft_micropartition::Error) -> Self {
+        Self::DaftError {
+            source: value.into(),
+        }
+    }
+}
+
+// -----------------------------------
+// Conversions from common error types
+// -----------------------------------
+impl From<std::fmt::Error> for ConnectError {
+    fn from(value: std::fmt::Error) -> Self {
+        Self::InternalError {
+            msg: value.to_string(),
+        }
+    }
+}
+
+impl From<tokio::task::JoinError> for ConnectError {
+    fn from(value: tokio::task::JoinError) -> Self {
+        Self::InternalError {
+            msg: value.to_string(),
+        }
+    }
+}
+
 impl From<DaftError> for ConnectError {
     fn from(value: DaftError) -> Self {
         Self::InvalidArgument {
             arg: value.to_string(),
+        }
+    }
+}
+impl From<PlannerError> for ConnectError {
+    fn from(value: PlannerError) -> Self {
+        Self::DaftError {
+            source: value.into(),
         }
     }
 }
@@ -81,7 +116,6 @@ impl ConnectError {
             relation: relation.into(),
         }
     }
-
     pub fn unsupported_operation<S: Into<String>>(op: S) -> Self {
         Self::UnsupportedOperation { op: op.into() }
     }
@@ -93,6 +127,12 @@ impl ConnectError {
         Self::InternalError { msg: msg.into() }
     }
 }
+
+// -----------------------------------
+// Error macros
+// These macros will return out of the current function with the error.
+// Use the `ConnectError` methods directly if you want to handle the error.
+// -----------------------------------
 
 #[macro_export]
 macro_rules! invalid_argument_err {
@@ -129,7 +169,20 @@ macro_rules! internal_err {
 }
 
 #[macro_export]
+macro_rules! invalid_relation_err {
+    ($arg: tt) => {{
+        let msg = format!($arg);
+        return $crate::error::ConnectError::invalid_relation(msg).into();
+    }};
+}
+
+#[macro_export]
 macro_rules! ensure {
+    ($condition:expr, $arg:expr) => {
+        if !$condition {
+            return Err($crate::error::ConnectError::invalid_argument($arg))
+        }
+    };
     ($condition:expr, $($arg:tt)*) => {
         if !$condition {
             return Err($crate::error::ConnectError::invalid_argument(format!($($arg)*)))

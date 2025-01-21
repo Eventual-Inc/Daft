@@ -44,7 +44,7 @@ use crate::{
     ensure,
     error::{ConnectError, ConnectResult, Context},
     functions::CONNECT_FUNCTIONS,
-    internal_err, invalid_argument_err, not_yet_implemented,
+    internal_err, invalid_argument_err, invalid_relation_err, not_yet_implemented,
     session::Session,
     util::FromOptionalField,
     Runner,
@@ -670,7 +670,7 @@ impl SparkAnalyzer<'_> {
             .session
             .catalog
             .read()
-            .map_err(|e| eyre::eyre!("Failed to read catalog: {e}"))?;
+            .map_err(|e| ConnectError::internal(format!("Failed to read catalog: {e}")))?;
         let catalog = catalog.clone();
 
         let mut planner = SQLPlanner::new(catalog);
@@ -686,7 +686,7 @@ impl SparkAnalyzer<'_> {
         };
 
         let Some(expr) = &expression.expr_type else {
-            bail!("Expression is required");
+            not_yet_implemented!("Expression is required");
         };
 
         match expr {
@@ -712,10 +712,10 @@ impl SparkAnalyzer<'_> {
             }
             spark_expr::ExprType::UnresolvedFunction(f) => self.process_function(f),
             spark_expr::ExprType::ExpressionString(_) => {
-                bail!("Expression string not yet supported")
+                not_yet_implemented!("Expression string not yet supported")
             }
             spark_expr::ExprType::UnresolvedStar(_) => {
-                bail!("Unresolved star expressions not yet supported")
+                not_yet_implemented!("Unresolved star expressions not yet supported")
             }
             spark_expr::ExprType::Alias(alias) => {
                 let spark_expr::Alias {
@@ -723,20 +723,17 @@ impl SparkAnalyzer<'_> {
                     name,
                     metadata,
                 } = &**alias;
-
-                let Some(expr) = expr else {
-                    bail!("Alias expr is required");
-                };
+                let expr = expr.required("expr")?;
 
                 let [name] = name.as_slice() else {
-                    bail!("Alias name is required and currently only works with a single string; got {name:?}");
+                    invalid_argument_err!("Alias name is required and currently only works with a single string; got {name:?}");
                 };
 
                 if let Some(metadata) = metadata {
-                    bail!("Alias metadata is not yet supported; got {metadata:?}");
+                    not_yet_implemented!("Alias metadata: {metadata:?}");
                 }
 
-                let child = self.to_daft_expr(expr)?;
+                let child = self.to_daft_expr(&*expr)?;
 
                 let name = Arc::from(name.as_str());
 
@@ -750,26 +747,25 @@ impl SparkAnalyzer<'_> {
                 } = &**c;
 
                 let Some(expr) = expr else {
-                    bail!("Cast expression is required");
+                    invalid_argument_err!("Cast expression is required");
                 };
 
-                let expr = self.to_daft_expr(expr)?;
+                let expr = self.to_daft_expr(&*expr)?;
 
-                let Some(cast_to_type) = cast_to_type else {
-                    bail!("Cast to type is required");
-                };
+                let cast_to_type = cast_to_type.required("cast_to_type")?;
 
-                let data_type = match cast_to_type {
-                    CastToType::Type(kind) => to_daft_datatype(kind).wrap_err_with(|| {
-                        format!("Failed to convert spark datatype to daft datatype: {kind:?}")
-                    })?,
+                let data_type = match &cast_to_type {
+                    CastToType::Type(kind) => to_daft_datatype(kind)?,
                     CastToType::TypeStr(s) => {
-                        bail!("Cast to type string not yet supported; tried to cast to {s}");
+                        not_yet_implemented!(
+                            "Cast to type string not yet supported; tried to cast to {s}"
+                        );
                     }
                 };
 
-                let eval_mode = EvalMode::try_from(*eval_mode)
-                    .wrap_err_with(|| format!("Invalid cast eval mode: {eval_mode}"))?;
+                let eval_mode = EvalMode::try_from(eval_mode).map_err(|e| {
+                    ConnectError::invalid_relation(format!("Unknown eval mode: {e}"))
+                })?;
 
                 debug!("Ignoring cast eval mode: {eval_mode:?}");
 
@@ -783,16 +779,18 @@ impl SparkAnalyzer<'_> {
                 } = &**s;
 
                 let Some(_child) = child else {
-                    bail!("Sort order child is required");
+                    invalid_argument_err!("Sort order child is required");
                 };
 
-                let _sort_direction = SortDirection::try_from(*direction)
-                    .wrap_err_with(|| format!("Invalid sort direction: {direction}"))?;
+                let _sort_direction = SortDirection::try_from(*direction).map_err(|e| {
+                    ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
+                })?;
 
-                let _sort_nulls = NullOrdering::try_from(*null_ordering)
-                    .wrap_err_with(|| format!("Invalid sort nulls: {null_ordering}"))?;
+                let _sort_nulls = NullOrdering::try_from(*null_ordering).map_err(|e| {
+                    ConnectError::invalid_relation(format!("Unknown null ordering: {e}"))
+                })?;
 
-                bail!("Sort order expressions not yet supported");
+                not_yet_implemented!("Sort order expressions not yet supported");
             }
             other => not_yet_implemented!("expression type: {other:?}"),
         }

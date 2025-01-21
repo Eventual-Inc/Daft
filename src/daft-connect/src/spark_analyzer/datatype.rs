@@ -1,7 +1,12 @@
 use daft_schema::{dtype::DataType, field::Field, time_unit::TimeUnit};
-use eyre::{bail, ensure, WrapErr};
 use spark_connect::data_type::Kind;
 use tracing::debug;
+
+use crate::{
+    ensure,
+    error::{ConnectResult, Context},
+    invalid_argument_err, not_yet_implemented,
+};
 
 pub fn to_spark_datatype(datatype: &DataType) -> spark_connect::DataType {
     macro_rules! simple_spark_type {
@@ -68,9 +73,9 @@ pub fn to_spark_datatype(datatype: &DataType) -> spark_connect::DataType {
 }
 
 // todo(test): add tests for this esp in Python
-pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<DataType> {
+pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> ConnectResult<DataType> {
     let Some(kind) = &datatype.kind else {
-        bail!("Datatype is required");
+        invalid_argument_err!("DataType kind is required");
     };
 
     let type_variation_err = "Custom type variation reference not supported";
@@ -114,11 +119,11 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
             ensure!(value.type_variation_reference == 0, type_variation_err);
 
             let Some(precision) = value.precision else {
-                bail!("Decimal precision is required");
+                invalid_argument_err!("Decimal precision is required");
             };
 
             let Some(scale) = value.scale else {
-                bail!("Decimal scale is required");
+                invalid_argument_err!("Decimal scale is required");
             };
 
             let precision = usize::try_from(precision)
@@ -152,16 +157,18 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
             ensure!(value.type_variation_reference == 0, type_variation_err);
             Ok(DataType::Timestamp(TimeUnit::Microseconds, None))
         }
-        Kind::CalendarInterval(_) => bail!("Calendar interval type not supported"),
-        Kind::YearMonthInterval(_) => bail!("Year-month interval type not supported"),
-        Kind::DayTimeInterval(_) => bail!("Day-time interval type not supported"),
+        Kind::CalendarInterval(_) => not_yet_implemented!("Calendar interval type not supported"),
+        Kind::YearMonthInterval(_) => {
+            not_yet_implemented!("Year-month interval type not supported")
+        }
+        Kind::DayTimeInterval(_) => not_yet_implemented!("Day-time interval type not supported"),
         Kind::Array(value) => {
             ensure!(value.type_variation_reference == 0, type_variation_err);
             let element_type = to_daft_datatype(
                 value
                     .element_type
                     .as_ref()
-                    .ok_or_else(|| eyre::eyre!("Array element type is required"))?,
+                    .ok_or_else(|| invalid_argument_err!("Array element type is required"))?,
             )?;
             Ok(DataType::List(Box::new(element_type)))
         }
@@ -171,14 +178,13 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
                 .fields
                 .iter()
                 .map(|f| {
-                    let field_type = to_daft_datatype(
-                        f.data_type
-                            .as_ref()
-                            .ok_or_else(|| eyre::eyre!("Struct field type is required"))?,
-                    )?;
+                    let field_type =
+                        to_daft_datatype(f.data_type.as_ref().ok_or_else(|| {
+                            invalid_argument_err!("Struct field type is required")
+                        })?)?;
                     Ok(Field::new(&f.name, field_type))
                 })
-                .collect::<eyre::Result<Vec<_>>>()?;
+                .collect::<ConnectResult<Vec<_>>>()?;
             Ok(DataType::Struct(fields))
         }
         Kind::Map(value) => {
@@ -187,13 +193,13 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
                 value
                     .key_type
                     .as_ref()
-                    .ok_or_else(|| eyre::eyre!("Map key type is required"))?,
+                    .ok_or_else(|| invalid_argument_err!("Map key type is required"))?,
             )?;
             let value_type = to_daft_datatype(
                 value
                     .value_type
                     .as_ref()
-                    .ok_or_else(|| eyre::eyre!("Map value type is required"))?,
+                    .ok_or_else(|| invalid_argument_err!("Map value type is required"))?,
             )?;
 
             let map = DataType::Map {
@@ -203,8 +209,8 @@ pub fn to_daft_datatype(datatype: &spark_connect::DataType) -> eyre::Result<Data
 
             Ok(map)
         }
-        Kind::Variant(_) => bail!("Variant type not supported"),
-        Kind::Udt(_) => bail!("User-defined type not supported"),
-        Kind::Unparsed(_) => bail!("Unparsed type not supported"),
+        Kind::Variant(_) => not_yet_implemented!("Variant type not supported"),
+        Kind::Udt(_) => not_yet_implemented!("User-defined type not supported"),
+        Kind::Unparsed(_) => not_yet_implemented!("Unparsed type not supported"),
     }
 }

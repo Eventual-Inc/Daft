@@ -23,9 +23,13 @@ use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 use tracing::debug;
 
 use crate::{
-    error::ConnectResult, invalid_argument_err, not_yet_implemented,
-    response_builder::ResponseBuilder, session::Session, spark_analyzer::SparkAnalyzer,
-    util::FromOptionalField, ExecuteStream, Runner,
+    error::{ConnectError, ConnectResult},
+    invalid_argument_err, not_yet_implemented,
+    response_builder::ResponseBuilder,
+    session::Session,
+    spark_analyzer::SparkAnalyzer,
+    util::FromOptionalField,
+    ExecuteStream, Runner,
 };
 
 impl Session {
@@ -123,11 +127,7 @@ impl Session {
         let stream = ReceiverStream::new(rx);
 
         let stream = stream
-            .map_err(|e| {
-                Status::internal(
-                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
-                )
-            })
+            .map_err(|e| e.into())
             .chain(stream::once(ready(Ok(result_complete))));
 
         Ok(Box::pin(stream))
@@ -137,8 +137,8 @@ impl Session {
         &self,
         operation: WriteOperation,
         res: ResponseBuilder<ExecutePlanResponse>,
-    ) -> Result<ExecuteStream, Status> {
-        fn check_write_operation(write_op: &WriteOperation) -> Result<(), Status> {
+    ) -> ConnectResult<ExecuteStream> {
+        fn check_write_operation(write_op: &WriteOperation) -> ConnectResult<()> {
             if !write_op.sort_column_names.is_empty() {
                 not_yet_implemented!("Sort with column names");
             }
@@ -173,7 +173,7 @@ impl Session {
 
         let finished = res.result_complete_response();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
+        let (tx, rx) = tokio::sync::mpsc::channel::<ConnectResult<ExecutePlanResponse>>(1);
 
         let this = self.clone();
 
@@ -193,9 +193,7 @@ impl Session {
 
                 let file_format: FileFormat = source.parse()?;
 
-                let Some(save_type) = save_type else {
-                    bail!("Save type is required");
-                };
+                let save_type = save_type.required("save_type")?;
 
                 let path = match save_type {
                     SaveType::Path(path) => path,
@@ -332,7 +330,7 @@ impl Session {
         // TODO: code duplication
         let result_complete = res.result_complete_response();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
+        let (tx, rx) = tokio::sync::mpsc::channel::<ConnectResult<ExecutePlanResponse>>(1);
 
         let this = self.clone();
 
@@ -397,7 +395,7 @@ impl Session {
         let single_batch = results
             .into_iter()
             .next()
-            .ok_or_else(|| eyre::eyre!("No results"))?;
+            .ok_or_else(|| ConnectError::internal("no results"))?;
 
         let tbls = single_batch.get_tables()?;
         let tbl = Table::concat(&tbls)?;

@@ -1,13 +1,12 @@
 use daft_core::datatypes::IntervalValue;
-use eyre::bail;
 use spark_connect::expression::{literal::LiteralType, Literal};
 
-use crate::not_yet_implemented;
+use crate::{error::ConnectResult, invalid_relation_err, not_yet_implemented};
 
 // todo(test): add tests for this esp in Python
-pub fn to_daft_literal(literal: &Literal) -> eyre::Result<daft_dsl::ExprRef> {
+pub fn to_daft_literal(literal: &Literal) -> ConnectResult<daft_dsl::ExprRef> {
     let Some(literal) = &literal.literal_type else {
-        bail!("Literal is required");
+        invalid_relation_err!("Literal is required");
     };
 
     match literal {

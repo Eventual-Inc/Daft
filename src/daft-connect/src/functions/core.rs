@@ -4,7 +4,11 @@ use daft_schema::dtype::DataType;
 use spark_connect::Expression;
 
 use super::{FunctionModule, SparkFunction};
-use crate::{invalid_argument_err, spark_analyzer::SparkAnalyzer};
+use crate::{
+    error::{ConnectError, ConnectResult},
+    invalid_argument_err,
+    spark_analyzer::SparkAnalyzer,
+};
 
 // Core functions are the most basic functions such as `+`, `-`, `*`, `/`, not, notnull, etc.
 pub struct CoreFunctions;
@@ -49,15 +53,18 @@ impl SparkFunction for BinaryOpFunction {
         &self,
         args: &[Expression],
         analyzer: &SparkAnalyzer,
-    ) -> eyre::Result<daft_dsl::ExprRef> {
+    ) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
             .map(|arg| analyzer.to_daft_expr(arg))
-            .collect::<eyre::Result<Vec<_>>>()?;
+            .collect::<ConnectResult<Vec<_>>>()?;
 
-        let [lhs, rhs] = args
-            .try_into()
-            .map_err(|args| eyre::eyre!("requires exactly two arguments; got {:?}", args))?;
+        let [lhs, rhs] = args.try_into().map_err(|args| {
+            ConnectError::invalid_argument(format!(
+                "requires exactly two arguments; got {:?}",
+                args
+            ))
+        })?;
 
         Ok(binary_op(self.0, lhs, rhs))
     }
@@ -68,7 +75,7 @@ impl SparkFunction for UnaryFunction {
         &self,
         args: &[Expression],
         analyzer: &SparkAnalyzer,
-    ) -> eyre::Result<daft_dsl::ExprRef> {
+    ) -> ConnectResult<daft_dsl::ExprRef> {
         match args {
             [arg] => {
                 let arg = analyzer.to_daft_expr(arg)?;
@@ -84,7 +91,7 @@ impl SparkFunction for CountFunction {
         &self,
         args: &[Expression],
         analyzer: &SparkAnalyzer,
-    ) -> eyre::Result<daft_dsl::ExprRef> {
+    ) -> ConnectResult<daft_dsl::ExprRef> {
         match args {
             [arg] => {
                 let arg = analyzer.to_daft_expr(arg)?;
