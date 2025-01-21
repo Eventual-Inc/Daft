@@ -1,4 +1,4 @@
-use std::{cmp, iter::repeat, ops::Not};
+use std::{cmp, iter::repeat, ops::Not, sync::Arc};
 
 use arrow2::{bitmap::MutableBitmap, types::IndexRange};
 use common_error::DaftResult;
@@ -83,10 +83,11 @@ pub(super) fn hash_inner_join(
 
     let common_cols: Vec<_> = get_common_join_cols(&left.schema, &right.schema).collect();
 
-    let mut join_series = left
-        .get_columns(common_cols.as_slice())?
-        .take(&lidx)?
-        .columns;
+    let mut join_series = Arc::unwrap_or_clone(
+        left.get_columns(common_cols.as_slice())?
+            .take(&lidx)?
+            .columns,
+    );
 
     drop(lkeys);
     drop(rkeys);
@@ -191,10 +192,12 @@ pub(super) fn hash_left_right_join(
         (right, &ridx)
     };
 
-    let mut join_series = common_cols_tbl
-        .get_columns(&common_cols)?
-        .take(common_cols_idx)?
-        .columns;
+    let mut join_series = Arc::unwrap_or_clone(
+        common_cols_tbl
+            .get_columns(&common_cols)?
+            .take(common_cols_idx)?
+            .columns,
+    );
 
     drop(lkeys);
     drop(rkeys);

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -210,7 +210,7 @@ impl Table {
             Table::concat(&vec![input; outer_len])
         }
 
-        let (left_table, mut right_table) = match outer_loop_side {
+        let (left_table, right_table) = match outer_loop_side {
             JoinSide::Left => (
                 create_outer_loop_table(self, right.len())?,
                 create_inner_loop_table(right, self.len())?,
@@ -224,8 +224,10 @@ impl Table {
         let num_rows = self.len() * right.len();
 
         let join_schema = self.schema.union(&right.schema)?;
-        let mut join_columns = left_table.columns;
-        join_columns.append(&mut right_table.columns);
+        let mut join_columns = Arc::unwrap_or_clone(left_table.columns);
+        let mut right_columns = Arc::unwrap_or_clone(right_table.columns);
+
+        join_columns.append(&mut right_columns);
 
         Self::new_with_size(join_schema, join_columns, num_rows)
     }

@@ -258,12 +258,17 @@ class DataFrame:
 
     @DataframePublicAPI
     def iter_rows(
-        self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
+        self,
+        results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
+        column_format: Literal["python", "arrow"] = "python",
     ) -> Iterator[Dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
 
         Each row will be a Python dictionary of the form { "key" : value, ... }. If you are instead looking to iterate over
         entire partitions of data, see: :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`.
+
+        By default, Daft will convert the columns to Python lists for easy consumption. Datatypes with Python equivalents will be converted accordingly, e.g. timestamps to datetime, tensors to numpy arrays.
+        For nested data such as List or Struct arrays, however, this can be expensive. You may wish to set `column_format` to "arrow" such that the nested data is returned as Arrow scalars.
 
         .. NOTE::
             A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
@@ -291,6 +296,7 @@ class DataFrame:
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
                 available on the machine).
+            column_format: the format of the columns to iterate over. One of "python" or "arrow". Defaults to "python".
 
         .. seealso::
             :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`: iterator over entire partitions instead of single rows
@@ -298,13 +304,28 @@ class DataFrame:
         if results_buffer_size == "num_cpus":
             results_buffer_size = multiprocessing.cpu_count()
 
+        def arrow_iter_rows(table: "pyarrow.Table") -> Iterator[Dict[str, Any]]:
+            columns = table.columns
+            for i in range(len(table)):
+                row = {col._name: col[i] for col in columns}
+                yield row
+
+        def python_iter_rows(pydict: Dict[str, List[Any]], num_rows: int) -> Iterator[Dict[str, Any]]:
+            for i in range(num_rows):
+                row = {key: value[i] for (key, value) in pydict.items()}
+                yield row
+
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            pydict = self.to_pydict()
-            for i in range(len(self)):
-                row = {key: value[i] for (key, value) in pydict.items()}
-                yield row
+            if column_format == "python":
+                yield from python_iter_rows(self.to_pydict(), len(self))
+            elif column_format == "arrow":
+                yield from arrow_iter_rows(self.to_arrow())
+            else:
+                raise ValueError(
+                    f"Unsupported column_format: {column_format}, supported formats are 'python' and 'arrow'"
+                )
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
@@ -314,12 +335,14 @@ class DataFrame:
 
             # Iterate through partitions.
             for partition in partitions_iter:
-                pydict = partition.to_pydict()
-
-                # Yield invidiual rows from the partition.
-                for i in range(len(partition)):
-                    row = {key: value[i] for (key, value) in pydict.items()}
-                    yield row
+                if column_format == "python":
+                    yield from python_iter_rows(partition.to_pydict(), len(partition))
+                elif column_format == "arrow":
+                    yield from arrow_iter_rows(partition.to_arrow())
+                else:
+                    raise ValueError(
+                        f"Unsupported column_format: {column_format}, supported formats are 'python' and 'arrow'"
+                    )
 
     @DataframePublicAPI
     def to_arrow_iter(
