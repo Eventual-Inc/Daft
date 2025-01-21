@@ -1,10 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
-
-use common_error::DaftResult;
-use daft_dsl::{col, ExprRef};
-
-use super::join_graph::{JoinAdjList, JoinCondition, JoinGraph, JoinOrderTree, JoinOrderer};
-use crate::{optimization::rules::reorder_joins::join_graph, LogicalPlanBuilder, LogicalPlanRef};
+use super::join_graph::{JoinGraph, JoinOrderTree, JoinOrderer};
 
 pub(crate) struct BruteForceJoinOrderer {}
 
@@ -16,8 +10,8 @@ fn generate_combinations(
     mut unchosen: Vec<usize>,
 ) -> Vec<(Vec<usize>, Vec<usize>)> {
     if remaining == 0 {
-        for e in cur_idx..elements.len() {
-            unchosen.push(elements[e]);
+        for &element in elements.iter().skip(cur_idx) {
+            unchosen.push(element);
         }
         return vec![(chosen, unchosen)];
     }
@@ -54,7 +48,6 @@ impl BruteForceJoinOrderer {
                 .expect("Got non-existent ID in join graph");
             let stats = plan.materialized_stats();
             let cost = stats.approx_stats.num_rows;
-            // println!("1 available: {id}, with cost: {cost}");
             return Some((cost, JoinOrderTree::Relation(id)));
         }
         let max_left_size = available.len() / 2;
@@ -64,7 +57,6 @@ impl BruteForceJoinOrderer {
             for (chosen, unchosen) in
                 generate_combinations(&available, 0, left_split_size, vec![], vec![])
             {
-                //println!("available: {available:?}, chosen: {chosen:?}, unchosen: {unchosen:?}");
                 if let Some((left_cost, left_join_order_tree)) =
                     Self::find_min_cost_order(graph, chosen)
                     && let Some((right_cost, right_join_order_tree)) =
@@ -74,13 +66,17 @@ impl BruteForceJoinOrderer {
                         .adj_list
                         .get_connections(&left_join_order_tree, &right_join_order_tree);
                     if !connections.is_empty() {
-                        let max_total_domain: usize =
-                            connections.iter().map(|conn| conn.total_domain).product();
+                        // TODO(desmond): This is a hack to get the total domain of the join. Technically, we should
+                        // take the product of total domains from the minimum spanning tree of equivalence relations.
+                        let mut total_domains = connections
+                            .iter()
+                            .map(|conn| conn.total_domain)
+                            .collect::<Vec<_>>();
+                        total_domains.sort_unstable_by(|a, b| b.cmp(a));
+                        let denominator: usize =
+                            total_domains.iter().take(connections.len()).product();
                         let cur_cost =
-                            (left_cost * right_cost / max_total_domain) + left_cost + right_cost;
-                        if available.len() == 6 {
-                            println!("*** {cur_cost} <- chosen {left_join_order_tree:?}, unchosen {right_join_order_tree:?}");
-                        }
+                            (left_cost * right_cost / denominator) + left_cost + right_cost;
                         if let Some(cur_min_cost) = min_cost {
                             if cur_min_cost > cur_cost {
                                 min_cost = Some(cur_cost);
@@ -100,7 +96,6 @@ impl BruteForceJoinOrderer {
         if let Some(min_cost) = min_cost
             && let Some(chosen_plan) = chosen_plan
         {
-            //println!("available: {available:?}, chosen_plan: {chosen_plan:?}");
             Some((min_cost, chosen_plan))
         } else {
             None
@@ -111,17 +106,7 @@ impl BruteForceJoinOrderer {
 impl JoinOrderer for BruteForceJoinOrderer {
     fn order(&self, graph: &JoinGraph) -> JoinOrderTree {
         let available: Vec<usize> = (0..graph.adj_list.max_id).collect();
-        for i in 0..graph.adj_list.max_id {
-            let plan = graph.adj_list.id_to_plan.get(&i).unwrap();
-            println!(
-                "{i}({:?}) cost: {}",
-                plan.schema().names(),
-                plan.materialized_stats().approx_stats.num_rows
-            );
-        }
-        if let Some((cost, join_order_tree)) = Self::find_min_cost_order(graph, available) {
-            println!("Final cost: {cost}");
-            println!("join order: {:?}", join_order_tree);
+        if let Some((_cost, join_order_tree)) = Self::find_min_cost_order(graph, available) {
             join_order_tree
         } else {
             panic!("Tried to get join order from non-fully connected join graph")
@@ -134,7 +119,6 @@ mod tests {
     use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_schema::{dtype::DataType, field::Field};
-    use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
     use super::{BruteForceJoinOrderer, JoinGraph, JoinOrderTree, JoinOrderer};
     use crate::{
@@ -177,7 +161,11 @@ mod tests {
     ) -> JoinGraph {
         let mut adj_list = JoinAdjList::empty();
         for (from, to, td) in edges {
-            adj_list.add_bidirectional_edge_with_td(nodes[from].clone(), nodes[to].clone(), td);
+            adj_list.add_bidirectional_edge_with_total_domain(
+                nodes[from].clone(),
+                nodes[to].clone(),
+                td,
+            );
         }
         JoinGraph::new(adj_list, vec![])
     }

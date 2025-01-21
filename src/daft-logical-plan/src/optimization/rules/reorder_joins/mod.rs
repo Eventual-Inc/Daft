@@ -1,5 +1,6 @@
 mod brute_force_join_order;
 mod join_graph;
+#[cfg(test)]
 mod naive_left_deep_join_order;
 
 #[derive(Default, Debug)]
@@ -16,7 +17,6 @@ use brute_force_join_order::BruteForceJoinOrderer;
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use join_graph::JoinGraphBuilder;
-use naive_left_deep_join_order::NaiveLeftDeepJoinOrderer;
 
 use crate::{
     optimization::rules::{reorder_joins::join_graph::JoinOrderer, OptimizerRule},
@@ -43,7 +43,6 @@ impl OptimizerRule for ReorderJoins {
             // the top 3 joins. In theory, below the Agg, there could be more joins to reorder. In this case
             // we would need to reorder the nodes below the Agg then reorder/reconstruct the logical plan with
             // this reordered relation. We don't consider this case for now.
-            //            println!("join reorder!! {}", join_graph.could_reorder());
             if !join_graph.could_reorder() {
                 return Ok(Transformed::no(plan));
             }
