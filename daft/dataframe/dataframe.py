@@ -267,8 +267,8 @@ class DataFrame:
         Each row will be a Python dictionary of the form { "key" : value, ... }. If you are instead looking to iterate over
         entire partitions of data, see: :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`.
 
-        By default, Daft will convert the columns to Python lists for easy consumption. However, for nested data such as List or Struct arrays, this can be expensive.
-        You may wish to set `column_format` to "arrow" such that the nested data is returned as Arrow scalars.
+        By default, Daft will convert the columns to Python lists for easy consumption. Datatypes with Python equivalents will be converted accordingly, e.g. timestamps to datetime, tensors to numpy arrays.
+        For nested data such as List or Struct arrays, however, this can be expensive. You may wish to set `column_format` to "arrow" such that the nested data is returned as Arrow scalars.
 
         .. NOTE::
             A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
