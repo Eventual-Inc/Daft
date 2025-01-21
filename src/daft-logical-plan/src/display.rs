@@ -39,8 +39,8 @@ mod test {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
-        LogicalPlanRef, SourceInfo,
+        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinColumnRenamingParams,
+        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
 
     fn plan_1() -> LogicalPlanRef {
@@ -106,7 +106,9 @@ mod test {
                 vec![col("id")],
                 JoinType::Inner,
                 None,
-                Default::default(),
+                JoinColumnRenamingParams::builder()
+                    .merge_matching_join_keys(true)
+                    .build(),
             )?
             .filter(col("first_name").eq(lit("hello")))?
             .select(vec![col("first_name")])?
@@ -179,7 +181,9 @@ Project1 --> Limit0
                 Some(vec![true]),
                 JoinType::Inner,
                 None,
-                Default::default(),
+                JoinColumnRenamingParams::builder()
+                    .merge_matching_join_keys(true)
+                    .build(),
             )?
             .filter(col("first_name").eq(lit("hello")))?
             .select(vec![col("first_name")])?
