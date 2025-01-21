@@ -2,6 +2,8 @@ use std::net::ToSocketAddrs;
 
 use tonic::Status;
 
+use crate::error::ConnectError;
+
 pub fn parse_spark_connect_address(addr: &str) -> eyre::Result<std::net::SocketAddr> {
     // Check if address starts with "sc://"
     if !addr.starts_with("sc://") {
@@ -26,13 +28,13 @@ pub fn parse_spark_connect_address(addr: &str) -> eyre::Result<std::net::SocketA
 pub trait FromOptionalField<T> {
     /// Converts an optional protobuf field to a different type, returning an
     /// error if None.
-    fn required(self, field: impl Into<String>) -> Result<T, Status>;
+    fn required(self, field: impl Into<String>) -> Result<T, ConnectError>;
 }
 
 impl<T> FromOptionalField<T> for Option<T> {
-    fn required(self, field: impl Into<String>) -> Result<T, Status> {
+    fn required(self, field: impl Into<String>) -> Result<T, ConnectError> {
         match self {
-            None => Err(Status::internal(format!(
+            None => Err(ConnectError::invalid_relation(format!(
                 "Required field '{}' is missing",
                 field.into()
             ))),

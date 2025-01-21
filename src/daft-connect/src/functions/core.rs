@@ -74,7 +74,7 @@ impl SparkFunction for UnaryFunction {
                 let arg = analyzer.to_daft_expr(arg)?;
                 Ok(self.0(arg))
             }
-            _ => invalid_argument_err!("requires exactly one argument")?,
+            _ => invalid_argument_err!("requires exactly one argument"),
         }
     }
 }
@@ -99,7 +99,7 @@ impl SparkFunction for CountFunction {
 
                 Ok(count)
             }
-            _ => invalid_argument_err!("requires exactly one argument")?,
+            _ => invalid_argument_err!("requires exactly one argument"),
         }
     }
 }

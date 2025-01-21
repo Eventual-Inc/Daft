@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     display::SparkDisplay,
+    error::ConnectError,
     invalid_argument_err, not_yet_implemented,
     response_builder::ResponseBuilder,
     session::Session,
@@ -163,7 +164,7 @@ impl SparkConnectService for DaftSparkConnectService {
                 let Plan { op_type } = plan.required("plan")?;
 
                 let OpType::Root(relation) = op_type.required("op_type")? else {
-                    return invalid_argument_err!("op_type must be Root");
+                    invalid_argument_err!("op_type must be Root");
                 };
 
                 let translator = SparkAnalyzer::new(&session);
@@ -171,9 +172,7 @@ impl SparkConnectService for DaftSparkConnectService {
                 let result = match translator.relation_to_spark_schema(relation).await {
                     Ok(schema) => schema,
                     Err(e) => {
-                        return invalid_argument_err!(
-                            "Failed to translate relation to schema: {e:?}"
-                        );
+                        invalid_argument_err!("Failed to translate relation to schema: {e:?}");
                     }
                 };
                 Ok(Response::new(rb.schema_response(result)))
@@ -181,7 +180,7 @@ impl SparkConnectService for DaftSparkConnectService {
             Analyze::DdlParse(DdlParse { ddl_string }) => {
                 let daft_schema = match daft_sql::sql_schema(&ddl_string) {
                     Ok(daft_schema) => daft_schema,
-                    Err(e) => return invalid_argument_err!("{e}"),
+                    Err(e) => invalid_argument_err!("{e}"),
                 };
 
                 let daft_schema = daft_schema.to_struct();
@@ -198,7 +197,7 @@ impl SparkConnectService for DaftSparkConnectService {
                 };
 
                 let OpType::Root(input) = plan.op_type.required("op_type")? else {
-                    return invalid_argument_err!("op_type must be Root");
+                    invalid_argument_err!("op_type must be Root");
                 };
 
                 if let Some(common) = &input.common {

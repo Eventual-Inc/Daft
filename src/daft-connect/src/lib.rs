@@ -18,7 +18,7 @@ mod functions;
 #[cfg(feature = "python")]
 mod display;
 #[cfg(feature = "python")]
-mod err;
+mod error;
 #[cfg(feature = "python")]
 mod execute;
 #[cfg(feature = "python")]
