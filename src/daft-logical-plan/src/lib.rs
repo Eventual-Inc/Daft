@@ -23,6 +23,7 @@ use common_file_formats::{
 };
 pub use daft_core::join::{JoinStrategy, JoinType};
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
+pub use ops::join::JoinColumnRenamingParams;
 pub use partitioning::ClusteringSpec;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -41,6 +42,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<DatabaseSourceConfig>()?;
     parent.add_class::<FileInfos>()?;
     parent.add_class::<FileInfo>()?;
+    parent.add_class::<JoinColumnRenamingParams>()?;
     parent.add_function(wrap_pyfunction!(
         builder::py_check_column_name_validity,
         parent

@@ -1455,8 +1455,8 @@ class PyMicroPartition:
         right: PyMicroPartition,
         left_on: list[PyExpr],
         right_on: list[PyExpr],
-        null_equals_nulls: list[bool] | None,
         how: JoinType,
+        null_equals_nulls: list[bool] | None = None,
     ) -> PyMicroPartition: ...
     def pivot(
         self,
@@ -1584,6 +1584,11 @@ class AdaptivePhysicalPlanScheduler:
         num_rows: int,
     ) -> None: ...
 
+class JoinColumnRenamingParams:
+    def __new__(
+        cls, prefix: str | None = None, suffix: str | None = None, merge_matching_join_keys: bool | None = None
+    ) -> JoinColumnRenamingParams: ...
+
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
 
@@ -1642,9 +1647,8 @@ class LogicalPlanBuilder:
         left_on: list[PyExpr],
         right_on: list[PyExpr],
         join_type: JoinType,
-        strategy: JoinStrategy | None = None,
-        join_prefix: str | None = None,
-        join_suffix: str | None = None,
+        join_strategy: JoinStrategy | None = None,
+        column_renaming_params: JoinColumnRenamingParams | None = None,
     ) -> LogicalPlanBuilder: ...
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
     def intersect(self, other: LogicalPlanBuilder, is_all: bool) -> LogicalPlanBuilder: ...

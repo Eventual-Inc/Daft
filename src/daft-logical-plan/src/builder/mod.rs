@@ -33,7 +33,7 @@ use {
 
 use crate::{
     logical_plan::LogicalPlan,
-    ops,
+    ops::{self, join::JoinColumnRenamingParams},
     optimization::OptimizerBuilder,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
@@ -440,9 +440,7 @@ impl LogicalPlanBuilder {
             right_on,
             JoinType::Inner,
             None,
-            None,
-            None,
-            false,
+            Default::default(),
         )
     }
 
@@ -454,9 +452,7 @@ impl LogicalPlanBuilder {
         right_on: Vec<ExprRef>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
-        keep_join_keys: bool,
+        column_renaming_params: JoinColumnRenamingParams,
     ) -> DaftResult<Self> {
         self.join_with_null_safe_equal(
             right,
@@ -465,9 +461,7 @@ impl LogicalPlanBuilder {
             None,
             join_type,
             join_strategy,
-            join_suffix,
-            join_prefix,
-            keep_join_keys,
+            column_renaming_params,
         )
     }
 
@@ -480,9 +474,7 @@ impl LogicalPlanBuilder {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
-        keep_join_keys: bool,
+        column_renaming_params: JoinColumnRenamingParams,
     ) -> DaftResult<Self> {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
@@ -492,18 +484,13 @@ impl LogicalPlanBuilder {
         let (left_on, _) = expr_resolver.resolve(left_on, &left_plan.schema())?;
         let (right_on, _) = expr_resolver.resolve(right_on, &right_plan.schema())?;
 
-        // TODO(kevin): we should do this, but it has not been properly used before and is nondeterministic, which causes some tests to break
-        // let (left_on, right_on) = ops::Join::rename_join_keys(left_on, right_on);
-
-        let (right_plan, right_on) = ops::Join::rename_right_columns(
-            left_plan.clone(),
+        let (right_plan, right_on) = ops::join::Join::deduplicate_join_columns(
+            &left_plan,
             right_plan,
-            left_on.clone(),
+            &left_on,
             right_on,
             join_type,
-            join_suffix,
-            join_prefix,
-            keep_join_keys,
+            column_renaming_params,
         )?;
 
         let logical_plan: LogicalPlan = ops::Join::try_new(
@@ -522,8 +509,7 @@ impl LogicalPlanBuilder {
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
+        column_renaming_params: JoinColumnRenamingParams,
     ) -> DaftResult<Self> {
         self.join(
             right,
@@ -531,9 +517,7 @@ impl LogicalPlanBuilder {
             vec![],
             JoinType::Inner,
             None,
-            join_suffix,
-            join_prefix,
-            false, // no join keys to keep
+            column_renaming_params,
         )
     }
 
@@ -987,8 +971,7 @@ impl PyLogicalPlanBuilder {
         right_on,
         join_type,
         join_strategy=None,
-        join_suffix=None,
-        join_prefix=None
+        column_renaming_params=None
     ))]
     pub fn join(
         &self,
@@ -997,8 +980,7 @@ impl PyLogicalPlanBuilder {
         right_on: Vec<PyExpr>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
+        column_renaming_params: Option<JoinColumnRenamingParams>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1008,9 +990,7 @@ impl PyLogicalPlanBuilder {
                 pyexprs_to_exprs(right_on),
                 join_type,
                 join_strategy,
-                join_suffix,
-                join_prefix,
-                false, // dataframes do not keep the join keys when joining
+                column_renaming_params.unwrap_or_default(),
             )?
             .into())
     }

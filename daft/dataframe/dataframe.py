@@ -32,7 +32,7 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, check_column_name_validity
+from daft.daft import FileFormat, IOConfig, JoinColumnRenamingParams, JoinStrategy, JoinType, check_column_name_validity
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -1874,8 +1874,7 @@ class DataFrame:
             right_on=right_exprs,
             how=join_type,
             strategy=join_strategy,
-            join_prefix=prefix,
-            join_suffix=suffix,
+            column_renaming_params=JoinColumnRenamingParams(prefix, suffix, True),
         )
         return DataFrame(builder)
 

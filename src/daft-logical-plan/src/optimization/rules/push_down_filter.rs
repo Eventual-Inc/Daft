@@ -699,9 +699,7 @@ mod tests {
                 null_equals_nulls.clone(),
                 how,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(pred.clone())?
             .build();
@@ -721,9 +719,7 @@ mod tests {
                 null_equals_nulls,
                 how,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
@@ -765,9 +761,7 @@ mod tests {
                 null_equals_nulls.clone(),
                 how,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(pred.clone())?
             .build();
@@ -787,9 +781,7 @@ mod tests {
                 null_equals_nulls,
                 how,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
@@ -844,9 +836,7 @@ mod tests {
                 null_equals_nulls.clone(),
                 how,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(pred.clone())?
             .build();
@@ -874,9 +864,7 @@ mod tests {
                 null_equals_nulls,
                 how,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
@@ -914,9 +902,7 @@ mod tests {
                 null_equals_nulls,
                 how,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(pred)?
             .build();
@@ -957,9 +943,7 @@ mod tests {
                 null_equals_nulls,
                 how,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(pred)?
             .build();
@@ -983,9 +967,7 @@ mod tests {
                 vec![],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(
                 (col("a").eq(lit("FRANCE")).and(col("b").eq(lit("GERMANY"))))
@@ -1010,9 +992,7 @@ mod tests {
             vec![],
             JoinType::Inner,
             None,
-            None,
-            None,
-            false,
+            Default::default(),
         )?
         .filter(
             (col("b").eq(lit("GERMANY")).or(col("a").eq(lit("GERMANY"))))

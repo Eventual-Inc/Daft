@@ -2,15 +2,10 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use daft_core::{
-    datatypes::Field,
-    join::JoinSide,
-    prelude::{Schema, SchemaRef},
-    utils::supertype,
-};
-use daft_dsl::{col, join::get_common_join_keys};
+use daft_core::{join::JoinSide, prelude::Schema};
+use daft_dsl::{col, join::get_common_join_cols};
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
@@ -362,7 +357,7 @@ pub fn physical_plan_to_pipeline(
             let build_schema = build_child.schema();
             let probe_schema = probe_child.schema();
             || -> DaftResult<_> {
-                let common_join_keys: IndexSet<_> = get_common_join_keys(left_on, right_on)
+                let common_join_cols: IndexSet<_> = get_common_join_cols(left_schema, right_schema)
                     .map(std::string::ToString::to_string)
                     .collect();
                 let build_key_fields = build_on
@@ -373,29 +368,13 @@ pub fn physical_plan_to_pipeline(
                     .iter()
                     .map(|e| e.to_field(probe_schema))
                     .collect::<DaftResult<Vec<_>>>()?;
-                let key_schema: SchemaRef = Schema::new(
-                    build_key_fields
-                        .into_iter()
-                        .zip(probe_key_fields.into_iter())
-                        .map(|(l, r)| {
-                            // TODO we should be using the comparison_op function here instead but i'm just using existing behavior for now
-                            let dtype = supertype::try_get_supertype(&l.dtype, &r.dtype)?;
-                            Ok(Field::new(l.name, dtype))
-                        })
-                        .collect::<DaftResult<Vec<_>>>()?,
-                )?
-                .into();
-
-                let casted_build_on = build_on
-                    .iter()
-                    .zip(key_schema.fields.values())
-                    .map(|(e, f)| e.clone().cast(&f.dtype))
-                    .collect::<Vec<_>>();
-                let casted_probe_on = probe_on
-                    .iter()
-                    .zip(key_schema.fields.values())
-                    .map(|(e, f)| e.clone().cast(&f.dtype))
-                    .collect::<Vec<_>>();
+                let build_key_schema = Arc::new(Schema::new(build_key_fields)?);
+                let probe_key_schema = Arc::new(Schema::new(probe_key_fields)?);
+                if build_key_schema != probe_key_schema {
+                    return Err(DaftError::SchemaMismatch(
+                        format!("Expected bhild and probe key field datatypes to match, found: {build_key_schema} vs {probe_key_schema}")
+                    ));
+                }
                 // we should move to a builder pattern
                 let probe_state_bridge = BroadcastStateBridge::new();
                 let track_indices = if matches!(join_type, JoinType::Anti | JoinType::Semi) {
@@ -404,8 +383,8 @@ pub fn physical_plan_to_pipeline(
                     true
                 };
                 let build_sink = HashJoinBuildSink::new(
-                    key_schema,
-                    casted_build_on,
+                    build_key_schema,
+                    build_on.clone(),
                     null_equals_null.clone(),
                     track_indices,
                     probe_state_bridge.clone(),
@@ -419,7 +398,7 @@ pub fn physical_plan_to_pipeline(
                 match join_type {
                     JoinType::Anti | JoinType::Semi => Ok(StreamingSinkNode::new(
                         Arc::new(AntiSemiProbeSink::new(
-                            casted_probe_on,
+                            probe_on.clone(),
                             join_type,
                             schema,
                             probe_state_bridge,
@@ -430,11 +409,11 @@ pub fn physical_plan_to_pipeline(
                     .boxed()),
                     JoinType::Inner => Ok(IntermediateNode::new(
                         Arc::new(InnerHashJoinProbeOperator::new(
-                            casted_probe_on,
+                            probe_on.clone(),
                             left_schema,
                             right_schema,
                             build_on_left,
-                            common_join_keys,
+                            common_join_cols,
                             schema,
                             probe_state_bridge,
                         )),
@@ -444,15 +423,15 @@ pub fn physical_plan_to_pipeline(
                     JoinType::Left | JoinType::Right | JoinType::Outer => {
                         Ok(StreamingSinkNode::new(
                             Arc::new(OuterHashJoinProbeSink::new(
-                                casted_probe_on,
+                                probe_on.clone(),
                                 left_schema,
                                 right_schema,
                                 *join_type,
                                 build_on_left,
-                                common_join_keys,
+                                common_join_cols,
                                 schema,
                                 probe_state_bridge,
-                            )),
+                            )?),
                             vec![build_node, probe_child_node],
                         )
                         .boxed())

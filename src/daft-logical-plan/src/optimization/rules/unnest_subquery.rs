@@ -126,15 +126,13 @@ impl UnnestScalarSubquery {
                     JoinType::Left
                 };
 
-                let (decorrelated_subquery, subquery_on) = Join::rename_right_columns(
-                    curr_input.clone(),
+                let (decorrelated_subquery, subquery_on) = Join::deduplicate_join_columns(
+                    &curr_input,
                     decorrelated_subquery,
-                    input_on.clone(),
+                    &input_on,
                     subquery_on,
                     join_type,
-                    None,
-                    None,
-                    false,
+                    Default::default(),
                 )?;
 
                 Ok(Arc::new(LogicalPlan::Join(Join::try_new(
@@ -618,9 +616,7 @@ mod tests {
                 vec![],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(col("key").eq(col(subquery_alias)))?
             .select(vec![col("key"), col("val")])?
@@ -673,9 +669,7 @@ mod tests {
                 vec![col("inner_key")],
                 JoinType::Left,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(col("outer_key").eq(col(subquery_alias)))?
             .select(vec![col("outer_key"), col("inner_key"), col("val")])?
@@ -713,9 +707,7 @@ mod tests {
                 vec![col("key")],
                 JoinType::Semi,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .select(vec![col("val")])?
             .build();
@@ -757,9 +749,7 @@ mod tests {
                 vec![col("key")],
                 JoinType::Anti,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .select(vec![col("val")])?
             .build();
