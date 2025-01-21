@@ -77,7 +77,7 @@ def get_name_and_commit_hash(branch_name: Optional[str]) -> tuple[str, str]:
 
 def parse_questions(questions: Optional[str], total_number_of_questions: int) -> list[int]:
     if questions is None:
-        return list(range(total_number_of_questions))
+        return list(range(1, total_number_of_questions + 1))
     else:
 
         def to_int(q: str) -> int:

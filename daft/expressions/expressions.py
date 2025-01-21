@@ -273,6 +273,15 @@ class Expression:
         """Access methods that work on columns of json."""
         return ExpressionJsonNamespace.from_expression(self)
 
+    @property
+    def binary(self) -> ExpressionBinaryNamespace:
+        """Access binary string operations for this expression.
+
+        Returns:
+            ExpressionBinaryNamespace: A namespace containing binary string operations
+        """
+        return ExpressionBinaryNamespace.from_expression(self)
+
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
@@ -456,6 +465,23 @@ class Expression:
         """Compares if an expression is equal to another (``e1 == e2``)."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr == expr._expr)
+
+    def eq_null_safe(self, other: Expression) -> Expression:
+        """Performs a null-safe equality comparison between two expressions.
+
+        Unlike regular equality (==), null-safe equality (<=> or IS NOT DISTINCT FROM):
+        - Returns True when comparing NULL <=> NULL
+        - Returns False when comparing NULL <=> any_value
+        - Behaves like regular equality for non-NULL values
+
+        Args:
+            other: The expression to compare with
+
+        Returns:
+            Expression: A boolean expression indicating if the values are equal
+        """
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr.eq_null_safe(expr._expr))
 
     def __ne__(self, other: Expression) -> Expression:  # type: ignore
         """Compares if an expression is not equal to another (``e1 != e2``)."""
@@ -1414,6 +1440,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
         # if the user gave an expression, we assume that each row has a specific url to upload to.
+        # Consider moving the check for is_single_folder to a lower IR.
         is_single_folder = isinstance(location, str)
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
         return Expression._from_pyexpr(
@@ -3554,3 +3581,100 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
     def cosine_distance(self, other: Expression) -> Expression:
         """Compute the cosine distance between two embeddings."""
         return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
+
+
+class ExpressionBinaryNamespace(ExpressionNamespace):
+    def length(self) -> Expression:
+        """Retrieves the length for a binary string column.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [b"foo", b"bar", b"baz"]})
+            >>> df = df.select(df["x"].binary.length())
+            >>> df.show()
+            ╭────────╮
+            │ x      │
+            │ ---    │
+            │ UInt64 │
+            ╞════════╡
+            │ 3      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 3      │
+            ├╌╌╌╌╌╌╌╌┤
+            │ 3      │
+            ╰────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Returns:
+            Expression: an UInt64 expression with the length of each binary string in bytes
+        """
+        return Expression._from_pyexpr(native.binary_length(self._expr))
+
+    def concat(self, other: Expression) -> Expression:
+        r"""Concatenates two binary strings.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {"a": [b"Hello", b"\\xff\\xfe", b"", b"World"], "b": [b" World", b"\\x00", b"empty", b"!"]}
+            ... )
+            >>> df = df.select(df["a"].binary.concat(df["b"]))
+            >>> df.show()
+            ╭────────────────────╮
+            │ a                  │
+            │ ---                │
+            │ Binary             │
+            ╞════════════════════╡
+            │ b"Hello World"     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"\\xff\\xfe\\x00" │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"empty"           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"World!"          │
+            ╰────────────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+
+        Args:
+            other: The binary string to concatenate with, can be either an Expression or a bytes literal
+
+        Returns:
+            Expression: A binary expression containing the concatenated strings
+        """
+        other_expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(native.binary_concat(self._expr, other_expr._expr))
+
+    def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
+        r"""Returns a slice of each binary string.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
+            >>> df = df.select(df["x"].binary.slice(1, 3))
+            >>> df.show()
+            ╭─────────────╮
+            │ x           │
+            │ ---         │
+            │ Binary      │
+            ╞═════════════╡
+            │ b"ell"      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"\xfe\x00" │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b"mpt"      │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Args:
+            start: The starting position (0-based) of the slice.
+            length: The length of the slice. If None, returns all characters from start to the end.
+
+        Returns:
+            A new expression representing the slice.
+        """
+        start_expr = Expression._to_expression(start)
+        length_expr = Expression._to_expression(length)
+        return Expression._from_pyexpr(native.binary_slice(self._expr, start_expr._expr, length_expr._expr))

@@ -2,11 +2,16 @@ use std::{
     any::Any,
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
-    time::SystemTime,
+    sync::{Arc, Mutex},
 };
 
-use aws_credential_types::provider::ProvideCredentials;
+use aws_credential_types::{
+    provider::{error::CredentialsError, ProvideCredentials},
+    Credentials,
+};
 use chrono::{offset::Utc, DateTime};
+use common_error::DaftResult;
+use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 
 pub use crate::ObfuscatedString;
@@ -18,7 +23,7 @@ pub struct S3Config {
     pub key_id: Option<String>,
     pub session_token: Option<ObfuscatedString>,
     pub access_key: Option<ObfuscatedString>,
-    pub credentials_provider: Option<Box<dyn S3CredentialsProvider>>,
+    pub credentials_provider: Option<S3CredentialsProviderWrapper>,
     pub buffer_time: Option<u64>,
     pub max_connections_per_io_thread: u32,
     pub retry_initial_backoff_ms: u64,
@@ -40,15 +45,54 @@ pub struct S3Credentials {
     pub key_id: String,
     pub access_key: String,
     pub session_token: Option<String>,
-    pub expiry: Option<SystemTime>,
+    pub expiry: Option<DateTime<Utc>>,
 }
 
 #[typetag::serde(tag = "type")]
-pub trait S3CredentialsProvider: ProvideCredentials + Debug {
+pub trait S3CredentialsProvider: Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn S3CredentialsProvider>;
     fn dyn_eq(&self, other: &dyn S3CredentialsProvider) -> bool;
     fn dyn_hash(&self, state: &mut dyn Hasher);
+    fn provide_credentials(&self) -> DaftResult<S3Credentials>;
+}
+
+#[derive(Derivative, Clone, Debug, Deserialize, Serialize)]
+#[derivative(PartialEq, Eq, Hash)]
+pub struct S3CredentialsProviderWrapper {
+    pub provider: Box<dyn S3CredentialsProvider>,
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
+    cached_creds: Arc<Mutex<Option<S3Credentials>>>,
+}
+
+impl S3CredentialsProviderWrapper {
+    pub fn new(provider: impl S3CredentialsProvider + 'static) -> Self {
+        Self {
+            provider: Box::new(provider),
+            cached_creds: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn get_new_credentials(&self) -> DaftResult<S3Credentials> {
+        let creds = self.provider.provide_credentials()?;
+        *self.cached_creds.lock().unwrap() = Some(creds.clone());
+        Ok(creds)
+    }
+
+    pub fn get_cached_credentials(&self) -> DaftResult<S3Credentials> {
+        let mut cached_creds = self.cached_creds.lock().unwrap();
+
+        if let Some(creds) = cached_creds.clone()
+            && creds.expiry.map_or(true, |expiry| expiry > Utc::now())
+        {
+            Ok(creds)
+        } else {
+            let creds = self.provider.provide_credentials()?;
+            *cached_creds = Some(creds.clone());
+            Ok(creds)
+        }
+    }
 }
 
 impl Clone for Box<dyn S3CredentialsProvider> {
@@ -71,14 +115,26 @@ impl Hash for Box<dyn S3CredentialsProvider> {
     }
 }
 
-impl ProvideCredentials for Box<dyn S3CredentialsProvider> {
+impl ProvideCredentials for S3CredentialsProviderWrapper {
     fn provide_credentials<'a>(
         &'a self,
     ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
     where
         Self: 'a,
     {
-        self.as_ref().provide_credentials()
+        aws_credential_types::provider::future::ProvideCredentials::ready(
+            self.get_new_credentials()
+                .map_err(|e| CredentialsError::provider_error(Box::new(e)))
+                .map(|creds| {
+                    Credentials::new(
+                        creds.key_id,
+                        creds.access_key,
+                        creds.session_token,
+                        creds.expiry.map(|e| e.into()),
+                        "daft_custom_provider",
+                    )
+                }),
+        )
     }
 }
 
@@ -225,8 +281,6 @@ impl S3Credentials {
             res.push(format!("Session token = {session_token}"));
         }
         if let Some(expiry) = &self.expiry {
-            let expiry: DateTime<Utc> = (*expiry).into();
-
             res.push(format!("Expiry = {}", expiry.format("%Y-%m-%dT%H:%M:%S")));
         }
         res

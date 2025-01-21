@@ -20,6 +20,7 @@ on:
         description: Cluster profile
         type: choice
         options:
+        - benchmarking-arm
         - medium-x86
         - debug_xs-x86
         required: false
@@ -49,7 +50,7 @@ jobs:
     uses: ./.github/workflows/build-commit.yaml
     if: ${{ inputs.daft_version == '' && inputs.daft_wheel_url == '' }}
     with:
-      arch: x86
+      arch: ${{ (inputs.cluster_profile == 'debug_xs-x86' || inputs.cluster_profile == 'medium-x86') && 'x86' || 'arm' }}
       python_version: ${{ inputs.python_version }}
     secrets:
       ACTIONS_AWS_ROLE_ARN: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
@@ -131,13 +132,12 @@ jobs:
           --entrypoint-script='${{ inputs.entrypoint_script }}' \
           --entrypoint-args='${{ inputs.entrypoint_args }}' \
           --env-vars='${{ inputs.env_vars }}' \
-          --enable-ray-tracing
     - name: Download log files from ray cluster
       if: always()
       run: |
         source .venv/bin/activate
-        ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs ray-daft-logs
-        find ray-daft-logs -depth -name '*:*' -exec bash -c '
+        ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs ray-logs
+        find ray-logs -depth -name '*:*' -exec bash -c '
         for filepath; do
           dir=$(dirname "$filepath")
           base=$(basename "$filepath")
@@ -172,5 +172,5 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: ray-daft-logs
-        path: ray-daft-logs
+        name: ray-logs
+        path: ray-logs

@@ -6,36 +6,45 @@
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
 
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
-use dashmap::DashMap;
+#[cfg(feature = "python")]
+mod config;
+
+#[cfg(feature = "python")]
+mod connect_service;
+
+#[cfg(feature = "python")]
+mod functions;
+
+#[cfg(feature = "python")]
+mod display;
+#[cfg(feature = "python")]
+mod err;
+#[cfg(feature = "python")]
+mod execute;
+#[cfg(feature = "python")]
+mod response_builder;
+#[cfg(feature = "python")]
+mod session;
+#[cfg(feature = "python")]
+mod spark_analyzer;
+#[cfg(feature = "python")]
+pub mod util;
+
+#[cfg(feature = "python")]
+use connect_service::DaftSparkConnectService;
+#[cfg(feature = "python")]
 use eyre::Context;
 #[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
-use spark_connect::{
-    analyze_plan_response,
-    command::CommandType,
-    plan::OpType,
-    spark_connect_service_server::{SparkConnectService, SparkConnectServiceServer},
-    AddArtifactsRequest, AddArtifactsResponse, AnalyzePlanRequest, AnalyzePlanResponse,
-    ArtifactStatusesRequest, ArtifactStatusesResponse, ConfigRequest, ConfigResponse,
-    ExecutePlanRequest, ExecutePlanResponse, FetchErrorDetailsRequest, FetchErrorDetailsResponse,
-    InterruptRequest, InterruptResponse, Plan, ReattachExecuteRequest, ReleaseExecuteRequest,
-    ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
-};
-use tonic::{transport::Server, Request, Response, Status};
-use tracing::{info, warn};
-use uuid::Uuid;
+#[cfg(feature = "python")]
+use spark_connect::spark_connect_service_server::{SparkConnectService, SparkConnectServiceServer};
+#[cfg(feature = "python")]
+use tonic::transport::Server;
+#[cfg(feature = "python")]
+use tracing::info;
 
-use crate::{display::SparkDisplay, session::Session, translation::SparkAnalyzer};
-
-mod config;
-mod display;
-mod err;
-mod op;
-
-mod session;
-mod translation;
-pub mod util;
+#[cfg(feature = "python")]
+pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
 #[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct ConnectionHandle {
@@ -57,6 +66,7 @@ impl ConnectionHandle {
     }
 }
 
+#[cfg(feature = "python")]
 pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
     info!("Daft-Connect server listening on {addr}");
     let addr = util::parse_spark_connect_address(addr)?;
@@ -74,10 +84,10 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
         shutdown_signal: Some(shutdown_signal),
         port,
     };
+    let runtime = common_runtime::get_io_runtime(true);
 
     std::thread::spawn(move || {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(async {
+        let result = runtime.block_on_current_thread(async {
             let incoming = {
                 let listener = tokio::net::TcpListener::from_std(listener)
                     .wrap_err("Failed to create TcpListener from std::net::TcpListener")?;
@@ -117,346 +127,14 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
     Ok(handle)
 }
 
-#[derive(Default)]
-pub struct DaftSparkConnectService {
-    client_to_session: DashMap<Uuid, Session>, // To track session data
-}
-
-impl DaftSparkConnectService {
-    fn get_session(
-        &self,
-        session_id: &str,
-    ) -> Result<dashmap::mapref::one::RefMut<Uuid, Session>, Status> {
-        let Ok(uuid) = Uuid::parse_str(session_id) else {
-            return Err(Status::invalid_argument(
-                "Invalid session_id format, must be a UUID",
-            ));
-        };
-
-        let res = self
-            .client_to_session
-            .entry(uuid)
-            .or_insert_with(|| Session::new(session_id.to_string()));
-
-        Ok(res)
-    }
-}
-
-#[tonic::async_trait]
-impl SparkConnectService for DaftSparkConnectService {
-    type ExecutePlanStream = std::pin::Pin<
-        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
-    >;
-    type ReattachExecuteStream = std::pin::Pin<
-        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
-    >;
-
-    #[tracing::instrument(skip_all)]
-    async fn execute_plan(
-        &self,
-        request: Request<ExecutePlanRequest>,
-    ) -> Result<Response<Self::ExecutePlanStream>, Status> {
-        let request = request.into_inner();
-
-        let session = self.get_session(&request.session_id)?;
-
-        let Some(operation) = request.operation_id else {
-            return invalid_argument_err!("Operation ID is required");
-        };
-
-        // Proceed with executing the plan...
-        let Some(plan) = request.plan else {
-            return invalid_argument_err!("Plan is required");
-        };
-
-        let Some(plan) = plan.op_type else {
-            return invalid_argument_err!("Plan operation is required");
-        };
-
-        use spark_connect::plan::OpType;
-
-        match plan {
-            OpType::Root(relation) => {
-                let result = session.handle_root_command(relation, operation).await?;
-                return Ok(Response::new(result));
-            }
-            OpType::Command(command) => {
-                let Some(command) = command.command_type else {
-                    return invalid_argument_err!("Command type is required");
-                };
-
-                match command {
-                    CommandType::RegisterFunction(_) => {
-                        unimplemented_err!("RegisterFunction not implemented")
-                    }
-                    CommandType::WriteOperation(op) => {
-                        let result = session.handle_write_command(op, operation).await?;
-                        return Ok(Response::new(result));
-                    }
-                    CommandType::CreateDataframeView(_) => {
-                        unimplemented_err!("CreateDataframeView not implemented")
-                    }
-                    CommandType::WriteOperationV2(_) => {
-                        unimplemented_err!("WriteOperationV2 not implemented")
-                    }
-                    CommandType::SqlCommand(..) => {
-                        unimplemented_err!("SQL execution not yet implemented")
-                    }
-                    CommandType::WriteStreamOperationStart(_) => {
-                        unimplemented_err!("WriteStreamOperationStart not implemented")
-                    }
-                    CommandType::StreamingQueryCommand(_) => {
-                        unimplemented_err!("StreamingQueryCommand not implemented")
-                    }
-                    CommandType::GetResourcesCommand(_) => {
-                        unimplemented_err!("GetResourcesCommand not implemented")
-                    }
-                    CommandType::StreamingQueryManagerCommand(_) => {
-                        unimplemented_err!("StreamingQueryManagerCommand not implemented")
-                    }
-                    CommandType::RegisterTableFunction(_) => {
-                        unimplemented_err!("RegisterTableFunction not implemented")
-                    }
-                    CommandType::StreamingQueryListenerBusCommand(_) => {
-                        unimplemented_err!("StreamingQueryListenerBusCommand not implemented")
-                    }
-                    CommandType::RegisterDataSource(_) => {
-                        unimplemented_err!("RegisterDataSource not implemented")
-                    }
-                    CommandType::CreateResourceProfileCommand(_) => {
-                        unimplemented_err!("CreateResourceProfileCommand not implemented")
-                    }
-                    CommandType::CheckpointCommand(_) => {
-                        unimplemented_err!("CheckpointCommand not implemented")
-                    }
-                    CommandType::RemoveCachedRemoteRelationCommand(_) => {
-                        unimplemented_err!("RemoveCachedRemoteRelationCommand not implemented")
-                    }
-                    CommandType::MergeIntoTableCommand(_) => {
-                        unimplemented_err!("MergeIntoTableCommand not implemented")
-                    }
-                    CommandType::Extension(_) => unimplemented_err!("Extension not implemented"),
-                }
-            }
-        }?
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn config(
-        &self,
-        request: Request<ConfigRequest>,
-    ) -> Result<Response<ConfigResponse>, Status> {
-        let request = request.into_inner();
-
-        let mut session = self.get_session(&request.session_id)?;
-
-        let Some(operation) = request.operation.and_then(|op| op.op_type) else {
-            return Err(Status::invalid_argument("Missing operation"));
-        };
-
-        use spark_connect::config_request::operation::OpType;
-
-        let response = match operation {
-            OpType::Set(op) => session.set(op),
-            OpType::Get(op) => session.get(op),
-            OpType::GetWithDefault(op) => session.get_with_default(op),
-            OpType::GetOption(op) => session.get_option(op),
-            OpType::GetAll(op) => session.get_all(op),
-            OpType::Unset(op) => session.unset(op),
-            OpType::IsModifiable(op) => session.is_modifiable(op),
-        }?;
-
-        Ok(Response::new(response))
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn add_artifacts(
-        &self,
-        _request: Request<tonic::Streaming<AddArtifactsRequest>>,
-    ) -> Result<Response<AddArtifactsResponse>, Status> {
-        unimplemented_err!("add_artifacts operation is not yet implemented")
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn analyze_plan(
-        &self,
-        request: Request<AnalyzePlanRequest>,
-    ) -> Result<Response<AnalyzePlanResponse>, Status> {
-        use spark_connect::analyze_plan_request::*;
-        let request = request.into_inner();
-
-        let AnalyzePlanRequest {
-            session_id,
-            analyze,
-            ..
-        } = request;
-
-        let Some(analyze) = analyze else {
-            return Err(Status::invalid_argument("analyze is required"));
-        };
-
-        match analyze {
-            Analyze::Schema(Schema { plan }) => {
-                let Some(Plan { op_type }) = plan else {
-                    return Err(Status::invalid_argument("plan is required"));
-                };
-
-                let Some(OpType::Root(relation)) = op_type else {
-                    return Err(Status::invalid_argument("op_type is required to be root"));
-                };
-
-                let result = match translation::relation_to_spark_schema(relation).await {
-                    Ok(schema) => schema,
-                    Err(e) => {
-                        return invalid_argument_err!(
-                            "Failed to translate relation to schema: {e:?}"
-                        );
-                    }
-                };
-
-                let schema = analyze_plan_response::Schema {
-                    schema: Some(result),
-                };
-
-                let response = AnalyzePlanResponse {
-                    session_id,
-                    server_side_session_id: String::new(),
-                    result: Some(analyze_plan_response::Result::Schema(schema)),
-                };
-
-                Ok(Response::new(response))
-            }
-            Analyze::DdlParse(DdlParse { ddl_string }) => {
-                let daft_schema = match daft_sql::sql_schema(&ddl_string) {
-                    Ok(daft_schema) => daft_schema,
-                    Err(e) => return invalid_argument_err!("{e}"),
-                };
-
-                let daft_schema = daft_schema.to_struct();
-
-                let schema = translation::to_spark_datatype(&daft_schema);
-
-                let schema = analyze_plan_response::Schema {
-                    schema: Some(schema),
-                };
-
-                let response = AnalyzePlanResponse {
-                    session_id,
-                    server_side_session_id: String::new(),
-                    result: Some(analyze_plan_response::Result::Schema(schema)),
-                };
-
-                Ok(Response::new(response))
-            }
-            Analyze::TreeString(TreeString { plan, level }) => {
-                let Some(plan) = plan else {
-                    return invalid_argument_err!("plan is required");
-                };
-
-                if let Some(level) = level {
-                    warn!("ignoring tree string level: {level:?}");
-                };
-
-                let Some(op_type) = plan.op_type else {
-                    return invalid_argument_err!("op_type is required");
-                };
-
-                let OpType::Root(input) = op_type else {
-                    return invalid_argument_err!("op_type must be Root");
-                };
-
-                if let Some(common) = &input.common {
-                    if common.origin.is_some() {
-                        warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
-                    }
-                }
-
-                // We're just checking the schema here, so we don't need to use a persistent cache as it won't be used
-                let pset = InMemoryPartitionSetCache::empty();
-                let translator = SparkAnalyzer::new(&pset);
-                let plan = Box::pin(translator.to_logical_plan(input))
-                    .await
-                    .unwrap()
-                    .build();
-
-                let schema = plan.schema();
-                let tree_string = schema.repr_spark_string();
-
-                let response = AnalyzePlanResponse {
-                    session_id,
-                    server_side_session_id: String::new(),
-                    result: Some(analyze_plan_response::Result::TreeString(
-                        analyze_plan_response::TreeString { tree_string },
-                    )),
-                };
-
-                Ok(Response::new(response))
-            }
-            other => unimplemented_err!("Analyze plan operation is not yet implemented: {other:?}"),
-        }
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn artifact_status(
-        &self,
-        _request: Request<ArtifactStatusesRequest>,
-    ) -> Result<Response<ArtifactStatusesResponse>, Status> {
-        unimplemented_err!("artifact_status operation is not yet implemented")
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn interrupt(
-        &self,
-        _request: Request<InterruptRequest>,
-    ) -> Result<Response<InterruptResponse>, Status> {
-        unimplemented_err!("interrupt operation is not yet implemented")
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn reattach_execute(
-        &self,
-        _request: Request<ReattachExecuteRequest>,
-    ) -> Result<Response<Self::ReattachExecuteStream>, Status> {
-        unimplemented_err!("reattach_execute operation is not yet implemented")
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn release_execute(
-        &self,
-        request: Request<ReleaseExecuteRequest>,
-    ) -> Result<Response<ReleaseExecuteResponse>, Status> {
-        let request = request.into_inner();
-
-        let session = self.get_session(&request.session_id)?;
-
-        let response = ReleaseExecuteResponse {
-            session_id: session.client_side_session_id().to_string(),
-            server_side_session_id: session.server_side_session_id().to_string(),
-            operation_id: None, // todo: set but not strictly required
-        };
-
-        Ok(Response::new(response))
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn release_session(
-        &self,
-        _request: Request<ReleaseSessionRequest>,
-    ) -> Result<Response<ReleaseSessionResponse>, Status> {
-        unimplemented_err!("release_session operation is not yet implemented")
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn fetch_error_details(
-        &self,
-        _request: Request<FetchErrorDetailsRequest>,
-    ) -> Result<Response<FetchErrorDetailsResponse>, Status> {
-        unimplemented_err!("fetch_error_details operation is not yet implemented")
-    }
+#[cfg(feature = "python")]
+pub enum Runner {
+    Ray,
+    Native,
 }
 
 #[cfg(feature = "python")]
-#[pyo3::pyfunction]
+#[cfg_attr(feature = "python", pyo3::pyfunction)]
 #[pyo3(name = "connect_start", signature = (addr = "sc://0.0.0.0:0"))]
 pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
     start(addr).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))

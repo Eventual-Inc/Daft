@@ -11,18 +11,16 @@ pub mod optimization;
 mod pyobj_serde;
 #[cfg(feature = "python")]
 pub mod python;
-mod resolve_expr;
 mod treenode;
 pub use common_treenode;
 pub use expr::{
-    binary_op, col, count_actor_pool_udfs, has_agg, is_actor_pool_udf, is_partition_compatible,
-    AggExpr, ApproxPercentileParams, Expr, ExprRef, Operator, OuterReferenceColumn, SketchType,
-    Subquery, SubqueryPlan,
+    binary_op, col, count_actor_pool_udfs, estimated_selectivity, exprs_to_schema, has_agg,
+    is_actor_pool_udf, is_partition_compatible, AggExpr, ApproxPercentileParams, Expr, ExprRef,
+    Operator, OuterReferenceColumn, SketchType, Subquery, SubqueryPlan,
 };
 pub use lit::{lit, literal_value, literals_to_series, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-pub use resolve_expr::{check_column_name_validity, ExprResolver};
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
@@ -41,10 +39,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::initialize_udfs, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::get_udf_names, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::eq, parent)?)?;
-    parent.add_function(wrap_pyfunction!(
-        python::check_column_name_validity,
-        parent
-    )?)?;
 
     Ok(())
 }

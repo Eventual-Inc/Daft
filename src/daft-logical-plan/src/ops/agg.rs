@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use daft_dsl::{ExprRef, ExprResolver};
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_dsl::{exprs_to_schema, ExprRef};
+use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
-use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{self, CreationSnafu},
+    logical_plan::{self},
     stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
@@ -36,21 +35,10 @@ impl Aggregate {
         aggregations: Vec<ExprRef>,
         groupby: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
-        let upstream_schema = input.schema();
-
-        let agg_resolver = ExprResolver::builder().groupby(&groupby).build();
-        let (aggregations, aggregation_fields) = agg_resolver
-            .resolve(aggregations, &upstream_schema)
-            .context(CreationSnafu)?;
-
-        let groupby_resolver = ExprResolver::default();
-        let (groupby, groupby_fields) = groupby_resolver
-            .resolve(groupby, &upstream_schema)
-            .context(CreationSnafu)?;
-
-        let fields = [groupby_fields, aggregation_fields].concat();
-
-        let output_schema = Schema::new(fields).context(CreationSnafu)?.into();
+        let output_schema = exprs_to_schema(
+            &[groupby.as_slice(), aggregations.as_slice()].concat(),
+            input.schema(),
+        )?;
 
         Ok(Self {
             input,
@@ -64,33 +52,19 @@ impl Aggregate {
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         // TODO(desmond): We can use the schema here for better estimations. For now, use the old logic.
         let input_stats = self.input.materialized_stats();
-        let est_bytes_per_row_lower = input_stats.approx_stats.lower_bound_bytes
-            / (input_stats.approx_stats.lower_bound_rows.max(1));
-        let est_bytes_per_row_upper =
-            input_stats
-                .approx_stats
-                .upper_bound_bytes
-                .and_then(|bytes| {
-                    input_stats
-                        .approx_stats
-                        .upper_bound_rows
-                        .map(|rows| bytes / rows.max(1))
-                });
+        let est_bytes_per_row =
+            input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
         let approx_stats = if self.groupby.is_empty() {
             ApproxStats {
-                lower_bound_rows: input_stats.approx_stats.lower_bound_rows.min(1),
-                upper_bound_rows: Some(1),
-                lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes.min(1)
-                    * est_bytes_per_row_lower,
-                upper_bound_bytes: est_bytes_per_row_upper,
+                num_rows: 1,
+                size_bytes: est_bytes_per_row,
             }
         } else {
+            // Assume high cardinality for group by columns, and 80% of rows are unique.
+            let est_num_groups = input_stats.approx_stats.num_rows * 4 / 5;
             ApproxStats {
-                lower_bound_rows: input_stats.approx_stats.lower_bound_rows.min(1),
-                upper_bound_rows: input_stats.approx_stats.upper_bound_rows,
-                lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes.min(1)
-                    * est_bytes_per_row_lower,
-                upper_bound_bytes: input_stats.approx_stats.upper_bound_bytes,
+                num_rows: est_num_groups,
+                size_bytes: est_bytes_per_row * est_num_groups,
             }
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());

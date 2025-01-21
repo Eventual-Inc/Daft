@@ -60,6 +60,20 @@ profiles: dict[str, Optional[Profile]] = {
         sudo chmod 777 /tmp
     fi""",
     ),
+    "benchmarking-arm": Profile(
+        instance_type="i8g.4xlarge",
+        image_id="ami-0d4eea77bb23270f4",
+        node_count=8,
+        ssh_user="ubuntu",
+        volume_mount=""" |
+    findmnt /tmp 1> /dev/null
+    code=$?
+    if [ $code -ne 0 ]; then
+        sudo mkfs.ext4 /dev/nvme0n1
+        sudo mount -t ext4 /dev/nvme0n1 /tmp
+        sudo chmod 777 /tmp
+    fi""",
+    ),
 }
 
 
@@ -71,7 +85,7 @@ if __name__ == "__main__":
     parser.add_argument("--daft-wheel-url")
     parser.add_argument("--daft-version")
     parser.add_argument("--python-version", required=True)
-    parser.add_argument("--cluster-profile", required=True, choices=["debug_xs-x86", "medium-x86"])
+    parser.add_argument("--cluster-profile", required=True, choices=["debug_xs-x86", "medium-x86", "benchmarking-arm"])
     parser.add_argument("--working-dir", required=True)
     parser.add_argument("--entrypoint-script", required=True)
     args = parser.parse_args()

@@ -15,6 +15,10 @@ from typing import Optional
 
 from ray.job_submission import JobStatus, JobSubmissionClient
 
+# We impose a 5min timeout here
+# If any job does *not* finish in 5min, then we cancel it and mark the question as a "DNF" (did-not-finish).
+TIMEOUT_S = 60 * 5
+
 
 def parse_env_var_str(env_var_str: str) -> dict:
     iter = map(
@@ -29,13 +33,17 @@ async def print_logs(logs):
         print(lines, end="")
 
 
-async def wait_on_job(logs, timeout_s):
-    await asyncio.wait_for(print_logs(logs), timeout=timeout_s)
+async def wait_on_job(logs, timeout_s) -> bool:
+    try:
+        await asyncio.wait_for(print_logs(logs), timeout=timeout_s)
+        return False
+    except asyncio.exceptions.TimeoutError:
+        return True
 
 
 @dataclass
 class Result:
-    query: int
+    arguments: str
     duration: timedelta
     error_msg: Optional[str]
 
@@ -45,7 +53,6 @@ def submit_job(
     entrypoint_script: str,
     entrypoint_args: str,
     env_vars: str,
-    enable_ray_tracing: bool,
 ):
     if "GHA_OUTPUT_DIR" not in os.environ:
         raise RuntimeError("Output directory environment variable not found; don't know where to store outputs")
@@ -53,8 +60,6 @@ def submit_job(
     output_dir.mkdir(exist_ok=True, parents=True)
 
     env_vars_dict = parse_env_var_str(env_vars)
-    if enable_ray_tracing:
-        env_vars_dict["DAFT_ENABLE_RAY_TRACING"] = "1"
 
     client = JobSubmissionClient(address="http://localhost:8265")
 
@@ -66,7 +71,7 @@ def submit_job(
 
     results = []
 
-    for index, args in enumerate(list_of_entrypoint_args):
+    for args in list_of_entrypoint_args:
         entrypoint = f"DAFT_RUNNER=ray python {entrypoint_script} {args}"
         print(f"{entrypoint=}")
         start = datetime.now()
@@ -78,18 +83,20 @@ def submit_job(
             },
         )
 
-        asyncio.run(wait_on_job(client.tail_job_logs(job_id), timeout_s=60 * 30))
+        timed_out = asyncio.run(wait_on_job(client.tail_job_logs(job_id), timeout_s=TIMEOUT_S))
 
         status = client.get_job_status(job_id)
-        assert status.is_terminal(), "Job should have terminated"
         end = datetime.now()
         duration = end - start
         error_msg = None
         if status != JobStatus.SUCCEEDED:
-            job_info = client.get_job_info(job_id)
-            error_msg = job_info.message
+            if timed_out:
+                error_msg = f"Job exceeded {TIMEOUT_S} second(s)"
+            else:
+                job_info = client.get_job_info(job_id)
+                error_msg = job_info.message
 
-        result = Result(query=index, duration=duration, error_msg=error_msg)
+        result = Result(arguments=args, duration=duration, error_msg=error_msg)
         results.append(result)
 
     output_file = output_dir / "out.csv"
@@ -106,7 +113,6 @@ if __name__ == "__main__":
     parser.add_argument("--entrypoint-script", type=str, required=True)
     parser.add_argument("--entrypoint-args", type=str, required=True)
     parser.add_argument("--env-vars", type=str, required=True)
-    parser.add_argument("--enable-ray-tracing", action="store_true")
 
     args = parser.parse_args()
 
@@ -122,5 +128,4 @@ if __name__ == "__main__":
         entrypoint_script=args.entrypoint_script,
         entrypoint_args=args.entrypoint_args,
         env_vars=args.env_vars,
-        enable_ray_tracing=args.enable_ray_tracing,
     )

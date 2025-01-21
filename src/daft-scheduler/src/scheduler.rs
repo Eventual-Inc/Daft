@@ -268,7 +268,6 @@ fn physical_plan_to_partition_tasks(
 ) -> PyResult<PyObject> {
     use daft_dsl::Expr;
     use daft_physical_plan::ops::{CrossJoin, ShuffleExchange, ShuffleExchangeStrategy};
-
     match physical_plan {
         PhysicalPlan::InMemoryScan(InMemoryScan {
             in_memory_info: InMemoryInfo { cache_key, .. },
@@ -355,7 +354,9 @@ fn physical_plan_to_partition_tasks(
             Ok(py_iter.into())
         }
 
-        PhysicalPlan::Filter(Filter { input, predicate }) => {
+        PhysicalPlan::Filter(Filter {
+            input, predicate, ..
+        }) => {
             let upstream_iter =
                 physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let expressions_mod = py.import(pyo3::intern!(py, "daft.expressions.expressions"))?;

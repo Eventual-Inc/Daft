@@ -43,3 +43,6 @@ log/
 
 # helix editor
 .helix
+
+# uv
+uv.lock
