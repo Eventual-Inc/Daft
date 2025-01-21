@@ -94,7 +94,7 @@ mod test {
                 startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
-            .add_monotonically_increasing_id(None)?
+            .add_monotonically_increasing_id(Some("id2"))?
             .distinct()?
             .sort(vec![col("last_name")], vec![false], vec![false])?
             .build();
@@ -124,7 +124,7 @@ Filter2["Filter: col(first_name) == lit('hello')"]
 Join3["Join: Type = Inner
 Strategy = Auto
 On = col(id)
-Output schema = id#Int32, text#Utf8, first_name#Utf8, last_name#Utf8"]
+Output schema = id#Int32, text#Utf8, id2#UInt64, first_name#Utf8, last_name#Utf8"]
 Filter4["Filter: col(id) == lit(1)"]
 Source5["PlaceHolder:
 Source ID = 0
@@ -168,7 +168,7 @@ Project1 --> Limit0
                 startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
-            .add_monotonically_increasing_id(None)?
+            .add_monotonically_increasing_id(Some("id2"))?
             .distinct()?
             .sort(vec![col("last_name")], vec![false], vec![false])?
             .build();

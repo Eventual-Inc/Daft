@@ -5,6 +5,7 @@ use std::{
     any::Any,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -999,7 +1000,8 @@ impl Expr {
                     | Operator::Eq
                     | Operator::NotEq
                     | Operator::LtEq
-                    | Operator::GtEq => {
+                    | Operator::GtEq
+                    | Operator::EqNullSafe => {
                         let (result_type, _intermediate, _comp_type) =
                             InferDataType::from(&left_field.dtype)
                                 .comparison_op(&InferDataType::from(&right_field.dtype))?;
@@ -1153,6 +1155,7 @@ impl Expr {
                     to_sql_inner(left, buffer)?;
                     let op = match op {
                         Operator::Eq => "=",
+                        Operator::EqNullSafe => "<=>",
                         Operator::NotEq => "!=",
                         Operator::Lt => "<",
                         Operator::LtEq => "<=",
@@ -1219,12 +1222,18 @@ impl Expr {
             _ => None,
         }
     }
+
+    pub fn eq_null_safe(self: ExprRef, other: ExprRef) -> ExprRef {
+        binary_op(Operator::EqNullSafe, self, other)
+    }
 }
 
 #[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Operator {
     #[display("==")]
     Eq,
+    #[display("<=>")]
+    EqNullSafe,
     #[display("!=")]
     NotEq,
     #[display("<")]
@@ -1265,6 +1274,7 @@ impl Operator {
         matches!(
             self,
             Self::Eq
+                | Self::EqNullSafe
                 | Self::NotEq
                 | Self::Lt
                 | Self::LtEq
@@ -1278,6 +1288,32 @@ impl Operator {
 
     pub(crate) fn is_arithmetic(&self) -> bool {
         !(self.is_comparison())
+    }
+}
+
+impl FromStr for Operator {
+    type Err = DaftError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "==" => Ok(Self::Eq),
+            "!=" => Ok(Self::NotEq),
+            "<" => Ok(Self::Lt),
+            "<=" => Ok(Self::LtEq),
+            ">" => Ok(Self::Gt),
+            ">=" => Ok(Self::GtEq),
+            "+" => Ok(Self::Plus),
+            "-" => Ok(Self::Minus),
+            "*" => Ok(Self::Multiply),
+            "/" => Ok(Self::TrueDivide),
+            "//" => Ok(Self::FloorDivide),
+            "%" => Ok(Self::Modulus),
+            "&" => Ok(Self::And),
+            "|" => Ok(Self::Or),
+            "^" => Ok(Self::Xor),
+            "<<" => Ok(Self::ShiftLeft),
+            ">>" => Ok(Self::ShiftRight),
+            _ => Err(DaftError::ComputeError(format!("Invalid operator: {}", s))),
+        }
     }
 }
 
@@ -1335,6 +1371,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
             match op {
                 // Fixed selectivity for all common comparisons
                 Operator::Eq => 0.1,
+                Operator::EqNullSafe => 0.1,
                 Operator::NotEq => 0.9,
                 Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.2,
 
@@ -1397,4 +1434,12 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::Subquery(_) => 1.0,
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
     }
+}
+
+pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult<SchemaRef> {
+    let fields = exprs
+        .iter()
+        .map(|e| e.to_field(&input_schema))
+        .collect::<DaftResult<_>>()?;
+    Ok(Arc::new(Schema::new(fields)?))
 }

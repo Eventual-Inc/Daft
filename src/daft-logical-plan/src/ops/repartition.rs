@@ -1,13 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use daft_dsl::ExprResolver;
-
-use crate::{
-    partitioning::{HashRepartitionConfig, RepartitionSpec},
-    stats::StatsState,
-    LogicalPlan,
-};
+use crate::{partitioning::RepartitionSpec, stats::StatsState, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Repartition {
@@ -18,28 +11,12 @@ pub struct Repartition {
 }
 
 impl Repartition {
-    pub(crate) fn try_new(
-        input: Arc<LogicalPlan>,
-        repartition_spec: RepartitionSpec,
-    ) -> DaftResult<Self> {
-        let repartition_spec = match repartition_spec {
-            RepartitionSpec::Hash(HashRepartitionConfig { num_partitions, by }) => {
-                let expr_resolver = ExprResolver::default();
-
-                let (resolved_by, _) = expr_resolver.resolve(by, &input.schema())?;
-                RepartitionSpec::Hash(HashRepartitionConfig {
-                    num_partitions,
-                    by: resolved_by,
-                })
-            }
-            RepartitionSpec::Random(_) | RepartitionSpec::IntoPartitions(_) => repartition_spec,
-        };
-
-        Ok(Self {
+    pub(crate) fn new(input: Arc<LogicalPlan>, repartition_spec: RepartitionSpec) -> Self {
+        Self {
             input,
             repartition_spec,
             stats_state: StatsState::NotMaterialized,
-        })
+        }
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {

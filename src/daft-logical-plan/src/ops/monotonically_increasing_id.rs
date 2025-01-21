@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use daft_core::prelude::*;
 
-use crate::{stats::StatsState, LogicalPlan};
+use crate::{
+    logical_plan::{self},
+    stats::StatsState,
+    LogicalPlan,
+};
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct MonotonicallyIncreasingId {
@@ -13,25 +17,23 @@ pub struct MonotonicallyIncreasingId {
 }
 
 impl MonotonicallyIncreasingId {
-    pub(crate) fn new(input: Arc<LogicalPlan>, column_name: Option<&str>) -> Self {
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
+        column_name: Option<&str>,
+    ) -> logical_plan::Result<Self> {
         let column_name = column_name.unwrap_or("id");
 
-        let mut schema_with_id_index_map = input.schema().fields.clone();
-        schema_with_id_index_map.shift_insert(
-            0,
-            column_name.to_string(),
-            Field::new(column_name, DataType::UInt64),
-        );
-        let schema_with_id = Schema {
-            fields: schema_with_id_index_map,
-        };
+        let fields_with_id = std::iter::once(Field::new(column_name, DataType::UInt64))
+            .chain(input.schema().fields.values().cloned())
+            .collect();
+        let schema_with_id = Schema::new(fields_with_id)?;
 
-        Self {
+        Ok(Self {
             input,
             schema: Arc::new(schema_with_id),
             column_name: column_name.to_string(),
             stats_state: StatsState::NotMaterialized,
-        }
+        })
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {

@@ -44,6 +44,10 @@ impl DaftCompare<&Self> for ColumnRangeStatistics {
         self.equal(rhs)?.not()
     }
 
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        self.equal(rhs)
+    }
+
     fn gt(&self, rhs: &Self) -> Self::Output {
         // lower_bound: True greater (self.lower > rhs.upper)
         // upper_bound: some value that can be greater (self.upper > rhs.lower)

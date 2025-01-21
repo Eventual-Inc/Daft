@@ -380,9 +380,11 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             if daft_execution_config.enable_native_executor:
                 logger.info("Using native executor")
 
-                executor = NativeExecutor.from_logical_plan_builder(builder, daft_execution_config)
+                executor = NativeExecutor()
                 results_gen = executor.run(
+                    builder,
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+                    daft_execution_config,
                     results_buffer_size,
                 )
                 yield from results_gen

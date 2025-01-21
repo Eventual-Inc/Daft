@@ -211,6 +211,20 @@ pub fn xor(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
     }
 }
 
+#[inline]
+/// Compute bitwise equality operation
+pub fn bitwise_eq(lhs: &Bitmap, rhs: &Bitmap) -> Bitmap {
+    assert_eq!(lhs.len(), rhs.len());
+    // Fast path: if bitmaps are identical, return all true
+    if lhs == rhs {
+        let mut mutable = MutableBitmap::with_capacity(lhs.len());
+        mutable.extend_constant(lhs.len(), true);
+        mutable.into()
+    } else {
+        binary(lhs, rhs, |x, y| !(x ^ y))  // XNOR operation
+    }
+}
+
 fn eq(lhs: &Bitmap, rhs: &Bitmap) -> bool {
     if lhs.len() != rhs.len() {
         return false;

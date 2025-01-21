@@ -69,13 +69,16 @@ impl<T: Send + 'static> Future for RuntimeTask<T> {
 }
 
 pub struct Runtime {
-    runtime: tokio::runtime::Runtime,
+    pub runtime: Arc<tokio::runtime::Runtime>,
     pool_type: PoolType,
 }
 
 impl Runtime {
     pub(crate) fn new(runtime: tokio::runtime::Runtime, pool_type: PoolType) -> RuntimeRef {
-        Arc::new(Self { runtime, pool_type })
+        Arc::new(Self {
+            runtime: Arc::new(runtime),
+            pool_type,
+        })
     }
 
     async fn execute_task<F>(future: F, pool_type: PoolType) -> DaftResult<F::Output>
