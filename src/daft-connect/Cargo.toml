@@ -1,7 +1,6 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_json_integration"]}
 async-stream = "0.3.6"
-common-daft-config = {workspace = true, optional = true, features = ["python"]}
 common-error = {workspace = true, optional = true, features = ["python"]}
 common-file-formats = {workspace = true, optional = true, features = ["python"]}
 daft-catalog = {path = "../daft-catalog", optional = true, features = ["python"]}
@@ -27,12 +26,12 @@ tokio = {version = "1.40.0", features = ["full"]}
 tonic = "0.12.3"
 tracing = {workspace = true}
 uuid = {version = "1.10.0", features = ["v4"]}
+common-runtime.workspace = true
 
 [features]
 default = ["python"]
 python = [
   "dep:pyo3",
-  "dep:common-daft-config",
   "dep:common-error",
   "dep:common-file-formats",
   "dep:daft-core",

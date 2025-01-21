@@ -2008,9 +2008,9 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "async-stream",
- "common-daft-config",
  "common-error",
  "common-file-formats",
+ "common-runtime",
  "daft-catalog",
  "daft-core",
  "daft-dsl",
@@ -2378,6 +2378,7 @@ dependencies = [
  "serde",
  "snafu",
  "test-log",
+ "tokio",
  "typed-builder 0.20.0",
  "uuid 1.11.0",
 ]
