@@ -25,7 +25,7 @@ use sqlparser::{
     ast::{
         self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
         ExactNumberInfo, ExcludeSelectItem, FunctionArg, FunctionArgExpr, GroupByExpr, Ident,
-        ObjectName, Query, SelectItem, SetExpr, Statement, StructField, Subscript, TableAlias,
+        ObjectName, Query, SelectItem, SetExpr, StructField, Subscript, TableAlias,
         TableFunctionArgs, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
         WildcardAdditionalOptions, With,
     },
@@ -218,14 +218,7 @@ impl<'a> SQLPlanner<'a> {
         plan
     }
 
-    fn plan_statement(&mut self, statement: &Statement) -> SQLPlannerResult<LogicalPlanRef> {
-        match statement {
-            Statement::Query(query) => Ok(self.plan_query(query)?.build()),
-            other => unsupported_sql_err!("{}", other),
-        }
-    }
-
-    fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
+    pub(crate) fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
         check_query_features(query)?;
 
         let selection = match query.body.as_ref() {
@@ -997,7 +990,7 @@ impl<'a> SQLPlanner<'a> {
                 ..
             } => {
                 let rel = if is_table_path(name) {
-                    self.plan_relation_path(name)?
+                    self.plan_relation_path(name.0[0].value.as_str())?
                 } else {
                     self.plan_relation_table(name)?
                 };
@@ -1051,15 +1044,14 @@ impl<'a> SQLPlanner<'a> {
     }
 
     /// Plan a `FROM <path>` table factor by rewriting to relevant table-value function.
-    fn plan_relation_path(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
-        let path = name.0[0].value.as_str();
+    fn plan_relation_path(&self, path: &str) -> SQLPlannerResult<Relation> {
         let func = match Path::new(path).extension() {
             Some(ext) if ext.eq_ignore_ascii_case("csv") => "read_csv",
             Some(ext) if ext.eq_ignore_ascii_case("json") => "read_json",
             Some(ext) if ext.eq_ignore_ascii_case("jsonl") => "read_json",
             Some(ext) if ext.eq_ignore_ascii_case("parquet") => "read_parquet",
-            Some(_) => invalid_operation_err!("unsupported file path extension: {}", name),
-            None => invalid_operation_err!("unsupported file path, no extension: {}", name),
+            Some(_) => invalid_operation_err!("unsupported file path extension: {}", path),
+            None => invalid_operation_err!("unsupported file path, no extension: {}", path),
         };
         let args = TableFunctionArgs {
             args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(
@@ -1071,7 +1063,7 @@ impl<'a> SQLPlanner<'a> {
     }
 
     /// Plan a `FROM <table>` table factor.
-    fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
+    pub(crate) fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
         let table_name = name.to_string();
         let Some(rel) = self
             .table_map
@@ -2234,15 +2226,13 @@ fn idents_to_str(idents: &[Ident]) -> String {
 }
 
 /// Returns true iff the ObjectName is a string literal (single-quoted identifier e.g. 'path/to/file.extension').
-///
-/// # Examples
-///
-/// ```
+/// Example:
+/// ```text
 /// 'file.ext'           -> true
 /// 'path/to/file.ext'   -> true
-/// 'a'.'b'.'c'         -> false (multiple identifiers)
+/// 'a'.'b'.'c'          -> false (multiple identifiers)
 /// "path/to/file.ext"   -> false (double-quotes)
-/// hello               -> false (not single-quoted)
+/// hello                -> false (not single-quoted)
 /// ```
 fn is_table_path(name: &ObjectName) -> bool {
     if name.0.len() != 1 {

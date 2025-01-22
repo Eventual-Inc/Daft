@@ -56,6 +56,14 @@ impl SparkAnalyzer<'_> {
         SparkAnalyzer { session }
     }
 
+    /// Creates a logical source (scan) operator from a vec of tables.
+    ///
+    /// Consider moving into LogicalBuilder, but this would re-introduce the daft-table dependency.
+    ///
+    /// TODOs
+    ///   * https://github.com/Eventual-Inc/Daft/pull/3250
+    ///   * https://github.com/Eventual-Inc/Daft/issues/3718
+    ///
     pub fn create_in_memory_scan(
         &self,
         plan_id: usize,
@@ -66,8 +74,7 @@ impl SparkAnalyzer<'_> {
 
         match runner {
             Runner::Ray => {
-                let mp =
-                    MicroPartition::new_loaded(tables[0].schema.clone(), Arc::new(tables), None);
+                let mp = MicroPartition::new_loaded(schema, Arc::new(tables), None);
                 Python::with_gil(|py| {
                     // Convert MicroPartition to a logical plan using Python interop.
                     let py_micropartition = py
@@ -84,7 +91,7 @@ impl SparkAnalyzer<'_> {
                     let py_plan_builder = py_plan_builder.getattr(intern!(py, "_builder"))?;
                     let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
 
-                    Ok::<_, eyre::Error>(dbg!(plan.builder))
+                    Ok::<_, eyre::Error>(plan.builder)
                 })
             }
             Runner::Native => {

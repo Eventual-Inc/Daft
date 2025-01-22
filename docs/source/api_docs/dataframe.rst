@@ -192,4 +192,5 @@ Schema and Lineage
 
     DataFrame.explain
     DataFrame.schema
+    DataFrame.describe
     DataFrame.column_names

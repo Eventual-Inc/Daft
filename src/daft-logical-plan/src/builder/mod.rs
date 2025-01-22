@@ -18,6 +18,7 @@ use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{col, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
+use pyo3::intern;
 #[cfg(feature = "python")]
 pub use resolve_expr::py_check_column_name_validity;
 use resolve_expr::ExprResolver;
@@ -144,6 +145,7 @@ impl LogicalPlanBuilder {
         Ok(Self::from(Arc::new(logical_plan)))
     }
 
+    /// Creates a `LogicalPlan::Source` from a scan handle.
     pub fn table_scan(
         scan_operator: ScanOperatorRef,
         pushdowns: Option<Pushdowns>,
@@ -365,6 +367,31 @@ impl LogicalPlanBuilder {
         )
         .into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    /// Creates a logical scan operator by collapsing the plan to just its schema.
+    pub fn describe(&self) -> DaftResult<Self> {
+        Python::with_gil(|py| {
+            // schema = self.schema()
+            let schema = py
+                .import(intern!(py, "daft.logical.schema"))?
+                .getattr(intern!(py, "Schema"))?
+                .getattr(intern!(py, "_from_pyschema"))?
+                .call1((PySchema::from(self.schema()),))?;
+            // df = DataFrame._from_schema(schema)
+            let df = py
+                .import(intern!(py, "daft.dataframe.dataframe"))?
+                .getattr(intern!(py, "DataFrame"))?
+                .getattr(intern!(py, "_from_schema"))?
+                .call1((schema,))?;
+            // builder = df._builder._builder
+            let builder: PyLogicalPlanBuilder = df
+                .getattr(intern!(py, "_builder"))?
+                .getattr(intern!(py, "_builder"))?
+                .extract()?;
+            // done.
+            Ok(builder.builder)
+        })
     }
 
     pub fn distinct(&self) -> DaftResult<Self> {
@@ -937,6 +964,10 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.into_partitions(num_partitions)?.into())
     }
 
+    pub fn describe(&self) -> PyResult<Self> {
+        Ok(self.builder.describe()?.into())
+    }
+
     pub fn distinct(&self) -> PyResult<Self> {
         Ok(self.builder.distinct()?.into())
     }
@@ -1162,6 +1193,7 @@ impl PyLogicalPlanBuilder {
             )?
             .into())
     }
+
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(self.builder.schema().into())
     }

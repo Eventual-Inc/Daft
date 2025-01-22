@@ -89,6 +89,10 @@ class LogicalPlanBuilder:
         pyschema = self._builder.schema()
         return Schema._from_pyschema(pyschema)
 
+    def describe(self) -> LogicalPlanBuilder:
+        builder = self._builder.describe()
+        return LogicalPlanBuilder(builder)
+
     def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
         """Pretty prints the current underlying logical plan."""
         from daft.dataframe.display import MermaidOptions
