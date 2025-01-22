@@ -135,13 +135,13 @@ If you're interested in hands-on learning about Daft internals and would like to
 
 Take a look at the many issues tagged with `good first issue` in our repo. If there are any that interest you, feel free to chime in on the issue itself or join us in our [Distributed Data Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg) and send us a message in #daft-dev. Daft team members will be happy to assign any issue to you and provide any guidance if needed!
 
-## Frequently Asked Questions
+<!-- ## Frequently Asked Questions
 
 !!! failure "todo(docs): Add answers to each and more questions if necessary"
 
 ??? quote "What does Daft do well? (or What should I use Daft for?)"
 
-    <!-- from 10 min quickstart, filler answer for now -->
+    !!! failure "todo(docs): this is from 10 min quickstart, filler answer for now"
 
     Daft is the right tool for you if you are working with:
 
@@ -170,4 +170,4 @@ Take a look at the many issues tagged with `good first issue` in our repo. If th
 
 ??? quote "Does Daft perform any telemetry?"
 
-    See [Telemetry](resources/telemetry.md)
+    See [Telemetry](resources/telemetry.md) -->
