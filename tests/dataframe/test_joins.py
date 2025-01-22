@@ -1260,30 +1260,12 @@ def test_cross_join(left_partitions, right_partitions, make_df, with_morsel_size
     ],
 )
 def test_join_empty(join_type, repartition_nparts, left, right, expected, make_df, with_morsel_size):
-    left = pa.Table.from_pydict(
-        left,
-        schema=pa.schema(
-            [
-                ("a", pa.int32()),
-                ("b", pa.string()),
-            ]
-        ),
-    )
     left_df = make_df(
         left,
         repartition=repartition_nparts,
         repartition_columns=["a"],
     )
 
-    right = pa.Table.from_pydict(
-        right,
-        schema=pa.schema(
-            [
-                ("c", pa.int32()),
-                ("d", pa.string()),
-            ]
-        ),
-    )
     right_df = make_df(
         right,
         repartition=repartition_nparts,
@@ -1298,11 +1280,79 @@ def test_join_empty(join_type, repartition_nparts, left, right, expected, make_d
         right_on = ["c"]
 
     result = left_df.join(right_df, left_on=left_on, right_on=right_on, how=join_type)
-    if join_type in ["inner", "left", "right", "outer", "cross"]:
-        result = result.sort(["a", "b", "c", "d"])
-    else:
-        result = result.sort(["a", "b"])
 
-    expected_result = expected[join_type]
+    sort_by = ["a", "b", "c", "d"] if join_type in ["inner", "left", "right", "outer", "cross"] else ["a", "b"]
 
-    assert result.to_pydict() == expected_result
+    assert sort_arrow_table(pa.Table.from_pydict(result.to_pydict()), *sort_by) == sort_arrow_table(
+        pa.Table.from_pydict(expected[join_type]), *sort_by
+    )
+
+
+@pytest.mark.parametrize(
+    "join_type,expected",
+    [
+        ("inner", {"a": [1, 1, 2], "b": ["a", "a", "b"], "c": [1.0, 1.0, 2.0], "d": ["g", "h", "j"]}),
+        (
+            "left",
+            {
+                "a": [1, 1, 2, 3, 4, 5, 6],
+                "b": ["a", "a", "b", "c", "d", "e", "f"],
+                "c": [1.0, 1.0, 2.0, None, None, None, None],
+                "d": ["g", "h", "j", None, None, None, None],
+            },
+        ),
+        (
+            "right",
+            {
+                "a": [1, 1, 2, None, None, None],
+                "b": ["a", "a", "b", None, None, None],
+                "c": [1.0, 1.0, 2.0, 1.5, 2.1, 2.5],
+                "d": ["g", "h", "j", "i", "k", "l"],
+            },
+        ),
+        (
+            "outer",
+            {
+                "a": [1, 1, 2, 3, 4, 5, 6, None, None, None],
+                "b": ["a", "a", "b", "c", "d", "e", "f", None, None, None],
+                "c": [1.0, 1.0, 2.0, None, None, None, None, 1.5, 2.1, 2.5],
+                "d": ["g", "h", "j", None, None, None, None, "i", "k", "l"],
+            },
+        ),
+        (
+            "anti",
+            {
+                "a": [3, 4, 5, 6],
+                "b": ["c", "d", "e", "f"],
+            },
+        ),
+        (
+            "semi",
+            {
+                "a": [1, 2],
+                "b": ["a", "b"],
+            },
+        ),
+    ],
+)
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_join_different_join_key_types(join_type, expected, repartition_nparts, make_df, with_morsel_size):
+    left_df = make_df(
+        {"a": [1, 2, 3, 4, 5, 6], "b": ["a", "b", "c", "d", "e", "f"]},
+        repartition=repartition_nparts,
+        repartition_columns=["a"],
+    )
+
+    right_df = make_df(
+        {"c": [1.0, 1.0, 1.5, 2.0, 2.1, 2.5], "d": ["g", "h", "i", "j", "k", "l"]},
+        repartition=repartition_nparts,
+        repartition_columns=["c"],
+    )
+
+    result = left_df.join(right_df, left_on="a", right_on="c", how=join_type)
+
+    sort_by = ["a", "b", "c", "d"] if join_type in ["inner", "left", "right", "outer"] else ["a", "b"]
+
+    assert sort_arrow_table(pa.Table.from_pydict(result.to_pydict()), *sort_by) == sort_arrow_table(
+        pa.Table.from_pydict(expected), *sort_by
+    )
