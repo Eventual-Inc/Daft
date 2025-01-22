@@ -82,15 +82,15 @@ theme:
       name: Switch to light mode
   - media: "(prefers-color-scheme: light)"
     scheme: default
-    primary: indigo
-    accent: indigo
+    primary: custom
+    accent: custom
     toggle:
       icon: material/weather-night
       name: Switch to dark mode
   - media: "(prefers-color-scheme: dark)"
     scheme: slate
     primary: black
-    accent: indigo
+    accent: custom
     toggle:
       icon: material/theme-light-dark
       name: Switch to system preference

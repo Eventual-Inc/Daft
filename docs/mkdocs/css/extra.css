@@ -11,4 +11,13 @@
     border: .05rem solid var(--md-default-bg-color--lighter);
     border-radius: .1rem;
     content: "/";
-  }
+}
+
+:root {
+  --md-primary-fg-color: #532687;
+  --md-accent-fg-color: #ad9fff;
+}
+
+[data-md-color-scheme=slate][data-md-color-primary=black] {
+  --md-typeset-a-color: #7862FF;
+}
