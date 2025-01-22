@@ -4,6 +4,7 @@ mod tests;
 
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     sync::Arc,
 };
 
@@ -688,19 +689,79 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    /// Async equivalent of `optimize`
+    /// This is safe to call from a tokio runtime
+    pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
+        let cfg = self.config.clone();
+
+        // Run LogicalPlan optimizations
+        let unoptimized_plan = self.build();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        std::thread::spawn(move || {
+            let optimizer = OptimizerBuilder::default()
+                .when(
+                    cfg.as_ref()
+                        .map_or(false, |conf| conf.enable_join_reordering),
+                    |builder| builder.reorder_joins(),
+                )
+                .simplify_expressions()
+                .build();
+
+            let optimized_plan = optimizer.optimize(
+                unoptimized_plan,
+                |new_plan, rule_batch, pass, transformed, seen| {
+                    if transformed {
+                        log::debug!(
+                            "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
+                            rule_batch,
+                            pass,
+                            if seen { "an already seen" } else { "a new" },
+                            new_plan.repr_ascii(true),
+                        );
+                    } else {
+                        log::debug!(
+                            "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
+                            rule_batch,
+                            pass,
+                            new_plan.repr_ascii(true),
+                        );
+                    }
+                },
+            );
+            tx.send(optimized_plan).unwrap();
+        });
+
+        let cfg = self.config.clone();
+        async move {
+            rx.await
+                .map_err(|e| {
+                    DaftError::InternalError(format!("Error optimizing logical plan: {:?}", e))
+                })?
+                .map(|plan| Self::new(plan, cfg))
+        }
+    }
+
+    /// optimize the logical plan
+    ///
+    /// **Important**: Do not call this method from the main thread as there is a `block_on` call deep within this method
+    /// Calling will result in a runtime panic
     pub fn optimize(&self) -> DaftResult<Self> {
+        // TODO: remove the `block_on` to make this method safe to call from the main thread
+
+        let cfg = self.config.clone();
+
+        let unoptimized_plan = self.build();
+
         let optimizer = OptimizerBuilder::default()
             .when(
-                self.config
-                    .as_ref()
+                cfg.as_ref()
                     .map_or(false, |conf| conf.enable_join_reordering),
                 |builder| builder.reorder_joins(),
             )
             .simplify_expressions()
             .build();
 
-        // Run LogicalPlan optimizations
-        let unoptimized_plan = self.build();
         let optimized_plan = optimizer.optimize(
             unoptimized_plan,
             |new_plan, rule_batch, pass, transformed, seen| {
@@ -723,7 +784,7 @@ impl LogicalPlanBuilder {
             },
         )?;
 
-        let builder = Self::new(optimized_plan, self.config.clone());
+        let builder = Self::new(optimized_plan, cfg);
         Ok(builder)
     }
 

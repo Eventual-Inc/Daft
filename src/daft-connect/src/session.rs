@@ -3,7 +3,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use common_runtime::RuntimeRef;
 use daft_catalog::DaftCatalog;
+use daft_local_execution::NativeExecutor;
 use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use uuid::Uuid;
 
@@ -19,6 +21,8 @@ pub struct Session {
     /// MicroPartitionSet associated with this session
     /// this will be filled up as the user runs queries
     pub(crate) psets: Arc<InMemoryPartitionSetCache>,
+    pub(crate) compute_runtime: RuntimeRef,
+    pub(crate) engine: Arc<NativeExecutor>,
     pub(crate) catalog: Arc<RwLock<DaftCatalog>>,
 }
 
@@ -34,11 +38,15 @@ impl Session {
     pub fn new(id: String) -> Self {
         let server_side_session_id = Uuid::new_v4();
         let server_side_session_id = server_side_session_id.to_string();
+        let rt = common_runtime::get_compute_runtime();
+
         Self {
             config_values: Default::default(),
             id,
             server_side_session_id,
             psets: Arc::new(InMemoryPartitionSetCache::empty()),
+            compute_runtime: rt.clone(),
+            engine: Arc::new(NativeExecutor::default().with_runtime(rt.runtime.clone())),
             catalog: Arc::new(RwLock::new(DaftCatalog::default())),
         }
     }

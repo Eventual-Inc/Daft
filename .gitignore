@@ -46,3 +46,6 @@ docs/site/
 
 # helix editor
 .helix
+
+# uv
+uv.lock

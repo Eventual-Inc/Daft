@@ -31,7 +31,7 @@ services:
     - mysql_data:/var/lib/mysql
 
   azuresqledge:
-    image: mcr.microsoft.com/azure-sql-edge
+    image: mcr.microsoft.com/azure-sql-edge:2.0.0
     container_name: azuresqledge
     environment:
       ACCEPT_EULA: "Y"
