@@ -137,11 +137,11 @@ Take a look at the many issues tagged with `good first issue` in our repo. If th
 
 <!-- ## Frequently Asked Questions
 
-!!! failure "todo(docs): Add answers to each and more questions if necessary"
+todo(docs - jay): Add answers to each and more questions if necessary
 
 ??? quote "What does Daft do well? (or What should I use Daft for?)"
 
-    !!! failure "todo(docs): this is from 10 min quickstart, filler answer for now"
+    todo(docs): this is from 10 min quickstart, filler answer for now
 
     Daft is the right tool for you if you are working with:
 

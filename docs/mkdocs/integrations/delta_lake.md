@@ -123,6 +123,6 @@ Here are Delta Lake features that are on our roadmap. Please let us know if you 
 
 3. Writing new Delta Lake tables ([issue](https://github.com/Eventual-Inc/Daft/issues/1967)).
 
-!!! failure "todo(docs): ^ this needs to be updated, issue is already closed"
+<!-- todo(docs - jay): ^ this needs to be updated, issue is already closed -->
 
 4. Writing back to an existing table with appends, overwrites, upserts, or deletes ([issue](https://github.com/Eventual-Inc/Daft/issues/1968)).

@@ -1,6 +1,6 @@
 # Architecture
 
-!!! failure "todo(docs): Add information about where Daft fits into the ecosystem or architecture of a system"
+<!-- todo(docs - jay): Add information about where Daft fits into the ecosystem or architecture of a system -->
 
 
 ## High Level Overview

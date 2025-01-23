@@ -1,15 +1,8 @@
 # Core Concepts
 
-!!! failure "todo(docs): Created a mega Core Concepts page to improve user journey. Right now `toc_depth=3` for visibility into subheadings, but are there now too many subheadings? Can we combine/condense some sections? My concern is that `toc_depth=2` is not informative unless we turn off `toc.integrate` and have a right-hand menu for all the subheadings."
-
 Learn about the core concepts that Daft is built on!
 
 ## DataFrame
-
-!!! failure "todo(docs): Check that this page makes sense. Can we have a 1-1 mapping of "Common data operations that you would perform on DataFrames are: ..." to its respective section?"
-
-!!! failure "todo(docs): I reused some of these sections in the Quickstart (create df, execute df and view data, select rows, select columns) but the examples in the quickstart are different. Should we still keep those sections on this page?"
-
 
 If you are coming from other DataFrame libraries such as Pandas or Polars, here are some key differences about Daft DataFrames:
 
@@ -1404,7 +1397,7 @@ The [`.dt.truncate()`]({{ api_path }}/expression_methods/daft.Expression.dt.trun
 ╰───────────────────────────────┴───────────────────────────────╯
 ```
 
-!!! failure "todo(docs): Should this section also have sql examples?"
+<!-- todo(docs - jay): Should this section also have sql examples? -->
 
 Daft can read data from a variety of sources, and write data to many destinations.
 
@@ -2247,13 +2240,11 @@ Now you're ready to call this function on the `urls` column and store the output
     classified_images_df.select("dog_name", "image", "classify_breed").show()
     ```
 
-!!! failure "todo(docs): Insert table of dog urls? or new UDF example?"
+<!-- todo(docs - jay): Insert table of dog urls? or new UDF example? This was from the original 10-min quickstart with multimodal -->
 
 ## Multimodal Data
 
 Daft is built to work comfortably with multimodal data types, including URLs and images. You can use the [`url.download()`]({{ api_path }}/expression_methods/daft.Expression.url.download.html) expression to download the bytes from a URL. Let’s store them in a new column using the `with_column` method:
-
-!!! failure "todo(docs): This example is originally from 10min quickstart"
 
 === "🐍 Python"
 
@@ -2284,8 +2275,6 @@ Let’s turn the bytes into human-readable images using [`image.decode()`]({{ ap
     df_family = df_family.with_column("image", daft.col("image_bytes").image.decode())
     df_family.show()
     ```
-
-!!! failure "todo(docs): This example is originally from 10min quickstart. Insert dog images or create new example?"
 
 ## What's Next?
 

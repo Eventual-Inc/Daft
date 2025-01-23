@@ -1,13 +1,12 @@
 # Quickstart
 
-!!! failure "todo(docs): Are there too many sections?"
+<!--
+todo(docs - jay): Incorporate SQL examples
 
-!!! failure "todo(docs): Incorporate SQL examples"
+todo(docs): Add link to notebook to DIY (notebook is in mkdocs dir, but idk how to host on colab)
 
-!!! failure "todo(docs): Add link to notebook to DIY (notebook is in mkdocs dir, but idk how to host on colab)."
-
-!!! failure "todo(docs): What does the actual output look like for some of these examples?"
-
+todo(docs): What does the actual output look like for some of these examples? should we update it visually?
+-->
 
 In this quickstart, you will learn the basics of Daft's DataFrame and SQL API and the features that set it apart from frameworks like Pandas, PySpark, Dask, and Ray.
 
@@ -26,8 +25,6 @@ You can install Daft using `pip`. Run the following command in your terminal or 
 For more advanced installation options, please see [Installation](install.md).
 
 ## Create Your First Daft DataFrame
-
-!!! failure "todo(docs): Simplify this example, take from "dataframe" section, but will they be too similar now?"
 
 See also [DataFrame Creation](api_docs/creation.html#df-input-output). Let's create a DataFrame from a dictionary of columns:
 
@@ -82,7 +79,7 @@ Daft supports both local paths as well as paths to object storage such as AWS S3
 
 Let’s read in a Parquet file from a public S3 bucket. Note that this Parquet file is partitioned on the column `country`. This will be important later on.
 
-!!! failure "todo(docs): SQL equivalent?"
+<!-- todo(docs - jay): SQL equivalent? -->
 
 
 === "🐍 Python"
@@ -114,7 +111,7 @@ Daft DataFrames are **lazy** by default. This means that the contents will not b
 
 The file we have just loaded only has 5 rows. You can materialize the whole DataFrame in memory easily using the [`df.collect()`]({{ api_path }}/dataframe_methods/daft.DataFrame.collect.html) method:
 
-!!! failure "todo(docs): How does SQL materialize the DataFrame?"
+<!-- todo(docs - jay): How does SQL materialize the DataFrame? -->
 
 === "🐍 Python"
 
@@ -163,7 +160,7 @@ Now let's take a look at some common DataFrame operations.
 
 ## Select Columns
 
-!!! failure "todo(docs): SQL equivalent?"
+<!-- todo(docs - jay): SQL equivalent? -->
 
 You can **select** specific columns from your DataFrame with the [`df.select()`]({{ api_path }}/dataframe_methods/daft.DataFrame.select.html) method:
 
