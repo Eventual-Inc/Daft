@@ -14,4 +14,5 @@ markdown-exec
 mkdocs-jupyter
 mkdocs-material
 mkdocs-macros-plugin
+mkdocs-simple-hooks
 pymdown-extensions
