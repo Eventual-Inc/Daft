@@ -31,12 +31,6 @@ log/
 # pytest benchmarks
 .benchmarks
 
-# docs autogen
-docs/source/doc_gen/
-docs/sphinx/_build/
-docs/sphinx/source/doc_gen/
-docs/site/
-
 # Added by pyenv
 .python-version
 
