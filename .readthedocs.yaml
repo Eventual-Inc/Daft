@@ -9,17 +9,12 @@ build:
     pre_build:
     - VIRTUAL_ENV=${READTHEDOCS_VIRTUALENV_PATH} make VENV=${READTHEDOCS_VIRTUALENV_PATH} build
 
-    pre_install:
-    - pip install -r requirements-docs.txt
+python:
+  install:
+    - requirements: requirements-docs.txt
 
 mkdocs:
   configuration: docs/mkdocs.yml
 
 formats:
 - htmlzip
-
-python:
-  install:
-  - method: pip
-    path: .
-  - requirements: requirements-docs.txt
