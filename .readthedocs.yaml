@@ -12,8 +12,11 @@ build:
     pre_install:
       - pip install -r requirements-docs.txt
 
-formats:
-- htmlzip
-
 mkdocs:
   configuration: mkdocs.yml
+
+sphinx:
+  configuration: docs/source/conf.py
+
+formats:
+- htmlzip
