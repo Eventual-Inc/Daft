@@ -12,10 +12,10 @@ impl NaiveLeftDeepJoinOrderer {
             return current_order;
         }
         for (index, candidate_node_id) in available.iter().enumerate() {
-            let right = JoinOrderTree::Relation(*candidate_node_id);
+            let right = JoinOrderTree::Relation(*candidate_node_id, 0);
             let connections = graph.adj_list.get_connections(&current_order, &right);
             if !connections.is_empty() {
-                let new_order = current_order.join(right, connections);
+                let new_order = current_order.join(right, connections, 0);
                 available.remove(index);
                 return Self::extend_order(graph, new_order, available);
             }
@@ -28,7 +28,7 @@ impl JoinOrderer for NaiveLeftDeepJoinOrderer {
     fn order(&self, graph: &JoinGraph) -> JoinOrderTree {
         let available: Vec<usize> = (1..graph.adj_list.max_id).collect();
         // Take a starting order of the node with id 0.
-        let starting_order = JoinOrderTree::Relation(0);
+        let starting_order = JoinOrderTree::Relation(0, 0);
         Self::extend_order(graph, starting_order, available)
     }
 }

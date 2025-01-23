@@ -48,7 +48,7 @@ impl BruteForceJoinOrderer {
                 .expect("Got non-existent ID in join graph");
             let stats = plan.materialized_stats();
             let cost = stats.approx_stats.num_rows;
-            return Some((cost, JoinOrderTree::Relation(id)));
+            return Some((cost, JoinOrderTree::Relation(id, cost)));
         }
         let max_left_size = available.len() / 2;
         let mut min_cost = None;
@@ -66,28 +66,34 @@ impl BruteForceJoinOrderer {
                         .adj_list
                         .get_connections(&left_join_order_tree, &right_join_order_tree);
                     if !connections.is_empty() {
-                        // TODO(desmond): This is a hack to get the total domain of the join. Technically, we should
-                        // take the product of total domains from the minimum spanning tree of equivalence relations.
-                        let mut total_domains = connections
+                        // TODO(desmond): This is a hack to get the selectivity of the join.
+                        // We should eventually take the product of the largest total domains that
+                        // form a minimum spanning tree of the relations.
+                        let denominator = connections
                             .iter()
                             .map(|conn| conn.total_domain)
-                            .collect::<Vec<_>>();
-                        total_domains.sort_unstable_by(|a, b| b.cmp(a));
-                        let denominator: usize =
-                            total_domains.iter().take(connections.len()).product();
-                        let cur_cost =
-                            (left_cost * right_cost / denominator) + left_cost + right_cost;
+                            .max()
+                            .expect("There should be at least one total domain");
+                        let cardinality = left_join_order_tree.get_cardinality()
+                            * right_join_order_tree.get_cardinality()
+                            / denominator;
+                        let cur_cost = cardinality + left_cost + right_cost;
                         if let Some(cur_min_cost) = min_cost {
                             if cur_min_cost > cur_cost {
                                 min_cost = Some(cur_cost);
-                                chosen_plan = Some(
-                                    left_join_order_tree.join(right_join_order_tree, connections),
-                                );
+                                chosen_plan = Some(left_join_order_tree.join(
+                                    right_join_order_tree,
+                                    connections,
+                                    cardinality,
+                                ));
                             }
                         } else {
                             min_cost = Some(cur_cost);
-                            chosen_plan =
-                                Some(left_join_order_tree.join(right_join_order_tree, connections));
+                            chosen_plan = Some(left_join_order_tree.join(
+                                right_join_order_tree,
+                                connections,
+                                cardinality,
+                            ));
                         }
                     }
                 }
@@ -191,17 +197,17 @@ mod tests {
             ("region", 1),
             ("nation", 25),
             ("customer", 1_500_000),
-            ("orders", 3_750_000),
+            ("orders", 3_000_000),
             ("lineitem", 60_000_000),
             ("supplier", 100_000),
         ];
         let edges = vec![
-            (0, 1, 1),         // region <-> nation
-            (1, 2, 25),        // nation <-> customer
-            (2, 3, 1_500_000), // customer <-> orders
-            (3, 4, 3_750_000), // orders <-> lineitem
-            (4, 5, 1),         // lineitem <-> supplier
-            (5, 1, 25),        // supplier <-> nation
+            (0, 1, 5),          // region <-> nation
+            (1, 2, 25),         // nation <-> customer
+            (2, 3, 1_500_000),  // customer <-> orders
+            (3, 4, 15_000_000), // orders <-> lineitem
+            (4, 5, 100_000),    // lineitem <-> supplier
+            (5, 1, 25),         // supplier <-> nation
         ];
         create_and_test_join_graph!(nodes, edges, BruteForceJoinOrderer {});
     }

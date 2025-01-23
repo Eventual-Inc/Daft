@@ -21,28 +21,40 @@ use crate::{
 /// TODO(desmond): In the future these trees should keep track of current cost estimates.
 #[derive(Clone, Debug)]
 pub(super) enum JoinOrderTree {
-    Relation(usize),                                                  // (ID).
-    Join(Box<JoinOrderTree>, Box<JoinOrderTree>, Vec<JoinCondition>), // (subtree, subtree, join conditions).
+    Relation(usize, usize), // (ID, cardinality).
+    Join(
+        Box<JoinOrderTree>,
+        Box<JoinOrderTree>,
+        Vec<JoinCondition>,
+        usize,
+    ), // (subtree, subtree, join conditions, cardinality).
 }
 
 impl JoinOrderTree {
-    pub(super) fn join(self, right: Self, conds: Vec<JoinCondition>) -> Self {
-        Self::Join(Box::new(self), Box::new(right), conds)
+    pub(super) fn join(self, right: Self, conds: Vec<JoinCondition>, card: usize) -> Self {
+        Self::Join(Box::new(self), Box::new(right), conds, card)
     }
 
     // Helper function that checks if the join order tree contains a given id.
     #[cfg(test)]
     pub(super) fn contains(&self, target_id: usize) -> bool {
         match self {
-            Self::Relation(id) => *id == target_id,
-            Self::Join(left, right, _) => left.contains(target_id) || right.contains(target_id),
+            Self::Relation(id, ..) => *id == target_id,
+            Self::Join(left, right, ..) => left.contains(target_id) || right.contains(target_id),
         }
     }
 
     fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
         match self {
-            Self::Relation(id) => Box::new(std::iter::once(*id)),
-            Self::Join(left, right, _) => Box::new(left.iter().chain(right.iter())),
+            Self::Relation(id, ..) => Box::new(std::iter::once(*id)),
+            Self::Join(left, right, ..) => Box::new(left.iter().chain(right.iter())),
+        }
+    }
+
+    pub(super) fn get_cardinality(&self) -> usize {
+        match self {
+            Self::Relation(_, cardinality) => *cardinality,
+            Self::Join(_, _, _, cardinality) => *cardinality,
         }
     }
 }
@@ -278,7 +290,7 @@ impl JoinGraph {
         join_order: &JoinOrderTree,
     ) -> DaftResult<LogicalPlanBuilder> {
         match join_order {
-            JoinOrderTree::Relation(id) => {
+            JoinOrderTree::Relation(id, ..) => {
                 let relation = self
                     .adj_list
                     .id_to_plan
@@ -286,7 +298,7 @@ impl JoinGraph {
                     .expect("Join order contains non-existent plan id 1");
                 Ok(LogicalPlanBuilder::from(relation.clone()))
             }
-            JoinOrderTree::Join(left_tree, right_tree, conds) => {
+            JoinOrderTree::Join(left_tree, right_tree, conds, _) => {
                 let left_builder = self.build_joins_from_join_order(left_tree)?;
                 let right_builder = self.build_joins_from_join_order(right_tree)?;
                 let mut left_cols = vec![];
