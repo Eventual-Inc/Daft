@@ -175,8 +175,8 @@ impl Schema {
         res.push_str("<thead><tr>");
 
         // Add header for column name and type
-        res.push_str("<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">Column Name</th>");
-        res.push_str("<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">Type</th>");
+        res.push_str("<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">column</th>");
+        res.push_str("<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">type</th>");
 
         // End the header.
         res.push_str("</tr></thead>\n");

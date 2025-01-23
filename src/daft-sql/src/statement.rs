@@ -1,4 +1,4 @@
-use daft_logical_plan::LogicalPlanRef;
+use daft_logical_plan::LogicalPlanBuilder;
 use sqlparser::ast;
 
 use crate::{error::SQLPlannerResult, unsupported_sql_err, SQLPlanner};
@@ -9,7 +9,7 @@ impl<'a> SQLPlanner<'a> {
     pub(crate) fn plan_statement(
         &mut self,
         statement: &ast::Statement,
-    ) -> SQLPlannerResult<LogicalPlanRef> {
+    ) -> SQLPlannerResult<LogicalPlanBuilder> {
         match statement {
             ast::Statement::Query(query) => self.plan_select(query),
             ast::Statement::Explain {
@@ -30,24 +30,24 @@ impl<'a> SQLPlanner<'a> {
                 *has_table_keyword,
                 table_name,
             ),
-            other => unsupported_sql_err!("{}", other),
+            other => unsupported_sql_err!("unsupported statement, {}", other),
         }
     }
 
     /// SELECT ...
-    fn plan_select(&mut self, query: &ast::Query) -> SQLPlannerResult<LogicalPlanRef> {
-        Ok(self.plan_query(query)?.build())
+    fn plan_select(&mut self, query: &ast::Query) -> SQLPlannerResult<LogicalPlanBuilder> {
+        self.plan_query(query)
     }
 
     /// DESCRIBE <statement>
     fn plan_describe(
-        &self,
+        &mut self,
         describe_alias: &ast::DescribeAlias,
         analyze: bool,
         verbose: bool,
-        _statement: &ast::Statement,
+        statement: &ast::Statement,
         format: &Option<ast::AnalyzeFormat>,
-    ) -> SQLPlannerResult<LogicalPlanRef> {
+    ) -> SQLPlannerResult<LogicalPlanBuilder> {
         // err on `DESC | EXPLAIN`
         if *describe_alias != ast::DescribeAlias::Describe {
             unsupported_sql_err!(
@@ -59,17 +59,18 @@ impl<'a> SQLPlanner<'a> {
         if analyze || verbose || format.is_some() {
             unsupported_sql_err!("DESCRIBE ( options.. ) is not supported")
         }
-        unsupported_sql_err!("DESCRIBE <statement> is not supported")
+        // plan statement and .describe()
+        Ok(self.plan_statement(statement)?.describe()?)
     }
 
-    /// DESCRIBE TABLE <table>
+    /// DESCRIBE <table>
     fn plan_describe_table(
         &self,
         describe_alias: &ast::DescribeAlias,
         hive_format: &Option<ast::HiveDescribeFormat>,
         has_table_keyword: bool,
         table_name: &ast::ObjectName,
-    ) -> SQLPlannerResult<LogicalPlanRef> {
+    ) -> SQLPlannerResult<LogicalPlanBuilder> {
         // err on `DESC | EXPLAIN`
         if *describe_alias != ast::DescribeAlias::Describe {
             unsupported_sql_err!(
@@ -86,8 +87,6 @@ impl<'a> SQLPlanner<'a> {
             unsupported_sql_err!("DESCRIBE TABLE is not supported, did you mean DESCRIBE?")
         }
         // resolve table and .describe()
-        let rel = self.plan_relation_table(table_name)?;
-        let res = rel.inner.describe()?.build();
-        Ok(res)
+        Ok(self.plan_relation_table(table_name)?.inner.describe()?)
     }
 }

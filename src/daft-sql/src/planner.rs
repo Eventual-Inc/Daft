@@ -206,16 +206,21 @@ impl<'a> SQLPlanner<'a> {
             })
             .with_tokens(tokens);
 
+        // currently only allow one statement
         let statements = parser.parse_statements()?;
+        if statements.len() > 1 {
+            unsupported_sql_err!(
+                "Only exactly one SQL statement allowed, found {}",
+                statements.len()
+            )
+        }
 
-        let plan = match statements.len() {
-            1 => Ok(self.plan_statement(&statements[0])?),
-            other => {
-                unsupported_sql_err!("Only exactly one SQL statement allowed, found {}", other)
-            }
-        };
+        // plan single statement
+        let stmt = &statements[0];
+        let plan = self.plan_statement(stmt)?.build();
         self.clear_context();
-        plan
+
+        Ok(plan)
     }
 
     pub(crate) fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {

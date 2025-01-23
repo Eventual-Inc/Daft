@@ -27,14 +27,32 @@ def assert_eq(df1, df2):
     assert df1.collect().to_pydict() == df2.collect().to_pydict()
 
 
-def test_describe():
+def test_describe_table():
     actual_df = daft.sql("DESCRIBE df")
     expect_df = df.describe()
     assert_eq(actual_df, expect_df)
 
 
 @pytest.mark.skip("DESCRIBE TABLE syntax not supported")
-def test_describe_table():
+def test_describe_table_with_keyword():
     actual_df = daft.sql("DESCRIBE TABLE df")
     expect_df = df.describe()
+    assert_eq(actual_df, expect_df)
+
+
+def test_describe_select_all():
+    actual_df = daft.sql("DESCRIBE SELECT * FROM df")
+    expect_df = df.describe()
+    assert_eq(actual_df, expect_df)
+
+
+def test_describe_select_one():
+    actual_df = daft.sql("DESCRIBE SELECT integers FROM df")
+    expect_df = df.select("integers").describe()
+    assert_eq(actual_df, expect_df)
+
+
+def test_describe_select_some():
+    actual_df = daft.sql("DESCRIBE SELECT integers, floats, bools FROM df")
+    expect_df = df.select("integers", "floats", "bools").describe()
     assert_eq(actual_df, expect_df)
