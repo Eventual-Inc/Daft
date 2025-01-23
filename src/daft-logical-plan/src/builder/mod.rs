@@ -18,7 +18,6 @@ use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{col, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
-use pyo3::intern;
 #[cfg(feature = "python")]
 pub use resolve_expr::py_check_column_name_validity;
 use resolve_expr::ExprResolver;
@@ -29,6 +28,7 @@ use {
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
+    pyo3::intern,
     pyo3::prelude::*,
 };
 
