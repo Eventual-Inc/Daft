@@ -7,7 +7,7 @@ use super::{ArrayWrapper, IntoSeries, Series};
 use crate::datatypes::PythonArray;
 use crate::{
     array::{
-        ops::{broadcast::Broadcastable, DaftListAggable, GroupIndices},
+        ops::{broadcast::Broadcastable, DaftListAggable, DaftSetAggable, GroupIndices},
         prelude::*,
         DataArray,
     },
@@ -163,9 +163,15 @@ macro_rules! impl_series_like_for_data_array {
             fn agg_set(
                 &self,
                 groups: Option<&GroupIndices>,
-                _include_nulls: bool,
+                include_nulls: bool,
             ) -> DaftResult<Series> {
-                self.agg_list(groups)
+                match groups {
+                    Some(groups) => Ok(self
+                        .0
+                        .grouped_distinct(groups, include_nulls)?
+                        .into_series()),
+                    None => Ok(self.0.distinct(include_nulls)?.into_series()),
+                }
             }
         }
     };

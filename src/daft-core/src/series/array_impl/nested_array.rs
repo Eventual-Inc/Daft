@@ -5,7 +5,7 @@ use common_error::{DaftError, DaftResult};
 use super::ArrayWrapper;
 use crate::{
     array::{
-        ops::{broadcast::Broadcastable, DaftIsNull, DaftNotNull, GroupIndices},
+        ops::{broadcast::Broadcastable, DaftIsNull, DaftNotNull, DaftSetAggable, GroupIndices},
         FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{BooleanArray, DataType, Field},
@@ -73,9 +73,15 @@ macro_rules! impl_series_like_for_nested_arrays {
             fn agg_set(
                 &self,
                 groups: Option<&GroupIndices>,
-                _include_nulls: bool,
+                include_nulls: bool,
             ) -> DaftResult<Series> {
-                self.agg_list(groups)
+                match groups {
+                    Some(groups) => Ok(self
+                        .0
+                        .grouped_distinct(groups, include_nulls)?
+                        .into_series()),
+                    None => Ok(self.0.distinct(include_nulls)?.into_series()),
+                }
             }
 
             fn broadcast(&self, num: usize) -> DaftResult<Series> {

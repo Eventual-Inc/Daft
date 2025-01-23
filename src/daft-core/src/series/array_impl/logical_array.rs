@@ -169,9 +169,21 @@ macro_rules! impl_series_like_for_logical_array {
             fn agg_set(
                 &self,
                 groups: Option<&GroupIndices>,
-                _include_nulls: bool,
+                include_nulls: bool,
             ) -> DaftResult<Series> {
-                self.agg_list(groups)
+                use crate::array::ops::DaftSetAggable;
+                let data_array = match groups {
+                    Some(groups) => self.0.physical.grouped_distinct(groups, include_nulls)?,
+                    None => self.0.physical.distinct(include_nulls)?,
+                };
+                let new_field = self.field().to_list_field()?;
+                Ok(ListArray::new(
+                    new_field,
+                    data_array.flat_child.cast(self.data_type())?,
+                    data_array.offsets().clone(),
+                    data_array.validity().cloned(),
+                )
+                .into_series())
             }
         }
     };
