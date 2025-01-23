@@ -151,6 +151,8 @@ impl JoinOrderer for BruteForceJoinOrderer {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_schema::{dtype::DataType, field::Field};
@@ -224,6 +226,33 @@ mod tests {
         };
     }
 
+    fn node_to_id_map(nodes: Vec<(&str, usize)>) -> HashMap<String, usize> {
+        nodes
+            .into_iter()
+            .enumerate()
+            .map(|(id, (name, _))| (name.to_string(), id))
+            .collect()
+    }
+
+    #[test]
+    fn test_brute_force_order_minimal() {
+        let nodes = vec![("medium", 1_000), ("large", 50_000), ("small", 500)];
+        let name_to_id = node_to_id_map(nodes.clone());
+        let edges = vec![
+            (name_to_id["medium"], name_to_id["large"], 1_000),
+            (name_to_id["large"], name_to_id["small"], 500),
+            (name_to_id["medium"], name_to_id["small"], 500),
+        ];
+        let optimal_order = test_join(
+            test_relation(name_to_id["large"]),
+            test_join(
+                test_relation(name_to_id["medium"]),
+                test_relation(name_to_id["small"]),
+            ),
+        );
+        create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
+    }
+
     #[test]
     fn test_brute_force_order_mock_tpch_q5() {
         let nodes = vec![
@@ -234,25 +263,115 @@ mod tests {
             ("lineitem", 60_000_000),
             ("supplier", 100_000),
         ];
+        let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (0, 1, 5),          // region <-> nation
-            (1, 2, 25),         // nation <-> customer
-            (2, 3, 1_500_000),  // customer <-> orders
-            (3, 4, 15_000_000), // orders <-> lineitem
-            (4, 5, 100_000),    // lineitem <-> supplier
-            (5, 1, 25),         // supplier <-> nation
+            (name_to_id["region"], name_to_id["nation"], 5),
+            (name_to_id["nation"], name_to_id["customer"], 25),
+            (name_to_id["customer"], name_to_id["orders"], 1_500_000),
+            (name_to_id["orders"], name_to_id["lineitem"], 15_000_000),
+            (name_to_id["lineitem"], name_to_id["supplier"], 100_000),
+            (name_to_id["supplier"], name_to_id["nation"], 25),
         ];
         let optimal_order = test_join(
-            test_relation(5),
+            test_relation(name_to_id["supplier"]),
             test_join(
-                test_relation(4),
+                test_relation(name_to_id["lineitem"]),
                 test_join(
-                    test_relation(3),
+                    test_relation(name_to_id["orders"]),
                     test_join(
-                        test_relation(2),
-                        test_join(test_relation(1), test_relation(0)),
+                        test_relation(name_to_id["customer"]),
+                        test_join(
+                            test_relation(name_to_id["nation"]),
+                            test_relation(name_to_id["region"]),
+                        ),
                     ),
                 ),
+            ),
+        );
+        create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
+    }
+
+    #[test]
+    fn test_brute_force_order_star_schema() {
+        let nodes = vec![
+            ("fact", 10_000_000),
+            ("dim1", 100),
+            ("dim2", 500),
+            ("dim3", 50),
+        ];
+        let name_to_id = node_to_id_map(nodes.clone());
+        let edges = vec![
+            (name_to_id["fact"], name_to_id["dim1"], 10_000), // Pretend there was a large filter on dim1.
+            (name_to_id["fact"], name_to_id["dim2"], 500),
+            (name_to_id["fact"], name_to_id["dim3"], 500), // Pretend there was a small filter on dim3.
+        ];
+        let optimal_order = test_join(
+            test_join(
+                test_join(
+                    test_relation(name_to_id["fact"]),
+                    test_relation(name_to_id["dim1"]),
+                ),
+                test_relation(name_to_id["dim3"]),
+            ),
+            test_relation(name_to_id["dim2"]),
+        );
+        create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
+    }
+
+    #[test]
+    fn test_brute_force_order_snowflake_schema() {
+        let nodes = vec![
+            ("fact", 50_000_000),
+            ("dim1", 50_000),
+            ("dim2", 500),
+            ("dim3", 500),
+            ("dim4", 25),
+        ];
+        let name_to_id = node_to_id_map(nodes.clone());
+        let edges = vec![
+            (name_to_id["fact"], name_to_id["dim1"], 500_000), // Pretend there was a filter on dim1.
+            (name_to_id["fact"], name_to_id["dim2"], 500),
+            (name_to_id["dim2"], name_to_id["dim3"], 500),
+            (name_to_id["dim2"], name_to_id["dim4"], 250), // Pretend there was a filter on dim4.
+        ];
+        let optimal_order = test_join(
+            test_relation(name_to_id["dim1"]),
+            test_join(
+                test_relation(name_to_id["fact"]),
+                test_join(
+                    test_relation(name_to_id["dim3"]),
+                    test_join(
+                        test_relation(name_to_id["dim2"]),
+                        test_relation(name_to_id["dim4"]),
+                    ),
+                ),
+            ),
+        );
+        create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
+    }
+
+    #[test]
+    fn test_brute_force_order_bushy_join() {
+        let nodes = vec![
+            ("table1", 10_000),
+            ("table2", 1_000_000),
+            ("table3", 10_000),
+            ("table4", 1_000_000),
+        ];
+        let name_to_id = node_to_id_map(nodes.clone());
+        let edges = vec![
+            (name_to_id["table1"], name_to_id["table2"], 10),
+            (name_to_id["table2"], name_to_id["table3"], 2),
+            (name_to_id["table3"], name_to_id["table4"], 20),
+        ];
+        let optimal_order = test_join(
+            test_join(
+                test_relation(name_to_id["table1"]),
+                test_relation(name_to_id["table2"]),
+            ),
+            test_join(
+                test_relation(name_to_id["table3"]),
+                test_relation(name_to_id["table4"]),
             ),
         );
         create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
