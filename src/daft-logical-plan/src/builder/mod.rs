@@ -370,6 +370,7 @@ impl LogicalPlanBuilder {
     }
 
     /// Creates a logical scan operator by collapsing the plan to just its schema.
+    #[cfg(feature = "python")]
     pub fn describe(&self) -> DaftResult<Self> {
         Python::with_gil(|py| {
             // schema = self.schema()
