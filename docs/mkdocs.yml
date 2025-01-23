@@ -7,9 +7,9 @@ site_name: Daft Documentation
 docs_dir: mkdocs
 
 # Scarf pixel for tracking analytics
-image:
-  referrerpolicy: "no-referrer-when-downgrade"
-  src: "https://static.scarf.sh/a.png?x-pxid=c9065f3a-a090-4243-8f69-145d5de7bfca"
+# image:
+#   referrerpolicy: "no-referrer-when-downgrade"
+#   src: "https://static.scarf.sh/a.png?x-pxid=c9065f3a-a090-4243-8f69-145d5de7bfca"
 
 
 # Repository
