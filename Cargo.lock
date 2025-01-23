@@ -2030,7 +2030,6 @@ dependencies = [
  "snafu",
  "spark-connect",
  "textwrap",
- "thiserror",
  "tokio",
  "tonic",
  "tracing",

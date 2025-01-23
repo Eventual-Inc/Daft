@@ -32,7 +32,6 @@ once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 spark-connect = {workspace = true}
 textwrap = "0.16.1"
-thiserror = {workspace = true}
 tokio = {version = "1.40.0", features = ["full"]}
 tonic = "0.12.3"
 tracing = {workspace = true}
