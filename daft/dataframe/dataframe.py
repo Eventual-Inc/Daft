@@ -1368,9 +1368,9 @@ class DataFrame:
         """Returns the Schema of the DataFrame, which provides information about each column, as a new DataFrame.
 
         Example:
-        >>> import daft
-        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
-        >>> df.describe().show()
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+            >>> df.describe().show()
             ╭────────┬───────╮
             │ column ┆ type  │
             │ ---    ┆ ---   │
@@ -1380,6 +1380,8 @@ class DataFrame:
             ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ b      ┆ Utf8  │
             ╰────────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
 
         Returns:
             DataFrame: A dataframe where each row is a column name and its corresponding type.
