@@ -105,7 +105,7 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
                 }
             };
 
-            let result = tokio::select! {
+            tokio::select! {
                 result = Server::builder()
                     .add_service(SparkConnectServiceServer::new(service))
                     .serve_with_incoming(incoming)=> {
@@ -115,9 +115,7 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
                     info!("Received shutdown signal");
                     Ok(())
                 }
-            };
-
-            result
+            }
         });
 
         if let Err(e) = result {

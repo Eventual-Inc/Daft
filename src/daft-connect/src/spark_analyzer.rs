@@ -146,7 +146,7 @@ impl SparkAnalyzer<'_> {
             RelType::Deduplicate(rel) => self.deduplicate(*rel).await,
             RelType::Sort(rel) => self.sort(*rel).await,
             RelType::Sql(sql) => self.sql(sql).await,
-            plan => not_yet_implemented!("relation type: \"{}\"", rel_name(&plan)),
+            plan => not_yet_implemented!(r#"relation type: "{}""#, rel_name(&plan)),
         }
     }
 
@@ -476,7 +476,6 @@ impl SparkAnalyzer<'_> {
             let chunk = match ss {
                 StreamState::Some(chunk) => chunk,
                 StreamState::Waiting => {
-
                     internal_err!("StreamReader is waiting for data, but a chunk was expected. This likely indicates that the spark provided data is incomplete.")
                 }
             };
