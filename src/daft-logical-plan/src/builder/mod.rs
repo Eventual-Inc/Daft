@@ -334,6 +334,10 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn summarize(&self) -> DaftResult<Self> {
+        todo!(".summarize()")
+    }
+
     pub fn hash_repartition(
         &self,
         num_partitions: Option<usize>,
@@ -942,6 +946,10 @@ impl PyLogicalPlanBuilder {
             .builder
             .sort(pyexprs_to_exprs(sort_by), descending, nulls_first)?
             .into())
+    }
+
+    pub fn summarize(&self) -> PyResult<Self> {
+        Ok(self.builder.summarize()?.into())
     }
 
     #[pyo3(signature = (partition_by, num_partitions=None))]

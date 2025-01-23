@@ -1457,6 +1457,16 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def summarize(self) -> "DataFrame":
+        """Returns column statistics for the DataFrame.
+
+        Returns:
+            DataFrame: new DataFrame with the computed column statistics.
+        """
+        builder = self._builder.summarize()
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def exclude(self, *names: str) -> "DataFrame":
         """Drops columns from the current DataFrame by name.
 

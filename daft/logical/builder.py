@@ -215,6 +215,10 @@ class LogicalPlanBuilder:
         builder = self._builder.sort(sort_by_pyexprs, descending, nulls_first)
         return LogicalPlanBuilder(builder)
 
+    def summarize(self) -> LogicalPlanBuilder:
+        builder = self._builder.summarize()
+        return LogicalPlanBuilder(builder)
+
     def hash_repartition(self, num_partitions: int | None, partition_by: list[Expression]) -> LogicalPlanBuilder:
         partition_by_pyexprs = [expr._expr for expr in partition_by]
         builder = self._builder.hash_repartition(partition_by_pyexprs, num_partitions=num_partitions)
