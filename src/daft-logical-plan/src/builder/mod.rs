@@ -395,6 +395,14 @@ impl LogicalPlanBuilder {
         })
     }
 
+    /// Creates a logical scan operator by collapsing the plan to just its schema.
+    #[cfg(not(feature = "python"))]
+    pub fn describe(&self) -> DaftResult<Self> {
+        Err(DaftError::InternalError(
+            ".describe() requires 'python' feature".to_string(),
+        ))
+    }
+
     pub fn distinct(&self) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
         Ok(self.with_new_plan(logical_plan))
