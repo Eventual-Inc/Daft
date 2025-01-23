@@ -21,6 +21,7 @@ log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
+typed-builder = {workspace = true}
 uuid = {version = "1", features = ["v4"]}
 
 [dev-dependencies]
@@ -39,6 +40,7 @@ python = [
   "common-io-config/python",
   "common-daft-config/python",
   "common-resource-request/python",
+  "common-partitioning/python",
   "common-scan-info/python",
   "daft-core/python",
   "daft-dsl/python",

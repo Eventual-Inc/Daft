@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use daft_dsl::{ExprRef, ExprResolver};
+use daft_dsl::{exprs_to_schema, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
-use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{self, CreationSnafu},
+    logical_plan::{self},
     stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
@@ -26,35 +25,23 @@ impl Explode {
         input: Arc<LogicalPlan>,
         to_explode: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
-        let upstream_schema = input.schema();
-
-        let expr_resolver = ExprResolver::default();
-
-        let (to_explode, _) = expr_resolver
-            .resolve(to_explode, &upstream_schema)
-            .context(CreationSnafu)?;
-
-        let explode_exprs = to_explode
-            .iter()
-            .cloned()
-            .map(daft_functions::list::explode)
-            .collect::<Vec<_>>();
         let exploded_schema = {
-            let explode_schema = {
-                let explode_fields = explode_exprs
-                    .iter()
-                    .map(|e| e.to_field(&upstream_schema))
-                    .collect::<common_error::DaftResult<Vec<_>>>()
-                    .context(CreationSnafu)?;
-                Schema::new(explode_fields).context(CreationSnafu)?
-            };
-            let fields = upstream_schema
+            let explode_exprs = to_explode
+                .iter()
+                .cloned()
+                .map(daft_functions::list::explode)
+                .collect::<Vec<_>>();
+
+            let explode_schema = exprs_to_schema(&explode_exprs, input.schema())?;
+
+            let fields = input
+                .schema()
                 .fields
                 .iter()
                 .map(|(name, field)| explode_schema.fields.get(name).unwrap_or(field))
                 .cloned()
                 .collect::<Vec<_>>();
-            Schema::new(fields).context(CreationSnafu)?.into()
+            Schema::new(fields)?.into()
         };
 
         Ok(Self {

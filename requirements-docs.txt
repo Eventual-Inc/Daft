@@ -1,0 +1,5 @@
+# not pinned at the moment
+markdown-exec
+mkdocs-jupyter
+mkdocs-material
+pymdown-extensions

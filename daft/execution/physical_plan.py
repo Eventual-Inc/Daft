@@ -1681,7 +1681,7 @@ def _best_effort_next_step(
         return (None, False)
     else:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output(stage_id=stage_id)
+            step = step.finalize_partition_task_single_output(stage_id=stage_id, cache_metadata_on_done=False)
             return (step, True)
         elif isinstance(step, PartitionTask):
             return (step, False)
@@ -1771,7 +1771,7 @@ class Materialize:
             try:
                 step = next(self.child_plan)
                 if isinstance(step, PartitionTaskBuilder):
-                    step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                    step = step.finalize_partition_task_single_output(stage_id=stage_id, cache_metadata_on_done=False)
                     self.materializations.append(step)
                     num_final_yielded += 1
                     logger.debug("[plan-%s] YIELDING final task (%s so far)", stage_id, num_final_yielded)

@@ -2,6 +2,8 @@ use daft_dsl::python::PyExpr;
 use daft_io::python::IOConfig;
 use pyo3::{exceptions::PyValueError, pyfunction, PyResult};
 
+use crate::uri::{self, download::UrlDownloadArgs, upload::UrlUploadArgs};
+
 #[pyfunction]
 pub fn url_download(
     expr: PyExpr,
@@ -15,15 +17,13 @@ pub fn url_download(
             "max_connections must be positive and non_zero: {max_connections}"
         )));
     }
-
-    Ok(crate::uri::download(
-        expr.into(),
+    let args = UrlDownloadArgs::new(
         max_connections as usize,
         raise_error_on_failure,
         multi_thread,
         Some(config.config),
-    )
-    .into())
+    );
+    Ok(uri::download(expr.into(), Some(args)).into())
 }
 
 #[pyfunction(signature = (
@@ -49,14 +49,12 @@ pub fn url_upload(
             "max_connections must be positive and non_zero: {max_connections}"
         )));
     }
-    Ok(crate::uri::upload(
-        expr.into(),
-        folder_location.into(),
+    let args = UrlUploadArgs::new(
         max_connections as usize,
         raise_error_on_failure,
         multi_thread,
         is_single_folder,
         io_config.map(|io_config| io_config.config),
-    )
-    .into())
+    );
+    Ok(uri::upload(expr.into(), folder_location.into(), Some(args)).into())
 }
