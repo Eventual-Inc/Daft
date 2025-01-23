@@ -44,7 +44,7 @@ use crate::{
     ensure,
     error::{ConnectError, ConnectResult, Context},
     functions::CONNECT_FUNCTIONS,
-    internal_err, invalid_argument_err, invalid_relation_err, not_yet_implemented,
+    internal_err, invalid_argument_err, not_yet_implemented,
     session::Session,
     util::FromOptionalField,
     Runner,
@@ -735,7 +735,7 @@ impl SparkAnalyzer<'_> {
                     not_yet_implemented!("Alias metadata: {metadata:?}");
                 }
 
-                let child = self.to_daft_expr(&*expr)?;
+                let child = self.to_daft_expr(expr)?;
 
                 let name = Arc::from(name.as_str());
 
@@ -752,7 +752,7 @@ impl SparkAnalyzer<'_> {
                     invalid_argument_err!("Cast expression is required");
                 };
 
-                let expr = self.to_daft_expr(&*expr)?;
+                let expr = self.to_daft_expr(expr)?;
 
                 let Some(cast_to_type) = cast_to_type else {
                     invalid_argument_err!("Cast to type is required");

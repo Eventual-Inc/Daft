@@ -86,7 +86,7 @@ impl From<ConnectError> for Status {
     fn from(value: ConnectError) -> Self {
         match value {
             ConnectError::TonicError { source } => source,
-            _ => Status::internal(value.to_string()),
+            _ => Self::internal(value.to_string()),
         }
     }
 }
@@ -100,12 +100,6 @@ impl<T> From<ConnectError> for Result<T, Status> {
 impl<T> From<ConnectError> for Result<T, ConnectError> {
     fn from(value: ConnectError) -> Self {
         Err(value)
-    }
-}
-
-impl<T> From<ConnectError> for Result<T, eyre::Error> {
-    fn from(value: ConnectError) -> Self {
-        eyre::Result::Err(eyre::eyre!(value))
     }
 }
 

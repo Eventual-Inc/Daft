@@ -13,7 +13,6 @@ use uuid::Uuid;
 
 use crate::{
     display::SparkDisplay,
-    error::ConnectError,
     invalid_argument_err, not_yet_implemented,
     response_builder::ResponseBuilder,
     session::Session,

@@ -68,8 +68,6 @@ impl ConnectionHandle {
 
 #[cfg(feature = "python")]
 pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
-    use snafu::whatever;
-
     info!("Daft-Connect server listening on {addr}");
     let addr = util::parse_spark_connect_address(addr).whatever_context("Invalid address")?;
 
@@ -126,7 +124,7 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
             eprintln!("Daft-Connect server error: {e:?}");
         }
 
-        eyre::Result::<_>::Ok(())
+        Ok::<_, error::ConnectError>(())
     });
 
     Ok(handle)
@@ -151,4 +149,3 @@ pub fn register_modules(parent: &pyo3::Bound<pyo3::types::PyModule>) -> pyo3::Py
     parent.add_class::<ConnectionHandle>()?;
     Ok(())
 }
- 

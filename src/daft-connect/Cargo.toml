@@ -1,68 +1,67 @@
 [dependencies]
-arrow2 = { workspace = true, features = ["io_json_integration"] }
+arrow2 = {workspace = true, features = ["io_json_integration"]}
 async-stream = "0.3.6"
-common-error = { workspace = true, optional = true, features = ["python"] }
-common-file-formats = { workspace = true, optional = true, features = [
-    "python",
-] }
-daft-catalog = { path = "../daft-catalog", optional = true, features = [
-    "python",
-] }
-daft-core = { workspace = true, optional = true, features = ["python"] }
-daft-dsl = { workspace = true, optional = true, features = ["python"] }
-daft-local-execution = { workspace = true, optional = true, features = [
-    "python",
-] }
-daft-logical-plan = { workspace = true, optional = true, features = ["python"] }
-daft-micropartition = { workspace = true, optional = true, features = [
-    "python",
-] }
-daft-ray-execution = { workspace = true, optional = true, features = [
-    "python",
-] }
-daft-scan = { workspace = true, optional = true, features = ["python"] }
-daft-schema = { workspace = true, optional = true, features = ["python"] }
-daft-sql = { workspace = true, optional = true, features = ["python"] }
-daft-table = { workspace = true, optional = true, features = ["python"] }
+common-error = {workspace = true, optional = true, features = ["python"]}
+common-file-formats = {workspace = true, optional = true, features = [
+  "python"
+]}
+common-runtime = {workspace = true}
+daft-catalog = {path = "../daft-catalog", optional = true, features = [
+  "python"
+]}
+daft-core = {workspace = true, optional = true, features = ["python"]}
+daft-dsl = {workspace = true, optional = true, features = ["python"]}
+daft-local-execution = {workspace = true, optional = true, features = [
+  "python"
+]}
+daft-logical-plan = {workspace = true, optional = true, features = ["python"]}
+daft-micropartition = {workspace = true, optional = true, features = [
+  "python"
+]}
+daft-ray-execution = {workspace = true, optional = true, features = [
+  "python"
+]}
+daft-scan = {workspace = true, optional = true, features = ["python"]}
+daft-schema = {workspace = true, optional = true, features = ["python"]}
+daft-sql = {workspace = true, optional = true, features = ["python"]}
+daft-table = {workspace = true, optional = true, features = ["python"]}
 dashmap = "6.1.0"
-eyre = "0.6.12"
 futures = "0.3.31"
-itertools = { workspace = true }
-once_cell = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-spark-connect = { workspace = true }
+itertools = {workspace = true}
+once_cell = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+spark-connect = {workspace = true}
 textwrap = "0.16.1"
-tokio = { version = "1.40.0", features = ["full"] }
+thiserror = {workspace = true}
+tokio = {version = "1.40.0", features = ["full"]}
 tonic = "0.12.3"
-tracing = { workspace = true }
-uuid = { version = "1.10.0", features = ["v4"] }
-common-runtime = { workspace = true }
-thiserror = { workspace = true }
+tracing = {workspace = true}
+uuid = {version = "1.10.0", features = ["v4"]}
 snafu.workspace = true
 
 [features]
 default = ["python"]
 python = [
-    "dep:pyo3",
-    "dep:common-error",
-    "dep:common-file-formats",
-    "dep:daft-core",
-    "dep:daft-dsl",
-    "dep:daft-local-execution",
-    "dep:daft-logical-plan",
-    "dep:daft-micropartition",
-    "dep:daft-ray-execution",
-    "dep:daft-scan",
-    "dep:daft-schema",
-    "dep:daft-sql",
-    "dep:daft-table",
-    "dep:daft-catalog",
+  "dep:pyo3",
+  "dep:common-error",
+  "dep:common-file-formats",
+  "dep:daft-core",
+  "dep:daft-dsl",
+  "dep:daft-local-execution",
+  "dep:daft-logical-plan",
+  "dep:daft-micropartition",
+  "dep:daft-ray-execution",
+  "dep:daft-scan",
+  "dep:daft-schema",
+  "dep:daft-sql",
+  "dep:daft-table",
+  "dep:daft-catalog"
 ]
 
 [lints]
 workspace = true
 
 [package]
-edition = { workspace = true }
+edition = {workspace = true}
 name = "daft-connect"
-version = { workspace = true }
+version = {workspace = true}
