@@ -18,7 +18,7 @@ mod functions;
 #[cfg(feature = "python")]
 mod display;
 #[cfg(feature = "python")]
-mod err;
+mod error;
 #[cfg(feature = "python")]
 mod execute;
 #[cfg(feature = "python")]
@@ -33,9 +33,9 @@ pub mod util;
 #[cfg(feature = "python")]
 use connect_service::DaftSparkConnectService;
 #[cfg(feature = "python")]
-use eyre::Context;
-#[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
+#[cfg(feature = "python")]
+use snafu::{ResultExt, Whatever};
 #[cfg(feature = "python")]
 use spark_connect::spark_connect_service_server::{SparkConnectService, SparkConnectServiceServer};
 #[cfg(feature = "python")]
@@ -67,12 +67,16 @@ impl ConnectionHandle {
 }
 
 #[cfg(feature = "python")]
-pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
+pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
     info!("Daft-Connect server listening on {addr}");
-    let addr = util::parse_spark_connect_address(addr)?;
+    let addr = util::parse_spark_connect_address(addr).whatever_context("Invalid address")?;
 
-    let listener = std::net::TcpListener::bind(addr)?;
-    let port = listener.local_addr()?.port();
+    let listener =
+        std::net::TcpListener::bind(addr).whatever_context("unable to bind to address")?;
+    let port = listener
+        .local_addr()
+        .whatever_context("no local_addr")?
+        .port();
 
     let service = DaftSparkConnectService::default();
 
@@ -89,8 +93,7 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
     std::thread::spawn(move || {
         let result = runtime.block_on_current_thread(async {
             let incoming = {
-                let listener = tokio::net::TcpListener::from_std(listener)
-                    .wrap_err("Failed to create TcpListener from std::net::TcpListener")?;
+                let listener = tokio::net::TcpListener::from_std(listener).expect("from_std");
 
                 async_stream::stream! {
                     loop {
@@ -102,7 +105,7 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
                 }
             };
 
-            let result = tokio::select! {
+            tokio::select! {
                 result = Server::builder()
                     .add_service(SparkConnectServiceServer::new(service))
                     .serve_with_incoming(incoming)=> {
@@ -112,16 +115,14 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
                     info!("Received shutdown signal");
                     Ok(())
                 }
-            };
-
-            result.wrap_err_with(|| format!("Failed to start server on {addr}"))
+            }
         });
 
         if let Err(e) = result {
             eprintln!("Daft-Connect server error: {e:?}");
         }
 
-        eyre::Result::<_>::Ok(())
+        Ok::<_, error::ConnectError>(())
     });
 
     Ok(handle)

@@ -22,7 +22,6 @@ use daft_sql::SQLPlanner;
 use daft_table::Table;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
-use eyre::{bail, ensure, Context};
 use itertools::zip_eq;
 use literal::to_daft_literal;
 use pyo3::{intern, prelude::*};
@@ -42,8 +41,13 @@ use spark_connect::{
 use tracing::debug;
 
 use crate::{
-    functions::CONNECT_FUNCTIONS, invalid_argument_err, not_yet_implemented, session::Session,
-    util::FromOptionalField, Runner,
+    ensure,
+    error::{ConnectError, ConnectResult, Context},
+    functions::CONNECT_FUNCTIONS,
+    internal_err, invalid_argument_err, not_yet_implemented,
+    session::Session,
+    util::FromOptionalField,
+    Runner,
 };
 
 #[derive(Clone)]
@@ -61,7 +65,7 @@ impl SparkAnalyzer<'_> {
         plan_id: usize,
         schema: Arc<Schema>,
         tables: Vec<Table>,
-    ) -> eyre::Result<LogicalPlanBuilder> {
+    ) -> ConnectResult<LogicalPlanBuilder> {
         let runner = self.session.get_runner()?;
 
         match runner {
@@ -84,7 +88,7 @@ impl SparkAnalyzer<'_> {
                     let py_plan_builder = py_plan_builder.getattr(intern!(py, "_builder"))?;
                     let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
 
-                    Ok::<_, eyre::Error>(dbg!(plan.builder))
+                    Ok::<_, ConnectError>(plan.builder)
                 })
             }
             Runner::Native => {
@@ -114,18 +118,14 @@ impl SparkAnalyzer<'_> {
         }
     }
 
-    pub async fn to_logical_plan(&self, relation: Relation) -> eyre::Result<LogicalPlanBuilder> {
-        let Some(common) = relation.common else {
-            bail!("Common metadata is required");
-        };
+    pub async fn to_logical_plan(&self, relation: Relation) -> ConnectResult<LogicalPlanBuilder> {
+        let common = relation.common.required("common")?;
 
         if common.origin.is_some() {
             debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
         }
 
-        let Some(rel_type) = relation.rel_type else {
-            bail!("Relation type is required");
-        };
+        let rel_type = relation.rel_type.required("rel_type")?;
 
         match rel_type {
             RelType::Limit(l) => self.limit(*l).await,
@@ -146,23 +146,20 @@ impl SparkAnalyzer<'_> {
             RelType::Deduplicate(rel) => self.deduplicate(*rel).await,
             RelType::Sort(rel) => self.sort(*rel).await,
             RelType::Sql(sql) => self.sql(sql).await,
-            plan => not_yet_implemented!("relation type: \"{}\"", rel_name(&plan))?,
+            plan => not_yet_implemented!(r#"relation type: "{}""#, rel_name(&plan)),
         }
     }
 
-    async fn limit(&self, limit: Limit) -> eyre::Result<LogicalPlanBuilder> {
+    async fn limit(&self, limit: Limit) -> ConnectResult<LogicalPlanBuilder> {
         let Limit { input, limit } = limit;
-
-        let Some(input) = input else {
-            bail!("input must be set");
-        };
+        let input = input.required("input")?;
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
         plan.limit(i64::from(limit), false).map_err(Into::into)
     }
 
-    async fn deduplicate(&self, deduplicate: Deduplicate) -> eyre::Result<LogicalPlanBuilder> {
+    async fn deduplicate(&self, deduplicate: Deduplicate) -> ConnectResult<LogicalPlanBuilder> {
         let Deduplicate {
             input,
             column_names,
@@ -170,7 +167,7 @@ impl SparkAnalyzer<'_> {
         } = deduplicate;
 
         if !column_names.is_empty() {
-            not_yet_implemented!("Deduplicate with column names")?;
+            not_yet_implemented!("Deduplicate with column names");
         }
 
         let input = input.required("input")?;
@@ -180,7 +177,7 @@ impl SparkAnalyzer<'_> {
         plan.distinct().map_err(Into::into)
     }
 
-    async fn sort(&self, sort: Sort) -> eyre::Result<LogicalPlanBuilder> {
+    async fn sort(&self, sort: Sort) -> ConnectResult<LogicalPlanBuilder> {
         let Sort {
             input,
             order,
@@ -190,7 +187,7 @@ impl SparkAnalyzer<'_> {
         let input = input.required("input")?;
 
         if is_global == Some(false) {
-            not_yet_implemented!("Non Global sort")?;
+            not_yet_implemented!("Non Global sort");
         }
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
@@ -212,16 +209,18 @@ impl SparkAnalyzer<'_> {
             let expr = child.required("child")?;
             let expr = self.to_daft_expr(&expr)?;
 
-            let sort_direction = SortDirection::try_from(direction)
-                .wrap_err_with(|| format!("Invalid sort direction: {direction}"))?;
+            let sort_direction = SortDirection::try_from(direction).map_err(|e| {
+                ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
+            })?;
 
             let desc = match sort_direction {
                 SortDirection::Ascending => false,
                 SortDirection::Descending | SortDirection::Unspecified => true,
             };
 
-            let null_ordering = NullOrdering::try_from(null_ordering)
-                .wrap_err_with(|| format!("Invalid sort nulls: {null_ordering}"))?;
+            let null_ordering = NullOrdering::try_from(null_ordering).map_err(|e| {
+                ConnectError::invalid_relation(format!("Unknown null ordering: {e}"))
+            })?;
 
             let nf = match null_ordering {
                 NullOrdering::SortNullsUnspecified => desc,
@@ -238,7 +237,7 @@ impl SparkAnalyzer<'_> {
             .map_err(Into::into)
     }
 
-    fn range(&self, range: Range) -> eyre::Result<LogicalPlanBuilder> {
+    fn range(&self, range: Range) -> ConnectResult<LogicalPlanBuilder> {
         use daft_scan::python::pylib::ScanOperatorHandle;
         let Range {
             start,
@@ -275,30 +274,27 @@ impl SparkAnalyzer<'_> {
 
             let plan = LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)?;
 
-            eyre::Result::<_>::Ok(plan)
+            ConnectResult::<_>::Ok(plan)
         })
         .wrap_err("Failed to create range scan")?;
 
         Ok(plan)
     }
 
-    async fn read(&self, read: spark_connect::Read) -> eyre::Result<LogicalPlanBuilder> {
+    async fn read(&self, read: spark_connect::Read) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Read {
             is_streaming,
             read_type,
         } = read;
 
         if is_streaming {
-            not_yet_implemented!("Streaming read")?;
+            not_yet_implemented!("Streaming read");
         }
 
         let read_type = read_type.required("read_type")?;
 
         match read_type {
-            ReadType::NamedTable(table) => {
-                let name = table.unparsed_identifier;
-                not_yet_implemented!("NamedTable").context(format!("table: {name}"))
-            }
+            ReadType::NamedTable(_) => not_yet_implemented!("NamedTable"),
             ReadType::DataSource(source) => self.read_datasource(source).await,
         }
     }
@@ -306,7 +302,7 @@ impl SparkAnalyzer<'_> {
     async fn read_datasource(
         &self,
         data_source: spark_connect::read::DataSource,
-    ) -> eyre::Result<LogicalPlanBuilder> {
+    ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::read::DataSource {
             format,
             schema,
@@ -336,10 +332,12 @@ impl SparkAnalyzer<'_> {
             "csv" => CsvScanBuilder::new(paths).finish().await?,
             "json" => {
                 // todo(completeness): implement json reading
-                not_yet_implemented!("read json")?
+                not_yet_implemented!("read json")
             }
             other => {
-                bail!("Unsupported format: {other}; only parquet and csv are supported");
+                invalid_argument_err!(
+                    "Unsupported format: {other}; only parquet and csv are supported"
+                );
             }
         })
     }
@@ -347,24 +345,24 @@ impl SparkAnalyzer<'_> {
     async fn aggregate(
         &self,
         aggregate: spark_connect::Aggregate,
-    ) -> eyre::Result<LogicalPlanBuilder> {
-        fn check_grouptype(group_type: GroupType) -> eyre::Result<()> {
+    ) -> ConnectResult<LogicalPlanBuilder> {
+        fn check_grouptype(group_type: GroupType) -> ConnectResult<()> {
             match group_type {
                 GroupType::Groupby => {}
                 GroupType::Unspecified => {
-                    invalid_argument_err!("GroupType must be specified; got Unspecified")?;
+                    invalid_argument_err!("GroupType must be specified; got Unspecified");
                 }
                 GroupType::Rollup => {
-                    not_yet_implemented!("GroupType.Rollup not yet supported")?;
+                    not_yet_implemented!("GroupType.Rollup not yet supported");
                 }
                 GroupType::Cube => {
-                    not_yet_implemented!("GroupType.Cube")?;
+                    not_yet_implemented!("GroupType.Cube");
                 }
                 GroupType::Pivot => {
-                    not_yet_implemented!("GroupType.Pivot")?;
+                    not_yet_implemented!("GroupType.Pivot");
                 }
                 GroupType::GroupingSets => {
-                    not_yet_implemented!("GroupType.GroupingSets")?;
+                    not_yet_implemented!("GroupType.GroupingSets");
                 }
             };
             Ok(())
@@ -383,16 +381,16 @@ impl SparkAnalyzer<'_> {
 
         let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        let group_type = GroupType::try_from(group_type)?;
+        let group_type = GroupType::try_from(group_type).wrap_err("Invalid group type")?;
 
         check_grouptype(group_type)?;
 
         if let Some(pivot) = pivot {
-            bail!("Pivot not yet supported; got {pivot:?}");
+            not_yet_implemented!("Pivot not yet supported; got {pivot:?}");
         }
 
         if !grouping_sets.is_empty() {
-            bail!("Grouping sets not yet supported; got {grouping_sets:?}");
+            not_yet_implemented!("Grouping sets not yet supported; got {grouping_sets:?}");
         }
 
         let grouping_expressions: Vec<_> = grouping_expressions
@@ -410,7 +408,7 @@ impl SparkAnalyzer<'_> {
         Ok(plan)
     }
 
-    async fn drop(&self, drop: spark_connect::Drop) -> eyre::Result<LogicalPlanBuilder> {
+    async fn drop(&self, drop: spark_connect::Drop) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Drop {
             input,
             columns,
@@ -420,7 +418,7 @@ impl SparkAnalyzer<'_> {
         let input = input.required("input")?;
 
         if !columns.is_empty() {
-            not_yet_implemented!("columns is not supported; use column_names instead")?;
+            not_yet_implemented!("columns is not supported; use column_names instead");
         }
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
@@ -437,7 +435,7 @@ impl SparkAnalyzer<'_> {
         Ok(plan.select(to_select)?)
     }
 
-    pub async fn filter(&self, filter: spark_connect::Filter) -> eyre::Result<LogicalPlanBuilder> {
+    pub async fn filter(&self, filter: spark_connect::Filter) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Filter { input, condition } = filter;
 
         let input = input.required("input")?;
@@ -452,7 +450,7 @@ impl SparkAnalyzer<'_> {
         &self,
         plan_id: i64,
         plan: spark_connect::LocalRelation,
-    ) -> eyre::Result<LogicalPlanBuilder> {
+    ) -> ConnectResult<LogicalPlanBuilder> {
         // We can ignore spark schema. The true schema is sent in the
         // arrow data. (see read_stream_metadata)
         // the schema inside the plan is actually wrong. See https://issues.apache.org/jira/browse/SPARK-50627
@@ -461,7 +459,8 @@ impl SparkAnalyzer<'_> {
         let data = data.required("data")?;
 
         let mut reader = Cursor::new(&data);
-        let metadata = read_stream_metadata(&mut reader)?;
+        let metadata =
+            read_stream_metadata(&mut reader).wrap_err("Failed to read stream metadata")?;
 
         let arrow_schema = metadata.schema.clone();
         let daft_schema = Arc::new(
@@ -477,7 +476,7 @@ impl SparkAnalyzer<'_> {
             let chunk = match ss {
                 StreamState::Some(chunk) => chunk,
                 StreamState::Waiting => {
-                    bail!("StreamReader is waiting for data, but a chunk was expected. This likely indicates that the spark provided data is incomplete.")
+                    internal_err!("StreamReader is waiting for data, but a chunk was expected. This likely indicates that the spark provided data is incomplete.")
                 }
             };
 
@@ -492,17 +491,17 @@ impl SparkAnalyzer<'_> {
 
                     Ok(series)
                 })
-                .collect::<eyre::Result<Vec<_>>>()?;
+                .collect::<ConnectResult<Vec<_>>>()?;
 
             let batch = Table::from_nonempty_columns(columns)?;
 
             Ok(batch)
-         }).collect::<eyre::Result<Vec<_>>>()?;
+         }).collect::<ConnectResult<Vec<_>>>()?;
 
         self.create_in_memory_scan(plan_id as _, daft_schema, tables)
     }
 
-    async fn project(&self, project: spark_connect::Project) -> eyre::Result<LogicalPlanBuilder> {
+    async fn project(&self, project: spark_connect::Project) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Project { input, expressions } = project;
 
         let input = input.required("input")?;
@@ -521,7 +520,7 @@ impl SparkAnalyzer<'_> {
     async fn with_columns(
         &self,
         with_columns: spark_connect::WithColumns,
-    ) -> eyre::Result<LogicalPlanBuilder> {
+    ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::WithColumns { input, aliases } = with_columns;
 
         let input = input.required("input")?;
@@ -546,16 +545,14 @@ impl SparkAnalyzer<'_> {
     async fn with_columns_renamed(
         &self,
         with_columns_renamed: spark_connect::WithColumnsRenamed,
-    ) -> eyre::Result<LogicalPlanBuilder> {
+    ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::WithColumnsRenamed {
             input,
             rename_columns_map,
             renames,
         } = with_columns_renamed;
 
-        let Some(input) = input else {
-            bail!("Input is required");
-        };
+        let input = input.required("input")?;
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
@@ -584,7 +581,7 @@ impl SparkAnalyzer<'_> {
         Ok(plan)
     }
 
-    async fn to_df(&self, to_df: spark_connect::ToDf) -> eyre::Result<LogicalPlanBuilder> {
+    async fn to_df(&self, to_df: spark_connect::ToDf) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::ToDf {
             input,
             column_names,
@@ -605,10 +602,10 @@ impl SparkAnalyzer<'_> {
     pub async fn relation_to_spark_schema(
         &self,
         input: Relation,
-    ) -> eyre::Result<spark_connect::DataType> {
+    ) -> ConnectResult<spark_connect::DataType> {
         let result = self.relation_to_daft_schema(input).await?;
 
-        let fields: eyre::Result<Vec<StructField>> = result
+        let fields: ConnectResult<Vec<StructField>> = result
             .fields
             .iter()
             .map(|(name, field)| {
@@ -632,7 +629,7 @@ impl SparkAnalyzer<'_> {
         })
     }
 
-    pub async fn relation_to_daft_schema(&self, input: Relation) -> eyre::Result<SchemaRef> {
+    pub async fn relation_to_daft_schema(&self, input: Relation) -> ConnectResult<SchemaRef> {
         if let Some(common) = &input.common {
             if common.origin.is_some() {
                 debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
@@ -647,7 +644,7 @@ impl SparkAnalyzer<'_> {
     }
 
     #[allow(deprecated)]
-    async fn sql(&self, sql: Sql) -> eyre::Result<LogicalPlanBuilder> {
+    async fn sql(&self, sql: Sql) -> ConnectResult<LogicalPlanBuilder> {
         let Sql {
             query,
             args,
@@ -656,23 +653,23 @@ impl SparkAnalyzer<'_> {
             pos_arguments,
         } = sql;
         if !args.is_empty() {
-            not_yet_implemented!("args")?;
+            not_yet_implemented!("args");
         }
         if !pos_args.is_empty() {
-            not_yet_implemented!("pos_args")?;
+            not_yet_implemented!("pos_args");
         }
         if !named_arguments.is_empty() {
-            not_yet_implemented!("named_arguments")?;
+            not_yet_implemented!("named_arguments");
         }
         if !pos_arguments.is_empty() {
-            not_yet_implemented!("pos_arguments")?;
+            not_yet_implemented!("pos_arguments");
         }
 
         let catalog = self
             .session
             .catalog
             .read()
-            .map_err(|e| eyre::eyre!("Failed to read catalog: {e}"))?;
+            .map_err(|e| ConnectError::internal(format!("Failed to read catalog: {e}")))?;
         let catalog = catalog.clone();
 
         let mut planner = SQLPlanner::new(catalog);
@@ -680,7 +677,7 @@ impl SparkAnalyzer<'_> {
         Ok(plan.into())
     }
 
-    pub fn to_daft_expr(&self, expression: &Expression) -> eyre::Result<daft_dsl::ExprRef> {
+    pub fn to_daft_expr(&self, expression: &Expression) -> ConnectResult<daft_dsl::ExprRef> {
         if let Some(common) = &expression.common {
             if common.origin.is_some() {
                 debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
@@ -688,7 +685,7 @@ impl SparkAnalyzer<'_> {
         };
 
         let Some(expr) = &expression.expr_type else {
-            bail!("Expression is required");
+            not_yet_implemented!("Expression is required");
         };
 
         match expr {
@@ -714,10 +711,10 @@ impl SparkAnalyzer<'_> {
             }
             spark_expr::ExprType::UnresolvedFunction(f) => self.process_function(f),
             spark_expr::ExprType::ExpressionString(_) => {
-                bail!("Expression string not yet supported")
+                not_yet_implemented!("Expression string not yet supported")
             }
             spark_expr::ExprType::UnresolvedStar(_) => {
-                bail!("Unresolved star expressions not yet supported")
+                not_yet_implemented!("Unresolved star expressions not yet supported")
             }
             spark_expr::ExprType::Alias(alias) => {
                 let spark_expr::Alias {
@@ -725,17 +722,16 @@ impl SparkAnalyzer<'_> {
                     name,
                     metadata,
                 } = &**alias;
-
                 let Some(expr) = expr else {
-                    bail!("Alias expr is required");
+                    invalid_argument_err!("Alias expression is required");
                 };
 
                 let [name] = name.as_slice() else {
-                    bail!("Alias name is required and currently only works with a single string; got {name:?}");
+                    invalid_argument_err!("Alias name is required and currently only works with a single string; got {name:?}");
                 };
 
                 if let Some(metadata) = metadata {
-                    bail!("Alias metadata is not yet supported; got {metadata:?}");
+                    not_yet_implemented!("Alias metadata: {metadata:?}");
                 }
 
                 let child = self.to_daft_expr(expr)?;
@@ -752,26 +748,27 @@ impl SparkAnalyzer<'_> {
                 } = &**c;
 
                 let Some(expr) = expr else {
-                    bail!("Cast expression is required");
+                    invalid_argument_err!("Cast expression is required");
                 };
 
                 let expr = self.to_daft_expr(expr)?;
 
                 let Some(cast_to_type) = cast_to_type else {
-                    bail!("Cast to type is required");
+                    invalid_argument_err!("Cast to type is required");
                 };
 
-                let data_type = match cast_to_type {
-                    CastToType::Type(kind) => to_daft_datatype(kind).wrap_err_with(|| {
-                        format!("Failed to convert spark datatype to daft datatype: {kind:?}")
-                    })?,
+                let data_type = match &cast_to_type {
+                    CastToType::Type(kind) => to_daft_datatype(kind)?,
                     CastToType::TypeStr(s) => {
-                        bail!("Cast to type string not yet supported; tried to cast to {s}");
+                        not_yet_implemented!(
+                            "Cast to type string not yet supported; tried to cast to {s}"
+                        );
                     }
                 };
 
-                let eval_mode = EvalMode::try_from(*eval_mode)
-                    .wrap_err_with(|| format!("Invalid cast eval mode: {eval_mode}"))?;
+                let eval_mode = EvalMode::try_from(*eval_mode).map_err(|e| {
+                    ConnectError::invalid_relation(format!("Unknown eval mode: {e}"))
+                })?;
 
                 debug!("Ignoring cast eval mode: {eval_mode:?}");
 
@@ -785,22 +782,24 @@ impl SparkAnalyzer<'_> {
                 } = &**s;
 
                 let Some(_child) = child else {
-                    bail!("Sort order child is required");
+                    invalid_argument_err!("Sort order child is required");
                 };
 
-                let _sort_direction = SortDirection::try_from(*direction)
-                    .wrap_err_with(|| format!("Invalid sort direction: {direction}"))?;
+                let _sort_direction = SortDirection::try_from(*direction).map_err(|e| {
+                    ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
+                })?;
 
-                let _sort_nulls = NullOrdering::try_from(*null_ordering)
-                    .wrap_err_with(|| format!("Invalid sort nulls: {null_ordering}"))?;
+                let _sort_nulls = NullOrdering::try_from(*null_ordering).map_err(|e| {
+                    ConnectError::invalid_relation(format!("Unknown null ordering: {e}"))
+                })?;
 
-                bail!("Sort order expressions not yet supported");
+                not_yet_implemented!("Sort order expressions not yet supported");
             }
-            other => not_yet_implemented!("expression type: {other:?}")?,
+            other => not_yet_implemented!("expression type: {other:?}"),
         }
     }
 
-    fn process_function(&self, f: &UnresolvedFunction) -> eyre::Result<daft_dsl::ExprRef> {
+    fn process_function(&self, f: &UnresolvedFunction) -> ConnectResult<daft_dsl::ExprRef> {
         let UnresolvedFunction {
             function_name,
             arguments,
@@ -809,15 +808,15 @@ impl SparkAnalyzer<'_> {
         } = f;
 
         if *is_distinct {
-            not_yet_implemented!("Distinct ")?;
+            not_yet_implemented!("Distinct");
         }
 
         if *is_user_defined_function {
-            not_yet_implemented!("User-defined functions")?;
+            not_yet_implemented!("User-defined functions");
         }
 
         let Some(f) = CONNECT_FUNCTIONS.get(function_name.as_str()) else {
-            return not_yet_implemented!("function: {function_name}")?;
+            not_yet_implemented!("function: {function_name}");
         };
 
         f.to_expr(arguments, self)
