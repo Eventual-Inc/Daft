@@ -1,7 +1,23 @@
 use super::join_graph::{JoinGraph, JoinOrderTree, JoinOrderer};
 
+// The brute force join orderer is a simple algorithm that recursively enumerates all possible join
+// orders (including deep and bushy joins) and picks the one with the lowest summed cardinality.
+//
+// This algorithm is easy to understand and implement, but is not efficient because it takes more than
+// O(n!) time to run. It is meant as an oracle to verify that more efficient algorithms produce the
+// optimal join order.
 pub(crate) struct BruteForceJoinOrderer {}
 
+// Takes the following arguments:
+// - elements: The list of elements to choose from.
+// - cur_idx: The current index in the list of elements to choose from.
+// - remaining: The number of elements to choose.
+// - chosen: The list of elements that have already been chosen.
+// - unchosen: The list of elements that have not yet been chosen.
+//
+// Returns a list of tuples, where each tuple contains two lists:
+// - The first list is the list of elements that have been chosen.
+// - The second list is the list of elements that have not been chosen.
 fn generate_combinations(
     elements: &[usize],
     cur_idx: usize,
@@ -35,11 +51,13 @@ fn generate_combinations(
 }
 
 impl BruteForceJoinOrderer {
+    // Enumerates all possible join orders and returns the one with the lowest summed cardinality.
     fn find_min_cost_order(
         graph: &JoinGraph,
         available: Vec<usize>,
     ) -> Option<(usize, JoinOrderTree)> {
         if available.len() == 1 {
+            // Base case: if there is only one element, we return the cost of the relation and the join order tree.
             let id = available[0];
             let plan = graph
                 .adj_list
@@ -50,6 +68,9 @@ impl BruteForceJoinOrderer {
             let cost = stats.approx_stats.num_rows;
             return Some((cost, JoinOrderTree::Relation(id, cost)));
         }
+        // Recursive case: we split the available elements into two groups and recursively find the minimum cost join order for each group.
+        // We only need to consider splits where the left group has at most half the number of elements as the right group, because the
+        // cardinality of the join is commutative. Determining probe/build sides happens later in the physical planner.
         let max_left_size = available.len() / 2;
         let mut min_cost = None;
         let mut chosen_plan = None;
@@ -66,9 +87,15 @@ impl BruteForceJoinOrderer {
                         .adj_list
                         .get_connections(&left_join_order_tree, &right_join_order_tree);
                     if !connections.is_empty() {
-                        // TODO(desmond): This is a hack to get the selectivity of the join.
-                        // We should eventually take the product of the largest total domains that
-                        // form a minimum spanning tree of the relations.
+                        // If there is a connection between the left and right subgraphs, we compute the cardinality of the
+                        // joined graph as the product of all the cardinalities of the relations in the left and right subgraphs,
+                        // divided by the selectivity of the join.
+                        // Assuming that join keys are uniformly distributed and independent, the selectivity is computed as the reciprocal
+                        // of the product of the largest total domains that form a minimum spanning tree of the relations.
+
+                        // TODO(desmond): This is a hack to get the selectivity of the join. We should expand this to take the minimum spanning tree
+                        // of edges to connect the relations. For simple graphs (e.g. the queries in the TPCH benchmark), taking the max of the total
+                        // domains is a good proxy.
                         let denominator = connections
                             .iter()
                             .map(|conn| conn.total_domain)
@@ -77,7 +104,9 @@ impl BruteForceJoinOrderer {
                         let cardinality = left_join_order_tree.get_cardinality()
                             * right_join_order_tree.get_cardinality()
                             / denominator;
+                        // The cost of the join is the sum of the cardinalities of the left and right subgraphs, plus the cardinality of the joined graph.
                         let cur_cost = cardinality + left_cost + right_cost;
+                        // Take the join with the lowest summed cardinality.
                         if let Some(cur_min_cost) = min_cost {
                             if cur_min_cost > cur_cost {
                                 min_cost = Some(cur_cost);
