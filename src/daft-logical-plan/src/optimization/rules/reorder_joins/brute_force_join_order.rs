@@ -166,16 +166,20 @@ mod tests {
         LogicalPlanRef,
     };
 
-    fn assert_order_contains_all_nodes(order: &JoinOrderTree, graph: &JoinGraph) {
-        for id in 0..graph.adj_list.max_id {
-            assert!(
-                order.contains(id),
-                "Graph id {} not found in order {:?}.\n{}",
-                id,
-                order,
-                graph.adj_list
-            );
-        }
+    const PLACEHOLDER_CARDINALITY: usize = 0;
+
+    // Helper functions to create test trees with placeholder values.
+    fn test_relation(id: usize) -> JoinOrderTree {
+        JoinOrderTree::Relation(id, PLACEHOLDER_CARDINALITY)
+    }
+
+    fn test_join(left: JoinOrderTree, right: JoinOrderTree) -> JoinOrderTree {
+        JoinOrderTree::Join(
+            Box::new(left),
+            Box::new(right),
+            vec![], // Empty join conditions.
+            PLACEHOLDER_CARDINALITY,
+        )
     }
 
     fn create_scan_node(name: &str, size: Option<usize>) -> LogicalPlanRef {
@@ -205,8 +209,8 @@ mod tests {
         JoinGraph::new(adj_list, vec![])
     }
 
-    macro_rules! create_and_test_join_graph {
-        ($nodes:expr, $edges:expr, $orderer:expr) => {
+    macro_rules! create_and_test_join_order {
+        ($nodes:expr, $edges:expr, $orderer:expr, $optimal_order:expr) => {
             let nodes: Vec<JoinNode> = $nodes
                 .iter()
                 .map(|(name, size)| {
@@ -216,12 +220,12 @@ mod tests {
                 .collect();
             let graph = create_join_graph_with_edges(nodes.clone(), $edges);
             let order = $orderer.order(&graph);
-            assert_order_contains_all_nodes(&order, &graph);
+            assert!(JoinOrderTree::order_eq(&order, &$optimal_order));
         };
     }
 
     #[test]
-    fn test_brute_force_order_mock_tpch() {
+    fn test_brute_force_order_mock_tpch_q5() {
         let nodes = vec![
             ("region", 1),
             ("nation", 25),
@@ -238,6 +242,19 @@ mod tests {
             (4, 5, 100_000),    // lineitem <-> supplier
             (5, 1, 25),         // supplier <-> nation
         ];
-        create_and_test_join_graph!(nodes, edges, BruteForceJoinOrderer {});
+        let optimal_order = test_join(
+            test_relation(5),
+            test_join(
+                test_relation(4),
+                test_join(
+                    test_relation(3),
+                    test_join(
+                        test_relation(2),
+                        test_join(test_relation(1), test_relation(0)),
+                    ),
+                ),
+            ),
+        );
+        create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
     }
 }

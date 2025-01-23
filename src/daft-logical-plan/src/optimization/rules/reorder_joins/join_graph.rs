@@ -57,6 +57,19 @@ impl JoinOrderTree {
             Self::Join(_, _, _, cardinality) => *cardinality,
         }
     }
+
+    #[cfg(test)]
+    // Check if the join structure is the same, regardless of cardinality or join conditions.
+    pub(super) fn order_eq(this: &Self, other: &Self) -> bool {
+        match (this, other) {
+            (JoinOrderTree::Relation(id1, _), JoinOrderTree::Relation(id2, _)) => id1 == id2,
+            (
+                JoinOrderTree::Join(left1, right1, _, _),
+                JoinOrderTree::Join(left2, right2, _, _),
+            ) => Self::order_eq(left1, left2) && Self::order_eq(right1, right2),
+            _ => false,
+        }
+    }
 }
 
 pub(super) trait JoinOrderer {
