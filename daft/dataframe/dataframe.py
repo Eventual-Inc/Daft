@@ -233,6 +233,47 @@ class DataFrame:
         """
         return self.__builder.schema()
 
+    @DataframePublicAPI
+    def describe(self, columns: ManyColumnsInputType = []) -> "DataFrame":
+        """Returns column statistics.
+
+        Currently returns the number of rows, nulls, approximate distinct, min, and max of the specified columns. This dataframe method is intended to aid data exploration and the API is subject to change.
+
+        Example:
+        >>> import daft
+        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [None, "a", "b"]})
+        >>> df.describe("a").show()
+        ╭─────────┬─────────┬───────────────────┬───────┬───────╮
+        │ a_count ┆ a_nulls ┆ a_approx_distinct ┆ a_min ┆ a_max │
+        │ ---     ┆ ---     ┆ ---               ┆ ---   ┆ ---   │
+        │ UInt64  ┆ UInt64  ┆ UInt64            ┆ Int64 ┆ Int64 │
+        ╞═════════╪═════════╪═══════════════════╪═══════╪═══════╡
+        │ 3       ┆ 0       ┆ 3                 ┆ 1     ┆ 3     │
+        ╰─────────┴─────────┴───────────────────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+
+        >>> df.describe().show()
+        ╭─────────┬─────────┬───────────────────┬───────┬───────┬─────────┬─────────┬───────────────────┬───────┬───────╮
+        │ a_count ┆ a_nulls ┆ a_approx_distinct ┆ a_min ┆ a_max ┆ b_count ┆ b_nulls ┆ b_approx_distinct ┆ b_min ┆ b_max │
+        │ ---     ┆ ---     ┆ ---               ┆ ---   ┆ ---   ┆ ---     ┆ ---     ┆ ---               ┆ ---   ┆ ---   │
+        │ UInt64  ┆ UInt64  ┆ UInt64            ┆ Int64 ┆ Int64 ┆ UInt64  ┆ UInt64  ┆ UInt64            ┆ Utf8  ┆ Utf8  │
+        ╞═════════╪═════════╪═══════════════════╪═══════╪═══════╪═════════╪═════════╪═══════════════════╪═══════╪═══════╡
+        │ 3       ┆ 0       ┆ 3                 ┆ 1     ┆ 3     ┆ 3       ┆ 1       ┆ 2                 ┆ a     ┆ b     │
+        ╰─────────┴─────────┴───────────────────┴───────┴───────┴─────────┴─────────┴───────────────────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+
+        Args:
+            columns (ManyColumnsInputType): Columns to describe. If not specified, all columns will be described.
+
+        Returns:
+            DataFrame: A dataframe with the number of rows, nulls, approximate distinct, min, and max for each column. Column names
+                will be the original column names with `_count`, `_nulls`, `_approx_distinct`, `_min`, and `_max` appended.
+        """
+        builder = self.__builder.describe(self._column_inputs_to_expressions(columns))
+        return DataFrame(builder)
+
     @property
     def column_names(self) -> List[str]:
         """Returns column names of DataFrame as a list of strings.

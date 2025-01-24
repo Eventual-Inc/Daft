@@ -89,6 +89,15 @@ class LogicalPlanBuilder:
         pyschema = self._builder.schema()
         return Schema._from_pyschema(pyschema)
 
+    def describe(
+        self,
+        to_describe: list[Expression],
+    ) -> LogicalPlanBuilder:
+        """Summary stats for each column of the current logical plan."""
+        to_describe_pyexprs = [expr._expr for expr in to_describe]
+        builder = self._builder.describe(to_describe_pyexprs)
+        return LogicalPlanBuilder(builder)
+
     def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
         """Pretty prints the current underlying logical plan."""
         from daft.dataframe.display import MermaidOptions

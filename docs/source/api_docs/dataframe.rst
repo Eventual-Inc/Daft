@@ -193,3 +193,12 @@ Schema and Lineage
     DataFrame.explain
     DataFrame.schema
     DataFrame.column_names
+
+Statistics
+##########
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/dataframe_methods
+
+    DataFrame.describe
