@@ -334,7 +334,22 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    /// Creates a DataFrame summary by aggregating column stats into lists then exploding.
     pub fn summarize(&self) -> DaftResult<Self> {
+        // columns
+        // let mut cols: Vec<ExprRef> = vec![]; // column             :: utf8
+        // let mut typs: Vec<ExprRef> = vec![]; // type               :: utf8
+        // let mut mins: Vec<ExprRef> = vec![]; // min                :: utf8
+        // let mut maxs: Vec<ExprRef> = vec![]; // max                :: utf8
+        // let mut cnts: Vec<ExprRef> = vec![]; // count              :: int64
+        // let mut nuls: Vec<ExprRef> = vec![]; // nulls              :: int64
+        // let mut unqs: Vec<ExprRef> = vec![]; // approx_distinct    :: int64
+        // build the columns to explode
+        // for (_, column) in &self.schema().fields {
+        //     cols.push(column.name.clone().lit());
+        //     typs.push(column.dtype.to_string().clone().lit());
+        // }
+        // explode the columns
         todo!(".summarize()")
     }
 
