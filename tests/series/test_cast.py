@@ -1187,7 +1187,6 @@ def to_coo_sparse_dict(ndarray: np.ndarray) -> dict[str, np.ndarray]:
     indices = np.flatnonzero(flat_array)
     if len(indices):
         indices = np.ediff1d(indices, to_begin=indices[0])
-    
     values = flat_array[np.flatnonzero(flat_array)]
     shape = list(ndarray.shape)
 
