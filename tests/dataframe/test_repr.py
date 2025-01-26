@@ -308,7 +308,7 @@ def test_repr_empty_struct():
     assert df.schema()._truncated_table_string() == expected_schema_truncated_repr
 
     expected_schema_repr = """╭──────────────────────┬──────────────────────────────────╮
-│ column               ┆ type                             │
+│ column_name          ┆ type                             │
 ╞══════════════════════╪══════════════════════════════════╡
 │ empty_structs        ┆ Struct[]                         │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
