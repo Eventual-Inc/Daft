@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
 # serializable before importing pa from daft.dependencies.
 import pyarrow as pa  # noqa: TID253
+import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
@@ -40,10 +41,10 @@ from daft.daft import (
     IOConfig,
     PyDaftExecutionConfig,
     ResourceRequest,
-    extract_partial_stateful_udf_py,
 )
 from daft.datatype import DataType
 from daft.execution.execution_step import (
+    ActorPoolProject,
     FanoutInstruction,
     Instruction,
     MultiOutputPartitionTask,
@@ -51,7 +52,6 @@ from daft.execution.execution_step import (
     ReduceInstruction,
     ScanWithTask,
     SingleOutputPartitionTask,
-    StatefulUDFProject,
 )
 from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
@@ -517,7 +517,7 @@ def fanout_pipeline(
 
 
 @ray_tracing.ray_remote_traced
-@ray.remote(scheduling_strategy="SPREAD")
+@ray.remote
 def reduce_pipeline(
     task_context: PartitionTaskContext,
     daft_execution_config: PyDaftExecutionConfig,
@@ -534,7 +534,7 @@ def reduce_pipeline(
 
 
 @ray_tracing.ray_remote_traced
-@ray.remote(scheduling_strategy="SPREAD")
+@ray.remote
 def reduce_and_fanout(
     task_context: PartitionTaskContext,
     daft_execution_config: PyDaftExecutionConfig,
@@ -556,7 +556,7 @@ def get_metas(*partitions: MicroPartition) -> list[PartitionMetadata]:
 
 
 def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
-    """Helper that gets the number of CPUs from Ray
+    """Helper that gets the number of CPUs from Ray.
 
     Used as a generator as it provides a guard against calling ray.cluster_resources()
     more than once per `ttl_seconds`.
@@ -579,10 +579,7 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
 
 class Scheduler(ActorPoolManager):
     def __init__(self, max_task_backlog: int | None, use_ray_tqdm: bool) -> None:
-        """
-        max_task_backlog: Max number of inflight tasks waiting for cores.
-        """
-
+        """max_task_backlog: Max number of inflight tasks waiting for cores."""
         # As of writing, Ray does not seem to be guaranteed to support
         # more than this number of pending scheduling tasks.
         # Ray has an internal proto that reports backlogged tasks [1],
@@ -684,10 +681,9 @@ class Scheduler(ActorPoolManager):
         dispatches_allowed: int,
         runner_tracer: RunnerTracer,
     ) -> tuple[list[PartitionTask], bool]:
-        """Constructs a batch of PartitionTasks that should be dispatched
+        """Constructs a batch of PartitionTasks that should be dispatched.
 
         Args:
-
             execution_id: The ID of the current execution.
             tasks: The iterator over the physical plan.
             dispatches_allowed (int): The maximum number of tasks that can be dispatched in this batch.
@@ -759,7 +755,7 @@ class Scheduler(ActorPoolManager):
         daft_execution_config_objref: ray.ObjectRef,
         runner_tracer: RunnerTracer,
     ) -> Iterator[tuple[PartitionTask, list[ray.ObjectRef]]]:
-        """Iteratively Dispatches a batch of tasks to the Ray backend"""
+        """Iteratively Dispatches a batch of tasks to the Ray backend."""
         with runner_tracer.dispatching():
             for task in tasks_to_dispatch:
                 if task.actor_pool_id is None:
@@ -815,14 +811,15 @@ class Scheduler(ActorPoolManager):
         return readies
 
     def _is_active(self, execution_id: str):
-        """Checks if the execution for the provided `execution_id` is still active"""
+        """Checks if the execution for the provided `execution_id` is still active."""
         return self.active_by_df.get(execution_id, False)
 
     def _place_in_queue(self, execution_id: str, item: ray.ObjectRef):
-        """Places a result into the queue for the provided `execution_id
+        """Places a result into the queue for the provided `execution_id.
 
         NOTE: This will block and poll busily until space is available on the queue
-        `"""
+        `
+        """
         while self._is_active(execution_id):
             try:
                 self.results_by_df[execution_id].put(item, timeout=0.1)
@@ -1016,6 +1013,12 @@ def _build_partitions(
             if task.instructions and isinstance(task.instructions[-1], FanoutInstruction)
             else reduce_pipeline
         )
+        if task.node_id is not None:
+            ray_options["scheduling_strategy"] = ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                task.node_id, soft=True
+            )
+        else:
+            ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
         [metadatas_ref, *partitions] = build_remote.remote(
             PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
@@ -1062,7 +1065,10 @@ def _build_partitions_on_actor_pool(
     actor_pool: RayRoundRobinActorPool,
 ) -> list[ray.ObjectRef]:
     """Run a PartitionTask on an actor pool and return the resulting list of partitions."""
-    [metadatas_ref, *partitions] = actor_pool.submit(task.instructions, task.partial_metadatas, task.inputs)
+    assert len(task.instructions) == 1, "Actor pool can only handle single ActorPoolProject instructions"
+    assert isinstance(task.instructions[0], ActorPoolProject)
+
+    [metadatas_ref, *partitions] = actor_pool.submit(task.partial_metadatas, task.inputs)
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result(
         [
@@ -1080,26 +1086,19 @@ def _build_partitions_on_actor_pool(
 @ray.remote
 class DaftRayActor:
     def __init__(self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection):
-        self.daft_execution_config = daft_execution_config
-        partial_stateful_udfs = {
-            name: psu
-            for expr in uninitialized_projection
-            for name, psu in extract_partial_stateful_udf_py(expr._expr).items()
-        }
-        logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
+        from daft.daft import get_udf_names
 
-        self.initialized_stateful_udfs = {}
-        for name, (partial_udf, init_args) in partial_stateful_udfs.items():
-            if init_args is None:
-                self.initialized_stateful_udfs[name] = partial_udf.func_cls()
-            else:
-                args, kwargs = init_args
-                self.initialized_stateful_udfs[name] = partial_udf.func_cls(*args, **kwargs)
+        self.daft_execution_config = daft_execution_config
+
+        logger.info(
+            "Initializing stateful UDFs: %s",
+            ", ".join(name for expr in uninitialized_projection for name in get_udf_names(expr._expr)),
+        )
+        self.initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
     @ray.method(num_returns=2)
     def run(
         self,
-        uninitialized_projection: ExpressionsProjection,
         partial_metadatas: list[PartitionMetadata],
         *inputs: MicroPartition,
     ) -> list[list[PartitionMetadata] | MicroPartition]:
@@ -1109,11 +1108,7 @@ class DaftRayActor:
             part = inputs[0]
             partial = partial_metadatas[0]
 
-            # Bind the ExpressionsProjection to the initialized UDFs
-            initialized_projection = ExpressionsProjection(
-                [e._bind_stateful_udfs(self.initialized_stateful_udfs) for e in uninitialized_projection]
-            )
-            new_part = part.eval_expression_list(initialized_projection)
+            new_part = part.eval_expression_list(self.initialized_projection)
 
             return [
                 [PartitionMetadata.from_table(new_part).merge_with_partial(partial)],
@@ -1122,7 +1117,7 @@ class DaftRayActor:
 
 
 class RayRoundRobinActorPool:
-    """Naive implementation of an ActorPool that performs round-robin task submission to the actors"""
+    """Naive implementation of an ActorPool that performs round-robin task submission to the actors."""
 
     def __init__(
         self,
@@ -1159,24 +1154,15 @@ class RayRoundRobinActorPool:
         self._actors = None
         del old_actors
 
-    def submit(
-        self, instruction_stack: list[Instruction], partial_metadatas: list[ray.ObjectRef], inputs: list[ray.ObjectRef]
-    ) -> list[ray.ObjectRef]:
+    def submit(self, partial_metadatas: list[ray.ObjectRef], inputs: list[ray.ObjectRef]) -> list[ray.ObjectRef]:
         assert self._actors is not None, "Must have active Ray actors during submission"
-
-        assert (
-            len(instruction_stack) == 1
-        ), "RayRoundRobinActorPool can only handle single StatefulUDFProject instructions"
-        instruction = instruction_stack[0]
-        assert isinstance(instruction, StatefulUDFProject)
-        projection = instruction.projection
 
         # Determine which actor to schedule on in a round-robin fashion
         idx = self._task_idx % self._num_actors
         self._task_idx += 1
         actor = self._actors[idx]
 
-        return actor.run.remote(projection, partial_metadatas, *inputs)
+        return actor.run.remote(partial_metadatas, *inputs)
 
 
 class RayRunner(Runner[ray.ObjectRef]):

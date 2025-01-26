@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow2::compute::cast::cast;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -82,10 +83,10 @@ impl FromArrow for ListArray {
                 DataType::List(daft_child_dtype),
                 arrow2::datatypes::DataType::LargeList(arrow_child_field),
             ) => {
+
                 // unifying lists
-                let arrow_arr = arrow_arr.convert_logical_type(
-                    arrow2::datatypes::DataType::LargeList(arrow_child_field.clone()),
-                );
+                let arrow_arr = cast(&*arrow_arr, &arrow2::datatypes::DataType::LargeList(arrow_child_field.clone()), Default::default())?;
+
 
                 let arrow_arr = arrow_arr
                     .as_any()

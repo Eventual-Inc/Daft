@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow2::types::months_days_ns;
 
 use super::as_arrow::AsArrow;
@@ -114,7 +116,7 @@ impl ExtensionArray {
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {
     #[inline]
-    pub fn get(&self, idx: usize) -> pyo3::PyObject {
+    pub fn get(&self, idx: usize) -> Arc<pyo3::PyObject> {
         use arrow2::array::Array;
         use pyo3::prelude::*;
 
@@ -132,7 +134,7 @@ impl crate::datatypes::PythonArray {
         if valid {
             self.as_arrow().values().get(idx).unwrap().clone()
         } else {
-            Python::with_gil(|py| py.None())
+            Arc::new(Python::with_gil(|py| py.None()))
         }
     }
 }

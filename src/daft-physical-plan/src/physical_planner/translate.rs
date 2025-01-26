@@ -7,13 +7,13 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_scan_info::PhysicalScanInfo;
-use daft_core::prelude::*;
+use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
+use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
-    Expr, ExprRef, SketchType,
+    col, estimated_selectivity, functions::agg::merge_mean, is_partition_compatible, AggExpr,
+    ApproxPercentileParams, Expr, ExprRef, SketchType,
 };
-use daft_functions::numeric::sqrt;
+use daft_functions::{list::unique_count, numeric::sqrt};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
@@ -38,15 +38,22 @@ pub(super) fn translate_single_logical_node(
     physical_children: &mut Vec<PhysicalPlanRef>,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<PhysicalPlanRef> {
-    match logical_plan {
+    let physical_plan = match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
             SourceInfo::Physical(PhysicalScanInfo {
                 pushdowns,
-                scan_op,
+                scan_state,
                 source_schema,
                 ..
             }) => {
-                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?;
+                let scan_tasks = {
+                    match scan_state {
+                        ScanState::Operator(scan_op) => {
+                            Arc::new(scan_op.0.to_scan_tasks(pushdowns.clone())?)
+                        }
+                        ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
+                    }
+                };
 
                 if scan_tasks.is_empty() {
                     let clustering_spec =
@@ -58,6 +65,14 @@ pub(super) fn translate_single_logical_node(
                     ))
                     .arced())
                 } else {
+                    // Perform scan task splitting and merging.
+                    let scan_tasks = if let Some(split_and_merge_pass) = SPLIT_AND_MERGE_PASS.get()
+                    {
+                        split_and_merge_pass(scan_tasks, pushdowns, cfg)?
+                    } else {
+                        scan_tasks
+                    };
+
                     let clustering_spec = Arc::new(ClusteringSpec::Unknown(
                         UnknownClusteringConfig::new(scan_tasks.len()),
                     ));
@@ -101,9 +116,17 @@ pub(super) fn translate_single_logical_node(
             )?)
             .arced())
         }
-        LogicalPlan::Filter(LogicalFilter { predicate, .. }) => {
+        LogicalPlan::Filter(LogicalFilter {
+            predicate, input, ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::Filter(Filter::new(input_physical, predicate.clone())).arced())
+            let estimated_selectivity = estimated_selectivity(predicate, &input.schema());
+            Ok(PhysicalPlan::Filter(Filter::new(
+                input_physical,
+                predicate.clone(),
+                estimated_selectivity,
+            ))
+            .arced())
         }
         LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -205,7 +228,7 @@ pub(super) fn translate_single_logical_node(
             };
             Ok(repartitioned_plan.arced())
         }
-        LogicalPlan::Distinct(LogicalDistinct { input }) => {
+        LogicalPlan::Distinct(LogicalDistinct { input, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let col_exprs = input
                 .schema()
@@ -409,11 +432,6 @@ pub(super) fn translate_single_logical_node(
             join_strategy,
             ..
         }) => {
-            if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
-                return Err(DaftError::not_implemented(
-                    "Joins without join conditions (cross join) are not supported yet",
-                ));
-            }
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");
             let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
@@ -462,17 +480,10 @@ pub(super) fn translate_single_logical_node(
 
             // For broadcast joins, ensure that the left side of the join is the smaller side.
             let (smaller_size_bytes, left_is_larger) =
-                match (left_stats.upper_bound_bytes, right_stats.upper_bound_bytes) {
-                    (Some(left_size_bytes), Some(right_size_bytes)) => {
-                        if right_size_bytes < left_size_bytes {
-                            (Some(right_size_bytes), true)
-                        } else {
-                            (Some(left_size_bytes), false)
-                        }
-                    }
-                    (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
-                    (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
-                    (None, None) => (None, false),
+                if right_stats.size_bytes < left_stats.size_bytes {
+                    (right_stats.size_bytes, true)
+                } else {
+                    (left_stats.size_bytes, false)
                 };
             let is_larger_partitioned = if left_is_larger {
                 is_left_hash_partitioned || is_left_sort_partitioned
@@ -483,6 +494,10 @@ pub(super) fn translate_single_logical_node(
                 .as_ref()
                 .map_or(false, |v| v.iter().any(|b| *b));
             let join_strategy = join_strategy.unwrap_or_else(|| {
+                if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
+                    return JoinStrategy::Cross;
+                }
+
                 fn keys_are_primitive(on: &[ExprRef], schema: &SchemaRef) -> bool {
                     on.iter().all(|expr| {
                         let dtype = expr.get_type(schema).unwrap();
@@ -504,7 +519,6 @@ pub(super) fn translate_single_logical_node(
 
                 // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join.
                 if !is_larger_partitioned
-                    && let Some(smaller_size_bytes) = smaller_size_bytes
                     && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold
                     && smaller_side_is_broadcastable
                 {
@@ -674,6 +688,32 @@ pub(super) fn translate_single_logical_node(
                     ))
                     .arced())
                 }
+                JoinStrategy::Cross => {
+                    if *join_type != JoinType::Inner {
+                        return Err(common_error::DaftError::ValueError(
+                            "Cross join is only applicable for inner joins".to_string(),
+                        ));
+                    }
+                    if !left_on.is_empty() || !right_on.is_empty() {
+                        return Err(common_error::DaftError::ValueError(
+                            "Cross join cannot have join keys".to_string(),
+                        ));
+                    }
+
+                    // choose the larger side to be in the outer loop since the inner side has to be fully materialized
+                    let outer_loop_side = if left_is_larger {
+                        JoinSide::Left
+                    } else {
+                        JoinSide::Right
+                    };
+
+                    Ok(PhysicalPlan::CrossJoin(CrossJoin::new(
+                        left_physical,
+                        right_physical,
+                        outer_loop_side,
+                    ))
+                    .arced())
+                }
             }
         }
         LogicalPlan::Sink(LogicalSink {
@@ -756,7 +796,12 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Union(_) => Err(DaftError::InternalError(
             "Union should already be optimized away".to_string(),
         )),
-    }
+    }?;
+    // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
+    // different size estimations depending on when the approximation is computed. Once we fix
+    // this, we can add back in the assertion here.
+    // debug_assert!(logical_plan.get_stats().approx_stats == physical_plan.approximate_stats());
+    Ok(physical_plan)
 }
 
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
@@ -768,6 +813,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::Count(e, count_mode) => {
                     AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
                 }
+                AggExpr::CountDistinct(e) => {
+                    AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
+                },
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
@@ -858,6 +906,27 @@ pub fn populate_aggregation_stages(
                         col(count_id.clone()).alias(sum_of_count_id.clone()),
                     ));
                 final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
+            }
+            AggExpr::CountDistinct(sub_expr) => {
+                // First stage
+                let list_agg_id = add_to_stage(
+                    AggExpr::List,
+                    sub_expr.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
+
+                // Second stage
+                let list_concat_id = add_to_stage(
+                    AggExpr::Concat,
+                    col(list_agg_id.clone()),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+
+                // Final projection
+                let result = unique_count(col(list_concat_id.clone())).alias(output_name);
+                final_exprs.push(result);
             }
             AggExpr::Sum(e) => {
                 let sum_id = agg_expr.semantic_id(schema).id;

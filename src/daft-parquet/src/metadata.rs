@@ -176,8 +176,8 @@ fn apply_field_ids_to_parquet_file_metadata(
 
     let new_row_groups = file_metadata
         .row_groups
-        .into_values()
-        .map(|rg| {
+        .iter()
+        .map(|(_, rg)| {
             let new_columns = rg
                 .columns()
                 .iter()

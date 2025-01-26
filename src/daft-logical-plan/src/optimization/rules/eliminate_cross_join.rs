@@ -52,7 +52,9 @@ impl OptimizerRule for EliminateCrossJoin {
             if !can_flatten_join_inputs(filter.input.as_ref()) {
                 return Ok(Transformed::no(Arc::new(LogicalPlan::Filter(filter))));
             }
-            let Filter { input, predicate } = filter;
+            let Filter {
+                input, predicate, ..
+            } = filter;
             flatten_join_inputs(
                 Arc::unwrap_or_clone(input),
                 &mut possible_join_keys,
@@ -301,21 +303,18 @@ fn find_inner_join(
         if !join_keys.is_empty() {
             all_join_keys.insert_all(join_keys.iter());
             let right_input = rights.remove(i);
-            let join_schema = left_input
-                .schema()
-                .non_distinct_union(right_input.schema().as_ref());
 
             let (left_keys, right_keys) = join_keys.iter().cloned().unzip();
-            return Ok(LogicalPlan::Join(Join {
-                left: left_input,
-                right: right_input,
-                left_on: left_keys,
-                right_on: right_keys,
-                null_equals_nulls: None,
-                join_type: JoinType::Inner,
-                join_strategy: None,
-                output_schema: Arc::new(join_schema),
-            })
+
+            return Ok(LogicalPlan::Join(Join::try_new(
+                left_input,
+                right_input,
+                left_keys,
+                right_keys,
+                None,
+                JoinType::Inner,
+                None,
+            )?)
             .arced());
         }
     }
@@ -323,20 +322,16 @@ fn find_inner_join(
     // no matching right plan had any join keys, cross join with the first right
     // plan
     let right = rights.remove(0);
-    let join_schema = left_input
-        .schema()
-        .non_distinct_union(right.schema().as_ref());
 
-    Ok(LogicalPlan::Join(Join {
-        left: left_input,
+    Ok(LogicalPlan::Join(Join::try_new(
+        left_input,
         right,
-        left_on: vec![],
-        right_on: vec![],
-        null_equals_nulls: None,
-        join_type: JoinType::Inner,
-        join_strategy: None,
-        output_schema: Arc::new(join_schema),
-    })
+        vec![],
+        vec![],
+        None,
+        JoinType::Inner,
+        None,
+    )?)
     .arced())
 }
 
@@ -449,14 +444,14 @@ mod tests {
             ])
             .unwrap(),
         );
-        LogicalPlan::Source(Source {
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 source_id: 0,
             })),
-        })
+        ))
         .arced()
     }
 
@@ -470,14 +465,14 @@ mod tests {
             ])
             .unwrap(),
         );
-        LogicalPlan::Source(Source {
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 source_id: 0,
             })),
-        })
+        ))
         .arced()
     }
 

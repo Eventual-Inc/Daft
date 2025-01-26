@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 
 def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., LogicalPlanBuilder]):
-    """Decorator to be applied to any @classmethod instantiation method on LogicalPlanBuilder
+    """Decorator to be applied to any @classmethod instantiation method on LogicalPlanBuilder.
 
     This decorator ensures that the current DaftPlanningConfig is applied to the instantiated LogicalPlanBuilder
     """
@@ -50,17 +50,15 @@ def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., L
 
 
 class LogicalPlanBuilder:
-    """
-    A logical plan builder for the Daft DataFrame.
-    """
+    """A logical plan builder for the Daft DataFrame."""
 
     def __init__(self, builder: _LogicalPlanBuilder) -> None:
         self._builder = builder
 
     def to_physical_plan_scheduler(self, daft_execution_config: PyDaftExecutionConfig) -> PhysicalPlanScheduler:
-        """
-        Convert the underlying logical plan to a physical plan scheduler, which is
-        used to generate executable tasks for the physical plan.
+        """Convert the underlying logical plan to a physical plan scheduler.
+
+        physical plan scheduler is used to generate executable tasks for the physical plan.
 
         This should be called after triggering optimization with self.optimize().
 
@@ -87,16 +85,12 @@ class LogicalPlanBuilder:
         )
 
     def schema(self) -> Schema:
-        """
-        The schema of the current logical plan.
-        """
+        """The schema of the current logical plan."""
         pyschema = self._builder.schema()
         return Schema._from_pyschema(pyschema)
 
     def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
-        """
-        Pretty prints the current underlying logical plan.
-        """
+        """Pretty prints the current underlying logical plan."""
         from daft.dataframe.display import MermaidOptions
 
         if format == "ascii":
@@ -110,9 +104,7 @@ class LogicalPlanBuilder:
         return self._builder.repr_ascii(simple=False)
 
     def optimize(self) -> LogicalPlanBuilder:
-        """
-        Optimize the underlying logical plan.
-        """
+        """Optimize the underlying logical plan."""
         builder = self._builder.optimize()
         return LogicalPlanBuilder(builder)
 
@@ -287,6 +279,18 @@ class LogicalPlanBuilder:
         builder = self._builder.intersect(other._builder, False)
         return LogicalPlanBuilder(builder)
 
+    def intersect_all(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
+        builder = self._builder.intersect(other._builder, True)
+        return LogicalPlanBuilder(builder)
+
+    def except_distinct(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
+        builder = self._builder.except_(other._builder, False)
+        return LogicalPlanBuilder(builder)
+
+    def except_all(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
+        builder = self._builder.except_(other._builder, True)
+        return LogicalPlanBuilder(builder)
+
     def add_monotonically_increasing_id(self, column_name: str | None) -> LogicalPlanBuilder:
         builder = self._builder.add_monotonically_increasing_id(column_name)
         return LogicalPlanBuilder(builder)
@@ -305,9 +309,8 @@ class LogicalPlanBuilder:
         builder = self._builder.table_write(str(root_dir), file_format, part_cols_pyexprs, compression, io_config)
         return LogicalPlanBuilder(builder)
 
-    def write_iceberg(self, table: IcebergTable) -> LogicalPlanBuilder:
+    def write_iceberg(self, table: IcebergTable, io_config: IOConfig) -> LogicalPlanBuilder:
         from daft.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
-        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         name = ".".join(table.name())
         location = f"{table.location()}/data"
@@ -322,7 +325,6 @@ class LogicalPlanBuilder:
         partition_cols = [partition_field_to_expr(field, schema)._expr for field in partition_spec.fields]
         props = table.properties
         columns = [col.name for col in schema.columns]
-        io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
         builder = builder.iceberg_write(
             name, location, partition_spec.spec_id, partition_cols, schema, props, columns, io_config
         )

@@ -64,7 +64,7 @@ class Schema:
 
     @classmethod
     def from_pyarrow_schema(cls, pa_schema: pa.Schema) -> Schema:
-        """Creates a Daft Schema from a PyArrow Schema
+        """Creates a Daft Schema from a PyArrow Schema.
 
         Args:
             pa_schema (pa.Schema): PyArrow schema to convert
@@ -77,7 +77,7 @@ class Schema:
         )
 
     def to_pyarrow_schema(self) -> pa.Schema:
-        """Converts a Daft Schema to a PyArrow Schema
+        """Converts a Daft Schema to a PyArrow Schema.
 
         Returns:
             pa.Schema: PyArrow schema that corresponds to the provided Daft schema

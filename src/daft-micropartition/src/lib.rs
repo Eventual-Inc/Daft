@@ -7,7 +7,7 @@ use snafu::Snafu;
 mod micropartition;
 mod ops;
 
-pub use micropartition::MicroPartition;
+pub use micropartition::{MicroPartition, MicroPartitionRef};
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -15,6 +15,8 @@ pub mod python;
 use pyo3::PyErr;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+
+pub mod partitioning;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

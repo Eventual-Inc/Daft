@@ -8,7 +8,6 @@ import ray
 
 import daft
 from daft import udf
-from daft.context import get_context, set_planning_config
 from daft.datatype import DataType
 from daft.internal.gpu import cuda_visible_devices
 from tests.conftest import get_tests_daft_runner_name
@@ -18,22 +17,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="module")
-def enable_actor_pool():
-    try:
-        original_config = get_context().daft_planning_config
-
-        set_planning_config(
-            config=get_context().daft_planning_config.with_config_values(enable_actor_pool_projections=True)
-        )
-        yield
-    finally:
-        set_planning_config(config=original_config)
-
-
 @contextmanager
 def reset_runner_with_gpus(num_gpus, monkeypatch):
-    """If current runner does not have enough GPUs, create a new runner with mocked GPU resources"""
+    """If current runner does not have enough GPUs, create a new runner with mocked GPU resources."""
     if len(cuda_visible_devices()) < num_gpus:
         if get_tests_daft_runner_name() == "ray":
             try:
@@ -59,7 +45,7 @@ def reset_runner_with_gpus(num_gpus, monkeypatch):
 
 @pytest.mark.parametrize("concurrency", [1, 2])
 @pytest.mark.parametrize("num_gpus", [1, 2])
-def test_stateful_udf_cuda_env_var(enable_actor_pool, monkeypatch, concurrency, num_gpus):
+def test_actor_pool_udf_cuda_env_var(monkeypatch, concurrency, num_gpus):
     with reset_runner_with_gpus(concurrency * num_gpus, monkeypatch):
 
         @udf(return_dtype=DataType.string(), num_gpus=num_gpus)
@@ -91,7 +77,7 @@ def test_stateful_udf_cuda_env_var(enable_actor_pool, monkeypatch, concurrency, 
         assert len(all_devices) == concurrency * num_gpus
 
 
-def test_stateful_udf_fractional_gpu(enable_actor_pool, monkeypatch):
+def test_actor_pool_udf_fractional_gpu(monkeypatch):
     with reset_runner_with_gpus(1, monkeypatch):
 
         @udf(return_dtype=DataType.string(), num_gpus=0.5)
@@ -121,7 +107,7 @@ def test_stateful_udf_fractional_gpu(enable_actor_pool, monkeypatch):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "py", reason="Test can only be run on PyRunner")
-def test_stateful_udf_no_cuda_devices(enable_actor_pool, monkeypatch):
+def test_actor_pool_udf_no_cuda_devices(monkeypatch):
     monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 0)
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
 
@@ -150,7 +136,7 @@ def test_stateful_udf_no_cuda_devices(enable_actor_pool, monkeypatch):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "py", reason="Test can only be run on PyRunner")
-def test_stateful_udf_no_cuda_visible_device_envvar(enable_actor_pool, monkeypatch):
+def test_actor_pool_udf_no_cuda_visible_device_envvar(monkeypatch):
     monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 1)
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
 

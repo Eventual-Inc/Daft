@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{ExprRef, ExprResolver};
+use daft_dsl::{exprs_to_schema, ExprRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
-use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
+use crate::{logical_plan, logical_plan::CreationSnafu, stats::StatsState, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sort {
@@ -15,6 +15,7 @@ pub struct Sort {
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
+    pub stats_state: StatsState,
 }
 
 impl Sort {
@@ -31,15 +32,10 @@ impl Sort {
             .context(CreationSnafu);
         }
 
-        let expr_resolver = ExprResolver::default();
+        // TODO(Kevin): make sort by expression names unique so that we can do things like sort(col("a"), col("a") + col("b"))
+        let sort_by_schema = exprs_to_schema(&sort_by, input.schema())?;
 
-        let (sort_by, sort_by_fields) = expr_resolver
-            .resolve(sort_by, &input.schema())
-            .context(CreationSnafu)?;
-
-        let sort_by_resolved_schema = Schema::new(sort_by_fields).context(CreationSnafu)?;
-
-        for (field, expr) in sort_by_resolved_schema.fields.values().zip(sort_by.iter()) {
+        for (field, expr) in sort_by_schema.fields.values().zip(sort_by.iter()) {
             // Disallow sorting by null, binary, and boolean columns.
             // TODO(Clark): This is a port of an existing constraint, we should look at relaxing this.
             if let dt @ (DataType::Null | DataType::Binary) = &field.dtype {
@@ -54,7 +50,15 @@ impl Sort {
             sort_by,
             descending,
             nulls_first,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // Sorting does not affect cardinality.
+        let input_stats = self.input.materialized_stats();
+        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -76,6 +80,9 @@ impl Sort {
             })
             .join(", ");
         res.push(format!("Sort: Sort by = {}", pairs));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

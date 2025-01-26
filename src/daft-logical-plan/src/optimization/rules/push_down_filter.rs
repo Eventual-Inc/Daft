@@ -6,12 +6,11 @@ use std::{
 use common_error::DaftResult;
 use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
+use daft_algebra::boolean::{combine_conjunction, split_conjunction, to_cnf};
 use daft_core::join::JoinType;
 use daft_dsl::{
     col,
-    optimization::{
-        conjuct, get_required_columns, replace_columns_with_expressions, split_conjuction,
-    },
+    optimization::{get_required_columns, replace_columns_with_expressions},
     ExprRef,
 };
 
@@ -56,20 +55,20 @@ impl PushDownFilter {
                 // Filter-Filter --> Filter
 
                 // Split predicate expression on conjunctions (ANDs).
-                let parent_predicates = split_conjuction(&filter.predicate);
-                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().copied().collect();
+                let parent_predicates = split_conjunction(&filter.predicate);
+                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().collect();
                 // Add child predicate expressions to parent predicate expressions, eliminating duplicates.
                 let new_predicates: Vec<ExprRef> = parent_predicates
                     .iter()
                     .chain(
-                        split_conjuction(&child_filter.predicate)
+                        split_conjunction(&child_filter.predicate)
                             .iter()
-                            .filter(|e| !predicate_set.contains(**e)),
+                            .filter(|e| !predicate_set.contains(*e)),
                     )
                     .map(|e| (*e).clone())
                     .collect::<Vec<_>>();
                 // Reconjunct predicate expressions.
-                let new_predicate = conjuct(new_predicates).unwrap();
+                let new_predicate = combine_conjunction(new_predicates).unwrap();
                 let new_filter: Arc<LogicalPlan> =
                     LogicalPlan::from(Filter::try_new(child_filter.input.clone(), new_predicate)?)
                         .into();
@@ -113,7 +112,7 @@ impl PushDownFilter {
                             needing_filter_op,
                         } = rewrite_predicate_for_partitioning(
                             &new_predicate,
-                            external_info.scan_op.0.partitioning_keys(),
+                            external_info.scan_state.get_scan_op().0.partitioning_keys(),
                         )?;
                         assert!(
                             partition_only_filter.len()
@@ -133,8 +132,8 @@ impl PushDownFilter {
                             return Ok(Transformed::no(plan));
                         }
 
-                        let data_filter = conjuct(data_only_filter);
-                        let partition_filter = conjuct(partition_only_filter);
+                        let data_filter = combine_conjunction(data_only_filter);
+                        let partition_filter = combine_conjunction(partition_only_filter);
                         assert!(data_filter.is_some() || partition_filter.is_some());
 
                         let new_pushdowns = if let Some(data_filter) = data_filter {
@@ -158,7 +157,7 @@ impl PushDownFilter {
                             // TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
                             let filter_op: LogicalPlan = Filter::try_new(
                                 new_source.into(),
-                                conjuct(needing_filter_op).unwrap(),
+                                combine_conjunction(needing_filter_op).unwrap(),
                             )?
                             .into();
                             return Ok(Transformed::yes(filter_op.into()));
@@ -176,7 +175,7 @@ impl PushDownFilter {
                 // don't involve compute.
                 //
                 // Filter-Projection --> {Filter-}Projection-Filter
-                let predicates = split_conjuction(&filter.predicate);
+                let predicates = split_conjunction(&filter.predicate);
                 let projection_input_mapping = child_project
                     .projection
                     .iter()
@@ -191,7 +190,7 @@ impl PushDownFilter {
                 let mut can_push: Vec<ExprRef> = vec![];
                 let mut can_not_push: Vec<ExprRef> = vec![];
                 for predicate in predicates {
-                    let predicate_cols = get_required_columns(predicate);
+                    let predicate_cols = get_required_columns(&predicate);
                     if predicate_cols
                         .iter()
                         .all(|col| projection_input_mapping.contains_key(col))
@@ -212,7 +211,7 @@ impl PushDownFilter {
                     return Ok(Transformed::no(plan));
                 }
                 // Create new Filter with predicates that can be pushed past Projection.
-                let predicates_to_push = conjuct(can_push).unwrap();
+                let predicates_to_push = combine_conjunction(can_push).unwrap();
                 let push_down_filter: LogicalPlan =
                     Filter::try_new(child_project.input.clone(), predicates_to_push)?.into();
                 // Create new Projection.
@@ -226,7 +225,7 @@ impl PushDownFilter {
                 } else {
                     // Otherwise, add a Filter after Projection that filters with predicate expressions
                     // that couldn't be pushed past the Projection, returning a Filter-Projection-Filter subplan.
-                    let post_projection_predicate = conjuct(can_not_push).unwrap();
+                    let post_projection_predicate = combine_conjunction(can_not_push).unwrap();
                     let post_projection_filter: LogicalPlan =
                         Filter::try_new(new_projection.into(), post_projection_predicate)?.into();
                     post_projection_filter.into()
@@ -239,7 +238,7 @@ impl PushDownFilter {
                     .into();
                 child_plan.with_new_children(&[new_filter]).into()
             }
-            LogicalPlan::Concat(Concat { input, other }) => {
+            LogicalPlan::Concat(Concat { input, other, .. }) => {
                 // Push filter into each side of the concat.
                 let new_input: LogicalPlan =
                     Filter::try_new(input.clone(), filter.predicate.clone())?.into();
@@ -274,7 +273,8 @@ impl PushDownFilter {
                 let left_cols = HashSet::<_>::from_iter(child_join.left.schema().names());
                 let right_cols = HashSet::<_>::from_iter(child_join.right.schema().names());
 
-                for predicate in split_conjuction(&filter.predicate).into_iter().cloned() {
+                // TODO: simplify predicates, since they may be expanded with `to_cnf`
+                for predicate in split_conjunction(&to_cnf(filter.predicate.clone())) {
                     let pred_cols = HashSet::<_>::from_iter(get_required_columns(&predicate));
 
                     match (
@@ -307,11 +307,11 @@ impl PushDownFilter {
                     }
                 }
 
-                let left_pushdowns = conjuct(left_pushdowns);
-                let right_pushdowns = conjuct(right_pushdowns);
+                let left_pushdowns = combine_conjunction(left_pushdowns);
+                let right_pushdowns = combine_conjunction(right_pushdowns);
 
                 if left_pushdowns.is_some() || right_pushdowns.is_some() {
-                    let kept_predicates = conjuct(kept_predicates);
+                    let kept_predicates = combine_conjunction(kept_predicates);
 
                     let new_left = left_pushdowns.map_or_else(
                         || child_join.left.clone(),
@@ -356,10 +356,15 @@ mod tests {
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit};
+    use daft_functions::uri::download::UrlDownloadArgs;
     use rstest::rstest;
 
     use crate::{
-        optimization::{rules::PushDownFilter, test::assert_optimized_plan_with_rules_eq},
+        optimization::{
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            rules::PushDownFilter,
+            test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
     };
@@ -371,7 +376,14 @@ mod tests {
         plan: Arc<LogicalPlan>,
         expected: Arc<LogicalPlan>,
     ) -> DaftResult<()> {
-        assert_optimized_plan_with_rules_eq(plan, expected, vec![Box::new(PushDownFilter::new())])
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![RuleBatch::new(
+                vec![Box::new(PushDownFilter::new())],
+                RuleExecutionStrategy::Once,
+            )],
+        )
     }
 
     /// Tests that we can't pushdown a filter into a ScanOperator that has a limit.
@@ -424,7 +436,10 @@ mod tests {
     /// Tests that we can't pushdown a filter into a ScanOperator if it has an udf-ish expression.
     #[test]
     fn filter_with_udf_not_pushed_down_into_scan() -> DaftResult<()> {
-        let pred = daft_functions::uri::download(col("a"), 1, true, true, None);
+        let pred = daft_functions::uri::download(
+            col("a"),
+            Some(UrlDownloadArgs::new(1, true, true, None)),
+        );
         let plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
@@ -951,6 +966,62 @@ mod tests {
         // should not push down filter
         let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that a complex predicate can be separated so that it can be pushed down into one side of the join.
+    /// Modeled after TPC-H Q7
+    #[rstest]
+    fn filter_commutes_with_join_complex() -> DaftResult<()> {
+        let left_scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
+        let right_scan_op = dummy_scan_operator(vec![Field::new("b", DataType::Utf8)]);
+
+        let plan = dummy_scan_node(left_scan_op.clone())
+            .join(
+                dummy_scan_node(right_scan_op.clone()),
+                vec![],
+                vec![],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+                false,
+            )?
+            .filter(
+                (col("a").eq(lit("FRANCE")).and(col("b").eq(lit("GERMANY"))))
+                    .or(col("a").eq(lit("GERMANY")).and(col("b").eq(lit("FRANCE")))),
+            )?
+            .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_filters(Some(
+                col("a").eq(lit("FRANCE")).or(col("a").eq(lit("GERMANY"))),
+            )),
+        )
+        .join(
+            dummy_scan_node_with_pushdowns(
+                right_scan_op,
+                Pushdowns::default().with_filters(Some(
+                    col("b").eq(lit("GERMANY")).or(col("b").eq(lit("FRANCE"))),
+                )),
+            ),
+            vec![],
+            vec![],
+            JoinType::Inner,
+            None,
+            None,
+            None,
+            false,
+        )?
+        .filter(
+            (col("b").eq(lit("GERMANY")).or(col("a").eq(lit("GERMANY"))))
+                .and(col("a").eq(lit("FRANCE")).or(col("b").eq(lit("FRANCE")))),
+        )?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
+
         Ok(())
     }
 }

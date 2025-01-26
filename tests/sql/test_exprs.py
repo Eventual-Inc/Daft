@@ -224,3 +224,27 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
     )
 
     assert expected_df == actual_sql == expected_intervals
+
+
+def test_coalesce():
+    df = daft.from_pydict(
+        {
+            "a": [None, None, 3, None],
+            "b": [None, 2, 4, None],
+            "c": [None, None, 5, 6],
+        }
+    )
+
+    expected = df.select(daft.coalesce(col("a"), col("b"), col("c")).alias("result")).to_pydict()
+
+    catalog = SQLCatalog({"df": df})
+    actual = daft.sql(
+        """
+    SELECT
+        COALESCE(a, b, c) as result
+    FROM df
+    """,
+        catalog=catalog,
+    ).to_pydict()
+
+    assert actual == expected

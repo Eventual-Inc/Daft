@@ -16,6 +16,10 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
     type Error = PlannerError;
 
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
+        // TODO validations (unsure if should carry over from python API)
+        // - schema_hints is deprecated
+        // - ensure infer_schema is true if schema is None.
+
         let delimiter = args.try_get_named("delimiter")?;
         let has_headers: bool = args.try_get_named("has_headers")?.unwrap_or(true);
         let double_quote: bool = args.try_get_named("double_quote")?.unwrap_or(true);
@@ -46,7 +50,6 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
         let buffer_size = args.try_get_named("buffer_size")?;
         let file_path_column = args.try_get_named("file_path_column")?;
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
-        let use_native_downloader = args.try_get_named("use_native_downloader")?.unwrap_or(true);
         let schema = None; // TODO
         let schema_hints = None; // TODO
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
@@ -65,7 +68,6 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
             io_config,
             file_path_column,
             hive_partitioning,
-            use_native_downloader,
             schema_hints,
             buffer_size,
             chunk_size,
@@ -95,7 +97,6 @@ impl SQLTableFunction for ReadCsvFunction {
                 "io_config",
                 "file_path_column",
                 "hive_partitioning",
-                "use_native_downloader",
                 // "schema_hints",
                 "buffer_size",
                 "chunk_size",
@@ -103,6 +104,8 @@ impl SQLTableFunction for ReadCsvFunction {
             1, // 1 positional argument (path)
         )?;
 
-        builder.finish().map_err(From::from)
+        let runtime = common_runtime::get_io_runtime(true);
+        let result = runtime.block_on(builder.finish())??;
+        Ok(result)
     }
 }

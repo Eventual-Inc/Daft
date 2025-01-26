@@ -2,6 +2,7 @@ extend = "../.ruff.toml"
 
 [lint]
 extend-select = [
+  "PYI030",  # unnecessary-literal-union, derived from flake8-pyi
   "TID253",  # banned-module-level-imports, derived from flake8-tidy-imports
   "TCH"  # flake8-type-checking
 ]

@@ -3,12 +3,14 @@ common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
+common-partitioning = {path = "src/common/partitioning", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-runtime = {path = "src/common/runtime", default-features = false}
 common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
+daft-algebra = {path = "src/daft-algebra", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-catalog-python-catalog = {path = "src/daft-catalog/python-catalog", optional = true}
 daft-compression = {path = "src/daft-compression", default-features = false}
@@ -29,6 +31,7 @@ daft-micropartition = {path = "src/daft-micropartition", default-features = fals
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
 daft-physical-plan = {path = "src/daft-physical-plan", default-features = false}
+daft-ray-execution = {path = "src/daft-ray-execution", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
 daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
@@ -46,21 +49,14 @@ sysinfo = {workspace = true}
 # maturin will turn this on
 python = [
   "common-daft-config/python",
-  "common-daft-config/python",
-  "common-daft-config/python",
   "common-display/python",
-  "common-display/python",
-  "common-display/python",
+  "common-partitioning/python",
   "common-resource-request/python",
-  "common-resource-request/python",
-  "common-resource-request/python",
+  "common-file-formats/python",
   "common-scan-info/python",
-  "common-system-info/python",
-  "common-system-info/python",
   "common-system-info/python",
   "daft-catalog-python-catalog/python",
   "daft-catalog/python",
-  "daft-connect/python",
   "daft-core/python",
   "daft-csv/python",
   "daft-dsl/python",
@@ -78,7 +74,6 @@ python = [
   "daft-scan/python",
   "daft-scheduler/python",
   "daft-sql/python",
-  "daft-stats/python",
   "daft-stats/python",
   "daft-table/python",
   "daft-writers/python",
@@ -149,6 +144,7 @@ members = [
   "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
+  "src/daft-algebra",
   "src/daft-catalog",
   "src/daft-core",
   "src/daft-csv",
@@ -175,7 +171,9 @@ members = [
   "src/daft-connect",
   "src/parquet2",
   # "src/spark-connect-script",
-  "src/generated/spark-connect"
+  "src/generated/spark-connect",
+  "src/common/partitioning",
+  "src/daft-ray-execution"
 ]
 
 [workspace.dependencies]
@@ -188,20 +186,25 @@ async-compression = {version = "0.4.12", features = [
 async-stream = "0.3.6"
 async-trait = "0.1.79"
 base64 = "0.22.1"
-bytes = "1.6.0"
+bytes = "1.8.0"
 chrono = "0.4.38"
-chrono-tz = "0.8.4"
+chrono-tz = "0.10.0"
 comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
+common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
+common-file-formats = {path = "src/common/file-formats"}
+common-runtime = {path = "src/common/runtime", default-features = false}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}
-daft-local-plan = {path = "src/daft-local-plan"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
+daft-micropartition = {path = "src/daft-micropartition"}
+daft-ray-execution = {path = "src/daft-ray-execution"}
 daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
+daft-sql = {path = "src/daft-sql"}
 daft-table = {path = "src/daft-table"}
 derivative = "2.2.0"
 derive_builder = "0.20.2"
@@ -224,7 +227,7 @@ rand = "^0.8"
 rayon = "1.10.0"
 regex = "1.10.4"
 rstest = "0.18.2"
-serde_json = "1.0.116"
+serde_json = "1.0.133"
 sha1 = "0.11.0-pre.4"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
@@ -276,11 +279,11 @@ features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py38", "indexmap"]
-version = "0.21.0"
+features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono"]
+version = "0.23.3"
 
 [workspace.dependencies.pyo3-log]
-version = "0.11.0"
+version = "0.12.1"
 
 [workspace.dependencies.serde]
 features = ["derive", "rc"]

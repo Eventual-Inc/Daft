@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 import pyarrow as pa
@@ -30,7 +30,7 @@ def pytest_configure(config):
 
 
 def get_tests_daft_runner_name() -> Literal["ray"] | Literal["py"] | Literal["native"]:
-    """Test utility that checks the environment variable for the runner that is being used for the test"""
+    """Test utility that checks the environment variable for the runner that is being used for the test."""
     name = os.getenv("DAFT_RUNNER")
     assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
     name = name.lower()
@@ -90,7 +90,7 @@ def join_strategy(request):
 
 @pytest.fixture(scope="function")
 def make_df(data_source, tmp_path) -> daft.Dataframe:
-    """Makes a dataframe when provided with data"""
+    """Makes a dataframe when provided with data."""
 
     def _make_df(
         data: pa.Table | dict | list,
@@ -182,6 +182,18 @@ def assert_df_equals(
         except AssertionError:
             print(f"Failed assertion for col: {col}")
             raise
+
+
+def check_answer(df: daft.DataFrame, expected_answer: dict[str, Any], is_sorted: bool = False):
+    daft_df = df.to_pandas()
+    expected_df = daft.from_pydict(expected_answer).to_pandas()
+    # when this is an empty result, no need to check data types.
+    check_dtype = not expected_df.empty
+    if is_sorted:
+        assert_df_equals(daft_df, expected_df, assert_ordering=True, check_dtype=check_dtype)
+    else:
+        sort_keys = df.column_names
+        assert_df_equals(daft_df, expected_df, sort_key=sort_keys, assert_ordering=False, check_dtype=check_dtype)
 
 
 @pytest.fixture(

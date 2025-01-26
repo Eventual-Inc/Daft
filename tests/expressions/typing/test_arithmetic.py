@@ -12,12 +12,12 @@ from tests.expressions.typing.conftest import (
     has_supertype,
     is_integer,
     is_numeric,
+    is_numeric_or_null,
 )
 
 
 def plus_type_validation(lhs: DataType, rhs: DataType) -> bool:
-    """Checks whether these input types are resolvable for the + operation"""
-
+    """Checks whether these input types are resolvable for the + operation."""
     # Plus only works for certain types
     for arg in (lhs, rhs):
         if not (is_numeric(arg) or (arg == DataType.string()) or (arg == DataType.bool()) or (arg == DataType.null())):
@@ -42,7 +42,7 @@ def test_plus(binary_data_fixture):
 
 
 def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType, op: ops) -> bool:
-    """Checks whether these input types are resolvable for arithmetic operations"""
+    """Checks whether these input types are resolvable for arithmetic operations."""
     # (temporal - temporal = duration)
     if lhs._is_temporal_type() and rhs._is_temporal_type() and lhs == rhs and op == ops.sub:
         return True
@@ -117,6 +117,18 @@ def test_round(unary_data_fixture):
         expr=col(arg.name()).round(0),
         run_kernel=lambda: arg.round(0),
         resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_clip(ternary_data_fixture):
+    data, min, max = ternary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=ternary_data_fixture,
+        expr=col(data.name()).clip(col(min.name()), col(max.name())),
+        run_kernel=lambda: data.clip(min, max),
+        resolvable=is_numeric(data.datatype())
+        and is_numeric_or_null(min.datatype())
+        and is_numeric_or_null(max.datatype()),
     )
 
 

@@ -2,10 +2,10 @@ mod actor_pool_project;
 mod agg;
 mod broadcast_join;
 mod concat;
+mod cross_join;
 mod csv;
 #[cfg(feature = "python")]
 mod deltalake_write;
-
 mod empty_scan;
 mod explode;
 mod filter;
@@ -32,6 +32,7 @@ pub use actor_pool_project::ActorPoolProject;
 pub use agg::Aggregate;
 pub use broadcast_join::BroadcastJoin;
 pub use concat::Concat;
+pub use cross_join::CrossJoin;
 pub use csv::TabularWriteCsv;
 #[cfg(feature = "python")]
 pub use deltalake_write::DeltaLakeWrite;

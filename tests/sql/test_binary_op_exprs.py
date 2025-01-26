@@ -75,20 +75,20 @@ def test_unsupported_div_floor():
 
     _assert_df_op_raise(
         lambda: df.select(daft.col("A") // daft.col("C")).collect(),
-        "TypeError Cannot perform floor divide on types: Int64, Boolean",
+        "Cannot perform floor divide on types: Int64, Boolean",
     )
 
     _assert_df_op_raise(
         lambda: df.select(daft.col("C") // daft.col("A")).collect(),
-        "TypeError Cannot perform floor divide on types: Boolean, Int64",
+        "Cannot perform floor divide on types: Boolean, Int64",
     )
 
     _assert_df_op_raise(
         lambda: df.select(daft.col("B") // daft.col("C")).collect(),
-        "TypeError Cannot perform floor divide on types: Float64, Boolean",
+        "Cannot perform floor divide on types: Float64, Boolean",
     )
 
     _assert_df_op_raise(
         lambda: df.select(daft.col("C") // daft.col("B")).collect(),
-        "TypeError Cannot perform floor divide on types: Boolean, Float64",
+        "Cannot perform floor divide on types: Boolean, Float64",
     )

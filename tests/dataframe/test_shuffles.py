@@ -33,9 +33,7 @@ def generator(
 
 @pytest.fixture(scope="function")
 def pre_shuffle_merge_ctx():
-    """
-    Fixture that provides a context manager for pre-shuffle merge testing.
-    """
+    """Fixture that provides a context manager for pre-shuffle merge testing."""
 
     def _ctx(threshold: int | None = None):
         return daft.execution_config_ctx(shuffle_algorithm="pre_shuffle_merge", pre_shuffle_merge_threshold=threshold)
@@ -52,9 +50,7 @@ def pre_shuffle_merge_ctx():
     [(100, 100), (100, 1), (100, 50), (100, 200)],
 )
 def test_pre_shuffle_merge_small_partitions(pre_shuffle_merge_ctx, input_partitions, output_partitions):
-    """
-    Test that pre-shuffle merge is working for small partitions less than the memory threshold
-    """
+    """Test that pre-shuffle merge is working for small partitions less than the memory threshold."""
 
     def num_rows_fn():
         return output_partitions
@@ -90,9 +86,7 @@ def test_pre_shuffle_merge_small_partitions(pre_shuffle_merge_ctx, input_partiti
     [(100, 100), (100, 1), (100, 50), (100, 200)],
 )
 def test_pre_shuffle_merge_big_partitions(pre_shuffle_merge_ctx, input_partitions, output_partitions):
-    """
-    Test that pre-shuffle merge is working for big partitions greater than the threshold
-    """
+    """Test that pre-shuffle merge is working for big partitions greater than the threshold."""
 
     def num_rows_fn():
         return output_partitions
@@ -128,9 +122,7 @@ def test_pre_shuffle_merge_big_partitions(pre_shuffle_merge_ctx, input_partition
     [(100, 100), (100, 1), (100, 50), (100, 200)],
 )
 def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, input_partitions, output_partitions):
-    """
-    Test that pre-shuffle merge is working for randomly sized partitions
-    """
+    """Test that pre-shuffle merge is working for randomly sized partitions."""
 
     def num_rows_fn():
         return output_partitions

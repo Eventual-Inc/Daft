@@ -10,6 +10,7 @@ pub mod optimization;
 pub mod partitioning;
 pub mod sink_info;
 pub mod source_info;
+pub mod stats;
 #[cfg(test)]
 mod test;
 mod treenode;
@@ -40,6 +41,10 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<DatabaseSourceConfig>()?;
     parent.add_class::<FileInfos>()?;
     parent.add_class::<FileInfo>()?;
+    parent.add_function(wrap_pyfunction!(
+        builder::py_check_column_name_validity,
+        parent
+    )?)?;
 
     Ok(())
 }

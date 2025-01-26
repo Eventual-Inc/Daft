@@ -6,25 +6,12 @@ import pytest
 
 import daft
 from daft import col
-from daft.context import get_context, set_planning_config
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
 from daft.series import Series
 from daft.table import MicroPartition
 from daft.udf import udf
-
-
-@pytest.fixture(scope="function", params=[False, True])
-def actor_pool_enabled(request):
-    original_config = get_context().daft_planning_config
-    try:
-        set_planning_config(
-            config=get_context().daft_planning_config.with_config_values(enable_actor_pool_projections=request.param)
-        )
-        yield request.param
-    finally:
-        set_planning_config(config=original_config)
 
 
 def test_udf():
@@ -44,7 +31,8 @@ def test_udf():
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_class_udf(batch_size, actor_pool_enabled):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf(batch_size, use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
@@ -55,8 +43,8 @@ def test_class_udf(batch_size, actor_pool_enabled):
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
 
-    if actor_pool_enabled:
-        RepeatN = RepeatN.with_concurrency(1)
+    if use_actor_pool:
+        RepeatN = RepeatN.with_concurrency(2)
 
     expr = RepeatN(col("a"))
     field = expr._to_field(df.schema())
@@ -68,7 +56,8 @@ def test_class_udf(batch_size, actor_pool_enabled):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_class_udf_init_args(batch_size, actor_pool_enabled):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf_init_args(batch_size, use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
@@ -79,8 +68,8 @@ def test_class_udf_init_args(batch_size, actor_pool_enabled):
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
 
-    if actor_pool_enabled:
-        RepeatN = RepeatN.with_concurrency(1)
+    if use_actor_pool:
+        RepeatN = RepeatN.with_concurrency(2)
 
     expr = RepeatN(col("a"))
     field = expr._to_field(df.schema())
@@ -98,7 +87,8 @@ def test_class_udf_init_args(batch_size, actor_pool_enabled):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_class_udf_init_args_no_default(batch_size, actor_pool_enabled):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf_init_args_no_default(batch_size, use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
@@ -109,10 +99,10 @@ def test_class_udf_init_args_no_default(batch_size, actor_pool_enabled):
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
 
-    if actor_pool_enabled:
-        RepeatN = RepeatN.with_concurrency(1)
+    if use_actor_pool:
+        RepeatN = RepeatN.with_concurrency(2)
 
-    with pytest.raises(ValueError, match="Cannot call StatefulUDF without initialization arguments."):
+    with pytest.raises(ValueError, match="Cannot call class UDF without initialization arguments."):
         RepeatN(col("a"))
 
     expr = RepeatN.with_init_args(initial_n=2)(col("a"))
@@ -123,7 +113,8 @@ def test_class_udf_init_args_no_default(batch_size, actor_pool_enabled):
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-def test_class_udf_init_args_bad_args(actor_pool_enabled):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf_init_args_bad_args(use_actor_pool):
     @udf(return_dtype=DataType.string())
     class RepeatN:
         def __init__(self, initial_n):
@@ -132,16 +123,15 @@ def test_class_udf_init_args_bad_args(actor_pool_enabled):
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
 
-    if actor_pool_enabled:
-        RepeatN = RepeatN.with_concurrency(1)
+    if use_actor_pool:
+        RepeatN = RepeatN.with_concurrency(2)
 
     with pytest.raises(TypeError, match="missing a required argument: 'initial_n'"):
         RepeatN.with_init_args(wrong=5)
 
 
 @pytest.mark.parametrize("concurrency", [1, 2, 4])
-@pytest.mark.parametrize("actor_pool_enabled", [True], indirect=True)
-def test_stateful_udf_concurrency(concurrency, actor_pool_enabled):
+def test_actor_pool_udf_concurrency(concurrency):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=1)
@@ -233,10 +223,14 @@ def test_udf_error():
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_no_args_udf_call(batch_size):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_no_args_udf_call(batch_size, use_actor_pool):
     @udf(return_dtype=DataType.int64(), batch_size=batch_size)
     def udf_no_args():
         pass
+
+    if use_actor_pool:
+        udf_no_args = udf_no_args.with_concurrency(2)
 
     assert isinstance(udf_no_args(), Expression)
 
@@ -247,10 +241,14 @@ def test_no_args_udf_call(batch_size):
         udf_no_args(invalid="invalid")
 
 
-def test_full_udf_call():
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_full_udf_call(use_actor_pool):
     @udf(return_dtype=DataType.int64())
     def full_udf(e_arg, val, kwarg_val=None, kwarg_ex=None):
         pass
+
+    if use_actor_pool:
+        full_udf = full_udf.with_concurrency(2)
 
     assert isinstance(full_udf(col("x"), 1, kwarg_val=0, kwarg_ex=col("y")), Expression)
 
@@ -258,7 +256,8 @@ def test_full_udf_call():
         full_udf()
 
 
-def test_class_udf_initialization_error(actor_pool_enabled):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf_initialization_error(use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
@@ -269,11 +268,11 @@ def test_class_udf_initialization_error(actor_pool_enabled):
         def __call__(self, data):
             return data
 
-    if actor_pool_enabled:
+    if use_actor_pool:
         IdentityWithInitError = IdentityWithInitError.with_concurrency(1)
 
     expr = IdentityWithInitError(col("a"))
-    if actor_pool_enabled:
+    if use_actor_pool:
         with pytest.raises(Exception):
             df.select(expr).collect()
     else:
@@ -281,10 +280,14 @@ def test_class_udf_initialization_error(actor_pool_enabled):
             df.select(expr).collect()
 
 
-def test_udf_equality():
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_udf_equality(use_actor_pool):
     @udf(return_dtype=DataType.int64())
     def udf1(x):
         pass
+
+    if use_actor_pool:
+        udf1 = udf1.with_concurrency(2)
 
     assert expr_structurally_equal(udf1("x"), udf1("x"))
     assert not expr_structurally_equal(udf1("x"), udf1("y"))
@@ -339,7 +342,7 @@ def test_udf_arbitrary_number_of_kwargs(batch_size):
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
     def repeat_kwargs(**kwargs):
         data = {k: v.to_pylist() for k, v in kwargs.items()}
-        length = len(data[list(data.keys())[0]])
+        length = len(data[next(iter(data.keys()))])
         return Series.from_pylist(["".join([key * data[key][i] for key in data]) for i in range(length)])
 
     expr = repeat_kwargs(a=col("a"), b=col("b"), c=col("c"))
@@ -420,3 +423,19 @@ def test_udf_invalid_batch_sizes():
 
     with pytest.raises(OverflowError):
         table.eval_expression_list([noop.override_options(batch_size=-1)(col("a"))])
+
+
+@pytest.mark.parametrize("batch_size", [None, 1, 2])
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_udf_empty(batch_size, use_actor_pool):
+    df = daft.from_pydict({"a": []})
+
+    @udf(return_dtype=DataType.int64(), batch_size=batch_size)
+    def identity(data):
+        return data
+
+    if use_actor_pool:
+        identity = identity.with_concurrency(2)
+
+    result = df.select(identity(col("a")))
+    assert result.to_pydict() == {"a": []}

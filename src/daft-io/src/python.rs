@@ -9,7 +9,14 @@ mod py {
 
     use crate::{get_io_client, parse_url, s3_like, stats::IOStatsContext};
 
-    #[pyfunction]
+    #[pyfunction(signature = (
+        input,
+        multithreaded_io=None,
+        io_config=None,
+        fanout_limit=None,
+        page_size=None,
+        limit=None
+    ))]
     fn io_glob(
         py: Python,
         input: String,
@@ -50,7 +57,7 @@ mod py {
         });
         let mut to_rtn = vec![];
         for file in lsr? {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("type", format!("{:?}", file.filetype))?;
             dict.set_item("path", file.filepath)?;
             dict.set_item("size", file.size)?;
@@ -72,8 +79,8 @@ mod py {
 
     pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
         common_io_config::python::register_modules(parent)?;
-        parent.add_function(wrap_pyfunction_bound!(io_glob, parent)?)?;
-        parent.add_function(wrap_pyfunction_bound!(s3_config_from_env, parent)?)?;
+        parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
+        parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
         Ok(())
     }
 }

@@ -61,7 +61,7 @@ def _build_segment_batch_payload(
 
 
 def _post_segment_track_endpoint(analytics_client: AnalyticsClient, payload: dict[str, Any]) -> None:
-    """Posts a batch of JSON data to Segment"""
+    """Posts a batch of JSON data to Segment."""
     req = urllib.request.Request(
         _SEGMENT_BATCH_ENDPOINT,
         method="POST",
@@ -84,7 +84,7 @@ def _post_segment_track_endpoint(analytics_client: AnalyticsClient, payload: dic
 
 
 class AnalyticsClient:
-    """Non-threadsafe client for sending analytics events, which is a singleton for each Python process"""
+    """Non-threadsafe client for sending analytics events, which is a singleton for each Python process."""
 
     def __init__(
         self,
@@ -169,7 +169,7 @@ class AnalyticsClient:
 
 
 def init_analytics(daft_version: str, daft_build_type: str, user_opted_out: bool) -> AnalyticsClient:
-    """Initialize the analytics module
+    """Initialize the analytics module.
 
     Returns:
         AnalyticsClient: initialized singleton AnalyticsClient
@@ -187,7 +187,7 @@ def init_analytics(daft_version: str, daft_build_type: str, user_opted_out: bool
 
 
 def time_df_method(method):
-    """Decorator to track metrics about Dataframe method calls"""
+    """Decorator to track metrics about Dataframe method calls."""
 
     @functools.wraps(method)
     def tracked_method(*args, **kwargs):
@@ -213,7 +213,7 @@ def time_df_method(method):
 
 
 def time_func(fn):
-    """Decorator to track metrics for daft API calls"""
+    """Decorator to track metrics for daft API calls."""
 
     @functools.wraps(fn)
     def tracked_fn(*args, **kwargs):

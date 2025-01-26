@@ -8,7 +8,7 @@ from tests.conftest import assert_df_equals
 
 
 def test_sorted_by_expr(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
-    """Sort by a column that undergoes an expression"""
+    """Sort by a column that undergoes an expression."""
     daft_df = daft_df.repartition(repartition_nparts)
     daft_sorted_df = daft_df.sort(((col("Unique Key") % 2) == 0).if_else(col("Unique Key"), col("Unique Key") * -1))
     daft_sorted_pd_df = daft_sorted_df.to_pandas()
@@ -37,7 +37,7 @@ def test_sorted_by_expr(daft_df, service_requests_csv_pd_df, repartition_nparts,
     ],
 )
 def test_get_sorted(daft_df, service_requests_csv_pd_df, repartition_nparts, sort_keys, with_morsel_size):
-    """Sort by a column"""
+    """Sort by a column."""
     daft_df = daft_df.repartition(repartition_nparts)
     daft_sorted_df = daft_df.sort([col(k) for k in sort_keys], desc=True)
     daft_sorted_pd_df = daft_sorted_df.to_pandas()
@@ -56,7 +56,7 @@ def test_get_sorted(daft_df, service_requests_csv_pd_df, repartition_nparts, sor
     ],
 )
 def test_get_sorted_top_n(daft_df, service_requests_csv_pd_df, repartition_nparts, sort_keys, with_morsel_size):
-    """Sort by a column"""
+    """Sort by a column."""
     daft_df = daft_df.repartition(repartition_nparts)
     daft_sorted_df = daft_df.sort([col(k) for k in sort_keys], desc=True).limit(100)
     daft_sorted_pd_df = daft_sorted_df.to_pandas()
@@ -77,7 +77,7 @@ def test_get_sorted_top_n(daft_df, service_requests_csv_pd_df, repartition_npart
 def test_get_sorted_top_n_flipped_desc(
     daft_df, service_requests_csv_pd_df, repartition_nparts, sort_keys, with_morsel_size
 ):
-    """Sort by a column"""
+    """Sort by a column."""
     daft_df = daft_df.repartition(repartition_nparts)
     desc_list = [True]
     for i in range(len(sort_keys) - 1):
@@ -108,7 +108,7 @@ def test_get_sorted_top_n_flipped_desc(
 def test_get_sorted_top_n_projected(
     daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size
 ):
-    """Sort by a column and retrieve specific columns from the top N results"""
+    """Sort by a column and retrieve specific columns from the top N results."""
     daft_df = daft_df.repartition(repartition_nparts)
     expected = service_requests_csv_pd_df.sort_values(by="Unique Key", ascending=False)[
         ["Unique Key", "Complaint Type"]

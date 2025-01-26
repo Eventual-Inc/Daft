@@ -1,110 +1,65 @@
 mod runtime_py_object;
 mod udf;
-mod udf_runtime_binding;
 
-#[cfg(feature = "python")]
-use std::collections::HashMap;
 use std::sync::Arc;
 
-#[cfg(feature = "python")]
-use common_error::DaftError;
 use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
 use common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_core::datatypes::DataType;
+use daft_core::prelude::*;
 use itertools::Itertools;
 #[cfg(feature = "python")]
-use pyo3::{Py, PyAny};
+use pyo3::Python;
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
-pub use udf_runtime_binding::UDFRuntimeBinding;
 
-use super::{FunctionEvaluator, FunctionExpr};
+use super::FunctionExpr;
 use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum PythonUDF {
-    Stateless(StatelessPythonUDF),
-    Stateful(StatefulPythonUDF),
-}
-
-impl PythonUDF {
-    #[inline]
-    pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        match self {
-            Self::Stateless(stateless_python_udf) => stateless_python_udf,
-            Self::Stateful(stateful_python_udf) => stateful_python_udf,
-        }
-    }
+pub enum MaybeInitializedUDF {
+    Initialized(RuntimePyObject),
+    Uninitialized {
+        inner: RuntimePyObject,
+        init_args: RuntimePyObject,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct StatelessPythonUDF {
+pub struct PythonUDF {
     pub name: Arc<String>,
-    partial_func: RuntimePyObject,
-    num_expressions: usize,
-    pub return_dtype: DataType,
-    pub resource_request: Option<ResourceRequest>,
-    pub batch_size: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct StatefulPythonUDF {
-    pub name: Arc<String>,
-    pub stateful_partial_func: RuntimePyObject,
+    pub func: MaybeInitializedUDF,
+    pub bound_args: RuntimePyObject,
     pub num_expressions: usize,
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
-    pub init_args: Option<RuntimePyObject>,
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
-    pub runtime_binding: UDFRuntimeBinding,
-}
-
-pub fn stateless_udf(
-    name: &str,
-    py_partial_stateless_udf: RuntimePyObject,
-    expressions: &[ExprRef],
-    return_dtype: DataType,
-    resource_request: Option<ResourceRequest>,
-    batch_size: Option<usize>,
-) -> DaftResult<Expr> {
-    Ok(Expr::Function {
-        func: super::FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
-            name: name.to_string().into(),
-            partial_func: py_partial_stateless_udf,
-            num_expressions: expressions.len(),
-            return_dtype,
-            resource_request,
-            batch_size,
-        })),
-        inputs: expressions.into(),
-    })
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn stateful_udf(
+pub fn udf(
     name: &str,
-    py_stateful_partial_func: RuntimePyObject,
+    inner: RuntimePyObject,
+    bound_args: RuntimePyObject,
     expressions: &[ExprRef],
     return_dtype: DataType,
+    init_args: RuntimePyObject,
     resource_request: Option<ResourceRequest>,
-    init_args: Option<RuntimePyObject>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
-        func: super::FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+        func: super::FunctionExpr::Python(PythonUDF {
             name: name.to_string().into(),
-            stateful_partial_func: py_stateful_partial_func,
+            func: MaybeInitializedUDF::Uninitialized { inner, init_args },
+            bound_args,
             num_expressions: expressions.len(),
             return_dtype,
             resource_request,
-            init_args,
             batch_size,
             concurrency,
-            runtime_binding: UDFRuntimeBinding::Unbound,
-        })),
+        }),
         inputs: expressions.into(),
     })
 }
@@ -119,18 +74,9 @@ pub fn get_resource_request(exprs: &[ExprRef]) -> Option<ResourceRequest> {
             expr.apply(|e| match e.as_ref() {
                 Expr::Function {
                     func:
-                        FunctionExpr::Python(PythonUDF::Stateless(StatelessPythonUDF {
-                            resource_request,
-                            ..
-                        })),
-                    ..
-                }
-                | Expr::Function {
-                    func:
-                        FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                            resource_request,
-                            ..
-                        })),
+                        FunctionExpr::Python(PythonUDF {
+                            resource_request, ..
+                        }),
                     ..
                 } => {
                     if let Some(rr) = resource_request {
@@ -157,101 +103,121 @@ pub fn get_resource_request(exprs: &[ExprRef]) -> Option<ResourceRequest> {
     }
 }
 
-/// Gets the concurrency from the first StatefulUDF encountered in a given slice of expressions
+/// Gets the concurrency from the first UDF encountered in a given slice of expressions
 ///
-/// NOTE: This function panics if no StatefulUDF is found
+/// NOTE: This function panics if no UDF is found or if the first UDF has no concurrency
 pub fn get_concurrency(exprs: &[ExprRef]) -> usize {
     let mut projection_concurrency = None;
     for expr in exprs {
-        let mut found_stateful_udf = false;
+        let mut found_actor_pool_udf = false;
         expr.apply(|e| match e.as_ref() {
             Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF{concurrency, ..})),
+                func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
                 ..
             } => {
-                found_stateful_udf = true;
-                projection_concurrency = Some(concurrency.expect("Should have concurrency specified"));
+                found_actor_pool_udf = true;
+                projection_concurrency =
+                    Some(concurrency.expect("Should have concurrency specified"));
                 Ok(common_treenode::TreeNodeRecursion::Stop)
             }
             _ => Ok(common_treenode::TreeNodeRecursion::Continue),
-        }).unwrap();
-        if found_stateful_udf {
+        })
+        .unwrap();
+        if found_actor_pool_udf {
             break;
         }
     }
-    projection_concurrency.expect("get_concurrency expects one StatefulUDF")
+    projection_concurrency.expect("get_concurrency expects one UDF with concurrency set")
 }
 
-/// Binds every StatefulPythonUDF expression to an initialized function provided by an actor
+/// Gets the batch size from the first UDF encountered in a given slice of expressions
+pub fn get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
+    let mut projection_batch_size = None;
+    for expr in exprs {
+        let mut found_udf = false;
+        expr.apply(|e| match e.as_ref() {
+            Expr::Function {
+                func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
+                ..
+            } => {
+                found_udf = true;
+                projection_batch_size = Some(*batch_size);
+                Ok(common_treenode::TreeNodeRecursion::Stop)
+            }
+            _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+        })
+        .unwrap();
+        if found_udf {
+            break;
+        }
+    }
+    projection_batch_size.expect("get_batch_size expects one UDF")
+}
+
 #[cfg(feature = "python")]
-pub fn bind_stateful_udfs(
-    expr: ExprRef,
-    initialized_funcs: &HashMap<String, Py<PyAny>>,
-) -> DaftResult<ExprRef> {
+fn py_udf_initialize(
+    py: Python<'_>,
+    func: Arc<pyo3::PyObject>,
+    init_args: Arc<pyo3::PyObject>,
+) -> DaftResult<pyo3::PyObject> {
+    Ok(func.call_method1(
+        py,
+        pyo3::intern!(py, "initialize"),
+        (init_args.clone_ref(py),),
+    )?)
+}
+
+/// Initializes all uninitialized UDFs in the expression
+#[cfg(feature = "python")]
+pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
+    use common_treenode::Transformed;
+
     expr.transform(|e| match e.as_ref() {
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::Stateful(stateful_py_udf)),
+            func:
+                FunctionExpr::Python(
+                    python_udf @ PythonUDF {
+                        func: MaybeInitializedUDF::Uninitialized { inner, init_args },
+                        ..
+                    },
+                ),
             inputs,
         } => {
-            let f = initialized_funcs
-                .get(stateful_py_udf.name.as_ref())
-                .ok_or_else(|| {
-                    DaftError::InternalError(format!(
-                        "Unable to find UDF to bind: {}",
-                        stateful_py_udf.name.as_ref()
-                    ))
-                })?;
-            let bound_expr = Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                    runtime_binding: udf_runtime_binding::UDFRuntimeBinding::Bound(
-                        f.clone().into(),
-                    ),
-                    ..stateful_py_udf.clone()
-                })),
+            let initialized_func = Python::with_gil(|py| {
+                py_udf_initialize(py, inner.clone().unwrap(), init_args.clone().unwrap())
+            })?;
+
+            let initialized_expr = Expr::Function {
+                func: FunctionExpr::Python(PythonUDF {
+                    func: MaybeInitializedUDF::Initialized(initialized_func.into()),
+                    ..python_udf.clone()
+                }),
                 inputs: inputs.clone(),
             };
-            Ok(common_treenode::Transformed::yes(bound_expr.into()))
+
+            Ok(Transformed::yes(initialized_expr.into()))
         }
-        _ => Ok(common_treenode::Transformed::no(e)),
+        _ => Ok(Transformed::no(e)),
     })
     .map(|transformed| transformed.data)
 }
 
-/// Helper function that extracts all PartialStatefulUDF python objects from a given expression tree
-#[cfg(feature = "python")]
-pub fn extract_partial_stateful_udf_py(
-    expr: ExprRef,
-) -> HashMap<String, (Py<PyAny>, Option<Py<PyAny>>)> {
-    extract_stateful_udf_exprs(expr)
-        .into_iter()
-        .map(|stateful_udf| {
-            (
-                stateful_udf.name.as_ref().to_string(),
-                (
-                    stateful_udf.stateful_partial_func.as_ref().clone(),
-                    stateful_udf.init_args.map(|x| x.as_ref().clone()),
-                ),
-            )
-        })
-        .collect()
-}
+/// Get the names of all UDFs in expression
+pub fn get_udf_names(expr: &ExprRef) -> Vec<String> {
+    let mut names = Vec::new();
 
-/// Helper function that extracts all `StatefulPythonUDF` expressions from a given expression tree
-pub fn extract_stateful_udf_exprs(expr: ExprRef) -> Vec<StatefulPythonUDF> {
-    let mut stateful_udf_exprs = Vec::new();
-
-    expr.apply(|child| {
+    expr.apply(|e| {
         if let Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::Stateful(stateful_udf)),
+            func: FunctionExpr::Python(PythonUDF { name, .. }),
             ..
-        } = child.as_ref()
+        } = e.as_ref()
         {
-            stateful_udf_exprs.push(stateful_udf.clone());
+            names.push(name.to_string());
         }
 
         Ok(TreeNodeRecursion::Continue)
     })
     .unwrap();
 
-    stateful_udf_exprs
+    names
 }

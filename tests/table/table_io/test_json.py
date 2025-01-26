@@ -10,22 +10,13 @@ from typing import Any
 import pytest
 
 import daft
-from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableReadOptions
-from daft.table import MicroPartition, schema_inference, table_io
+from daft.table import MicroPartition, table_io
 
 
-def storage_config_from_use_native_downloader(use_native_downloader: bool) -> StorageConfig:
-    if use_native_downloader:
-        return StorageConfig.native(NativeStorageConfig(True, None))
-    else:
-        return StorageConfig.python(PythonStorageConfig(None))
-
-
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_read_input(tmpdir, use_native_downloader):
+def test_read_input(tmpdir):
     tmpdir = pathlib.Path(tmpdir)
     data = {"foo": [1, 2, 3]}
     with open(tmpdir / "file.json", "w") as f:
@@ -34,24 +25,16 @@ def test_read_input(tmpdir, use_native_downloader):
             f.write("\n")
 
     schema = Schema._from_field_name_and_types([("foo", DataType.int64())])
-    storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
     # Test pathlib, str and IO
-    assert table_io.read_json(tmpdir / "file.json", schema=schema, storage_config=storage_config).to_pydict() == data
-    assert (
-        table_io.read_json(str(tmpdir / "file.json"), schema=schema, storage_config=storage_config).to_pydict() == data
-    )
-
-    with open(tmpdir / "file.json", "rb") as f:
-        if use_native_downloader:
-            f = tmpdir / "file.json"
-        assert table_io.read_json(f, schema=schema, storage_config=storage_config).to_pydict() == data
+    assert table_io.read_json(tmpdir / "file.json", schema=schema).to_pydict() == data
+    assert table_io.read_json(str(tmpdir / "file.json"), schema=schema).to_pydict() == data
 
 
 @contextlib.contextmanager
 def _json_write_helper(data: dict[str, list[Any]]):
     with tempfile.TemporaryDirectory() as directory_name:
-        first_key = list(data.keys())[0]
+        first_key = next(iter(data.keys()))
         data_len = len(data[first_key])
         for k in data:
             assert len(data[k]) == data_len
@@ -78,16 +61,14 @@ def _json_write_helper(data: dict[str, list[Any]]):
         ([1, None, 2], DataType.list(DataType.int64())),
     ],
 )
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_json_infer_schema(data, expected_dtype, use_native_downloader):
+def test_json_infer_schema(data, expected_dtype):
     with _json_write_helper(
         {
             "id": [1, 2, 3],
             "data": [data, data, None],
         }
     ) as f:
-        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
-        schema = schema_inference.from_json(f, storage_config=storage_config)
+        schema = Schema.from_json(f)
         assert schema == Schema._from_field_name_and_types([("id", DataType.int64()), ("data", expected_dtype)])
 
 
@@ -102,8 +83,7 @@ def test_json_infer_schema(data, expected_dtype, use_native_downloader):
         ({"foo": 1}, daft.Series.from_pylist([{"foo": 1}, {"foo": 1}, None])),
     ],
 )
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_json_read_data(data, expected_data_series, use_native_downloader):
+def test_json_read_data(data, expected_data_series):
     with _json_write_helper(
         {
             "id": [1, 2, 3],
@@ -119,13 +99,11 @@ def test_json_read_data(data, expected_data_series, use_native_downloader):
                 "data": expected_data_series,
             }
         )
-        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
-        table = table_io.read_json(f, schema, storage_config=storage_config)
+        table = table_io.read_json(f, schema)
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_json_read_data_limit_rows(use_native_downloader):
+def test_json_read_data_limit_rows():
     with _json_write_helper(
         {
             "id": [1, 2, 3],
@@ -139,13 +117,11 @@ def test_json_read_data_limit_rows(use_native_downloader):
                 "data": [1, 2],
             }
         )
-        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
-        table = table_io.read_json(f, schema, read_options=TableReadOptions(num_rows=2), storage_config=storage_config)
+        table = table_io.read_json(f, schema, read_options=TableReadOptions(num_rows=2))
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_json_read_data_select_columns(use_native_downloader):
+def test_json_read_data_select_columns():
     with _json_write_helper(
         {
             "id": [1, 2, 3],
@@ -158,8 +134,5 @@ def test_json_read_data_select_columns(use_native_downloader):
                 "data": [1, 2, None],
             }
         )
-        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
-        table = table_io.read_json(
-            f, schema, read_options=TableReadOptions(column_names=["data"]), storage_config=storage_config
-        )
+        table = table_io.read_json(f, schema, read_options=TableReadOptions(column_names=["data"]))
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"

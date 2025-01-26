@@ -14,7 +14,17 @@ pub mod pylib {
         ArrowChunk, ParquetSchemaInferenceOptions, ParquetSchemaInferenceOptionsBuilder,
     };
     #[allow(clippy::too_many_arguments)]
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uri,
+        columns=None,
+        start_offset=None,
+        num_rows=None,
+        row_groups=None,
+        predicate=None,
+        io_config=None,
+        multithreaded_io=None,
+        coerce_int96_timestamp_unit=None
+    ))]
     pub fn read_parquet(
         py: Python,
         uri: &str,
@@ -88,7 +98,18 @@ pub mod pylib {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uri,
+        string_encoding,
+        columns=None,
+        start_offset=None,
+        num_rows=None,
+        row_groups=None,
+        io_config=None,
+        multithreaded_io=None,
+        coerce_int96_timestamp_unit=None,
+        file_timeout_ms=None
+    ))]
     pub fn read_parquet_into_pyarrow(
         py: Python,
         uri: &str,
@@ -126,11 +147,22 @@ pub mod pylib {
                 file_timeout_ms,
             )
         })?;
-        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, &pyarrow)
     }
     #[allow(clippy::too_many_arguments)]
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uris,
+        columns=None,
+        start_offset=None,
+        num_rows=None,
+        row_groups=None,
+        predicate=None,
+        io_config=None,
+        num_parallel_tasks=None,
+        multithreaded_io=None,
+        coerce_int96_timestamp_unit=None
+    ))]
     pub fn read_parquet_bulk(
         py: Python,
         uris: Vec<String>,
@@ -178,7 +210,17 @@ pub mod pylib {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uris,
+        columns=None,
+        start_offset=None,
+        num_rows=None,
+        row_groups=None,
+        io_config=None,
+        num_parallel_tasks=None,
+        multithreaded_io=None,
+        coerce_int96_timestamp_unit=None
+    ))]
     pub fn read_parquet_into_pyarrow_bulk(
         py: Python,
         uris: Vec<String>,
@@ -213,7 +255,7 @@ pub mod pylib {
                 schema_infer_options,
             )
         })?;
-        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         parquet_read_results
             .into_iter()
             .map(|(s, all_arrays, num_rows)| {
@@ -222,7 +264,12 @@ pub mod pylib {
             .collect::<PyResult<Vec<_>>>()
     }
 
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uri,
+        io_config=None,
+        multithreaded_io=None,
+        coerce_int96_timestamp_unit=None
+    ))]
     pub fn read_parquet_schema(
         py: Python,
         uri: &str,
@@ -240,21 +287,27 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            Ok(Arc::new(
+
+            let runtime_handle = common_runtime::get_io_runtime(true);
+
+            let task = async move {
                 crate::read::read_parquet_schema(
                     uri,
                     io_client,
                     Some(io_stats),
                     schema_infer_options,
                     None, // TODO: allow passing in of field_id_mapping through Python API?
-                )?
-                .0,
-            )
-            .into())
+                )
+                .await
+            };
+
+            let (schema, _) = runtime_handle.block_on_current_thread(task)?;
+
+            Ok(Arc::new(schema).into())
         })
     }
 
-    #[pyfunction]
+    #[pyfunction(signature = (uris, io_config=None, multithreaded_io=None))]
     pub fn read_parquet_statistics(
         py: Python,
         uris: PySeries,
@@ -281,20 +334,14 @@ pub mod pylib {
     }
 }
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction_bound!(pylib::read_parquet, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(
-        pylib::read_parquet_into_pyarrow,
-        parent
-    )?)?;
-    parent.add_function(wrap_pyfunction_bound!(
+    parent.add_function(wrap_pyfunction!(pylib::read_parquet, parent)?)?;
+    parent.add_function(wrap_pyfunction!(pylib::read_parquet_into_pyarrow, parent)?)?;
+    parent.add_function(wrap_pyfunction!(
         pylib::read_parquet_into_pyarrow_bulk,
         parent
     )?)?;
-    parent.add_function(wrap_pyfunction_bound!(pylib::read_parquet_bulk, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(pylib::read_parquet_schema, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(
-        pylib::read_parquet_statistics,
-        parent
-    )?)?;
+    parent.add_function(wrap_pyfunction!(pylib::read_parquet_bulk, parent)?)?;
+    parent.add_function(wrap_pyfunction!(pylib::read_parquet_schema, parent)?)?;
+    parent.add_function(wrap_pyfunction!(pylib::read_parquet_statistics, parent)?)?;
     Ok(())
 }

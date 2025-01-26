@@ -139,6 +139,18 @@ impl ResourceRequest {
             self.memory_bytes.map(|x| x * (factor as usize)),
         )
     }
+
+    pub fn num_cpus(&self) -> Option<f64> {
+        self.num_cpus
+    }
+
+    pub fn num_gpus(&self) -> Option<f64> {
+        self.num_gpus
+    }
+
+    pub fn memory_bytes(&self) -> Option<usize> {
+        self.memory_bytes
+    }
 }
 
 impl Add for &ResourceRequest {
@@ -191,6 +203,7 @@ fn float_max(left: f64, right: f64) -> f64 {
 #[pymethods]
 impl ResourceRequest {
     #[new]
+    #[pyo3(signature = (num_cpus=None, num_gpus=None, memory_bytes=None))]
     pub fn new(
         num_cpus: Option<f64>,
         num_gpus: Option<f64>,
@@ -221,14 +234,17 @@ impl ResourceRequest {
         Ok(self.memory_bytes)
     }
 
+    #[pyo3(signature = (num_cpus))]
     pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> DaftResult<Self> {
         Self::try_new_internal(num_cpus, self.num_gpus, self.memory_bytes)
     }
 
+    #[pyo3(signature = (num_gpus))]
     pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> DaftResult<Self> {
         Self::try_new_internal(self.num_cpus, num_gpus, self.memory_bytes)
     }
 
+    #[pyo3(signature = (memory_bytes))]
     pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> DaftResult<Self> {
         Self::try_new_internal(self.num_cpus, self.num_gpus, memory_bytes)
     }

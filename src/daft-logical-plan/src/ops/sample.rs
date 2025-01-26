@@ -3,7 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use crate::LogicalPlan;
+use crate::{
+    stats::{PlanStats, StatsState},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sample {
@@ -12,6 +15,7 @@ pub struct Sample {
     pub fraction: f64,
     pub with_replacement: bool,
     pub seed: Option<u64>,
+    pub stats_state: StatsState,
 }
 
 impl Eq for Sample {}
@@ -44,7 +48,18 @@ impl Sample {
             fraction,
             with_replacement,
             seed,
+            stats_state: StatsState::NotMaterialized,
         }
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
+        let input_stats = self.input.materialized_stats();
+        let approx_stats = input_stats
+            .approx_stats
+            .apply(|v| ((v as f64) * self.fraction) as usize);
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -52,6 +67,9 @@ impl Sample {
         res.push(format!("Sample: {}", self.fraction));
         res.push(format!("With replacement = {}", self.with_replacement));
         res.push(format!("Seed = {:?}", self.seed));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

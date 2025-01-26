@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use daft_dsl::{ExprRef, ExprResolver};
+use daft_dsl::{exprs_to_schema, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
-use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{self, CreationSnafu},
+    logical_plan::{self},
+    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -17,6 +17,7 @@ pub struct Explode {
     // Expressions to explode. e.g. col("a")
     pub to_explode: Vec<ExprRef>,
     pub exploded_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl Explode {
@@ -24,42 +25,42 @@ impl Explode {
         input: Arc<LogicalPlan>,
         to_explode: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
-        let upstream_schema = input.schema();
-
-        let expr_resolver = ExprResolver::default();
-
-        let (to_explode, _) = expr_resolver
-            .resolve(to_explode, &upstream_schema)
-            .context(CreationSnafu)?;
-
-        let explode_exprs = to_explode
-            .iter()
-            .cloned()
-            .map(daft_functions::list::explode)
-            .collect::<Vec<_>>();
         let exploded_schema = {
-            let explode_schema = {
-                let explode_fields = explode_exprs
-                    .iter()
-                    .map(|e| e.to_field(&upstream_schema))
-                    .collect::<common_error::DaftResult<Vec<_>>>()
-                    .context(CreationSnafu)?;
-                Schema::new(explode_fields).context(CreationSnafu)?
-            };
-            let fields = upstream_schema
+            let explode_exprs = to_explode
+                .iter()
+                .cloned()
+                .map(daft_functions::list::explode)
+                .collect::<Vec<_>>();
+
+            let explode_schema = exprs_to_schema(&explode_exprs, input.schema())?;
+
+            let fields = input
+                .schema()
                 .fields
                 .iter()
                 .map(|(name, field)| explode_schema.fields.get(name).unwrap_or(field))
                 .cloned()
                 .collect::<Vec<_>>();
-            Schema::new(fields).context(CreationSnafu)?.into()
+            Schema::new(fields)?.into()
         };
 
         Ok(Self {
             input,
             to_explode,
             exploded_schema,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        let input_stats = self.input.materialized_stats();
+        let est_num_exploded_rows = input_stats.approx_stats.num_rows * 4;
+        let approx_stats = ApproxStats {
+            num_rows: est_num_exploded_rows,
+            size_bytes: input_stats.approx_stats.size_bytes,
+        };
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -69,6 +70,9 @@ impl Explode {
             self.to_explode.iter().map(|e| e.to_string()).join(", ")
         ));
         res.push(format!("Schema = {}", self.exploded_schema.short_string()));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

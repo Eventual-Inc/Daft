@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from typing import Callable
 from urllib.parse import urlparse
 
@@ -16,7 +17,7 @@ class UnityCatalogTable:
 
 
 class UnityCatalog:
-    """Client to access the Unity Catalog
+    """Client to access the Unity Catalog.
 
     Unity Catalog is an open-sourced data catalog that can be self-hosted, or hosted by Databricks.
 
@@ -89,14 +90,56 @@ class UnityCatalog:
 
         return self._paginate_to_completion(_paginated_list_tables)
 
-    def load_table(self, table_name: str) -> UnityCatalogTable:
+    def load_table(self, table_name: str, new_table_storage_path: str | None = None) -> UnityCatalogTable:
+        """Loads an existing Unity Catalog table. If the table is not found, and information is provided in the method to create a new table, a new table will be attempted to be registered.
+
+        Args:
+            table_name (str): Name of the table in Unity Catalog in the form of dot-separated, 3-level namespace
+            new_table_storage_path (str, optional): Cloud storage path URI to register a new external table using this path. Unity Catalog will validate if the path is valid and authorized for the principal, else will raise an exception.
+
+        Returns:
+            UnityCatalogTable
+        """
         # Load the table ID
-        table_info = self._client.tables.retrieve(table_name)
+        try:
+            table_info = self._client.tables.retrieve(table_name)
+            if new_table_storage_path:
+                warnings.warn(
+                    f"Table {table_name} is an existing storage table with a valid storage path. The 'new_table_storage_path' argument provided will be ignored."
+                )
+        except unitycatalog.NotFoundError:
+            if not new_table_storage_path:
+                raise ValueError(
+                    f"Table {table_name} is not an existing table. If a new table needs to be created, provide 'new_table_storage_path' value."
+                )
+            try:
+                three_part_namesplit = table_name.split(".")
+                if len(three_part_namesplit) != 3 or not all(three_part_namesplit):
+                    raise ValueError(
+                        f"Expected table name to be in the format of 'catalog.schema.table', received: {table_name}"
+                    )
+
+                params = {
+                    "catalog_name": three_part_namesplit[0],
+                    "schema_name": three_part_namesplit[1],
+                    "name": three_part_namesplit[2],
+                    "columns": None,
+                    "data_source_format": "DELTA",
+                    "table_type": "EXTERNAL",
+                    "storage_location": new_table_storage_path,
+                    "comment": None,
+                }
+
+                table_info = self._client.tables.create(**params)
+            except Exception as e:
+                raise Exception(f"An error occurred while registering the table in Unity Catalog: {e}")
+
         table_id = table_info.table_id
         storage_location = table_info.storage_location
-
         # Grab credentials from Unity catalog and place it into the Table
-        temp_table_credentials = self._client.temporary_table_credentials.create(operation="READ", table_id=table_id)
+        temp_table_credentials = self._client.temporary_table_credentials.create(
+            operation="READ_WRITE", table_id=table_id
+        )
 
         scheme = urlparse(storage_location).scheme
         if scheme == "s3" or scheme == "s3a":
@@ -114,11 +157,15 @@ class UnityCatalog:
             )
         elif scheme == "gcs" or scheme == "gs":
             # TO-DO: gather GCS credential vending assets from Unity and construct 'io_config``
-            pass
+            warnings.warn("GCS credential vending from Unity Catalog is not yet supported.")
+            io_config = None
         elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
             io_config = IOConfig(
                 azure=AzureConfig(sas_token=temp_table_credentials.azure_user_delegation_sas.get("sas_token"))
             )
+        else:
+            warnings.warn(f"Credentials for scheme {scheme} are not yet supported.")
+            io_config = None
 
         return UnityCatalogTable(
             table_uri=storage_location,

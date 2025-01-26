@@ -8,6 +8,7 @@ common-io-config = {path = "../common/io-config", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
+ctor = "0.2.9"
 daft-core = {path = "../daft-core", default-features = false}
 daft-csv = {path = "../daft-csv", default-features = false}
 daft-decoding = {path = "../daft-decoding", default-features = false}
@@ -27,6 +28,9 @@ serde = {workspace = true}
 snafu = {workspace = true}
 typetag = {workspace = true}
 urlencoding = "2.1.3"
+
+[dev-dependencies]
+tokio = {workspace = true, features = ["full"]}
 
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-logical-plan/python", "daft-table/python", "daft-stats/python", "common-file-formats/python", "common-io-config/python", "common-daft-config/python", "common-scan-info/python", "daft-schema/python"]

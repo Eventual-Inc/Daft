@@ -2,7 +2,10 @@
 mod tests;
 
 use std::{
+    any::Any,
+    hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -38,8 +41,11 @@ use crate::{
 
 pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     fn name(&self) -> &'static str;
     fn schema(&self) -> SchemaRef;
+    fn dyn_eq(&self, other: &dyn SubqueryPlan) -> bool;
+    fn dyn_hash(&self, state: &mut dyn Hasher);
 }
 
 #[derive(Display, Debug, Clone)]
@@ -60,6 +66,14 @@ impl Subquery {
     pub fn name(&self) -> &'static str {
         self.plan.name()
     }
+
+    pub fn semantic_id(&self) -> FieldID {
+        let mut s = DefaultHasher::new();
+        self.hash(&mut s);
+        let hash = s.finish();
+
+        FieldID::new(format!("subquery({}-{})", self.name(), hash))
+    }
 }
 
 impl Serialize for Subquery {
@@ -76,7 +90,7 @@ impl<'de> Deserialize<'de> for Subquery {
 
 impl PartialEq for Subquery {
     fn eq(&self, other: &Self) -> bool {
-        self.plan.name() == other.plan.name() && self.plan.schema() == other.plan.schema()
+        self.plan.dyn_eq(other.plan.as_ref())
     }
 }
 
@@ -84,8 +98,7 @@ impl Eq for Subquery {}
 
 impl std::hash::Hash for Subquery {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.plan.name().hash(state);
-        self.plan.schema().hash(state);
+        self.plan.dyn_hash(state);
     }
 }
 
@@ -177,7 +190,7 @@ pub struct OuterReferenceColumn {
 
 impl Display for OuterReferenceColumn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "outer_col({}, {})", self.field.name, self.depth)
+        write!(f, "outer_col({}, depth={})", self.field.name, self.depth)
     }
 }
 
@@ -185,6 +198,9 @@ impl Display for OuterReferenceColumn {
 pub enum AggExpr {
     #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
+
+    #[display("count_distinct({_0})")]
+    CountDistinct(ExprRef),
 
     #[display("sum({_0})")]
     Sum(ExprRef),
@@ -247,6 +263,7 @@ impl AggExpr {
     pub fn name(&self) -> &str {
         match self {
             Self::Count(expr, ..)
+            | Self::CountDistinct(expr)
             | Self::Sum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
@@ -268,6 +285,10 @@ impl AggExpr {
             Self::Count(expr, mode) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_count({mode})"))
+            }
+            Self::CountDistinct(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_count_distinct()"))
             }
             Self::Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -337,6 +358,7 @@ impl AggExpr {
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
             Self::Count(expr, ..)
+            | Self::CountDistinct(expr)
             | Self::Sum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
@@ -361,7 +383,8 @@ impl AggExpr {
         }
         let mut first_child = || children.pop().unwrap();
         match self {
-            Self::Count(_, count_mode) => Self::Count(first_child(), *count_mode),
+            &Self::Count(_, count_mode) => Self::Count(first_child(), count_mode),
+            Self::CountDistinct(_) => Self::CountDistinct(first_child()),
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
             Self::Stddev(_) => Self::Stddev(first_child()),
@@ -391,7 +414,7 @@ impl AggExpr {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
-            Self::Count(expr, ..) => {
+            Self::Count(expr, ..) | Self::CountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
             }
@@ -537,6 +560,10 @@ impl Expr {
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
         Self::Agg(AggExpr::Count(self, mode)).into()
+    }
+
+    pub fn count_distinct(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::CountDistinct(self)).into()
     }
 
     pub fn sum(self: ExprRef) -> ExprRef {
@@ -730,10 +757,18 @@ impl Expr {
             // Agg: Separate path.
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
             Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
+            Self::Subquery(subquery) => subquery.semantic_id(),
+            Self::InSubquery(expr, subquery) => {
+                let child_id = expr.semantic_id(schema);
+                let subquery_id = subquery.semantic_id();
 
-            Self::Subquery(..) | Self::InSubquery(..) | Self::Exists(..) => {
-                FieldID::new("__subquery__")
-            } // todo: better/unique id
+                FieldID::new(format!("({child_id} IN {subquery_id})"))
+            }
+            Self::Exists(subquery) => {
+                let subquery_id = subquery.semantic_id();
+
+                FieldID::new(format!("(EXISTS {subquery_id})"))
+            }
             Self::OuterReferenceColumn(c) => {
                 let name = &c.field.name;
                 let depth = c.depth;
@@ -965,7 +1000,8 @@ impl Expr {
                     | Operator::Eq
                     | Operator::NotEq
                     | Operator::LtEq
-                    | Operator::GtEq => {
+                    | Operator::GtEq
+                    | Operator::EqNullSafe => {
                         let (result_type, _intermediate, _comp_type) =
                             InferDataType::from(&left_field.dtype)
                                 .comparison_op(&InferDataType::from(&right_field.dtype))?;
@@ -1119,6 +1155,7 @@ impl Expr {
                     to_sql_inner(left, buffer)?;
                     let op = match op {
                         Operator::Eq => "=",
+                        Operator::EqNullSafe => "<=>",
                         Operator::NotEq => "!=",
                         Operator::Lt => "<",
                         Operator::LtEq => "<=",
@@ -1185,12 +1222,18 @@ impl Expr {
             _ => None,
         }
     }
+
+    pub fn eq_null_safe(self: ExprRef, other: ExprRef) -> ExprRef {
+        binary_op(Operator::EqNullSafe, self, other)
+    }
 }
 
 #[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Operator {
     #[display("==")]
     Eq,
+    #[display("<=>")]
+    EqNullSafe,
     #[display("!=")]
     NotEq,
     #[display("<")]
@@ -1231,6 +1274,7 @@ impl Operator {
         matches!(
             self,
             Self::Eq
+                | Self::EqNullSafe
                 | Self::NotEq
                 | Self::Lt
                 | Self::LtEq
@@ -1247,6 +1291,32 @@ impl Operator {
     }
 }
 
+impl FromStr for Operator {
+    type Err = DaftError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "==" => Ok(Self::Eq),
+            "!=" => Ok(Self::NotEq),
+            "<" => Ok(Self::Lt),
+            "<=" => Ok(Self::LtEq),
+            ">" => Ok(Self::Gt),
+            ">=" => Ok(Self::GtEq),
+            "+" => Ok(Self::Plus),
+            "-" => Ok(Self::Minus),
+            "*" => Ok(Self::Multiply),
+            "/" => Ok(Self::TrueDivide),
+            "//" => Ok(Self::FloorDivide),
+            "%" => Ok(Self::Modulus),
+            "&" => Ok(Self::And),
+            "|" => Ok(Self::Or),
+            "^" => Ok(Self::Xor),
+            "<<" => Ok(Self::ShiftLeft),
+            ">>" => Ok(Self::ShiftRight),
+            _ => Err(DaftError::ComputeError(format!("Invalid operator: {}", s))),
+        }
+    }
+}
+
 // Check if one set of columns is a reordering of the other
 pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
     // sort a and b by name
@@ -1259,14 +1329,117 @@ pub fn has_agg(expr: &ExprRef) -> bool {
     expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
 }
 
-pub fn has_stateful_udf(expr: &ExprRef) -> bool {
-    expr.exists(|e| {
-        matches!(
-            e.as_ref(),
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+#[inline]
+pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
+    matches!(
+        expr.as_ref(),
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF {
+                concurrency: Some(_),
                 ..
+            }),
+            ..
+        }
+    )
+}
+
+pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
+    exprs
+        .iter()
+        .map(|expr| {
+            let mut count = 0;
+            expr.apply(|e| {
+                if is_actor_pool_udf(e) {
+                    count += 1;
+                }
+
+                Ok(common_treenode::TreeNodeRecursion::Continue)
+            })
+            .unwrap();
+
+            count
+        })
+        .sum()
+}
+
+pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
+    match expr {
+        // Boolean operations that filter rows
+        Expr::BinaryOp { op, left, right } => {
+            let left_selectivity = estimated_selectivity(left, schema);
+            let right_selectivity = estimated_selectivity(right, schema);
+            match op {
+                // Fixed selectivity for all common comparisons
+                Operator::Eq => 0.1,
+                Operator::EqNullSafe => 0.1,
+                Operator::NotEq => 0.9,
+                Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.2,
+
+                // Logical operators with fixed estimates
+                // P(A and B) = P(A) * P(B)
+                Operator::And => left_selectivity * right_selectivity,
+                // P(A or B) = P(A) + P(B) - P(A and B)
+                Operator::Or => left_selectivity
+                    .mul_add(-right_selectivity, left_selectivity + right_selectivity),
+                // P(A xor B) = P(A) + P(B) - 2 * P(A and B)
+                Operator::Xor => 2.0f64.mul_add(
+                    -(left_selectivity * right_selectivity),
+                    left_selectivity + right_selectivity,
+                ),
+
+                // Non-boolean operators don't filter
+                Operator::Plus
+                | Operator::Minus
+                | Operator::Multiply
+                | Operator::TrueDivide
+                | Operator::FloorDivide
+                | Operator::Modulus
+                | Operator::ShiftLeft
+                | Operator::ShiftRight => 1.0,
             }
-        )
-    })
+        }
+
+        // Revert selectivity for NOT
+        Expr::Not(expr) => 1.0 - estimated_selectivity(expr, schema),
+
+        // Fixed selectivity for IS NULL and IS NOT NULL, assume not many nulls
+        Expr::IsNull(_) => 0.1,
+        Expr::NotNull(_) => 0.9,
+
+        // All membership operations use same selectivity
+        Expr::IsIn(_, _) | Expr::Between(_, _, _) | Expr::InSubquery(_, _) | Expr::Exists(_) => 0.2,
+
+        // Pass through for expressions that wrap other expressions
+        Expr::Cast(expr, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
+
+        // Boolean literals
+        Expr::Literal(lit) => match lit {
+            lit::LiteralValue::Boolean(true) => 1.0,
+            lit::LiteralValue::Boolean(false) => 0.0,
+            _ => 1.0,
+        },
+
+        // Everything else that could be boolean gets 0.2, non-boolean gets 1.0
+        Expr::ScalarFunction(_)
+        | Expr::Function { .. }
+        | Expr::Column(_)
+        | Expr::OuterReferenceColumn(_)
+        | Expr::IfElse { .. }
+        | Expr::FillNull(_, _) => match expr.to_field(schema) {
+            Ok(field) if field.dtype == DataType::Boolean => 0.2,
+            _ => 1.0,
+        },
+
+        // Everything else doesn't filter
+        Expr::Subquery(_) => 1.0,
+        Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
+    }
+}
+
+pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult<SchemaRef> {
+    let fields = exprs
+        .iter()
+        .map(|e| e.to_field(&input_schema))
+        .collect::<DaftResult<_>>()?;
+    Ok(Arc::new(Schema::new(fields)?))
 }

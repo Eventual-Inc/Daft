@@ -60,16 +60,3 @@ impl ScalarUDF for ImageToMode {
 pub fn image_to_mode(expr: ExprRef, mode: ImageMode) -> ExprRef {
     ScalarFunction::new(ImageToMode { mode }, vec![expr]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "image_to_mode")]
-pub fn py_image_to_mode(expr: PyExpr, mode: ImageMode) -> PyResult<PyExpr> {
-    Ok(image_to_mode(expr.into(), mode).into())
-}

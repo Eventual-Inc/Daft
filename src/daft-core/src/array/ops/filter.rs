@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 use arrow2::bitmap::utils::SlicesIterator;
 use common_error::DaftResult;
@@ -38,7 +38,7 @@ impl crate::datatypes::PythonArray {
                 .map(|x| x.unwrap_or(false))
                 .zip(self.as_arrow().values().iter())
                 .filter_map(|(f, item)| if f { Some(item.clone()) } else { None })
-                .collect::<Vec<PyObject>>()
+                .collect::<Vec<Arc<PyObject>>>()
         };
 
         // Apply the filter mask to the validity bitmap.

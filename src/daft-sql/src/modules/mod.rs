@@ -1,6 +1,7 @@
 use crate::functions::SQLFunctions;
 
 pub mod aggs;
+pub mod coalesce;
 pub mod config;
 pub mod float;
 pub mod hashing;
@@ -14,6 +15,7 @@ pub mod python;
 pub mod sketch;
 pub mod structs;
 pub mod temporal;
+pub mod uri;
 pub mod utf8;
 
 pub use aggs::SQLModuleAggs;
@@ -29,6 +31,7 @@ pub use python::SQLModulePython;
 pub use sketch::SQLModuleSketch;
 pub use structs::SQLModuleStructs;
 pub use temporal::SQLModuleTemporal;
+pub use uri::SQLModuleUri;
 pub use utf8::SQLModuleUtf8;
 
 /// A [SQLModule] is a collection of SQL functions that can be registered with a [SQLFunctions] instance.

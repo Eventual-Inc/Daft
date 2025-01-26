@@ -32,10 +32,7 @@ def sanitize_table_for_deltalake(
 def partitioned_table_to_deltalake_iter(
     partitioned: PartitionedTable, large_dtypes: bool
 ) -> Iterator[Tuple[pa.Table, str, Dict[str, Optional[str]]]]:
-    """
-    Iterates over partitions, yielding each partition as an Arrow table, along with their respective paths and partition values.
-    """
-
+    """Iterates over partitions, yielding each partition as an Arrow table, along with their respective paths and partition values."""
     partition_values = partitioned.partition_values()
 
     if partition_values:
