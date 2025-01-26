@@ -1416,8 +1416,26 @@ impl TensorArray {
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
+                    let indices_values = indices.u64()?.as_slice();
+                    let mut previous = 0u64;
+                    let offsets_values: Vec<u64> = indices_values.iter()
+                        .map(|&current| {
+                            let offset = current - previous;
+                            previous = current; 
+                            offset
+                        })
+                        .collect();
+                    // let shifted_indices_iter = iter::once(&0u64)
+                    //     .chain(indices_values.iter().take(indices_values.len() - 1));
+
+                    // let offsets_values: Vec<u64> = indices_values.iter()
+                    //     .zip(shifted_indices_iter)
+                    //     .map(|(&current, &previous)| current - previous)
+                    //     .collect();
+
+                    let ofssets_indices_arr = UInt64Array::from(("item", offsets_values.clone())).into_series();
                     non_zero_values.push(data);
-                    non_zero_indices.push(indices);
+                    non_zero_indices.push(ofssets_indices_arr);
                 }
 
                 let offsets: Offsets<i64> =
@@ -1602,10 +1620,13 @@ fn cast_sparse_to_dense_for_inner_dtype(
                 let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
                 .unwrap()
                 .as_arrow();
+                let mut old_idx: u64 = 0;
                 for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
                     let list_start_offset = offsets.start_end(i).0;
-                    values[list_start_offset + *idx.unwrap() as usize] = *val.unwrap();
-                }
+                    let current_idx = idx.unwrap() + old_idx;
+                    old_idx = current_idx;
+                    values[list_start_offset + current_idx as usize] = *val.unwrap();
+                }           
             }
             Box::new(arrow2::array::PrimitiveArray::from_vec(values))
     });
@@ -1980,8 +2001,27 @@ impl FixedShapeTensorArray {
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
+                    let indices_values = indices.u64()?.as_slice();
+                    // let shifted_indices_iter = iter::once(&0u64)
+                    //     .chain(indices_values.iter().take(indices_values.len() - 1));
+
+                    // let offsets_values: Vec<u64> = indices_values.iter()
+                    //     .zip(shifted_indices_iter)
+                    //     .map(|(&current, &previous)| current - previous)
+                    //     .collect();
+
+                    let mut previous = 0u64;
+                    let offsets_values: Vec<u64> = indices_values.iter()
+                        .map(|&current| {
+                            let offset = current - previous;
+                            previous = current; 
+                            offset
+                        })
+                        .collect();
+
+                    let ofssets_indices_arr = UInt64Array::from(("item", offsets_values.clone())).into_series();
                     non_zero_values.push(data);
-                    non_zero_indices.push(indices);
+                    non_zero_indices.push(ofssets_indices_arr);
                 }
                 let offsets: Offsets<i64> =
                     Offsets::try_from_iter(non_zero_values.iter().map(|s| s.len()))?;
