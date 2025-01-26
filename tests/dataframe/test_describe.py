@@ -43,6 +43,6 @@ def test_describe():
     # assert
     assert df.count_rows() == len(fields), "Output from describe() is missing some columns"
     expect_columns = set(f.name for f in fields)
-    actual_columns = df.to_pydict()["column"]
+    actual_columns = df.to_pydict()["column_name"]
     for c in actual_columns:
         assert c in expect_columns, f"Column {c} from describe() not found in original schema"

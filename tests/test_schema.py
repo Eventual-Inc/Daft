@@ -96,17 +96,17 @@ def test_repr():
     without_escape = ANSI_ESCAPE.sub("", out_repr)
     assert (
         without_escape.replace("\r", "")
-        == """╭────────┬─────────╮
-│ column ┆ type    │
-╞════════╪═════════╡
-│ int    ┆ Int64   │
-├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ float  ┆ Float64 │
-├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ string ┆ Utf8    │
-├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ bool   ┆ Boolean │
-╰────────┴─────────╯
+        == """╭─────────────┬─────────╮
+│ column_name ┆ type    │
+╞═════════════╪═════════╡
+│ int         ┆ Int64   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ float       ┆ Float64 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ string      ┆ Utf8    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ bool        ┆ Boolean │
+╰─────────────┴─────────╯
 """
     )
 
@@ -117,7 +117,7 @@ def test_repr_html():
     assert (
         out_repr
         == f"""<table class="dataframe">
-<thead><tr><th {TH_STYLE}>column</th><th {TH_STYLE}>type</th></tr></thead>
+<thead><tr><th {TH_STYLE}>column_name</th><th {TH_STYLE}>type</th></tr></thead>
 <tbody>
 <tr><td {TD_STYLE}>int</td><td {TD_STYLE}>Int64</td></tr>
 <tr><td {TD_STYLE}>float</td><td {TD_STYLE}>Float64</td></tr>

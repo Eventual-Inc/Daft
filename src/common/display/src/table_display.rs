@@ -43,7 +43,7 @@ pub fn make_schema_vertical_table(
         table.set_width(default_width_if_no_tty as u16);
     }
 
-    let header = vec![create_table_cell("column"), create_table_cell("type")];
+    let header = vec![create_table_cell("column_name"), create_table_cell("type")];
     table.set_header(header);
     for (name, dtype) in fields {
         table.add_row(vec![name.clone(), dtype]);

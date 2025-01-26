@@ -574,11 +574,11 @@ class DataFrame:
             schema: The Schema to convert into a DataFrame.
 
         Returns:
-            DataFrame: Daft DataFrame with "column" and "type" fields.
+            DataFrame: Daft DataFrame with "column_name" and "type" fields.
         """
-        pydict: Dict = {"column": [], "type": []}
+        pydict: Dict = {"column_name": [], "type": []}
         for field in schema:
-            pydict["column"].append(field.name)
+            pydict["column_name"].append(field.name)
             pydict["type"].append(str(field.dtype))
         return DataFrame._from_pydict(pydict)
 
@@ -1371,15 +1371,15 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
             >>> df.describe().show()
-            ╭────────┬───────╮
-            │ column ┆ type  │
-            │ ---    ┆ ---   │
-            │ Utf8   ┆ Utf8  │
-            ╞════════╪═══════╡
-            │ a      ┆ Int64 │
-            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ b      ┆ Utf8  │
-            ╰────────┴───────╯
+            ╭─────────────┬───────╮
+            │ column_name ┆ type  │
+            │ ---         ┆ ---   │
+            │ Utf8        ┆ Utf8  │
+            ╞═════════════╪═══════╡
+            │ a           ┆ Int64 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ b           ┆ Utf8  │
+            ╰─────────────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
