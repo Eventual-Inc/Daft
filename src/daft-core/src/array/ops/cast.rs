@@ -1418,22 +1418,16 @@ impl TensorArray {
                         .filter(&non_zero_mask)?;
                     let indices_values = indices.u64()?.as_slice();
                     let mut previous = 0u64;
-                    let offsets_values: Vec<u64> = indices_values.iter()
+                    let offsets_values: Vec<u64> = indices_values
+                        .iter()
                         .map(|&current| {
                             let offset = current - previous;
-                            previous = current; 
+                            previous = current;
                             offset
                         })
                         .collect();
-                    // let shifted_indices_iter = iter::once(&0u64)
-                    //     .chain(indices_values.iter().take(indices_values.len() - 1));
-
-                    // let offsets_values: Vec<u64> = indices_values.iter()
-                    //     .zip(shifted_indices_iter)
-                    //     .map(|(&current, &previous)| current - previous)
-                    //     .collect();
-
-                    let ofssets_indices_arr = UInt64Array::from(("item", offsets_values.clone())).into_series();
+                    let ofssets_indices_arr =
+                        UInt64Array::from(("item", offsets_values.clone())).into_series();
                     non_zero_values.push(data);
                     non_zero_indices.push(ofssets_indices_arr);
                 }
@@ -1626,7 +1620,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     let current_idx = idx.unwrap() + old_idx;
                     old_idx = current_idx;
                     values[list_start_offset + current_idx as usize] = *val.unwrap();
-                }           
+                }
             }
             Box::new(arrow2::array::PrimitiveArray::from_vec(values))
     });
@@ -2002,24 +1996,18 @@ impl FixedShapeTensorArray {
                         .into_series()
                         .filter(&non_zero_mask)?;
                     let indices_values = indices.u64()?.as_slice();
-                    // let shifted_indices_iter = iter::once(&0u64)
-                    //     .chain(indices_values.iter().take(indices_values.len() - 1));
-
-                    // let offsets_values: Vec<u64> = indices_values.iter()
-                    //     .zip(shifted_indices_iter)
-                    //     .map(|(&current, &previous)| current - previous)
-                    //     .collect();
-
                     let mut previous = 0u64;
-                    let offsets_values: Vec<u64> = indices_values.iter()
+                    let offsets_values: Vec<u64> = indices_values
+                        .iter()
                         .map(|&current| {
                             let offset = current - previous;
-                            previous = current; 
+                            previous = current;
                             offset
                         })
                         .collect();
 
-                    let ofssets_indices_arr = UInt64Array::from(("item", offsets_values.clone())).into_series();
+                    let ofssets_indices_arr =
+                        UInt64Array::from(("item", offsets_values.clone())).into_series();
                     non_zero_values.push(data);
                     non_zero_indices.push(ofssets_indices_arr);
                 }
