@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Optional, Union
 
 from daft import context, from_pydict
 from daft.api_annotations import PublicAPI
-from daft.daft import PythonStorageConfig, ScanOperatorHandle, StorageConfig
+from daft.daft import ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
@@ -79,22 +79,12 @@ def read_sql(
 
         Read data from a SQL query and partition the data by a column:
 
-        >>> df = daft.read_sql(
-        ...     "SELECT * FROM my_table",
-        ...     "sqlite:///my_database.db",
-        ...     partition_col="id"
-        ... )
+        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id")
 
         Read data from a SQL query and partition the data into 3 partitions:
 
-        >>> df = daft.read_sql(
-        ...     "SELECT * FROM my_table",
-        ...     "sqlite:///my_database.db",
-        ...     partition_col="id",
-        ...     num_partitions=3
-        ... )
+        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id", num_partitions=3)
     """
-
     if num_partitions is not None and partition_col is None:
         raise ValueError("Failed to execute sql: partition_col must be specified when num_partitions is specified")
 
@@ -104,7 +94,7 @@ def read_sql(
         )
 
     io_config = context.get_context().daft_planning_config.default_io_config
-    storage_config = StorageConfig.python(PythonStorageConfig(io_config))
+    storage_config = StorageConfig(True, io_config)
 
     sql_conn = SQLConnection.from_url(conn) if isinstance(conn, str) else SQLConnection.from_connection_factory(conn)
     sql_operator = SQLScanOperator(

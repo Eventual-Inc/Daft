@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 /// Type of a join operation.
 #[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
 pub enum JoinType {
     Inner,
     Left,
@@ -57,6 +57,7 @@ impl FromStr for JoinType {
     fn from_str(join_type: &str) -> DaftResult<Self> {
         match join_type {
             "inner" => Ok(Self::Inner),
+            "cross" => Ok(Self::Inner), // cross join is just inner join with no join keys
             "left" => Ok(Self::Left),
             "right" => Ok(Self::Right),
             "outer" => Ok(Self::Outer),
@@ -72,11 +73,13 @@ impl FromStr for JoinType {
 }
 
 #[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
 pub enum JoinStrategy {
     Hash,
     SortMerge,
     Broadcast,
+    /// only used internally, do not let users to specify
+    Cross,
 }
 
 #[cfg(feature = "python")]
@@ -124,3 +127,12 @@ impl FromStr for JoinStrategy {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+pub enum JoinSide {
+    Left,
+    Right,
+}
+
+impl_bincode_py_state_serialization!(JoinSide);

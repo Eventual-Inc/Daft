@@ -3,6 +3,7 @@ arrow2 = {workspace = true}
 bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
+common-partitioning = {path = "../common/partitioning", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
@@ -14,12 +15,31 @@ daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
+dashmap = "6.1.0"
+futures = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
+tokio = {workspace = true}
+tracing = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-file-formats/python", "common-scan-info/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-io/python", "daft-parquet/python", "daft-scan/python", "daft-stats/python", "daft-csv/python", "daft-json/python"]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "common-partitioning/python",
+  "common-file-formats/python",
+  "common-scan-info/python",
+  "daft-core/python",
+  "daft-dsl/python",
+  "daft-table/python",
+  "daft-io/python",
+  "daft-parquet/python",
+  "daft-scan/python",
+  "daft-stats/python",
+  "daft-csv/python",
+  "daft-json/python"
+]
 
 [lints]
 workspace = true

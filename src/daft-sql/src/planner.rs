@@ -1,18 +1,20 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
     collections::{HashMap, HashSet},
+    path::Path,
     rc::Rc,
     sync::Arc,
 };
 
 use common_error::{DaftError, DaftResult};
+use daft_algebra::boolean::combine_conjunction;
+use daft_catalog::DaftCatalog;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
     common_treenode::{Transformed, TreeNode},
-    has_agg, lit, literals_to_series, null_lit,
-    optimization::conjuct,
-    AggExpr, Expr, ExprRef, LiteralValue, Operator, OuterReferenceColumn, Subquery,
+    has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
+    OuterReferenceColumn, Subquery,
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
@@ -21,9 +23,10 @@ use daft_functions::{
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
-        ArrayElemTypeDef, BinaryOperator, CastKind, DateTimeField, Distinct, ExactNumberInfo,
-        ExcludeSelectItem, GroupByExpr, Ident, Query, SelectItem, SetExpr, Statement, StructField,
-        Subscript, TableAlias, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
+        self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
+        ExactNumberInfo, ExcludeSelectItem, FunctionArg, FunctionArgExpr, GroupByExpr, Ident,
+        ObjectName, Query, SelectItem, SetExpr, Statement, StructField, Subscript, TableAlias,
+        TableFunctionArgs, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
         WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
@@ -32,8 +35,7 @@ use sqlparser::{
 };
 
 use crate::{
-    catalog::SQLCatalog, column_not_found_err, error::*, invalid_operation_err,
-    table_not_found_err, unsupported_sql_err,
+    column_not_found_err, error::*, invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
 
 /// A named logical plan
@@ -71,18 +73,10 @@ impl Relation {
 }
 
 /// Context that is shared across a query and its subqueries
+#[derive(Default)]
 struct PlannerContext {
-    catalog: SQLCatalog,
+    catalog: DaftCatalog,
     cte_map: HashMap<String, Relation>,
-}
-
-impl Default for PlannerContext {
-    fn default() -> Self {
-        Self {
-            catalog: SQLCatalog::new(),
-            cte_map: Default::default(),
-        }
-    }
 }
 
 #[derive(Default)]
@@ -98,7 +92,7 @@ pub struct SQLPlanner<'a> {
 }
 
 impl<'a> SQLPlanner<'a> {
-    pub fn new(catalog: SQLCatalog) -> Self {
+    pub fn new(catalog: DaftCatalog) -> Self {
         let context = Rc::new(RefCell::new(PlannerContext {
             catalog,
             ..Default::default()
@@ -144,7 +138,7 @@ impl<'a> SQLPlanner<'a> {
         Ref::map(self.context.borrow(), |i| &i.cte_map)
     }
 
-    fn catalog(&self) -> Ref<'_, SQLCatalog> {
+    fn catalog(&self) -> Ref<'_, DaftCatalog> {
         Ref::map(self.context.borrow(), |i| &i.catalog)
     }
 
@@ -959,12 +953,12 @@ impl<'a> SQLPlanner<'a> {
             };
 
             let mut left_plan = self.current_relation.as_ref().unwrap().inner.clone();
-            if let Some(left_predicate) = conjuct(left_filters) {
+            if let Some(left_predicate) = combine_conjunction(left_filters) {
                 left_plan = left_plan.filter(left_predicate)?;
             }
 
             let mut right_plan = right_rel.inner.clone();
-            if let Some(right_predicate) = conjuct(right_filters) {
+            if let Some(right_predicate) = combine_conjunction(right_filters) {
                 right_plan = right_plan.filter(right_predicate)?;
             }
 
@@ -1002,21 +996,11 @@ impl<'a> SQLPlanner<'a> {
                 alias,
                 ..
             } => {
-                let table_name = name.to_string();
-                let Some(rel) = self
-                    .table_map
-                    .get(&table_name)
-                    .cloned()
-                    .or_else(|| self.cte_map().get(&table_name).cloned())
-                    .or_else(|| {
-                        self.catalog()
-                            .get_table(&table_name)
-                            .map(|table| Relation::new(table.into(), table_name.clone()))
-                    })
-                else {
-                    table_not_found_err!(table_name)
+                let rel = if is_table_path(name) {
+                    self.plan_relation_path(name)?
+                } else {
+                    self.plan_relation_table(name)?
                 };
-
                 (rel, alias.clone())
             }
             sqlparser::ast::TableFactor::Derived {
@@ -1064,6 +1048,46 @@ impl<'a> SQLPlanner<'a> {
         } else {
             Ok(rel)
         }
+    }
+
+    /// Plan a `FROM <path>` table factor by rewriting to relevant table-value function.
+    fn plan_relation_path(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
+        let path = name.0[0].value.as_str();
+        let func = match Path::new(path).extension() {
+            Some(ext) if ext.eq_ignore_ascii_case("csv") => "read_csv",
+            Some(ext) if ext.eq_ignore_ascii_case("json") => "read_json",
+            Some(ext) if ext.eq_ignore_ascii_case("jsonl") => "read_json",
+            Some(ext) if ext.eq_ignore_ascii_case("parquet") => "read_parquet",
+            Some(_) => invalid_operation_err!("unsupported file path extension: {}", name),
+            None => invalid_operation_err!("unsupported file path, no extension: {}", name),
+        };
+        let args = TableFunctionArgs {
+            args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(
+                ast::Expr::Value(Value::SingleQuotedString(path.to_string())),
+            ))],
+            settings: None,
+        };
+        self.plan_table_function(func, &args)
+    }
+
+    /// Plan a `FROM <table>` table factor.
+    fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
+        let table_name = name.to_string();
+        let Some(rel) = self
+            .table_map
+            .get(&table_name)
+            .cloned()
+            .or_else(|| self.cte_map().get(&table_name).cloned())
+            .or_else(|| {
+                self.catalog()
+                    .read_table(&table_name)
+                    .ok()
+                    .map(|table| Relation::new(table, table_name.clone()))
+            })
+        else {
+            table_not_found_err!(table_name)
+        };
+        Ok(rel)
     }
 
     fn plan_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<ExprRef> {
@@ -1262,6 +1286,28 @@ impl<'a> SQLPlanner<'a> {
         }
     }
 
+    fn column_to_field(&self, column_def: &ColumnDef) -> SQLPlannerResult<Field> {
+        let ColumnDef {
+            name,
+            data_type,
+            collation,
+            options,
+        } = column_def;
+
+        if let Some(collation) = collation {
+            unsupported_sql_err!("collation operation ({collation:?}) is not supported")
+        }
+
+        if !options.is_empty() {
+            unsupported_sql_err!("unsupported options: {options:?}")
+        }
+
+        let name = ident_to_str(name);
+        let data_type = self.sql_dtype_to_dtype(data_type)?;
+
+        Ok(Field::new(name, data_type))
+    }
+
     fn value_to_lit(&self, value: &Value) -> SQLPlannerResult<LiteralValue> {
         Ok(match value {
             Value::SingleQuotedString(s) => LiteralValue::Utf8(s.clone()),
@@ -1457,6 +1503,9 @@ impl<'a> SQLPlanner<'a> {
                 let expr = self.plan_expr(expr)?;
                 let start = self.plan_expr(substring_from)?;
                 let length = self.plan_expr(substring_for)?;
+
+                // SQL substring is one indexed
+                let start = start.sub(lit(1));
 
                 Ok(daft_functions::utf8::substr(expr, start, length))
             }
@@ -1766,6 +1815,7 @@ impl<'a> SQLPlanner<'a> {
             BinaryOperator::Multiply => Ok(Operator::Multiply),
             BinaryOperator::Divide => Ok(Operator::TrueDivide),
             BinaryOperator::Eq => Ok(Operator::Eq),
+            BinaryOperator::Spaceship => Ok(Operator::EqNullSafe),
             BinaryOperator::Modulo => Ok(Operator::Modulus),
             BinaryOperator::Gt => Ok(Operator::Gt),
             BinaryOperator::Lt => Ok(Operator::Lt),
@@ -2111,6 +2161,32 @@ fn check_wildcard_options(
 
     Ok(())
 }
+
+pub fn sql_schema<S: AsRef<str>>(s: S) -> SQLPlannerResult<SchemaRef> {
+    let planner = SQLPlanner::default();
+
+    let tokens = Tokenizer::new(&GenericDialect, s.as_ref()).tokenize()?;
+
+    let mut parser = Parser::new(&GenericDialect)
+        .with_options(ParserOptions {
+            trailing_commas: true,
+            ..Default::default()
+        })
+        .with_tokens(tokens);
+
+    let column_defs = parser.parse_comma_separated(Parser::parse_column_def)?;
+
+    let fields: Result<Vec<_>, _> = column_defs
+        .into_iter()
+        .map(|c| planner.column_to_field(&c))
+        .collect();
+
+    let fields = fields?;
+
+    let schema = Schema::new(fields)?;
+    Ok(Arc::new(schema))
+}
+
 pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
     let mut planner = SQLPlanner::default();
 
@@ -2135,6 +2211,12 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
 // ----------------
 // Helper functions
 // ----------------
+
+/// # Examples
+/// ```
+/// // Quoted identifier "MyCol" -> "MyCol"
+/// // Unquoted identifier MyCol -> "MyCol"
+/// ```
 fn ident_to_str(ident: &Ident) -> String {
     if ident.quote_style == Some('"') {
         ident.value.to_string()
@@ -2149,6 +2231,24 @@ fn idents_to_str(idents: &[Ident]) -> String {
         .map(ident_to_str)
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// Returns true iff the ObjectName is a string literal (single-quoted identifier e.g. 'path/to/file.extension').
+///
+/// # Examples
+///
+/// ```
+/// 'file.ext'           -> true
+/// 'path/to/file.ext'   -> true
+/// 'a'.'b'.'c'         -> false (multiple identifiers)
+/// "path/to/file.ext"   -> false (double-quotes)
+/// hello               -> false (not single-quoted)
+/// ```
+fn is_table_path(name: &ObjectName) -> bool {
+    if name.0.len() != 1 {
+        return false;
+    }
+    matches!(name.0[0].quote_style, Some('\''))
 }
 
 /// unresolves an alias in a projection
@@ -2186,4 +2286,77 @@ fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> SQLPlannerResult<Ex
             }
         })
         .ok_or_else(|| PlannerError::column_not_found(expr.name(), "projection"))
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::*;
+    use sqlparser::ast::{Ident, ObjectName};
+
+    use crate::{planner::is_table_path, sql_schema};
+
+    #[test]
+    fn test_sql_schema_creates_expected_schema() {
+        let result =
+            sql_schema("Year int, First_Name STRING, County STRING, Sex STRING, Count int")
+                .unwrap();
+
+        let expected = Schema::new(vec![
+            Field::new("Year", DataType::Int32),
+            Field::new("First_Name", DataType::Utf8),
+            Field::new("County", DataType::Utf8),
+            Field::new("Sex", DataType::Utf8),
+            Field::new("Count", DataType::Int32),
+        ])
+        .unwrap();
+
+        assert_eq!(&*result, &expected);
+    }
+
+    #[test]
+    fn test_duplicate_column_names_in_schema() {
+        // This test checks that sql_schema fails or handles duplicates gracefully.
+        // The planner currently returns errors if schema construction fails, so we expect an Err here.
+        let result = sql_schema("col1 INT, col1 STRING");
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Daft error: DaftError::ValueError Attempting to make a Schema with duplicate field names: col1"
+        );
+    }
+
+    #[test]
+    fn test_degenerate_empty_schema() {
+        assert!(sql_schema("").is_err());
+    }
+
+    #[test]
+    fn test_single_field_schema() {
+        let result = sql_schema("col1 INT").unwrap();
+        let expected = Schema::new(vec![Field::new("col1", DataType::Int32)]).unwrap();
+        assert_eq!(&*result, &expected);
+    }
+
+    #[test]
+    fn test_is_table_path() {
+        // single-quoted path should return true
+        assert!(is_table_path(&ObjectName(vec![Ident {
+            value: "path/to/file.ext".to_string(),
+            quote_style: Some('\'')
+        }])));
+        // multiple identifiers should return false
+        assert!(!is_table_path(&ObjectName(vec![
+            Ident::new("a"),
+            Ident::new("b")
+        ])));
+        // double-quoted identifier should return false
+        assert!(!is_table_path(&ObjectName(vec![Ident {
+            value: "path/to/file.ext".to_string(),
+            quote_style: Some('"')
+        }])));
+        // unquoted identifier should return false
+        assert!(!is_table_path(&ObjectName(vec![Ident::new(
+            "path/to/file.ext"
+        )])));
+    }
 }

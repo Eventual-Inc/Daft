@@ -127,6 +127,17 @@ def test_repr_functions_round() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_clip() -> None:
+    a = col("a")
+    b = col("b")
+    c = col("c")
+    y = a.clip(b, c)
+    repr_out = repr(y)
+    assert repr_out == "clip(col(a), col(b), col(c))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_log2() -> None:
     a = col("a")
     y = a.log2()
@@ -589,6 +600,41 @@ def test_list_value_counts_nested():
         'DaftError::ArrowError Invalid argument error: The data type type LargeList(Field { name: "item", data_type: Int64, is_nullable: true, metadata: {} }) has no natural order'
         in str(exc_info.value)
     )
+
+
+def test_list_value_counts_fixed_size():
+    # Create data with lists of fixed size
+    data = {
+        "fixed_list": [
+            [1, 2, 3],
+            [4, 3, 4],
+            [4, 5, 6],
+            [1, 2, 3],
+            [7, 8, 9],
+            None,
+        ]
+    }
+
+    # Create DataFrame and cast the column to fixed size list
+    df = daft.from_pydict(data).with_column(
+        "fixed_list", daft.col("fixed_list").cast(DataType.fixed_size_list(DataType.int64(), 3))
+    )
+
+    df = df.with_column("fixed_list", col("fixed_list").cast(DataType.fixed_size_list(DataType.int64(), 3)))
+
+    # Get value counts
+    result = df.with_column("value_counts", col("fixed_list").list.value_counts())
+
+    # Verify the value counts
+    result_dict = result.to_pydict()
+    assert result_dict["value_counts"] == [
+        [(1, 1), (2, 1), (3, 1)],
+        [(4, 2), (3, 1)],
+        [(4, 1), (5, 1), (6, 1)],
+        [(1, 1), (2, 1), (3, 1)],
+        [(7, 1), (8, 1), (9, 1)],
+        [],
+    ]
 
 
 def test_list_value_counts_degenerate():

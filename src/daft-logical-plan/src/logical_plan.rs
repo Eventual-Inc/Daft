@@ -1,13 +1,19 @@
-use std::{num::NonZeroUsize, sync::Arc};
+use std::{
+    any::Any,
+    hash::{Hash, Hasher},
+    num::NonZeroUsize,
+    sync::Arc,
+};
 
 use common_display::ascii::AsciiTreeDisplay;
 use common_error::DaftError;
-use daft_dsl::{optimization::get_required_columns, SubqueryPlan};
+use daft_dsl::{optimization::get_required_columns, Subquery, SubqueryPlan};
 use daft_schema::schema::SchemaRef;
 use indexmap::IndexSet;
 use snafu::Snafu;
 
 pub use crate::ops::*;
+use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -39,6 +45,7 @@ impl LogicalPlan {
     pub fn arced(self) -> Arc<Self> {
         Arc::new(self)
     }
+
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
@@ -197,29 +204,95 @@ impl LogicalPlan {
         }
     }
 
+    pub fn stats_state(&self) -> &StatsState {
+        match self {
+            Self::Source(Source { stats_state, .. })
+            | Self::Project(Project { stats_state, .. })
+            | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
+            | Self::Filter(Filter { stats_state, .. })
+            | Self::Limit(Limit { stats_state, .. })
+            | Self::Explode(Explode { stats_state, .. })
+            | Self::Unpivot(Unpivot { stats_state, .. })
+            | Self::Sort(Sort { stats_state, .. })
+            | Self::Repartition(Repartition { stats_state, .. })
+            | Self::Distinct(Distinct { stats_state, .. })
+            | Self::Aggregate(Aggregate { stats_state, .. })
+            | Self::Pivot(Pivot { stats_state, .. })
+            | Self::Concat(Concat { stats_state, .. })
+            | Self::Join(Join { stats_state, .. })
+            | Self::Sink(Sink { stats_state, .. })
+            | Self::Sample(Sample { stats_state, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. }) => {
+                stats_state
+            }
+            Self::Intersect(_) => {
+                panic!("Intersect nodes should be optimized away before stats are materialized")
+            }
+            Self::Union(_) => {
+                panic!("Union nodes should be optimized away before stats are materialized")
+            }
+        }
+    }
+
+    pub fn materialized_stats(&self) -> &PlanStats {
+        self.stats_state().materialized_stats()
+    }
+
+    // Materializes stats over logical plans. If stats are already materialized, this function recomputes stats, which might be
+    // useful if stats become stale during query planning.
+    pub fn with_materialized_stats(self) -> Self {
+        match self {
+            Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
+            Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
+            Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
+            Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
+            Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
+            Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
+            Self::Unpivot(plan) => Self::Unpivot(plan.with_materialized_stats()),
+            Self::Sort(plan) => Self::Sort(plan.with_materialized_stats()),
+            Self::Repartition(plan) => Self::Repartition(plan.with_materialized_stats()),
+            Self::Distinct(plan) => Self::Distinct(plan.with_materialized_stats()),
+            Self::Aggregate(plan) => Self::Aggregate(plan.with_materialized_stats()),
+            Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
+            Self::Concat(plan) => Self::Concat(plan.with_materialized_stats()),
+            Self::Intersect(_) => {
+                panic!("Intersect should be optimized away before stats are derived")
+            }
+            Self::Union(_) => {
+                panic!("Union should be optimized away before stats are derived")
+            }
+            Self::Join(plan) => Self::Join(plan.with_materialized_stats()),
+            Self::Sink(plan) => Self::Sink(plan.with_materialized_stats()),
+            Self::Sample(plan) => Self::Sample(plan.with_materialized_stats()),
+            Self::MonotonicallyIncreasingId(plan) => {
+                Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
+            }
+        }
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::ActorPoolProject(projection) => projection.multiline_display(),
-            Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
-            Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
+            Self::Filter(filter) => filter.multiline_display(),
+            Self::Limit(limit) => limit.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
-            Self::Distinct(_) => vec!["Distinct".to_string()],
+            Self::Distinct(distinct) => distinct.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
-            Self::Concat(_) => vec!["Concat".to_string()],
+            Self::Concat(concat) => concat.multiline_display(),
             Self::Intersect(inner) => inner.multiline_display(),
             Self::Union(inner) => inner.multiline_display(),
             Self::Join(join) => join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
-            Self::Sample(sample) => {
-                vec![format!("Sample: {fraction}", fraction = sample.fraction)]
+            Self::Sample(sample) => sample.multiline_display(),
+            Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+                monotonically_increasing_id.multiline_display()
             }
-            Self::MonotonicallyIncreasingId(_) => vec!["MonotonicallyIncreasingId".to_string()],
         }
     }
 
@@ -237,7 +310,7 @@ impl LogicalPlan {
             Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
             Self::Pivot(Pivot { input, .. }) => vec![input],
-            Self::Concat(Concat { input, other }) => vec![input, other],
+            Self::Concat(Concat { input, other, .. }) => vec![input, other],
             Self::Join(Join { left, right, .. }) => vec![left, right],
             Self::Sink(Sink { input, .. }) => vec![input],
             Self::Intersect(Intersect { lhs, rhs, .. }) => vec![lhs, rhs],
@@ -261,13 +334,14 @@ impl LogicalPlan {
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, nulls_first, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone()).unwrap()),
-                Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::try_new(input.clone(), scheme_config.clone()).unwrap()),
+                Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
                 Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, ..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::new(input.clone(), Some(column_name))),
-                Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) => Self::Unpivot(Unpivot { input: input.clone(), ids: ids.clone(), values: values.clone(), variable_name: variable_name.clone(), value_name: value_name.clone(), output_schema: output_schema.clone() }),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::try_new(input.clone(), Some(column_name)).unwrap()),
+                Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) =>
+                    Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
                 Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
                 Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
@@ -287,9 +361,6 @@ impl LogicalPlan {
                     null_equals_nulls.clone(),
                     *join_type,
                     *join_strategy,
-                    None,  // The suffix is already eagerly computed in the constructor
-                    None,  // the prefix is already eagerly computed in the constructor
-                    false // this is already eagerly computed in the constructor
                 ).unwrap()),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
@@ -331,6 +402,10 @@ impl SubqueryPlan for LogicalPlan {
         self
     }
 
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+
     fn name(&self) -> &'static str {
         Self::name(self)
     }
@@ -338,6 +413,26 @@ impl SubqueryPlan for LogicalPlan {
     fn schema(&self) -> SchemaRef {
         Self::schema(self)
     }
+
+    fn dyn_eq(&self, other: &dyn SubqueryPlan) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |other| self == other)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state);
+    }
+}
+
+pub(crate) fn downcast_subquery(subquery: &Subquery) -> LogicalPlanRef {
+    subquery
+        .plan
+        .clone()
+        .as_any_arc()
+        .downcast::<LogicalPlan>()
+        .expect("subquery plan should be a LogicalPlan")
 }
 
 #[derive(Debug, Snafu)]
@@ -377,7 +472,7 @@ macro_rules! impl_from_data_struct_for_logical_plan {
 
         impl From<$name> for Arc<LogicalPlan> {
             fn from(data: $name) -> Self {
-                Arc::new(LogicalPlan::$name(data))
+                Self::new(LogicalPlan::$name(data))
             }
         }
     };

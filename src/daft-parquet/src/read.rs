@@ -418,6 +418,7 @@ async fn stream_parquet_single(
             maintain_order,
             io_stats,
         )
+        .await
     } else {
         let builder = ParquetReaderBuilder::from_uri(
             uri.as_str(),
@@ -954,17 +955,15 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
     Ok(collected.into_iter().map(|(_, v)| v).collect())
 }
 
-pub fn read_parquet_schema(
+pub async fn read_parquet_schema(
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_inference_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<(Schema, FileMetaData)> {
-    let runtime_handle = get_io_runtime(true);
-    let builder = runtime_handle.block_on_current_thread(async {
-        ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats, field_id_mapping).await
-    })?;
+    let builder =
+        ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats, field_id_mapping).await?;
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
     let metadata = builder.metadata;

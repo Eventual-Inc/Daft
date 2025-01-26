@@ -1114,3 +1114,143 @@ def test_join_suffix_and_prefix(suffix, prefix, expected, make_df, with_morsel_s
 
     df = df1.join(df2, on="idx").join(df3, on="idx", suffix=suffix, prefix=prefix)
     assert df.column_names == ["idx", "val", "score", expected]
+
+
+@pytest.mark.parametrize("left_partitions", [1, 2, 4])
+@pytest.mark.parametrize("right_partitions", [1, 2, 4])
+def test_cross_join(left_partitions, right_partitions, make_df, with_morsel_size):
+    df1 = make_df(
+        {
+            "A": [1, 3, 5],
+            "B": ["a", "b", "c"],
+        },
+        repartition=left_partitions,
+        repartition_columns=["A"],
+    )
+
+    df2 = make_df(
+        {
+            "C": [2, 4, 6, 8],
+            "D": ["d", "e", "f", "g"],
+        },
+        repartition=right_partitions,
+        repartition_columns=["C"],
+    )
+
+    df = df1.join(df2, how="cross")
+    df = df.sort(["A", "C"])
+
+    assert df.to_pydict() == {
+        "A": [1, 1, 1, 1, 3, 3, 3, 3, 5, 5, 5, 5],
+        "B": ["a", "a", "a", "a", "b", "b", "b", "b", "c", "c", "c", "c"],
+        "C": [2, 4, 6, 8, 2, 4, 6, 8, 2, 4, 6, 8],
+        "D": ["d", "e", "f", "g", "d", "e", "f", "g", "d", "e", "f", "g"],
+    }
+
+
+@pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer", "anti", "semi", "cross"])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize(
+    "left,right,expected",
+    [
+        # Case 1: Left has data, right is empty
+        (
+            {"a": [1, 2, 3, 4], "b": ["a", "b", "c", "d"]},
+            {"c": [], "d": []},
+            {
+                "inner": {"a": [], "b": [], "c": [], "d": []},
+                "left": {
+                    "a": [1, 2, 3, 4],
+                    "b": ["a", "b", "c", "d"],
+                    "c": [None, None, None, None],
+                    "d": [None, None, None, None],
+                },
+                "right": {"a": [], "b": [], "c": [], "d": []},
+                "outer": {
+                    "a": [1, 2, 3, 4],
+                    "b": ["a", "b", "c", "d"],
+                    "c": [None, None, None, None],
+                    "d": [None, None, None, None],
+                },
+                "anti": {"a": [1, 2, 3, 4], "b": ["a", "b", "c", "d"]},
+                "semi": {"a": [], "b": []},
+                "cross": {"a": [], "b": [], "c": [], "d": []},
+            },
+        ),
+        # Case 2: Left is empty, right has data
+        (
+            {"a": [], "b": []},
+            {"c": [5, 6, 7], "d": ["e", "f", "g"]},
+            {
+                "inner": {"a": [], "b": [], "c": [], "d": []},
+                "left": {"a": [], "b": [], "c": [], "d": []},
+                "right": {"a": [None, None, None], "b": [None, None, None], "c": [5, 6, 7], "d": ["e", "f", "g"]},
+                "outer": {"a": [None, None, None], "b": [None, None, None], "c": [5, 6, 7], "d": ["e", "f", "g"]},
+                "anti": {"a": [], "b": []},
+                "semi": {"a": [], "b": []},
+                "cross": {"a": [], "b": [], "c": [], "d": []},
+            },
+        ),
+        # Case 3: Both empty
+        (
+            {"a": [], "b": []},
+            {"c": [], "d": []},
+            {
+                "inner": {"a": [], "b": [], "c": [], "d": []},
+                "left": {"a": [], "b": [], "c": [], "d": []},
+                "right": {"a": [], "b": [], "c": [], "d": []},
+                "outer": {"a": [], "b": [], "c": [], "d": []},
+                "anti": {"a": [], "b": []},
+                "semi": {"a": [], "b": []},
+                "cross": {"a": [], "b": [], "c": [], "d": []},
+            },
+        ),
+    ],
+)
+def test_join_empty(join_type, repartition_nparts, left, right, expected, make_df, with_morsel_size):
+    left = pa.Table.from_pydict(
+        left,
+        schema=pa.schema(
+            [
+                ("a", pa.int32()),
+                ("b", pa.string()),
+            ]
+        ),
+    )
+    left_df = make_df(
+        left,
+        repartition=repartition_nparts,
+        repartition_columns=["a"],
+    )
+
+    right = pa.Table.from_pydict(
+        right,
+        schema=pa.schema(
+            [
+                ("c", pa.int32()),
+                ("d", pa.string()),
+            ]
+        ),
+    )
+    right_df = make_df(
+        right,
+        repartition=repartition_nparts,
+        repartition_columns=["c"],
+    )
+
+    if join_type == "cross":
+        left_on = None
+        right_on = None
+    else:
+        left_on = ["a"]
+        right_on = ["c"]
+
+    result = left_df.join(right_df, left_on=left_on, right_on=right_on, how=join_type)
+    if join_type in ["inner", "left", "right", "outer", "cross"]:
+        result = result.sort(["a", "b", "c", "d"])
+    else:
+        result = result.sort(["a", "b"])
+
+    expected_result = expected[join_type]
+
+    assert result.to_pydict() == expected_result

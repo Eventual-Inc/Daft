@@ -5,7 +5,7 @@ requires = ["maturin>=1.5.0,<2.0.0"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow >= 7.0.0",
+  "pyarrow >= 8.0.0",
   "fsspec",
   "tqdm",
   "typing-extensions >= 4.0.0; python_version < '3.10'"
@@ -19,7 +19,7 @@ maintainers = [
 ]
 name = "getdaft"
 readme = "README.rst"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 
 [project.optional-dependencies]
 all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
@@ -28,7 +28,7 @@ azure = []
 deltalake = ["deltalake"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
-iceberg = ["pyiceberg >= 0.4.0, < 0.8", "packaging"]
+iceberg = ["pyiceberg >= 0.4.0", "packaging"]
 lance = ["lancedb"]
 numpy = ["numpy"]
 pandas = ["pandas"]
@@ -55,7 +55,7 @@ check-hidden = true
 ignore-words-list = "crate,arithmetics,ser"
 # Feel free to un-skip examples, and experimental, you will just need to
 # work through many typos (--write-changes and --interactive will help)
-skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken,*.sql"
+skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken,*.sql,tests/table/utf8/*,tests/table/binary/*"
 
 [tool.maturin]
 # "python" tells pyo3 we want to build an extension module (skips linking against libpython.so)
@@ -64,7 +64,7 @@ features = ["python"]
 [tool.mypy]
 exclude = ['daft/pickle/*.py$']
 files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
-python_version = "3.8"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 
@@ -89,6 +89,12 @@ warn_return_any = false
 typeCheckingMode = "off"
 venv = ".venv"
 venvPath = "."
+
+[[tool.pyright.executionEnvironments]]
+root = ".github/ci-scripts"
+
+[[tool.pyright.executionEnvironments]]
+root = "tools"
 
 [tool.pytest.ini_options]
 addopts = "-m 'not (integration or benchmark or hypothesis)'"

@@ -24,28 +24,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8', '3.10']
+        python-version: ['3.9', '3.10']
         daft-runner: [py, ray, native]
-        pyarrow-version: [7.0.0, 16.0.0]
+        pyarrow-version: [8.0.0, 16.0.0]
         os: [ubuntu-20.04, windows-latest]
         exclude:
         - daft-runner: ray
-          pyarrow-version: 7.0.0
+          pyarrow-version: 8.0.0
           os: ubuntu-20.04
         - daft-runner: py
           python-version: '3.10'
-          pyarrow-version: 7.0.0
+          pyarrow-version: 8.0.0
           os: ubuntu-20.04
         - daft-runner: native
           python-version: '3.10'
-          pyarrow-version: 7.0.0
+          pyarrow-version: 8.0.0
           os: ubuntu-20.04
-        - python-version: '3.8'
+        - python-version: '3.9'
           pyarrow-version: 16.0.0
         - os: windows-latest
-          python-version: '3.8'
+          python-version: '3.9'
         - os: windows-latest
-          pyarrow-version: 7.0.0
+          pyarrow-version: 8.0.0
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -93,7 +93,7 @@ jobs:
       run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
     - name: Override deltalake for pyarrow
-      if: ${{ (matrix.pyarrow-version == '7.0.0') }}
+      if: ${{ (matrix.pyarrow-version == '8.0.0') }}
       run: uv pip install deltalake==0.10.0
 
     - name: Build library and Test with pytest (unix)
@@ -181,7 +181,7 @@ jobs:
       package-name: getdaft
     strategy:
       matrix:
-        python-version: ['3.8']
+        python-version: ['3.9']
     steps:
     - uses: actions/checkout@v4
       with:
@@ -219,7 +219,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8']
+        python-version: ['3.9']
         daft-runner: [py, ray, native]
     steps:
     - uses: actions/checkout@v4
@@ -294,7 +294,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
+        python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
     steps:
     - uses: actions/checkout@v4
@@ -372,7 +372,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
+        python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
@@ -466,7 +466,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
+        python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
     steps:
     - uses: actions/checkout@v4
@@ -543,7 +543,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
+        python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
     steps:
     - uses: actions/checkout@v4
@@ -695,7 +695,7 @@ jobs:
 
   rust-tests-platform:
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -854,7 +854,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
-        python-version: ['3.8']
+        python-version: ['3.9']
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -946,7 +946,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      python-version: '3.8'
+      python-version: '3.9'
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ env.python-version }}

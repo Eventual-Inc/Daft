@@ -1,13 +1,9 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::{DataType, Field, Schema, Series};
-#[cfg(feature = "python")]
-use daft_dsl::python::PyExpr;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
-#[cfg(feature = "python")]
-use pyo3::{pyfunction, PyResult};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -33,11 +29,15 @@ impl ScalarUDF for ListValueCountsFunction {
 
         let data_field = data.to_field(schema)?;
 
-        let DataType::List(inner_type) = &data_field.dtype else {
-            return Err(DaftError::TypeError(format!(
-                "Expected list, got {}",
-                data_field.dtype
-            )));
+        let inner_type = match &data_field.dtype {
+            DataType::List(inner_type) => inner_type,
+            DataType::FixedSizeList(inner_type, _) => inner_type,
+            _ => {
+                return Err(DaftError::TypeError(format!(
+                    "Expected list or fixed size list, got {}",
+                    data_field.dtype
+                )));
+            }
         };
 
         let map_type = DataType::Map {
@@ -62,11 +62,4 @@ impl ScalarUDF for ListValueCountsFunction {
 
 pub fn list_value_counts(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListValueCountsFunction, vec![expr]).into()
-}
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_value_counts")]
-pub fn py_list_value_counts(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_value_counts(expr.into()).into())
 }

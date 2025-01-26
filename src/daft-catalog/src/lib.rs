@@ -19,11 +19,11 @@ pub mod global_catalog {
 
     use lazy_static::lazy_static;
 
-    use crate::{DaftMetaCatalog, DataCatalog};
+    use crate::{DaftCatalog, DataCatalog};
 
     lazy_static! {
-        pub(crate) static ref GLOBAL_DAFT_META_CATALOG: RwLock<DaftMetaCatalog> =
-            RwLock::new(DaftMetaCatalog::new_from_env());
+        pub(crate) static ref GLOBAL_DAFT_META_CATALOG: RwLock<DaftCatalog> =
+            RwLock::new(DaftCatalog::new_from_env());
     }
 
     /// Register a DataCatalog with the global DaftMetaCatalog
@@ -50,7 +50,8 @@ static DEFAULT_CATALOG_NAME: &str = "default";
 ///
 /// Users of Daft can register various [`DataCatalog`] with Daft, enabling
 /// discovery of tables across various [`DataCatalog`] implementations.
-pub struct DaftMetaCatalog {
+#[derive(Debug, Clone, Default)]
+pub struct DaftCatalog {
     /// Map of catalog names to the DataCatalog impls.
     ///
     /// NOTE: The default catalog is always named "default"
@@ -60,11 +61,11 @@ pub struct DaftMetaCatalog {
     named_tables: HashMap<String, LogicalPlanBuilder>,
 }
 
-impl DaftMetaCatalog {
+impl DaftCatalog {
     /// Create a `DaftMetaCatalog` from the current environment
     pub fn new_from_env() -> Self {
         // TODO: Parse a YAML file to produce the catalog
-        DaftMetaCatalog {
+        DaftCatalog {
             data_catalogs: default::Default::default(),
             named_tables: default::Default::default(),
         }
@@ -95,14 +96,23 @@ impl DaftMetaCatalog {
     }
 
     /// Registers a LogicalPlan with a name in the DaftMetaCatalog
-    pub fn register_named_table(&mut self, name: &str, view: LogicalPlanBuilder) -> Result<()> {
+    pub fn register_table(
+        &mut self,
+        name: &str,
+        view: impl Into<LogicalPlanBuilder>,
+    ) -> Result<()> {
         if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
             return Err(Error::InvalidTableName {
                 name: name.to_string(),
             });
         }
-        self.named_tables.insert(name.to_string(), view);
+        self.named_tables.insert(name.to_string(), view.into());
         Ok(())
+    }
+
+    /// Check if a named table is registered in the DaftCatalog
+    pub fn contains_table(&self, name: &str) -> bool {
+        self.named_tables.contains_key(name)
     }
 
     /// Provides high-level functionality for reading a table of data against a [`DaftMetaCatalog`]
@@ -146,6 +156,15 @@ impl DaftMetaCatalog {
             table_id: searched_table_name.to_string(),
         })
     }
+    /// Copy from another catalog, using tables from other in case of conflict
+    pub fn copy_from(&mut self, other: &Self) {
+        for (name, plan) in &other.named_tables {
+            self.named_tables.insert(name.clone(), plan.clone());
+        }
+        for (name, catalog) in &other.data_catalogs {
+            self.data_catalogs.insert(name.clone(), catalog.clone());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -168,39 +187,37 @@ mod tests {
             ])
             .unwrap(),
         );
-        LogicalPlan::Source(Source {
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 source_id: 0,
             })),
-        })
+        ))
         .arced()
     }
 
     #[test]
     fn test_register_and_unregister_named_table() {
-        let mut catalog = DaftMetaCatalog::new_from_env();
-        let plan = LogicalPlanBuilder::new(mock_plan(), None);
+        let mut catalog = DaftCatalog::new_from_env();
+        let plan = LogicalPlanBuilder::from(mock_plan());
 
         // Register a table
-        assert!(catalog
-            .register_named_table("test_table", plan.clone())
-            .is_ok());
+        assert!(catalog.register_table("test_table", plan.clone()).is_ok());
 
         // Try to register a table with invalid name
         assert!(catalog
-            .register_named_table("invalid name", plan.clone())
+            .register_table("invalid name", plan.clone())
             .is_err());
     }
 
     #[test]
     fn test_read_registered_table() {
-        let mut catalog = DaftMetaCatalog::new_from_env();
-        let plan = LogicalPlanBuilder::new(mock_plan(), None);
+        let mut catalog = DaftCatalog::new_from_env();
+        let plan = LogicalPlanBuilder::from(mock_plan());
 
-        catalog.register_named_table("test_table", plan).unwrap();
+        catalog.register_table("test_table", plan).unwrap();
 
         assert!(catalog.read_table("test_table").is_ok());
         assert!(catalog.read_table("non_existent_table").is_err());

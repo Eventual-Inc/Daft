@@ -10,8 +10,8 @@ from tests.conftest import get_tests_daft_runner_name
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
-PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="iceberg only supported if pyarrow >= 8.0.0")
+PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
+pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="iceberg not supported on old versions of pyarrow")
 
 
 from pyiceberg.catalog.sql import SqlCatalog
@@ -161,7 +161,7 @@ def test_read_and_overwrite(simple_local_table):
 
 
 def test_missing_columns_write(simple_local_table):
-    table, num_partitions = simple_local_table
+    table, _ = simple_local_table
 
     df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
 

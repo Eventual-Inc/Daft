@@ -98,7 +98,8 @@ def test_joins_with_duplicate_columns():
         """
         SELECT *
         FROM table1 t1
-        LEFT JOIN table2 t2 on t2.id = t1.id;
+        LEFT JOIN table2 t2 on t2.id = t1.id
+        ORDER BY t1.id;
         """,
         catalog,
     ).collect()
@@ -167,3 +168,30 @@ def test_join_qualifiers_with_alias(join_condition, selection):
     expected = {"x": [1], "val": [10], "y": [1], "score": [0.1]}
 
     assert df_sql == expected
+
+
+def test_cross_join():
+    x = daft.from_pydict(
+        {
+            "A": [1, 3, 5],
+            "B": ["a", "b", "c"],
+        },
+    )
+
+    y = daft.from_pydict(
+        {
+            "C": [2, 4, 6, 8],
+            "D": ["d", "e", "f", "g"],
+        },
+    )
+
+    catalog = SQLCatalog({"x": x, "y": y})
+
+    df = daft.sql("select * from x, y order by A, C", catalog)
+
+    assert df.to_pydict() == {
+        "A": [1, 1, 1, 1, 3, 3, 3, 3, 5, 5, 5, 5],
+        "B": ["a", "a", "a", "a", "b", "b", "b", "b", "c", "c", "c", "c"],
+        "C": [2, 4, 6, 8, 2, 4, 6, 8, 2, 4, 6, 8],
+        "D": ["d", "e", "f", "g", "d", "e", "f", "g", "d", "e", "f", "g"],
+    }

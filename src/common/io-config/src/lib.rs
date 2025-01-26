@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 #[cfg(feature = "python")]
 pub mod python;
 

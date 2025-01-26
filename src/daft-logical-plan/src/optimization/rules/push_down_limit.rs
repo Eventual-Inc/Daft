@@ -37,6 +37,7 @@ impl PushDownLimit {
                 input,
                 limit,
                 eager,
+                ..
             }) => {
                 let limit = *limit as usize;
                 match input.as_ref() {
@@ -74,7 +75,12 @@ impl PushDownLimit {
                                     SourceInfo::Physical(new_external_info).into(),
                                 ))
                                 .into();
-                                let out_plan = if external_info.scan_op.0.can_absorb_limit() {
+                                let out_plan = if external_info
+                                    .scan_state
+                                    .get_scan_op()
+                                    .0
+                                    .can_absorb_limit()
+                                {
                                     new_source
                                 } else {
                                     plan.with_new_children(&[new_source]).into()
@@ -93,6 +99,7 @@ impl PushDownLimit {
                         input,
                         limit: child_limit,
                         eager: child_eagar,
+                        ..
                     }) => {
                         let new_limit = limit.min(*child_limit as usize);
                         let new_eager = eager | child_eagar;
@@ -130,7 +137,11 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        optimization::{rules::PushDownLimit, test::assert_optimized_plan_with_rules_eq},
+        optimization::{
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            rules::PushDownLimit,
+            test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan, LogicalPlanBuilder,
     };
@@ -142,7 +153,14 @@ mod tests {
         plan: Arc<LogicalPlan>,
         expected: Arc<LogicalPlan>,
     ) -> DaftResult<()> {
-        assert_optimized_plan_with_rules_eq(plan, expected, vec![Box::new(PushDownLimit::new())])
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![RuleBatch::new(
+                vec![Box::new(PushDownLimit::new())],
+                RuleExecutionStrategy::Once,
+            )],
+        )
     }
 
     /// Tests that Limit pushes into external Source.
@@ -255,10 +273,16 @@ mod tests {
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
         let py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
-        let plan =
-            LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default(), 5, 3)?
-                .limit(5, false)?
-                .build();
+        let plan = LogicalPlanBuilder::in_memory_scan(
+            "foo",
+            common_partitioning::PartitionCacheEntry::Python(Arc::new(py_obj)),
+            schema,
+            Default::default(),
+            5,
+            3,
+        )?
+        .limit(5, false)?
+        .build();
         assert_optimized_plan_eq(plan.clone(), plan)?;
         Ok(())
     }

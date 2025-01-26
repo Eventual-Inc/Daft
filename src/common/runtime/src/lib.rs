@@ -69,13 +69,16 @@ impl<T: Send + 'static> Future for RuntimeTask<T> {
 }
 
 pub struct Runtime {
-    runtime: tokio::runtime::Runtime,
+    pub runtime: Arc<tokio::runtime::Runtime>,
     pool_type: PoolType,
 }
 
 impl Runtime {
     pub(crate) fn new(runtime: tokio::runtime::Runtime, pool_type: PoolType) -> RuntimeRef {
-        Arc::new(Self { runtime, pool_type })
+        Arc::new(Self {
+            runtime: Arc::new(runtime),
+            pool_type,
+        })
     }
 
     async fn execute_task<F>(future: F, pool_type: PoolType) -> DaftResult<F::Output>
@@ -100,7 +103,12 @@ impl Runtime {
 
     /// Spawns a task on the runtime and blocks the current thread until the task is completed.
     /// Similar to tokio's Runtime::block_on but requires static lifetime + Send
-    /// You should use this when you are spawning IO tasks from an Expression Evaluator or in the Executor
+    /// You should use this when you need to run an async task in a synchronous function, but you are already in a tokio runtime.
+    ///
+    /// For example, URL download is an async function, but it is called from a synchronous function in a tokio runtime,
+    /// i.e. calling the Expression Evaluator from the Native Executor.
+    ///
+    /// In the future, we should refactor the code to be fully async, but for now, this is a workaround.
     pub fn block_on<F>(&self, future: F) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,

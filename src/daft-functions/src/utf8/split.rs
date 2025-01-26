@@ -60,15 +60,3 @@ impl ScalarUDF for Utf8Split {
 pub fn utf8_split(input: ExprRef, pattern: ExprRef, regex: bool) -> ExprRef {
     ScalarFunction::new(Utf8Split { regex }, vec![input, pattern]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_split")]
-pub fn py_utf8_split(expr: PyExpr, pattern: PyExpr, regex: bool) -> PyResult<PyExpr> {
-    Ok(utf8_split(expr.into(), pattern.into(), regex).into())
-}

@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use common_treenode::Transformed;
 use daft_core::prelude::*;
-use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef, ExprResolver};
+use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{CreationSnafu, Result},
+    logical_plan::{self},
+    stats::StatsState,
     LogicalPlan,
 };
 
@@ -18,30 +19,38 @@ pub struct Project {
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
     pub projected_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl Project {
-    pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
-        let expr_resolver = ExprResolver::builder().allow_stateful_udf(true).build();
-
-        let (projection, fields) = expr_resolver
-            .resolve(projection, &input.schema())
-            .context(CreationSnafu)?;
-
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
+        projection: Vec<ExprRef>,
+    ) -> logical_plan::Result<Self> {
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
             Self::try_factor_subexpressions(input, projection)?;
 
-        let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
+        let fields = factored_projection
+            .iter()
+            .map(|expr| expr.to_field(&factored_input.schema()))
+            .collect::<DaftResult<_>>()?;
+
+        let projected_schema = Schema::new(fields)?.into();
 
         Ok(Self {
             input: factored_input,
             projection: factored_projection,
             projected_schema,
+            stats_state: StatsState::NotMaterialized,
         })
     }
+
     /// Create a new Projection using the specified output schema
-    pub(crate) fn new_from_schema(input: Arc<LogicalPlan>, schema: SchemaRef) -> Result<Self> {
+    pub(crate) fn new_from_schema(
+        input: Arc<LogicalPlan>,
+        schema: SchemaRef,
+    ) -> logical_plan::Result<Self> {
         let expr: Vec<ExprRef> = schema
             .names()
             .into_iter()
@@ -50,17 +59,28 @@ impl Project {
         Self::try_new(input, expr)
     }
 
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
+        let input_stats = self.input.materialized_stats();
+        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        self
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!(
+        let mut res = vec![format!(
             "Project: {}",
             self.projection.iter().map(|e| e.to_string()).join(", ")
-        )]
+        )];
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
+        res
     }
 
     fn try_factor_subexpressions(
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,
-    ) -> Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
+    ) -> logical_plan::Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
         // Given construction parameters for a projection,
         // see if we can factor out common subexpressions.
         // Returns a new set of projection parameters
@@ -406,6 +426,10 @@ fn replace_column_with_semantic_id_aggexpr(
                 |transformed_child| AggExpr::Count(transformed_child, mode),
                 |_| e,
             )
+        }
+        AggExpr::CountDistinct(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::CountDistinct, |_| e)
         }
         AggExpr::Sum(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)

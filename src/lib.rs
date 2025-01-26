@@ -71,7 +71,7 @@ pub mod pylib {
     #[pyfunction]
     pub fn refresh_logger(py: Python) -> PyResult<()> {
         use log::LevelFilter;
-        let logging = py.import_bound(pyo3::intern!(py, "logging"))?;
+        let logging = py.import(pyo3::intern!(py, "logging"))?;
         let python_log_level = logging
             .getattr(pyo3::intern!(py, "getLogger"))?
             .call0()?
@@ -124,6 +124,11 @@ pub mod pylib {
         // Register catalog module
         let catalog_module = daft_catalog::python::register_modules(m)?;
         daft_catalog_python_catalog::python::register_modules(&catalog_module)?;
+
+        // Register testing module
+        let testing_module = PyModule::new(m.py(), "testing")?;
+        m.add_submodule(&testing_module)?;
+        daft_scan::python::register_testing_modules(&testing_module)?;
 
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;

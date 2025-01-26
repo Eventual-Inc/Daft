@@ -7,7 +7,7 @@ use common_treenode::{
 };
 use daft_logical_plan::{
     ops::Source,
-    optimization::Optimizer,
+    optimization::OptimizerBuilder,
     source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
     LogicalPlan, LogicalPlanRef,
 };
@@ -119,7 +119,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                             let left_stats = left.approximate_stats();
                             let right_stats = right.approximate_stats();
 
-                            if left_stats.lower_bound_bytes <= right_stats.lower_bound_bytes {
+                            if left_stats.size_bytes <= right_stats.size_bytes {
                                 RunNext::Left
                             } else {
                                 RunNext::Right
@@ -215,6 +215,7 @@ impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
             LogicalPlan::Source(Source {
                 output_schema: _,
                 source_info,
+                ..
             }) => match source_info.as_ref() {
                 SourceInfo::PlaceHolder(phi) => {
                     assert!(self.mat_results.is_some());
@@ -226,10 +227,10 @@ impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
                     mat_results.in_memory_info.clustering_spec = Some(phi.clustering_spec.clone());
                     mat_results.in_memory_info.source_schema = phi.source_schema.clone();
 
-                    let new_source_node = LogicalPlan::Source(Source {
-                        output_schema: mat_results.in_memory_info.source_schema.clone(),
-                        source_info: SourceInfo::InMemory(mat_results.in_memory_info).into(),
-                    })
+                    let new_source_node = LogicalPlan::Source(Source::new(
+                        mat_results.in_memory_info.source_schema.clone(),
+                        SourceInfo::InMemory(mat_results.in_memory_info).into(),
+                    ))
                     .arced();
                     Ok(Transformed::new(
                         new_source_node,
@@ -357,7 +358,7 @@ impl AdaptivePlanner {
 
         self.logical_plan = result.data;
 
-        let optimizer = Optimizer::new(Default::default());
+        let optimizer = OptimizerBuilder::default().simplify_expressions().build();
 
         self.logical_plan = optimizer.optimize(
             self.logical_plan.clone(),

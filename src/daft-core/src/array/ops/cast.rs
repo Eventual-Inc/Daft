@@ -68,7 +68,7 @@ where
                     PySeries::from(Series::try_from((self.name(), self.data.clone()))?);
 
                 let new_pyseries: PySeries = Python::with_gil(|py| -> PyResult<PySeries> {
-                    PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?
+                    PyModule::import(py, pyo3::intern!(py, "daft.series"))?
                         .getattr(pyo3::intern!(py, "Series"))?
                         .getattr(pyo3::intern!(py, "_from_pyseries"))?
                         .call1((old_pyseries,))?
@@ -455,14 +455,14 @@ macro_rules! pycast_then_arrowcast {
 
             let new_pyseries = Python::with_gil(|py| -> PyResult<PySeries> {
                 let old_daft_series = {
-                    PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?
+                    PyModule::import(py, pyo3::intern!(py, "daft.series"))?
                         .getattr(pyo3::intern!(py, "Series"))?
                         .getattr(pyo3::intern!(py, "_from_pyseries"))?
                         .call1((old_pyseries,))?
                 };
 
                 let py_type_fn = {
-                    PyModule::import_bound(py, pyo3::intern!(py, "builtins"))?
+                    PyModule::import(py, pyo3::intern!(py, "builtins"))?
                         .getattr(pyo3::intern!(py, $pytype_str))?
                 };
 
@@ -589,12 +589,12 @@ fn extract_python_to_vec<
     }
 
     let from_numpy_dtype = {
-        PyModule::import_bound(py, pyo3::intern!(py, "daft.datatype"))?
+        PyModule::import(py, pyo3::intern!(py, "daft.datatype"))?
             .getattr(pyo3::intern!(py, "DataType"))?
             .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
     };
 
-    let builtins = PyModule::import_bound(py, pyo3::intern!(py, "builtins"))?;
+    let builtins = PyModule::import(py, pyo3::intern!(py, "builtins"))?;
 
     let py_type_fn = match child_dtype {
         dtype if dtype.is_integer() => Ok(builtins.getattr(pyo3::intern!(py, "int"))?),
@@ -605,7 +605,7 @@ fn extract_python_to_vec<
     }?;
 
     let py_memory_view = py
-        .import_bound(pyo3::intern!(py, "builtins"))?
+        .import(pyo3::intern!(py, "builtins"))?
         .getattr(pyo3::intern!(py, "memoryview"))?;
 
     // TODO: use this to extract our the image mode
@@ -628,7 +628,7 @@ fn extract_python_to_vec<
             {
                 // Path if object supports buffer/array protocols.
                 let np_as_array_fn = py
-                    .import_bound(pyo3::intern!(py, "numpy"))?
+                    .import(pyo3::intern!(py, "numpy"))?
                     .getattr(pyo3::intern!(py, "asarray"))?;
                 let pyarray = np_as_array_fn.call1((object,))?;
                 let (num_values, shape_size) = append_values_from_numpy(
@@ -654,7 +654,7 @@ fn extract_python_to_vec<
             } else {
                 // Path if object does not support buffer/array protocols.
                 // Try a best-effort conversion of the elements.
-                let pyiter = object.iter();
+                let pyiter = object.try_iter();
                 if let Ok(pyiter) = pyiter {
                     // has an iter
                     let casted_iter = pyiter.map(|v| v.and_then(|f| py_type_fn.call1((f,))));
@@ -1115,7 +1115,7 @@ impl EmbeddingArray {
             (DataType::Python, DataType::Embedding(_, size)) => Python::with_gil(|py| {
                 let physical_arrow = self.physical.flat_child.to_arrow();
                 let shape = (self.len(), *size);
-                let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
                 // Only go through FFI layer once instead of for every embedding.
                 // We create an ndarray view on the entire embeddings array
                 // buffer sans the validity mask, and then create a subndarray view
@@ -1124,8 +1124,8 @@ impl EmbeddingArray {
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                     .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
                 let ndarrays = py_array
-                    .iter()?
-                    .map(|a| a.unwrap().unbind())
+                    .try_iter()?
+                    .map(|a| Arc::new(a.unwrap().unbind()))
                     .collect::<Vec<_>>();
                 let values_array =
                     PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
@@ -1160,7 +1160,7 @@ impl ImageArray {
                 let ca = self.channel_array();
                 let ha = self.height_array();
                 let wa = self.width_array();
-                let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
                 for i in 0..da.len() {
                     let element = da.get(i);
                     let shape = (
@@ -1172,10 +1172,9 @@ impl ImageArray {
                         Some(element) => ffi::to_py_array(py, element.to_arrow(), &pyarrow)?
                             .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                             .call_method1(pyo3::intern!(py, "reshape"), (shape,))?,
-                        None => PyArray3::<u8>::zeros_bound(py, shape.into_dimension(), false)
-                            .into_any(),
+                        None => PyArray3::<u8>::zeros(py, shape.into_dimension(), false).into_any(),
                     };
-                    ndarrays.push(py_array.unbind());
+                    ndarrays.push(Arc::new(py_array.unbind()));
                 }
                 let values_array =
                     PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
@@ -1273,7 +1272,7 @@ impl FixedShapeImageArray {
                         *width as usize,
                         mode.num_channels() as usize,
                     );
-                    let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                    let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
                     // Only go through FFI layer once instead of for every image.
                     // We create an (N, H, W, C) ndarray view on the entire image array
                     // buffer sans the validity mask, and then create a subndarray view
@@ -1283,8 +1282,8 @@ impl FixedShapeImageArray {
                             .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                             .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
                     let ndarrays = py_array
-                        .iter()?
-                        .map(|a| a.unwrap().unbind())
+                        .try_iter()?
+                        .map(|a| Arc::new(a.unwrap().unbind()))
                         .collect::<Vec<_>>();
                     let values_array =
                         PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
@@ -1337,7 +1336,7 @@ impl TensorArray {
                 let mut ndarrays = Vec::with_capacity(self.len());
                 let da = self.data_array();
                 let sa = self.shape_array();
-                let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
                 for (arrow_array, shape_array) in (0..self.len()).map(|i| (da.get(i), sa.get(i))) {
                     if let (Some(arrow_array), Some(shape_array)) = (arrow_array, shape_array) {
                         let shape_array = shape_array.u64().unwrap().as_arrow();
@@ -1345,9 +1344,9 @@ impl TensorArray {
                         let py_array = ffi::to_py_array(py, arrow_array.to_arrow(), &pyarrow)?
                             .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                             .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
-                        ndarrays.push(py_array.unbind());
+                        ndarrays.push(Arc::new(py_array.unbind()));
                     } else {
-                        ndarrays.push(py.None());
+                        ndarrays.push(Arc::new(py.None()));
                     }
                 }
                 let values_array =
@@ -1725,11 +1724,11 @@ impl SparseTensorArray {
             }
             #[cfg(feature = "python")]
             DataType::Python => Python::with_gil(|py| {
-                let mut pydicts: Vec<Py<PyAny>> = Vec::with_capacity(self.len());
+                let mut pydicts: Vec<Arc<PyObject>> = Vec::with_capacity(self.len());
                 let sa = self.shape_array();
                 let va = self.values_array();
                 let ia = self.indices_array();
-                let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
                 for ((shape_array, values_array), indices_array) in
                     sa.into_iter().zip(va.into_iter()).zip(ia.into_iter())
                 {
@@ -1744,13 +1743,13 @@ impl SparseTensorArray {
                         let py_indices_array =
                             ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
                                 .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                        let pydict = pyo3::types::PyDict::new_bound(py);
+                        let pydict = pyo3::types::PyDict::new(py);
                         pydict.set_item("values", py_values_array)?;
                         pydict.set_item("indices", py_indices_array)?;
                         pydict.set_item("shape", shape)?;
-                        pydicts.push(pydict.unbind().into());
+                        pydicts.push(Arc::new(pydict.unbind().into()));
                     } else {
-                        pydicts.push(py.None());
+                        pydicts.push(Arc::new(py.None()));
                     }
                 }
                 let py_objects_array =
@@ -1856,10 +1855,10 @@ impl FixedShapeSparseTensorArray {
             #[cfg(feature = "python")]
             (DataType::Python, DataType::FixedShapeSparseTensor(_, tensor_shape)) => {
                 Python::with_gil(|py| {
-                    let mut pydicts: Vec<Py<PyAny>> = Vec::with_capacity(self.len());
+                    let mut pydicts: Vec<Arc<PyObject>> = Vec::with_capacity(self.len());
                     let va = self.values_array();
                     let ia = self.indices_array();
-                    let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                    let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
                     for (values_array, indices_array) in va.into_iter().zip(ia.into_iter()) {
                         if let (Some(values_array), Some(indices_array)) =
                             (values_array, indices_array)
@@ -1870,13 +1869,13 @@ impl FixedShapeSparseTensorArray {
                             let py_indices_array =
                                 ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
                                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                            let pydict = pyo3::types::PyDict::new_bound(py);
+                            let pydict = pyo3::types::PyDict::new(py);
                             pydict.set_item("values", py_values_array)?;
                             pydict.set_item("indices", py_indices_array)?;
                             pydict.set_item("shape", tensor_shape)?;
-                            pydicts.push(pydict.unbind().into());
+                            pydicts.push(Arc::new(pydict.unbind().into()));
                         } else {
-                            pydicts.push(py.None());
+                            pydicts.push(Arc::new(py.None()));
                         }
                     }
                     let py_objects_array =
@@ -1900,7 +1899,7 @@ impl FixedShapeTensorArray {
             (DataType::Python, DataType::FixedShapeTensor(_, shape)) => {
                 let physical_arrow = self.physical.flat_child.to_arrow();
                 pyo3::Python::with_gil(|py| {
-                    let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                    let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
                     let mut np_shape: Vec<u64> = vec![self.len() as u64];
                     np_shape.extend(shape);
                     // Only go through FFI layer once instead of for every tensor element.
@@ -1912,8 +1911,8 @@ impl FixedShapeTensorArray {
                             .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                             .call_method1(pyo3::intern!(py, "reshape"), (np_shape,))?;
                     let ndarrays = py_array
-                        .iter()?
-                        .map(|a| a.unwrap().unbind())
+                        .try_iter()?
+                        .map(|a| Arc::new(a.unwrap().unbind()))
                         .collect::<Vec<_>>();
                     let values_array =
                         PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
@@ -2316,10 +2315,12 @@ where
             .as_arrow()
             .convert_logical_type(arrow_dtype)
             .with_validity(None);
-        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
-        let py_array: Vec<PyObject> = ffi::to_py_array(py, arrow_array.to_boxed(), &pyarrow)?
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        let py_array = ffi::to_py_array(py, arrow_array.to_boxed(), &pyarrow)?
             .call_method0(pyo3::intern!(py, "to_pylist"))?
-            .extract()?;
+            .try_iter()?
+            .map(|a| Arc::new(a.unwrap().unbind()))
+            .collect::<Vec<_>>();
         let values_array =
             PseudoArrowArray::new(py_array.into(), array.as_arrow().validity().cloned());
         Ok(PythonArray::new(

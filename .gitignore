@@ -16,6 +16,7 @@ build
 
 **/node_modules/**
 data/**
+benchmarking/tpcds/data
 *.so
 *.whl
 log/
@@ -42,3 +43,6 @@ log/
 
 # helix editor
 .helix
+
+# uv
+uv.lock

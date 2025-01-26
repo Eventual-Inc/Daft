@@ -1,7 +1,7 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
 
 #[cfg(feature = "python")]
-use pyo3::{types::PyAnyMethods, PyObject, Python};
+use pyo3::{types::PyAnyMethods, PyObject, PyResult, Python};
 use serde::{
     de::{Error as DeError, Visitor},
     ser::Error as SerError,
@@ -9,17 +9,22 @@ use serde::{
 };
 
 #[cfg(feature = "python")]
+pub fn pickle_dumps(obj: &PyObject) -> PyResult<Vec<u8>> {
+    Python::with_gil(|py| {
+        py.import(pyo3::intern!(py, "daft.pickle"))
+            .and_then(|m| m.getattr(pyo3::intern!(py, "dumps")))
+            .and_then(|f| f.call1((obj,)))
+            .and_then(|b| b.extract::<Vec<u8>>())
+    })
+}
+
+#[cfg(feature = "python")]
 pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let bytes = Python::with_gil(|py| {
-        py.import_bound(pyo3::intern!(py, "daft.pickle"))
-            .and_then(|m| m.getattr(pyo3::intern!(py, "dumps")))
-            .and_then(|f| f.call1((obj,)))
-            .and_then(|b| b.extract::<Vec<u8>>())
-            .map_err(|e| SerError::custom(e.to_string()))
-    })?;
+    let bytes = pickle_dumps(obj).map_err(|e| SerError::custom(e.to_string()))?;
+
     s.serialize_bytes(bytes.as_slice())
 }
 #[cfg(feature = "python")]
@@ -38,7 +43,7 @@ impl<'de> Visitor<'de> for PyObjectVisitor {
         E: DeError,
     {
         Python::with_gil(|py| {
-            py.import_bound(pyo3::intern!(py, "daft.pickle"))
+            py.import(pyo3::intern!(py, "daft.pickle"))
                 .and_then(|m| m.getattr(pyo3::intern!(py, "loads")))
                 .and_then(|f| Ok(f.call1((v,))?.into()))
                 .map_err(|e| DeError::custom(e.to_string()))
@@ -66,11 +71,11 @@ impl<'de> Visitor<'de> for PyObjectVisitor {
 }
 
 #[cfg(feature = "python")]
-pub fn deserialize_py_object<'de, D>(d: D) -> Result<PyObject, D::Error>
+pub fn deserialize_py_object<'de, D>(d: D) -> Result<Arc<PyObject>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    d.deserialize_bytes(PyObjectVisitor)
+    d.deserialize_bytes(PyObjectVisitor).map(Into::into)
 }
 
 #[macro_export]
@@ -84,16 +89,22 @@ macro_rules! impl_bincode_py_state_serialization {
                 py: Python<'py>,
             ) -> PyResult<(PyObject, (pyo3::Bound<'py, pyo3::types::PyBytes>,))> {
                 use pyo3::{
+                    exceptions::PyRuntimeError,
                     types::{PyAnyMethods, PyBytes},
-                    PyTypeInfo, ToPyObject,
+                    PyErr, PyTypeInfo,
                 };
                 Ok((
-                    Self::type_object_bound(py)
+                    Self::type_object(py)
                         .getattr(pyo3::intern!(py, "_from_serialized"))?
                         .into(),
-                    (PyBytes::new_bound(
+                    (PyBytes::new(
                         py,
-                        &$crate::bincode::serialize(&self).unwrap(),
+                        &$crate::bincode::serialize(&self).map_err(|error| {
+                            PyErr::new::<PyRuntimeError, _>(format!(
+                                "Failed to serialize: {}",
+                                error.to_string()
+                            ))
+                        })?,
                     ),),
                 ))
             }

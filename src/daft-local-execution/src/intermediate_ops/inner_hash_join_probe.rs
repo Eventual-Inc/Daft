@@ -1,22 +1,21 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState};
 use indexmap::IndexSet;
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::sinks::hash_join_build::ProbeStateBridgeRef;
+use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum InnerHashJoinProbeState {
-    Building(ProbeStateBridgeRef),
+    Building(BroadcastStateBridgeRef<ProbeState>),
     Probing(Arc<ProbeState>),
 }
 
@@ -24,7 +23,7 @@ impl InnerHashJoinProbeState {
     async fn get_or_await_probe_state(&mut self) -> Arc<ProbeState> {
         match self {
             Self::Building(bridge) => {
-                let probe_state = bridge.get_probe_state().await;
+                let probe_state = bridge.get_state().await;
                 *self = Self::Probing(probe_state.clone());
                 probe_state
             }
@@ -50,7 +49,7 @@ struct InnerHashJoinParams {
 pub struct InnerHashJoinProbeOperator {
     params: Arc<InnerHashJoinParams>,
     output_schema: SchemaRef,
-    probe_state_bridge: ProbeStateBridgeRef,
+    probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
 }
 
 impl InnerHashJoinProbeOperator {
@@ -63,7 +62,7 @@ impl InnerHashJoinProbeOperator {
         build_on_left: bool,
         common_join_keys: IndexSet<String>,
         output_schema: &SchemaRef,
-        probe_state_bridge: ProbeStateBridgeRef,
+        probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
     ) -> Self {
         let left_non_join_columns = left_schema
             .fields
@@ -172,7 +171,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime_ref: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -184,26 +183,29 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         }
 
         let params = self.params.clone();
-        runtime_ref
-            .spawn(async move {
-                let inner_join_state = state
+        task_spawner
+            .spawn(
+                async move {
+                    let inner_join_state = state
                     .as_any_mut()
                     .downcast_mut::<InnerHashJoinProbeState>()
                     .expect(
                         "InnerHashJoinProbeState should be used with InnerHashJoinProbeOperator",
                     );
-                let probe_state = inner_join_state.get_or_await_probe_state().await;
-                let res = Self::probe_inner(
-                    &input,
-                    &probe_state,
-                    &params.probe_on,
-                    &params.common_join_keys,
-                    &params.left_non_join_columns,
-                    &params.right_non_join_columns,
-                    params.build_on_left,
-                );
-                Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
-            })
+                    let probe_state = inner_join_state.get_or_await_probe_state().await;
+                    let res = Self::probe_inner(
+                        &input,
+                        &probe_state,
+                        &params.probe_on,
+                        &params.common_join_keys,
+                        &params.left_non_join_columns,
+                        &params.right_non_join_columns,
+                        params.build_on_left,
+                    );
+                    Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
+                },
+                Span::current(),
+            )
             .into()
     }
 

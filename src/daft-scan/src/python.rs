@@ -1,8 +1,13 @@
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
+
 use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
-use crate::storage_config::{NativeStorageConfig, PyStorageConfig, PythonStorageConfig};
+use crate::storage_config::StorageConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(
@@ -10,40 +15,60 @@ struct PyObjectSerializableWrapper(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub PyObject,
+    pub Arc<PyObject>,
 );
 
 /// Python arguments to a Python function that produces Tables
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PythonTablesFactoryArgs(Vec<PyObjectSerializableWrapper>);
+pub struct PythonTablesFactoryArgs {
+    args: Vec<PyObjectSerializableWrapper>,
+    hash: u64,
+}
+
+impl Hash for PythonTablesFactoryArgs {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
 
 impl PythonTablesFactoryArgs {
-    pub fn new(args: Vec<PyObject>) -> Self {
-        Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
+    pub fn new(args: Vec<Arc<PyObject>>) -> Self {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        Python::with_gil(|py| {
+            for obj in &args {
+                // Only hash hashable PyObjects.
+                if let Ok(hash) = obj.bind(py).hash() {
+                    hash.hash(&mut hasher);
+                }
+            }
+        });
+        Self {
+            args: args.into_iter().map(PyObjectSerializableWrapper).collect(),
+            hash: hasher.finish(),
+        }
     }
 
-    #[must_use]
-    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> Bound<'a, PyTuple> {
-        pyo3::types::PyTuple::new_bound(py, self.0.iter().map(|x| x.0.bind(py)))
+    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyTuple>> {
+        pyo3::types::PyTuple::new(py, self.args.iter().map(|x| x.0.bind(py)))
     }
 }
 
 impl PartialEq for PythonTablesFactoryArgs {
     fn eq(&self, other: &Self) -> bool {
-        if self.0.len() != other.0.len() {
+        if self.args.len() != other.args.len() {
             return false;
         }
-        self.0
+        self.args
             .iter()
-            .zip(other.0.iter())
+            .zip(other.args.iter())
             .all(|(s, o)| (s.0.as_ptr() as isize) == (o.0.as_ptr() as isize))
     }
 }
 
 pub mod pylib {
-    use std::sync::Arc;
+    use std::{default, sync::Arc};
 
-    use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
+    use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
     use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
@@ -55,19 +80,12 @@ pub mod pylib {
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
     use daft_table::{python::PyTable, Table};
-    use pyo3::{
-        prelude::*,
-        pyclass,
-        types::{PyIterator, PyList},
-    };
+    use pyo3::{prelude::*, pyclass, types::PyIterator};
     use serde::{Deserialize, Serialize};
 
     use super::PythonTablesFactoryArgs;
     use crate::{
-        anonymous::AnonymousScanOperator,
-        glob::GlobScanOperator,
-        scan_task_iters::{merge_by_sizes, split_by_row_groups, BoxScanTaskIter},
-        storage_config::{PyStorageConfig, PythonStorageConfig},
+        anonymous::AnonymousScanOperator, glob::GlobScanOperator, storage_config::StorageConfig,
         DataSource, ScanTask,
     };
     #[pyclass(module = "daft.daft", frozen)]
@@ -88,7 +106,7 @@ pub mod pylib {
             files: Vec<String>,
             schema: PySchema,
             file_format_config: PyFileFormatConfig,
-            storage_config: PyStorageConfig,
+            storage_config: StorageConfig,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let schema = schema.schema;
@@ -106,18 +124,29 @@ pub mod pylib {
 
         #[staticmethod]
         #[allow(clippy::too_many_arguments)]
+        #[pyo3(signature = (
+            glob_path,
+            file_format_config,
+            storage_config,
+            hive_partitioning,
+            infer_schema,
+            schema=None,
+            file_path_column=None
+        ))]
         pub fn glob_scan(
             py: Python,
             glob_path: Vec<String>,
             file_format_config: PyFileFormatConfig,
-            storage_config: PyStorageConfig,
+            storage_config: StorageConfig,
             hive_partitioning: bool,
             infer_schema: bool,
             schema: Option<PySchema>,
             file_path_column: Option<String>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
-                let operator = Arc::new(GlobScanOperator::try_new(
+                let executor = common_runtime::get_io_runtime(true);
+
+                let task = GlobScanOperator::try_new(
                     glob_path,
                     file_format_config.into(),
                     storage_config.into(),
@@ -125,7 +154,11 @@ pub mod pylib {
                     schema.map(|s| s.schema),
                     file_path_column,
                     hive_partitioning,
-                )?);
+                );
+
+                let operator = executor.block_on(task)??;
+                let operator = Arc::new(operator);
+
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),
                 })
@@ -143,6 +176,7 @@ pub mod pylib {
     #[pyclass(module = "daft.daft")]
     #[derive(Debug)]
     struct PythonScanOperatorBridge {
+        name: String,
         operator: PyObject,
         schema: SchemaRef,
         partitioning_keys: Vec<PartitionField>,
@@ -153,12 +187,16 @@ pub mod pylib {
     }
 
     impl PythonScanOperatorBridge {
+        fn _name(abc: &PyObject, py: Python) -> PyResult<String> {
+            let result = abc.call_method0(py, pyo3::intern!(py, "name"))?;
+            result.extract::<String>(py)
+        }
         fn _partitioning_keys(abc: &PyObject, py: Python) -> PyResult<Vec<PartitionField>> {
             let result = abc.call_method0(py, pyo3::intern!(py, "partitioning_keys"))?;
-            let result = result.extract::<&PyList>(py)?;
             result
-                .into_iter()
-                .map(|p| Ok(p.extract::<PyPartitionField>()?.0.as_ref().clone()))
+                .bind(py)
+                .try_iter()?
+                .map(|p| Ok(p?.extract::<PyPartitionField>()?.0.as_ref().clone()))
                 .collect()
         }
 
@@ -195,6 +233,7 @@ pub mod pylib {
     impl PythonScanOperatorBridge {
         #[staticmethod]
         pub fn from_python_abc(abc: PyObject, py: Python) -> PyResult<Self> {
+            let name = Self::_name(&abc, py)?;
             let partitioning_keys = Self::_partitioning_keys(&abc, py)?;
             let schema = Self::_schema(&abc, py)?;
             let can_absorb_filter = Self::_can_absorb_filter(&abc, py)?;
@@ -203,6 +242,7 @@ pub mod pylib {
             let display_name = Self::_display_name(&abc, py)?;
 
             Ok(Self {
+                name,
                 operator: abc,
                 schema,
                 partitioning_keys,
@@ -215,6 +255,9 @@ pub mod pylib {
     }
 
     impl ScanOperator for PythonScanOperatorBridge {
+        fn name(&self) -> &str {
+            &self.name
+        }
         fn partitioning_keys(&self) -> &[PartitionField] {
             &self.partitioning_keys
         }
@@ -242,17 +285,13 @@ pub mod pylib {
             lines
         }
 
-        fn to_scan_tasks(
-            &self,
-            pushdowns: Pushdowns,
-            cfg: Option<&DaftExecutionConfig>,
-        ) -> DaftResult<Vec<ScanTaskLikeRef>> {
+        fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
             let scan_tasks = Python::with_gil(|py| {
-                let pypd = PyPushdowns(pushdowns.clone().into()).into_py(py);
+                let pypd = PyPushdowns(pushdowns.clone().into()).into_pyobject(py)?;
                 let pyiter =
                     self.operator
                         .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
-                let pyiter = PyIterator::from_bound_object(pyiter.bind(py))?;
+                let pyiter = PyIterator::from_object(pyiter.bind(py))?;
                 DaftResult::Ok(
                     pyiter
                         .map(|v| {
@@ -263,20 +302,8 @@ pub mod pylib {
                 )
             })?;
 
-            let mut scan_tasks: BoxScanTaskIter = Box::new(scan_tasks.into_iter());
-
-            if let Some(cfg) = cfg {
-                scan_tasks = split_by_row_groups(
-                    scan_tasks,
-                    cfg.parquet_split_row_groups_max_files,
-                    cfg.scan_tasks_min_size_bytes,
-                    cfg.scan_tasks_max_size_bytes,
-                );
-
-                scan_tasks = merge_by_sizes(scan_tasks, &pushdowns, cfg);
-            }
-
             scan_tasks
+                .into_iter()
                 .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
                 .collect()
         }
@@ -320,11 +347,23 @@ pub mod pylib {
     impl PyScanTask {
         #[allow(clippy::too_many_arguments)]
         #[staticmethod]
+        #[pyo3(signature = (
+            file,
+            file_format,
+            schema,
+            storage_config,
+            num_rows=None,
+            size_bytes=None,
+            iceberg_delete_files=None,
+            pushdowns=None,
+            partition_values=None,
+            stats=None
+        ))]
         pub fn catalog_scan_task(
             file: String,
             file_format: PyFileFormatConfig,
             schema: PySchema,
-            storage_config: PyStorageConfig,
+            storage_config: StorageConfig,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             iceberg_delete_files: Option<Vec<String>>,
@@ -384,11 +423,21 @@ pub mod pylib {
 
         #[allow(clippy::too_many_arguments)]
         #[staticmethod]
+        #[pyo3(signature = (
+            url,
+            file_format,
+            schema,
+            storage_config,
+            num_rows=None,
+            size_bytes=None,
+            pushdowns=None,
+            stats=None
+        ))]
         pub fn sql_scan_task(
             url: String,
             file_format: PyFileFormatConfig,
             schema: PySchema,
-            storage_config: PyStorageConfig,
+            storage_config: StorageConfig,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
@@ -417,11 +466,20 @@ pub mod pylib {
 
         #[allow(clippy::too_many_arguments)]
         #[staticmethod]
+        #[pyo3(signature = (
+            module,
+            func_name,
+            func_args,
+            schema,
+            num_rows=None,
+            size_bytes=None,
+            pushdowns=None,
+            stats=None
+        ))]
         pub fn python_factory_func_scan_task(
-            py: Python,
             module: String,
             func_name: String,
-            func_args: Vec<Bound<PyAny>>,
+            func_args: Vec<PyObject>,
             schema: PySchema,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
@@ -435,7 +493,7 @@ pub mod pylib {
                 module,
                 func_name,
                 func_args: PythonTablesFactoryArgs::new(
-                    func_args.iter().map(|pyany| pyany.into_py(py)).collect(),
+                    func_args.into_iter().map(Arc::new).collect(),
                 ),
                 size_bytes,
                 metadata: num_rows.map(|num_rows| TableMetadata {
@@ -451,9 +509,7 @@ pub mod pylib {
                 schema.schema,
                 // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
                 // ScanTask creation, so we just put in a placeholder here
-                Arc::new(crate::storage_config::StorageConfig::Python(Arc::new(
-                    PythonStorageConfig { io_config: None },
-                ))),
+                Arc::new(Default::default()),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
             );
@@ -485,17 +541,83 @@ pub mod pylib {
     ) -> PyResult<PyLogicalPlanBuilder> {
         Ok(LogicalPlanBuilder::table_scan(scan_operator.into(), None)?.into())
     }
+
+    /// Estimates the in-memory size in bytes for a Parquet file.
+    ///
+    /// This function calculates an approximate size that the Parquet file would occupy
+    /// when loaded into memory, considering only the specified columns if provided.
+    ///
+    /// Used for testing only.
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - A string slice that holds the URI of the Parquet file.
+    /// * `file_size` - the size of the file on disk
+    /// * `columns` - An optional vector of strings representing the column names to consider.
+    ///               If None, all columns in the file will be considered.
+    /// * `has_metadata` - whether or not metadata is pre-populated in the ScanTask. Defaults to false.
+    ///
+    /// # Returns
+    ///
+    /// Returns an `i64` representing the estimated size in bytes.
+    ///
+    #[pyfunction(signature = (uri, file_size, columns=None, has_metadata=None))]
+    pub fn estimate_in_memory_size_bytes(
+        uri: &str,
+        file_size: u64,
+        columns: Option<Vec<String>>,
+        has_metadata: Option<bool>,
+    ) -> PyResult<usize> {
+        let io_runtime = common_runtime::get_io_runtime(true);
+        let (schema, metadata) =
+            io_runtime.block_on_current_thread(daft_parquet::read::read_parquet_schema(
+                uri,
+                default::Default::default(),
+                None,
+                default::Default::default(),
+                None,
+            ))?;
+        let data_source = DataSource::File {
+            path: uri.to_string(),
+            chunk_spec: None,
+            size_bytes: Some(file_size),
+            iceberg_delete_files: None,
+            metadata: if has_metadata.unwrap_or(false) {
+                Some(TableMetadata {
+                    length: metadata.num_rows,
+                })
+            } else {
+                None
+            },
+            partition_spec: None,
+            statistics: None,
+            parquet_metadata: None,
+        };
+        let st = ScanTask::new(
+            vec![data_source],
+            Arc::new(FileFormatConfig::Parquet(default::Default::default())),
+            Arc::new(schema),
+            Arc::new(Default::default()),
+            Pushdowns::new(None, None, columns.map(Arc::new), None),
+            None,
+        );
+        Ok(st.estimate_in_memory_size_bytes(None).unwrap())
+    }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<PyStorageConfig>()?;
-    parent.add_class::<NativeStorageConfig>()?;
-    parent.add_class::<PythonStorageConfig>()?;
+    parent.add_class::<StorageConfig>()?;
 
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
-    parent.add_function(wrap_pyfunction_bound!(
-        pylib::logical_plan_table_scan,
+    parent.add_function(wrap_pyfunction!(pylib::logical_plan_table_scan, parent)?)?;
+
+    Ok(())
+}
+
+pub fn register_testing_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_function(wrap_pyfunction!(
+        pylib::estimate_in_memory_size_bytes,
         parent
     )?)?;
 

@@ -55,6 +55,7 @@ Numeric
     Expression.floor
     Expression.sign
     Expression.round
+    Expression.clip
     Expression.sqrt
     Expression.cbrt
     Expression.sin
@@ -93,6 +94,7 @@ Logical
     Expression.__lt__
     Expression.__le__
     Expression.__eq__
+    Expression.eq_null_safe
     Expression.__ne__
     Expression.__gt__
     Expression.__ge__
@@ -168,6 +170,22 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.tokenize_decode
    Expression.str.count_matches
 
+.. _api-binary-expression-operations:
+
+Binary
+######
+
+The following methods are available under the ``expr.binary`` attribute.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+   Expression.binary.concat
+   Expression.binary.length
+   Expression.binary.slice
+
 .. _api-float-expression-operations:
 
 Floats
@@ -214,12 +232,17 @@ List
    :toctree: doc_gen/expression_methods
    :template: autosummary/accessor_method.rst
 
+   Expression.list.chunk
+   Expression.list.count
+   Expression.list.get
    Expression.list.join
    Expression.list.length
-   Expression.list.get
+   Expression.list.max
+   Expression.list.mean
+   Expression.list.min
    Expression.list.slice
-   Expression.list.chunk
    Expression.list.sort
+   Expression.list.sum
    Expression.list.value_counts
 
 Struct

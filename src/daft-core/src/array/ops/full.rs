@@ -33,7 +33,7 @@ where
         let field = Field::new(name, dtype.clone());
         #[cfg(feature = "python")]
         if dtype.is_python() {
-            let py_none = Python::with_gil(|py: Python| py.None());
+            let py_none = Arc::new(Python::with_gil(|py: Python| py.None()));
 
             return Self::new(
                 field.into(),

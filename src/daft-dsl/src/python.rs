@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -40,7 +40,7 @@ pub fn time_lit(item: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
     Ok(expr.into())
 }
 
-#[pyfunction]
+#[pyfunction(signature = (val, tu, tz=None))]
 pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
     Ok(expr.into())
@@ -52,8 +52,17 @@ pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
     Ok(expr.into())
 }
 
-#[pyfunction]
 #[allow(clippy::too_many_arguments)]
+#[pyfunction(signature = (
+    years=None,
+    months=None,
+    days=None,
+    hours=None,
+    minutes=None,
+    seconds=None,
+    millis=None,
+    nanos=None
+))]
 pub fn interval_lit(
     years: Option<i32>,
     months: Option<i32>,
@@ -173,60 +182,30 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     }
 }
 
-// Create a UDF Expression using:
-// * `func` - a Python function that takes as input an ordered list of Python Series to execute the user's UDF.
-// * `expressions` - an ordered list of Expressions, each representing computation that will be performed, producing a Series to pass into `func`
-// * `return_dtype` - returned column's DataType
-#[pyfunction]
-pub fn stateless_udf(
-    name: &str,
-    partial_stateless_udf: PyObject,
-    expressions: Vec<PyExpr>,
-    return_dtype: PyDataType,
-    resource_request: Option<ResourceRequest>,
-    batch_size: Option<usize>,
-) -> PyResult<PyExpr> {
-    use crate::functions::python::stateless_udf;
-
-    if let Some(batch_size) = batch_size {
-        if batch_size == 0 {
-            return Err(PyValueError::new_err(format!(
-                "Error creating UDF: batch size must be positive (got {batch_size})"
-            )));
-        }
-    }
-
-    let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
-    Ok(PyExpr {
-        expr: stateless_udf(
-            name,
-            partial_stateless_udf.into(),
-            &expressions_map,
-            return_dtype.dtype,
-            resource_request,
-            batch_size,
-        )?
-        .into(),
-    })
-}
-
-// Create a UDF Expression using:
-// * `cls` - a Python class that has an __init__, and where __call__ takes as input an ordered list of Python Series to execute the user's UDF.
-// * `expressions` - an ordered list of Expressions, each representing computation that will be performed, producing a Series to pass into `func`
-// * `return_dtype` - returned column's DataType
-#[pyfunction]
 #[allow(clippy::too_many_arguments)]
-pub fn stateful_udf(
+#[pyfunction(signature = (
+    name,
+    inner,
+    bound_args,
+    expressions,
+    return_dtype,
+    init_args,
+    resource_request=None,
+    batch_size=None,
+    concurrency=None
+))]
+pub fn udf(
     name: &str,
-    partial_stateful_udf: PyObject,
+    inner: PyObject,
+    bound_args: PyObject,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
+    init_args: PyObject,
     resource_request: Option<ResourceRequest>,
-    init_args: Option<PyObject>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
 ) -> PyResult<PyExpr> {
-    use crate::functions::python::stateful_udf;
+    use crate::functions::python::udf;
 
     if let Some(batch_size) = batch_size {
         if batch_size == 0 {
@@ -237,15 +216,15 @@ pub fn stateful_udf(
     }
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
-    let init_args = init_args.map(|args| args.into());
     Ok(PyExpr {
-        expr: stateful_udf(
+        expr: udf(
             name,
-            partial_stateful_udf.into(),
+            inner.into(),
+            bound_args.into(),
             &expressions_map,
             return_dtype.dtype,
+            init_args.into(),
             resource_request,
-            init_args,
             batch_size,
             concurrency,
         )?
@@ -253,23 +232,18 @@ pub fn stateful_udf(
     })
 }
 
-/// Extracts the `class PartialStatefulUDF` Python objects that are in the specified expression tree
+/// Initializes all uninitialized UDFs in the expression
 #[pyfunction]
-pub fn extract_partial_stateful_udf_py(
-    expr: PyExpr,
-) -> HashMap<String, (Py<PyAny>, Option<Py<PyAny>>)> {
-    use crate::functions::python::extract_partial_stateful_udf_py;
-    extract_partial_stateful_udf_py(expr.expr)
+pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
+    use crate::functions::python::initialize_udfs;
+    Ok(initialize_udfs(expr.expr)?.into())
 }
 
-/// Binds the StatefulPythonUDFs in a given expression to any corresponding initialized Python callables in the provided map
+/// Get the names of all UDFs in expression
 #[pyfunction]
-pub fn bind_stateful_udfs(
-    expr: PyExpr,
-    initialized_funcs: HashMap<String, Py<PyAny>>,
-) -> PyResult<PyExpr> {
-    use crate::functions::python::bind_stateful_udfs;
-    Ok(bind_stateful_udfs(expr.expr, &initialized_funcs).map(PyExpr::from)?)
+pub fn get_udf_names(expr: PyExpr) -> Vec<String> {
+    use crate::functions::python::get_udf_names;
+    get_udf_names(&expr.expr)
 }
 
 #[pyclass(module = "daft.daft")]
@@ -281,11 +255,6 @@ pub struct PyExpr {
 #[pyfunction]
 pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
     Ok(expr1.expr == expr2.expr)
-}
-
-#[pyfunction]
-pub fn check_column_name_validity(name: &str, schema: &PySchema) -> PyResult<()> {
-    Ok(crate::check_column_name_validity(name, &schema.schema)?)
 }
 
 #[derive(FromPyObject)]
@@ -318,6 +287,10 @@ impl PyExpr {
 
     pub fn count(&self, mode: CountMode) -> PyResult<Self> {
         Ok(self.expr.clone().count(mode).into())
+    }
+
+    pub fn count_distinct(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().count_distinct().into())
     }
 
     pub fn sum(&self) -> PyResult<Self> {
@@ -450,6 +423,10 @@ impl PyExpr {
 
     pub fn fill_null(&self, fill_value: &Self) -> PyResult<Self> {
         Ok(self.expr.clone().fill_null(fill_value.expr.clone()).into())
+    }
+
+    pub fn eq_null_safe(&self, other: &Self) -> PyResult<Self> {
+        Ok(crate::binary_op(crate::Operator::EqNullSafe, self.into(), other.into()).into())
     }
 
     pub fn is_in(&self, other: Vec<Self>) -> PyResult<Self> {

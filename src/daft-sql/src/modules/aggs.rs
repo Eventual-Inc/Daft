@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use daft_core::prelude::CountMode;
 use daft_dsl::{col, AggExpr, Expr, ExprRef, LiteralValue};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
@@ -16,20 +17,17 @@ pub struct SQLModuleAggs;
 
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
-        use AggExpr::{Count, Max, Mean, Min, Stddev, Sum};
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
-        parent.add_fn(
-            "count",
-            Count(nil.clone(), daft_core::count_mode::CountMode::Valid),
-        );
-        parent.add_fn("sum", Sum(nil.clone()));
-        parent.add_fn("avg", Mean(nil.clone()));
-        parent.add_fn("mean", Mean(nil.clone()));
-        parent.add_fn("min", Min(nil.clone()));
-        parent.add_fn("max", Max(nil.clone()));
-        parent.add_fn("stddev", Stddev(nil.clone()));
-        parent.add_fn("stddev_samp", Stddev(nil));
+        parent.add_fn("count", AggExpr::Count(nil.clone(), CountMode::Valid));
+        parent.add_fn("count_distinct", AggExpr::CountDistinct(nil.clone()));
+        parent.add_fn("sum", AggExpr::Sum(nil.clone()));
+        parent.add_fn("avg", AggExpr::Mean(nil.clone()));
+        parent.add_fn("mean", AggExpr::Mean(nil.clone()));
+        parent.add_fn("min", AggExpr::Min(nil.clone()));
+        parent.add_fn("max", AggExpr::Max(nil.clone()));
+        parent.add_fn("stddev", AggExpr::Stddev(nil.clone()));
+        parent.add_fn("stddev_samp", AggExpr::Stddev(nil));
     }
 }
 
@@ -47,6 +45,7 @@ impl SQLFunction for AggExpr {
     fn docstrings(&self, alias: &str) -> String {
         match self {
             Self::Count(_, _) => static_docs::COUNT_DOCSTRING.to_string(),
+            Self::CountDistinct(_) => static_docs::COUNT_DISTINCT_DOCSTRING.to_string(),
             Self::Sum(_) => static_docs::SUM_DOCSTRING.to_string(),
             Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
@@ -59,6 +58,7 @@ impl SQLFunction for AggExpr {
     fn arg_names(&self) -> &'static [&'static str] {
         match self {
             Self::Count(_, _)
+            | Self::CountDistinct(_)
             | Self::Sum(_)
             | Self::Mean(_)
             | Self::Min(_)
@@ -100,9 +100,13 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
     })
 }
 
-pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
+fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
+        AggExpr::CountDistinct(_) => {
+            ensure!(args.len() == 1, "count_distinct takes exactly one argument");
+            Ok(args[0].clone().count_distinct())
+        }
         AggExpr::Sum(_) => {
             ensure!(args.len() == 1, "sum takes exactly one argument");
             Ok(args[0].clone().sum())
@@ -169,7 +173,47 @@ Example:
     │ ---   │
     │ Int64 │
     ╞═══════╡
-    │ 1     │
+    │ 2     │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const COUNT_DISTINCT_DOCSTRING: &str =
+        "Counts the number of distinct, non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT count(distinct x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 2     │
     ╰───────╯
     (Showing first 1 of 1 rows)";
 

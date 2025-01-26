@@ -60,15 +60,3 @@ impl ScalarUDF for Utf8Extract {
 pub fn utf8_extract(input: ExprRef, pattern: ExprRef, index: usize) -> ExprRef {
     ScalarFunction::new(Utf8Extract { index }, vec![input, pattern]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_extract")]
-pub fn py_utf8_extract(expr: PyExpr, pattern: PyExpr, index: usize) -> PyResult<PyExpr> {
-    Ok(utf8_extract(expr.into(), pattern.into(), index).into())
-}

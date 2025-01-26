@@ -29,19 +29,12 @@ impl PyDaftPlanningConfig {
         }
     }
 
-    fn with_config_values(
-        &mut self,
-        default_io_config: Option<PyIOConfig>,
-        enable_actor_pool_projections: Option<bool>,
-    ) -> PyResult<Self> {
+    #[pyo3(signature = (default_io_config=None))]
+    fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
             config.default_io_config = default_io_config.config;
-        }
-
-        if let Some(enable_actor_pool_projections) = enable_actor_pool_projections {
-            config.enable_actor_pool_projections = enable_actor_pool_projections;
         }
 
         Ok(Self {
@@ -54,11 +47,6 @@ impl PyDaftPlanningConfig {
         Ok(PyIOConfig {
             config: self.config.default_io_config.clone(),
         })
-    }
-
-    #[getter(enable_actor_pool_projections)]
-    fn enable_actor_pool_projections(&self) -> PyResult<bool> {
-        Ok(self.config.enable_actor_pool_projections)
     }
 }
 
@@ -87,6 +75,32 @@ impl PyDaftExecutionConfig {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        scan_tasks_min_size_bytes=None,
+        scan_tasks_max_size_bytes=None,
+        broadcast_join_size_bytes_threshold=None,
+        parquet_split_row_groups_max_files=None,
+        sort_merge_join_sort_with_aligned_boundaries=None,
+        hash_join_partition_size_leniency=None,
+        sample_size_for_sort=None,
+        num_preview_rows=None,
+        parquet_target_filesize=None,
+        parquet_target_row_group_size=None,
+        parquet_inflation_factor=None,
+        csv_target_filesize=None,
+        csv_inflation_factor=None,
+        shuffle_aggregation_default_partitions=None,
+        partial_aggregation_threshold=None,
+        high_cardinality_aggregation_threshold=None,
+        read_sql_partition_size_bytes=None,
+        enable_aqe=None,
+        enable_native_executor=None,
+        default_morsel_size=None,
+        shuffle_algorithm=None,
+        pre_shuffle_merge_threshold=None,
+        enable_ray_tracing=None,
+        scantask_splitting_level=None
+    ))]
     fn with_config_values(
         &self,
         scan_tasks_min_size_bytes: Option<usize>,
@@ -103,6 +117,8 @@ impl PyDaftExecutionConfig {
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
+        partial_aggregation_threshold: Option<usize>,
+        high_cardinality_aggregation_threshold: Option<f64>,
         read_sql_partition_size_bytes: Option<usize>,
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
@@ -110,6 +126,7 @@ impl PyDaftExecutionConfig {
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
         enable_ray_tracing: Option<bool>,
+        scantask_splitting_level: Option<i32>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -159,6 +176,13 @@ impl PyDaftExecutionConfig {
         {
             config.shuffle_aggregation_default_partitions = shuffle_aggregation_default_partitions;
         }
+        if let Some(partial_aggregation_threshold) = partial_aggregation_threshold {
+            config.partial_aggregation_threshold = partial_aggregation_threshold;
+        }
+        if let Some(high_cardinality_aggregation_threshold) = high_cardinality_aggregation_threshold
+        {
+            config.high_cardinality_aggregation_threshold = high_cardinality_aggregation_threshold;
+        }
         if let Some(read_sql_partition_size_bytes) = read_sql_partition_size_bytes {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
         }
@@ -186,6 +210,15 @@ impl PyDaftExecutionConfig {
 
         if let Some(enable_ray_tracing) = enable_ray_tracing {
             config.enable_ray_tracing = enable_ray_tracing;
+        }
+
+        if let Some(scantask_splitting_level) = scantask_splitting_level {
+            if !matches!(scantask_splitting_level, 1 | 2) {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "scantask_splitting_level must be 1 or 2",
+                ));
+            }
+            config.scantask_splitting_level = scantask_splitting_level;
         }
 
         Ok(Self {
@@ -259,6 +292,16 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
+    fn get_partial_aggregation_threshold(&self) -> PyResult<usize> {
+        Ok(self.config.partial_aggregation_threshold)
+    }
+
+    #[getter]
+    fn get_high_cardinality_aggregation_threshold(&self) -> PyResult<f64> {
+        Ok(self.config.high_cardinality_aggregation_threshold)
+    }
+
+    #[getter]
     fn get_read_sql_partition_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.read_sql_partition_size_bytes)
     }
@@ -286,6 +329,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_ray_tracing(&self) -> PyResult<bool> {
         Ok(self.config.enable_ray_tracing)
+    }
+
+    #[getter]
+    fn scantask_splitting_level(&self) -> PyResult<i32> {
+        Ok(self.config.scantask_splitting_level)
     }
 }
 

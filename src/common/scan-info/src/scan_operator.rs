@@ -4,13 +4,14 @@ use std::{
     sync::Arc,
 };
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 
 use crate::{PartitionField, Pushdowns, ScanTaskLikeRef};
 
 pub trait ScanOperator: Send + Sync + Debug {
+    fn name(&self) -> &str;
+
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
     fn file_path_column(&self) -> Option<&str>;
@@ -33,11 +34,7 @@ pub trait ScanOperator: Send + Sync + Debug {
 
     /// If cfg provided, `to_scan_tasks` should apply the appropriate transformations
     /// (merging, splitting) to the outputted scan tasks
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-        config: Option<&DaftExecutionConfig>,
-    ) -> DaftResult<Vec<ScanTaskLikeRef>>;
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>>;
 }
 
 impl Display for dyn ScanOperator {

@@ -1,6 +1,12 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
-use std::{any::Any, borrow::Cow, fmt::Debug, sync::Arc};
+use std::{
+    any::Any,
+    borrow::Cow,
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_display::DisplayAs;
 use common_error::DaftError;
@@ -100,7 +106,7 @@ impl From<Error> for pyo3::PyErr {
 }
 
 /// Specification of a subset of a file to be read.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum ChunkSpec {
     /// Selection of Parquet row groups.
     Parquet(Vec<i64>),
@@ -147,6 +153,63 @@ pub enum DataSource {
         statistics: Option<TableStatistics>,
         partition_spec: Option<PartitionSpec>,
     },
+}
+
+impl Hash for DataSource {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Hash everything except for cached parquet metadata.
+        match self {
+            Self::File {
+                path,
+                chunk_spec,
+                size_bytes,
+                iceberg_delete_files,
+                metadata,
+                partition_spec,
+                statistics,
+                ..
+            } => {
+                path.hash(state);
+                if let Some(chunk_spec) = chunk_spec {
+                    chunk_spec.hash(state);
+                }
+                size_bytes.hash(state);
+                iceberg_delete_files.hash(state);
+                metadata.hash(state);
+                partition_spec.hash(state);
+                statistics.hash(state);
+            }
+            Self::Database {
+                path,
+                size_bytes,
+                metadata,
+                statistics,
+            } => {
+                path.hash(state);
+                size_bytes.hash(state);
+                metadata.hash(state);
+                statistics.hash(state);
+            }
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction {
+                module,
+                func_name,
+                func_args,
+                size_bytes,
+                metadata,
+                statistics,
+                partition_spec,
+            } => {
+                module.hash(state);
+                func_name.hash(state);
+                func_args.hash(state);
+                size_bytes.hash(state);
+                metadata.hash(state);
+                statistics.hash(state);
+                partition_spec.hash(state);
+            }
+        }
+    }
 }
 
 impl DataSource {
@@ -349,7 +412,7 @@ impl DisplayAs for DataSource {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Hash)]
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
 
@@ -386,6 +449,10 @@ impl ScanTaskLike for ScanTask {
             .as_any()
             .downcast_ref::<Self>()
             .map_or(false, |a| a == self)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state);
     }
 
     fn materialized_schema(&self) -> SchemaRef {
@@ -619,7 +686,9 @@ impl ScanTask {
             if self.pushdowns.filters.is_some() {
                 // HACK: This might not be a good idea? We could also just return None here
                 // Assume that filters filter out about 80% of the data
-                approx_total_num_rows_before_pushdowns / 5.
+                let estimated_selectivity =
+                    self.pushdowns.estimated_selectivity(self.schema.as_ref());
+                approx_total_num_rows_before_pushdowns * estimated_selectivity
             } else if let Some(limit) = self.pushdowns.limit {
                 (limit as f64).min(approx_total_num_rows_before_pushdowns)
             } else {
@@ -702,8 +771,7 @@ impl ScanTask {
         let storage_config = self.storage_config.multiline_display();
         if !storage_config.is_empty() {
             res.push(format!(
-                "{} storage config = {{ {} }}",
-                self.storage_config.var_name(),
+                "storage config = {{ {} }}",
                 storage_config.join(", ")
             ));
         }
@@ -774,11 +842,7 @@ mod test {
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
     use itertools::Itertools;
 
-    use crate::{
-        glob::GlobScanOperator,
-        storage_config::{NativeStorageConfig, StorageConfig},
-        DataSource, ScanTask,
-    };
+    use crate::{glob::GlobScanOperator, storage_config::StorageConfig, DataSource, ScanTask};
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
@@ -805,15 +869,13 @@ mod test {
             sources,
             Arc::new(file_format_config),
             Arc::new(Schema::empty()),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(false, None),
-            ))),
+            Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
             None,
         )
     }
 
-    fn make_glob_scan_operator(num_sources: usize) -> GlobScanOperator {
+    async fn make_glob_scan_operator(num_sources: usize) -> GlobScanOperator {
         let file_format_config: FileFormatConfig = FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit: TimeUnit::Seconds,
             field_id_mapping: None,
@@ -830,22 +892,21 @@ mod test {
         let glob_scan_operator: GlobScanOperator = GlobScanOperator::try_new(
             sources,
             Arc::new(file_format_config),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(false, None),
-            ))),
+            Arc::new(StorageConfig::new_internal(false, None)),
             false,
             Some(Arc::new(Schema::empty())),
             None,
             false,
         )
+        .await
         .unwrap();
 
         glob_scan_operator
     }
 
-    #[test]
-    fn test_glob_display_condenses() -> DaftResult<()> {
-        let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8);
+    #[tokio::test]
+    async fn test_glob_display_condenses() -> DaftResult<()> {
+        let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8).await;
         let condensed_glob_paths: Vec<String> = glob_scan_operator.multiline_display();
         assert_eq!(condensed_glob_paths[1], "Glob paths = [../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ..., ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet]");
         Ok(())

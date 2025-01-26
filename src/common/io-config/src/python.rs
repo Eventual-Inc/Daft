@@ -1,20 +1,21 @@
 use std::{
     any::Any,
     hash::{Hash, Hasher},
-    time::{Duration, SystemTime},
+    sync::Arc,
 };
 
-use aws_credential_types::{
-    provider::{error::CredentialsError, ProvideCredentials},
-    Credentials,
-};
+use chrono::{DateTime, Utc};
+use common_error::DaftResult;
 use common_py_serde::{
     deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
 };
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{config, s3::S3CredentialsProvider};
+use crate::{
+    config,
+    s3::{S3CredentialsProvider, S3CredentialsProviderWrapper},
+};
 
 /// Create configurations to be used when accessing an S3-compatible system
 ///
@@ -59,10 +60,11 @@ pub struct S3Config {
 ///     expiry (datetime.datetime, optional): Expiry time of the credentials, credentials are assumed to be permanent if not provided
 ///
 /// Example:
+///     >>> from datetime import datetime, timedelta, timezone
 ///     >>> get_credentials = lambda: S3Credentials(
 ///     ...     key_id="xxx",
 ///     ...     access_key="xxx",
-///     ...     expiry=(datetime.datetime.now() + datetime.timedelta(hours=1))
+///     ...     expiry=(datetime.now(timezone.utc) + timedelta(hours=1))
 ///     ... )
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
@@ -157,6 +159,7 @@ pub struct HTTPConfig {
 impl IOConfig {
     #[new]
     #[must_use]
+    #[pyo3(signature = (s3=None, azure=None, gcs=None, http=None))]
     pub fn new(
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
@@ -174,6 +177,7 @@ impl IOConfig {
     }
 
     #[must_use]
+    #[pyo3(signature = (s3=None, azure=None, gcs=None, http=None))]
     pub fn replace(
         &self,
         s3: Option<S3Config>,
@@ -250,6 +254,28 @@ impl_bincode_py_state_serialization!(IOConfig);
 impl S3Config {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (
+        region_name=None,
+        endpoint_url=None,
+        key_id=None,
+        session_token=None,
+        access_key=None,
+        credentials_provider=None,
+        buffer_time=None,
+        max_connections=None,
+        retry_initial_backoff_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        num_tries=None,
+        retry_mode=None,
+        anonymous=None,
+        use_ssl=None,
+        verify_ssl=None,
+        check_hostname_ssl=None,
+        requester_pays=None,
+        force_virtual_addressing=None,
+        profile_name=None
+    ))]
     pub fn new(
         region_name: Option<String>,
         endpoint_url: Option<String>,
@@ -284,8 +310,9 @@ impl S3Config {
                 access_key: access_key.map(std::convert::Into::into).or(def.access_key),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
-                            as Box<dyn S3CredentialsProvider>)
+                        Ok::<_, PyErr>(S3CredentialsProviderWrapper::new(
+                            PyS3CredentialsProvider::new(p)?,
+                        ))
                     })
                     .transpose()?
                     .or(def.credentials_provider),
@@ -311,6 +338,28 @@ impl S3Config {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        region_name=None,
+        endpoint_url=None,
+        key_id=None,
+        session_token=None,
+        access_key=None,
+        credentials_provider=None,
+        buffer_time=None,
+        max_connections=None,
+        retry_initial_backoff_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        num_tries=None,
+        retry_mode=None,
+        anonymous=None,
+        use_ssl=None,
+        verify_ssl=None,
+        check_hostname_ssl=None,
+        requester_pays=None,
+        force_virtual_addressing=None,
+        profile_name=None
+    ))]
     pub fn replace(
         &self,
         region_name: Option<String>,
@@ -347,8 +396,9 @@ impl S3Config {
                     .or_else(|| self.config.access_key.clone()),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
-                            as Box<dyn S3CredentialsProvider>)
+                        Ok::<_, PyErr>(S3CredentialsProviderWrapper::new(
+                            PyS3CredentialsProvider::new(p)?,
+                        ))
                     })
                     .transpose()?
                     .or_else(|| self.config.credentials_provider.clone()),
@@ -378,7 +428,7 @@ impl S3Config {
     #[staticmethod]
     pub fn from_env(py: Python) -> PyResult<Self> {
         let io_config_from_env_func = py
-            .import_bound(pyo3::intern!(py, "daft"))?
+            .import(pyo3::intern!(py, "daft"))?
             .getattr(pyo3::intern!(py, "daft"))?
             .getattr(pyo3::intern!(py, "s3_config_from_env"))?;
         io_config_from_env_func.call0().map(|pyany| {
@@ -442,7 +492,8 @@ impl S3Config {
     #[getter]
     pub fn credentials_provider(&self, py: Python) -> PyResult<Option<Py<PyAny>>> {
         Ok(self.config.credentials_provider.as_ref().and_then(|p| {
-            p.as_any()
+            p.provider
+                .as_any()
                 .downcast_ref::<PyS3CredentialsProvider>()
                 .map(|p| p.provider.clone_ref(py))
         }))
@@ -525,72 +576,66 @@ impl S3Config {
     pub fn profile_name(&self) -> PyResult<Option<String>> {
         Ok(self.config.profile_name.clone())
     }
+
+    pub fn provide_cached_credentials(&self) -> PyResult<Option<S3Credentials>> {
+        self.config
+            .credentials_provider
+            .as_ref()
+            .map(|provider| {
+                Ok(S3Credentials {
+                    credentials: provider.get_cached_credentials()?,
+                })
+            })
+            .transpose()
+    }
 }
 
 #[pymethods]
 impl S3Credentials {
     #[new]
+    #[pyo3(signature = (key_id, access_key, session_token=None, expiry=None))]
     pub fn new(
-        py: Python,
         key_id: String,
         access_key: String,
         session_token: Option<String>,
-        expiry: Option<Bound<PyAny>>,
-    ) -> PyResult<Self> {
-        // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
-        let expiry = expiry
-            .map(|e| {
-                let ts = e.call_method0(pyo3::intern!(py, "timestamp"))?.extract()?;
-
-                Ok::<_, PyErr>(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(ts))
-            })
-            .transpose()?;
-
-        Ok(Self {
+        expiry: Option<DateTime<Utc>>,
+    ) -> Self {
+        Self {
             credentials: crate::S3Credentials {
                 key_id,
                 access_key,
                 session_token,
                 expiry,
             },
-        })
+        }
     }
 
-    pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.credentials))
+    pub fn __repr__(&self) -> String {
+        format!("{}", self.credentials)
     }
 
     /// AWS Access Key ID
     #[getter]
-    pub fn key_id(&self) -> PyResult<String> {
-        Ok(self.credentials.key_id.clone())
+    pub fn key_id(&self) -> &str {
+        &self.credentials.key_id
     }
 
     /// AWS Secret Access Key
     #[getter]
-    pub fn access_key(&self) -> PyResult<String> {
-        Ok(self.credentials.access_key.clone())
+    pub fn access_key(&self) -> &str {
+        &self.credentials.access_key
     }
 
     /// AWS Session Token
     #[getter]
-    pub fn expiry<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
-        // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
-        self.credentials
-            .expiry
-            .map(|e| {
-                let datetime = py.import_bound(pyo3::intern!(py, "datetime"))?;
+    pub fn session_token(&self) -> Option<&str> {
+        self.credentials.session_token.as_deref()
+    }
 
-                datetime
-                    .getattr(pyo3::intern!(py, "datetime"))?
-                    .call_method1(
-                        pyo3::intern!(py, "fromtimestamp"),
-                        (e.duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs_f64(),),
-                    )
-            })
-            .transpose()
+    /// AWS Credentials Expiry
+    #[getter]
+    pub fn expiry(&self) -> Option<DateTime<Utc>> {
+        self.credentials.expiry
     }
 }
 
@@ -600,7 +645,7 @@ pub struct PyS3CredentialsProvider {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub provider: PyObject,
+    pub provider: Arc<PyObject>,
     pub hash: isize,
 }
 
@@ -608,35 +653,9 @@ impl PyS3CredentialsProvider {
     pub fn new(provider: Bound<PyAny>) -> PyResult<Self> {
         let hash = provider.hash()?;
         Ok(Self {
-            provider: provider.into(),
+            provider: Arc::new(provider.into()),
             hash,
         })
-    }
-}
-
-impl ProvideCredentials for PyS3CredentialsProvider {
-    fn provide_credentials<'a>(
-        &'a self,
-    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        aws_credential_types::provider::future::ProvideCredentials::ready(
-            Python::with_gil(|py| {
-                let py_creds = self.provider.call0(py)?;
-                py_creds.extract::<S3Credentials>(py)
-            })
-            .map_err(|e| CredentialsError::provider_error(Box::new(e)))
-            .map(|creds| {
-                Credentials::new(
-                    creds.credentials.key_id,
-                    creds.credentials.access_key,
-                    creds.credentials.session_token,
-                    creds.credentials.expiry,
-                    "daft_custom_provider",
-                )
-            }),
-        )
     }
 }
 
@@ -674,6 +693,13 @@ impl S3CredentialsProvider for PyS3CredentialsProvider {
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {
         self.hash(&mut state);
     }
+
+    fn provide_credentials(&self) -> DaftResult<crate::S3Credentials> {
+        Python::with_gil(|py| {
+            let py_creds = self.provider.call0(py)?;
+            Ok(py_creds.extract::<S3Credentials>(py)?.credentials)
+        })
+    }
 }
 
 #[pymethods]
@@ -681,6 +707,19 @@ impl AzureConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[must_use]
+    #[pyo3(signature = (
+        storage_account=None,
+        access_key=None,
+        sas_token=None,
+        bearer_token=None,
+        tenant_id=None,
+        client_id=None,
+        client_secret=None,
+        use_fabric_endpoint=None,
+        anonymous=None,
+        endpoint_url=None,
+        use_ssl=None
+    ))]
     pub fn new(
         storage_account: Option<String>,
         access_key: Option<String>,
@@ -716,6 +755,19 @@ impl AzureConfig {
 
     #[allow(clippy::too_many_arguments)]
     #[must_use]
+    #[pyo3(signature = (
+        storage_account=None,
+        access_key=None,
+        sas_token=None,
+        bearer_token=None,
+        tenant_id=None,
+        client_id=None,
+        client_secret=None,
+        use_fabric_endpoint=None,
+        anonymous=None,
+        endpoint_url=None,
+        use_ssl=None
+    ))]
     pub fn replace(
         &self,
         storage_account: Option<String>,
@@ -834,6 +886,17 @@ impl GCSConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[must_use]
+    #[pyo3(signature = (
+        project_id=None,
+        credentials=None,
+        token=None,
+        anonymous=None,
+        max_connections=None,
+        retry_initial_backoff_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        num_tries=None
+    ))]
     pub fn new(
         project_id: Option<String>,
         credentials: Option<String>,
@@ -866,6 +929,17 @@ impl GCSConfig {
     }
     #[allow(clippy::too_many_arguments)]
     #[must_use]
+    #[pyo3(signature = (
+        project_id=None,
+        credentials=None,
+        token=None,
+        anonymous=None,
+        max_connections=None,
+        retry_initial_backoff_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        num_tries=None
+    ))]
     pub fn replace(
         &self,
         project_id: Option<String>,
@@ -965,6 +1039,7 @@ impl From<config::IOConfig> for IOConfig {
 impl HTTPConfig {
     #[new]
     #[must_use]
+    #[pyo3(signature = (bearer_token=None))]
     pub fn new(bearer_token: Option<String>) -> Self {
         Self {
             config: crate::HTTPConfig::new(bearer_token),

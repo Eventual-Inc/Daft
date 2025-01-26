@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class HudiScanOperator(ScanOperator):
     def __init__(self, table_uri: str, storage_config: StorageConfig) -> None:
         super().__init__()
-        resolved_path, self._resolved_fs = _resolve_paths_and_filesystem(table_uri, storage_config.config.io_config)
+        resolved_path, self._resolved_fs = _resolve_paths_and_filesystem(table_uri, storage_config.io_config)
         self._table = HudiTable(table_uri, self._resolved_fs, resolved_path[0])
         self._storage_config = storage_config
         self._schema = Schema.from_pyarrow_schema(self._table.schema)
@@ -36,6 +36,9 @@ class HudiScanOperator(ScanOperator):
 
     def schema(self) -> Schema:
         return self._schema
+
+    def name(self) -> str:
+        return "HudiScanOperator"
 
     def display_name(self) -> str:
         return f"HudiScanOperator({self._table.props.name})"
@@ -58,7 +61,7 @@ class HudiScanOperator(ScanOperator):
         files_metadata = hudi_table_metadata.files_metadata
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
-            logging.warning(
+            logger.warning(
                 "%s has partitioning keys = %s, but no partition filter was specified. This will result in a full table scan.",
                 self.display_name(),
                 self.partitioning_keys(),

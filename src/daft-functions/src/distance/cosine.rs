@@ -171,14 +171,3 @@ impl ScalarUDF for CosineDistanceFunction {
 pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
     ScalarFunction::new(CosineDistanceFunction {}, vec![a, b]).into()
 }
-
-#[cfg(feature = "python")]
-pub mod python {
-    use daft_dsl::python::PyExpr;
-    use pyo3::{pyfunction, PyResult};
-
-    #[pyfunction]
-    pub fn cosine_distance(a: PyExpr, b: PyExpr) -> PyResult<PyExpr> {
-        Ok(super::cosine_distance(a.into(), b.into()).into())
-    }
-}

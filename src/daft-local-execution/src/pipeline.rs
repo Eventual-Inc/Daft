@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
@@ -6,18 +6,21 @@ use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use daft_core::{
     datatypes::Field,
+    join::JoinSide,
     prelude::{Schema, SchemaRef},
     utils::supertype,
 };
-use daft_dsl::{col, join::get_common_join_keys, Expr};
+use daft_dsl::{col, join::get_common_join_keys};
 use daft_local_plan::{
-    ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
-    Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample,
-    Sort, UnGroupedAggregate, Unpivot,
+    ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
+    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
+    Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
-use daft_logical_plan::JoinType;
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
+use daft_logical_plan::{stats::StatsState, JoinType};
+use daft_micropartition::{
+    partitioning::{MicroPartitionSet, PartitionSetCache},
+    MicroPartition, MicroPartitionRef,
+};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
@@ -26,17 +29,19 @@ use snafu::ResultExt;
 use crate::{
     channel::Receiver,
     intermediate_ops::{
-        actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
-        anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
-        filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
-        unpivot::UnpivotOperator,
+        actor_pool_project::ActorPoolProjectOperator, cross_join::CrossJoinOperator,
+        explode::ExplodeOperator, filter::FilterOperator,
+        inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
+        project::ProjectOperator, sample::SampleOperator, unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink,
+        anti_semi_hash_join_probe::AntiSemiProbeSink,
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
-        hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
+        cross_join_collect::CrossJoinCollectSink,
+        grouped_aggregate::GroupedAggregateSink,
+        hash_join_build::HashJoinBuildSink,
         limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
@@ -46,6 +51,7 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
+    state_bridge::BroadcastStateBridge,
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
@@ -75,7 +81,7 @@ pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
+    psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;
@@ -102,8 +108,13 @@ pub fn physical_plan_to_pipeline(
             scan_task_source.arced().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
-            let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            InMemorySource::new(partitions.clone(), info.source_schema.clone())
+            let cache_key: Arc<str> = info.cache_key.clone().into();
+
+            let materialized_pset = psets
+                .get_partition_set(&cache_key)
+                .unwrap_or_else(|| panic!("Cache key not found: {:?}", info.cache_key));
+
+            InMemorySource::new(materialized_pset, info.source_schema.clone())
                 .arced()
                 .into()
         }
@@ -165,42 +176,13 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
-            let aggregations = aggregations
-                .iter()
-                .map(extract_agg_expr)
-                .collect::<DaftResult<Vec<_>>>()
-                .with_context(|_| PipelineCreationSnafu {
-                    plan_name: physical_plan.name(),
-                })?;
-
-            let (first_stage_aggs, second_stage_aggs, final_exprs) =
-                populate_aggregation_stages(&aggregations, schema, &[]);
-            let first_stage_agg_op = AggregateOperator::new(
-                first_stage_aggs
-                    .values()
-                    .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e)))
-                    .collect(),
-                vec![],
-            );
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let post_first_agg_node =
-                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
-
-            let second_stage_agg_sink = AggregateSink::new(
-                second_stage_aggs
-                    .values()
-                    .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e)))
-                    .collect(),
-                vec![],
-            );
-            let second_stage_node =
-                BlockingSinkNode::new(Arc::new(second_stage_agg_sink), post_first_agg_node).boxed();
-
-            let final_stage_project = ProjectOperator::new(final_exprs);
-
-            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
+            let agg_sink = AggregateSink::new(aggregations, schema).with_context(|_| {
+                PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                }
+            })?;
+            BlockingSinkNode::new(Arc::new(agg_sink), child_node).boxed()
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
             input,
@@ -209,48 +191,12 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
-            let aggregations = aggregations
-                .iter()
-                .map(extract_agg_expr)
-                .collect::<DaftResult<Vec<_>>>()
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let agg_sink = GroupedAggregateSink::new(aggregations, group_by, schema, cfg)
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
-
-            let (first_stage_aggs, second_stage_aggs, final_exprs) =
-                populate_aggregation_stages(&aggregations, schema, group_by);
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let (post_first_agg_node, group_by) = if !first_stage_aggs.is_empty() {
-                let agg_op = AggregateOperator::new(
-                    first_stage_aggs
-                        .values()
-                        .cloned()
-                        .map(|e| Arc::new(Expr::Agg(e)))
-                        .collect(),
-                    group_by.clone(),
-                );
-                (
-                    IntermediateNode::new(Arc::new(agg_op), vec![child_node]).boxed(),
-                    &group_by.iter().map(|e| col(e.name())).collect(),
-                )
-            } else {
-                (child_node, group_by)
-            };
-
-            let second_stage_agg_sink = AggregateSink::new(
-                second_stage_aggs
-                    .values()
-                    .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e)))
-                    .collect(),
-                group_by.clone(),
-            );
-            let second_stage_node =
-                BlockingSinkNode::new(Arc::new(second_stage_agg_sink), post_first_agg_node).boxed();
-
-            let final_stage_project = ProjectOperator::new(final_exprs);
-
-            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
+            BlockingSinkNode::new(Arc::new(agg_sink), child_node).boxed()
         }
         LocalPhysicalPlan::Unpivot(Unpivot {
             input,
@@ -319,19 +265,94 @@ pub fn physical_plan_to_pipeline(
             null_equals_null,
             join_type,
             schema,
+            ..
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();
 
-            // Determine the build and probe sides based on the join type
-            // Currently it is a naive determination, in the future we should leverage the cardinality of the tables
-            // to determine the build and probe sides
+            // To determine whether to use the left or right side of a join for building a probe table, we consider:
+            // 1. Cardinality of the sides. Probe tables should be built on the smaller side.
+            // 2. Join type. Different join types have different requirements for which side can build the probe table.
+            let left_stats_state = left.get_stats_state();
+            let right_stats_state = right.get_stats_state();
             let build_on_left = match join_type {
-                JoinType::Inner => true,
-                JoinType::Right => true,
-                JoinType::Outer => true,
-                JoinType::Left => false,
-                JoinType::Anti | JoinType::Semi => false,
+                // Inner and outer joins can build on either side. If stats are available, choose the smaller side.
+                // Else, default to building on the left.
+                JoinType::Inner | JoinType::Outer => match (left_stats_state, right_stats_state) {
+                    (
+                        StatsState::Materialized(left_stats),
+                        StatsState::Materialized(right_stats),
+                    ) => {
+                        let left_size = left_stats.approx_stats.size_bytes;
+                        let right_size = right_stats.approx_stats.size_bytes;
+                        left_size <= right_size
+                    }
+                    // If stats are only available on the right side of the join, and the upper bound bytes on the
+                    // right are under the broadcast join size threshold, we build on the right instead of the left.
+                    (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
+                        right_stats.approx_stats.size_bytes
+                            > cfg.broadcast_join_size_bytes_threshold
+                    }
+                    _ => true,
+                },
+                // Left joins can build on the left side, but prefer building on the right because building on left requires keeping track
+                // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
+                JoinType::Left => match (left_stats_state, right_stats_state) {
+                    (
+                        StatsState::Materialized(left_stats),
+                        StatsState::Materialized(right_stats),
+                    ) => {
+                        let left_size = left_stats.approx_stats.size_bytes;
+                        let right_size = right_stats.approx_stats.size_bytes;
+                        right_size as f64 >= left_size as f64 * 1.5
+                    }
+                    // If stats are only available on the left side of the join, and the upper bound bytes on the left
+                    // are under the broadcast join size threshold, we build on the left instead of the right.
+                    (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
+                        left_stats.approx_stats.size_bytes
+                            <= cfg.broadcast_join_size_bytes_threshold
+                    }
+                    _ => false,
+                },
+                // Right joins can build on the right side, but prefer building on the left because building on right requires keeping track
+                // of used indices in a bitmap. If stats are available, only select the right side if its smaller than the left side by a factor of 1.5.
+                JoinType::Right => match (left_stats_state, right_stats_state) {
+                    (
+                        StatsState::Materialized(left_stats),
+                        StatsState::Materialized(right_stats),
+                    ) => {
+                        let left_size = left_stats.approx_stats.size_bytes;
+                        let right_size = right_stats.approx_stats.size_bytes;
+                        (right_size as f64 * 1.5) >= left_size as f64
+                    }
+                    // If stats are only available on the right side of the join, and the upper bound bytes on the
+                    // right are under the broadcast join size threshold, we build on the right instead of the left.
+                    (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
+                        right_stats.approx_stats.size_bytes
+                            > cfg.broadcast_join_size_bytes_threshold
+                    }
+                    _ => true,
+                },
+                // Anti/semi joins can build on the left side, but prefer building on the right because building on left requires keeping track
+                // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
+                JoinType::Anti | JoinType::Semi => match (left_stats_state, right_stats_state) {
+                    (
+                        StatsState::Materialized(left_stats),
+                        StatsState::Materialized(right_stats),
+                    ) => {
+                        let left_size = left_stats.approx_stats.size_bytes;
+                        let right_size = right_stats.approx_stats.size_bytes;
+                        right_size as f64 > left_size as f64 * 1.5
+                    }
+                    // If stats are only available on the left side of the join, and the upper bound bytes on the left
+                    // are under the broadcast join size threshold, we build on the left instead of the right.
+                    (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
+                        left_stats.approx_stats.size_bytes
+                            <= cfg.broadcast_join_size_bytes_threshold
+                    }
+                    // Else, default to building on the right
+                    _ => false,
+                },
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {
                 true => (left_on, right_on, left, right),
@@ -376,12 +397,17 @@ pub fn physical_plan_to_pipeline(
                     .map(|(e, f)| e.clone().cast(&f.dtype))
                     .collect::<Vec<_>>();
                 // we should move to a builder pattern
-                let probe_state_bridge = ProbeStateBridge::new();
+                let probe_state_bridge = BroadcastStateBridge::new();
+                let track_indices = if matches!(join_type, JoinType::Anti | JoinType::Semi) {
+                    build_on_left
+                } else {
+                    true
+                };
                 let build_sink = HashJoinBuildSink::new(
                     key_schema,
                     casted_build_on,
                     null_equals_null.clone(),
-                    join_type,
+                    track_indices,
                     probe_state_bridge.clone(),
                 )?;
                 let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
@@ -391,12 +417,13 @@ pub fn physical_plan_to_pipeline(
                 let probe_child_node = physical_plan_to_pipeline(probe_child, psets, cfg)?;
 
                 match join_type {
-                    JoinType::Anti | JoinType::Semi => Ok(IntermediateNode::new(
-                        Arc::new(AntiSemiProbeOperator::new(
+                    JoinType::Anti | JoinType::Semi => Ok(StreamingSinkNode::new(
+                        Arc::new(AntiSemiProbeSink::new(
                             casted_probe_on,
                             join_type,
                             schema,
                             probe_state_bridge,
+                            build_on_left,
                         )),
                         vec![build_node, probe_child_node],
                     )
@@ -421,6 +448,7 @@ pub fn physical_plan_to_pipeline(
                                 left_schema,
                                 right_schema,
                                 *join_type,
+                                build_on_left,
                                 common_join_keys,
                                 schema,
                                 probe_state_bridge,
@@ -435,15 +463,69 @@ pub fn physical_plan_to_pipeline(
                 plan_name: physical_plan.name(),
             })?
         }
+        LocalPhysicalPlan::CrossJoin(CrossJoin {
+            left,
+            right,
+            schema,
+            ..
+        }) => {
+            let left_stats_state = left.get_stats_state();
+            let right_stats_state = right.get_stats_state();
+
+            // To determine whether to use the left or right side of a join for collecting vs streaming, we choose
+            // the larger side to stream so that it can be parallelized via an intermediate op. Default to left side.
+            let stream_on_left = match (left_stats_state, right_stats_state) {
+                (StatsState::Materialized(left_stats), StatsState::Materialized(right_stats)) => {
+                    left_stats.approx_stats.num_rows > right_stats.approx_stats.num_rows
+                }
+                // If stats are only available on the left side of the join, and the upper bound bytes on the
+                // left are under the broadcast join size threshold, we stream on the right.
+                (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
+                    left_stats.approx_stats.size_bytes > cfg.broadcast_join_size_bytes_threshold
+                }
+                // If stats are not available, we fall back and stream on the left by default.
+                _ => true,
+            };
+
+            let stream_side = if stream_on_left {
+                JoinSide::Left
+            } else {
+                JoinSide::Right
+            };
+
+            let (stream_child, collect_child) = match stream_side {
+                JoinSide::Left => (left, right),
+                JoinSide::Right => (right, left),
+            };
+
+            let stream_child_node = physical_plan_to_pipeline(stream_child, psets, cfg)?;
+            let collect_child_node = physical_plan_to_pipeline(collect_child, psets, cfg)?;
+
+            let state_bridge = BroadcastStateBridge::new();
+            let collect_node = BlockingSinkNode::new(
+                Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
+                collect_child_node,
+            )
+            .boxed();
+
+            IntermediateNode::new(
+                Arc::new(CrossJoinOperator::new(
+                    schema.clone(),
+                    stream_side,
+                    state_bridge,
+                )),
+                vec![collect_node, stream_child_node],
+            )
+            .boxed()
+        }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
             file_info,
-            data_schema,
             file_schema,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let writer_factory = make_physical_writer_factory(file_info, data_schema, cfg);
+            let writer_factory = make_physical_writer_factory(file_info, cfg);
             let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
                 (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
                 (FileFormat::Parquet, false) => WriteFormat::Parquet,
@@ -463,7 +545,6 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::CatalogWrite(daft_local_plan::CatalogWrite {
             input,
             catalog_type,
-            data_schema,
             file_schema,
             ..
         }) => {
@@ -496,12 +577,8 @@ pub fn physical_plan_to_pipeline(
                 }
                 _ => panic!("Unsupported catalog type"),
             };
-            let writer_factory = daft_writers::make_catalog_writer_factory(
-                catalog_type,
-                data_schema,
-                &partition_by,
-                cfg,
-            );
+            let writer_factory =
+                daft_writers::make_catalog_writer_factory(catalog_type, &partition_by, cfg);
             let write_sink = WriteSink::new(
                 write_format,
                 writer_factory,

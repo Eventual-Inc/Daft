@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_runtime::{get_compute_runtime, RuntimeRef};
+use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
+use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
@@ -13,8 +14,11 @@ use crate::{
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     pipeline::PipelineNode,
+    progress_bar::ProgressBarColor,
+    resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, OperatorOutput, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
+    NUM_CPUS,
 };
 
 pub(crate) trait IntermediateOpState: Send + Sync {
@@ -30,7 +34,6 @@ impl IntermediateOpState for DefaultIntermediateOperatorState {
 
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
     HasMoreOutput(Arc<MicroPartition>),
 }
 
@@ -41,7 +44,7 @@ pub trait IntermediateOperator: Send + Sync {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
@@ -49,8 +52,9 @@ pub trait IntermediateOperator: Send + Sync {
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
-    fn max_concurrency(&self) -> usize {
-        *NUM_CPUS
+    /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
+    fn max_concurrency(&self) -> DaftResult<usize> {
+        Ok(*NUM_CPUS)
     }
 
     fn dispatch_spawner(
@@ -107,17 +111,16 @@ impl IntermediateNode {
         receiver: Receiver<Arc<MicroPartition>>,
         sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
+        memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
+        let task_spawner =
+            ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
         let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
             loop {
-                let result = rt_context
-                    .in_span(&span, || {
-                        op.execute(morsel.clone(), state, &compute_runtime)
-                    })
-                    .await??;
+                let result = op.execute(morsel.clone(), state, &task_spawner).await??;
                 state = result.0;
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
@@ -145,6 +148,7 @@ impl IntermediateNode {
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
         runtime_handle: &mut ExecutionRuntimeContext,
         maintain_order: bool,
+        memory_manager: Arc<MemoryManager>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
@@ -155,6 +159,7 @@ impl IntermediateNode {
                     input_receiver,
                     output_sender,
                     self.runtime_stats.clone(),
+                    memory_manager.clone(),
                 ),
                 self.intermediate_op.name(),
             );
@@ -200,17 +205,27 @@ impl PipelineNode for IntermediateNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
+        let progress_bar = runtime_handle.make_progress_bar(
+            self.name(),
+            ProgressBarColor::Magenta,
+            true,
+            self.runtime_stats.clone(),
+        );
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,
                 self.runtime_stats.clone(),
+                progress_bar.clone(),
             ));
         }
         let op = self.intermediate_op.clone();
-        let num_workers = op.max_concurrency();
+        let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
+            node_name: self.name(),
+        })?;
         let (destination_sender, destination_receiver) = create_channel(1);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
+        let counting_sender =
+            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
 
         let dispatch_spawner = self
             .intermediate_op
@@ -229,6 +244,7 @@ impl PipelineNode for IntermediateNode {
             spawned_dispatch_result.worker_receivers,
             runtime_handle,
             maintain_order,
+            runtime_handle.memory_manager(),
         );
         runtime_handle.spawn(
             async move {
@@ -243,6 +259,7 @@ impl PipelineNode for IntermediateNode {
         );
         Ok(destination_receiver)
     }
+
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }

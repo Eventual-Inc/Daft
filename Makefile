@@ -56,11 +56,11 @@ hooks: .venv
 
 .PHONY: build
 build: check-toolchain .venv  ## Compile and install Daft for development
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --extras=all
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --extras=all --uv
 
 .PHONY: build-release
 build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv
 
 .PHONY: test
 test: .venv build  ## Run tests
@@ -69,6 +69,10 @@ test: .venv build  ## Run tests
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data
 	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpcds-gen-folder=$(OUTPUT_DIR)
+
+.PHONY: docs
+docs: .venv ## Serve docs
+	uv run --with-requirements requirements-docs.txt mkdocs serve
 
 .PHONY: clean
 clean:

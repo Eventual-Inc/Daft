@@ -1,4 +1,8 @@
-use std::{any::Any, sync::Arc};
+use std::{
+    any::Any,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayAs;
@@ -9,16 +13,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Hash)]
 struct DummyScanTask {
     pub schema: SchemaRef,
     pub pushdowns: Pushdowns,
+    pub in_memory_size: Option<usize>,
 }
 
 #[derive(Debug)]
 pub struct DummyScanOperator {
     pub schema: SchemaRef,
     pub num_scan_tasks: u32,
+    pub in_memory_size_per_task: Option<usize>,
 }
 
 #[typetag::serde]
@@ -36,6 +42,10 @@ impl ScanTaskLike for DummyScanTask {
             .as_any()
             .downcast_ref::<Self>()
             .map_or(false, |a| a == self)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state);
     }
 
     fn materialized_schema(&self) -> SchemaRef {
@@ -59,7 +69,7 @@ impl ScanTaskLike for DummyScanTask {
     }
 
     fn estimate_in_memory_size_bytes(&self, _: Option<&DaftExecutionConfig>) -> Option<usize> {
-        None
+        self.in_memory_size
     }
 
     fn file_format_config(&self) -> Arc<FileFormatConfig> {
@@ -89,6 +99,9 @@ Pushdowns: {pushdowns}
 }
 
 impl ScanOperator for DummyScanOperator {
+    fn name(&self) -> &'static str {
+        "dummy"
+    }
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
@@ -121,14 +134,11 @@ impl ScanOperator for DummyScanOperator {
         vec!["DummyScanOperator".to_string()]
     }
 
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-        _: Option<&DaftExecutionConfig>,
-    ) -> DaftResult<Vec<ScanTaskLikeRef>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
         let scan_task = Arc::new(DummyScanTask {
             schema: self.schema.clone(),
             pushdowns,
+            in_memory_size: self.in_memory_size_per_task,
         });
 
         Ok((0..self.num_scan_tasks)

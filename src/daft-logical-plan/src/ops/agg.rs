@@ -1,12 +1,12 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
-use daft_dsl::{ExprRef, ExprResolver};
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_dsl::{exprs_to_schema, ExprRef};
+use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
-use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{self, CreationSnafu},
+    logical_plan::{self},
+    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -26,6 +26,7 @@ pub struct Aggregate {
     pub groupby: Vec<ExprRef>,
 
     pub output_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl Aggregate {
@@ -34,30 +35,40 @@ impl Aggregate {
         aggregations: Vec<ExprRef>,
         groupby: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
-        let upstream_schema = input.schema();
-
-        let groupby_set = HashSet::from_iter(groupby.clone());
-
-        let groupby_resolver = ExprResolver::default();
-        let agg_resolver = ExprResolver::builder().groupby(&groupby_set).build();
-
-        let (groupby, groupby_fields) = groupby_resolver
-            .resolve(groupby, &upstream_schema)
-            .context(CreationSnafu)?;
-        let (aggregations, aggregation_fields) = agg_resolver
-            .resolve(aggregations, &upstream_schema)
-            .context(CreationSnafu)?;
-
-        let fields = [groupby_fields, aggregation_fields].concat();
-
-        let output_schema = Schema::new(fields).context(CreationSnafu)?.into();
+        let output_schema = exprs_to_schema(
+            &[groupby.as_slice(), aggregations.as_slice()].concat(),
+            input.schema(),
+        )?;
 
         Ok(Self {
             input,
             aggregations,
             groupby,
             output_schema,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // TODO(desmond): We can use the schema here for better estimations. For now, use the old logic.
+        let input_stats = self.input.materialized_stats();
+        let est_bytes_per_row =
+            input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
+        let approx_stats = if self.groupby.is_empty() {
+            ApproxStats {
+                num_rows: 1,
+                size_bytes: est_bytes_per_row,
+            }
+        } else {
+            // Assume high cardinality for group by columns, and 80% of rows are unique.
+            let est_num_groups = input_stats.approx_stats.num_rows * 4 / 5;
+            ApproxStats {
+                num_rows: est_num_groups,
+                size_bytes: est_bytes_per_row * est_num_groups,
+            }
+        };
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -76,6 +87,9 @@ impl Aggregate {
             "Output schema = {}",
             self.output_schema.short_string()
         ));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

@@ -1,8 +1,11 @@
-use std::{cmp::max, collections::HashSet, ops::Add, sync::Arc};
+use std::{cmp::max, collections::HashSet, sync::Arc};
 
 use common_display::ascii::AsciiTreeDisplay;
-use daft_logical_plan::partitioning::{
-    ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
+use daft_logical_plan::{
+    partitioning::{
+        ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
+    },
+    stats::ApproxStats,
 };
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +34,7 @@ pub enum PhysicalPlan {
     HashJoin(HashJoin),
     SortMergeJoin(SortMergeJoin),
     BroadcastJoin(BroadcastJoin),
+    CrossJoin(CrossJoin),
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
@@ -41,48 +45,6 @@ pub enum PhysicalPlan {
     DeltaLakeWrite(DeltaLakeWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
-}
-
-pub struct ApproxStats {
-    pub lower_bound_rows: usize,
-    pub upper_bound_rows: Option<usize>,
-    pub lower_bound_bytes: usize,
-    pub upper_bound_bytes: Option<usize>,
-}
-
-impl ApproxStats {
-    fn empty() -> Self {
-        Self {
-            lower_bound_rows: 0,
-            upper_bound_rows: None,
-            lower_bound_bytes: 0,
-            upper_bound_bytes: None,
-        }
-    }
-    fn apply<F: Fn(usize) -> usize>(&self, f: F) -> Self {
-        Self {
-            lower_bound_rows: f(self.lower_bound_rows),
-            upper_bound_rows: self.upper_bound_rows.map(&f),
-            lower_bound_bytes: f(self.lower_bound_rows),
-            upper_bound_bytes: self.upper_bound_bytes.map(&f),
-        }
-    }
-}
-
-impl Add for &ApproxStats {
-    type Output = ApproxStats;
-    fn add(self, rhs: Self) -> Self::Output {
-        ApproxStats {
-            lower_bound_rows: self.lower_bound_rows + rhs.lower_bound_rows,
-            upper_bound_rows: self
-                .upper_bound_rows
-                .and_then(|l_ub| rhs.upper_bound_rows.map(|v| v + l_ub)),
-            lower_bound_bytes: self.lower_bound_bytes + rhs.lower_bound_bytes,
-            upper_bound_bytes: self
-                .upper_bound_bytes
-                .and_then(|l_ub| rhs.upper_bound_bytes.map(|v| v + l_ub)),
-        }
-    }
 }
 
 impl PhysicalPlan {
@@ -209,6 +171,9 @@ impl PhysicalPlan {
                 std::iter::repeat(false).take(left_on.len()).collect(),
             ))
             .into(),
+            Self::CrossJoin(CrossJoin {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
@@ -222,61 +187,49 @@ impl PhysicalPlan {
     pub fn approximate_stats(&self) -> ApproxStats {
         match self {
             Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => ApproxStats {
-                lower_bound_rows: in_memory_info.num_rows,
-                upper_bound_rows: Some(in_memory_info.num_rows),
-                lower_bound_bytes: in_memory_info.size_bytes,
-                upper_bound_bytes: Some(in_memory_info.size_bytes),
+                num_rows: in_memory_info.num_rows,
+                size_bytes: in_memory_info.size_bytes,
             },
             Self::TabularScan(TabularScan { scan_tasks, .. }) => {
-                let mut stats = ApproxStats::empty();
-                for st in scan_tasks {
-                    stats.lower_bound_rows += st.num_rows().unwrap_or(0);
-                    let in_memory_size = st.estimate_in_memory_size_bytes(None);
-                    stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
-                    stats.upper_bound_rows = stats
-                        .upper_bound_rows
-                        .and_then(|st_ub| st.upper_bound_rows().map(|ub| st_ub + ub));
-                    stats.upper_bound_bytes = stats
-                        .upper_bound_bytes
-                        .and_then(|st_ub| in_memory_size.map(|ub| st_ub + ub));
+                let mut approx_stats = ApproxStats::empty();
+                for st in scan_tasks.iter() {
+                    approx_stats.num_rows += st
+                        .num_rows()
+                        .unwrap_or_else(|| st.approx_num_rows(None).unwrap_or(0.0) as usize);
+                    approx_stats.size_bytes += st.estimate_in_memory_size_bytes(None).unwrap_or(0);
                 }
-                stats
+                approx_stats
             }
             Self::EmptyScan(..) => ApproxStats {
-                lower_bound_rows: 0,
-                upper_bound_rows: Some(0),
-                lower_bound_bytes: 0,
-                upper_bound_bytes: Some(0),
+                num_rows: 0,
+                size_bytes: 0,
             },
             // Assume no row/column pruning in cardinality-affecting operations.
             // TODO(Clark): Estimate row/column pruning to get a better size approximation.
-            Self::Filter(Filter { input, .. }) => {
+            Self::Filter(Filter {
+                input,
+                estimated_selectivity,
+                ..
+            }) => {
                 let input_stats = input.approximate_stats();
                 ApproxStats {
-                    lower_bound_rows: 0,
-                    upper_bound_rows: input_stats.upper_bound_rows,
-                    lower_bound_bytes: 0,
-                    upper_bound_bytes: input_stats.upper_bound_bytes,
+                    num_rows: (input_stats.num_rows as f64 * estimated_selectivity).ceil() as usize,
+                    size_bytes: (input_stats.size_bytes as f64 * estimated_selectivity).ceil()
+                        as usize,
                 }
             }
             Self::Limit(Limit { input, limit, .. }) => {
-                let limit = *limit as usize;
                 let input_stats = input.approximate_stats();
-                let est_bytes_per_row_lower =
-                    input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
-                let est_bytes_per_row_upper = input_stats
-                    .upper_bound_bytes
-                    .and_then(|bytes| input_stats.upper_bound_rows.map(|rows| bytes / rows.max(1)));
-                let new_lower_rows = input_stats.lower_bound_rows.min(limit);
-                let new_upper_rows = input_stats
-                    .upper_bound_rows
-                    .map(|ub| ub.min(limit))
-                    .unwrap_or(limit);
+                let limit = *limit as usize;
                 ApproxStats {
-                    lower_bound_rows: new_lower_rows,
-                    upper_bound_rows: Some(new_upper_rows),
-                    lower_bound_bytes: new_lower_rows * est_bytes_per_row_lower,
-                    upper_bound_bytes: est_bytes_per_row_upper.map(|x| x * new_upper_rows),
+                    num_rows: limit.min(input_stats.num_rows),
+                    size_bytes: if input_stats.num_rows > limit {
+                        let est_bytes_per_row =
+                            input_stats.size_bytes / input_stats.num_rows.max(1);
+                        limit * est_bytes_per_row
+                    } else {
+                        input_stats.size_bytes
+                    },
                 }
             }
             Self::Project(Project { input, .. })
@@ -292,11 +245,10 @@ impl PhysicalPlan {
                 .apply(|v| ((v as f64) * fraction) as usize),
             Self::Explode(Explode { input, .. }) => {
                 let input_stats = input.approximate_stats();
+                let est_num_exploded_rows = input_stats.num_rows * 4;
                 ApproxStats {
-                    lower_bound_rows: input_stats.lower_bound_rows,
-                    upper_bound_rows: None,
-                    lower_bound_bytes: input_stats.lower_bound_bytes,
-                    upper_bound_bytes: None,
+                    num_rows: est_num_exploded_rows,
+                    size_bytes: input_stats.size_bytes,
                 }
             }
             // Propagate child approximation for operations that don't affect cardinality.
@@ -314,59 +266,42 @@ impl PhysicalPlan {
                 ..
             })
             | Self::HashJoin(HashJoin { left, right, .. })
-            | Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
+            | Self::SortMergeJoin(SortMergeJoin { left, right, .. })
+            | Self::CrossJoin(CrossJoin { left, right, .. }) => {
                 // assume a Primary-key + Foreign-Key join which would yield the max of the two tables
                 let left_stats = left.approximate_stats();
                 let right_stats = right.approximate_stats();
 
                 ApproxStats {
-                    lower_bound_rows: 0,
-                    upper_bound_rows: left_stats
-                        .upper_bound_rows
-                        .and_then(|l| right_stats.upper_bound_rows.map(|r| l.max(r))),
-                    lower_bound_bytes: 0,
-                    upper_bound_bytes: left_stats
-                        .upper_bound_bytes
-                        .and_then(|l| right_stats.upper_bound_bytes.map(|r| l.max(r))),
+                    num_rows: left_stats.num_rows.max(right_stats.num_rows),
+                    size_bytes: left_stats.size_bytes.max(right_stats.size_bytes),
                 }
             }
             // TODO(Clark): Approximate post-aggregation sizes via grouping estimates + aggregation type.
             Self::Aggregate(Aggregate { input, groupby, .. }) => {
                 let input_stats = input.approximate_stats();
                 // TODO we should use schema inference here
-                let est_bytes_per_row_lower =
-                    input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
-                let est_bytes_per_row_upper = input_stats
-                    .upper_bound_bytes
-                    .and_then(|bytes| input_stats.upper_bound_rows.map(|rows| bytes / rows.max(1)));
+                let est_bytes_per_row = input_stats.size_bytes / (input_stats.num_rows.max(1));
                 if groupby.is_empty() {
                     ApproxStats {
-                        lower_bound_rows: input_stats.lower_bound_rows.min(1),
-                        upper_bound_rows: Some(1),
-                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1)
-                            * est_bytes_per_row_lower,
-                        upper_bound_bytes: est_bytes_per_row_upper,
+                        num_rows: 1,
+                        size_bytes: est_bytes_per_row,
                     }
                 } else {
-                    // we should use the new schema here
+                    // Assume high cardinality for group by columns, and 80% of rows are unique.
+                    let est_num_groups = input_stats.num_rows * 4 / 5;
                     ApproxStats {
-                        lower_bound_rows: input_stats.lower_bound_rows.min(1),
-                        upper_bound_rows: input_stats.upper_bound_rows,
-                        lower_bound_bytes: input_stats.lower_bound_bytes.min(1)
-                            * est_bytes_per_row_lower,
-                        upper_bound_bytes: input_stats.upper_bound_bytes,
+                        num_rows: est_num_groups,
+                        size_bytes: est_bytes_per_row * est_num_groups,
                     }
                 }
             }
             Self::Unpivot(Unpivot { input, values, .. }) => {
                 let input_stats = input.approximate_stats();
                 let num_values = values.len();
-                // the number of bytes should be the name but nows should be multiplied by num_values
                 ApproxStats {
-                    lower_bound_rows: input_stats.lower_bound_rows * num_values,
-                    upper_bound_rows: input_stats.upper_bound_rows.map(|v| v * num_values),
-                    lower_bound_bytes: input_stats.lower_bound_bytes,
-                    upper_bound_bytes: input_stats.upper_bound_bytes,
+                    num_rows: input_stats.num_rows * num_values,
+                    size_bytes: input_stats.size_bytes,
                 }
             }
             // Post-write DataFrame will contain paths to files that were written.
@@ -414,6 +349,7 @@ impl PhysicalPlan {
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
                 vec![left, right]
             }
+            Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left, right],
             Self::Concat(Concat { input, other }) => vec![input, other],
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
@@ -433,7 +369,7 @@ impl PhysicalPlan {
                 ).unwrap()),
 
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
-                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
+                Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),
@@ -452,7 +388,7 @@ impl PhysicalPlan {
                 Self::DeltaLakeWrite(DeltaLakeWrite {schema, delta_lake_info, .. }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(schema.clone(), delta_lake_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
-                Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
+                Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) | Self::CrossJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
             },
             [input1, input2] => match self {
                 #[cfg(feature = "python")]
@@ -469,6 +405,7 @@ impl PhysicalPlan {
                     ..
                 }) => Self::BroadcastJoin(BroadcastJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), null_equals_nulls.clone(), *join_type, *is_swapped)),
                 Self::SortMergeJoin(SortMergeJoin { left_on, right_on, join_type, num_partitions, left_is_larger, needs_presort, .. }) => Self::SortMergeJoin(SortMergeJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type, *num_partitions, *left_is_larger, *needs_presort)),
+                Self::CrossJoin(CrossJoin { outer_loop_side, .. }) => Self::CrossJoin(CrossJoin::new(input1.clone(), input2.clone(), *outer_loop_side)),
                 Self::Concat(_) => Self::Concat(Concat::new(input1.clone(), input2.clone())),
                 _ => panic!("Physical op {:?} has one input, but got two", self),
             },
@@ -495,6 +432,7 @@ impl PhysicalPlan {
             Self::HashJoin(..) => "HashJoin",
             Self::BroadcastJoin(..) => "BroadcastJoin",
             Self::SortMergeJoin(..) => "SortMergeJoin",
+            Self::CrossJoin(..) => "CrossJoin",
             Self::Concat(..) => "Concat",
             Self::TabularWriteParquet(..) => "TabularWriteParquet",
             Self::TabularWriteCsv(..) => "TabularWriteCsv",
@@ -529,6 +467,7 @@ impl PhysicalPlan {
             Self::HashJoin(hash_join) => hash_join.multiline_display(),
             Self::BroadcastJoin(broadcast_join) => broadcast_join.multiline_display(),
             Self::SortMergeJoin(sort_merge_join) => sort_merge_join.multiline_display(),
+            Self::CrossJoin(cross_join) => cross_join.multiline_display(),
             Self::Concat(concat) => concat.multiline_display(),
             Self::TabularWriteParquet(tabular_write_parquet) => {
                 tabular_write_parquet.multiline_display()

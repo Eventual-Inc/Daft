@@ -409,7 +409,7 @@ impl Literal for Series {
 #[cfg(feature = "python")]
 impl Literal for pyo3::PyObject {
     fn literal_value(self) -> LiteralValue {
-        LiteralValue::Python(PyObjectWrapper(self))
+        LiteralValue::Python(PyObjectWrapper(Arc::new(self)))
     }
 }
 
@@ -442,6 +442,12 @@ pub fn literal_value<L: Literal>(t: L) -> LiteralValue {
 
 pub fn null_lit() -> ExprRef {
     Arc::new(Expr::Literal(LiteralValue::Null))
+}
+
+impl LiteralValue {
+    pub fn into_single_value_series(self) -> DaftResult<Series> {
+        literals_to_series(&[self])
+    }
 }
 
 /// Convert a slice of literals to a series.
