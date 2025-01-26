@@ -5,7 +5,7 @@ use std::{
     any::Any,
     collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
-    io::{self, Write},
+    io::{self},
     str::FromStr,
     sync::Arc,
 };
@@ -27,8 +27,7 @@ use serde::{Deserialize, Serialize};
 use super::functions::FunctionExpr;
 use crate::{
     functions::{
-        binary_op_display_without_formatter, function_display_without_formatter,
-        function_semantic_id, is_in_display_without_formatter,
+        function_display_without_formatter, function_semantic_id,
         python::PythonUDF,
         scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
@@ -112,7 +111,7 @@ pub enum Expr {
     #[display("{_0}")]
     Agg(AggExpr),
 
-    #[display("{}", binary_op_display_without_formatter(op, left, right)?)]
+    #[display("{}", expr_binary_op_display_without_formatter(op, left, right)?)]
     BinaryOp {
         op: Operator,
         left: ExprRef,
@@ -143,11 +142,14 @@ pub enum Expr {
     #[display("fill_null({_0}, {_1})")]
     FillNull(ExprRef, ExprRef),
 
-    #[display("{}", is_in_display_without_formatter(_0, _1)?)]
+    #[display("{}", expr_is_in_display_without_formatter(_0, _1)?)]
     IsIn(ExprRef, Vec<ExprRef>),
 
     #[display("{_0} in [{_1},{_2}]")]
     Between(ExprRef, ExprRef, ExprRef),
+
+    #[display("{}", expr_list_display_without_formatter(_0))]
+    List(Vec<ExprRef>),
 
     #[display("lit({_0})")]
     Literal(lit::LiteralValue),
@@ -164,8 +166,10 @@ pub enum Expr {
 
     #[display("subquery {_0}")]
     Subquery(Subquery),
+
     #[display("{_0} in {_1}")]
     InSubquery(ExprRef, Subquery),
+
     #[display("exists {_0}")]
     Exists(Subquery),
 
@@ -1450,30 +1454,50 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
     Ok(Arc::new(Schema::new(fields)?))
 }
 
-/// Adds aliases as appropriate to ensure that all expressions have unique names.
-pub fn deduplicate_expr_names(exprs: &[ExprRef]) -> Vec<ExprRef> {
-    let mut names_so_far = HashSet::new();
+fn expr_is_in_display_without_formatter(
+    expr: &ExprRef,
+    inputs: &[ExprRef],
+) -> std::result::Result<String, std::fmt::Error> {
+    let mut f = String::default();
+    write!(&mut f, "{expr} IN (")?;
+    for (i, input) in inputs.iter().enumerate() {
+        if i != 0 {
+            write!(&mut f, ", ")?;
+        }
+        write!(&mut f, "{input}")?;
+    }
+    write!(&mut f, ")")?;
+    Ok(f)
+}
 
-    exprs
-        .iter()
-        .map(|e| {
-            let curr_name = e.name();
+fn expr_binary_op_display_without_formatter(
+    op: &Operator,
+    left: &ExprRef,
+    right: &ExprRef,
+) -> std::result::Result<String, std::fmt::Error> {
+    let mut f = String::default();
+    let write_out_expr = |f: &mut String, input: &Expr| match input {
+        Expr::Alias(e, _) => write!(f, "{e}"),
+        Expr::BinaryOp { .. } => write!(f, "[{input}]"),
+        _ => write!(f, "{input}"),
+    };
+    write_out_expr(&mut f, left)?;
+    write!(&mut f, " {op} ")?;
+    write_out_expr(&mut f, right)?;
+    Ok(f)
+}
 
-            let mut i = 0;
-            let mut new_name = curr_name.to_string();
-
-            while names_so_far.contains(&new_name) {
-                i += 1;
-                new_name = format!("{}_{}", curr_name, i);
-            }
-
-            names_so_far.insert(new_name.clone());
-
-            if i == 0 {
-                e.clone()
-            } else {
-                e.alias(new_name)
-            }
-        })
-        .collect()
+fn expr_list_display_without_formatter(
+    items: &[ExprRef],
+) -> std::result::Result<String, std::fmt::Error> {
+    let mut f = String::default();
+    write!(&mut f, "list(",)?;
+    for (i, input) in items.iter().enumerate() {
+        if i != 0 {
+            write!(&mut f, ", ")?;
+        }
+        write!(&mut f, "{input}")?;
+    }
+    write!(&mut f, ")")?;
+    Ok(f)
 }
