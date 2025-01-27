@@ -72,7 +72,7 @@ dsdgen: .venv ## Generate TPC-DS data
 
 .PHONY: docs
 docs: .venv ## Serve docs
-	uv run --with-requirements requirements-docs.txt mkdocs serve
+	uv run --with-requirements requirements-docs.txt mkdocs build
 
 .PHONY: clean
 clean:
