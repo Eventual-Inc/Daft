@@ -61,7 +61,8 @@ mod tests {
         let expected = col("a").and(col("b")).and(
             (col("c").or(col("e")))
                 .and(col("c").or(col("f")))
-                .and(col("d").or(col("e")).and(col("d").or(col("f")))),
+                .and(col("d").or(col("e")))
+                .and(col("d").or(col("f"))),
         );
 
         assert_eq!(expected, to_cnf(expr));
