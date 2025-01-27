@@ -970,7 +970,7 @@ impl Expr {
                 // Use "list" as the field name, and infer list type from items.
                 let field_name = "list";
                 let field_type = infer_list_type(items, schema)?.unwrap_or(DataType::Null);
-                Ok(Field::new(field_name, field_type))
+                Ok(Field::new(field_name, DataType::new_list(field_type)))
             }
             Self::Between(value, lower, upper) => {
                 let value_field = value.to_field(schema)?;
@@ -1461,19 +1461,24 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
     Ok(Arc::new(Schema::new(fields)?))
 }
 
-/// Asserts an expr slice is homogeneous and returns the type, or None if empty.
+/// Asserts an expr slice is homogeneous and returns the type, or None if empty or all nulls.
 fn infer_list_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Option<DataType>> {
-    if exprs.is_empty() {
-        return Ok(None);
-    }
-    let dtype = exprs.first().unwrap().get_type(schema)?;
-    for expr in exprs.iter().skip(1) {
+    let mut dtype: Option<DataType> = None;
+    for expr in exprs {
         let other_dtype = expr.get_type(schema)?;
-        if other_dtype != dtype {
-            return Err(DaftError::TypeError(format!(
-                "Expected all list elements to have type {dtype}, but found element with type {other_dtype}"
-            )));
+        // other is null, continue
+        if other_dtype == DataType::Null {
+            continue;
+        }
+        // other != null and dtype is unset -> set dtype
+        if dtype.is_none() {
+            dtype = Some(other_dtype);
+            continue;
+        }
+        // other != null and dtype is set -> compare or err!
+        if dtype.as_ref() != Some(&other_dtype) {
+            return Err(DaftError::TypeError(format!("Expected all arguments to be of the same type {}, but found element with type {other_dtype}", dtype.unwrap())));
         }
     }
-    Ok(Some(dtype))
+    Ok(dtype)
 }

@@ -29,6 +29,7 @@ pub mod list;
 pub mod log;
 pub mod logical;
 pub mod map;
+pub mod merge;
 pub mod minhash;
 pub mod not;
 pub mod null;

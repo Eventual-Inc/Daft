@@ -1,9 +1,50 @@
 import pyarrow as pa
+import pytest
 
 import daft
-from daft import col
+from daft import DataType, col
 from daft.daft import CountMode
 from daft.sql.sql import SQLCatalog
+
+
+def assert_eq(actual, expect):
+    """Asserts two dataframes are equal for tests."""
+    assert actual.collect().to_pydict() == expect.collect().to_pydict()
+
+
+def test_list_empty():
+    with pytest.raises(Exception, match="empty ARRAY constructor"):
+        df = daft.from_pydict({"x": [1, 2, 3]})
+        daft.sql("SELECT [ ] as list FROM df")
+        print(df)  # for ruff ignore unused
+
+
+def test_list_singleton():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ x ] as list FROM df")
+    expect = df.select(col("x").apply(lambda x: [x], DataType.list(DataType.int64())).alias("list"))
+    assert_eq(actual, expect)
+
+
+def test_list():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ x * 1, x * 2, x * 3 ] FROM df")
+    expect = df.select(col("x").apply(lambda x: [x * 1, x * 2, x * 3], DataType.list(DataType.int64())).alias("list"))
+    assert_eq(actual, expect)
+
+
+def test_list_mixed():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ x, NULL ] FROM df")
+    expect = df.select(col("x").apply(lambda x: [x * 2, None], DataType.list(DataType.int64())).alias("list"))
+    assert_eq(actual, expect)
+
+
+def test_list_of_nulls():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ NULL, NULL, NULL ] FROM df")
+    expect = df.select(col("x").apply(lambda x: [None, None, None], DataType.list(DataType.null())).alias("list"))
+    assert_eq(actual, expect)
 
 
 def test_list_chunk():

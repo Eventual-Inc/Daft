@@ -1628,7 +1628,18 @@ impl<'a> SQLPlanner<'a> {
             }
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
-            SQLExpr::Array(_) => unsupported_sql_err!("ARRAY"),
+            SQLExpr::Array(array) => {
+                if array.elem.is_empty() {
+                    // ultimately limited by needing at least 1 series to perform concat
+                    invalid_operation_err!("empty ARRAY constructor")
+                }
+                let items = array
+                    .elem
+                    .iter()
+                    .map(|e| self.plan_expr(e))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                Ok(Expr::List(items).into())
+            }
             SQLExpr::Interval(interval) => {
                 use regex::Regex;
 
