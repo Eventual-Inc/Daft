@@ -89,7 +89,9 @@ def get_name_and_commit_hash(local_branch_name: Optional[str]) -> tuple[str, str
         # Strip the upstream name from the branch to get the remote branch name.
         remote_branch_name = remote_branch_name.split("/", 1)[1]
     commit_hash = (
-        subprocess.check_output(["git", "rev-parse", local_branch_name], stderr=subprocess.STDOUT).strip().decode("utf-8")
+        subprocess.check_output(["git", "rev-parse", local_branch_name], stderr=subprocess.STDOUT)
+        .strip()
+        .decode("utf-8")
     )
     return remote_branch_name, commit_hash
 
