@@ -64,11 +64,32 @@ def get_latest_run(workflow: Workflow) -> WorkflowRun:
 
 def get_name_and_commit_hash(branch_name: Optional[str]) -> tuple[str, str]:
     branch_name = branch_name or "HEAD"
+    has_upstream = False
+
+    try:
+        # Check if the branch has a remote tracking branch.
+        upstream_branch = (
+            subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", f"{branch_name}@{{upstream}}"],
+                stderr=subprocess.STDOUT
+            )
+            .strip()
+            .decode("utf-8")
+        )
+        has_upstream = True
+        branch_name = upstream_branch
+    except subprocess.CalledProcessError:
+        pass
+
+
     name = (
         subprocess.check_output(["git", "rev-parse", "--abbrev-ref", branch_name], stderr=subprocess.STDOUT)
         .strip()
         .decode("utf-8")
     )
+    if has_upstream:
+        # Strip the upstream name from the branch.
+        name = name.split("/", 1)[1]
     commit_hash = (
         subprocess.check_output(["git", "rev-parse", branch_name], stderr=subprocess.STDOUT).strip().decode("utf-8")
     )
