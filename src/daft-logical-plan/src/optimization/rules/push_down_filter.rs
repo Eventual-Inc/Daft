@@ -1015,8 +1015,8 @@ mod tests {
             false,
         )?
         .filter(
-            (col("b").eq(lit("GERMANY")).or(col("a").eq(lit("GERMANY"))))
-                .and(col("a").eq(lit("FRANCE")).or(col("b").eq(lit("FRANCE")))),
+            (col("a").eq(lit("FRANCE")).or(col("b").eq(lit("FRANCE"))))
+                .and(col("b").eq(lit("GERMANY")).or(col("a").eq(lit("GERMANY")))),
         )?
         .build();
 
