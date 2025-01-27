@@ -226,7 +226,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def schema(self) -> Schema:
-        """Returns the Schema of the DataFrame, which provides information about each column.
+        """Returns the Schema of the DataFrame, which provides information about each column, as a Python object.
 
         Returns:
             Schema: schema of the DataFrame
@@ -565,6 +565,22 @@ class DataFrame:
         # build preview
         df._populate_preview()
         return df
+
+    @classmethod
+    def _from_schema(cls, schema: Schema) -> "DataFrame":
+        """Creates a Daft DataFrom from a Schema.
+
+        Args:
+            schema: The Schema to convert into a DataFrame.
+
+        Returns:
+            DataFrame: Daft DataFrame with "column_name" and "type" fields.
+        """
+        pydict: Dict = {"column_name": [], "type": []}
+        for field in schema:
+            pydict["column_name"].append(field.name)
+            pydict["type"].append(str(field.dtype))
+        return DataFrame._from_pydict(pydict)
 
     ###
     # Write methods
@@ -1345,6 +1361,32 @@ class DataFrame:
         """
         assert len(columns) > 0
         builder = self._builder.select(self.__column_input_to_expression(columns))
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def describe(self) -> "DataFrame":
+        """Returns the Schema of the DataFrame, which provides information about each column, as a new DataFrame.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+            >>> df.describe().show()
+            ╭─────────────┬───────╮
+            │ column_name ┆ type  │
+            │ ---         ┆ ---   │
+            │ Utf8        ┆ Utf8  │
+            ╞═════════════╪═══════╡
+            │ a           ┆ Int64 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ b           ┆ Utf8  │
+            ╰─────────────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Returns:
+            DataFrame: A dataframe where each row is a column name and its corresponding type.
+        """
+        builder = self.__builder.describe()
         return DataFrame(builder)
 
     @DataframePublicAPI
