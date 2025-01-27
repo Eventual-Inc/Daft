@@ -87,6 +87,10 @@ impl StreamingSink for LimitSink {
         "Limit"
     }
 
+    fn multiline_display(&self) -> Vec<String> {
+        vec![format!("Limit: {}", self.limit)]
+    }
+
     fn finalize(
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,

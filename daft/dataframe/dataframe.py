@@ -36,6 +36,7 @@ from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, check_column
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
+from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.filesystem import overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
@@ -208,10 +209,15 @@ class DataFrame:
             print_to_file("\n== Optimized Logical Plan ==\n")
             builder = builder.optimize()
             print_to_file(builder.pretty_print(simple))
+            print_to_file("\n== Physical Plan ==\n")
             if get_context().get_or_create_runner().name != "native":
-                print_to_file("\n== Physical Plan ==\n")
                 physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
                 print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
+            else:
+                native_executor = NativeExecutor()
+                print_to_file(
+                    native_executor.pretty_print(builder, get_context().daft_execution_config, simple, format=format)
+                )
         else:
             print_to_file(
                 "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.",

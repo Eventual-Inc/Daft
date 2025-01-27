@@ -31,7 +31,7 @@ impl CrossJoinCollectSink {
 
 impl BlockingSink for CrossJoinCollectSink {
     fn name(&self) -> &'static str {
-        "CrossJoinCollectSink"
+        "CrossJoinCollect"
     }
 
     fn sink(
@@ -88,6 +88,10 @@ impl BlockingSink for CrossJoinCollectSink {
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         Ok(Box::new(CrossJoinCollectState(Some(Vec::new()))))
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        vec!["CrossJoinCollect".to_string()]
     }
 
     fn max_concurrency(&self) -> usize {

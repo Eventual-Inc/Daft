@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
+use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
@@ -42,6 +43,7 @@ pub trait BlockingSink: Send + Sync {
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult;
     fn name(&self) -> &'static str;
+    fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn dispatch_spawner(
         &self,
@@ -59,16 +61,22 @@ pub struct BlockingSinkNode {
     name: &'static str,
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<RuntimeStatsContext>,
+    plan_stats: StatsState,
 }
 
 impl BlockingSinkNode {
-    pub(crate) fn new(op: Arc<dyn BlockingSink>, child: Box<dyn PipelineNode>) -> Self {
+    pub(crate) fn new(
+        op: Arc<dyn BlockingSink>,
+        child: Box<dyn PipelineNode>,
+        plan_stats: StatsState,
+    ) -> Self {
         let name = op.name();
         Self {
             op,
             name,
             child,
             runtime_stats: RuntimeStatsContext::new(),
+            plan_stats,
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
@@ -123,12 +131,23 @@ impl TreeDisplay for BlockingSinkNode {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-        writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::Compact;
-        if matches!(level, Compact) {
-        } else {
-            let rt_result = self.runtime_stats.result();
-            rt_result.display(&mut display, true, true, true).unwrap();
+
+        use common_display::DisplayLevel;
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.op.name()).unwrap();
+            }
+            level => {
+                let multiline_display = self.op.multiline_display().join("\n");
+                writeln!(display, "{}", multiline_display).unwrap();
+                if let StatsState::Materialized(stats) = &self.plan_stats {
+                    writeln!(display, "Stats = {}", stats).unwrap();
+                }
+                if matches!(level, DisplayLevel::Verbose) {
+                    let rt_result = self.runtime_stats.result();
+                    rt_result.display(&mut display, true, true, true).unwrap();
+                }
+            }
         }
         display
     }

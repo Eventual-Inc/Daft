@@ -1698,8 +1698,18 @@ class LogicalPlanBuilder:
 class NativeExecutor:
     def __init__(self) -> None: ...
     def run(
-        self, psets: dict[str, list[PartitionT]], cfg: PyDaftExecutionConfig, results_buffer_size: int | None
+        self,
+        builder: LogicalPlanBuilder,
+        psets: dict[str, list[PartitionT]],
+        daft_execution_config: PyDaftExecutionConfig,
+        results_buffer_size: int | None,
     ) -> Iterator[PyMicroPartition]: ...
+    def repr_ascii(
+        self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool
+    ) -> str: ...
+    def repr_mermaid(
+        self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
+    ) -> str: ...
 
 class PyDaftExecutionConfig:
     @staticmethod
