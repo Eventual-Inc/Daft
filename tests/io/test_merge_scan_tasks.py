@@ -81,3 +81,15 @@ def test_merge_scan_task_limit_override(csv_files):
     ):
         df = daft.read_csv(str(csv_files)).limit(1)
         assert df.num_partitions() == 3, "Should have 3 partitions [(CSV1, CSV2, CSV3)] since we have a limit 1"
+
+
+def test_merge_scan_task_up_to_max_sources(csv_files):
+    with daft.execution_config_ctx(
+        scan_tasks_min_size_bytes=30,
+        scan_tasks_max_size_bytes=30,
+        max_sources_per_scan_task=2,
+    ):
+        df = daft.read_csv(str(csv_files))
+        assert (
+            df.num_partitions() == 2
+        ), "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the third CSV is too large to merge with the first two, and max_sources_per_scan_task is set to 2"
