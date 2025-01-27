@@ -70,8 +70,7 @@ def get_name_and_commit_hash(branch_name: Optional[str]) -> tuple[str, str]:
         # Check if the branch has a remote tracking branch.
         upstream_branch = (
             subprocess.check_output(
-                ["git", "rev-parse", "--abbrev-ref", f"{branch_name}@{{upstream}}"],
-                stderr=subprocess.STDOUT
+                ["git", "rev-parse", "--abbrev-ref", f"{branch_name}@{{upstream}}"], stderr=subprocess.STDOUT
             )
             .strip()
             .decode("utf-8")
@@ -80,7 +79,6 @@ def get_name_and_commit_hash(branch_name: Optional[str]) -> tuple[str, str]:
         branch_name = upstream_branch
     except subprocess.CalledProcessError:
         pass
-
 
     name = (
         subprocess.check_output(["git", "rev-parse", "--abbrev-ref", branch_name], stderr=subprocess.STDOUT)
