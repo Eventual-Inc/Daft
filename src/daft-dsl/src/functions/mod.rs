@@ -18,7 +18,7 @@ pub use scalar::*;
 use serde::{Deserialize, Serialize};
 
 use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};
-use crate::{Expr, ExprRef, Operator};
+use crate::ExprRef;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {

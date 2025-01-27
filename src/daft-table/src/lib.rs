@@ -553,7 +553,11 @@ impl Table {
                 .eval_expression(child)?
                 .is_in(&s)
             }
-
+            Expr::List(items) => {
+                let items = items.iter().map(|item| self.eval_expression(item)).collect::<DaftResult<Vec<_>>>()?;
+                let items = items.iter().collect::<Vec<&Series>>();
+                Series::concat(items.as_slice())
+            }
             Expr::Between(child, lower, upper) => self
                 .eval_expression(child)?
                 .between(&self.eval_expression(lower)?, &self.eval_expression(upper)?),

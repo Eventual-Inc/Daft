@@ -1,13 +1,9 @@
+mod display;
 #[cfg(test)]
 mod tests;
 
 use std::{
-    any::Any,
-    collections::HashSet,
-    hash::{DefaultHasher, Hash, Hasher},
-    io::{self},
-    str::FromStr,
-    sync::Arc,
+    any::Any, collections::HashSet, hash::{DefaultHasher, Hash, Hasher}, io::{self, Write}, str::FromStr, sync::Arc
 };
 
 use common_error::{DaftError, DaftResult};
@@ -111,7 +107,7 @@ pub enum Expr {
     #[display("{_0}")]
     Agg(AggExpr),
 
-    #[display("{}", expr_binary_op_display_without_formatter(op, left, right)?)]
+    #[display("{}", display::expr_binary_op_display_without_formatter(op, left, right)?)]
     BinaryOp {
         op: Operator,
         left: ExprRef,
@@ -142,13 +138,13 @@ pub enum Expr {
     #[display("fill_null({_0}, {_1})")]
     FillNull(ExprRef, ExprRef),
 
-    #[display("{}", expr_is_in_display_without_formatter(_0, _1)?)]
+    #[display("{}", display::expr_is_in_display_without_formatter(_0, _1)?)]
     IsIn(ExprRef, Vec<ExprRef>),
 
     #[display("{_0} in [{_1},{_2}]")]
     Between(ExprRef, ExprRef, ExprRef),
 
-    #[display("{}", expr_list_display_without_formatter(_0))]
+    #[display("{}", display::expr_list_display_without_formatter(_0)?)]
     List(Vec<ExprRef>),
 
     #[display("lit({_0})")]
@@ -733,6 +729,12 @@ impl Expr {
 
                 FieldID::new(format!("{child_id}.is_in({items_id})"))
             }
+            Self::List(items) => {
+                let items_id = items.iter().fold(String::new(), |acc, item| {
+                    format!("{},{}", acc, item.semantic_id(schema))
+                });
+                FieldID::new(format!("List({items_id})"))
+            }
             Self::Between(expr, lower, upper) => {
                 let child_id = expr.semantic_id(schema);
                 let lower_id = lower.semantic_id(schema);
@@ -809,6 +811,7 @@ impl Expr {
             Self::IsIn(expr, items) => std::iter::once(expr.clone())
                 .chain(items.iter().cloned())
                 .collect::<Vec<_>>(),
+            Self::List(items) => items.clone(),
             Self::Between(expr, lower, upper) => vec![expr.clone(), lower.clone(), upper.clone()],
             Self::IfElse {
                 if_true,
@@ -870,6 +873,15 @@ impl Expr {
                 let items = children_iter.collect();
 
                 Self::IsIn(expr, items)
+            }
+            Self::List(children_old) => {
+                let c_len = children.len();
+                let c_len_old = children_old.len();
+                assert_eq!(
+                    c_len, c_len_old,
+                    "Should have same number of children ({c_len_old}), found ({c_len})"
+                );
+                Self::List(children)
             }
             Self::Between(..) => Self::Between(
                 children.first().expect("Should have 1 child").clone(),
@@ -942,31 +954,23 @@ impl Expr {
                     )))
                 }
             }
-            Self::IsIn(left, right) => {
-                let left_field = left.to_field(schema)?;
-
-                let first_right_field = right
-                    .first()
-                    .expect("Should have at least 1 child")
-                    .to_field(schema)?;
-                let all_same_type = right.iter().all(|expr| {
-                    let field = expr.to_field(schema).unwrap();
-                    // allow nulls to be compared with anything
-                    if field.dtype == DataType::Null || first_right_field.dtype == DataType::Null {
-                        return true;
-                    }
-                    field.dtype == first_right_field.dtype
-                });
-                if !all_same_type {
-                    return Err(DaftError::TypeError(format!(
-                        "Expected all arguments to be of the same type, but received {first_right_field} and others",
-                    )));
-                }
-
-                let (result_type, _intermediate, _comp_type) =
-                    InferDataType::from(&left_field.dtype)
-                        .membership_op(&InferDataType::from(&first_right_field.dtype))?;
-                Ok(Field::new(left_field.name.as_str(), result_type))
+            Self::IsIn(expr, items) => {
+                // Use the expr's field name, and infer membership op type.
+                let list_dtype =
+                    infer_list_type(items, schema)?.expect("Should have at least 1 child");
+                let expr_field = expr.to_field(schema)?;
+                let expr_type = &expr_field.dtype;
+                let field_name = &expr_field.name;
+                let field_type = InferDataType::from(expr_type)
+                    .membership_op(&(&list_dtype).into())?
+                    .0;
+                Ok(Field::new(field_name, field_type))
+            }
+            Self::List(items) => {
+                // Use "list" as the field name, and infer list type from items.
+                let field_name = "list";
+                let field_type = infer_list_type(items, schema)?.unwrap_or(DataType::Null);
+                Ok(Field::new(field_name, field_type))
             }
             Self::Between(value, lower, upper) => {
                 let value_field = value.to_field(schema)?;
@@ -1111,6 +1115,7 @@ impl Expr {
             Self::IsIn(expr, ..) => expr.name(),
             Self::Between(expr, ..) => expr.name(),
             Self::Literal(..) => "literal",
+            Self::List(..) => "list",
             Self::Function { func, inputs } => match func {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
                 _ => inputs.first().unwrap().name(),
@@ -1199,6 +1204,7 @@ impl Expr {
                 | Expr::Agg(..)
                 | Expr::Cast(..)
                 | Expr::IsIn(..)
+                | Expr::List(..)
                 | Expr::Between(..)
                 | Expr::Function { .. }
                 | Expr::FillNull(..)
@@ -1440,6 +1446,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         // Everything else doesn't filter
         Expr::Subquery(_) => 1.0,
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
+        Expr::List(_) => 1.0,
     };
 
     // Lower bound to 1% to prevent overly selective estimate
@@ -1454,50 +1461,19 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
     Ok(Arc::new(Schema::new(fields)?))
 }
 
-fn expr_is_in_display_without_formatter(
-    expr: &ExprRef,
-    inputs: &[ExprRef],
-) -> std::result::Result<String, std::fmt::Error> {
-    let mut f = String::default();
-    write!(&mut f, "{expr} IN (")?;
-    for (i, input) in inputs.iter().enumerate() {
-        if i != 0 {
-            write!(&mut f, ", ")?;
-        }
-        write!(&mut f, "{input}")?;
+/// Asserts an expr slice is homogeneous and returns the type, or None if empty.
+fn infer_list_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Option<DataType>> {
+    if exprs.is_empty() {
+        return Ok(None);
     }
-    write!(&mut f, ")")?;
-    Ok(f)
-}
-
-fn expr_binary_op_display_without_formatter(
-    op: &Operator,
-    left: &ExprRef,
-    right: &ExprRef,
-) -> std::result::Result<String, std::fmt::Error> {
-    let mut f = String::default();
-    let write_out_expr = |f: &mut String, input: &Expr| match input {
-        Expr::Alias(e, _) => write!(f, "{e}"),
-        Expr::BinaryOp { .. } => write!(f, "[{input}]"),
-        _ => write!(f, "{input}"),
-    };
-    write_out_expr(&mut f, left)?;
-    write!(&mut f, " {op} ")?;
-    write_out_expr(&mut f, right)?;
-    Ok(f)
-}
-
-fn expr_list_display_without_formatter(
-    items: &[ExprRef],
-) -> std::result::Result<String, std::fmt::Error> {
-    let mut f = String::default();
-    write!(&mut f, "list(",)?;
-    for (i, input) in items.iter().enumerate() {
-        if i != 0 {
-            write!(&mut f, ", ")?;
+    let dtype = exprs.first().unwrap().get_type(schema)?;
+    for expr in exprs.iter().skip(1) {
+        let other_dtype = expr.get_type(schema)?;
+        if other_dtype != dtype {
+            return Err(DaftError::TypeError(format!(
+                "Expected all list elements to have type {dtype}, but found element with type {other_dtype}"
+            )));
         }
-        write!(&mut f, "{input}")?;
     }
-    write!(&mut f, ")")?;
-    Ok(f)
+    Ok(Some(dtype))
 }
