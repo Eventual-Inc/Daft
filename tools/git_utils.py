@@ -62,36 +62,36 @@ def get_latest_run(workflow: Workflow) -> WorkflowRun:
     raise RuntimeError("Unable to list all workflow invocations")
 
 
-def get_name_and_commit_hash(branch_name: Optional[str]) -> tuple[str, str]:
-    branch_name = branch_name or "HEAD"
+def get_name_and_commit_hash(local_branch_name: Optional[str]) -> tuple[str, str]:
+    local_branch_name = local_branch_name or "HEAD"
     has_upstream = False
 
     try:
         # Check if the branch has a remote tracking branch.
         upstream_branch = (
             subprocess.check_output(
-                ["git", "rev-parse", "--abbrev-ref", f"{branch_name}@{{upstream}}"], stderr=subprocess.STDOUT
+                ["git", "rev-parse", "--abbrev-ref", f"{local_branch_name}@{{upstream}}"], stderr=subprocess.STDOUT
             )
             .strip()
             .decode("utf-8")
         )
         has_upstream = True
-        branch_name = upstream_branch
+        local_branch_name = upstream_branch
     except subprocess.CalledProcessError:
         pass
 
-    name = (
-        subprocess.check_output(["git", "rev-parse", "--abbrev-ref", branch_name], stderr=subprocess.STDOUT)
+    remote_branch_name = (
+        subprocess.check_output(["git", "rev-parse", "--abbrev-ref", local_branch_name], stderr=subprocess.STDOUT)
         .strip()
         .decode("utf-8")
     )
     if has_upstream:
-        # Strip the upstream name from the branch.
-        name = name.split("/", 1)[1]
+        # Strip the upstream name from the branch to get the remote branch name.
+        remote_branch_name = remote_branch_name.split("/", 1)[1]
     commit_hash = (
-        subprocess.check_output(["git", "rev-parse", branch_name], stderr=subprocess.STDOUT).strip().decode("utf-8")
+        subprocess.check_output(["git", "rev-parse", local_branch_name], stderr=subprocess.STDOUT).strip().decode("utf-8")
     )
-    return name, commit_hash
+    return remote_branch_name, commit_hash
 
 
 def parse_questions(questions: Optional[str], total_number_of_questions: int) -> list[int]:
