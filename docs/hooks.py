@@ -25,4 +25,4 @@ def make_api_docs(*args, **kwargs):
     ], check=True, env=env)
 
     # Copy built docs to mkdocs directory
-    shutil.copytree("docs/sphinx/_build/html", "docs/mkdocs/api_docs", dirs_exist_ok=True)
+    shutil.copytree("docs/sphinx/_build", "docs/mkdocs/api_docs", dirs_exist_ok=True)

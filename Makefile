@@ -80,7 +80,7 @@ docs: .venv sphinx-docs ## Build both MkDocs and Sphinx documentation
 
 .PHONY: sphinx-docs
 sphinx-docs: .venv ## Build Sphinx API documentation
-	uv run --with-requirements requirements-docs.txt sphinx-build -b html "docs/sphinx/source" "docs/sphinx/_build/html"
+	uv run --with-requirements requirements-docs.txt sphinx-build -b html "docs/sphinx/source" "docs/sphinx/_build"
 
 .PHONY: clean
 clean:
