@@ -346,8 +346,7 @@ impl PushDownProjection {
             | LogicalPlan::Limit(..)
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
-            | LogicalPlan::Explode(..)
-            | LogicalPlan::Unpivot(..) => {
+            | LogicalPlan::Explode(..) => {
                 // Get required columns from projection and upstream.
                 let combined_dependencies = plan
                     .required_columns()
@@ -360,6 +359,7 @@ impl PushDownProjection {
                 // Skip optimization if no columns would be pruned.
                 let grand_upstream_plan = &upstream_plan.arc_children()[0];
                 let grand_upstream_columns = grand_upstream_plan.schema().names();
+
                 if grand_upstream_columns.len() == combined_dependencies.len() {
                     return Ok(Transformed::no(plan));
                 }
@@ -373,6 +373,43 @@ impl PushDownProjection {
                     Project::try_new(grand_upstream_plan.clone(), pushdown_column_exprs)?.into()
                 };
 
+                let new_upstream = upstream_plan.with_new_children(&[new_subprojection.into()]);
+                let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
+                // Retry optimization now that the upstream node is different.
+                let new_plan = self
+                    .try_optimize_node(new_plan.clone())?
+                    .or(Transformed::yes(new_plan));
+                Ok(new_plan)
+            }
+            LogicalPlan::Unpivot(unpivot) => {
+                let combined_dependencies = plan
+                    .required_columns()
+                    .iter()
+                    .flatten()
+                    .chain(upstream_plan.required_columns().iter().flatten())
+                    .cloned()
+                    .collect::<IndexSet<_>>();
+
+                let grand_upstream_plan = &upstream_plan.arc_children()[0];
+                let grand_upstream_columns = grand_upstream_plan.schema().names();
+                let input_columns = unpivot
+                    .ids
+                    .iter()
+                    .chain(unpivot.values.iter())
+                    .map(|e| e.name().to_string())
+                    .collect::<IndexSet<_>>();
+
+                let can_be_pushed_down = input_columns
+                    .intersection(&combined_dependencies)
+                    .map(|e| col(e.as_str()))
+                    .collect::<Vec<_>>();
+
+                if grand_upstream_columns.len() == can_be_pushed_down.len() {
+                    return Ok(Transformed::no(plan));
+                }
+
+                let new_subprojection: LogicalPlan =
+                    Project::try_new(grand_upstream_plan.clone(), can_be_pushed_down)?.into();
                 let new_upstream = upstream_plan.with_new_children(&[new_subprojection.into()]);
                 let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
                 // Retry optimization now that the upstream node is different.
@@ -680,6 +717,7 @@ mod tests {
     };
 
     use crate::{
+        ops::{Project, Unpivot},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownProjection,
@@ -1073,5 +1111,63 @@ mod tests {
 
         assert_optimized_plan_eq(project, expected_scan)?;
         Ok(())
+    }
+
+    #[test]
+    fn test_projection_pushdown_with_unpivot() {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("year", DataType::Int64),
+            Field::new("id", DataType::Int64),
+            Field::new("Jan", DataType::Int64),
+            Field::new("Feb", DataType::Int64),
+        ]);
+        let scan_node = dummy_scan_node(scan_op.clone()).build();
+
+        let plan = LogicalPlan::Unpivot(
+            Unpivot::try_new(
+                scan_node.clone(),
+                vec![col("year")],
+                vec![col("Jan"), col("Feb")],
+                "month".to_string(),
+                "inventory".to_string(),
+            )
+            .unwrap(),
+        );
+
+        let plan = LogicalPlan::Project(
+            Project::try_new(plan.into(), vec![col("inventory").alias("year2")]).unwrap(),
+        )
+        .into();
+        let expected_scan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns {
+                limit: None,
+                partition_filters: None,
+                columns: Some(Arc::new(vec![
+                    "year".to_string(),
+                    "Jan".to_string(),
+                    "Feb".to_string(),
+                ])),
+                filters: None,
+            },
+        )
+        .build();
+
+        let expected = LogicalPlan::Unpivot(
+            Unpivot::try_new(
+                expected_scan,
+                vec![col("year")],
+                vec![col("Jan"), col("Feb")],
+                "month".to_string(),
+                "inventory".to_string(),
+            )
+            .unwrap(),
+        );
+
+        let expected = LogicalPlan::Project(
+            Project::try_new(expected.into(), vec![col("inventory").alias("year2")]).unwrap(),
+        )
+        .into();
+        assert_optimized_plan_eq(plan, expected).unwrap();
     }
 }

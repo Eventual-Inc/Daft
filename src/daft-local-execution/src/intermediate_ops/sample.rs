@@ -58,7 +58,18 @@ impl IntermediateOperator for SampleOperator {
             .into()
     }
 
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Sample: {}", self.params.fraction));
+        res.push(format!(
+            "With replacement = {}",
+            self.params.with_replacement
+        ));
+        res.push(format!("Seed = {:?}", self.params.seed));
+        res
+    }
+
     fn name(&self) -> &'static str {
-        "SampleOperator"
+        "Sample"
     }
 }

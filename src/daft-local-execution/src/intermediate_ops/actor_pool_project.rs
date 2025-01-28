@@ -1,16 +1,17 @@
-use std::sync::Arc;
+use std::{sync::Arc, vec};
 
 use common_error::DaftResult;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
     count_actor_pool_udfs,
-    functions::python::{get_batch_size, get_concurrency, get_resource_request},
+    functions::python::{get_batch_size, get_concurrency, get_resource_request, get_udf_names},
     ExprRef,
 };
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
+use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use tracing::{instrument, Span};
@@ -182,6 +183,30 @@ impl IntermediateOperator for ActorPoolProjectOperator {
 
     fn name(&self) -> &'static str {
         "ActorPoolProject"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("ActorPoolProject:".to_string());
+        res.push(format!(
+            "Projection = [{}]",
+            self.projection.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!(
+            "UDFs = [{}]",
+            self.projection.iter().flat_map(get_udf_names).join(", ")
+        ));
+        res.push(format!("Concurrency = {}", self.concurrency));
+        if let Some(resource_request) = get_resource_request(&self.projection) {
+            let multiline_display = resource_request.multiline_display();
+            res.push(format!(
+                "Resource request = {{ {} }}",
+                multiline_display.join(", ")
+            ));
+        } else {
+            res.push("Resource request = None".to_string());
+        }
+        res
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {

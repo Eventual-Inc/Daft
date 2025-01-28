@@ -1,6 +1,5 @@
 use arrow2::io::ipc::write::StreamWriter;
 use daft_table::Table;
-use eyre::Context;
 use spark_connect::{
     analyze_plan_response,
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
@@ -8,7 +7,10 @@ use spark_connect::{
 };
 use uuid::Uuid;
 
-use crate::session::Session;
+use crate::{
+    error::{ConnectResult, Context},
+    session::Session,
+};
 
 /// A utility for constructing responses to send back to the client,
 /// It's generic over the type of response it can build, which is determined by the type parameter `T`
@@ -63,7 +65,7 @@ impl ResponseBuilder<ExecutePlanResponse> {
     }
 
     /// Send an arrow batch response to the client
-    pub fn arrow_batch_response(&self, table: &Table) -> eyre::Result<ExecutePlanResponse> {
+    pub fn arrow_batch_response(&self, table: &Table) -> ConnectResult<ExecutePlanResponse> {
         let mut data = Vec::new();
 
         let mut writer = StreamWriter::new(
@@ -73,14 +75,11 @@ impl ResponseBuilder<ExecutePlanResponse> {
 
         let row_count = table.num_rows();
 
-        let schema = table
-            .schema
-            .to_arrow()
-            .wrap_err("Failed to convert Daft schema to Arrow schema")?;
+        let schema = table.schema.to_arrow()?;
 
         writer
             .start(&schema, None)
-            .wrap_err("Failed to start Arrow stream writer with schema")?;
+            .wrap_err("Failed to start Arrow stream writer")?;
 
         let arrays = table.get_inner_arrow_arrays().collect();
         let chunk = arrow2::chunk::Chunk::new(arrays);

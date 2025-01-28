@@ -7,7 +7,6 @@ use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_ray_execution::RayEngine;
 use daft_table::Table;
-use eyre::{bail, Context};
 use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
@@ -23,17 +22,22 @@ use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 use tracing::debug;
 
 use crate::{
-    not_yet_implemented, response_builder::ResponseBuilder, session::Session,
-    spark_analyzer::SparkAnalyzer, util::FromOptionalField, ExecuteStream, Runner,
+    error::{ConnectError, ConnectResult, Context},
+    invalid_argument_err, not_yet_implemented,
+    response_builder::ResponseBuilder,
+    session::Session,
+    spark_analyzer::SparkAnalyzer,
+    util::FromOptionalField,
+    ExecuteStream, Runner,
 };
 
 impl Session {
-    pub fn get_runner(&self) -> eyre::Result<Runner> {
+    pub fn get_runner(&self) -> ConnectResult<Runner> {
         let runner = match self.config_values().get("daft.runner") {
             Some(runner) => match runner.as_str() {
                 "ray" => Runner::Ray,
                 "native" => Runner::Native,
-                _ => bail!("Invalid runner: {}", runner),
+                _ => invalid_argument_err!("Invalid runner: {}", runner),
             },
             None => Runner::Native,
         };
@@ -43,7 +47,7 @@ impl Session {
     pub async fn run_query(
         &self,
         lp: LogicalPlanBuilder,
-    ) -> eyre::Result<BoxStream<DaftResult<Arc<MicroPartition>>>> {
+    ) -> ConnectResult<BoxStream<DaftResult<Arc<MicroPartition>>>> {
         match self.get_runner()? {
             Runner::Ray => {
                 let runner_address = self.config_values().get("daft.runner.ray.address");
@@ -75,12 +79,12 @@ impl Session {
         &self,
         command: Relation,
         res: ResponseBuilder<ExecutePlanResponse>,
-    ) -> Result<ExecuteStream, Status> {
+    ) -> ConnectResult<ExecuteStream> {
         use futures::{StreamExt, TryStreamExt};
 
         let result_complete = res.result_complete_response();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
+        let (tx, rx) = tokio::sync::mpsc::channel::<ConnectResult<ExecutePlanResponse>>(1);
 
         let this = self.clone();
         self.compute_runtime.runtime.spawn(async move {
@@ -123,11 +127,7 @@ impl Session {
         let stream = ReceiverStream::new(rx);
 
         let stream = stream
-            .map_err(|e| {
-                Status::internal(
-                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
-                )
-            })
+            .map_err(|e| e.into())
             .chain(stream::once(ready(Ok(result_complete))));
 
         Ok(Box::pin(stream))
@@ -137,20 +137,20 @@ impl Session {
         &self,
         operation: WriteOperation,
         res: ResponseBuilder<ExecutePlanResponse>,
-    ) -> Result<ExecuteStream, Status> {
-        fn check_write_operation(write_op: &WriteOperation) -> Result<(), Status> {
+    ) -> ConnectResult<ExecuteStream> {
+        fn check_write_operation(write_op: &WriteOperation) -> ConnectResult<()> {
             if !write_op.sort_column_names.is_empty() {
-                return not_yet_implemented!("Sort with column names");
+                not_yet_implemented!("Sort with column names");
             }
             if !write_op.partitioning_columns.is_empty() {
-                return not_yet_implemented!("Partitioning with column names");
+                not_yet_implemented!("Partitioning with column names");
             }
             if !write_op.clustering_columns.is_empty() {
-                return not_yet_implemented!("Clustering with column names");
+                not_yet_implemented!("Clustering with column names");
             }
 
             if let Some(bucket_by) = &write_op.bucket_by {
-                return not_yet_implemented!("Bucketing by: {:?}", bucket_by);
+                not_yet_implemented!("Bucketing by: {:?}", bucket_by);
             }
 
             if !write_op.options.is_empty() {
@@ -173,7 +173,7 @@ impl Session {
 
         let finished = res.result_complete_response();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
+        let (tx, rx) = tokio::sync::mpsc::channel::<ConnectResult<ExecutePlanResponse>>(1);
 
         let this = self.clone();
 
@@ -193,14 +193,12 @@ impl Session {
 
                 let file_format: FileFormat = source.parse()?;
 
-                let Some(save_type) = save_type else {
-                    bail!("Save type is required");
-                };
+                let save_type = save_type.required("save_type")?;
 
                 let path = match save_type {
                     SaveType::Path(path) => path,
                     SaveType::Table(_) => {
-                        return not_yet_implemented!("write to table").map_err(|e| e.into())
+                        not_yet_implemented!("write to table")
                     }
                 };
 
@@ -252,7 +250,7 @@ impl Session {
         } = create_dataframe;
 
         if is_global {
-            return not_yet_implemented!("Global dataframe view");
+            not_yet_implemented!("Global dataframe view");
         }
 
         let input = input.required("input")?;
@@ -295,22 +293,22 @@ impl Session {
             input,
         }: SqlCommand,
         res: ResponseBuilder<ExecutePlanResponse>,
-    ) -> Result<ExecuteStream, Status> {
+    ) -> ConnectResult<ExecuteStream> {
         if !args.is_empty() {
-            return not_yet_implemented!("Named arguments");
+            not_yet_implemented!("Named arguments");
         }
         if !pos_args.is_empty() {
-            return not_yet_implemented!("Positional arguments");
+            not_yet_implemented!("Positional arguments");
         }
         if !named_arguments.is_empty() {
-            return not_yet_implemented!("Named arguments");
+            not_yet_implemented!("Named arguments");
         }
         if !pos_arguments.is_empty() {
-            return not_yet_implemented!("Positional arguments");
+            not_yet_implemented!("Positional arguments");
         }
 
         if input.is_some() {
-            return not_yet_implemented!("Input");
+            not_yet_implemented!("Input");
         }
 
         let catalog = self.catalog.read().unwrap();
@@ -318,21 +316,14 @@ impl Session {
 
         let mut planner = daft_sql::SQLPlanner::new(catalog);
 
-        let plan = planner
-            .plan_sql(&sql)
-            .wrap_err("Error planning SQL")
-            .map_err(|e| {
-                Status::internal(
-                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
-                )
-            })?;
+        let plan = planner.plan_sql(&sql).wrap_err("Error planning SQL")?;
 
         let plan = LogicalPlanBuilder::from(plan);
 
         // TODO: code duplication
         let result_complete = res.result_complete_response();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
+        let (tx, rx) = tokio::sync::mpsc::channel::<ConnectResult<ExecutePlanResponse>>(1);
 
         let this = self.clone();
 
@@ -359,11 +350,7 @@ impl Session {
         let stream = ReceiverStream::new(rx);
 
         let stream = stream
-            .map_err(|e| {
-                Status::internal(
-                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
-                )
-            })
+            .map_err(|e| Status::internal(e.to_string()))
             .chain(stream::once(ready(Ok(result_complete))));
 
         Ok(Box::pin(stream))
@@ -373,7 +360,7 @@ impl Session {
         &self,
         show_string: ShowString,
         response_builder: ResponseBuilder<ExecutePlanResponse>,
-    ) -> eyre::Result<ExecutePlanResponse> {
+    ) -> ConnectResult<ExecutePlanResponse> {
         let translator = SparkAnalyzer::new(self);
 
         let ShowString {
@@ -384,7 +371,7 @@ impl Session {
         } = show_string;
 
         if vertical {
-            bail!("Vertical show string is not supported");
+            not_yet_implemented!("Vertical show string is not supported");
         }
 
         let input = input.required("input")?;
@@ -397,7 +384,7 @@ impl Session {
         let single_batch = results
             .into_iter()
             .next()
-            .ok_or_else(|| eyre::eyre!("No results"))?;
+            .ok_or_else(|| ConnectError::internal("no results"))?;
 
         let tbls = single_batch.get_tables()?;
         let tbl = Table::concat(&tbls)?;

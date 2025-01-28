@@ -36,6 +36,7 @@ from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, check_column
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
+from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.filesystem import overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
@@ -208,10 +209,15 @@ class DataFrame:
             print_to_file("\n== Optimized Logical Plan ==\n")
             builder = builder.optimize()
             print_to_file(builder.pretty_print(simple))
+            print_to_file("\n== Physical Plan ==\n")
             if get_context().get_or_create_runner().name != "native":
-                print_to_file("\n== Physical Plan ==\n")
                 physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
                 print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
+            else:
+                native_executor = NativeExecutor()
+                print_to_file(
+                    native_executor.pretty_print(builder, get_context().daft_execution_config, simple, format=format)
+                )
         else:
             print_to_file(
                 "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.",
@@ -226,7 +232,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def schema(self) -> Schema:
-        """Returns the Schema of the DataFrame, which provides information about each column.
+        """Returns the Schema of the DataFrame, which provides information about each column, as a Python object.
 
         Returns:
             Schema: schema of the DataFrame
@@ -565,6 +571,22 @@ class DataFrame:
         # build preview
         df._populate_preview()
         return df
+
+    @classmethod
+    def _from_schema(cls, schema: Schema) -> "DataFrame":
+        """Creates a Daft DataFrom from a Schema.
+
+        Args:
+            schema: The Schema to convert into a DataFrame.
+
+        Returns:
+            DataFrame: Daft DataFrame with "column_name" and "type" fields.
+        """
+        pydict: Dict = {"column_name": [], "type": []}
+        for field in schema:
+            pydict["column_name"].append(field.name)
+            pydict["type"].append(str(field.dtype))
+        return DataFrame._from_pydict(pydict)
 
     ###
     # Write methods
@@ -1345,6 +1367,32 @@ class DataFrame:
         """
         assert len(columns) > 0
         builder = self._builder.select(self.__column_input_to_expression(columns))
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def describe(self) -> "DataFrame":
+        """Returns the Schema of the DataFrame, which provides information about each column, as a new DataFrame.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+            >>> df.describe().show()
+            ╭─────────────┬───────╮
+            │ column_name ┆ type  │
+            │ ---         ┆ ---   │
+            │ Utf8        ┆ Utf8  │
+            ╞═════════════╪═══════╡
+            │ a           ┆ Int64 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ b           ┆ Utf8  │
+            ╰─────────────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Returns:
+            DataFrame: A dataframe where each row is a column name and its corresponding type.
+        """
+        builder = self.__builder.describe()
         return DataFrame(builder)
 
     @DataframePublicAPI

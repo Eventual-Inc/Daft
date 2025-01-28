@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
+use common_display::{
+    ascii::fmt_tree_gitstyle,
+    mermaid::{MermaidDisplayVisitor, SubgraphOptions},
+    tree::TreeDisplay,
+    DisplayLevel,
+};
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use daft_core::{
@@ -50,7 +55,7 @@ use crate::{
         streaming_sink::StreamingSinkNode,
         write::{WriteFormat, WriteSink},
     },
-    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
+    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
     state_bridge::BroadcastStateBridge,
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
@@ -67,16 +72,28 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }
 
-pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
+pub fn viz_pipeline_mermaid(
+    root: &dyn PipelineNode,
+    display_type: DisplayLevel,
+    bottom_up: bool,
+    subgraph_options: Option<SubgraphOptions>,
+) -> String {
     let mut output = String::new();
-    let mut visitor = MermaidDisplayVisitor::new(
-        &mut output,
-        common_display::DisplayLevel::Default,
-        true,
-        Default::default(),
-    );
+    let mut visitor =
+        MermaidDisplayVisitor::new(&mut output, display_type, bottom_up, subgraph_options);
     visitor.fmt(root.as_tree_display()).unwrap();
     output
+}
+
+pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {
+    let mut s = String::new();
+    let level = if simple {
+        DisplayLevel::Compact
+    } else {
+        DisplayLevel::Default
+    };
+    fmt_tree_gitstyle(root.as_tree_display(), 0, &mut s, level).unwrap();
+    s
 }
 
 pub fn physical_plan_to_pipeline(
@@ -88,15 +105,18 @@ pub fn physical_plan_to_pipeline(
 
     use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
-        LocalPhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
+        LocalPhysicalPlan::EmptyScan(EmptyScan {
+            schema,
+            stats_state,
+        }) => {
             let source = EmptyScanSource::new(schema.clone());
-            source.arced().into()
+            SourceNode::new(source.arced(), stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             scan_tasks,
             pushdowns,
             schema,
-            ..
+            stats_state,
         }) => {
             let scan_tasks = scan_tasks
                 .iter()
@@ -105,75 +125,106 @@ pub fn physical_plan_to_pipeline(
 
             let scan_task_source =
                 ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
-            scan_task_source.arced().into()
+            SourceNode::new(scan_task_source.arced(), stats_state.clone()).boxed()
         }
-        LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
+        LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, stats_state }) => {
             let cache_key: Arc<str> = info.cache_key.clone().into();
 
-            let materialized_pset = psets
-                .get_partition_set(&cache_key)
-                .unwrap_or_else(|| panic!("Cache key not found: {:?}", info.cache_key));
-
-            InMemorySource::new(materialized_pset, info.source_schema.clone())
-                .arced()
-                .into()
+            let materialized_pset = psets.get_partition_set(&cache_key);
+            let in_memory_source = InMemorySource::new(
+                materialized_pset,
+                info.source_schema.clone(),
+                info.size_bytes,
+            )
+            .arced();
+            SourceNode::new(in_memory_source, stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::Project(Project {
-            input, projection, ..
+            input,
+            projection,
+            stats_state,
+            ..
         }) => {
             let proj_op = ProjectOperator::new(projection.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(proj_op), vec![child_node], stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::ActorPoolProject(ActorPoolProject {
-            input, projection, ..
+            input,
+            projection,
+            stats_state,
+            ..
         }) => {
             let proj_op = ActorPoolProjectOperator::new(projection.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(proj_op), vec![child_node], stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::Sample(Sample {
             input,
             fraction,
             with_replacement,
             seed,
+            stats_state,
             ..
         }) => {
             let sample_op = SampleOperator::new(*fraction, *with_replacement, *seed);
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            IntermediateNode::new(Arc::new(sample_op), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(sample_op), vec![child_node], stats_state.clone())
+                .boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
-            input, predicate, ..
+            input,
+            predicate,
+            stats_state,
+            ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(filter_op), vec![child_node], stats_state.clone())
+                .boxed()
         }
         LocalPhysicalPlan::Explode(Explode {
-            input, to_explode, ..
+            input,
+            to_explode,
+            stats_state,
+            ..
         }) => {
             let explode_op = ExplodeOperator::new(to_explode.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            IntermediateNode::new(Arc::new(explode_op), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(explode_op), vec![child_node], stats_state.clone())
+                .boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
-            input, num_rows, ..
+            input,
+            num_rows,
+            stats_state,
+            ..
         }) => {
             let sink = LimitSink::new(*num_rows as usize);
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            StreamingSinkNode::new(Arc::new(sink), vec![child_node]).boxed()
+            StreamingSinkNode::new(Arc::new(sink), vec![child_node], stats_state.clone()).boxed()
         }
-        LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
+        LocalPhysicalPlan::Concat(Concat {
+            input,
+            other,
+            stats_state,
+            ..
+        }) => {
             let left_child = physical_plan_to_pipeline(input, psets, cfg)?;
             let right_child = physical_plan_to_pipeline(other, psets, cfg)?;
             let sink = ConcatSink {};
-            StreamingSinkNode::new(Arc::new(sink), vec![left_child, right_child]).boxed()
+            StreamingSinkNode::new(
+                Arc::new(sink),
+                vec![left_child, right_child],
+                stats_state.clone(),
+            )
+            .boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
             schema,
+            stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
@@ -182,13 +233,14 @@ pub fn physical_plan_to_pipeline(
                     plan_name: physical_plan.name(),
                 }
             })?;
-            BlockingSinkNode::new(Arc::new(agg_sink), child_node).boxed()
+            BlockingSinkNode::new(Arc::new(agg_sink), child_node, stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
             input,
             aggregations,
             group_by,
             schema,
+            stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
@@ -196,7 +248,7 @@ pub fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
-            BlockingSinkNode::new(Arc::new(agg_sink), child_node).boxed()
+            BlockingSinkNode::new(Arc::new(agg_sink), child_node, stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::Unpivot(Unpivot {
             input,
@@ -204,6 +256,7 @@ pub fn physical_plan_to_pipeline(
             values,
             variable_name,
             value_name,
+            stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
@@ -213,7 +266,8 @@ pub fn physical_plan_to_pipeline(
                 variable_name.clone(),
                 value_name.clone(),
             );
-            IntermediateNode::new(Arc::new(unpivot_op), vec![child_node]).boxed()
+            IntermediateNode::new(Arc::new(unpivot_op), vec![child_node], stats_state.clone())
+                .boxed()
         }
         LocalPhysicalPlan::Pivot(Pivot {
             input,
@@ -222,6 +276,7 @@ pub fn physical_plan_to_pipeline(
             value_column,
             aggregation,
             names,
+            stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
@@ -232,30 +287,36 @@ pub fn physical_plan_to_pipeline(
                 aggregation.clone(),
                 names.clone(),
             );
-            BlockingSinkNode::new(Arc::new(pivot_sink), child_node).boxed()
+            BlockingSinkNode::new(Arc::new(pivot_sink), child_node, stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
             sort_by,
             descending,
             nulls_first,
+            stats_state,
             ..
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            BlockingSinkNode::new(Arc::new(sort_sink), child_node).boxed()
+            BlockingSinkNode::new(Arc::new(sort_sink), child_node, stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
             input,
             column_name,
             schema,
+            stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let monotonically_increasing_id_sink =
                 MonotonicallyIncreasingIdSink::new(column_name.clone(), schema.clone());
-            StreamingSinkNode::new(Arc::new(monotonically_increasing_id_sink), vec![child_node])
-                .boxed()
+            StreamingSinkNode::new(
+                Arc::new(monotonically_increasing_id_sink),
+                vec![child_node],
+                stats_state.clone(),
+            )
+            .boxed()
         }
         LocalPhysicalPlan::HashJoin(HashJoin {
             left,
@@ -265,6 +326,7 @@ pub fn physical_plan_to_pipeline(
             null_equals_null,
             join_type,
             schema,
+            stats_state,
             ..
         }) => {
             let left_schema = left.schema();
@@ -411,8 +473,12 @@ pub fn physical_plan_to_pipeline(
                     probe_state_bridge.clone(),
                 )?;
                 let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
-                let build_node =
-                    BlockingSinkNode::new(Arc::new(build_sink), build_child_node).boxed();
+                let build_node = BlockingSinkNode::new(
+                    Arc::new(build_sink),
+                    build_child_node,
+                    build_child.get_stats_state().clone(),
+                )
+                .boxed();
 
                 let probe_child_node = physical_plan_to_pipeline(probe_child, psets, cfg)?;
 
@@ -426,6 +492,7 @@ pub fn physical_plan_to_pipeline(
                             build_on_left,
                         )),
                         vec![build_node, probe_child_node],
+                        stats_state.clone(),
                     )
                     .boxed()),
                     JoinType::Inner => Ok(IntermediateNode::new(
@@ -439,6 +506,7 @@ pub fn physical_plan_to_pipeline(
                             probe_state_bridge,
                         )),
                         vec![build_node, probe_child_node],
+                        stats_state.clone(),
                     )
                     .boxed()),
                     JoinType::Left | JoinType::Right | JoinType::Outer => {
@@ -454,6 +522,7 @@ pub fn physical_plan_to_pipeline(
                                 probe_state_bridge,
                             )),
                             vec![build_node, probe_child_node],
+                            stats_state.clone(),
                         )
                         .boxed())
                     }
@@ -467,6 +536,7 @@ pub fn physical_plan_to_pipeline(
             left,
             right,
             schema,
+            stats_state,
             ..
         }) => {
             let left_stats_state = left.get_stats_state();
@@ -505,6 +575,7 @@ pub fn physical_plan_to_pipeline(
             let collect_node = BlockingSinkNode::new(
                 Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
                 collect_child_node,
+                collect_child.get_stats_state().clone(),
             )
             .boxed();
 
@@ -515,6 +586,7 @@ pub fn physical_plan_to_pipeline(
                     state_bridge,
                 )),
                 vec![collect_node, stream_child_node],
+                stats_state.clone(),
             )
             .boxed()
         }
@@ -522,6 +594,7 @@ pub fn physical_plan_to_pipeline(
             input,
             file_info,
             file_schema,
+            stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
@@ -539,13 +612,14 @@ pub fn physical_plan_to_pipeline(
                 file_info.partition_cols.clone(),
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::CatalogWrite(daft_local_plan::CatalogWrite {
             input,
             catalog_type,
             file_schema,
+            stats_state,
             ..
         }) => {
             use daft_logical_plan::CatalogType;
@@ -585,13 +659,14 @@ pub fn physical_plan_to_pipeline(
                 partition_by,
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::LanceWrite(daft_local_plan::LanceWrite {
             input,
             lance_info,
             file_schema,
+            stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
@@ -602,7 +677,7 @@ pub fn physical_plan_to_pipeline(
                 None,
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
         }
     };
 

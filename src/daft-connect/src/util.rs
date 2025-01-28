@@ -1,24 +1,28 @@
 use std::net::ToSocketAddrs;
 
-use tonic::Status;
+use snafu::whatever;
 
-pub fn parse_spark_connect_address(addr: &str) -> eyre::Result<std::net::SocketAddr> {
+use crate::error::{ConnectError, ConnectResult};
+
+pub fn parse_spark_connect_address(addr: &str) -> ConnectResult<std::net::SocketAddr> {
     // Check if address starts with "sc://"
     if !addr.starts_with("sc://") {
-        return Err(eyre::eyre!("Address must start with 'sc://'"));
+        whatever!("Address must start with 'sc://'");
     }
 
     // Remove the "sc://" prefix
     let addr = addr.trim_start_matches("sc://");
 
     // Resolve the hostname using tokio's DNS resolver
-    let addrs = addr.to_socket_addrs()?;
+    let addrs = addr
+        .to_socket_addrs()
+        .map_err(|e| ConnectError::internal(e.to_string()))?;
 
     // Take the first resolved address
-    addrs
-        .into_iter()
-        .next()
-        .ok_or_else(|| eyre::eyre!("No addresses found for hostname"))
+    let Some(nxt) = addrs.into_iter().next() else {
+        whatever!("No addresses found for hostname")
+    };
+    Ok(nxt)
 }
 
 /// An extension trait that adds the method `required` to any Option.
@@ -26,13 +30,13 @@ pub fn parse_spark_connect_address(addr: &str) -> eyre::Result<std::net::SocketA
 pub trait FromOptionalField<T> {
     /// Converts an optional protobuf field to a different type, returning an
     /// error if None.
-    fn required(self, field: impl Into<String>) -> Result<T, Status>;
+    fn required(self, field: impl Into<String>) -> Result<T, ConnectError>;
 }
 
 impl<T> FromOptionalField<T> for Option<T> {
-    fn required(self, field: impl Into<String>) -> Result<T, Status> {
+    fn required(self, field: impl Into<String>) -> Result<T, ConnectError> {
         match self {
-            None => Err(Status::internal(format!(
+            None => Err(ConnectError::invalid_relation(format!(
                 "Required field '{}' is missing",
                 field.into()
             ))),
