@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_scan_info::{PhysicalScanInfo, ScanState};
+use common_scan_info::PhysicalScanInfo;
 use common_treenode::{DynTreeNode, Transformed, TreeNodeIterator};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
@@ -201,28 +201,21 @@ impl LogicalPlan {
                     physical_scan_info @ PhysicalScanInfo {
                         pushdowns,
                         source_schema,
-                        scan_state: ScanState::Operator(scan_operator),
                         ..
                     },
                 ) => {
-                    let schema_with_generated_fields = {
-                        if let Some(generated_fields) = scan_operator.0.generated_fields() {
-                            &Arc::new(source_schema.non_distinct_union(&generated_fields))
-                        } else {
-                            source_schema
-                        }
-                    };
+                    let schema = Arc::new(output_schema.non_distinct_union(source_schema));
 
                     let new_filter = pushdowns
                         .filters
                         .as_ref()
-                        .map(|filter| f(filter.clone(), schema_with_generated_fields))
+                        .map(|filter| f(filter.clone(), &schema))
                         .transpose()?;
 
                     let new_partition_filter = pushdowns
                         .partition_filters
                         .as_ref()
-                        .map(|filter| f(filter.clone(), schema_with_generated_fields))
+                        .map(|filter| f(filter.clone(), &schema))
                         .transpose()?;
 
                     if new_filter

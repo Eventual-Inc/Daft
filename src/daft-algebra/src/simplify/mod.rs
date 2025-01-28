@@ -94,7 +94,7 @@ mod test {
     // A == true ---> A
     #[case(col("bool").eq(lit(true)), col("bool"))]
     // null = A --> null
-    #[case(null_lit().eq(col("bool")), null_lit())]
+    #[case(null_lit().eq(col("bool")), null_lit().cast(&DataType::Boolean))]
     // A == false ---> !A
     #[case(col("bool").eq(lit(false)), col("bool").not())]
     // true != A  --> !A
@@ -131,7 +131,7 @@ mod test {
     // 1 * A --> A
     #[case(lit(1).mul(col("int")), col("int"))]
     // A / 1 --> A
-    #[case(col("int").div(lit(1)), col("int"))]
+    #[case(col("int").div(lit(1)), col("int").cast(&DataType::Float64))]
     // A + 0 --> A
     #[case(col("int").add(lit(0)), col("int"))]
     // A - 0 --> A
