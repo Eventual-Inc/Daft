@@ -9,16 +9,11 @@ use crate::boolean::{
 };
 
 fn is_true(expr: &Expr) -> bool {
-    match expr {
-        Expr::Literal(LiteralValue::Boolean(v)) => *v,
-        _ => false,
-    }
+    matches!(expr, Expr::Literal(LiteralValue::Boolean(true)))
 }
+
 fn is_false(expr: &Expr) -> bool {
-    match expr {
-        Expr::Literal(LiteralValue::Boolean(v)) => !*v,
-        _ => false,
-    }
+    matches!(expr, Expr::Literal(LiteralValue::Boolean(false)))
 }
 
 fn is_bool(expr: &Expr, schema: &SchemaRef) -> DaftResult<bool> {
