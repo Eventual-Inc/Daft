@@ -15,7 +15,8 @@ def make_api_docs(*args, **kwargs):
     env["PATH"] = f"{os.path.abspath('.venv/bin')}:{env['PATH']}"
 
     # Run sphinx-build directly instead of using make
-    sphinx_build = os.path.join(os.path.abspath('.venv/bin'), 'sphinx-build')
+    venv_path = os.getenv("READTHEDOCS_VIRTUALENV_PATH", ".venv")
+    sphinx_build = os.path.join(os.path.abspath(f'{venv_path}/bin'), 'sphinx-build')
     subprocess.run([
         sphinx_build,
         "-b", "html",
