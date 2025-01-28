@@ -60,71 +60,45 @@ pub fn to_dnf(expr: ExprRef) -> ExprRef {
 
     // apply distributive property recursively
     dm_expr
-        .transform_down(|e| {
-            Ok(match e.as_ref() {
-                Expr::BinaryOp {
+        .transform_up(|e| {
+            Ok(
+                if let Expr::BinaryOp {
                     op: Operator::And,
                     left,
                     right,
-                } => {
-                    if let Expr::BinaryOp {
-                        op: Operator::Or,
-                        left: right_left,
-                        right: right_right,
-                    } = right.as_ref()
-                    {
-                        // (x & (y | z)) -> ((x & y) | (x & z))
-                        Transformed::yes(Arc::new(Expr::BinaryOp {
-                            op: Operator::Or,
-                            left: Arc::new(Expr::BinaryOp {
-                                op: Operator::And,
-                                left: left.clone(),
-                                right: right_left.clone(),
-                            }),
-                            right: Arc::new(Expr::BinaryOp {
-                                op: Operator::And,
-                                left: left.clone(),
-                                right: right_right.clone(),
-                            }),
-                        }))
-                    } else if let Expr::BinaryOp {
-                        op: Operator::Or,
-                        left: left_left,
-                        right: left_right,
-                    } = left.as_ref()
-                    {
-                        // ((x | y) & z) -> ((x & z) | (y & z))
-                        Transformed::yes(Arc::new(Expr::BinaryOp {
-                            op: Operator::Or,
-                            left: Arc::new(Expr::BinaryOp {
-                                op: Operator::And,
-                                left: left_left.clone(),
-                                right: right.clone(),
-                            }),
-                            right: Arc::new(Expr::BinaryOp {
-                                op: Operator::And,
-                                left: left_right.clone(),
-                                right: right.clone(),
-                            }),
-                        }))
-                    } else {
+                } = e.as_ref()
+                {
+                    let left_exprs = split_disjunction(left);
+                    let right_exprs = split_disjunction(right);
+
+                    if left_exprs.len() == 1 && right_exprs.len() == 1 {
                         Transformed::no(e)
+                    } else {
+                        let conditions = left_exprs
+                            .iter()
+                            .flat_map(|l| right_exprs.iter().map(|r| l.clone().and(r.clone())));
+
+                        Transformed::yes(combine_disjunction(conditions).unwrap())
                     }
-                }
-                _ => Transformed::no(e),
-            })
+                } else {
+                    Transformed::no(e)
+                },
+            )
         })
         .unwrap()
         .data
 }
 
-/// Transform boolean expression by applying De Morgan's law + eliminate double negations recursively
+/// Push all negations into boolean atoms by applying De Morgan's law + eliminate double negations
 fn apply_de_morgans(expr: ExprRef) -> Transformed<ExprRef> {
-    expr.transform_down(|e| {
-        Ok(match e.as_ref() {
+    fn transform_fn(e: ExprRef) -> Transformed<ExprRef> {
+        match e.as_ref() {
             Expr::Not(ne) => match ne.as_ref() {
-                // !x -> x
-                Expr::Not(nne) => Transformed::yes(nne.clone()),
+                // !!x -> x
+                Expr::Not(nne) => {
+                    // we do our own recursion here to not skip triple negatives
+                    Transformed::yes(transform_fn(nne.clone()).data)
+                }
                 // !(x & y) -> ((!x) | (!y))
                 Expr::BinaryOp {
                     op: Operator::And,
@@ -148,9 +122,10 @@ fn apply_de_morgans(expr: ExprRef) -> Transformed<ExprRef> {
                 _ => Transformed::no(e),
             },
             _ => Transformed::no(e),
-        })
-    })
-    .unwrap()
+        }
+    }
+
+    expr.transform_down(|e| Ok(transform_fn(e))).unwrap()
 }
 
 #[cfg(test)]
@@ -215,8 +190,9 @@ mod tests {
             .and((col("c").and(col("d"))).or(col("e").and(col("f"))));
         let expected = col("a").and(col("b")).and(
             (col("c").or(col("e")))
+                .and(col("c").or(col("f")))
                 .and(col("d").or(col("e")))
-                .and(col("c").or(col("f")).and(col("d").or(col("f")))),
+                .and(col("d").or(col("f"))),
         );
 
         assert_eq!(expected, to_cnf(expr));
