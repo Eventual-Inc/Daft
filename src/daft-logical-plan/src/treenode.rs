@@ -243,7 +243,7 @@ impl LogicalPlan {
                         Transformed::no(self)
                     }
                 }
-                _ => todo!(),
+                _ => Transformed::no(self),
             },
             _ => Transformed::no(self),
         })
