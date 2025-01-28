@@ -104,7 +104,7 @@ impl Default for OptimizerBuilder {
                 // we want to simplify expressions first to make the rest of the rules easier
                 RuleBatch::new(
                     vec![Box::new(SimplifyExpressionsRule::new())],
-                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                    RuleExecutionStrategy::FixedPoint(None),
                 ),
                 // --- Filter out null join keys ---
                 // This rule should be run once, before any filter pushdown rules.
@@ -137,7 +137,7 @@ impl Default for OptimizerBuilder {
                 // --- Simplify expressions before scans are materialized ---
                 RuleBatch::new(
                     vec![Box::new(SimplifyExpressionsRule::new())],
-                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                    RuleExecutionStrategy::FixedPoint(None),
                 ),
                 // --- Materialize scan nodes ---
                 RuleBatch::new(
@@ -171,7 +171,7 @@ impl OptimizerBuilder {
         // Try to simplify expressions again as other rules could introduce new exprs.
         self.rule_batches.push(RuleBatch::new(
             vec![Box::new(SimplifyExpressionsRule::new())],
-            RuleExecutionStrategy::FixedPoint(Some(3)),
+            RuleExecutionStrategy::FixedPoint(None),
         ));
         self
     }

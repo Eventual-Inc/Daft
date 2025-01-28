@@ -21,11 +21,22 @@ pub fn simplify_expr(expr: ExprRef, schema: &SchemaRef) -> DaftResult<Transforme
     ];
 
     expr.transform_up(|node| {
-        simplify_fns
+        let dtype = node.to_field(schema)?.dtype;
+
+        let transformed = simplify_fns
             .into_iter()
             .try_fold(Transformed::no(node), |transformed, f| {
                 transformed.transform_data(|e| f(e, schema))
+            })?;
+
+        // cast bac to original dtype if necessary
+        transformed.map_data(|new_node| {
+            Ok(if new_node.to_field(schema)?.dtype == dtype {
+                new_node
+            } else {
+                new_node.cast(&dtype)
             })
+        })
     })
 }
 
@@ -99,9 +110,9 @@ mod test {
     // A OR false --> A
     #[case(col("bool").or(lit(false)), col("bool"))]
     // (A OR B) AND (A OR C) -> A OR (B AND C)
-    #[case((col("a").or(col("b"))).and(col("a").or(col("b"))), col("a").or(col("b").and(col("c"))))]
+    #[case((col("a").or(col("b"))).and(col("a").or(col("c"))), col("a").or(col("b").and(col("c"))))]
     // (A AND B) OR (A AND C) -> A AND (B OR C)
-    #[case((col("a").and(col("b"))).or(col("a").and(col("b"))), col("a").and(col("b").or(col("c"))))]
+    #[case((col("a").and(col("b"))).or(col("a").and(col("c"))), col("a").and(col("b").or(col("c"))))]
     fn test_simplify_bool_exprs(
         #[case] input: ExprRef,
         #[case] expected: ExprRef,

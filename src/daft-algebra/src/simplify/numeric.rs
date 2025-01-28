@@ -1,6 +1,5 @@
 use common_error::DaftResult;
 use common_treenode::Transformed;
-use daft_core::utils::supertype::try_get_supertype;
 use daft_dsl::{Expr, ExprRef, LiteralValue, Operator};
 use daft_schema::schema::SchemaRef;
 
@@ -75,41 +74,27 @@ fn is_zero(s: &Expr) -> bool {
 // simplify expressions with numeric operators
 pub(crate) fn simplify_numeric_expr(
     expr: ExprRef,
-    schema: &SchemaRef,
+    _schema: &SchemaRef,
 ) -> DaftResult<Transformed<ExprRef>> {
     Ok(match expr.as_ref() {
         Expr::BinaryOp { op, left, right } => {
-            let supertype = try_get_supertype(&left.get_type(schema)?, &right.get_type(schema)?)?;
-
             match op {
                 // TODO: Can't do this one because we don't have a way to determine if an expr potentially contains nulls (nullable)
                 // A * 0 --> 0 (if A is not null and not floating/decimal)
                 // 0 * A --> 0 (if A is not null and not floating/decimal)
 
                 // A * 1 -> A
-                Operator::Multiply if is_one(left) => {
-                    Transformed::yes(right.clone().cast(&supertype))
-                }
-                Operator::Multiply if is_one(right) => {
-                    Transformed::yes(left.clone().cast(&supertype))
-                }
+                Operator::Multiply if is_one(left) => Transformed::yes(right.clone()),
+                Operator::Multiply if is_one(right) => Transformed::yes(left.clone()),
                 // A / 1 -> A
-                Operator::TrueDivide if is_one(left) => {
-                    Transformed::yes(right.clone().cast(&supertype))
-                }
-                Operator::TrueDivide if is_one(right) => {
-                    Transformed::yes(left.clone().cast(&supertype))
-                }
+                Operator::TrueDivide if is_one(left) => Transformed::yes(right.clone()),
+                Operator::TrueDivide if is_one(right) => Transformed::yes(left.clone()),
                 // A + 0 -> A
-                Operator::Plus if is_zero(left) => Transformed::yes(right.clone().cast(&supertype)),
-                Operator::Plus if is_zero(right) => Transformed::yes(left.clone().cast(&supertype)),
+                Operator::Plus if is_zero(left) => Transformed::yes(right.clone()),
+                Operator::Plus if is_zero(right) => Transformed::yes(left.clone()),
                 // A - 0 -> A
-                Operator::Minus if is_zero(left) => {
-                    Transformed::yes(right.clone().cast(&supertype))
-                }
-                Operator::Minus if is_zero(right) => {
-                    Transformed::yes(left.clone().cast(&supertype))
-                }
+                Operator::Minus if is_zero(left) => Transformed::yes(right.clone()),
+                Operator::Minus if is_zero(right) => Transformed::yes(left.clone()),
 
                 _ => Transformed::no(expr),
             }
