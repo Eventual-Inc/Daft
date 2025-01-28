@@ -70,10 +70,6 @@ test: .venv build  ## Run tests
 dsdgen: .venv ## Generate TPC-DS data
 	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpcds-gen-folder=$(OUTPUT_DIR)
 
-# .PHONY: html
-# docs: .venv ## Serve docs
-# 	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs build -f docs/mkdocs.yml
-
 .PHONY: docs
 docs: .venv sphinx-docs ## Build both MkDocs and Sphinx documentation
 	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs build -f docs/mkdocs.yml

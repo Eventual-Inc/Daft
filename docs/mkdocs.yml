@@ -115,7 +115,7 @@ extra:
   api_path: api_docs/doc_gen
 
 extra_css:
-- /css/extra.css
+- css/extra.css
 
 # Extensions
 markdown_extensions:
