@@ -251,10 +251,10 @@ impl LogicalPlanBuilder {
             .map(|(name, _)| {
                 if let Some(new_name) = cols_map.get(name) {
                     // If the column is in the rename map, create an alias expression
-                    col(name.clone()).alias(new_name.clone())
+                    col(name.as_str()).alias(new_name.as_str())
                 } else {
                     // Otherwise keep the original column reference
-                    col(name.clone())
+                    col(name.as_str())
                 }
             })
             .collect::<Vec<_>>();

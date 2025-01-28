@@ -1641,6 +1641,8 @@ class DataFrame:
     def with_column_renamed(self, existing: str, new: str) -> "DataFrame":
         """Renames a column in the current DataFrame.
 
+        If the column in the DataFrame schema does not exist, this will be a no-op.
+
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
@@ -1670,8 +1672,10 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def with_columns_renamed(self, colsMap: Dict[str, str]) -> "DataFrame":
+    def with_columns_renamed(self, cols_map: Dict[str, str]) -> "DataFrame":
         """Renames multiple columns in the current DataFrame.
+
+        If the columns in the DataFrame schema do not exist, this will be a no-op.
 
         Example:
             >>> import daft
@@ -1690,8 +1694,14 @@ class DataFrame:
             ╰───────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
+
+        Args:
+            cols_map (Dict[str, str]): Dictionary of columns to rename in the format { existing: new }
+
+        Returns:
+            DataFrame: DataFrame with the columns renamed.
         """
-        builder = self._builder.with_columns_renamed(colsMap)
+        builder = self._builder.with_columns_renamed(cols_map)
         return DataFrame(builder)
 
     @DataframePublicAPI

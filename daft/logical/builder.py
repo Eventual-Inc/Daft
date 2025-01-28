@@ -160,8 +160,8 @@ class LogicalPlanBuilder:
         builder = self._builder.with_columns_renamed(cols_map)
         return LogicalPlanBuilder(builder)
 
-    def with_columns_renamed(self, colsMap: dict[str, str]) -> LogicalPlanBuilder:
-        builder = self._builder.with_columns_renamed(colsMap)
+    def with_columns_renamed(self, cols_map: dict[str, str]) -> LogicalPlanBuilder:
+        builder = self._builder.with_columns_renamed(cols_map)
         return LogicalPlanBuilder(builder)
 
     def exclude(self, to_exclude: list[str]) -> LogicalPlanBuilder:
