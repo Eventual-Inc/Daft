@@ -84,13 +84,13 @@ macro_rules! impl_daft_set_agg {
             }
 
             // Deduplicate the series
-            child_series = deduplicate_series(&child_series)?.0;
+            let (deduped_series, _) = deduplicate_series(&child_series)?;
 
             // Create list array from deduplicated series
             let offsets =
-                arrow2::offset::OffsetsBuffer::try_from(vec![0, child_series.len() as i64])?;
+                arrow2::offset::OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
             let list_field = self.field.to_list_field()?;
-            Ok(ListArray::new(list_field, child_series, offsets, None))
+            Ok(ListArray::new(list_field, deduped_series, offsets, None))
         }
 
         fn grouped_distinct(&self, groups: &GroupIndices, include_nulls: bool) -> Self::Output {
