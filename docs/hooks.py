@@ -1,7 +1,27 @@
+# import shutil
+# import subprocess
+
+
+# def make_api_docs(*args, **kwargs):
+#     subprocess.run(["make", "html", 'SPHINXOPTS="-W"'], check=True)
+#     shutil.copytree("docs/sphinx/_build/html", "mkdocs/api_docs", dirs_exist_ok=True)
+
 import shutil
 import subprocess
-
+import os
 
 def make_api_docs(*args, **kwargs):
-    subprocess.run(["make", "html", 'SPHINXOPTS="-W"'], check=True)
-    shutil.copytree("docs/sphinx/_build/html", "mkdocs/api_docs", dirs_exist_ok=True)
+    env = os.environ.copy()
+    env["PATH"] = f"{os.path.abspath('.venv/bin')}:{env['PATH']}"
+
+    # Run sphinx-build directly instead of using make
+    sphinx_build = os.path.join(os.path.abspath('.venv/bin'), 'sphinx-build')
+    subprocess.run([
+        sphinx_build,
+        "-b", "html",
+        "docs/sphinx/source",  # source dir
+        "docs/sphinx/_build",  # build dir
+    ], check=True, env=env)
+
+    # Copy built docs to mkdocs directory
+    shutil.copytree("docs/sphinx/_build/html", "docs/mkdocs/api_docs", dirs_exist_ok=True)
