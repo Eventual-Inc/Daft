@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use once_cell::sync::Lazy;
 use spark_connect::Expression;
 
-use crate::spark_analyzer::SparkAnalyzer;
+use crate::{error::ConnectResult, spark_analyzer::SparkAnalyzer};
 mod core;
 
 pub(crate) static CONNECT_FUNCTIONS: Lazy<SparkFunctions> = Lazy::new(|| {
@@ -17,7 +17,7 @@ pub trait SparkFunction: Send + Sync {
         &self,
         args: &[Expression],
         analyzer: &SparkAnalyzer,
-    ) -> eyre::Result<daft_dsl::ExprRef>;
+    ) -> ConnectResult<daft_dsl::ExprRef>;
 }
 
 pub struct SparkFunctions {

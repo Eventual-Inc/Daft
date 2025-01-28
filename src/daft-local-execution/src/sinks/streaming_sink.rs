@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
+use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
@@ -56,6 +57,8 @@ pub trait StreamingSink: Send + Sync {
     /// The name of the StreamingSink operator.
     fn name(&self) -> &'static str;
 
+    fn multiline_display(&self) -> Vec<String>;
+
     /// Create a new worker-local state for this StreamingSink.
     fn make_state(&self) -> Box<dyn StreamingSinkState>;
 
@@ -77,16 +80,22 @@ pub struct StreamingSinkNode {
     name: &'static str,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
+    plan_stats: StatsState,
 }
 
 impl StreamingSinkNode {
-    pub(crate) fn new(op: Arc<dyn StreamingSink>, children: Vec<Box<dyn PipelineNode>>) -> Self {
+    pub(crate) fn new(
+        op: Arc<dyn StreamingSink>,
+        children: Vec<Box<dyn PipelineNode>>,
+        plan_stats: StatsState,
+    ) -> Self {
         let name = op.name();
         Self {
             op,
             name,
             children,
             runtime_stats: RuntimeStatsContext::new(),
+            plan_stats,
         }
     }
 
@@ -164,12 +173,23 @@ impl TreeDisplay for StreamingSinkNode {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-        writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::Compact;
-        if matches!(level, Compact) {
-        } else {
-            let rt_result = self.runtime_stats.result();
-            rt_result.display(&mut display, true, true, true).unwrap();
+
+        use common_display::DisplayLevel;
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.op.name()).unwrap();
+            }
+            level => {
+                let multiline_display = self.op.multiline_display().join("\n");
+                writeln!(display, "{}", multiline_display).unwrap();
+                if let StatsState::Materialized(stats) = &self.plan_stats {
+                    writeln!(display, "Stats = {}", stats).unwrap();
+                }
+                if matches!(level, DisplayLevel::Verbose) {
+                    let rt_result = self.runtime_stats.result();
+                    rt_result.display(&mut display, true, true, true).unwrap();
+                }
+            }
         }
         display
     }

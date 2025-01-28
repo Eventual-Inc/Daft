@@ -7,6 +7,7 @@ use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState, Probeable, Table};
 use futures::{stream, StreamExt};
+use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
 
 use super::{
@@ -270,7 +271,32 @@ impl StreamingSink for AntiSemiProbeSink {
     }
 
     fn name(&self) -> &'static str {
-        "AntiSemiProbeSink"
+        "AntiSemiHashJoinProbe"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if self.params.is_semi {
+            res.push(format!(
+                "SemiHashJoinProbe: {}",
+                self.params
+                    .probe_on
+                    .iter()
+                    .map(|e| e.to_string())
+                    .join(", ")
+            ));
+        } else {
+            res.push(format!(
+                "AntiHashJoinProbe: {}",
+                self.params
+                    .probe_on
+                    .iter()
+                    .map(|e| e.to_string())
+                    .join(", ")
+            ));
+        }
+        res.push(format!("Build on left: {}", self.build_on_left));
+        res
     }
 
     #[instrument(skip_all, name = "AntiSemiProbeSink::finalize")]

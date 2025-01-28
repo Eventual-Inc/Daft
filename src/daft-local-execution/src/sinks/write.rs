@@ -17,6 +17,7 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, NUM_CPUS,
 };
 
+#[derive(Debug)]
 pub enum WriteFormat {
     Parquet,
     PartitionedParquet,
@@ -154,6 +155,15 @@ impl BlockingSink for WriteSink {
             // Writers also have their own internal buffering.
             Arc::new(UnorderedDispatcher::new(None))
         }
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut lines = vec![];
+        lines.push(format!("Write: {:?}", self.write_format));
+        if let Some(partition_by) = &self.partition_by {
+            lines.push(format!("Partition by: {:?}", partition_by));
+        }
+        lines
     }
 
     fn max_concurrency(&self) -> usize {

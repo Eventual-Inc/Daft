@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Iterator
 from daft.daft import (
     NativeExecutor as _NativeExecutor,
 )
+from daft.dataframe.display import MermaidOptions
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
@@ -37,3 +38,18 @@ class NativeExecutor:
             LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
             for part in self._executor.run(builder._builder, psets_mp, daft_execution_config, results_buffer_size)
         )
+
+    def pretty_print(
+        self,
+        builder: LogicalPlanBuilder,
+        daft_execution_config: PyDaftExecutionConfig,
+        simple: bool = False,
+        format: str = "ascii",
+    ) -> str:
+        """Pretty prints the current underlying logical plan."""
+        if format == "ascii":
+            return self._executor.repr_ascii(builder._builder, daft_execution_config, simple)
+        elif format == "mermaid":
+            return self._executor.repr_mermaid(builder._builder, daft_execution_config, MermaidOptions(simple))
+        else:
+            raise ValueError(f"Unknown format: {format}")
