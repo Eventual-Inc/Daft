@@ -1,0 +1,152 @@
+# Documentation: https://squidfunk.github.io/mkdocs-material/
+# Example: https://github.com/squidfunk/mkdocs-material/blob/master/mkdocs.yml
+
+# Project Information
+site_name: Daft Documentation
+
+docs_dir: mkdocs
+
+# Scarf pixel for tracking analytics
+# image:
+#   referrerpolicy: "no-referrer-when-downgrade"
+#   src: "https://static.scarf.sh/a.png?x-pxid=c9065f3a-a090-4243-8f69-145d5de7bfca"
+
+
+# Repository
+repo_name: Daft
+repo_url: https://github.com/Eventual-Inc/Daft
+
+# Sitemap
+nav:
+- Daft User Guide:
+  - Overview: index.md
+  - Terminology: terms.md
+  - Installation: install.md
+  - Quickstart: quickstart.md
+  - Core Concepts: core_concepts.md
+  - Distributed Computing: distributed.md
+  - Advanced:
+    - Managing Memory Usage: advanced/memory.md
+    - Partitioning: advanced/partitioning.md
+  - Integrations:
+    - Ray: integrations/ray.md
+    - Unity Catalog: integrations/unity_catalog.md
+    - Apache Iceberg: integrations/iceberg.md
+    - Delta Lake: integrations/delta_lake.md
+    - Apache Hudi: integrations/hudi.md
+    - Microsoft Azure: integrations/azure.md
+    - Amazon Web Services: integrations/aws.md
+    - SQL: integrations/sql.md
+    - Hugging Face Datasets: integrations/huggingface.md
+  - Resources:
+    - Architecture: resources/architecture.md
+    - DataFrame Comparison: resources/dataframe_comparison.md
+    - Tutorials: resources/tutorials.md
+    - Benchmarks: resources/benchmarks/tpch.md     # Benchmarks can expand into a folder once we have more
+    - Telemetry: resources/telemetry.md
+  - Migration Guide:
+    - Coming from Dask: migration/dask_migration.md
+- API Docs: api_docs/index.html
+
+# Configuration
+theme:
+  name: material
+  locale: en
+  logo: img/daft.png
+  favicon: img/favicon.png
+  features:
+  - search.suggest
+  - search.highlight
+  - content.code.copy   # add copy button to code sections
+  - content.tabs.link   # If one tab switches Python to SQL, all tabs switch
+  - toc.follow
+  - toc.integrate   # adds page subsections to left-hand menu (instead of right-hand menu)
+  - navigation.tracking   # url in address bar is automatically updated with active anchor as highlighted in TOC
+  - navigation.tabs   # moves nav bar to top, with secondary left-hand menu
+  - navigation.tabs.sticky   # top nav bar remains visible when scrolling down
+    # - navigation.sections # fixed sections
+    # - navigation.expand # drop down sections
+    # - navigation.path # breadcrumb navigation is rendered above title of each page
+  - navigation.top   # back-to-top button
+    # - navigation.indexes # section header can also be a doc BUT! clashes with toc.integrate for the top-level page
+
+# Issue:
+# If we enable toc.integrate and navigation.indexes together, it doesn't show subsections for the top-level page that is a section header, but works fine for all lower pages
+# If we only enable toc.integrate, section headers are now plain text
+# If we only enable navigation.indexes, page subsections get moved back to right-hand menu
+
+  palette:
+  - media: "(prefers-color-scheme)"
+    toggle:
+      icon: material/white-balance-sunny
+      name: Switch to light mode
+  - media: "(prefers-color-scheme: light)"
+    scheme: default
+    primary: custom
+    accent: custom
+    toggle:
+      icon: material/weather-night
+      name: Switch to dark mode
+  - media: "(prefers-color-scheme: dark)"
+    scheme: slate
+    primary: black
+    accent: custom
+    toggle:
+      icon: material/theme-light-dark
+      name: Switch to system preference
+  icon:
+    admonition:
+      quote: octicons/question-16
+
+# Additional Configuration
+extra:
+  social:
+  - icon: fontawesome/brands/github
+    link: https://github.com/squidfunk
+  - icon: fontawesome/brands/slack
+    link: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
+  - icon: fontawesome/brands/linkedin
+    link: https://www.linkedin.com/company/eventualcomputing/
+  - icon: fontawesome/brands/x-twitter
+    link: https://x.com/daft_dataframe
+
+  # This is a macro you should use to refer to paths
+  # When referring to methods, the syntax is {{ api_path }}/path/to/method
+  api_path: api_docs/doc_gen
+
+extra_css:
+- css/extra.css
+
+# Extensions
+markdown_extensions:
+- admonition
+- toc:
+    toc_depth: 3
+    permalink: "#"
+- pymdownx.tabbed:
+    alternate_style: true
+- pymdownx.snippets:
+    check_paths: true
+      # base_path: ['docs/source', "."]
+      # dedent_subsections: true
+- pymdownx.superfences
+- pymdownx.details
+  # - pymdownx.blocks.admonition
+- attr_list
+- md_in_html
+- pymdownx.emoji:
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+# Plugins
+plugins:
+- markdown-exec
+- mkdocs-jupyter:
+    execute: false
+    include_source: true
+- search:
+    separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+- macros
+- mkdocs-simple-hooks:
+    hooks:
+      on_pre_build: "docs.hooks:make_api_docs"
