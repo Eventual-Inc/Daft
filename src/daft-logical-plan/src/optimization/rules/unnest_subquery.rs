@@ -126,14 +126,15 @@ impl UnnestScalarSubquery {
                     JoinType::Left
                 };
 
-                let (decorrelated_subquery, subquery_on) = Join::deduplicate_join_columns(
-                    &curr_input,
-                    decorrelated_subquery,
-                    &input_on,
-                    subquery_on,
-                    join_type,
-                    Default::default(),
-                )?;
+                let (curr_input, decorrelated_subquery, input_on, subquery_on) =
+                    Join::deduplicate_join_columns(
+                        curr_input,
+                        decorrelated_subquery,
+                        input_on,
+                        subquery_on,
+                        join_type,
+                        Default::default(),
+                    )?;
 
                 Ok(Arc::new(LogicalPlan::Join(Join::try_new(
                     curr_input,

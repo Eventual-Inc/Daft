@@ -430,8 +430,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec,
-        JoinColumnRenamingParams, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
+        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
 
     #[fixture]
@@ -631,10 +631,7 @@ mod tests {
     ) -> DaftResult<()> {
         // could eliminate to inner join
         let plan1 = LogicalPlanBuilder::from(t1.clone())
-            .cross_join(
-                t2.clone(),
-                JoinColumnRenamingParams::builder().prefix("t2.").build(),
-            )?
+            .cross_join(t2.clone(), JoinOptions::default().prefix("t2."))?
             .filter(
                 col("a")
                     .eq(col("t2.a"))
@@ -644,10 +641,7 @@ mod tests {
             .build();
 
         let plan2 = LogicalPlanBuilder::from(t3.clone())
-            .cross_join(
-                t4.clone(),
-                JoinColumnRenamingParams::builder().prefix("t4.").build(),
-            )?
+            .cross_join(t4.clone(), JoinOptions::default().prefix("t4."))?
             .filter(
                 (col("a")
                     .eq(col("t4.a"))
@@ -658,10 +652,7 @@ mod tests {
             .build();
 
         let plan = LogicalPlanBuilder::from(plan1.clone())
-            .cross_join(
-                plan2.clone(),
-                JoinColumnRenamingParams::builder().prefix("t3.").build(),
-            )?
+            .cross_join(plan2.clone(), JoinOptions::default().prefix("t3."))?
             .filter(
                 col("t3.a")
                     .eq(col("a"))

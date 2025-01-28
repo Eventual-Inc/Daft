@@ -154,7 +154,7 @@ macro_rules! dyn_dict {
     }};
 }
 
-fn compare_null(_left: &dyn Array, _right: &dyn Array) -> DynComparator {
+fn compare_null() -> DynComparator {
     Box::new(move |_i: usize, _j: usize| {
         // nulls do not have a canonical ordering, but it is trivially implemented so that
         // null arrays can be used in things that depend on `build_compare`
@@ -248,7 +248,7 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
                 }
             }
         }
-        (Null, _) | (_, Null) => compare_null(left, right),
+        (Null, Null) => compare_null(),
         (lhs, _) => {
             return Err(Error::InvalidArgumentError(format!(
                 "The data type type {lhs:?} has no natural order"

@@ -13,7 +13,6 @@ use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use snafu::ResultExt;
-use typed_builder::TypedBuilder;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
@@ -99,16 +98,22 @@ impl Join {
 
     /// Add a project under the right side plan when necessary in order to resolve naming conflicts
     /// between left and right side columns.
+    ///
+    /// Returns:
+    /// - left (unchanged)
+    /// - updated right
+    /// - left_on (unchanged)
+    /// - updated right_on
     pub(crate) fn deduplicate_join_columns(
-        left: &LogicalPlanRef,
+        left: LogicalPlanRef,
         right: LogicalPlanRef,
-        left_on: &[ExprRef],
+        left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
         join_type: JoinType,
-        renaming_params: JoinColumnRenamingParams,
-    ) -> DaftResult<(LogicalPlanRef, Vec<ExprRef>)> {
+        renaming_params: JoinOptions,
+    ) -> DaftResult<(LogicalPlanRef, LogicalPlanRef, Vec<ExprRef>, Vec<ExprRef>)> {
         if matches!(join_type, JoinType::Anti | JoinType::Semi) {
-            Ok((right, right_on))
+            Ok((left, right, left_on, right_on))
         } else {
             let merged_cols = if renaming_params.merge_matching_join_keys {
                 left_on
@@ -164,7 +169,7 @@ impl Join {
                 .collect();
 
             if right_rename_mapping.is_empty() {
-                Ok((right, right_on))
+                Ok((left, right, left_on, right_on))
             } else {
                 // projection to update the right side with the new column names
                 let new_right_projection: Vec<_> = right_names
@@ -191,7 +196,7 @@ impl Join {
                     .map(|expr| replace_columns_with_expressions(expr, &right_on_replace_map))
                     .collect::<Vec<_>>();
 
-                Ok((new_right.into(), new_right_on))
+                Ok((left, new_right.into(), left_on, new_right_on))
             }
         }
     }
@@ -260,22 +265,35 @@ impl Join {
 }
 
 #[cfg_attr(feature = "python", pyclass)]
-#[derive(Clone, TypedBuilder, Default)]
-#[builder(field_defaults(setter(into)))]
-pub struct JoinColumnRenamingParams {
-    #[builder(default, setter(strip_option))]
+#[derive(Clone, Default)]
+pub struct JoinOptions {
     pub prefix: Option<String>,
-    #[builder(default, setter(strip_option))]
     pub suffix: Option<String>,
     /// For join predicates in the form col(a) = col(a),
     /// merge column "a" from both sides into one column.
-    #[builder(default)]
     pub merge_matching_join_keys: bool,
+}
+
+impl JoinOptions {
+    pub fn prefix(mut self, val: impl Into<String>) -> Self {
+        self.prefix = Some(val.into());
+        self
+    }
+
+    pub fn suffix(mut self, val: impl Into<String>) -> Self {
+        self.suffix = Some(val.into());
+        self
+    }
+
+    pub fn merge_matching_join_keys(mut self, val: bool) -> Self {
+        self.merge_matching_join_keys = val;
+        self
+    }
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
-impl JoinColumnRenamingParams {
+impl JoinOptions {
     #[new]
     #[pyo3(signature = (
         prefix,

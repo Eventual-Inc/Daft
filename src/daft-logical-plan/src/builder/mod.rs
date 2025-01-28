@@ -33,7 +33,7 @@ use {
 
 use crate::{
     logical_plan::LogicalPlan,
-    ops::{self, join::JoinColumnRenamingParams},
+    ops::{self, join::JoinOptions},
     optimization::OptimizerBuilder,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
@@ -452,7 +452,7 @@ impl LogicalPlanBuilder {
         right_on: Vec<ExprRef>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        column_renaming_params: JoinColumnRenamingParams,
+        column_renaming_params: JoinOptions,
     ) -> DaftResult<Self> {
         self.join_with_null_safe_equal(
             right,
@@ -474,7 +474,7 @@ impl LogicalPlanBuilder {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        column_renaming_params: JoinColumnRenamingParams,
+        column_renaming_params: JoinOptions,
     ) -> DaftResult<Self> {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
@@ -484,10 +484,10 @@ impl LogicalPlanBuilder {
         let (left_on, _) = expr_resolver.resolve(left_on, &left_plan.schema())?;
         let (right_on, _) = expr_resolver.resolve(right_on, &right_plan.schema())?;
 
-        let (right_plan, right_on) = ops::join::Join::deduplicate_join_columns(
-            &left_plan,
+        let (left_plan, right_plan, left_on, right_on) = ops::join::Join::deduplicate_join_columns(
+            left_plan,
             right_plan,
-            &left_on,
+            left_on,
             right_on,
             join_type,
             column_renaming_params,
@@ -509,7 +509,7 @@ impl LogicalPlanBuilder {
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
-        column_renaming_params: JoinColumnRenamingParams,
+        column_renaming_params: JoinOptions,
     ) -> DaftResult<Self> {
         self.join(
             right,
@@ -980,7 +980,7 @@ impl PyLogicalPlanBuilder {
         right_on: Vec<PyExpr>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        column_renaming_params: Option<JoinColumnRenamingParams>,
+        column_renaming_params: Option<JoinOptions>,
     ) -> PyResult<Self> {
         Ok(self
             .builder

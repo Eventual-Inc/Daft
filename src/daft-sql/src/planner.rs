@@ -20,7 +20,7 @@ use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
     utf8::{ilike, like, to_date, to_datetime},
 };
-use daft_logical_plan::{JoinColumnRenamingParams, LogicalPlanBuilder, LogicalPlanRef};
+use daft_logical_plan::{JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
@@ -765,9 +765,7 @@ impl<'a> SQLPlanner<'a> {
 
                 rel.inner = rel.inner.cross_join(
                     right.inner,
-                    JoinColumnRenamingParams::builder()
-                        .prefix(right_join_prefix)
-                        .build(),
+                    JoinOptions::default().prefix(right_join_prefix),
                 )?;
             }
             self.current_relation = Some(rel);
@@ -972,10 +970,9 @@ impl<'a> SQLPlanner<'a> {
                 null_eq_nulls,
                 join_type,
                 None,
-                JoinColumnRenamingParams::builder()
+                JoinOptions::default()
                     .prefix(right_join_prefix)
-                    .merge_matching_join_keys(merge_matching_join_keys)
-                    .build(),
+                    .merge_matching_join_keys(merge_matching_join_keys),
             )?;
             self.table_map.insert(right_rel_name, right_rel);
         }

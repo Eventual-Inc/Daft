@@ -19,9 +19,9 @@ unsafe fn is_valid(arr: &dyn Array, i: usize) -> bool {
 }
 
 #[inline]
-fn compare_with_nulls<F: FnOnce() -> Ordering>(
-    left: &dyn Array,
-    right: &dyn Array,
+fn compare_with_nulls<A: Array, F: FnOnce() -> Ordering>(
+    left: &A,
+    right: &A,
     i: usize,
     j: usize,
     nulls_equal: bool,
@@ -120,27 +120,13 @@ fn compare_dyn_boolean(nulls_equal: bool) -> DynArrayComparator {
 }
 
 fn compare_dyn_null(nulls_equal: bool) -> DynArrayComparator {
-    Box::new(move |left, right, i, j| {
-        assert!(i < left.len());
-        assert!(j < right.len());
-        // need the extra datatype check in match because the validity of a null array
-        // is quizzically always true and not false
-        match (
-            unsafe { is_valid(left, i) } && *left.data_type() != DataType::Null,
-            unsafe { is_valid(right, j) } && *right.data_type() != DataType::Null,
-        ) {
-            (true, true) => unreachable!(),
-            (false, true) => Ordering::Greater,
-            (true, false) => Ordering::Less,
-            (false, false) => {
-                if nulls_equal {
-                    Ordering::Equal
-                } else {
-                    Ordering::Less
-                }
-            }
-        }
-    })
+    let ordering = if nulls_equal {
+        Ordering::Equal
+    } else {
+        Ordering::Less
+    };
+
+    Box::new(move |_, _, _, _| ordering)
 }
 
 pub fn build_dyn_array_compare(
@@ -208,7 +194,7 @@ pub fn build_dyn_array_compare(
         //         }
         //     }
         // }
-        (Null, _) | (_, Null) => compare_dyn_null(nulls_equal),
+        (Null, Null) => compare_dyn_null(nulls_equal),
         (lhs, _) => {
             return Err(Error::InvalidArgumentError(format!(
                 "The data type type {lhs:?} has no natural order"

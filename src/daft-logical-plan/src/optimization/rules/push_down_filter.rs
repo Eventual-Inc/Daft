@@ -804,7 +804,7 @@ mod tests {
         )]
         how: JoinType,
     ) -> DaftResult<()> {
-        use crate::JoinColumnRenamingParams;
+        use crate::JoinOptions;
 
         let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Utf8),
@@ -838,9 +838,7 @@ mod tests {
                 null_equals_nulls.clone(),
                 how,
                 None,
-                JoinColumnRenamingParams::builder()
-                    .merge_matching_join_keys(true)
-                    .build(),
+                JoinOptions::default().merge_matching_join_keys(true),
             )?
             .filter(pred.clone())?
             .build();
@@ -868,9 +866,7 @@ mod tests {
                 null_equals_nulls,
                 how,
                 None,
-                JoinColumnRenamingParams::builder()
-                    .merge_matching_join_keys(true)
-                    .build(),
+                JoinOptions::default().merge_matching_join_keys(true),
             )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;

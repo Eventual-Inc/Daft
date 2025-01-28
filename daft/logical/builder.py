@@ -8,7 +8,7 @@ from daft.daft import (
     CountMode,
     FileFormat,
     IOConfig,
-    JoinColumnRenamingParams,
+    JoinOptions,
     JoinStrategy,
     JoinType,
     PyDaftExecutionConfig,
@@ -258,7 +258,7 @@ class LogicalPlanBuilder:
         right_on: list[Expression],
         how: JoinType = JoinType.Inner,
         strategy: JoinStrategy | None = None,
-        column_renaming_params: JoinColumnRenamingParams | None = None,
+        column_renaming_params: JoinOptions | None = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.join(
             right._builder,

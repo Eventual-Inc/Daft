@@ -1584,10 +1584,8 @@ class AdaptivePhysicalPlanScheduler:
         num_rows: int,
     ) -> None: ...
 
-class JoinColumnRenamingParams:
-    def __new__(
-        cls, prefix: str | None, suffix: str | None, merge_matching_join_keys: bool
-    ) -> JoinColumnRenamingParams: ...
+class JoinOptions:
+    def __new__(cls, prefix: str | None, suffix: str | None, merge_matching_join_keys: bool) -> JoinOptions: ...
 
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
@@ -1648,7 +1646,7 @@ class LogicalPlanBuilder:
         right_on: list[PyExpr],
         join_type: JoinType,
         join_strategy: JoinStrategy | None = None,
-        column_renaming_params: JoinColumnRenamingParams | None = None,
+        column_renaming_params: JoinOptions | None = None,
     ) -> LogicalPlanBuilder: ...
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
     def intersect(self, other: LogicalPlanBuilder, is_all: bool) -> LogicalPlanBuilder: ...
