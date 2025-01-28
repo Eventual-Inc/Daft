@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_scan_info::PhysicalScanInfo;
+use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanState};
 use common_treenode::{DynTreeNode, Transformed, TreeNodeIterator};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
@@ -199,51 +199,33 @@ impl LogicalPlan {
             }) => match source_info.as_ref() {
                 SourceInfo::Physical(
                     physical_scan_info @ PhysicalScanInfo {
-                        pushdowns,
+                        pushdowns:
+                            pushdowns @ Pushdowns {
+                                filters: Some(filter),
+                                ..
+                            },
+                        scan_state: ScanState::Operator(scan_operator),
                         source_schema,
                         ..
                     },
                 ) => {
-                    let schema = Arc::new(output_schema.non_distinct_union(source_schema));
-
-                    let new_filter = pushdowns
-                        .filters
-                        .as_ref()
-                        .map(|filter| f(filter.clone(), &schema))
-                        .transpose()?;
-
-                    let new_partition_filter = pushdowns
-                        .partition_filters
-                        .as_ref()
-                        .map(|filter| f(filter.clone(), &schema))
-                        .transpose()?;
-
-                    if new_filter
-                        .as_ref()
-                        .map_or(false, |result| result.transformed)
-                        || new_partition_filter
-                            .as_ref()
-                            .map_or(false, |result| result.transformed)
-                    {
-                        Transformed::yes(
-                            Self::Source(Source {
-                                output_schema: output_schema.clone(),
-                                source_info: Arc::new(SourceInfo::Physical(
-                                    physical_scan_info.with_pushdowns(
-                                        pushdowns
-                                            .with_filters(new_filter.map(|result| result.data))
-                                            .with_partition_filters(
-                                                new_partition_filter.map(|result| result.data),
-                                            ),
-                                    ),
-                                )),
-                                stats_state: stats_state.clone(),
-                            })
-                            .into(),
-                        )
+                    let schema = if let Some(fields) = scan_operator.0.generated_fields() {
+                        &Arc::new(source_schema.non_distinct_union(&fields))
                     } else {
-                        Transformed::no(self)
-                    }
+                        source_schema
+                    };
+
+                    f(filter.clone(), schema)?.update_data(|new_filter| {
+                        Self::Source(Source {
+                            output_schema: output_schema.clone(),
+                            source_info: Arc::new(SourceInfo::Physical(
+                                physical_scan_info
+                                    .with_pushdowns(pushdowns.with_filters(Some(new_filter))),
+                            )),
+                            stats_state: stats_state.clone(),
+                        })
+                        .into()
+                    })
                 }
                 _ => Transformed::no(self),
             },
