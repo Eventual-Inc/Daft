@@ -155,6 +155,15 @@ class LogicalPlanBuilder:
         builder = self._builder.with_columns(column_pyexprs)
         return LogicalPlanBuilder(builder)
 
+    def with_column_renamed(self, existing: str, new: str) -> LogicalPlanBuilder:
+        cols_map = {existing: new}
+        builder = self._builder.with_columns_renamed(cols_map)
+        return LogicalPlanBuilder(builder)
+
+    def with_columns_renamed(self, colsMap: dict[str, str]) -> LogicalPlanBuilder:
+        builder = self._builder.with_columns_renamed(colsMap)
+        return LogicalPlanBuilder(builder)
+
     def exclude(self, to_exclude: list[str]) -> LogicalPlanBuilder:
         builder = self._builder.exclude(to_exclude)
         return LogicalPlanBuilder(builder)

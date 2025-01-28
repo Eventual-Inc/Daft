@@ -1638,6 +1638,63 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def with_column_renamed(self, existing: str, new: str) -> "DataFrame":
+        """Renames a column in the current DataFrame.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df.with_column_renamed("x", "foo").show()
+            ╭───────┬───────╮
+            │ foo   ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Args:
+            existing (str): name of the existing column to rename
+            new (str): new name for the column
+
+        Returns:
+            DataFrame: DataFrame with the column renamed.
+        """
+        builder = self._builder.with_column_renamed(existing, new)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def with_columns_renamed(self, colsMap: Dict[str, str]) -> "DataFrame":
+        """Renames multiple columns in the current DataFrame.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df.with_columns_renamed({"x": "foo", "y": "bar"}).show()
+            ╭───────┬───────╮
+            │ foo   ┆ bar   │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        builder = self._builder.with_columns_renamed(colsMap)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def sort(
         self,
         by: Union[ColumnInputType, List[ColumnInputType]],

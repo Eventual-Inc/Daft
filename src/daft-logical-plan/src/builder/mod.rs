@@ -243,6 +243,26 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn with_columns_renamed(&self, cols_map: HashMap<String, String>) -> DaftResult<Self> {
+        let exprs = self
+            .schema()
+            .fields
+            .iter()
+            .map(|(name, _)| {
+                if let Some(new_name) = cols_map.get(name) {
+                    // If the column is in the rename map, create an alias expression
+                    col(name.clone()).alias(new_name.clone())
+                } else {
+                    // Otherwise keep the original column reference
+                    col(name.clone())
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let logical_plan: LogicalPlan = ops::Project::try_new(self.plan.clone(), exprs)?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn exclude(&self, to_exclude: Vec<String>) -> DaftResult<Self> {
         let to_exclude = HashSet::<_>::from_iter(to_exclude.iter());
 
@@ -901,6 +921,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn with_columns(&self, columns: Vec<PyExpr>) -> PyResult<Self> {
         Ok(self.builder.with_columns(pyexprs_to_exprs(columns))?.into())
+    }
+
+    pub fn with_columns_renamed(&self, cols_map: HashMap<String, String>) -> PyResult<Self> {
+        Ok(self.builder.with_columns_renamed(cols_map)?.into())
     }
 
     pub fn exclude(&self, to_exclude: Vec<String>) -> PyResult<Self> {
