@@ -532,7 +532,7 @@ impl Table {
                 self.eval_expression(expr)?.agg_set(groups, *include_nulls)
             }
             AggExpr::Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
-            &AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
+            AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
         }
