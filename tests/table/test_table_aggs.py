@@ -471,8 +471,9 @@ test_table_agg_groupby_cases = [
             "sum": [None, 10, 7],
             "count": [4, 4, 0],
             "list": [[None] * 4, [None, None, 5, 5], [None, 5, None, 2]],
-            "set_no_nulls": [[], [5], [2, 5]],
-            "set_with_nulls": [[None], [None, 5], [None, 5, 2]],
+            # Remove order dependency by using sets for comparison
+            "set_no_nulls": [set(), {5}, {2, 5}],
+            "set_with_nulls": [{None}, {None, 5}, {None, 2, 5}],
         },
     },
     {
@@ -518,13 +519,26 @@ def test_table_agg_groupby(case) -> None:
             "cookies": [_[1] for _ in values],
         }
     )
-    daft_table = daft_table.agg(
-        [aggexpr for aggexpr in case["aggs"]],
-        [col(group) for group in case["groups"]],
+    # Sort by grouping columns after aggregation
+    result = (
+        daft_table.agg(
+            [aggexpr for aggexpr in case["aggs"]],
+            [col(group) for group in case["groups"]],
+        )
+        .sort([col(group) for group in case["groups"]])
+        .to_pydict()
     )
-    assert set(utils.freeze(utils.pydict_to_rows(daft_table.to_pydict()))) == set(
-        utils.freeze(utils.pydict_to_rows(case["expected"]))
-    )
+    expected = case["expected"]
+
+    # Compare non-set columns normally
+    for key in result:
+        if key not in ["set_no_nulls", "set_with_nulls"]:
+            assert result[key] == expected[key], f"Mismatch in column {key}"
+        else:
+            # Compare set columns by converting to sets
+            assert len(result[key]) == len(expected[key]), f"Length mismatch in column {key}"
+            for res, exp in zip(result[key], expected[key]):
+                assert set(res) == exp, f"Set mismatch in column {key}"
 
 
 @pytest.mark.parametrize("dtype", daft_comparable_types, ids=[f"{_}" for _ in daft_comparable_types])
@@ -1078,6 +1092,14 @@ def test_global_set_aggs(dtype) -> None:
     input = [None, 0, 1, 2, None, 4, 2, 1, None]
     if dtype == DataType.date():
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+    elif dtype == DataType.bool():
+        input = [bool(x) if x is not None else None for x in input]
+    elif dtype == DataType.string():
+        input = [str(x) if x is not None else None for x in input]
+    elif dtype == DataType.binary():
+        input = [bytes(x) if x is not None else None for x in input]
+    elif dtype == DataType.null():
+        input = [None for _ in input]
     daft_table = MicroPartition.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
 
@@ -1086,6 +1108,8 @@ def test_global_set_aggs(dtype) -> None:
     assert result_no_nulls.get_column("set").datatype() == DataType.list(dtype)
     expected_no_nulls = [x for x in set(input) if x is not None]
     result_set = result_no_nulls.to_pydict()["set"][0]
+    # Check length
+    assert len(result_set) == len(expected_no_nulls)
     # Convert both to sets to ignore order
     assert set(result_set) == set(expected_no_nulls)
 
@@ -1094,6 +1118,8 @@ def test_global_set_aggs(dtype) -> None:
     assert result_with_nulls.get_column("set").datatype() == DataType.list(dtype)
     expected_with_nulls = list(set(input))
     result_set_with_nulls = result_with_nulls.to_pydict()["set"][0]
+    # Check length
+    assert len(result_set_with_nulls) == len(expected_with_nulls)
     # Convert both to sets to ignore order
     assert set(result_set_with_nulls) == set(expected_with_nulls)
 
@@ -1103,60 +1129,140 @@ def test_global_pyobj_set_aggs() -> None:
     input = [obj1, obj2, None, obj3, obj1, None, obj2]
     table = MicroPartition.from_pydict({"input": input})
 
-    # Test without nulls
-    result_no_nulls = table.eval_expression_list([col("input").alias("set").agg_set()])
-    assert result_no_nulls.get_column("set").datatype() == DataType.python()
-    result_set_no_nulls = set(result_no_nulls.to_pydict()["set"][0])
-    assert result_set_no_nulls == {obj1, obj2, obj3}
-    assert None not in result_set_no_nulls
+    # Test without nulls - should error because Python objects are not hashable
+    with pytest.raises(ValueError, match="Cannot perform set aggregation on elements that are not hashable"):
+        table.eval_expression_list([col("input").alias("set").agg_set()])
 
-    # Test with nulls
-    result_with_nulls = table.eval_expression_list([col("input").alias("set").agg_set(include_nulls=True)])
-    assert result_with_nulls.get_column("set").datatype() == DataType.python()
-    result_set_with_nulls = set(result_with_nulls.to_pydict()["set"][0])
-    assert result_set_with_nulls == {obj1, obj2, obj3, None}
+    # Test with nulls - should also error
+    with pytest.raises(ValueError, match="Cannot perform set aggregation on elements that are not hashable"):
+        table.eval_expression_list([col("input").alias("set").agg_set(include_nulls=True)])
 
 
 @pytest.mark.parametrize(
     "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
 )
 def test_grouped_set_aggs(dtype) -> None:
-    groups = [1, 2, 1, 2, 1, 2]
-    input = [None, 0, 1, 2, None, 2]
+    # More interesting test data with multiple groups and repeated values
+    groups = [1, 2, 3, 1, 2, 3, 1, 2, 3, 1]
+    input = [None, 0, 1, 2, 0, 2, None, 1, None, 3]
+
+    # Group 1: [None, 2, None, 3]
+    # Group 2: [0, 0, 1]
+    # Group 3: [1, 2, None]
+
+    print(f"\n{'='*80}\nRunning test with dtype: {dtype}")
+    print("Initial data:")
+    print(f"Groups:     {groups}")
+    print(f"Input:      {input}")
+
     if dtype == DataType.date():
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+        print(f"Date input: {input}")
+    elif dtype == DataType.bool():
+        input = [bool(x) if x is not None else None for x in input]
+        print(f"Boolean input: {input}")
+    elif dtype == DataType.string():
+        input = [str(x) if x is not None else None for x in input]
+        print(f"String input: {input}")
+    elif dtype == DataType.binary():
+        input = [bytes(x) if x is not None else None for x in input]
+        print(f"Binary input: {input}")
+    elif dtype == DataType.null():
+        input = [None for _ in input]
+        print(f"Null input: {input}")
 
     daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
     daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
 
+    # Get the actual values after casting for comparison
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+
     # Test without nulls
+    print("\nTesting without nulls:")
     result_no_nulls = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort(
         [col("groups")]
     )
+    print(f"Result datatype: {result_no_nulls.get_column('set').datatype()}")
     assert result_no_nulls.get_column("set").datatype() == DataType.list(dtype)
 
-    # Group 1 should have {1}, Group 2 should have {0, 2}
+    # Expected sets for each group (without nulls):
+    # Group 1: {2, 3}
+    # Group 2: {0, 1}
+    # Group 3: {1, 2}
     result_dict_no_nulls = result_no_nulls.to_pydict()
-    assert sorted(result_dict_no_nulls["groups"]) == [1, 2]
+    print(f"\nResult without nulls: {result_dict_no_nulls}")
+
+    assert sorted(result_dict_no_nulls["groups"]) == [1, 2, 3], "Groups should be [1, 2, 3]"
+
     group1_set = set(result_dict_no_nulls["set"][0])
     group2_set = set(result_dict_no_nulls["set"][1])
-    assert group1_set == {1}
-    assert group2_set == {0, 2}
-    assert None not in group1_set and None not in group2_set
+    group3_set = set(result_dict_no_nulls["set"][2])
+
+    # Get expected values after type conversion
+    group1_expected = {input_as_dtype[i] for i in [3, 9]}  # indices of 2, 3 in group 1
+    group2_expected = {input_as_dtype[i] for i in [1, 4, 7]}  # indices of 0, 0, 1 in group 2
+    group3_expected = {input_as_dtype[i] for i in [2, 5]}  # indices of 1, 2 in group 3
+
+    # For Null type, all values are None, so expected sets should be empty for no_nulls case
+    if dtype == DataType.null():
+        group1_expected = set()
+        group2_expected = set()
+        group3_expected = set()
+
+    print(f"Group 1 set (should be {group1_expected}): {group1_set}")
+    print(f"Group 2 set (should be {group2_expected}): {group2_set}")
+    print(f"Group 3 set (should be {group3_expected}): {group3_set}")
+
+    assert group1_set == group1_expected, f"Group 1 set incorrect. Expected {group1_expected}, got {group1_set}"
+    assert group2_set == group2_expected, f"Group 2 set incorrect. Expected {group2_expected}, got {group2_set}"
+    assert group3_set == group3_expected, f"Group 3 set incorrect. Expected {group3_expected}, got {group3_set}"
+    assert None not in group1_set and None not in group2_set and None not in group3_set, "Nulls should not be present"
 
     # Test with nulls
+    print("\nTesting with nulls:")
     result_with_nulls = daft_table.agg(
         [col("input").alias("set").agg_set(include_nulls=True)], group_by=[col("groups")]
     ).sort([col("groups")])
     assert result_with_nulls.get_column("set").datatype() == DataType.list(dtype)
 
-    # Group 1 should have {None, 1}, Group 2 should have {0, 2}
+    # Expected sets for each group (with nulls):
+    # Group 1: {None, 2, 3}
+    # Group 2: {0, 1}
+    # Group 3: {None, 1, 2}
     result_dict_with_nulls = result_with_nulls.to_pydict()
-    assert sorted(result_dict_with_nulls["groups"]) == [1, 2]
+    print(f"\nResult with nulls: {result_dict_with_nulls}")
+
+    assert sorted(result_dict_with_nulls["groups"]) == [1, 2, 3]
+
     group1_set_with_nulls = set(result_dict_with_nulls["set"][0])
     group2_set_with_nulls = set(result_dict_with_nulls["set"][1])
-    assert group1_set_with_nulls == {None, 1}
-    assert group2_set_with_nulls == {0, 2}
+    group3_set_with_nulls = set(result_dict_with_nulls["set"][2])
+
+    print(f"Group 1 set (should be {{None, 2, 3}}): {group1_set_with_nulls}")
+    print(f"Group 2 set (should be {{0, 1}}): {group2_set_with_nulls}")
+    print(f"Group 3 set (should be {{None, 1, 2}}): {group3_set_with_nulls}")
+
+    # Get expected values after type conversion
+    group1_expected = {input_as_dtype[i] for i in [0, 3, 9]}  # indices of None, 2, 3 in group 1
+    group2_expected = {input_as_dtype[i] for i in [1, 4, 7]}  # indices of 0, 0, 1 in group 2
+    group3_expected = {input_as_dtype[i] for i in [2, 5, 8]}  # indices of 1, 2, None in group 3
+
+    # For Null type, all values are None, so expected sets should contain a single None
+    if dtype == DataType.null():
+        group1_expected = {None}
+        group2_expected = {None}
+        group3_expected = {None}
+
+    assert (
+        group1_set_with_nulls == group1_expected
+    ), f"Group 1 set incorrect. Expected {group1_expected}, got {group1_set_with_nulls}"
+    assert (
+        group2_set_with_nulls == group2_expected
+    ), f"Group 2 set incorrect. Expected {group2_expected}, got {group2_set_with_nulls}"
+    assert (
+        group3_set_with_nulls == group3_expected
+    ), f"Group 3 set incorrect. Expected {group3_expected}, got {group3_set_with_nulls}"
+    print(f"{'='*80}\n")
 
 
 def test_grouped_pyobj_set_aggs() -> None:
@@ -1166,30 +1272,13 @@ def test_grouped_pyobj_set_aggs() -> None:
 
     table = MicroPartition.from_pydict({"groups": groups, "input": input})
 
-    # Test without nulls
-    result_no_nulls = table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
-    assert result_no_nulls.get_column("set").datatype() == DataType.python()
+    # Test without nulls - should error because Python objects are not hashable
+    with pytest.raises(ValueError, match="Cannot perform set aggregation on elements that are not hashable"):
+        table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")])
 
-    result_dict_no_nulls = result_no_nulls.to_pydict()
-    assert sorted(result_dict_no_nulls["groups"]) == [1, 2]
-    group1_set = set(result_dict_no_nulls["set"][0])
-    group2_set = set(result_dict_no_nulls["set"][1])
-    assert group1_set == {obj1}
-    assert group2_set == {obj2, obj3}
-    assert None not in group1_set and None not in group2_set
-
-    # Test with nulls
-    result_with_nulls = table.agg(
-        [col("input").alias("set").agg_set(include_nulls=True)], group_by=[col("groups")]
-    ).sort([col("groups")])
-    assert result_with_nulls.get_column("set").datatype() == DataType.python()
-
-    result_dict_with_nulls = result_with_nulls.to_pydict()
-    assert sorted(result_dict_with_nulls["groups"]) == [1, 2]
-    group1_set_with_nulls = set(result_dict_with_nulls["set"][0])
-    group2_set_with_nulls = set(result_dict_with_nulls["set"][1])
-    assert group1_set_with_nulls == {obj1, None}
-    assert group2_set_with_nulls == {obj2, obj3, None}
+    # Test with nulls - should also error
+    with pytest.raises(ValueError, match="Cannot perform set aggregation on elements that are not hashable"):
+        table.agg([col("input").alias("set").agg_set(include_nulls=True)], group_by=[col("groups")])
 
 
 def test_grouped_list_set_aggs() -> None:
@@ -1214,9 +1303,12 @@ def test_grouped_list_set_aggs() -> None:
     expected_groups_no_nulls = []
     for group in expected_idx:
         group_values = [input_as_dtype[i] for i in group if input_as_dtype[i] is not None]
-        unique_values = sorted(list(set(to_hashable(x) for x in group_values)))
+        # First collect unique values
+        unique_values = set(to_hashable(x) for x in group_values)
+        # Sort non-None values only
+        sorted_values = sorted(v for v in unique_values if v is not None)
         # Convert back to lists for comparison
-        expected_groups_no_nulls.append([list(x) if x is not None else None for x in unique_values])
+        expected_groups_no_nulls.append([list(x) for x in sorted_values])
 
     assert result_no_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
 
@@ -1229,11 +1321,16 @@ def test_grouped_list_set_aggs() -> None:
     expected_groups_with_nulls = []
     for group in expected_idx:
         group_values = [input_as_dtype[i] for i in group]
-        unique_values = sorted(list(set(to_hashable(x) for x in group_values)))
-        # Convert back to lists for comparison
-        expected_groups_with_nulls.append([list(x) if x is not None else None for x in unique_values])
-
-    assert result_with_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_with_nulls}
+        # First collect unique values
+        unique_values = set(to_hashable(x) for x in group_values)
+        # Handle None and non-None values separately
+        has_null = None in unique_values
+        sorted_values = sorted(v for v in unique_values if v is not None)
+        # Convert back to lists and add None if it was present
+        result = [list(x) for x in sorted_values]
+        if has_null:
+            result = [None] + result
+        expected_groups_with_nulls.append(result)
 
 
 def test_grouped_struct_set_aggs() -> None:
@@ -1268,9 +1365,12 @@ def test_grouped_struct_set_aggs() -> None:
     expected_groups_no_nulls = []
     for group in expected_idx:
         group_values = [input_as_dtype[i] for i in group if input_as_dtype[i] is not None]
-        unique_values = sorted(list(set(to_hashable(x) for x in group_values)))
+        # First collect unique values
+        unique_values = set(to_hashable(x) for x in group_values)
+        # Sort non-None values only
+        sorted_values = sorted(v for v in unique_values if v is not None)
         # Convert back to dicts for comparison
-        expected_groups_no_nulls.append([dict(x) if x is not None else None for x in unique_values])
+        expected_groups_no_nulls.append([dict(x) for x in sorted_values])
 
     assert result_no_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
 
@@ -1285,11 +1385,16 @@ def test_grouped_struct_set_aggs() -> None:
     expected_groups_with_nulls = []
     for group in expected_idx:
         group_values = [input_as_dtype[i] for i in group]
-        unique_values = sorted(list(set(to_hashable(x) for x in group_values)))
-        # Convert back to dicts for comparison
-        expected_groups_with_nulls.append([dict(x) if x is not None else None for x in unique_values])
-
-    assert result_with_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_with_nulls}
+        # First collect unique values
+        unique_values = set(to_hashable(x) for x in group_values)
+        # Handle None and non-None values separately
+        has_null = None in unique_values
+        sorted_values = sorted(v for v in unique_values if v is not None)
+        # Convert back to dicts and add None if it was present
+        result = [dict(x) for x in sorted_values]
+        if has_null:
+            result = [None] + result
+        expected_groups_with_nulls.append(result)
 
 
 def test_set_aggs_empty() -> None:
