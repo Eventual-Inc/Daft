@@ -46,3 +46,17 @@ log/
 
 # uv
 uv.lock
+
+# dependencies
+node_modules
+
+# next.js
+.next
+out
+
+# production
+/build
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
