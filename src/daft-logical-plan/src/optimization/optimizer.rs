@@ -134,6 +134,11 @@ impl Default for OptimizerBuilder {
                     vec![Box::new(PushDownLimit::new())],
                     RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
+                // --- Simplify expressions before scans are materialized ---
+                RuleBatch::new(
+                    vec![Box::new(SimplifyExpressionsRule::new())],
+                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                ),
                 // --- Materialize scan nodes ---
                 RuleBatch::new(
                     vec![Box::new(MaterializeScans::new())],

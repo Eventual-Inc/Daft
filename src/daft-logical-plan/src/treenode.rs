@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::{
-    map_until_stop_and_collect, DynTreeNode, Transformed, TreeNodeIterator, TreeNodeRecursion,
-};
+use common_scan_info::PhysicalScanInfo;
+use common_treenode::{DynTreeNode, Transformed, TreeNodeIterator};
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 
 use crate::{
+    ops::Source,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
-    LogicalPlan,
+    LogicalPlan, SourceInfo,
 };
 
 impl DynTreeNode for LogicalPlan {
@@ -37,39 +38,42 @@ impl DynTreeNode for LogicalPlan {
 }
 
 impl LogicalPlan {
-    pub fn map_expressions<F: FnMut(ExprRef) -> DaftResult<Transformed<ExprRef>>>(
-        self,
+    pub fn map_expressions<F: FnMut(ExprRef, &SchemaRef) -> DaftResult<Transformed<ExprRef>>>(
+        self: Arc<Self>,
         mut f: F,
-    ) -> DaftResult<Transformed<Self>> {
+    ) -> DaftResult<Transformed<Arc<Self>>> {
         use crate::ops::{ActorPoolProject, Explode, Filter, Join, Project, Repartition, Sort};
 
-        Ok(match self {
+        Ok(match self.as_ref() {
             Self::Project(Project {
                 input,
                 projection,
                 projected_schema,
                 stats_state,
             }) => projection
-                .into_iter()
-                .map_until_stop_and_collect(f)?
-                .update_data(|expr| {
+                .iter()
+                .cloned()
+                .map_and_collect(|expr| f(expr, &input.schema()))?
+                .update_data(|new_projection| {
                     Self::Project(Project {
-                        input,
-                        projection: expr,
-                        projected_schema,
-                        stats_state,
+                        input: input.clone(),
+                        projection: new_projection,
+                        projected_schema: projected_schema.clone(),
+                        stats_state: stats_state.clone(),
                     })
+                    .into()
                 }),
             Self::Filter(Filter {
                 input,
                 predicate,
                 stats_state,
-            }) => f(predicate)?.update_data(|expr| {
+            }) => f(predicate.clone(), &input.schema())?.update_data(|expr| {
                 Self::Filter(Filter {
-                    input,
+                    input: input.clone(),
                     predicate: expr,
-                    stats_state,
+                    stats_state: stats_state.clone(),
                 })
+                .into()
             }),
             Self::Repartition(Repartition {
                 input,
@@ -77,38 +81,39 @@ impl LogicalPlan {
                 stats_state,
             }) => match repartition_spec {
                 RepartitionSpec::Hash(HashRepartitionConfig { num_partitions, by }) => by
-                    .into_iter()
-                    .map_until_stop_and_collect(f)?
+                    .iter()
+                    .cloned()
+                    .map_and_collect(|expr| f(expr, &input.schema()))?
                     .update_data(|expr| {
-                        RepartitionSpec::Hash(HashRepartitionConfig {
-                            num_partitions,
-                            by: expr,
+                        Self::Repartition(Repartition {
+                            input: input.clone(),
+                            repartition_spec: RepartitionSpec::Hash(HashRepartitionConfig {
+                                num_partitions: *num_partitions,
+                                by: expr,
+                            }),
+                            stats_state: stats_state.clone(),
                         })
+                        .into()
                     }),
-                repartition_spec => Transformed::no(repartition_spec),
-            }
-            .update_data(|repartition_spec| {
-                Self::Repartition(Repartition {
-                    input,
-                    repartition_spec,
-                    stats_state,
-                })
-            }),
+                _ => Transformed::no(self.clone()),
+            },
             Self::ActorPoolProject(ActorPoolProject {
                 input,
                 projection,
                 projected_schema,
                 stats_state,
             }) => projection
-                .into_iter()
-                .map_until_stop_and_collect(f)?
-                .update_data(|expr| {
+                .iter()
+                .cloned()
+                .map_and_collect(|expr| f(expr, &input.schema()))?
+                .update_data(|new_projection| {
                     Self::ActorPoolProject(ActorPoolProject {
-                        input,
-                        projection: expr,
-                        projected_schema,
-                        stats_state,
+                        input: input.clone(),
+                        projection: new_projection,
+                        projected_schema: projected_schema.clone(),
+                        stats_state: stats_state.clone(),
                     })
+                    .into()
                 }),
             Self::Sort(Sort {
                 input,
@@ -117,16 +122,18 @@ impl LogicalPlan {
                 nulls_first,
                 stats_state,
             }) => sort_by
-                .into_iter()
-                .map_until_stop_and_collect(f)?
-                .update_data(|expr| {
+                .iter()
+                .cloned()
+                .map_and_collect(|expr| f(expr, &input.schema()))?
+                .update_data(|new_sort_by| {
                     Self::Sort(Sort {
-                        input,
-                        sort_by: expr,
-                        descending,
-                        nulls_first,
-                        stats_state,
+                        input: input.clone(),
+                        sort_by: new_sort_by,
+                        descending: descending.clone(),
+                        nulls_first: nulls_first.clone(),
+                        stats_state: stats_state.clone(),
                     })
+                    .into()
                 }),
             Self::Explode(Explode {
                 input,
@@ -134,15 +141,17 @@ impl LogicalPlan {
                 exploded_schema,
                 stats_state,
             }) => to_explode
-                .into_iter()
-                .map_until_stop_and_collect(f)?
-                .update_data(|expr| {
+                .iter()
+                .cloned()
+                .map_and_collect(|expr| f(expr, &input.schema()))?
+                .update_data(|new_to_explode| {
                     Self::Explode(Explode {
-                        input,
-                        to_explode: expr,
-                        exploded_schema,
-                        stats_state,
+                        input: input.clone(),
+                        to_explode: new_to_explode,
+                        exploded_schema: exploded_schema.clone(),
+                        stats_state: stats_state.clone(),
                     })
+                    .into()
                 }),
             Self::Join(Join {
                 left,
@@ -155,41 +164,88 @@ impl LogicalPlan {
                 output_schema,
                 stats_state,
             }) => {
-                let o = left_on
-                    .into_iter()
-                    .zip(right_on)
-                    .map_until_stop_and_collect(|(l, r)| {
-                        map_until_stop_and_collect!(f(l), r, f(r))
-                    })?;
-                let (left_on, right_on) = o.data.into_iter().unzip();
+                let new_left_on = left_on
+                    .iter()
+                    .cloned()
+                    .map_and_collect(|expr| f(expr, &left.schema()))?;
+                let new_right_on = right_on
+                    .iter()
+                    .cloned()
+                    .map_and_collect(|expr| f(expr, &right.schema()))?;
 
-                if o.transformed {
-                    Transformed::yes(Self::Join(Join {
-                        left,
-                        right,
-                        left_on,
-                        right_on,
-                        null_equals_nulls,
-                        join_type,
-                        join_strategy,
-                        output_schema,
-                        stats_state,
-                    }))
+                if new_left_on.transformed && new_right_on.transformed {
+                    Transformed::yes(
+                        Self::Join(Join {
+                            left: left.clone(),
+                            right: right.clone(),
+                            left_on: new_left_on.data,
+                            right_on: new_right_on.data,
+                            null_equals_nulls: null_equals_nulls.clone(),
+                            join_type: *join_type,
+                            join_strategy: *join_strategy,
+                            output_schema: output_schema.clone(),
+                            stats_state: stats_state.clone(),
+                        })
+                        .into(),
+                    )
                 } else {
-                    Transformed::no(Self::Join(Join {
-                        left,
-                        right,
-                        left_on,
-                        right_on,
-                        null_equals_nulls,
-                        join_type,
-                        join_strategy,
-                        output_schema,
-                        stats_state,
-                    }))
+                    Transformed::no(self)
                 }
             }
-            lp => Transformed::no(lp),
+            Self::Source(Source {
+                output_schema,
+                source_info,
+                stats_state,
+            }) => match source_info.as_ref() {
+                SourceInfo::Physical(
+                    physical_scan_info @ PhysicalScanInfo {
+                        pushdowns,
+                        source_schema,
+                        ..
+                    },
+                ) => {
+                    let new_filter = pushdowns
+                        .filters
+                        .as_ref()
+                        .map(|filter| f(filter.clone(), source_schema))
+                        .transpose()?;
+
+                    let new_partition_filter = pushdowns
+                        .partition_filters
+                        .as_ref()
+                        .map(|filter| f(filter.clone(), source_schema))
+                        .transpose()?;
+
+                    if new_filter
+                        .as_ref()
+                        .map_or(false, |result| result.transformed)
+                        || new_partition_filter
+                            .as_ref()
+                            .map_or(false, |result| result.transformed)
+                    {
+                        Transformed::yes(
+                            Self::Source(Source {
+                                output_schema: output_schema.clone(),
+                                source_info: Arc::new(SourceInfo::Physical(
+                                    physical_scan_info.with_pushdowns(
+                                        pushdowns
+                                            .with_filters(new_filter.map(|result| result.data))
+                                            .with_partition_filters(
+                                                new_partition_filter.map(|result| result.data),
+                                            ),
+                                    ),
+                                )),
+                                stats_state: stats_state.clone(),
+                            })
+                            .into(),
+                        )
+                    } else {
+                        Transformed::no(self)
+                    }
+                }
+                _ => todo!(),
+            },
+            _ => Transformed::no(self),
         })
     }
 }
