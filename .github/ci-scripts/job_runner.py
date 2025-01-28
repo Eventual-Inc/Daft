@@ -75,7 +75,7 @@ def submit_job(
         entrypoint = f"DAFT_RUNNER=ray python {entrypoint_script} {args}"
         print(f"{entrypoint=}")
         start = datetime.now()
-        job_id = client.submit_job(
+        submission_id = client.submit_job(
             entrypoint=entrypoint,
             runtime_env={
                 "working_dir": working_dir,
@@ -83,9 +83,9 @@ def submit_job(
             },
         )
 
-        timed_out = asyncio.run(wait_on_job(client.tail_job_logs(job_id), timeout_s=TIMEOUT_S))
+        timed_out = asyncio.run(wait_on_job(client.tail_job_logs(submission_id), timeout_s=TIMEOUT_S))
 
-        status = client.get_job_status(job_id)
+        status = client.get_job_status(submission_id)
         end = datetime.now()
         duration = end - start
         error_msg = None
@@ -93,7 +93,7 @@ def submit_job(
             if timed_out:
                 error_msg = f"Job exceeded {TIMEOUT_S} second(s)"
             else:
-                job_info = client.get_job_info(job_id)
+                job_info = client.get_job_info(submission_id)
                 error_msg = job_info.message
 
         result = Result(arguments=args, duration=duration, error_msg=error_msg)

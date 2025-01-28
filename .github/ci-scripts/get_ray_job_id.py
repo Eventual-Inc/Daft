@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["requests"]
 # ///
 
 from argparse import ArgumentParser
@@ -17,6 +17,8 @@ def main(submission_id: str):
         if result["submission_id"] == submission_id:
             print(result["job_id"])
             break
+
+    raise RuntimeError(f"Failed to find a job-id mapping to the submission-id '{submission_id}'")
 
 
 if __name__ == "__main__":
