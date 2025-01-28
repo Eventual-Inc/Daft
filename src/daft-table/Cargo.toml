@@ -6,7 +6,6 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-functions = {path = "../daft-functions", default-features = false}
 daft-image = {path = "../daft-image", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 html-escape = {workspace = true}
@@ -17,7 +16,7 @@ rand = {workspace = true}
 serde = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "common-arrow-ffi/python", "common-display/python", "daft-image/python", "daft-logical-plan/python", "daft-functions/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "common-arrow-ffi/python", "common-display/python", "daft-image/python", "daft-logical-plan/python"]
 
 [lints]
 workspace = true
