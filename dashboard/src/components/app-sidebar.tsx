@@ -1,5 +1,9 @@
+'use client';
+
+import React from 'react';
 import { SearchForm } from '@/components/search-form';
-import { Home, TableProperties } from "lucide-react"
+import { Home, TableProperties } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 
 import {
     Sidebar,
@@ -11,23 +15,24 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
-} from "@/components/ui/sidebar"
+} from '@/components/ui/sidebar';
 
-// Menu items.
 const items = [
     {
-        title: "Home",
-        url: "home",
+        title: 'Home',
+        url: 'home',
         icon: Home,
     },
     {
-        title: "Queries",
-        url: "#",
+        title: 'Queries',
+        url: 'queries',
         icon: TableProperties,
     },
-]
+];
 
 export function AppSidebar() {
+    const pathName = usePathname();
+
     return (
         <Sidebar>
             <SidebarHeader>
@@ -40,7 +45,10 @@ export function AppSidebar() {
                         <SidebarMenu>
                             {items.map((item) => (
                                 <SidebarMenuItem key={item.title}>
-                                    <SidebarMenuButton asChild>
+                                    <SidebarMenuButton
+                                        asChild
+                                        isActive={pathName === `/${item.url}`}
+                                    >
                                         <a href={item.url}>
                                             <item.icon />
                                             <span>{item.title}</span>
@@ -53,5 +61,5 @@ export function AppSidebar() {
                 </SidebarGroup>
             </SidebarContent>
         </Sidebar>
-    )
+    );
 }
