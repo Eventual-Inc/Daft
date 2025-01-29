@@ -110,12 +110,12 @@ impl Join {
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
         join_type: JoinType,
-        renaming_params: JoinOptions,
+        options: JoinOptions,
     ) -> DaftResult<(LogicalPlanRef, LogicalPlanRef, Vec<ExprRef>, Vec<ExprRef>)> {
         if matches!(join_type, JoinType::Anti | JoinType::Semi) {
             Ok((left, right, left_on, right_on))
         } else {
-            let merged_cols = if renaming_params.merge_matching_join_keys {
+            let merged_cols = if options.merge_matching_join_keys {
                 left_on
                     .iter()
                     .zip(right_on.iter())
@@ -146,7 +146,7 @@ impl Join {
                     } else {
                         let mut new_name = name.clone();
                         while names_so_far.contains(&new_name) {
-                            new_name = match (&renaming_params.prefix, &renaming_params.suffix) {
+                            new_name = match (&options.prefix, &options.suffix) {
                                 (Some(prefix), Some(suffix)) => {
                                     format!("{}{}{}", prefix, new_name, suffix)
                                 }

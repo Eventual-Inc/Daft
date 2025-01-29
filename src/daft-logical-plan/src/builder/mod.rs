@@ -488,7 +488,7 @@ impl LogicalPlanBuilder {
         right_on: Vec<ExprRef>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        column_renaming_params: JoinOptions,
+        options: JoinOptions,
     ) -> DaftResult<Self> {
         self.join_with_null_safe_equal(
             right,
@@ -497,7 +497,7 @@ impl LogicalPlanBuilder {
             None,
             join_type,
             join_strategy,
-            column_renaming_params,
+            options,
         )
     }
 
@@ -510,7 +510,7 @@ impl LogicalPlanBuilder {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        column_renaming_params: JoinOptions,
+        options: JoinOptions,
     ) -> DaftResult<Self> {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
@@ -521,12 +521,7 @@ impl LogicalPlanBuilder {
         let (right_on, _) = expr_resolver.resolve(right_on, &right_plan.schema())?;
 
         let (left_plan, right_plan, left_on, right_on) = ops::join::Join::deduplicate_join_columns(
-            left_plan,
-            right_plan,
-            left_on,
-            right_on,
-            join_type,
-            column_renaming_params,
+            left_plan, right_plan, left_on, right_on, join_type, options,
         )?;
 
         let logical_plan: LogicalPlan = ops::Join::try_new(
@@ -545,16 +540,9 @@ impl LogicalPlanBuilder {
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
-        column_renaming_params: JoinOptions,
+        options: JoinOptions,
     ) -> DaftResult<Self> {
-        self.join(
-            right,
-            vec![],
-            vec![],
-            JoinType::Inner,
-            None,
-            column_renaming_params,
-        )
+        self.join(right, vec![], vec![], JoinType::Inner, None, options)
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
@@ -1011,7 +999,8 @@ impl PyLogicalPlanBuilder {
         right_on,
         join_type,
         join_strategy=None,
-        column_renaming_params=None
+        prefix=None,
+        suffix=None,
     ))]
     pub fn join(
         &self,
@@ -1020,7 +1009,8 @@ impl PyLogicalPlanBuilder {
         right_on: Vec<PyExpr>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        column_renaming_params: Option<JoinOptions>,
+        prefix: Option<String>,
+        suffix: Option<String>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1030,7 +1020,11 @@ impl PyLogicalPlanBuilder {
                 pyexprs_to_exprs(right_on),
                 join_type,
                 join_strategy,
-                column_renaming_params.unwrap_or_default(),
+                JoinOptions {
+                    prefix,
+                    suffix,
+                    merge_matching_join_keys: true,
+                },
             )?
             .into())
     }
