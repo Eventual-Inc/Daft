@@ -1462,6 +1462,7 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
 }
 
 /// Asserts an expr slice is homogeneous and returns the type, or None if empty or all nulls.
+/// None allows for context-dependent handling such as erroring or defaulting to Null.
 fn infer_list_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Option<DataType>> {
     let mut dtype: Option<DataType> = None;
     for expr in exprs {

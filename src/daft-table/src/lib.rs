@@ -554,9 +554,10 @@ impl Table {
                 .is_in(&s)
             }
             Expr::List(items) => {
+                let field = expr.to_field(&self.schema)?;
                 let items = items.iter().map(|item| self.eval_expression(item)).collect::<DaftResult<Vec<_>>>()?;
                 let items = items.iter().collect::<Vec<&Series>>();
-                Series::merge(items.as_slice())
+                Series::merge(field, items.as_slice())
             }
             Expr::Between(child, lower, upper) => self
                 .eval_expression(child)?

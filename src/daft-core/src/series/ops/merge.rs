@@ -15,7 +15,7 @@ impl Series {
     /// B: Series := ( b_0, b_1, .. , b_n )
     /// C: Series := MERGE(A, B) <-> ( [a_0, b_0], [a_1, b_1], [a_2, b_2] )
     /// ```
-    pub fn merge(series: &[&Self]) -> DaftResult<Self> {
+    pub fn merge(field: Field, series: &[&Self]) -> DaftResult<Self> {
         // err if no series to merge
         if series.is_empty() {
             return Err(DaftError::ValueError(
@@ -23,32 +23,51 @@ impl Series {
             ));
         }
 
-        // compute some basic info that's re-used
-        let len = series[0].len();
-        let dtype = series[0].data_type();
-        let capacity = series.iter().map(|s| s.len()).sum();
-        let mut offsets = Offsets::<i64>::with_capacity(capacity);
+        // homogeneity checks happen in lower-levels, assume ok.
+        let dtype = if let DataType::List(dtype) = &field.dtype {
+            dtype.as_ref()
+        } else {
+            return Err(DaftError::ValueError(
+                "Cannot merge field with non-list type".to_string(),
+            ));
+        };
 
-        // grow the child by merging each series
-        let mut child = make_growable("list", dtype, series.to_vec(), true, capacity);
-        for row in 0..len {
-            let mut n = 0;
-            for (i, col) in series.iter().enumerate() {
-                if is_null(col) {
-                    child.extend_nulls(1);
-                } else {
-                    n += 1;
-                    child.extend(i, row, 1);
-                }
+        // build a null series mask so we can skip making full_nulls and avoid downcast "Null to T" errors.
+        let mut mask: Vec<Option<usize>> = vec![];
+        let mut rows = 0;
+        let mut capacity = 0;
+        let mut arrays = vec![];
+        for s in series {
+            if is_null(s) {
+                mask.push(None);
+            } else {
+                mask.push(Some(arrays.len()));
+                arrays.push(*s);
             }
-            offsets.try_push(n)?;
+            let len = s.len();
+            rows = std::cmp::max(rows, len);
+            capacity += len;
         }
 
-        // create list_array
-        let child = child.build()?;
-        let field = Field::new("list", DataType::new_list(dtype.clone()));
-        let items = ListArray::new(field, child, offsets.into(), None);
-        Ok(items.into_series())
+        // initialize a growable child
+        let mut offsets = Offsets::<i64>::with_capacity(capacity);
+        let mut child = make_growable("list", dtype, arrays, true, capacity);
+        let sublist_len = series.len() as i64;
+
+        // merge each series based upon the mask
+        for row in 0..rows {
+            for i in &mask {
+                if let Some(i) = *i {
+                    child.extend(i, row, 1);
+                } else {
+                    child.extend_nulls(1);
+                }
+            }
+            offsets.try_push(sublist_len)?;
+        }
+
+        // create the outer array with offsets
+        Ok(ListArray::new(field, child.build()?, offsets.into(), None).into_series())
     }
 }
 

@@ -68,7 +68,7 @@ pub trait Growable {
     /// Extends this [`Growable`] with null elements
     fn add_nulls(&mut self, additional: usize);
 
-    /// Extends this [`Growable`] with null elements (same as add_nulls, but arrow named).
+    /// Extends this [`Growable`] with null elements (same as add_nulls with arrow naming convention).
     fn extend_nulls(&mut self, len: usize) {
         self.add_nulls(len);
     }
