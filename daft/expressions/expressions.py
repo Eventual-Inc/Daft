@@ -170,7 +170,7 @@ def list_(*items: Expression | str):
     Example:
         >>> import daft
         >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-        >>> df = df.select(daft.list("x", "y").alias("fwd"), daft.list("y", "x").alias("rev"))
+        >>> df = df.select(daft.list_("x", "y").alias("fwd"), daft.list_("y", "x").alias("rev"))
         >>> df.show()
         ╭─────────────┬─────────────╮
         │ fwd         ┆ rev         │
