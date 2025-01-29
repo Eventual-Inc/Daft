@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
-use daft_dsl::ExprRef;
+use daft_dsl::{join::normalize_join_keys, ExprRef};
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -147,10 +147,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
 
-            if join.left_on.is_empty()
-                && join.right_on.is_empty()
-                && join.join_type == JoinType::Inner
-            {
+            let (left_on, right_on) = normalize_join_keys(
+                join.left_on.clone(),
+                join.right_on.clone(),
+                join.left.schema(),
+                join.right.schema(),
+            )?;
+
+            if left_on.is_empty() && right_on.is_empty() && join.join_type == JoinType::Inner {
                 Ok(LocalPhysicalPlan::cross_join(
                     left,
                     right,
@@ -161,8 +165,8 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 Ok(LocalPhysicalPlan::hash_join(
                     left,
                     right,
-                    join.left_on.clone(),
-                    join.right_on.clone(),
+                    left_on,
+                    right_on,
                     join.null_equals_nulls.clone(),
                     join.join_type,
                     join.output_schema.clone(),

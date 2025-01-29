@@ -2012,8 +2012,8 @@ class DataFrame:
             right_on=right_exprs,
             how=join_type,
             strategy=join_strategy,
-            join_prefix=prefix,
-            join_suffix=suffix,
+            prefix=prefix,
+            suffix=suffix,
         )
         return DataFrame(builder)
 

@@ -222,9 +222,7 @@ mod tests {
                 vec![col("c")],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .build();
 
@@ -237,9 +235,7 @@ mod tests {
                 vec![col("c")],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .build();
 
@@ -270,9 +266,7 @@ mod tests {
                 Some(vec![false, true, false]),
                 JoinType::Left,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .build();
 
@@ -287,9 +281,7 @@ mod tests {
                 Some(vec![false, true, false]),
                 JoinType::Left,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .build();
 

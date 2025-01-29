@@ -1,19 +1,16 @@
+use std::cmp::Ordering;
+
 use num_traits::Float;
 use ord::total_cmp;
 
-use std::cmp::Ordering;
-
-use crate::datatypes::*;
-use crate::error::Error;
-use crate::offset::Offset;
-use crate::{array::*, types::NativeType};
+use crate::{array::*, datatypes::*, error::Error, offset::Offset, types::NativeType};
 
 /// Compare the values at two arbitrary indices in two arbitrary arrays.
 pub type DynArrayComparator =
     Box<dyn Fn(&dyn Array, &dyn Array, usize, usize) -> Ordering + Send + Sync>;
 
 #[inline]
-unsafe fn is_valid<A: Array>(arr: &A, i: usize) -> bool {
+unsafe fn is_valid(arr: &dyn Array, i: usize) -> bool {
     // avoid dyn function hop by using generic
     arr.validity()
         .as_ref()
@@ -122,6 +119,16 @@ fn compare_dyn_boolean(nulls_equal: bool) -> DynArrayComparator {
     })
 }
 
+fn compare_dyn_null(nulls_equal: bool) -> DynArrayComparator {
+    let ordering = if nulls_equal {
+        Ordering::Equal
+    } else {
+        Ordering::Less
+    };
+
+    Box::new(move |_, _, _, _| ordering)
+}
+
 pub fn build_dyn_array_compare(
     left: &DataType,
     right: &DataType,
@@ -187,6 +194,7 @@ pub fn build_dyn_array_compare(
         //         }
         //     }
         // }
+        (Null, Null) => compare_dyn_null(nulls_equal),
         (lhs, _) => {
             return Err(Error::InvalidArgumentError(format!(
                 "The data type type {lhs:?} has no natural order"

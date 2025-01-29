@@ -3,6 +3,7 @@ mod tests;
 
 use std::{
     any::Any,
+    collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
     str::FromStr,
@@ -21,7 +22,6 @@ use daft_core::{
     utils::supertype::try_get_supertype,
 };
 use derive_more::Display;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::functions::FunctionExpr;
@@ -1320,9 +1320,9 @@ impl FromStr for Operator {
 // Check if one set of columns is a reordering of the other
 pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
     // sort a and b by name
-    let a: Vec<&str> = a.iter().map(|a| a.name()).sorted().collect();
-    let b: Vec<&str> = b.iter().map(|a| a.name()).sorted().collect();
-    a == b
+    let a_set: HashSet<&ExprRef> = HashSet::from_iter(a);
+    let b_set: HashSet<&ExprRef> = HashSet::from_iter(b);
+    a_set == b_set
 }
 
 pub fn has_agg(expr: &ExprRef) -> bool {
@@ -1442,4 +1442,32 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
         .map(|e| e.to_field(&input_schema))
         .collect::<DaftResult<_>>()?;
     Ok(Arc::new(Schema::new(fields)?))
+}
+
+/// Adds aliases as appropriate to ensure that all expressions have unique names.
+pub fn deduplicate_expr_names(exprs: &[ExprRef]) -> Vec<ExprRef> {
+    let mut names_so_far = HashSet::new();
+
+    exprs
+        .iter()
+        .map(|e| {
+            let curr_name = e.name();
+
+            let mut i = 0;
+            let mut new_name = curr_name.to_string();
+
+            while names_so_far.contains(&new_name) {
+                i += 1;
+                new_name = format!("{}_{}", curr_name, i);
+            }
+
+            names_so_far.insert(new_name.clone());
+
+            if i == 0 {
+                e.clone()
+            } else {
+                e.alias(new_name)
+            }
+        })
+        .collect()
 }

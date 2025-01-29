@@ -1455,8 +1455,8 @@ class PyMicroPartition:
         right: PyMicroPartition,
         left_on: list[PyExpr],
         right_on: list[PyExpr],
-        null_equals_nulls: list[bool] | None,
         how: JoinType,
+        null_equals_nulls: list[bool] | None = None,
     ) -> PyMicroPartition: ...
     def pivot(
         self,
@@ -1643,9 +1643,9 @@ class LogicalPlanBuilder:
         left_on: list[PyExpr],
         right_on: list[PyExpr],
         join_type: JoinType,
-        strategy: JoinStrategy | None = None,
-        join_prefix: str | None = None,
-        join_suffix: str | None = None,
+        join_strategy: JoinStrategy | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
     ) -> LogicalPlanBuilder: ...
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
     def intersect(self, other: LogicalPlanBuilder, is_all: bool) -> LogicalPlanBuilder: ...
