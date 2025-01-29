@@ -1968,6 +1968,7 @@ dependencies = [
  "common-treenode",
  "daft-dsl",
  "daft-schema",
+ "indexmap 2.7.0",
  "rstest",
 ]
 
