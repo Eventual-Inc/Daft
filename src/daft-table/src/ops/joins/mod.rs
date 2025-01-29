@@ -1,11 +1,11 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::growable::make_growable, join::JoinSide, prelude::*, utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
-    join::{get_common_join_keys, infer_join_schema},
+    join::{get_common_join_cols, infer_join_schema},
     ExprRef,
 };
 use hash_join::hash_semi_anti_join;
@@ -157,20 +157,14 @@ impl Table {
             return left.sort_merge_join(&right, left_on, right_on, true);
         }
 
-        let join_schema = infer_join_schema(
-            &self.schema,
-            &right.schema,
-            left_on,
-            right_on,
-            JoinType::Inner,
-        )?;
+        let join_schema = infer_join_schema(&self.schema, &right.schema, JoinType::Inner)?;
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 
         let (ltable, rtable) = match_types_for_tables(&ltable, &rtable)?;
         let (lidx, ridx) = merge_join::merge_inner_join(&ltable, &rtable)?;
 
-        let mut join_series = get_common_join_keys(left_on, right_on)
+        let mut join_series = get_common_join_cols(&self.schema, &right.schema)
             .map(|name| {
                 let lcol = self.get_column(name)?;
                 let rcol = right.get_column(name)?;
@@ -216,7 +210,7 @@ impl Table {
             Table::concat(&vec![input; outer_len])
         }
 
-        let (left_table, mut right_table) = match outer_loop_side {
+        let (left_table, right_table) = match outer_loop_side {
             JoinSide::Left => (
                 create_outer_loop_table(self, right.len())?,
                 create_inner_loop_table(right, self.len())?,
@@ -230,8 +224,10 @@ impl Table {
         let num_rows = self.len() * right.len();
 
         let join_schema = self.schema.union(&right.schema)?;
-        let mut join_columns = left_table.columns;
-        join_columns.append(&mut right_table.columns);
+        let mut join_columns = Arc::unwrap_or_clone(left_table.columns);
+        let mut right_columns = Arc::unwrap_or_clone(right_table.columns);
+
+        join_columns.append(&mut right_columns);
 
         Self::new_with_size(join_schema, join_columns, num_rows)
     }

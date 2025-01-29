@@ -28,12 +28,13 @@ use {
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
+    pyo3::intern,
     pyo3::prelude::*,
 };
 
 use crate::{
     logical_plan::LogicalPlan,
-    ops,
+    ops::{self, join::JoinOptions},
     optimization::OptimizerBuilder,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
@@ -144,6 +145,7 @@ impl LogicalPlanBuilder {
         Ok(Self::from(Arc::new(logical_plan)))
     }
 
+    /// Creates a `LogicalPlan::Source` from a scan handle.
     pub fn table_scan(
         scan_operator: ScanOperatorRef,
         pushdowns: Option<Pushdowns>,
@@ -236,6 +238,26 @@ impl LogicalPlanBuilder {
                 .filter(|e| !current_col_names.contains(e.name()))
                 .cloned(),
         );
+
+        let logical_plan: LogicalPlan = ops::Project::try_new(self.plan.clone(), exprs)?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn with_columns_renamed(&self, cols_map: HashMap<String, String>) -> DaftResult<Self> {
+        let exprs = self
+            .schema()
+            .fields
+            .iter()
+            .map(|(name, _)| {
+                if let Some(new_name) = cols_map.get(name) {
+                    // If the column is in the rename map, create an alias expression
+                    col(name.as_str()).alias(new_name.as_str())
+                } else {
+                    // Otherwise keep the original column reference
+                    col(name.as_str())
+                }
+            })
+            .collect::<Vec<_>>();
 
         let logical_plan: LogicalPlan = ops::Project::try_new(self.plan.clone(), exprs)?.into();
         Ok(self.with_new_plan(logical_plan))
@@ -367,6 +389,40 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    /// Creates a logical scan operator by collapsing the plan to just its schema.
+    #[cfg(feature = "python")]
+    pub fn describe(&self) -> DaftResult<Self> {
+        Python::with_gil(|py| {
+            // schema = self.schema()
+            let schema = py
+                .import(intern!(py, "daft.logical.schema"))?
+                .getattr(intern!(py, "Schema"))?
+                .getattr(intern!(py, "_from_pyschema"))?
+                .call1((PySchema::from(self.schema()),))?;
+            // df = DataFrame._from_schema(schema)
+            let df = py
+                .import(intern!(py, "daft.dataframe.dataframe"))?
+                .getattr(intern!(py, "DataFrame"))?
+                .getattr(intern!(py, "_from_schema"))?
+                .call1((schema,))?;
+            // builder = df._builder._builder
+            let builder: PyLogicalPlanBuilder = df
+                .getattr(intern!(py, "_builder"))?
+                .getattr(intern!(py, "_builder"))?
+                .extract()?;
+            // done.
+            Ok(builder.builder)
+        })
+    }
+
+    /// Creates a logical scan operator by collapsing the plan to just its schema.
+    #[cfg(not(feature = "python"))]
+    pub fn describe(&self) -> DaftResult<Self> {
+        Err(DaftError::InternalError(
+            ".describe() requires 'python' feature".to_string(),
+        ))
+    }
+
     pub fn distinct(&self) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
         Ok(self.with_new_plan(logical_plan))
@@ -440,9 +496,7 @@ impl LogicalPlanBuilder {
             right_on,
             JoinType::Inner,
             None,
-            None,
-            None,
-            false,
+            Default::default(),
         )
     }
 
@@ -454,9 +508,7 @@ impl LogicalPlanBuilder {
         right_on: Vec<ExprRef>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
-        keep_join_keys: bool,
+        options: JoinOptions,
     ) -> DaftResult<Self> {
         self.join_with_null_safe_equal(
             right,
@@ -465,9 +517,7 @@ impl LogicalPlanBuilder {
             None,
             join_type,
             join_strategy,
-            join_suffix,
-            join_prefix,
-            keep_join_keys,
+            options,
         )
     }
 
@@ -480,9 +530,7 @@ impl LogicalPlanBuilder {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
-        keep_join_keys: bool,
+        options: JoinOptions,
     ) -> DaftResult<Self> {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
@@ -492,18 +540,8 @@ impl LogicalPlanBuilder {
         let (left_on, _) = expr_resolver.resolve(left_on, &left_plan.schema())?;
         let (right_on, _) = expr_resolver.resolve(right_on, &right_plan.schema())?;
 
-        // TODO(kevin): we should do this, but it has not been properly used before and is nondeterministic, which causes some tests to break
-        // let (left_on, right_on) = ops::Join::rename_join_keys(left_on, right_on);
-
-        let (right_plan, right_on) = ops::Join::rename_right_columns(
-            left_plan.clone(),
-            right_plan,
-            left_on.clone(),
-            right_on,
-            join_type,
-            join_suffix,
-            join_prefix,
-            keep_join_keys,
+        let (left_plan, right_plan, left_on, right_on) = ops::join::Join::deduplicate_join_columns(
+            left_plan, right_plan, left_on, right_on, join_type, options,
         )?;
 
         let logical_plan: LogicalPlan = ops::Join::try_new(
@@ -522,19 +560,9 @@ impl LogicalPlanBuilder {
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
+        options: JoinOptions,
     ) -> DaftResult<Self> {
-        self.join(
-            right,
-            vec![],
-            vec![],
-            JoinType::Inner,
-            None,
-            join_suffix,
-            join_prefix,
-            false, // no join keys to keep
-        )
+        self.join(right, vec![], vec![], JoinType::Inner, None, options)
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
@@ -867,6 +895,10 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.with_columns(pyexprs_to_exprs(columns))?.into())
     }
 
+    pub fn with_columns_renamed(&self, cols_map: HashMap<String, String>) -> PyResult<Self> {
+        Ok(self.builder.with_columns_renamed(cols_map)?.into())
+    }
+
     pub fn exclude(&self, to_exclude: Vec<String>) -> PyResult<Self> {
         Ok(self.builder.exclude(to_exclude)?.into())
     }
@@ -937,6 +969,10 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.into_partitions(num_partitions)?.into())
     }
 
+    pub fn describe(&self) -> PyResult<Self> {
+        Ok(self.builder.describe()?.into())
+    }
+
     pub fn distinct(&self) -> PyResult<Self> {
         Ok(self.builder.distinct()?.into())
     }
@@ -987,8 +1023,8 @@ impl PyLogicalPlanBuilder {
         right_on,
         join_type,
         join_strategy=None,
-        join_suffix=None,
-        join_prefix=None
+        prefix=None,
+        suffix=None,
     ))]
     pub fn join(
         &self,
@@ -997,8 +1033,8 @@ impl PyLogicalPlanBuilder {
         right_on: Vec<PyExpr>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
+        prefix: Option<String>,
+        suffix: Option<String>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1008,9 +1044,11 @@ impl PyLogicalPlanBuilder {
                 pyexprs_to_exprs(right_on),
                 join_type,
                 join_strategy,
-                join_suffix,
-                join_prefix,
-                false, // dataframes do not keep the join keys when joining
+                JoinOptions {
+                    prefix,
+                    suffix,
+                    merge_matching_join_keys: true,
+                },
             )?
             .into())
     }
@@ -1162,6 +1200,7 @@ impl PyLogicalPlanBuilder {
             )?
             .into())
     }
+
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(self.builder.schema().into())
     }

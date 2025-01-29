@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
+use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -132,7 +133,27 @@ impl BlockingSink for PivotSink {
     }
 
     fn name(&self) -> &'static str {
-        "PivotSink"
+        "Pivot"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut display = vec![];
+        display.push("Pivot:".to_string());
+        display.push(format!(
+            "Group by = {}",
+            self.pivot_params
+                .group_by
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        display.push(format!("Pivot column: {}", self.pivot_params.pivot_column));
+        display.push(format!("Value column: {}", self.pivot_params.value_column));
+        display.push(format!(
+            "Pivoted columns: {}",
+            self.pivot_params.names.iter().join(", ")
+        ));
+        display
     }
 
     fn max_concurrency(&self) -> usize {

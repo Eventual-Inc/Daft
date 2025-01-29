@@ -211,6 +211,31 @@ def test_unpivot_expr(make_df, n_partitions, with_morsel_size):
     assert df.to_pydict() == expected
 
 
+@pytest.mark.parametrize("n_partitions", [1, 2, 4])
+def test_unpivot_followed_by_projection(make_df, n_partitions, with_morsel_size):
+    df = make_df(
+        {
+            "year": [2020, 2021, 2022],
+            "id": [1, 2, 3],
+            "Jan": [10, 30, 50],
+            "Feb": [20, 40, 60],
+        },
+        repartition=n_partitions,
+    )
+
+    df = df.unpivot("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
+    df = df.with_column("inventory2", df["inventory"])
+    df = df.sort(["year", "month", "inventory"])
+
+    expected = {
+        "year": [2020, 2020, 2021, 2021, 2022, 2022],
+        "month": ["Feb", "Jan", "Feb", "Jan", "Feb", "Jan"],
+        "inventory": [20, 10, 40, 30, 60, 50],
+        "inventory2": [20, 10, 40, 30, 60, 50],
+    }
+    assert df.to_pydict() == expected
+
+
 def test_unpivot_empty(make_df):
     df = make_df(
         {

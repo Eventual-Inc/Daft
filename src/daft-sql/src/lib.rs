@@ -5,6 +5,7 @@ pub mod functions;
 mod modules;
 
 mod planner;
+mod statement;
 pub use planner::*;
 
 #[cfg(feature = "python")]
@@ -31,8 +32,8 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
-        LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
+        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
     use error::SQLPlannerResult;
     use rstest::{fixture, rstest};
@@ -305,9 +306,7 @@ mod tests {
                 Some(vec![null_equals_null]),
                 JoinType::Inner,
                 None,
-                None,
-                Some("tbl3."),
-                true,
+                JoinOptions::default().prefix("tbl3."),
             )?
             .select(vec![col("*")])?
             .build();
@@ -322,10 +321,10 @@ mod tests {
         tbl_3: LogicalPlanRef,
     ) -> SQLPlannerResult<()> {
         let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id and tbl2.val > 0";
-        let plan = planner.plan_sql(&sql)?;
+        let plan = planner.plan_sql(sql)?;
 
         let expected = LogicalPlanBuilder::from(tbl_2)
-            .filter(col("val").gt(lit(0 as i64)))?
+            .filter(col("val").gt(lit(0_i64)))?
             .join_with_null_safe_equal(
                 tbl_3,
                 vec![col("id")],
@@ -333,9 +332,7 @@ mod tests {
                 Some(vec![false]),
                 JoinType::Inner,
                 None,
-                None,
-                Some("tbl3."),
-                true,
+                JoinOptions::default().prefix("tbl3."),
             )?
             .select(vec![col("*")])?
             .build();

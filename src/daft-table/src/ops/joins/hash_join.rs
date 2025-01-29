@@ -1,4 +1,4 @@
-use std::{cmp, iter::repeat};
+use std::{cmp, iter::repeat, ops::Not, sync::Arc};
 
 use arrow2::{bitmap::MutableBitmap, types::IndexRange};
 use common_error::DaftResult;
@@ -7,7 +7,7 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
-    join::{get_common_join_keys, infer_join_schema},
+    join::{get_common_join_cols, infer_join_schema},
     ExprRef,
 };
 
@@ -20,13 +20,7 @@ pub(super) fn hash_inner_join(
     right_on: &[ExprRef],
     null_equals_nulls: &[bool],
 ) -> DaftResult<Table> {
-    let join_schema = infer_join_schema(
-        &left.schema,
-        &right.schema,
-        left_on,
-        right_on,
-        JoinType::Inner,
-    )?;
+    let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Inner)?;
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
 
@@ -87,12 +81,13 @@ pub(super) fn hash_inner_join(
         }
     };
 
-    let common_join_keys: Vec<_> = get_common_join_keys(left_on, right_on).collect();
+    let common_cols: Vec<_> = get_common_join_cols(&left.schema, &right.schema).collect();
 
-    let mut join_series = left
-        .get_columns(common_join_keys.as_slice())?
-        .take(&lidx)?
-        .columns;
+    let mut join_series = Arc::unwrap_or_clone(
+        left.get_columns(common_cols.as_slice())?
+            .take(&lidx)?
+            .columns,
+    );
 
     drop(lkeys);
     drop(rkeys);
@@ -111,13 +106,7 @@ pub(super) fn hash_left_right_join(
     null_equals_nulls: &[bool],
     left_side: bool,
 ) -> DaftResult<Table> {
-    let join_schema = infer_join_schema(
-        &left.schema,
-        &right.schema,
-        left_on,
-        right_on,
-        JoinType::Right,
-    )?;
+    let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Right)?;
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
 
@@ -195,20 +184,20 @@ pub(super) fn hash_left_right_join(
         (lkeys, rkeys, lidx, ridx)
     };
 
-    let common_join_keys = get_common_join_keys(left_on, right_on);
+    let common_cols = get_common_join_cols(&left.schema, &right.schema).collect::<Vec<_>>();
 
-    let mut join_series = if left_side {
-        left.get_columns(common_join_keys.collect::<Vec<_>>().as_slice())?
-            .take(&lidx)?
-            .columns
+    let (common_cols_tbl, common_cols_idx) = if left_side {
+        (left, &lidx)
     } else {
-        common_join_keys
-            .map(|name| {
-                let col_dtype = &left.schema.get_field(name)?.dtype;
-                right.get_column(name)?.take(&ridx)?.cast(col_dtype)
-            })
-            .collect::<DaftResult<Vec<_>>>()?
+        (right, &ridx)
     };
+
+    let mut join_series = Arc::unwrap_or_clone(
+        common_cols_tbl
+            .get_columns(&common_cols)?
+            .take(common_cols_idx)?
+            .columns,
+    );
 
     drop(lkeys);
     drop(rkeys);
@@ -287,13 +276,7 @@ pub(super) fn hash_outer_join(
     right_on: &[ExprRef],
     null_equals_nulls: &[bool],
 ) -> DaftResult<Table> {
-    let join_schema = infer_join_schema(
-        &left.schema,
-        &right.schema,
-        left_on,
-        right_on,
-        JoinType::Outer,
-    )?;
+    let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Outer)?;
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
 
@@ -401,33 +384,21 @@ pub(super) fn hash_outer_join(
         }
     };
 
-    let common_join_keys: Vec<_> = get_common_join_keys(left_on, right_on).collect();
+    let common_cols: Vec<_> = get_common_join_cols(&left.schema, &right.schema).collect();
 
-    let mut join_series = if common_join_keys.is_empty() {
+    let mut join_series = if common_cols.is_empty() {
         vec![]
     } else {
-        let join_key_predicate = BooleanArray::from((
-            "join_key_predicate",
-            arrow2::array::BooleanArray::from_trusted_len_values_iter(
-                lidx.u64()?
-                    .into_iter()
-                    .zip(ridx.u64()?)
-                    .map(|(l, r)| match (l, r) {
-                        (Some(_), _) => true,
-                        (None, Some(_)) => false,
-                        (None, None) => unreachable!("Join should not have None for both sides"),
-                    }),
-            ),
-        ))
-        .into_series();
+        // use right side value if left is null
+        let take_from_left = lidx.is_null()?.not()?;
 
-        common_join_keys
+        common_cols
             .into_iter()
             .map(|name| {
                 let lcol = left.get_column(name)?.take(&lidx)?;
                 let rcol = right.get_column(name)?.take(&ridx)?;
 
-                lcol.if_else(&rcol, &join_key_predicate)
+                lcol.if_else(&rcol, &take_from_left)
             })
             .collect::<DaftResult<Vec<_>>>()?
     };

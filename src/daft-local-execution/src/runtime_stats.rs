@@ -43,7 +43,7 @@ impl RuntimeStats {
         if received {
             writeln!(
                 w,
-                "rows received =  {}",
+                "Rows received =  {}",
                 self.rows_received.to_formatted_string(&Locale::en)
             )?;
         }
@@ -51,7 +51,7 @@ impl RuntimeStats {
         if emitted {
             writeln!(
                 w,
-                "rows emitted =  {}",
+                "Rows emitted =  {}",
                 self.rows_emitted.to_formatted_string(&Locale::en)
             )?;
         }

@@ -20,12 +20,12 @@ use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
     utf8::{ilike, like, to_date, to_datetime},
 };
-use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
+use daft_logical_plan::{JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
         ExactNumberInfo, ExcludeSelectItem, FunctionArg, FunctionArgExpr, GroupByExpr, Ident,
-        ObjectName, Query, SelectItem, SetExpr, Statement, StructField, Subscript, TableAlias,
+        ObjectName, Query, SelectItem, SetExpr, StructField, Subscript, TableAlias,
         TableFunctionArgs, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
         WildcardAdditionalOptions, With,
     },
@@ -206,26 +206,24 @@ impl<'a> SQLPlanner<'a> {
             })
             .with_tokens(tokens);
 
+        // currently only allow one statement
         let statements = parser.parse_statements()?;
-
-        let plan = match statements.len() {
-            1 => Ok(self.plan_statement(&statements[0])?),
-            other => {
-                unsupported_sql_err!("Only exactly one SQL statement allowed, found {}", other)
-            }
-        };
-        self.clear_context();
-        plan
-    }
-
-    fn plan_statement(&mut self, statement: &Statement) -> SQLPlannerResult<LogicalPlanRef> {
-        match statement {
-            Statement::Query(query) => Ok(self.plan_query(query)?.build()),
-            other => unsupported_sql_err!("{}", other),
+        if statements.len() > 1 {
+            unsupported_sql_err!(
+                "Only exactly one SQL statement allowed, found {}",
+                statements.len()
+            )
         }
+
+        // plan single statement
+        let stmt = &statements[0];
+        let plan = self.plan_statement(stmt)?.build();
+        self.clear_context();
+
+        Ok(plan)
     }
 
-    fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
+    pub(crate) fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
         check_query_features(query)?;
 
         let selection = match query.body.as_ref() {
@@ -761,11 +759,12 @@ impl<'a> SQLPlanner<'a> {
             for tbl in from_iter {
                 let right = self.plan_relation(&tbl.relation)?;
                 self.table_map.insert(right.get_name(), right.clone());
-                let right_join_prefix = Some(format!("{}.", right.get_name()));
+                let right_join_prefix = format!("{}.", right.get_name());
 
-                rel.inner =
-                    rel.inner
-                        .cross_join(right.inner, None, right_join_prefix.as_deref())?;
+                rel.inner = rel.inner.cross_join(
+                    right.inner,
+                    JoinOptions::default().prefix(right_join_prefix),
+                )?;
             }
             self.current_relation = Some(rel);
             return Ok(());
@@ -897,7 +896,7 @@ impl<'a> SQLPlanner<'a> {
             };
             let right_rel = self.plan_relation(&join.relation)?;
             let right_rel_name = right_rel.get_name();
-            let right_join_prefix = Some(format!("{right_rel_name}."));
+            let right_join_prefix = format!("{right_rel_name}.");
 
             // construct a planner with the right table to use for expr planning
             let mut right_planner = self.new_with_context();
@@ -922,7 +921,7 @@ impl<'a> SQLPlanner<'a> {
             let mut left_filters = Vec::new();
             let mut right_filters = Vec::new();
 
-            let (keep_join_keys, null_eq_nulls) = match &constraint {
+            let (merge_matching_join_keys, null_eq_nulls) = match &constraint {
                 JoinConstraint::On(expr) => {
                     let mut null_eq_nulls = Vec::new();
 
@@ -937,7 +936,7 @@ impl<'a> SQLPlanner<'a> {
                         &mut right_filters,
                     )?;
 
-                    (true, Some(null_eq_nulls))
+                    (false, Some(null_eq_nulls))
                 }
                 JoinConstraint::Using(idents) => {
                     left_on = idents
@@ -946,7 +945,7 @@ impl<'a> SQLPlanner<'a> {
                         .collect::<Vec<_>>();
                     right_on.clone_from(&left_on);
 
-                    (false, None)
+                    (true, None)
                 }
                 JoinConstraint::Natural => unsupported_sql_err!("NATURAL JOIN not supported"),
                 JoinConstraint::None => unsupported_sql_err!("JOIN without ON/USING not supported"),
@@ -969,9 +968,9 @@ impl<'a> SQLPlanner<'a> {
                 null_eq_nulls,
                 join_type,
                 None,
-                None,
-                right_join_prefix.as_deref(),
-                keep_join_keys,
+                JoinOptions::default()
+                    .prefix(right_join_prefix)
+                    .merge_matching_join_keys(merge_matching_join_keys),
             )?;
             self.table_map.insert(right_rel_name, right_rel);
         }
@@ -997,7 +996,7 @@ impl<'a> SQLPlanner<'a> {
                 ..
             } => {
                 let rel = if is_table_path(name) {
-                    self.plan_relation_path(name)?
+                    self.plan_relation_path(name.0[0].value.as_str())?
                 } else {
                     self.plan_relation_table(name)?
                 };
@@ -1051,15 +1050,14 @@ impl<'a> SQLPlanner<'a> {
     }
 
     /// Plan a `FROM <path>` table factor by rewriting to relevant table-value function.
-    fn plan_relation_path(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
-        let path = name.0[0].value.as_str();
+    fn plan_relation_path(&self, path: &str) -> SQLPlannerResult<Relation> {
         let func = match Path::new(path).extension() {
             Some(ext) if ext.eq_ignore_ascii_case("csv") => "read_csv",
             Some(ext) if ext.eq_ignore_ascii_case("json") => "read_json",
             Some(ext) if ext.eq_ignore_ascii_case("jsonl") => "read_json",
             Some(ext) if ext.eq_ignore_ascii_case("parquet") => "read_parquet",
-            Some(_) => invalid_operation_err!("unsupported file path extension: {}", name),
-            None => invalid_operation_err!("unsupported file path, no extension: {}", name),
+            Some(_) => invalid_operation_err!("unsupported file path extension: {}", path),
+            None => invalid_operation_err!("unsupported file path, no extension: {}", path),
         };
         let args = TableFunctionArgs {
             args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(
@@ -1071,7 +1069,7 @@ impl<'a> SQLPlanner<'a> {
     }
 
     /// Plan a `FROM <table>` table factor.
-    fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
+    pub(crate) fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
         let table_name = name.to_string();
         let Some(rel) = self
             .table_map
@@ -2234,15 +2232,13 @@ fn idents_to_str(idents: &[Ident]) -> String {
 }
 
 /// Returns true iff the ObjectName is a string literal (single-quoted identifier e.g. 'path/to/file.extension').
-///
-/// # Examples
-///
-/// ```
+/// Example:
+/// ```text
 /// 'file.ext'           -> true
 /// 'path/to/file.ext'   -> true
-/// 'a'.'b'.'c'         -> false (multiple identifiers)
+/// 'a'.'b'.'c'          -> false (multiple identifiers)
 /// "path/to/file.ext"   -> false (double-quotes)
-/// hello               -> false (not single-quoted)
+/// hello                -> false (not single-quoted)
 /// ```
 fn is_table_path(name: &ObjectName) -> bool {
     if name.0.len() != 1 {

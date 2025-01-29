@@ -5,6 +5,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::{Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
+use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -136,7 +137,18 @@ impl BlockingSink for AggregateSink {
     }
 
     fn name(&self) -> &'static str {
-        "AggregateSink"
+        "Aggregate"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        vec![format!(
+            "Aggregate: {}",
+            self.agg_sink_params
+                .sink_agg_exprs
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        )]
     }
 
     fn max_concurrency(&self) -> usize {

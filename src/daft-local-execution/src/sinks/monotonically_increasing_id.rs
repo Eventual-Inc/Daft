@@ -97,6 +97,10 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         "MonotonicallyIncreasingId"
     }
 
+    fn multiline_display(&self) -> Vec<String> {
+        vec!["MonotonicallyIncreasingId".to_string()]
+    }
+
     fn finalize(
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,

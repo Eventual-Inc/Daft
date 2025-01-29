@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -110,7 +111,29 @@ impl BlockingSink for SortSink {
     }
 
     fn name(&self) -> &'static str {
-        "SortResult"
+        "Sort"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut lines = vec![];
+        assert!(!self.params.sort_by.is_empty());
+        let pairs = self
+            .params
+            .sort_by
+            .iter()
+            .zip(self.params.descending.iter())
+            .zip(self.params.nulls_first.iter())
+            .map(|((sb, d), nf)| {
+                format!(
+                    "({}, {}, {})",
+                    sb,
+                    if *d { "descending" } else { "ascending" },
+                    if *nf { "nulls first" } else { "nulls last" }
+                )
+            })
+            .join(", ");
+        lines.push(format!("Sort: Sort by = {}", pairs));
+        lines
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

@@ -7,6 +7,7 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::translate;
@@ -29,7 +30,7 @@ use {
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{physical_plan_to_pipeline, viz_pipeline},
+    pipeline::{physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid},
     progress_bar::{make_progress_bar_manager, ProgressBarManager},
     resource_manager::get_or_init_memory_manager,
     Error, ExecutionRuntimeContext,
@@ -123,6 +124,28 @@ impl PyNativeExecutor {
         }));
         let part_iter = LocalPartitionIterator { iter };
         Ok(part_iter.into_pyobject(py)?.into_any())
+    }
+
+    pub fn repr_ascii(
+        &self,
+        logical_plan_builder: &PyLogicalPlanBuilder,
+        cfg: PyDaftExecutionConfig,
+        simple: bool,
+    ) -> PyResult<String> {
+        Ok(self
+            .executor
+            .repr_ascii(&logical_plan_builder.builder, cfg.config, simple))
+    }
+
+    pub fn repr_mermaid(
+        &self,
+        logical_plan_builder: &PyLogicalPlanBuilder,
+        cfg: PyDaftExecutionConfig,
+        options: MermaidDisplayOptions,
+    ) -> PyResult<String> {
+        Ok(self
+            .executor
+            .repr_mermaid(&logical_plan_builder.builder, cfg.config, options))
     }
 }
 
@@ -228,7 +251,16 @@ impl NativeExecutor {
                         .as_millis();
                     let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
                     let mut file = File::create(file_name)?;
-                    writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
+                    writeln!(
+                        file,
+                        "```mermaid\n{}\n```",
+                        viz_pipeline_mermaid(
+                            pipeline.as_ref(),
+                            DisplayLevel::Verbose,
+                            true,
+                            Default::default()
+                        )
+                    )?;
                 }
                 Ok(())
             };
@@ -254,6 +286,46 @@ impl NativeExecutor {
             handle,
             receiver: rx,
         })
+    }
+
+    fn repr_ascii(
+        &self,
+        logical_plan_builder: &LogicalPlanBuilder,
+        cfg: Arc<DaftExecutionConfig>,
+        simple: bool,
+    ) -> String {
+        let logical_plan = logical_plan_builder.build();
+        let physical_plan = translate(&logical_plan).unwrap();
+        let pipeline_node =
+            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
+                .unwrap();
+
+        viz_pipeline_ascii(pipeline_node.as_ref(), simple)
+    }
+
+    fn repr_mermaid(
+        &self,
+        logical_plan_builder: &LogicalPlanBuilder,
+        cfg: Arc<DaftExecutionConfig>,
+        options: MermaidDisplayOptions,
+    ) -> String {
+        let logical_plan = logical_plan_builder.build();
+        let physical_plan = translate(&logical_plan).unwrap();
+        let pipeline_node =
+            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
+                .unwrap();
+
+        let display_type = if options.simple {
+            DisplayLevel::Compact
+        } else {
+            DisplayLevel::Default
+        };
+        viz_pipeline_mermaid(
+            pipeline_node.as_ref(),
+            display_type,
+            options.bottom_up,
+            options.subgraph_options,
+        )
     }
 }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use daft_dsl::ExprRef;
 use daft_functions::list::explode;
 use daft_micropartition::MicroPartition;
+use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
@@ -46,7 +47,14 @@ impl IntermediateOperator for ExplodeOperator {
             .into()
     }
 
+    fn multiline_display(&self) -> Vec<String> {
+        vec![format!(
+            "Explode: {}",
+            self.to_explode.iter().map(|e| e.to_string()).join(", ")
+        )]
+    }
+
     fn name(&self) -> &'static str {
-        "ExplodeOperator"
+        "Explode"
     }
 }

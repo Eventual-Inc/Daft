@@ -152,8 +152,7 @@ impl LogicalPlan {
                 null_equals_nulls,
                 join_type,
                 join_strategy,
-                output_schema,
-                stats_state,
+                ..
             }) => {
                 let o = left_on
                     .into_iter()
@@ -164,7 +163,7 @@ impl LogicalPlan {
                 let (left_on, right_on) = o.data.into_iter().unzip();
 
                 if o.transformed {
-                    Transformed::yes(Self::Join(Join {
+                    Transformed::yes(Self::Join(Join::try_new(
                         left,
                         right,
                         left_on,
@@ -172,11 +171,9 @@ impl LogicalPlan {
                         null_equals_nulls,
                         join_type,
                         join_strategy,
-                        output_schema,
-                        stats_state,
-                    }))
+                    )?))
                 } else {
-                    Transformed::no(Self::Join(Join {
+                    Transformed::no(Self::Join(Join::try_new(
                         left,
                         right,
                         left_on,
@@ -184,9 +181,7 @@ impl LogicalPlan {
                         null_equals_nulls,
                         join_type,
                         join_strategy,
-                        output_schema,
-                        stats_state,
-                    }))
+                    )?))
                 }
             }
             lp => Transformed::no(lp),

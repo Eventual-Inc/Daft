@@ -2023,11 +2023,11 @@ dependencies = [
  "daft-sql",
  "daft-table",
  "dashmap",
- "eyre",
  "futures",
  "itertools 0.11.0",
  "once_cell",
  "pyo3",
+ "snafu",
  "spark-connect",
  "textwrap",
  "tokio",
@@ -2322,6 +2322,7 @@ dependencies = [
  "futures",
  "indexmap 2.7.0",
  "indicatif",
+ "itertools 0.11.0",
  "kanal",
  "lazy_static",
  "log",
@@ -2371,6 +2372,7 @@ dependencies = [
  "indexmap 2.7.0",
  "itertools 0.11.0",
  "log",
+ "num-format",
  "pretty_assertions",
  "pyo3",
  "rand 0.8.5",
@@ -2408,6 +2410,7 @@ dependencies = [
  "parquet2",
  "pyo3",
  "snafu",
+ "tokio",
  "tracing",
 ]
 
@@ -2963,16 +2966,6 @@ checksum = "3c3e4e0dd3673c1139bf041f3008816d9cf2946bbfac2945c09e523b8d7b05b2"
 dependencies = [
  "event-listener 5.4.0",
  "pin-project-lite",
-]
-
-[[package]]
-name = "eyre"
-version = "0.6.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cd915d99f24784cdc19fd37ef22b97e3ff0ae756c7e492e9fbfe897d61e2aec"
-dependencies = [
- "indenter",
- "once_cell",
 ]
 
 [[package]]
@@ -3907,12 +3900,6 @@ dependencies = [
  "byteorder-lite",
  "quick-error 2.0.1",
 ]
-
-[[package]]
-name = "indenter"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
 
 [[package]]
 name = "indexmap"

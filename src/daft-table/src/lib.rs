@@ -7,6 +7,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
+    sync::Arc,
 };
 
 use arrow2::array::Array;
@@ -46,14 +47,14 @@ use repr_html::html_value;
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Table {
     pub schema: SchemaRef,
-    columns: Vec<Series>,
+    columns: Arc<Vec<Series>>,
     num_rows: usize,
 }
 
 impl Hash for Table {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.schema.hash(state);
-        for col in &self.columns {
+        for col in &*self.columns {
             let hashes = col.hash(None).expect("Failed to hash column");
             hashes.into_iter().for_each(|h| h.hash(state));
         }
@@ -161,7 +162,7 @@ impl Table {
     ) -> Self {
         Self {
             schema: schema.into(),
-            columns,
+            columns: Arc::new(columns),
             num_rows,
         }
     }
@@ -183,7 +184,8 @@ impl Table {
     /// # Arguments
     ///
     /// * `columns` - Columns to crate a table from as [`Series`] objects
-    pub fn from_nonempty_columns(columns: Vec<Series>) -> DaftResult<Self> {
+    pub fn from_nonempty_columns(columns: impl Into<Arc<Vec<Series>>>) -> DaftResult<Self> {
+        let columns = columns.into();
         assert!(!columns.is_empty(), "Cannot call Table::new() with empty columns. This indicates an internal error, please file an issue.");
 
         let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect())?;
@@ -201,7 +203,11 @@ impl Table {
             }
         }
 
-        Ok(Self::new_unchecked(schema, columns, num_rows))
+        Ok(Self {
+            schema,
+            columns,
+            num_rows,
+        })
     }
 
     pub fn num_columns(&self) -> usize {
@@ -233,11 +239,11 @@ impl Table {
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         if num >= self.len() {
-            return Ok(Self::new_unchecked(
-                self.schema.clone(),
-                self.columns.clone(),
-                self.len(),
-            ));
+            return Ok(Self {
+                schema: self.schema.clone(),
+                columns: self.columns.clone(),
+                num_rows: self.len(),
+            });
         }
         self.slice(0, num)
     }
@@ -824,7 +830,7 @@ impl Table {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in &self.columns {
+            for col in &*self.columns {
                 res.push_str(styled_td);
                 res.push_str(&html_value(col, i));
                 res.push_str("</div></td>");
@@ -836,7 +842,7 @@ impl Table {
 
         if tail_rows != 0 {
             res.push_str("<tr>");
-            for _ in &self.columns {
+            for _ in &*self.columns {
                 res.push_str("<td>...</td>");
             }
             res.push_str("</tr>\n");
@@ -846,7 +852,7 @@ impl Table {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in &self.columns {
+            for col in &*self.columns {
                 res.push_str(styled_td);
                 res.push_str(&html_value(col, i));
                 res.push_str("</td>");
