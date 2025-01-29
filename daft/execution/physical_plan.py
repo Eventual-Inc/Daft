@@ -349,12 +349,13 @@ def hash_join(
     left_stage_id = next(stage_id_counter)
 
     # First, fully materialize the left side of the join
-    for partition_num, step in enumerate(left_plan):
+    left_partition_counter = 0
+    for step in left_plan:
         if isinstance(step, PartitionTaskBuilder):
             step = step.finalize_partition_task_single_output(stage_id=left_stage_id)
-            left_tasks[partition_num] = step
+            left_tasks[left_partition_counter] = step
+            left_partition_counter += 1
         yield step
-
     right_stage_id = next(stage_id_counter)
 
     def create_join_step(
