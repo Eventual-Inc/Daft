@@ -430,8 +430,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
-        LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
+        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
 
     #[fixture]
@@ -502,7 +502,7 @@ mod tests {
     fn eliminate_cross_with_simple_and(t1: LogicalPlanRef, t2: LogicalPlanRef) -> DaftResult<()> {
         // could eliminate to inner join since filter has Join predicates
         let plan = LogicalPlanBuilder::from(t1.clone())
-            .cross_join(t2.clone(), None, None)?
+            .cross_join(t2.clone(), Default::default())?
             .filter(col("a").eq(col("right.a")).and(col("b").eq(col("right.b"))))?
             .build();
 
@@ -517,9 +517,7 @@ mod tests {
                 vec![col("right.a"), col("right.b")],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .build();
 
@@ -533,7 +531,7 @@ mod tests {
         // could not eliminate to inner join since filter OR expression and there is no common
         // Join predicates in left and right of OR expr.
         let plan = LogicalPlanBuilder::from(t1.clone())
-            .cross_join(t2.clone(), None, None)?
+            .cross_join(t2.clone(), Default::default())?
             .filter(col("a").eq(col("right.a")).or(col("right.b").eq(col("a"))))?
             .build();
 
@@ -548,9 +546,7 @@ mod tests {
                 vec![],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(col("a").eq(col("right.a")).or(col("right.b").eq(col("a"))))?
             .build();
@@ -568,7 +564,7 @@ mod tests {
         let expr4 = col("right.c").eq(lit(10u32));
         // could eliminate to inner join
         let plan = LogicalPlanBuilder::from(t1.clone())
-            .cross_join(t2.clone(), None, None)?
+            .cross_join(t2.clone(), Default::default())?
             .filter(expr1.and(expr2.clone()).and(expr3).and(expr4.clone()))?
             .build();
 
@@ -583,9 +579,7 @@ mod tests {
                 vec![col("right.a")],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(expr2.and(expr4))?
             .build();
@@ -603,7 +597,7 @@ mod tests {
         let expr3 = col("a").eq(col("right.a"));
         let expr4 = col("right.c").eq(lit(688u32));
         let plan = LogicalPlanBuilder::from(t1.clone())
-            .cross_join(t2.clone(), None, None)?
+            .cross_join(t2.clone(), Default::default())?
             .filter(expr1.and(expr2.clone()).or(expr3.and(expr4.clone())))?
             .build();
 
@@ -618,9 +612,7 @@ mod tests {
                 vec![col("right.a")],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(expr2.or(expr4))?
             .build();
@@ -639,7 +631,7 @@ mod tests {
     ) -> DaftResult<()> {
         // could eliminate to inner join
         let plan1 = LogicalPlanBuilder::from(t1.clone())
-            .cross_join(t2.clone(), None, Some("t2."))?
+            .cross_join(t2.clone(), JoinOptions::default().prefix("t2."))?
             .filter(
                 col("a")
                     .eq(col("t2.a"))
@@ -649,7 +641,7 @@ mod tests {
             .build();
 
         let plan2 = LogicalPlanBuilder::from(t3.clone())
-            .cross_join(t4.clone(), None, Some("t4."))?
+            .cross_join(t4.clone(), JoinOptions::default().prefix("t4."))?
             .filter(
                 (col("a")
                     .eq(col("t4.a"))
@@ -660,7 +652,7 @@ mod tests {
             .build();
 
         let plan = LogicalPlanBuilder::from(plan1.clone())
-            .cross_join(plan2.clone(), None, Some("t3."))?
+            .cross_join(plan2.clone(), JoinOptions::default().prefix("t3."))?
             .filter(
                 col("t3.a")
                     .eq(col("a"))
@@ -679,9 +671,7 @@ mod tests {
                 vec![col("t2.a")],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(col("t2.c").lt(lit(15u32)).or(col("t2.c").eq(lit(688u32))))?
             .build();
@@ -697,9 +687,7 @@ mod tests {
                 vec![col("t4.a")],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(
                 col("t4.c")
@@ -723,9 +711,7 @@ mod tests {
                 vec![col("t3.a")],
                 JoinType::Inner,
                 None,
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .filter(col("t4.c").lt(lit(15u32)).or(col("t4.c").eq(lit(688u32))))?
             .build();

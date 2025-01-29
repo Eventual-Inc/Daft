@@ -134,7 +134,7 @@ def lit(value: object) -> Expression:
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
-    See :ref:`Column Wildcards` for details on wildcards.
+    See `Column Wildcards <../../../core_concepts/#selecting-columns-using-wildcards>`_ for details on wildcards.
 
     Example:
         >>> import daft

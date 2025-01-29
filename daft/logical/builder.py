@@ -155,6 +155,15 @@ class LogicalPlanBuilder:
         builder = self._builder.with_columns(column_pyexprs)
         return LogicalPlanBuilder(builder)
 
+    def with_column_renamed(self, existing: str, new: str) -> LogicalPlanBuilder:
+        cols_map = {existing: new}
+        builder = self._builder.with_columns_renamed(cols_map)
+        return LogicalPlanBuilder(builder)
+
+    def with_columns_renamed(self, cols_map: dict[str, str]) -> LogicalPlanBuilder:
+        builder = self._builder.with_columns_renamed(cols_map)
+        return LogicalPlanBuilder(builder)
+
     def exclude(self, to_exclude: list[str]) -> LogicalPlanBuilder:
         builder = self._builder.exclude(to_exclude)
         return LogicalPlanBuilder(builder)
@@ -261,8 +270,8 @@ class LogicalPlanBuilder:
         right_on: list[Expression],
         how: JoinType = JoinType.Inner,
         strategy: JoinStrategy | None = None,
-        join_suffix: str | None = None,
-        join_prefix: str | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.join(
             right._builder,
@@ -270,8 +279,8 @@ class LogicalPlanBuilder:
             [expr._expr for expr in right_on],
             how,
             strategy,
-            join_suffix,
-            join_prefix,
+            prefix,
+            suffix,
         )
         return LogicalPlanBuilder(builder)
 

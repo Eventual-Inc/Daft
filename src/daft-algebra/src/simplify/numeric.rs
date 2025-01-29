@@ -46,9 +46,13 @@ static POWS_OF_TEN: [i128; 38] = [
 
 fn is_one(s: &Expr) -> bool {
     match s {
-        Expr::Literal(LiteralValue::Int32(1))
-        | Expr::Literal(LiteralValue::Int64(1))
+        Expr::Literal(LiteralValue::Int8(1))
+        | Expr::Literal(LiteralValue::UInt8(1))
+        | Expr::Literal(LiteralValue::Int16(1))
+        | Expr::Literal(LiteralValue::UInt16(1))
+        | Expr::Literal(LiteralValue::Int32(1))
         | Expr::Literal(LiteralValue::UInt32(1))
+        | Expr::Literal(LiteralValue::Int64(1))
         | Expr::Literal(LiteralValue::UInt64(1))
         | Expr::Literal(LiteralValue::Float64(1.)) => true,
 
@@ -61,9 +65,13 @@ fn is_one(s: &Expr) -> bool {
 
 fn is_zero(s: &Expr) -> bool {
     match s {
-        Expr::Literal(LiteralValue::Int32(0))
-        | Expr::Literal(LiteralValue::Int64(0))
+        Expr::Literal(LiteralValue::Int8(0))
+        | Expr::Literal(LiteralValue::UInt8(0))
+        | Expr::Literal(LiteralValue::Int16(0))
+        | Expr::Literal(LiteralValue::UInt16(0))
+        | Expr::Literal(LiteralValue::Int32(0))
         | Expr::Literal(LiteralValue::UInt32(0))
+        | Expr::Literal(LiteralValue::Int64(0))
         | Expr::Literal(LiteralValue::UInt64(0))
         | Expr::Literal(LiteralValue::Float64(0.)) => true,
         Expr::Literal(LiteralValue::Decimal(v, _p, _s)) if *v == 0 => true,

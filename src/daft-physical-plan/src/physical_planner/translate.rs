@@ -10,8 +10,8 @@ use common_file_formats::FileFormat;
 use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    col, estimated_selectivity, functions::agg::merge_mean, is_partition_compatible, AggExpr,
-    ApproxPercentileParams, Expr, ExprRef, SketchType,
+    col, estimated_selectivity, functions::agg::merge_mean, is_partition_compatible,
+    join::normalize_join_keys, AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
 };
 use daft_functions::{list::unique_count, numeric::sqrt};
 use daft_logical_plan::{
@@ -435,6 +435,13 @@ pub(super) fn translate_single_logical_node(
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");
             let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
+            let (left_on, right_on) = normalize_join_keys(
+                left_on.clone(),
+                right_on.clone(),
+                left.schema(),
+                right.schema(),
+            )?;
+
             let left_clustering_spec = left_physical.clustering_spec();
             let right_clustering_spec = right_physical.clustering_spec();
             let num_partitions = max(
@@ -444,10 +451,10 @@ pub(super) fn translate_single_logical_node(
 
             let is_left_hash_partitioned =
                 matches!(left_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
-                    && is_partition_compatible(&left_clustering_spec.partition_by(), left_on);
+                    && is_partition_compatible(&left_clustering_spec.partition_by(), &left_on);
             let is_right_hash_partitioned =
                 matches!(right_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
-                    && is_partition_compatible(&right_clustering_spec.partition_by(), right_on);
+                    && is_partition_compatible(&right_clustering_spec.partition_by(), &right_on);
 
             // Left-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
             // sequence of expressions that has the join key as a prefix.
@@ -530,8 +537,8 @@ pub(super) fn translate_single_logical_node(
                 // TODO(Kevin): Support sort-merge join for other types of joins.
                 // TODO(advancedxy): Rewrite null safe equals to support SMJ
                 } else if *join_type == JoinType::Inner
-                    && keys_are_primitive(left_on, &left.schema())
-                    && keys_are_primitive(right_on, &right.schema())
+                    && keys_are_primitive(&left_on, &left.schema())
+                    && keys_are_primitive(&right_on, &right.schema())
                     && (is_left_sort_partitioned || is_right_sort_partitioned)
                     && (!is_larger_partitioned
                         || (left_is_larger && is_left_sort_partitioned
@@ -566,8 +573,8 @@ pub(super) fn translate_single_logical_node(
                     Ok(PhysicalPlan::BroadcastJoin(BroadcastJoin::new(
                         left_physical,
                         right_physical,
-                        left_on.clone(),
-                        right_on.clone(),
+                        left_on,
+                        right_on,
                         null_equals_nulls.clone(),
                         *join_type,
                         is_swapped,
@@ -619,8 +626,8 @@ pub(super) fn translate_single_logical_node(
                     Ok(PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
                         left_physical,
                         right_physical,
-                        left_on.clone(),
-                        right_on.clone(),
+                        left_on,
+                        right_on,
                         *join_type,
                         num_partitions,
                         left_is_larger,
@@ -681,8 +688,8 @@ pub(super) fn translate_single_logical_node(
                     Ok(PhysicalPlan::HashJoin(HashJoin::new(
                         left_physical,
                         right_physical,
-                        left_on.clone(),
-                        right_on.clone(),
+                        left_on,
+                        right_on,
                         null_equals_nulls.clone(),
                         *join_type,
                     ))
@@ -1345,9 +1352,7 @@ mod tests {
                 vec![col("a"), col("b")],
                 JoinType::Inner,
                 Some(JoinStrategy::Hash),
-                None,
-                None,
-                false,
+                Default::default(),
             )?
             .build();
         logical_to_physical(logical_plan, cfg)

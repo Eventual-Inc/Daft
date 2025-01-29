@@ -31,9 +31,6 @@ log/
 # pytest benchmarks
 .benchmarks
 
-# docs autogen
-/docs/source/api_docs/doc_gen/
-
 # Added by pyenv
 .python-version
 

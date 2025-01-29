@@ -4,16 +4,15 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
+use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::{
-    col,
-    join::{get_common_join_keys, infer_join_schema},
-    optimization::replace_columns_with_expressions,
-    Expr, ExprRef,
+    col, join::infer_join_schema, optimization::replace_columns_with_expressions, Expr, ExprRef,
 };
+use indexmap::IndexSet;
 use itertools::Itertools;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 use snafu::ResultExt;
-use uuid::Uuid;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
@@ -22,7 +21,7 @@ use crate::{
     LogicalPlan, LogicalPlanRef,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Join {
     // Upstream nodes.
     pub left: Arc<LogicalPlan>,
@@ -37,21 +36,11 @@ pub struct Join {
     pub stats_state: StatsState,
 }
 
-impl std::hash::Hash for Join {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::hash::Hash::hash(&self.left, state);
-        std::hash::Hash::hash(&self.right, state);
-        std::hash::Hash::hash(&self.left_on, state);
-        std::hash::Hash::hash(&self.right_on, state);
-        std::hash::Hash::hash(&self.null_equals_nulls, state);
-        std::hash::Hash::hash(&self.join_type, state);
-        std::hash::Hash::hash(&self.join_strategy, state);
-        std::hash::Hash::hash(&self.output_schema, state);
-    }
-}
-
 impl Join {
-    #[allow(clippy::too_many_arguments)]
+    /// Create a new join node, checking the validity of the inputs and deriving the output schema.
+    ///
+    /// Columns that have the same name between left and right are assumed to be merged.
+    /// If that is not the desired behavior, call `Join::deduplicate_join_keys` before initializing the join node.
     pub(crate) fn try_new(
         left: Arc<LogicalPlan>,
         right: Arc<LogicalPlan>,
@@ -61,35 +50,38 @@ impl Join {
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> logical_plan::Result<Self> {
-        for (on_exprs, side) in [(&left_on, &left), (&right_on, &right)] {
-            for expr in on_exprs {
-                // Null type check for both fields and expressions
-                if matches!(expr.to_field(&side.schema())?.dtype, DataType::Null) {
-                    return Err(DaftError::ValueError(format!(
-                        "Can't join on null type expressions: {expr}"
-                    )))
-                    .context(CreationSnafu);
-                }
-            }
+        if left_on.len() != right_on.len() {
+            return Err(DaftError::ValueError(format!(
+                "Expected length of left_on to match length of right_on for Join, received: {} vs {}",
+                left_on.len(),
+                right_on.len()
+            )))
+            .context(CreationSnafu);
+        }
+
+        for (l, r) in left_on.iter().zip(right_on.iter()) {
+            let l_dtype = l.to_field(&left.schema())?.dtype;
+            let r_dtype = r.to_field(&right.schema())?.dtype;
+
+            try_get_supertype(&l_dtype, &r_dtype).map_err(|_| {
+                DaftError::TypeError(
+                    format!("Expected dtypes of left_on and right_on for Join to have a valid supertype, received: {l_dtype} vs {r_dtype}")
+                )
+            })?;
         }
 
         if let Some(null_equals_null) = &null_equals_nulls {
             if null_equals_null.len() != left_on.len() {
-                return Err(DaftError::ValueError(
-                    "null_equals_nulls must have the same length as left_on or right_on"
-                        .to_string(),
-                ))
+                return Err(DaftError::ValueError(format!(
+                    "Expected null_equals_nulls to have the same length as left_on or right_on, received: {} vs {}",
+                    null_equals_null.len(),
+                    left_on.len()
+                )))
                 .context(CreationSnafu);
             }
         }
 
-        let output_schema = infer_join_schema(
-            &left.schema(),
-            &right.schema(),
-            &left_on,
-            &right_on,
-            join_type,
-        )?;
+        let output_schema = infer_join_schema(&left.schema(), &right.schema(), join_type)?;
 
         Ok(Self {
             left,
@@ -106,24 +98,37 @@ impl Join {
 
     /// Add a project under the right side plan when necessary in order to resolve naming conflicts
     /// between left and right side columns.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn rename_right_columns(
+    ///
+    /// Returns:
+    /// - left (unchanged)
+    /// - updated right
+    /// - left_on (unchanged)
+    /// - updated right_on
+    pub(crate) fn deduplicate_join_columns(
         left: LogicalPlanRef,
         right: LogicalPlanRef,
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
         join_type: JoinType,
-        join_suffix: Option<&str>,
-        join_prefix: Option<&str>,
-        keep_join_keys: bool,
-    ) -> DaftResult<(LogicalPlanRef, Vec<ExprRef>)> {
+        options: JoinOptions,
+    ) -> DaftResult<(LogicalPlanRef, LogicalPlanRef, Vec<ExprRef>, Vec<ExprRef>)> {
         if matches!(join_type, JoinType::Anti | JoinType::Semi) {
-            Ok((right, right_on))
+            Ok((left, right, left_on, right_on))
         } else {
-            let common_join_keys: HashSet<_> =
-                get_common_join_keys(left_on.as_slice(), right_on.as_slice())
-                    .map(|k| k.to_string())
-                    .collect();
+            let merged_cols = if options.merge_matching_join_keys {
+                left_on
+                    .iter()
+                    .zip(right_on.iter())
+                    .filter_map(|(l, r)| match (l.as_ref(), r.as_ref()) {
+                        (Expr::Column(l_name), Expr::Column(r_name)) if l_name == r_name => {
+                            Some(l_name.to_string())
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            } else {
+                IndexSet::new()
+            };
 
             let left_names = left.schema().names();
             let right_names = right.schema().names();
@@ -135,14 +140,13 @@ impl Join {
             let right_rename_mapping: HashMap<_, _> = right_names
                 .iter()
                 .filter_map(|name| {
-                    if !names_so_far.contains(name)
-                        || (common_join_keys.contains(name) && !keep_join_keys)
-                    {
+                    if !names_so_far.contains(name) || merged_cols.contains(name.as_str()) {
+                        names_so_far.insert(name.clone());
                         None
                     } else {
                         let mut new_name = name.clone();
                         while names_so_far.contains(&new_name) {
-                            new_name = match (join_prefix, join_suffix) {
+                            new_name = match (&options.prefix, &options.suffix) {
                                 (Some(prefix), Some(suffix)) => {
                                     format!("{}{}{}", prefix, new_name, suffix)
                                 }
@@ -165,7 +169,7 @@ impl Join {
                 .collect();
 
             if right_rename_mapping.is_empty() {
-                Ok((right, right_on))
+                Ok((left, right, left_on, right_on))
             } else {
                 // projection to update the right side with the new column names
                 let new_right_projection: Vec<_> = right_names
@@ -192,64 +196,9 @@ impl Join {
                     .map(|expr| replace_columns_with_expressions(expr, &right_on_replace_map))
                     .collect::<Vec<_>>();
 
-                Ok((new_right.into(), new_right_on))
+                Ok((left, new_right.into(), left_on, new_right_on))
             }
         }
-    }
-
-    /// Renames join keys for the given left and right expressions. This is required to
-    /// prevent errors when the join keys on the left and right expressions have the same key
-    /// name.
-    ///
-    /// This function takes two vectors of expressions (`left_exprs` and `right_exprs`) and
-    /// checks for pairs of column expressions that differ. If both expressions in a pair
-    /// are column expressions and they are not identical, it generates a unique identifier
-    /// and renames both expressions by appending this identifier to their original names.
-    ///
-    /// The function returns two vectors of expressions, where the renamed expressions are
-    /// substituted for the original expressions in the cases where renaming occurred.
-    ///
-    /// # Parameters
-    /// - `left_exprs`: A vector of expressions from the left side of a join.
-    /// - `right_exprs`: A vector of expressions from the right side of a join.
-    ///
-    /// # Returns
-    /// A tuple containing two vectors of expressions, one for the left side and one for the
-    /// right side, where expressions that needed to be renamed have been modified.
-    ///
-    /// # Example
-    /// ```
-    /// let (renamed_left, renamed_right) = rename_join_keys(left_expressions, right_expressions);
-    /// ```
-    ///
-    /// For more details, see [issue #2649](https://github.com/Eventual-Inc/Daft/issues/2649).
-    #[allow(dead_code)]
-    pub(crate) fn rename_join_keys(
-        left_exprs: Vec<Arc<Expr>>,
-        right_exprs: Vec<Arc<Expr>>,
-    ) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
-        left_exprs
-            .into_iter()
-            .zip(right_exprs)
-            .map(
-                |(left_expr, right_expr)| match (&*left_expr, &*right_expr) {
-                    (Expr::Column(left_name), Expr::Column(right_name))
-                        if left_name == right_name =>
-                    {
-                        (left_expr, right_expr)
-                    }
-                    _ => {
-                        let unique_id = Uuid::new_v4().to_string();
-
-                        let renamed_left_expr =
-                            left_expr.alias(format!("{}_{}", left_expr.name(), unique_id));
-                        let renamed_right_expr =
-                            right_expr.alias(format!("{}_{}", right_expr.name(), unique_id));
-                        (renamed_left_expr, renamed_right_expr)
-                    }
-                },
-            )
-            .unzip()
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
@@ -312,5 +261,54 @@ impl Join {
             res.push(format!("Stats = {}", stats));
         }
         res
+    }
+}
+
+#[cfg_attr(feature = "python", pyclass)]
+#[derive(Clone, Default)]
+pub struct JoinOptions {
+    pub prefix: Option<String>,
+    pub suffix: Option<String>,
+    /// For join predicates in the form col(a) = col(a),
+    /// merge column "a" from both sides into one column.
+    pub merge_matching_join_keys: bool,
+}
+
+impl JoinOptions {
+    pub fn prefix(mut self, val: impl Into<String>) -> Self {
+        self.prefix = Some(val.into());
+        self
+    }
+
+    pub fn suffix(mut self, val: impl Into<String>) -> Self {
+        self.suffix = Some(val.into());
+        self
+    }
+
+    pub fn merge_matching_join_keys(mut self, val: bool) -> Self {
+        self.merge_matching_join_keys = val;
+        self
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl JoinOptions {
+    #[new]
+    #[pyo3(signature = (
+        prefix,
+        suffix,
+        merge_matching_join_keys,
+    ))]
+    pub fn new(
+        prefix: Option<String>,
+        suffix: Option<String>,
+        merge_matching_join_keys: bool,
+    ) -> Self {
+        Self {
+            prefix,
+            suffix,
+            merge_matching_join_keys,
+        }
     }
 }
