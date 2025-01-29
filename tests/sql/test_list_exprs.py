@@ -26,7 +26,7 @@ def test_list_singleton():
     assert_eq(actual, expect)
 
 
-def test_list():
+def test_list_easy():
     df = daft.from_pydict({"x": [1, 2, 3]})
     actual = daft.sql("SELECT [ x * 1, x * 2, x * 3 ] FROM df")
     expect = df.select(col("x").apply(lambda x: [x * 1, x * 2, x * 3], DataType.list(DataType.int64())).alias("list"))

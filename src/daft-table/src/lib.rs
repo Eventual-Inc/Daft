@@ -21,7 +21,7 @@ use daft_core::{
 };
 use daft_dsl::{
     col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
-    Literal, LiteralValue, SketchType,
+    LiteralValue, SketchType,
 };
 use daft_logical_plan::FileInfos;
 use num_traits::ToPrimitive;
@@ -556,8 +556,7 @@ impl Table {
             Expr::List(items) => {
                 let items = items.iter().map(|item| self.eval_expression(item)).collect::<DaftResult<Vec<_>>>()?;
                 let items = items.iter().collect::<Vec<&Series>>();
-                let s = Series::merge(items.as_slice())?.literal_value();
-                Ok(s.to_series().rename("list"))
+                Series::merge(items.as_slice())
             }
             Expr::Between(child, lower, upper) => self
                 .eval_expression(child)?
