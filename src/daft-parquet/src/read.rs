@@ -375,6 +375,7 @@ async fn stream_parquet_single(
     metadata: Option<Arc<FileMetaData>>,
     delete_rows: Option<Vec<i64>>,
     maintain_order: bool,
+    chunk_size: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let columns_to_return = columns.map(|s| s.iter().map(|s| (*s).to_string()).collect_vec());
@@ -417,6 +418,7 @@ async fn stream_parquet_single(
             metadata,
             maintain_order,
             io_stats,
+            chunk_size,
         )
         .await
     } else {
@@ -427,6 +429,9 @@ async fn stream_parquet_single(
             field_id_mapping,
         )
         .await?;
+
+        let builder = builder.set_chunk_size(chunk_size);
+
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
         let builder = if let Some(columns) = &columns_to_read {
@@ -873,6 +878,7 @@ pub async fn stream_parquet(
     metadata: Option<Arc<FileMetaData>>,
     maintain_order: bool,
     delete_rows: Option<Vec<i64>>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
     let stream = stream_parquet_single(
         uri.to_string(),
@@ -887,6 +893,7 @@ pub async fn stream_parquet(
         metadata,
         delete_rows,
         maintain_order,
+        chunk_size,
     )
     .await?;
     Ok(Box::pin(stream))
@@ -1168,6 +1175,7 @@ mod tests {
                 None,
                 None,
                 false,
+                None,
                 None,
             )
             .await?
