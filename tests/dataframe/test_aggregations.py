@@ -32,8 +32,8 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set_no_nulls"),
-            col("values").agg_set(include_nulls=True).alias("set_with_nulls"),
+            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         ]
     )
     expected = {
@@ -77,7 +77,7 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
     assert len(res_set_with_nulls[0]) == len(
         set(x for x in res_set_with_nulls[0])
     ), "Result should contain no duplicates"
-    assert None in res_set_with_nulls[0], "Result should contain null when include_nulls=True"
+    assert None in res_set_with_nulls[0], "Result should contain null when ignore_nulls=False"
     assert set(res_set_with_nulls[0]) == set(exp_set_with_nulls[0]), "Sets should contain same elements including nulls"
 
 
@@ -98,8 +98,8 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set_no_nulls"),
-            col("values").agg_set(include_nulls=True).alias("set_with_nulls"),
+            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         ]
     )
     expected = {
@@ -156,8 +156,8 @@ def test_agg_global_empty(make_df):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set_no_nulls"),
-            col("values").agg_set(include_nulls=True).alias("set_with_nulls"),
+            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         ]
     )
     expected = {
@@ -215,8 +215,8 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set_no_nulls"),
-            col("values").agg_set(include_nulls=True).alias("set_with_nulls"),
+            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         ]
     )
     expected = {
@@ -261,7 +261,7 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
         assert set(x for x in res if x is not None) == set(
             x for x in exp if x is not None
         ), "Sets should contain same non-null elements"
-        assert None not in res, "Result should not contain nulls when include_nulls=False"
+        assert None not in res, "Result should not contain nulls when ignore_nulls=True"
 
     # Check set with nulls
     sorted_res_with_nulls = [res_set_with_nulls[i] for i in arg_sort]
@@ -270,7 +270,7 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
         assert len(res) == len(set(x for x in res)), "Result should contain no duplicates"
         assert set(res) == set(exp), "Sets should contain same elements including nulls"
         if None in exp:
-            assert None in res, "Result should contain null when include_nulls=True and nulls exist"
+            assert None in res, "Result should contain null when ignore_nulls=False and nulls exist"
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
@@ -293,8 +293,8 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set_no_nulls"),
-            col("values").agg_set(include_nulls=True).alias("set_with_nulls"),
+            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         ]
     )
 
@@ -344,7 +344,7 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
     for res, exp in zip(sorted_res_with_nulls, exp_set_with_nulls):
         assert res == exp, "Should contain single null when all values are null"
         assert len(res) == 1, "Should contain exactly one null when all values are null"
-        assert None in res, "Should contain null when include_nulls=True"
+        assert None in res, "Should contain null when ignore_nulls=False"
 
 
 def test_agg_groupby_null_type_column(make_df):
@@ -401,8 +401,8 @@ def test_all_null_groupby_keys(make_df, repartition_nparts, with_morsel_size):
         .agg(
             col("values").agg_list().alias("list"),
             col("values").mean().alias("mean"),
-            col("values").agg_set().alias("set_no_nulls"),
-            col("values").agg_set(include_nulls=True).alias("set_with_nulls"),
+            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         )
     )
 
@@ -460,8 +460,8 @@ def test_agg_groupby_empty(make_df):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set_no_nulls"),
-            col("values").agg_set(include_nulls=True).alias("set_with_nulls"),
+            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         ]
     )
 
@@ -506,8 +506,8 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set_no_nulls"),
-            col("values").agg_set(include_nulls=True).alias("set_with_nulls"),
+            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         ]
     )
     expected = {
@@ -552,7 +552,7 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
         assert set(x for x in res if x is not None) == set(
             x for x in exp if x is not None
         ), "Sets should contain same non-null elements"
-        assert None not in res, "Result should not contain nulls when include_nulls=False"
+        assert None not in res, "Result should not contain nulls when ignore_nulls=True"
 
     # Check set with nulls
     sorted_res_with_nulls = [res_set_with_nulls[i] for i in arg_sort]
@@ -561,7 +561,7 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
         assert len(res) == len(set(x for x in res)), "Result should contain no duplicates"
         assert set(res) == set(exp), "Sets should contain same elements including nulls"
         if None in exp:
-            assert None in res, "Result should contain null when include_nulls=True and nulls exist"
+            assert None in res, "Result should contain null when ignore_nulls=False and nulls exist"
 
 
 @dataclass
@@ -580,8 +580,8 @@ def test_agg_pyobjects():
         [
             col("objs").count().alias("count"),
             col("objs").agg_list().alias("list"),
-            col("objs").agg_set().alias("set_no_nulls"),
-            col("objs").agg_set(include_nulls=True).alias("set_with_nulls"),
+            col("objs").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+            col("objs").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         ]
     )
     df.collect()
@@ -615,8 +615,8 @@ def test_groupby_agg_pyobjects():
             [
                 col("objects").count().alias("count"),
                 col("objects").agg_list().alias("list"),
-                col("objects").agg_set().alias("set_no_nulls"),
-                col("objects").agg_set(include_nulls=True).alias("set_with_nulls"),
+                col("objects").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+                col("objects").agg_set(ignore_nulls=False).alias("set_with_nulls"),
             ]
         )
         .sort(col("groups"))

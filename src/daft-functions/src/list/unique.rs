@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListUnique {
-    include_nulls: bool,
+    ignore_nulls: bool,
 }
 
 #[typetag::serde]
@@ -82,10 +82,10 @@ impl ScalarUDF for ListUnique {
 
                 for sub_series in list {
                     if let Some(sub_series) = sub_series {
-                        let probe_table = if self.include_nulls {
-                            sub_series.build_probe_table_with_nulls()?
-                        } else {
+                        let probe_table = if self.ignore_nulls {
                             sub_series.build_probe_table_without_nulls()?
+                        } else {
+                            sub_series.build_probe_table_with_nulls()?
                         };
 
                         // Get indices in sorted order to preserve first occurrence order
@@ -134,8 +134,8 @@ impl ScalarUDF for ListUnique {
 
 /// Returns a list of unique elements in each list, preserving order of first occurrence.
 ///
-/// When include_nulls is false (default), nulls are excluded from the result.
-/// When include_nulls is true, nulls are included in the result.
-pub fn list_unique(expr: ExprRef, include_nulls: bool) -> ExprRef {
-    ScalarFunction::new(ListUnique { include_nulls }, vec![expr]).into()
+/// When ignore_nulls is true (default), nulls are excluded from the result.
+/// When ignore_nulls is false, nulls are included in the result.
+pub fn list_unique(expr: ExprRef, ignore_nulls: bool) -> ExprRef {
+    ScalarFunction::new(ListUnique { ignore_nulls }, vec![expr]).into()
 }

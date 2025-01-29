@@ -983,9 +983,9 @@ class Expression:
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
 
-    def agg_set(self, include_nulls: bool = False) -> Expression:
+    def agg_set(self, ignore_nulls: bool = True) -> Expression:
         """Aggregates the values in the expression into a set."""
-        expr = self._expr.agg_set(include_nulls)
+        expr = self._expr.agg_set(ignore_nulls)
         return Expression._from_pyexpr(expr)
 
     def agg_concat(self) -> Expression:
@@ -3237,7 +3237,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             nulls_first = Expression._to_expression(nulls_first)
         return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
 
-    def unique(self, include_nulls: bool = False) -> Expression:
+    def unique(self, ignore_nulls: bool = True) -> Expression:
         """Returns a list of unique elements in each list, preserving order of first occurrence.
 
         Example:
@@ -3259,12 +3259,12 @@ class ExpressionListNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         Args:
-            include_nulls: Whether to include null values in the result. Defaults to False.
+            ignore_nulls: Whether to ignore null values in the result. Defaults to True.
 
         Returns:
             Expression: An expression with lists containing only unique elements
         """
-        return Expression._from_pyexpr(_list_unique(self._expr, include_nulls))
+        return Expression._from_pyexpr(_list_unique(self._expr, ignore_nulls))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):

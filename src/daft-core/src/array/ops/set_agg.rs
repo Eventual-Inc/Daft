@@ -74,11 +74,11 @@ macro_rules! impl_daft_set_agg {
     () => {
         type Output = DaftResult<ListArray>;
 
-        fn distinct(&self, include_nulls: bool) -> Self::Output {
+        fn distinct(&self, ignore_nulls: bool) -> Self::Output {
             let mut child_series = self.clone().into_series();
 
             // Filter nulls if needed
-            if !include_nulls {
+            if ignore_nulls {
                 let not_null_mask = DaftNotNull::not_null(self)?.into_series();
                 child_series = child_series.filter(not_null_mask.bool()?)?;
             }
@@ -93,10 +93,10 @@ macro_rules! impl_daft_set_agg {
             Ok(ListArray::new(list_field, deduped_series, offsets, None))
         }
 
-        fn grouped_distinct(&self, groups: &GroupIndices, include_nulls: bool) -> Self::Output {
+        fn grouped_distinct(&self, groups: &GroupIndices, ignore_nulls: bool) -> Self::Output {
             println!(
-                "\nStarting grouped_distinct with include_nulls={}",
-                include_nulls
+                "\nStarting grouped_distinct with ignore_nulls={}",
+                ignore_nulls
             );
 
             // Convert self to series once at the start for reuse
@@ -104,7 +104,7 @@ macro_rules! impl_daft_set_agg {
             println!("Original series length: {}", series.len());
 
             // Create index mapping and filter nulls if needed
-            let (filtered_series, index_mapping) = if !include_nulls {
+            let (filtered_series, index_mapping) = if ignore_nulls {
                 println!("Filtering nulls from series...");
                 let not_null_mask = DaftNotNull::not_null(self)?.into_series();
                 let not_null_array = not_null_mask.bool()?;

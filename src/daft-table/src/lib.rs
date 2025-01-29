@@ -528,8 +528,8 @@ impl Table {
             //     let unique_expr = unique(col(list.name()), false);
             //     self.eval_expression(&unique_expr)
             // }
-            AggExpr::Set(expr, include_nulls) => {
-                self.eval_expression(expr)?.agg_set(groups, *include_nulls)
+            AggExpr::Set(expr, ignore_nulls) => {
+                self.eval_expression(expr)?.agg_set(groups, *ignore_nulls)
             }
             AggExpr::Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(

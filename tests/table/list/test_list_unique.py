@@ -12,7 +12,7 @@ def test_list_unique():
         }
     ).eval_expression_list([col("a").cast(DataType.list(DataType.int64()))])
 
-    # Test with default include_nulls=False
+    # Test with default ignore_nulls=True
     res = table.eval_expression_list([col("a").list.unique().alias("unique")])
     result = res.to_pydict()["unique"]
     expected = [[1, 2, 3], [4, 6, 2], [3], [11, 6], None, [], [1, 3], None]
@@ -30,8 +30,8 @@ def test_list_unique():
             e_order = {x: i for i, x in enumerate(e) if x is not None}
             assert r_order == e_order, "Order of first occurrence should be preserved"
 
-    # Test with include_nulls=True
-    res = table.eval_expression_list([col("a").list.unique(include_nulls=True).alias("unique")])
+    # Test with ignore_nulls=False
+    res = table.eval_expression_list([col("a").list.unique(ignore_nulls=False).alias("unique")])
     result = res.to_pydict()["unique"]
     expected = [[1, 2, 3], [4, 6, 2], [3], [11, 6], None, [], [1, None, 3], None]
 
@@ -56,7 +56,7 @@ def test_list_unique_fixed_size():
         }
     ).eval_expression_list([col("a").cast(DataType.fixed_size_list(DataType.int64(), 2))])
 
-    # Test with default include_nulls=False
+    # Test with default ignore_nulls=True
     res = table.eval_expression_list([col("a").list.unique().alias("unique")])
     result = res.to_pydict()["unique"]
     expected = [[1, 2], [2], [3], [11], None, [2], None]
@@ -74,8 +74,8 @@ def test_list_unique_fixed_size():
             e_order = {x: i for i, x in enumerate(e) if x is not None}
             assert r_order == e_order, "Order of first occurrence should be preserved"
 
-    # Test with include_nulls=True
-    res = table.eval_expression_list([col("a").list.unique(include_nulls=True).alias("unique")])
+    # Test with ignore_nulls=False
+    res = table.eval_expression_list([col("a").list.unique(ignore_nulls=False).alias("unique")])
     result = res.to_pydict()["unique"]
     expected = [[1, 2], [2], [3], [11], None, [2, None], None]
 

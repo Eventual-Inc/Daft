@@ -235,7 +235,7 @@ pub enum AggExpr {
     #[display("list({_0})")]
     List(ExprRef),
 
-    #[display("set({_0}, include_nulls={_1})")]
+    #[display("set({_0}, ignore_nulls={_1})")]
     Set(ExprRef, bool),
 
     #[display("list({_0})")]
@@ -351,11 +351,9 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_list()"))
             }
-            Self::Set(_expr, include_nulls) => {
+            Self::Set(_expr, ignore_nulls) => {
                 let child_id = _expr.semantic_id(schema);
-                FieldID::new(format!(
-                    "{child_id}.local_set(include_nulls={include_nulls})"
-                ))
+                FieldID::new(format!("{child_id}.local_set(ignore_nulls={ignore_nulls})"))
             }
             Self::Concat(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -403,7 +401,7 @@ impl AggExpr {
             Self::Max(_) => Self::Max(first_child()),
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
             Self::List(_) => Self::List(first_child()),
-            Self::Set(_expr, include_nulls) => Self::Set(first_child(), *include_nulls),
+            Self::Set(_expr, ignore_nulls) => Self::Set(first_child(), *ignore_nulls),
             Self::Concat(_) => Self::Concat(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
@@ -638,8 +636,8 @@ impl Expr {
         Self::Agg(AggExpr::List(self)).into()
     }
 
-    pub fn agg_set(self: ExprRef, include_nulls: bool) -> ExprRef {
-        Self::Agg(AggExpr::Set(self, include_nulls)).into()
+    pub fn agg_set(self: ExprRef, ignore_nulls: bool) -> ExprRef {
+        Self::Agg(AggExpr::Set(self, ignore_nulls)).into()
     }
 
     pub fn agg_concat(self: ExprRef) -> ExprRef {
