@@ -130,13 +130,25 @@ use std::ops::Add;
 impl Add for &ApproxStats {
     type Output = ApproxStats;
     fn add(self, rhs: Self) -> Self::Output {
+        // Take the weighted average of the selectivities.
+        let acc_selectivity = if self.acc_selectivity > 0.0 && rhs.acc_selectivity > 0.0 {
+            let current_rows = self.num_rows + rhs.num_rows;
+            let pre_filtered_rows = self.num_rows as f64 / self.acc_selectivity
+                + rhs.num_rows as f64 / rhs.acc_selectivity;
+            if pre_filtered_rows > 0.0 {
+                current_rows as f64 / pre_filtered_rows
+            } else {
+                // The only case where the number of pre-filtered rows can be 0 is when the number of rows is 0.
+                // In this case, the selectivity is 0.
+                0.0
+            }
+        } else {
+            0.0
+        };
         ApproxStats {
             num_rows: self.num_rows + rhs.num_rows,
             size_bytes: self.size_bytes + rhs.size_bytes,
-            // Take the weighted average of the selectivities.
-            acc_selectivity: (self.num_rows + rhs.num_rows) as f64
-                / ((self.num_rows as f64 / self.acc_selectivity)
-                    + (rhs.num_rows as f64 / rhs.acc_selectivity)),
+            acc_selectivity,
         }
     }
 }

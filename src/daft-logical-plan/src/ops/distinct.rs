@@ -27,11 +27,16 @@ impl Distinct {
             input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
         // Assume high cardinality, 80% of rows are distinct.
         let est_distinct_values = input_stats.approx_stats.num_rows * 4 / 5;
+        let acc_selectivity = if input_stats.approx_stats.num_rows == 0 {
+            0.0
+        } else {
+            input_stats.approx_stats.acc_selectivity * est_distinct_values as f64
+                / input_stats.approx_stats.num_rows as f64
+        };
         let approx_stats = ApproxStats {
             num_rows: est_distinct_values,
             size_bytes: est_distinct_values * est_bytes_per_row,
-            acc_selectivity: input_stats.approx_stats.acc_selectivity * est_distinct_values as f64
-                / input_stats.approx_stats.num_rows as f64,
+            acc_selectivity,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self

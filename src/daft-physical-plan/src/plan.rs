@@ -193,20 +193,20 @@ impl PhysicalPlan {
             },
             Self::TabularScan(TabularScan { scan_tasks, .. }) => {
                 let mut approx_stats = ApproxStats::empty();
-                let mut prefiltered_num_rows = 0.0;
                 for st in scan_tasks.iter() {
                     if let Some(num_rows) = st.num_rows() {
                         approx_stats.num_rows += num_rows;
-                        prefiltered_num_rows += num_rows as f64
-                            / st.pushdowns().estimated_selectivity(st.schema().as_ref());
                     } else if let Some(approx_num_rows) = st.approx_num_rows(None) {
                         approx_stats.num_rows += approx_num_rows as usize;
-                        prefiltered_num_rows += approx_num_rows
-                            / st.pushdowns().estimated_selectivity(st.schema().as_ref());
                     }
                     approx_stats.size_bytes += st.estimate_in_memory_size_bytes(None).unwrap_or(0);
                 }
-                approx_stats.acc_selectivity = approx_stats.num_rows as f64 / prefiltered_num_rows;
+                approx_stats.acc_selectivity = if scan_tasks.len() == 0 {
+                    0.0
+                } else {
+                    let st = scan_tasks.first().unwrap();
+                    st.pushdowns().estimated_selectivity(st.schema().as_ref())
+                };
                 approx_stats
             }
             Self::EmptyScan(..) => ApproxStats {
@@ -233,7 +233,11 @@ impl PhysicalPlan {
                 let input_stats = input.approximate_stats();
                 let limit = *limit as usize;
                 let limit_selectivity = if input_stats.num_rows > limit {
-                    limit as f64 / input_stats.num_rows as f64
+                    if input_stats.num_rows == 0 {
+                        0.0
+                    } else {
+                        limit as f64 / input_stats.num_rows as f64
+                    }
                 } else {
                     1.0
                 };
@@ -262,12 +266,17 @@ impl PhysicalPlan {
                 .apply(|v| ((v as f64) * fraction) as usize),
             Self::Explode(Explode { input, .. }) => {
                 let input_stats = input.approximate_stats();
-                let est_num_exploded_rows = input_stats.num_rows * 4;
+                const EXPLODE_FACTOR: usize = 4;
+                let est_num_exploded_rows = input_stats.num_rows * EXPLODE_FACTOR;
+                let acc_selectivity = if input_stats.num_rows == 0 {
+                    0.0
+                } else {
+                    input_stats.acc_selectivity * EXPLODE_FACTOR as f64
+                };
                 ApproxStats {
                     num_rows: est_num_exploded_rows,
                     size_bytes: input_stats.size_bytes,
-                    acc_selectivity: input_stats.acc_selectivity * est_num_exploded_rows as f64
-                        / input_stats.num_rows as f64,
+                    acc_selectivity,
                 }
             }
             // Propagate child approximation for operations that don't affect cardinality.
@@ -310,11 +319,16 @@ impl PhysicalPlan {
                 let input_stats = input.approximate_stats();
                 // TODO we should use schema inference here
                 let est_bytes_per_row = input_stats.size_bytes / (input_stats.num_rows.max(1));
+                let acc_selectivity = if input_stats.num_rows == 0 {
+                    0.0
+                } else {
+                    input_stats.acc_selectivity / input_stats.num_rows as f64
+                };
                 if groupby.is_empty() {
                     ApproxStats {
                         num_rows: 1,
                         size_bytes: est_bytes_per_row,
-                        acc_selectivity: input_stats.acc_selectivity,
+                        acc_selectivity,
                     }
                 } else {
                     // Assume high cardinality for group by columns, and 80% of rows are unique.

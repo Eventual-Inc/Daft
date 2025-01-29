@@ -54,12 +54,16 @@ impl Aggregate {
         let input_stats = self.input.materialized_stats();
         let est_bytes_per_row =
             input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
+        let acc_selectivity = if input_stats.approx_stats.num_rows == 0 {
+            0.0
+        } else {
+            input_stats.approx_stats.acc_selectivity / input_stats.approx_stats.num_rows as f64
+        };
         let approx_stats = if self.groupby.is_empty() {
             ApproxStats {
                 num_rows: 1,
                 size_bytes: est_bytes_per_row,
-                acc_selectivity: input_stats.approx_stats.acc_selectivity
-                    / input_stats.approx_stats.num_rows as f64,
+                acc_selectivity,
             }
         } else {
             // Assume high cardinality for group by columns, and 80% of rows are unique.

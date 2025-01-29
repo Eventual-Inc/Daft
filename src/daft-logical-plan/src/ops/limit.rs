@@ -31,7 +31,11 @@ impl Limit {
         let input_stats = self.input.materialized_stats();
         let limit = self.limit as usize;
         let limit_selectivity = if input_stats.approx_stats.num_rows > limit {
-            limit as f64 / input_stats.approx_stats.num_rows as f64
+            if input_stats.approx_stats.num_rows == 0 {
+                0.0
+            } else {
+                limit as f64 / input_stats.approx_stats.num_rows as f64
+            }
         } else {
             1.0
         };
