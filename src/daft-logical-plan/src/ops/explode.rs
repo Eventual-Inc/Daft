@@ -58,6 +58,9 @@ impl Explode {
         let approx_stats = ApproxStats {
             num_rows: est_num_exploded_rows,
             size_bytes: input_stats.approx_stats.size_bytes,
+            acc_selectivity: input_stats.approx_stats.acc_selectivity
+                * est_num_exploded_rows as f64
+                / input_stats.approx_stats.num_rows as f64,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self

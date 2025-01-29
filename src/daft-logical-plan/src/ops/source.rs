@@ -62,6 +62,7 @@ impl Source {
             }) => ApproxStats {
                 num_rows: *num_rows,
                 size_bytes: *size_bytes,
+                acc_selectivity: 1.0,
             },
             SourceInfo::Physical(physical_scan_info) => match &physical_scan_info.scan_state {
                 ScanState::Operator(_) => {
@@ -69,15 +70,22 @@ impl Source {
                 }
                 ScanState::Tasks(scan_tasks) => {
                     let mut approx_stats = ApproxStats::empty();
+                    let mut prefiltered_num_rows = 0.0;
                     for st in scan_tasks.iter() {
                         if let Some(num_rows) = st.num_rows() {
                             approx_stats.num_rows += num_rows;
+                            prefiltered_num_rows += num_rows as f64
+                                / st.pushdowns().estimated_selectivity(st.schema().as_ref());
                         } else if let Some(approx_num_rows) = st.approx_num_rows(None) {
                             approx_stats.num_rows += approx_num_rows as usize;
+                            prefiltered_num_rows += approx_num_rows
+                                / st.pushdowns().estimated_selectivity(st.schema().as_ref());
                         }
                         approx_stats.size_bytes +=
                             st.estimate_in_memory_size_bytes(None).unwrap_or(0);
                     }
+                    approx_stats.acc_selectivity =
+                        approx_stats.num_rows as f64 / prefiltered_num_rows;
                     approx_stats
                 }
             },

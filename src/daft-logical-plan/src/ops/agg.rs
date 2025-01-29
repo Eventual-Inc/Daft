@@ -58,6 +58,8 @@ impl Aggregate {
             ApproxStats {
                 num_rows: 1,
                 size_bytes: est_bytes_per_row,
+                acc_selectivity: input_stats.approx_stats.acc_selectivity
+                    / input_stats.approx_stats.num_rows as f64,
             }
         } else {
             // Assume high cardinality for group by columns, and 80% of rows are unique.
@@ -65,6 +67,8 @@ impl Aggregate {
             ApproxStats {
                 num_rows: est_num_groups,
                 size_bytes: est_bytes_per_row * est_num_groups,
+                acc_selectivity: input_stats.approx_stats.acc_selectivity * est_num_groups as f64
+                    / input_stats.approx_stats.num_rows as f64,
             }
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
