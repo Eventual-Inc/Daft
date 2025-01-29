@@ -69,6 +69,16 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
 impl DaftConcatAggable for ListArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
+        if self.null_count() == 0 {
+            let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, *self.offsets().last()])?;
+            return Ok(Self::new(
+                self.field.clone(),
+                self.flat_child.clone(),
+                new_offsets,
+                None,
+            ));
+        }
+
         // Only the all-null case leads to a null result. If any single element is non-null (e.g. an empty list []),
         // The concat will successfully return a single non-null element.
         let new_validity = match self.validity() {
@@ -86,20 +96,11 @@ impl DaftConcatAggable for ListArray {
             true,
             self.flat_child.len(), // Conservatively reserve a capacity == full size of the child
         );
-
-        if let Some(validity) = self.validity() {
-            for (start_valid, len_valid) in SlicesIterator::new(validity) {
-                let child_start = self.offsets().start_end(start_valid).0;
-                let child_end = self.offsets().start_end(start_valid + len_valid - 1).1;
-                child_growable.extend(0, child_start, child_end - child_start);
-            }
-        } else {
-            // No nulls, just concatenate everything
-            let child_start = self.offsets().start_end(0).0;
-            let child_end = self.offsets().start_end(self.len() - 1).1;
+        for (start_valid, len_valid) in SlicesIterator::new(self.validity().unwrap()) {
+            let child_start = self.offsets().start_end(start_valid).0;
+            let child_end = self.offsets().start_end(start_valid + len_valid - 1).1;
             child_growable.extend(0, child_start, child_end - child_start);
         }
-
         let new_child = child_growable.build()?;
         let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, new_child.len() as i64])?;
 
