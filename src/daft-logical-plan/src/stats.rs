@@ -105,6 +105,7 @@ impl<T: Display> Display for AlwaysSame<T> {
 pub struct ApproxStats {
     pub num_rows: usize,
     pub size_bytes: usize,
+    // Accumulated selectivity, i.e. the selectivity of the current operator and its children.
     pub acc_selectivity: f64,
 }
 
