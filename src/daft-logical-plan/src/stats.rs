@@ -48,9 +48,10 @@ impl Display for PlanStats {
         use num_format::{Locale, ToFormattedString};
         write!(
             f,
-            "{{ Approx num rows = {}, Approx size bytes = {} }}",
+            "{{ Approx num rows = {}, Approx size bytes = {}, Accumulated selectivity = {:.2} }}",
             self.approx_stats.num_rows.to_formatted_string(&Locale::en),
             bytes_to_human_readable(self.approx_stats.size_bytes),
+            self.approx_stats.acc_selectivity,
         )
     }
 }
