@@ -111,10 +111,20 @@ pub struct ShuffleExchangeFactory {
 }
 
 impl ShuffleExchangeFactory {
-    const PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE: usize = 1_000_000;
+    const PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE: usize = 200;
 
     pub fn new(input: PhysicalPlanRef) -> Self {
         Self { input }
+    }
+
+    fn should_use_pre_shuffle_merge(
+        &self,
+        input_num_partitions: usize,
+        target_num_partitions: usize,
+    ) -> bool {
+        let total_num_partitions = input_num_partitions * target_num_partitions;
+        let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
+        geometric_mean > Self::PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE
     }
 
     fn get_shuffle_strategy(
@@ -135,10 +145,10 @@ impl ShuffleExchangeFactory {
                 }
             }
             Some(cfg) if cfg.shuffle_algorithm == "auto" => {
-                let intermediate_num_partitions = self.input.clustering_spec().num_partitions()
-                    * clustering_spec.num_partitions();
-                if intermediate_num_partitions > Self::PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE
-                {
+                if self.should_use_pre_shuffle_merge(
+                    self.input.clustering_spec().num_partitions(),
+                    clustering_spec.num_partitions(),
+                ) {
                     ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                         target_spec: clustering_spec,
                         pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
@@ -150,10 +160,10 @@ impl ShuffleExchangeFactory {
                 }
             }
             None => {
-                let intermediate_num_partitions = self.input.clustering_spec().num_partitions()
-                    * clustering_spec.num_partitions();
-                if intermediate_num_partitions > Self::PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE
-                {
+                if self.should_use_pre_shuffle_merge(
+                    self.input.clustering_spec().num_partitions(),
+                    clustering_spec.num_partitions(),
+                ) {
                     ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                         target_spec: clustering_spec,
                         pre_shuffle_merge_threshold: DaftExecutionConfig::default()
