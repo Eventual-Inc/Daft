@@ -1142,112 +1142,66 @@ def test_global_pyobj_set_aggs() -> None:
     "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
 )
 def test_grouped_set_aggs(dtype) -> None:
-    # More interesting test data with multiple groups and repeated values
     groups = [1, 2, 3, 1, 2, 3, 1, 2, 3, 1]
     input = [None, 0, 1, 2, 0, 2, None, 1, None, 3]
 
-    # Group 1: [None, 2, None, 3]
-    # Group 2: [0, 0, 1]
-    # Group 3: [1, 2, None]
-
-    print(f"\n{'='*80}\nRunning test with dtype: {dtype}")
-    print("Initial data:")
-    print(f"Groups:     {groups}")
-    print(f"Input:      {input}")
-
     if dtype == DataType.date():
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
-        print(f"Date input: {input}")
     elif dtype == DataType.bool():
         input = [bool(x) if x is not None else None for x in input]
-        print(f"Boolean input: {input}")
     elif dtype == DataType.string():
         input = [str(x) if x is not None else None for x in input]
-        print(f"String input: {input}")
     elif dtype == DataType.binary():
         input = [bytes(x) if x is not None else None for x in input]
-        print(f"Binary input: {input}")
     elif dtype == DataType.null():
         input = [None for _ in input]
-        print(f"Null input: {input}")
 
     daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
     daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
-
-    # Get the actual values after casting for comparison
     input_as_dtype = daft_table.get_column("input").to_pylist()
 
-    # Test without nulls
-    print("\nTesting without nulls:")
     result_no_nulls = daft_table.agg(
         [col("input").alias("set").agg_set(ignore_nulls=True)], group_by=[col("groups")]
     ).sort([col("groups")])
-    print(f"Result datatype: {result_no_nulls.get_column('set').datatype()}")
     assert result_no_nulls.get_column("set").datatype() == DataType.list(dtype)
 
-    # Expected sets for each group (without nulls):
-    # Group 1: {2, 3}
-    # Group 2: {0, 1}
-    # Group 3: {1, 2}
     result_dict_no_nulls = result_no_nulls.to_pydict()
-    print(f"\nResult without nulls: {result_dict_no_nulls}")
-
-    assert sorted(result_dict_no_nulls["groups"]) == [1, 2, 3], "Groups should be [1, 2, 3]"
+    assert sorted(result_dict_no_nulls["groups"]) == [1, 2, 3]
 
     group1_set = set(result_dict_no_nulls["set"][0])
     group2_set = set(result_dict_no_nulls["set"][1])
     group3_set = set(result_dict_no_nulls["set"][2])
 
-    # Get expected values after type conversion
-    group1_expected = {input_as_dtype[i] for i in [3, 9]}  # indices of 2, 3 in group 1
-    group2_expected = {input_as_dtype[i] for i in [1, 4, 7]}  # indices of 0, 0, 1 in group 2
-    group3_expected = {input_as_dtype[i] for i in [2, 5]}  # indices of 1, 2 in group 3
+    group1_expected = {input_as_dtype[i] for i in [3, 9]}
+    group2_expected = {input_as_dtype[i] for i in [1, 4, 7]}
+    group3_expected = {input_as_dtype[i] for i in [2, 5]}
 
-    # For Null type, all values are None, so expected sets should be empty for no_nulls case
     if dtype == DataType.null():
         group1_expected = set()
         group2_expected = set()
         group3_expected = set()
 
-    print(f"Group 1 set (should be {group1_expected}): {group1_set}")
-    print(f"Group 2 set (should be {group2_expected}): {group2_set}")
-    print(f"Group 3 set (should be {group3_expected}): {group3_set}")
-
     assert group1_set == group1_expected, f"Group 1 set incorrect. Expected {group1_expected}, got {group1_set}"
     assert group2_set == group2_expected, f"Group 2 set incorrect. Expected {group2_expected}, got {group2_set}"
     assert group3_set == group3_expected, f"Group 3 set incorrect. Expected {group3_expected}, got {group3_set}"
-    assert None not in group1_set and None not in group2_set and None not in group3_set, "Nulls should not be present"
+    assert None not in group1_set and None not in group2_set and None not in group3_set
 
-    # Test with nulls
-    print("\nTesting with nulls:")
     result_with_nulls = daft_table.agg(
         [col("input").alias("set").agg_set(ignore_nulls=False)], group_by=[col("groups")]
     ).sort([col("groups")])
     assert result_with_nulls.get_column("set").datatype() == DataType.list(dtype)
 
-    # Expected sets for each group (with nulls):
-    # Group 1: {None, 2, 3}
-    # Group 2: {0, 1}
-    # Group 3: {None, 1, 2}
     result_dict_with_nulls = result_with_nulls.to_pydict()
-    print(f"\nResult with nulls: {result_dict_with_nulls}")
-
     assert sorted(result_dict_with_nulls["groups"]) == [1, 2, 3]
 
     group1_set_with_nulls = set(result_dict_with_nulls["set"][0])
     group2_set_with_nulls = set(result_dict_with_nulls["set"][1])
     group3_set_with_nulls = set(result_dict_with_nulls["set"][2])
 
-    print(f"Group 1 set (should be {{None, 2, 3}}): {group1_set_with_nulls}")
-    print(f"Group 2 set (should be {{0, 1}}): {group2_set_with_nulls}")
-    print(f"Group 3 set (should be {{None, 1, 2}}): {group3_set_with_nulls}")
+    group1_expected = {input_as_dtype[i] for i in [0, 3, 9]}
+    group2_expected = {input_as_dtype[i] for i in [1, 4, 7]}
+    group3_expected = {input_as_dtype[i] for i in [2, 5, 8]}
 
-    # Get expected values after type conversion
-    group1_expected = {input_as_dtype[i] for i in [0, 3, 9]}  # indices of None, 2, 3 in group 1
-    group2_expected = {input_as_dtype[i] for i in [1, 4, 7]}  # indices of 0, 0, 1 in group 2
-    group3_expected = {input_as_dtype[i] for i in [2, 5, 8]}  # indices of 1, 2, None in group 3
-
-    # For Null type, all values are None, so expected sets should contain a single None
     if dtype == DataType.null():
         group1_expected = {None}
         group2_expected = {None}
@@ -1262,7 +1216,6 @@ def test_grouped_set_aggs(dtype) -> None:
     assert (
         group3_set_with_nulls == group3_expected
     ), f"Group 3 set incorrect. Expected {group3_expected}, got {group3_set_with_nulls}"
-    print(f"{'='*80}\n")
 
 
 def test_grouped_pyobj_set_aggs() -> None:

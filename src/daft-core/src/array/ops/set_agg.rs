@@ -13,20 +13,12 @@ use crate::{
 };
 
 fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
-    println!(
-        "Starting deduplication for series with length: {}",
-        series.len()
-    );
-
     // Try to get hashes for each element, error out if elements are not hashable
-    println!("Computing hashes...");
     let hashes = series.hash(None).map_err(|_| {
-        println!("Error: Failed to compute hashes - elements are not hashable");
         DaftError::ValueError(
             "Cannot perform set aggregation on elements that are not hashable".to_string(),
         )
     })?;
-    println!("Successfully computed hashes");
 
     // Create a hashmap to track unique elements
     let mut seen_hashes = HashMap::new();
@@ -34,13 +26,10 @@ fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
     let mut has_null = false;
 
     // Iterate through hashes, keeping track of first occurrence
-    println!("Starting hash iteration...");
     for (idx, hash) in hashes.into_iter().enumerate() {
         if !series.is_valid(idx) {
-            println!("Found null at index {}", idx);
             // For actual nulls, only include the first one
             if !has_null {
-                println!("First null encountered, including index {}", idx);
                 has_null = true;
                 unique_indices.push(idx as u64);
             }
@@ -48,24 +37,16 @@ fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
             // For non-null values (including empty values), use hash-based deduplication
             if let Some(hash) = hash {
                 if let std::collections::hash_map::Entry::Vacant(e) = seen_hashes.entry(hash) {
-                    println!("New unique value at index {} with hash {:?}", idx, hash);
                     e.insert(idx);
                     unique_indices.push(idx as u64);
-                } else {
-                    println!("Duplicate value at index {} with hash {:?}", idx, hash);
                 }
             }
         }
     }
 
-    println!("Found {} unique values", unique_indices.len());
-    println!("Unique indices: {:?}", unique_indices);
-
     // Take only the unique elements in their original order
     let indices_array = UInt64Array::from(("", unique_indices.clone())).into_series();
-    println!("Created indices array, taking values from original series...");
     let result = series.take(&indices_array)?;
-    println!("Successfully created deduplicated series");
 
     Ok((result, unique_indices))
 }
@@ -94,18 +75,11 @@ macro_rules! impl_daft_set_agg {
         }
 
         fn grouped_distinct(&self, groups: &GroupIndices, ignore_nulls: bool) -> Self::Output {
-            println!(
-                "\nStarting grouped_distinct with ignore_nulls={}",
-                ignore_nulls
-            );
-
             // Convert self to series once at the start for reuse
             let series = self.clone().into_series();
-            println!("Original series length: {}", series.len());
 
             // Create index mapping and filter nulls if needed
             let (filtered_series, index_mapping) = if ignore_nulls {
-                println!("Filtering nulls from series...");
                 let not_null_mask = DaftNotNull::not_null(self)?.into_series();
                 let not_null_array = not_null_mask.bool()?;
 
@@ -119,11 +93,9 @@ macro_rules! impl_daft_set_agg {
                         current_new_pos += 1;
                     }
                 }
-                println!("Created index mapping: {:?}", new_positions);
 
                 // Filter the series
                 let filtered = series.filter(&not_null_array)?;
-                println!("After null filtering, series length: {}", filtered.len());
                 (filtered, new_positions)
             } else {
                 // If including nulls, use identity mapping
@@ -134,7 +106,6 @@ macro_rules! impl_daft_set_agg {
             // Create offsets for the final list array
             let mut offsets = Vec::with_capacity(groups.len() + 1);
             offsets.push(0);
-            println!("Processing {} groups", groups.len());
 
             // Create growable array for building result
             let mut growable: Box<dyn Growable> = Box::new(Self::make_growable(
@@ -146,16 +117,9 @@ macro_rules! impl_daft_set_agg {
             ));
 
             // Process each group
-            for (group_idx, group) in groups.iter().enumerate() {
-                println!(
-                    "\nProcessing group {} with {} elements",
-                    group_idx,
-                    group.len()
-                );
-
+            for group in groups.iter() {
                 // Skip empty groups
                 if group.is_empty() {
-                    println!("Group {} is empty, skipping", group_idx);
                     offsets.push(*offsets.last().unwrap());
                     continue;
                 }
@@ -166,11 +130,7 @@ macro_rules! impl_daft_set_agg {
                     .filter_map(|&idx| index_mapping[idx as usize].map(|x| x as u64))
                     .collect();
 
-                println!("Original group indices: {:?}", group);
-                println!("Filtered group indices: {:?}", filtered_group);
-
                 if filtered_group.is_empty() {
-                    println!("Group {} has no non-null elements, skipping", group_idx);
                     offsets.push(*offsets.last().unwrap());
                     continue;
                 }
@@ -178,35 +138,16 @@ macro_rules! impl_daft_set_agg {
                 // Take the slice for this group and convert to series
                 let group_indices = UInt64Array::from(("", filtered_group.clone())).into_series();
                 let group_series = filtered_series.take(&group_indices)?;
-                println!(
-                    "Group {} series created with length {}",
-                    group_idx,
-                    group_series.len()
-                );
 
                 // Deduplicate the group's values and get their original indices
-                println!("Deduplicating group {}...", group_idx);
                 let (_, unique_indices) = deduplicate_series(&group_series)?;
-                println!(
-                    "Group {} has {} unique values",
-                    group_idx,
-                    unique_indices.len()
-                );
 
                 // Add deduplicated values to growable array using the original indices
-                println!(
-                    "Adding unique values to result array for group {}",
-                    group_idx
-                );
-                for (i, &local_idx) in unique_indices.iter().enumerate() {
+                for &local_idx in unique_indices.iter() {
                     let filtered_idx = filtered_group[local_idx as usize];
                     // Find the original index that maps to this filtered index
                     for (orig_idx, &mapped_idx) in index_mapping.iter().enumerate() {
                         if mapped_idx == Some(filtered_idx as usize) {
-                            println!(
-                                "  Value {}: local_idx={}, filtered_idx={}, orig_idx={}",
-                                i, local_idx, filtered_idx, orig_idx
-                            );
                             growable.extend(0, orig_idx, 1);
                             break;
                         }
@@ -215,20 +156,16 @@ macro_rules! impl_daft_set_agg {
 
                 // Update offsets
                 offsets.push(offsets.last().unwrap() + unique_indices.len() as i64);
-                println!("Updated offsets for group {}: {:?}", group_idx, offsets);
             }
 
             // Create the final list array
-            println!("\nBuilding final list array");
             let list_field = self.field.to_list_field()?;
-            println!("Final offsets: {:?}", offsets);
             let result = ListArray::new(
                 list_field,
                 growable.build()?,
                 arrow2::offset::OffsetsBuffer::try_from(offsets)?,
                 None,
             );
-            println!("Successfully built list array");
 
             Ok(result)
         }
