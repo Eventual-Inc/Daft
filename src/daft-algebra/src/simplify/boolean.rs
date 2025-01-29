@@ -62,6 +62,9 @@ pub(crate) fn simplify_boolean_expr(
 ///
 /// 1. Matches up each expression in the left-side conjunction with each expression in the right-side conjunction.
 ///
+/// (We only match expressions between left and right sides and not within each side because this rule is run bottom-up,
+/// so the sides should have already been individually simplified.)
+///
 /// 2. For each pair, check if there are any common expressions in their disjunctions.
 ///
 ///     Ex:
@@ -152,6 +155,9 @@ fn simplify_and(expr: ExprRef, left: &ExprRef, right: &ExprRef) -> Transformed<E
 /// Combines common sub-expressions in OR expressions.
 ///
 /// 1. Matches up each expression in the left-side disjunction with each expression in the right-side disjunction.
+///
+/// (We only match expressions between left and right sides and not within each side because this rule is run bottom-up,
+/// so the sides should have already been individually simplified.)
 ///
 /// 2. For each pair, check if there are any common expressions in their conjunctions.
 ///

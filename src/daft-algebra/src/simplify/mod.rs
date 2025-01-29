@@ -20,6 +20,9 @@ pub fn simplify_expr(expr: ExprRef, schema: &SchemaRef) -> DaftResult<Transforme
         simplify_misc_expr,
     ];
 
+    // Our simplify rules currently require bottom-up traversal to work
+    // If we introduce top-down rules in the future, please add a separate pass
+    // on the expression instead of changing this.
     expr.transform_up(|node| {
         let dtype = node.to_field(schema)?.dtype;
 
@@ -29,7 +32,7 @@ pub fn simplify_expr(expr: ExprRef, schema: &SchemaRef) -> DaftResult<Transforme
                 transformed.transform_data(|e| f(e, schema))
             })?;
 
-        // cast bac to original dtype if necessary
+        // cast back to original dtype if necessary
         transformed.map_data(|new_node| {
             Ok(if new_node.to_field(schema)?.dtype == dtype {
                 new_node
