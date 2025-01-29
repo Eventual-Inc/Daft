@@ -33,6 +33,14 @@ pub enum LiteralValue {
     Utf8(String),
     /// A raw binary array
     Binary(Vec<u8>),
+    /// A 8-bit signed integer number.
+    Int8(i8),
+    /// A 8-bit unsigned integer number.
+    UInt8(u8),
+    /// A 16-bit signed integer number.
+    Int16(i16),
+    /// A 16-bit unsigned integer number.
+    UInt16(u16),
     /// A 32-bit signed integer number.
     Int32(i32),
     /// A 32-bit unsigned integer number.
@@ -88,6 +96,10 @@ impl Hash for LiteralValue {
             Self::Boolean(bool) => bool.hash(state),
             Self::Utf8(s) => s.hash(state),
             Self::Binary(arr) => arr.hash(state),
+            Self::Int8(n) => n.hash(state),
+            Self::UInt8(n) => n.hash(state),
+            Self::Int16(n) => n.hash(state),
+            Self::UInt16(n) => n.hash(state),
             Self::Int32(n) => n.hash(state),
             Self::UInt32(n) => n.hash(state),
             Self::Int64(n) => n.hash(state),
@@ -143,6 +155,10 @@ impl Display for LiteralValue {
             Self::Boolean(val) => write!(f, "{val}"),
             Self::Utf8(val) => write!(f, "\"{val}\""),
             Self::Binary(val) => write!(f, "Binary[{}]", val.len()),
+            Self::Int8(val) => write!(f, "{val}"),
+            Self::UInt8(val) => write!(f, "{val}"),
+            Self::Int16(val) => write!(f, "{val}"),
+            Self::UInt16(val) => write!(f, "{val}"),
             Self::Int32(val) => write!(f, "{val}"),
             Self::UInt32(val) => write!(f, "{val}"),
             Self::Int64(val) => write!(f, "{val}"),
@@ -184,6 +200,10 @@ impl LiteralValue {
             Self::Boolean(_) => DataType::Boolean,
             Self::Utf8(_) => DataType::Utf8,
             Self::Binary(_) => DataType::Binary,
+            Self::Int8(_) => DataType::Int8,
+            Self::UInt8(_) => DataType::UInt8,
+            Self::Int16(_) => DataType::Int16,
+            Self::UInt16(_) => DataType::UInt16,
             Self::Int32(_) => DataType::Int32,
             Self::UInt32(_) => DataType::UInt32,
             Self::Int64(_) => DataType::Int64,
@@ -212,10 +232,15 @@ impl LiteralValue {
                 Utf8Array::from(("literal", [val.as_str()].as_slice())).into_series()
             }
             Self::Binary(val) => BinaryArray::from(("literal", val.as_slice())).into_series(),
+            Self::Int8(val) => Int8Array::from(("literal", [*val].as_slice())).into_series(),
+            Self::UInt8(val) => UInt8Array::from(("literal", [*val].as_slice())).into_series(),
+            Self::Int16(val) => Int16Array::from(("literal", [*val].as_slice())).into_series(),
+            Self::UInt16(val) => UInt16Array::from(("literal", [*val].as_slice())).into_series(),
             Self::Int32(val) => Int32Array::from(("literal", [*val].as_slice())).into_series(),
             Self::UInt32(val) => UInt32Array::from(("literal", [*val].as_slice())).into_series(),
             Self::Int64(val) => Int64Array::from(("literal", [*val].as_slice())).into_series(),
             Self::UInt64(val) => UInt64Array::from(("literal", [*val].as_slice())).into_series(),
+
             Self::Date(val) => {
                 let physical = Int32Array::from(("literal", [*val].as_slice()));
                 DateArray::new(Field::new("literal", self.get_type()), physical).into_series()
@@ -263,7 +288,11 @@ impl LiteralValue {
         ));
         match self {
             Self::Null => write!(buffer, "NULL"),
-            Self::Boolean(v) => write!(buffer, "{}", v),
+            Self::Boolean(val) => write!(buffer, "{}", val),
+            Self::Int8(val) => write!(buffer, "{}", val),
+            Self::UInt8(val) => write!(buffer, "{}", val),
+            Self::Int16(val) => write!(buffer, "{}", val),
+            Self::UInt16(val) => write!(buffer, "{}", val),
             Self::Int32(val) => write!(buffer, "{}", val),
             Self::UInt32(val) => write!(buffer, "{}", val),
             Self::Int64(val) => write!(buffer, "{}", val),
