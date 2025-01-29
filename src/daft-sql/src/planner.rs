@@ -1630,8 +1630,7 @@ impl<'a> SQLPlanner<'a> {
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
             SQLExpr::Array(array) => {
                 if array.elem.is_empty() {
-                    // ultimately limited by needing at least 1 series to perform concat
-                    invalid_operation_err!("empty ARRAY constructor")
+                    invalid_operation_err!("List constructor requires at least one item")
                 }
                 let items = array
                     .elem

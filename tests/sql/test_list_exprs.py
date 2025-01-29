@@ -13,7 +13,7 @@ def assert_eq(actual, expect):
 
 
 def test_list_constructor_empty():
-    with pytest.raises(Exception, match="empty ARRAY constructor"):
+    with pytest.raises(Exception, match="List constructor requires at least one item"):
         df = daft.from_pydict({"x": [1, 2, 3]})
         daft.sql("SELECT [ ] as list FROM df")
         df  # for ruff ignore unused

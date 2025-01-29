@@ -16,6 +16,7 @@ Constructors
 
     col
     lit
+    list_
 
 Generic
 #######

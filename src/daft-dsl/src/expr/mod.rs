@@ -3,7 +3,12 @@ mod display;
 mod tests;
 
 use std::{
-    any::Any, collections::HashSet, hash::{DefaultHasher, Hash, Hasher}, io::{self, Write}, str::FromStr, sync::Arc
+    any::Any,
+    collections::HashSet,
+    hash::{DefaultHasher, Hash, Hasher},
+    io::{self, Write},
+    str::FromStr,
+    sync::Arc,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -1459,6 +1464,34 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
         .map(|e| e.to_field(&input_schema))
         .collect::<DaftResult<_>>()?;
     Ok(Arc::new(Schema::new(fields)?))
+}
+
+/// Adds aliases as appropriate to ensure that all expressions have unique names.
+pub fn deduplicate_expr_names(exprs: &[ExprRef]) -> Vec<ExprRef> {
+    let mut names_so_far = HashSet::new();
+
+    exprs
+        .iter()
+        .map(|e| {
+            let curr_name = e.name();
+
+            let mut i = 0;
+            let mut new_name = curr_name.to_string();
+
+            while names_so_far.contains(&new_name) {
+                i += 1;
+                new_name = format!("{}_{}", curr_name, i);
+            }
+
+            names_so_far.insert(new_name.clone());
+
+            if i == 0 {
+                e.clone()
+            } else {
+                e.alias(new_name)
+            }
+        })
+        .collect()
 }
 
 /// Asserts an expr slice is homogeneous and returns the type, or None if empty or all nulls.
