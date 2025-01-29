@@ -65,6 +65,12 @@ impl Default for StorageConfig {
     }
 }
 
+impl From<IOConfig> for StorageConfig {
+    fn from(io_config: IOConfig) -> Self {
+        Self::new_internal(true, Some(io_config))
+    }
+}
+
 #[cfg(feature = "python")]
 #[pymethods]
 impl StorageConfig {

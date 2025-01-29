@@ -36,6 +36,7 @@ from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, check_column
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
+from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.filesystem import overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
@@ -208,10 +209,15 @@ class DataFrame:
             print_to_file("\n== Optimized Logical Plan ==\n")
             builder = builder.optimize()
             print_to_file(builder.pretty_print(simple))
+            print_to_file("\n== Physical Plan ==\n")
             if get_context().get_or_create_runner().name != "native":
-                print_to_file("\n== Physical Plan ==\n")
                 physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
                 print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
+            else:
+                native_executor = NativeExecutor()
+                print_to_file(
+                    native_executor.pretty_print(builder, get_context().daft_execution_config, simple, format=format)
+                )
         else:
             print_to_file(
                 "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.",
@@ -226,7 +232,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def schema(self) -> Schema:
-        """Returns the Schema of the DataFrame, which provides information about each column.
+        """Returns the Schema of the DataFrame, which provides information about each column, as a Python object.
 
         Returns:
             Schema: schema of the DataFrame
@@ -258,12 +264,17 @@ class DataFrame:
 
     @DataframePublicAPI
     def iter_rows(
-        self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
+        self,
+        results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
+        column_format: Literal["python", "arrow"] = "python",
     ) -> Iterator[Dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
 
         Each row will be a Python dictionary of the form { "key" : value, ... }. If you are instead looking to iterate over
         entire partitions of data, see: :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`.
+
+        By default, Daft will convert the columns to Python lists for easy consumption. Datatypes with Python equivalents will be converted accordingly, e.g. timestamps to datetime, tensors to numpy arrays.
+        For nested data such as List or Struct arrays, however, this can be expensive. You may wish to set `column_format` to "arrow" such that the nested data is returned as Arrow scalars.
 
         .. NOTE::
             A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
@@ -291,6 +302,7 @@ class DataFrame:
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
                 available on the machine).
+            column_format: the format of the columns to iterate over. One of "python" or "arrow". Defaults to "python".
 
         .. seealso::
             :meth:`df.iter_partitions() <daft.DataFrame.iter_partitions>`: iterator over entire partitions instead of single rows
@@ -298,13 +310,28 @@ class DataFrame:
         if results_buffer_size == "num_cpus":
             results_buffer_size = multiprocessing.cpu_count()
 
+        def arrow_iter_rows(table: "pyarrow.Table") -> Iterator[Dict[str, Any]]:
+            columns = table.columns
+            for i in range(len(table)):
+                row = {col._name: col[i] for col in columns}
+                yield row
+
+        def python_iter_rows(pydict: Dict[str, List[Any]], num_rows: int) -> Iterator[Dict[str, Any]]:
+            for i in range(num_rows):
+                row = {key: value[i] for (key, value) in pydict.items()}
+                yield row
+
         if self._result is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            pydict = self.to_pydict()
-            for i in range(len(self)):
-                row = {key: value[i] for (key, value) in pydict.items()}
-                yield row
+            if column_format == "python":
+                yield from python_iter_rows(self.to_pydict(), len(self))
+            elif column_format == "arrow":
+                yield from arrow_iter_rows(self.to_arrow())
+            else:
+                raise ValueError(
+                    f"Unsupported column_format: {column_format}, supported formats are 'python' and 'arrow'"
+                )
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
@@ -314,12 +341,14 @@ class DataFrame:
 
             # Iterate through partitions.
             for partition in partitions_iter:
-                pydict = partition.to_pydict()
-
-                # Yield invidiual rows from the partition.
-                for i in range(len(partition)):
-                    row = {key: value[i] for (key, value) in pydict.items()}
-                    yield row
+                if column_format == "python":
+                    yield from python_iter_rows(partition.to_pydict(), len(partition))
+                elif column_format == "arrow":
+                    yield from arrow_iter_rows(partition.to_arrow())
+                else:
+                    raise ValueError(
+                        f"Unsupported column_format: {column_format}, supported formats are 'python' and 'arrow'"
+                    )
 
     @DataframePublicAPI
     def to_arrow_iter(
@@ -543,6 +572,22 @@ class DataFrame:
         df._populate_preview()
         return df
 
+    @classmethod
+    def _from_schema(cls, schema: Schema) -> "DataFrame":
+        """Creates a Daft DataFrom from a Schema.
+
+        Args:
+            schema: The Schema to convert into a DataFrame.
+
+        Returns:
+            DataFrame: Daft DataFrame with "column_name" and "type" fields.
+        """
+        pydict: Dict = {"column_name": [], "type": []}
+        for field in schema:
+            pydict["column_name"].append(field.name)
+            pydict["type"].append(str(field.dtype))
+        return DataFrame._from_pydict(pydict)
+
     ###
     # Write methods
     ###
@@ -552,7 +597,7 @@ class DataFrame:
         self,
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
-        write_mode: Literal["append", "overwrite"] = "append",
+        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -566,7 +611,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -576,8 +621,12 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
-        if write_mode not in ["append", "overwrite"]:
-            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+            raise ValueError(
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+            )
+        if write_mode == "overwrite-partitions" and partition_cols is None:
+            raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -598,7 +647,9 @@ class DataFrame:
         assert write_df._result is not None
 
         if write_mode == "overwrite":
-            overwrite_files(write_df, root_dir, io_config)
+            overwrite_files(write_df, root_dir, io_config, False)
+        elif write_mode == "overwrite-partitions":
+            overwrite_files(write_df, root_dir, io_config, True)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -624,7 +675,7 @@ class DataFrame:
     def write_csv(
         self,
         root_dir: Union[str, pathlib.Path],
-        write_mode: Literal["append", "overwrite"] = "append",
+        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -637,15 +688,19 @@ class DataFrame:
 
         Args:
             root_dir (str): root file path to write parquet files to.
-            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
-        if write_mode not in ["append", "overwrite"]:
-            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+            raise ValueError(
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+            )
+        if write_mode == "overwrite-partitions" and partition_cols is None:
+            raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -665,7 +720,9 @@ class DataFrame:
         assert write_df._result is not None
 
         if write_mode == "overwrite":
-            overwrite_files(write_df, root_dir, io_config)
+            overwrite_files(write_df, root_dir, io_config, False)
+        elif write_mode == "overwrite-partitions":
+            overwrite_files(write_df, root_dir, io_config, True)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -1313,6 +1370,32 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def describe(self) -> "DataFrame":
+        """Returns the Schema of the DataFrame, which provides information about each column, as a new DataFrame.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+            >>> df.describe().show()
+            ╭─────────────┬───────╮
+            │ column_name ┆ type  │
+            │ ---         ┆ ---   │
+            │ Utf8        ┆ Utf8  │
+            ╞═════════════╪═══════╡
+            │ a           ┆ Int64 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ b           ┆ Utf8  │
+            ╰─────────────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Returns:
+            DataFrame: A dataframe where each row is a column name and its corresponding type.
+        """
+        builder = self.__builder.describe()
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def distinct(self) -> "DataFrame":
         """Computes unique rows, dropping duplicates.
 
@@ -1552,6 +1635,73 @@ class DataFrame:
         new_columns = [col.alias(name) for name, col in columns.items()]
 
         builder = self._builder.with_columns(new_columns)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def with_column_renamed(self, existing: str, new: str) -> "DataFrame":
+        """Renames a column in the current DataFrame.
+
+        If the column in the DataFrame schema does not exist, this will be a no-op.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df.with_column_renamed("x", "foo").show()
+            ╭───────┬───────╮
+            │ foo   ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Args:
+            existing (str): name of the existing column to rename
+            new (str): new name for the column
+
+        Returns:
+            DataFrame: DataFrame with the column renamed.
+        """
+        builder = self._builder.with_column_renamed(existing, new)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def with_columns_renamed(self, cols_map: Dict[str, str]) -> "DataFrame":
+        """Renames multiple columns in the current DataFrame.
+
+        If the columns in the DataFrame schema do not exist, this will be a no-op.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df.with_columns_renamed({"x": "foo", "y": "bar"}).show()
+            ╭───────┬───────╮
+            │ foo   ┆ bar   │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Args:
+            cols_map (Dict[str, str]): Dictionary of columns to rename in the format { existing: new }
+
+        Returns:
+            DataFrame: DataFrame with the columns renamed.
+        """
+        builder = self._builder.with_columns_renamed(cols_map)
         return DataFrame(builder)
 
     @DataframePublicAPI

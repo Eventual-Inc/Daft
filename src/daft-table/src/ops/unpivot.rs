@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, series::cast_series_to_supertype};
 use daft_dsl::ExprRef;
@@ -52,7 +54,12 @@ impl Table {
             variable_series.field().clone(),
             value_series.field().clone(),
         ])?)?;
-        let unpivot_series = [ids_series, vec![variable_series, value_series]].concat();
+
+        let unpivot_series = [
+            Arc::unwrap_or_clone(ids_series),
+            vec![variable_series, value_series],
+        ]
+        .concat();
 
         Self::new_with_size(unpivot_schema, unpivot_series, unpivoted_len)
     }

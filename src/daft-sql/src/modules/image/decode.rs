@@ -4,7 +4,7 @@ use sqlparser::ast::FunctionArg;
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
-    functions::{SQLFunction, SQLFunctionArguments},
+    functions::{self, SQLFunction, SQLFunctionArguments},
     unsupported_sql_err,
 };
 
@@ -21,20 +21,7 @@ impl TryFrom<SQLFunctionArguments> for ImageDecode {
                 _ => unsupported_sql_err!("Expected mode to be a string"),
             })
             .transpose()?;
-
-        let raise_on_error = args
-            .get_named("on_error")
-            .map(|arg| match arg.as_ref() {
-                Expr::Literal(LiteralValue::Utf8(s)) => match s.as_ref() {
-                    "raise" => Ok(true),
-                    "null" => Ok(false),
-                    _ => unsupported_sql_err!("Expected on_error to be 'raise' or 'null'"),
-                },
-                _ => unsupported_sql_err!("Expected on_error to be 'raise' or 'null'"),
-            })
-            .transpose()?
-            .unwrap_or(true);
-
+        let raise_on_error = functions::args::parse_on_error(&args)?;
         Ok(Self {
             mode,
             raise_on_error,

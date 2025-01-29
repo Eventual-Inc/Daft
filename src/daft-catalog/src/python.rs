@@ -61,7 +61,7 @@ fn py_register_table(
     global_catalog::GLOBAL_DAFT_META_CATALOG
         .write()
         .unwrap()
-        .register_named_table(table_identifier, logical_plan.builder.clone())?;
+        .register_table(table_identifier, logical_plan.builder.clone())?;
     Ok(table_identifier.to_string())
 }
 

@@ -7,6 +7,7 @@ pub mod abs;
 pub mod agg;
 pub mod arithmetic;
 pub mod between;
+pub mod binary;
 pub mod broadcast;
 pub mod cast;
 pub mod cbrt;

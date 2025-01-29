@@ -6,7 +6,8 @@ import os
 import pathlib
 import sys
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Literal
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from daft.convert import from_pydict
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
@@ -19,7 +20,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHED_FSES: dict[tuple[str, IOConfig | None], pafs.FileSystem] = {}
+
+@dataclasses.dataclass(frozen=True)
+class PyArrowFSWithExpiry:
+    fs: pafs.FileSystem
+    expiry: datetime | None
+
+
+_CACHED_FSES: dict[tuple[str, IOConfig | None], PyArrowFSWithExpiry] = {}
 
 
 def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
@@ -29,22 +37,20 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSy
     """
     global _CACHED_FSES
 
-    return _CACHED_FSES.get((protocol, io_config))
+    if (protocol, io_config) in _CACHED_FSES:
+        fs = _CACHED_FSES[(protocol, io_config)]
+
+        if fs.expiry is None or fs.expiry > datetime.now(timezone.utc):
+            return fs.fs
+
+    return None
 
 
-def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | None) -> None:
+def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | None, expiry: datetime | None) -> None:
     """Put pyarrow filesystem in cache under provided protocol."""
     global _CACHED_FSES
 
-    _CACHED_FSES[(protocol, io_config)] = fs
-
-
-@dataclasses.dataclass(frozen=True)
-class ListingInfo:
-    path: str
-    size: int
-    type: Literal["file", "directory"]
-    rows: int | None = None
+    _CACHED_FSES[(protocol, io_config)] = PyArrowFSWithExpiry(fs, expiry)
 
 
 def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
@@ -154,10 +160,10 @@ def _resolve_paths_and_filesystem(
     if resolved_filesystem is None:
         # Resolve path and filesystem for the first path.
         # We use this first resolved filesystem for validation on all other paths.
-        resolved_path, resolved_filesystem = _infer_filesystem(paths[0], io_config)
+        resolved_path, resolved_filesystem, expiry = _infer_filesystem(paths[0], io_config)
 
         # Put resolved filesystem in cache under these paths' canonical protocol.
-        _put_fs_in_cache(protocol, resolved_filesystem, io_config)
+        _put_fs_in_cache(protocol, resolved_filesystem, io_config, expiry)
     else:
         resolved_path = _validate_filesystem(paths[0], resolved_filesystem, io_config)
 
@@ -175,7 +181,7 @@ def _resolve_paths_and_filesystem(
 
 
 def _validate_filesystem(path: str, fs: pafs.FileSystem, io_config: IOConfig | None) -> str:
-    resolved_path, inferred_fs = _infer_filesystem(path, io_config)
+    resolved_path, inferred_fs, _ = _infer_filesystem(path, io_config)
     if not isinstance(fs, type(inferred_fs)):
         raise RuntimeError(
             f"Cannot read multiple paths with different inferred PyArrow filesystems. Expected: {fs} but received: {inferred_fs}"
@@ -186,8 +192,8 @@ def _validate_filesystem(path: str, fs: pafs.FileSystem, io_config: IOConfig | N
 def _infer_filesystem(
     path: str,
     io_config: IOConfig | None,
-) -> tuple[str, pafs.FileSystem]:
-    """Resolves and normalizes the provided path and infers it's filesystem.
+) -> tuple[str, pafs.FileSystem, datetime | None]:
+    """Resolves and normalizes the provided path and infers its filesystem and expiry.
 
     Also ensures that the inferred filesystem is compatible with the passedfilesystem, if provided.
 
@@ -225,9 +231,17 @@ def _infer_filesystem(
                 except ImportError:
                     pass  # Config does not exist in pyarrow 7.0.0
 
+            expiry = None
+            if (s3_creds := s3_config.provide_cached_credentials()) is not None:
+                _set_if_not_none(translated_kwargs, "access_key", s3_creds.key_id)
+                _set_if_not_none(translated_kwargs, "secret_key", s3_creds.access_key)
+                _set_if_not_none(translated_kwargs, "session_token", s3_creds.session_token)
+
+                expiry = s3_creds.expiry
+
         resolved_filesystem = pafs.S3FileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, expiry
 
     ###
     # Local
@@ -235,7 +249,7 @@ def _infer_filesystem(
     elif protocol == "file":
         resolved_filesystem = pafs.LocalFileSystem()
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, None
 
     ###
     # GCS
@@ -257,7 +271,7 @@ def _infer_filesystem(
 
         resolved_filesystem = GcsFileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, None
 
     ###
     # HTTP: Use FSSpec as a fallback
@@ -267,7 +281,7 @@ def _infer_filesystem(
         fsspec_fs = fsspec_fs_cls()
         resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(resolved_path)
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, None
 
     ###
     # Azure: Use FSSpec as a fallback
@@ -290,7 +304,7 @@ def _infer_filesystem(
             fsspec_fs = fsspec_fs_cls()
         resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
-        return resolved_path, resolved_filesystem
+        return resolved_path, resolved_filesystem, None
 
     else:
         raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
@@ -313,7 +327,7 @@ def glob_path_with_stats(
     file_format: FileFormat | None,
     io_config: IOConfig | None,
 ) -> FileInfos:
-    """Glob a path, returning a list ListingInfo."""
+    """Glob a path, returning a FileInfos."""
     files = io_glob(path, io_config=io_config)
     filepaths_to_infos = {f["path"]: {"size": f["size"], "type": f["type"]} for f in files}
 
@@ -354,19 +368,41 @@ def overwrite_files(
     manifest: DataFrame,
     root_dir: str | pathlib.Path,
     io_config: IOConfig | None,
+    overwrite_partitions: bool,
 ) -> None:
     [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
-    file_selector = pafs.FileSelector(resolved_path, recursive=True)
-    try:
-        paths = [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
-    except FileNotFoundError:
-        # The root directory does not exist, so there are no files to delete.
-        return
-
-    all_file_paths_df = from_pydict({"path": paths})
 
     assert manifest._result is not None
     written_file_paths = manifest._result._get_merged_micropartition().get_column("path")
+
+    all_file_paths = []
+    if overwrite_partitions:
+        # Get all files in ONLY the directories that were written to.
+
+        written_dirs = set(str(pathlib.Path(path).parent) for path in written_file_paths.to_pylist())
+        for dir in written_dirs:
+            file_selector = pafs.FileSelector(dir, recursive=True)
+            try:
+                all_file_paths.extend(
+                    [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+                )
+            except FileNotFoundError:
+                continue
+    else:
+        # Get all files in the root directory.
+
+        file_selector = pafs.FileSelector(resolved_path, recursive=True)
+        try:
+            all_file_paths.extend(
+                [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+            )
+        except FileNotFoundError:
+            # The root directory does not exist, so there are no files to delete.
+            return
+
+    all_file_paths_df = from_pydict({"path": all_file_paths})
+
+    # Find the files that were not written to in this run and delete them.
     to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths))))
 
     # TODO: Look into parallelizing this

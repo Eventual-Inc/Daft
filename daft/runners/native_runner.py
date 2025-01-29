@@ -75,8 +75,9 @@ class NativeRunner(Runner[MicroPartition]):
 
         # Optimize the logical plan.
         builder = builder.optimize()
-        executor = NativeExecutor.from_logical_plan_builder(builder)
+        executor = NativeExecutor()
         results_gen = executor.run(
+            builder,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
             daft_execution_config,
             results_buffer_size,

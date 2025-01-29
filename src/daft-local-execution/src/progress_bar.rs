@@ -16,7 +16,7 @@ pub trait ProgressBar: Send + Sync {
     fn close(&self) -> DaftResult<()>;
 }
 
-pub trait ProgressBarManager {
+pub trait ProgressBarManager: std::fmt::Debug + Send + Sync {
     fn make_new_bar(
         &self,
         color: ProgressBarColor,
@@ -128,6 +128,7 @@ impl ProgressBar for IndicatifProgressBar {
     }
 }
 
+#[derive(Debug)]
 struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
 }
@@ -168,19 +169,19 @@ impl ProgressBarManager for IndicatifProgressBarManager {
     }
 }
 
-pub fn make_progress_bar_manager() -> Box<dyn ProgressBarManager> {
+pub fn make_progress_bar_manager() -> Arc<dyn ProgressBarManager> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
-            Box::new(python::TqdmProgressBarManager::new())
+            Arc::new(python::TqdmProgressBarManager::new())
         } else {
-            Box::new(IndicatifProgressBarManager::new())
+            Arc::new(IndicatifProgressBarManager::new())
         }
     }
 
     #[cfg(not(feature = "python"))]
     {
-        Box::new(IndicatifProgressBarManager::new())
+        Arc::new(IndicatifProgressBarManager::new())
     }
 }
 
@@ -215,7 +216,7 @@ mod python {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct TqdmProgressBarManager {
         inner: Arc<PyObject>,
     }

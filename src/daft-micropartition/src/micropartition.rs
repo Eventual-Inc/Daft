@@ -1,11 +1,13 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::{Context, Poll},
 };
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use common_file_formats::DatabaseSourceConfig;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
@@ -22,6 +24,7 @@ use daft_parquet::read::{
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use daft_table::Table;
+use futures::{Future, Stream};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 
@@ -1187,5 +1190,112 @@ impl Display for MicroPartition {
     }
 }
 
+struct MicroPartitionStreamAdapter {
+    state: TableState,
+    current: usize,
+    pending_task: Option<tokio::task::JoinHandle<DaftResult<Vec<Table>>>>,
+}
+
+impl Stream for MicroPartitionStreamAdapter {
+    type Item = DaftResult<Table>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+
+        if let Some(handle) = &mut this.pending_task {
+            match Pin::new(handle).poll(cx) {
+                Poll::Ready(Ok(Ok(tables))) => {
+                    let tables = Arc::new(tables);
+                    this.state = TableState::Loaded(tables.clone());
+                    this.current = 0;
+                    this.pending_task = None;
+                    return Poll::Ready(tables.first().cloned().map(Ok));
+                }
+                Poll::Ready(Ok(Err(e))) => return Poll::Ready(Some(Err(e))),
+                Poll::Ready(Err(e)) => {
+                    return Poll::Ready(Some(Err(DaftError::InternalError(e.to_string()))))
+                }
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+
+        match &this.state {
+            // if the state is unloaded, we spawn a task to load the tables
+            // and set the state to loaded
+            TableState::Unloaded(scan_task) => {
+                let scan_task = scan_task.clone();
+                let handle = tokio::spawn(async move {
+                    materialize_scan_task(scan_task, None)
+                        .map(|(tables, _)| tables)
+                        .map_err(DaftError::from)
+                });
+                this.pending_task = Some(handle);
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+            TableState::Loaded(tables) => {
+                let current = this.current;
+                if current < tables.len() {
+                    this.current = current + 1;
+                    Poll::Ready(tables.get(current).cloned().map(Ok))
+                } else {
+                    Poll::Ready(None)
+                }
+            }
+        }
+    }
+}
+impl MicroPartition {
+    pub fn into_stream(self: Arc<Self>) -> DaftResult<impl Stream<Item = DaftResult<Table>>> {
+        let state = match &*self.state.lock().unwrap() {
+            TableState::Unloaded(scan_task) => TableState::Unloaded(scan_task.clone()),
+            TableState::Loaded(tables) => TableState::Loaded(tables.clone()),
+        };
+
+        Ok(MicroPartitionStreamAdapter {
+            state,
+            current: 0,
+            pending_task: None,
+        })
+    }
+}
+
 #[cfg(test)]
-mod test {}
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_core::{
+        datatypes::{DataType, Field, Int32Array},
+        prelude::Schema,
+        series::IntoSeries,
+    };
+    use daft_table::Table;
+    use futures::StreamExt;
+
+    use crate::MicroPartition;
+
+    #[tokio::test]
+    async fn test_mp_stream() -> DaftResult<()> {
+        let columns = vec![Int32Array::from_values("a", vec![1].into_iter()).into_series()];
+        let columns2 = vec![Int32Array::from_values("a", vec![2].into_iter()).into_series()];
+        let schema = Schema::new(vec![Field::new("a", DataType::Int32)])?;
+
+        let table1 = Table::from_nonempty_columns(columns)?;
+        let table2 = Table::from_nonempty_columns(columns2)?;
+
+        let mp = MicroPartition::new_loaded(
+            Arc::new(schema),
+            Arc::new(vec![table1.clone(), table2.clone()]),
+            None,
+        );
+        let mp = Arc::new(mp);
+
+        let mut stream = mp.into_stream()?;
+        let tbl = stream.next().await.unwrap().unwrap();
+        assert_eq!(tbl, table1);
+        let tbl = stream.next().await.unwrap().unwrap();
+        assert_eq!(tbl, table2);
+        Ok(())
+    }
+}

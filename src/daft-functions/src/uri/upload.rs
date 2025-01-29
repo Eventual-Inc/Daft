@@ -9,16 +9,46 @@ use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct UploadFunction {
-    pub(super) max_connections: usize,
-    pub(super) raise_error_on_failure: bool,
-    pub(super) multi_thread: bool,
-    pub(super) is_single_folder: bool,
-    pub(super) config: Arc<IOConfig>,
+pub struct UrlUploadArgs {
+    pub max_connections: usize,
+    pub raise_error_on_failure: bool,
+    pub multi_thread: bool,
+    pub is_single_folder: bool,
+    pub io_config: Arc<IOConfig>,
+}
+
+impl UrlUploadArgs {
+    pub fn new(
+        max_connections: usize,
+        raise_error_on_failure: bool,
+        multi_thread: bool,
+        is_single_folder: bool,
+        io_config: Option<IOConfig>,
+    ) -> Self {
+        Self {
+            max_connections,
+            raise_error_on_failure,
+            multi_thread,
+            is_single_folder,
+            io_config: io_config.unwrap_or_default().into(),
+        }
+    }
+}
+
+impl Default for UrlUploadArgs {
+    fn default() -> Self {
+        Self {
+            max_connections: 32,
+            raise_error_on_failure: true,
+            multi_thread: true,
+            is_single_folder: false,
+            io_config: IOConfig::default().into(),
+        }
+    }
 }
 
 #[typetag::serde]
-impl ScalarUDF for UploadFunction {
+impl ScalarUDF for UrlUploadArgs {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -29,11 +59,11 @@ impl ScalarUDF for UploadFunction {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         let Self {
-            config,
             max_connections,
             raise_error_on_failure,
             multi_thread,
             is_single_folder,
+            io_config,
         } = self;
 
         match inputs {
@@ -44,7 +74,7 @@ impl ScalarUDF for UploadFunction {
                 *raise_error_on_failure,
                 *multi_thread,
                 *is_single_folder,
-                config.clone(),
+                io_config.clone(),
                 None,
             ),
             _ => Err(DaftError::ValueError(format!(

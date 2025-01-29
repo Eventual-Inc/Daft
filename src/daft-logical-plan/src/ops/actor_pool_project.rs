@@ -3,16 +3,15 @@ use std::sync::Arc;
 use common_error::DaftError;
 use common_resource_request::ResourceRequest;
 use daft_dsl::{
-    count_actor_pool_udfs,
+    count_actor_pool_udfs, exprs_to_schema,
     functions::python::{get_concurrency, get_resource_request, get_udf_names},
-    ExprRef, ExprResolver,
+    ExprRef,
 };
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
-use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{CreationSnafu, Error, Result},
+    logical_plan::{Error, Result},
     stats::StatsState,
     LogicalPlan,
 };
@@ -28,17 +27,12 @@ pub struct ActorPoolProject {
 
 impl ActorPoolProject {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
-        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
-        let (projection, fields) = expr_resolver
-            .resolve(projection, input.schema().as_ref())
-            .context(CreationSnafu)?;
-
         let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
         if !num_actor_pool_udfs == 1 {
             return Err(Error::CreationError { source: DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 actor pool UDF expression but found: {num_actor_pool_udfs}")) });
         }
 
-        let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
+        let projected_schema = exprs_to_schema(&projection, input.schema())?;
 
         Ok(Self {
             input,

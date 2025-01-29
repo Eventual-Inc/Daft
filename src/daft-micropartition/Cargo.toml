@@ -20,6 +20,7 @@ futures = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
+tokio = {workspace = true}
 tracing = {workspace = true}
 
 [features]

@@ -39,7 +39,7 @@ fn fmt_tree_indent_style<'a, W: fmt::Write + 'a>(
 
 // Print the tree recursively, and illustrate the tree structure in the same style as `git log --graph`.
 // `depth` is the number of forks in this node's ancestors.
-fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a>(
+pub fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a>(
     node: &dyn TreeDisplay,
     depth: usize,
     s: &'a mut W,

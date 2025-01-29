@@ -1,11 +1,11 @@
 #![feature(let_chains)]
 
-pub mod catalog;
 pub mod error;
 pub mod functions;
 mod modules;
 
 mod planner;
+mod statement;
 pub use planner::*;
 
 #[cfg(feature = "python")]
@@ -28,7 +28,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use catalog::SQLCatalog;
+    use daft_catalog::DaftCatalog;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
@@ -113,7 +113,7 @@ mod tests {
 
     #[fixture]
     fn planner() -> SQLPlanner<'static> {
-        let mut catalog = SQLCatalog::new();
+        let mut catalog = DaftCatalog::default();
 
         catalog.register_table("tbl1", tbl_1());
         catalog.register_table("tbl2", tbl_2());
@@ -323,10 +323,10 @@ mod tests {
         tbl_3: LogicalPlanRef,
     ) -> SQLPlannerResult<()> {
         let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id and tbl2.val > 0";
-        let plan = planner.plan_sql(&sql)?;
+        let plan = planner.plan_sql(sql)?;
 
         let expected = LogicalPlanBuilder::from(tbl_2)
-            .filter(col("val").gt(lit(0 as i64)))?
+            .filter(col("val").gt(lit(0_i64)))?
             .join_with_null_safe_equal(
                 tbl_3,
                 vec![col("id")],

@@ -69,6 +69,83 @@ where
         }
     }
 
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let l_validity = self.as_arrow().validity();
+                let r_validity = rhs.as_arrow().validity();
+
+                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                    .values()
+                    .clone();
+
+                match (l_validity, r_validity) {
+                    (None, None) => {}
+                    (None, Some(r_valid)) => {
+                        result_values = arrow2::bitmap::and(&result_values, r_valid);
+                    }
+                    (Some(l_valid), None) => {
+                        result_values = arrow2::bitmap::and(&result_values, l_valid);
+                    }
+                    (Some(l_valid), Some(r_valid)) => {
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
+                    }
+                }
+
+                Ok(BooleanArray::from((
+                    self.name(),
+                    arrow2::array::BooleanArray::new(
+                        arrow2::datatypes::DataType::Boolean,
+                        result_values,
+                        None,
+                    ),
+                )))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    Ok(self.eq_null_safe(value))
+                } else {
+                    let result_values = match self.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(l_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    Ok(rhs.eq_null_safe(value))
+                } else {
+                    let result_values = match rhs.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(r_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
+
     fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
@@ -335,6 +412,30 @@ where
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
         self.compare_to_scalar(rhs, comparison::gt_eq_scalar)
     }
+
+    fn eq_null_safe(&self, rhs: Scalar) -> Self::Output {
+        let rhs: T::Native =
+            NumCast::from(rhs).expect("could not cast to underlying DataArray type");
+
+        let arrow_array = self.as_arrow();
+        let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
+
+        let result_values = comparison::eq_scalar(arrow_array, &scalar).values().clone();
+
+        let final_values = match arrow_array.validity() {
+            None => result_values,
+            Some(valid) => arrow2::bitmap::and(&result_values, valid),
+        };
+
+        BooleanArray::from((
+            self.name(),
+            arrow2::array::BooleanArray::new(
+                arrow2::datatypes::DataType::Boolean,
+                final_values,
+                None,
+            ),
+        ))
+    }
 }
 
 impl DaftCompare<&Self> for BooleanArray {
@@ -531,6 +632,83 @@ impl DaftCompare<&Self> for BooleanArray {
             ))),
         }
     }
+
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let l_validity = self.as_arrow().validity();
+                let r_validity = rhs.as_arrow().validity();
+
+                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                    .values()
+                    .clone();
+
+                match (l_validity, r_validity) {
+                    (None, None) => {}
+                    (None, Some(r_valid)) => {
+                        result_values = arrow2::bitmap::and(&result_values, r_valid);
+                    }
+                    (Some(l_valid), None) => {
+                        result_values = arrow2::bitmap::and(&result_values, l_valid);
+                    }
+                    (Some(l_valid), Some(r_valid)) => {
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
+                    }
+                }
+
+                Ok(Self::from((
+                    self.name(),
+                    arrow2::array::BooleanArray::new(
+                        arrow2::datatypes::DataType::Boolean,
+                        result_values,
+                        None,
+                    ),
+                )))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    Ok(self.eq_null_safe(value)?)
+                } else {
+                    let result_values = match self.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(l_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(Self::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    Ok(rhs.eq_null_safe(value)?)
+                } else {
+                    let result_values = match rhs.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(r_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(Self::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
 }
 
 impl DaftCompare<bool> for BooleanArray {
@@ -582,6 +760,26 @@ impl DaftCompare<bool> for BooleanArray {
             comparison::boolean::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
         Ok(Self::from((self.name(), arrow_result)))
+    }
+
+    fn eq_null_safe(&self, rhs: bool) -> Self::Output {
+        let result_values = comparison::boolean::eq_scalar(self.as_arrow(), rhs)
+            .values()
+            .clone();
+
+        let final_values = match self.as_arrow().validity() {
+            None => result_values,
+            Some(valid) => arrow2::bitmap::and(&result_values, valid),
+        };
+
+        Ok(Self::from((
+            self.name(),
+            arrow2::array::BooleanArray::new(
+                arrow2::datatypes::DataType::Boolean,
+                final_values,
+                None,
+            ),
+        )))
     }
 }
 
@@ -819,6 +1017,7 @@ impl DaftCompare<&Self> for NullArray {
     null_array_comparison_method!(lte);
     null_array_comparison_method!(gt);
     null_array_comparison_method!(gte);
+    null_array_comparison_method!(eq_null_safe);
 }
 
 impl DaftLogical<bool> for BooleanArray {
@@ -1104,6 +1303,83 @@ impl DaftCompare<&Self> for Utf8Array {
             ))),
         }
     }
+
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let l_validity = self.as_arrow().validity();
+                let r_validity = rhs.as_arrow().validity();
+
+                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                    .values()
+                    .clone();
+
+                match (l_validity, r_validity) {
+                    (None, None) => {}
+                    (None, Some(r_valid)) => {
+                        result_values = arrow2::bitmap::and(&result_values, r_valid);
+                    }
+                    (Some(l_valid), None) => {
+                        result_values = arrow2::bitmap::and(&result_values, l_valid);
+                    }
+                    (Some(l_valid), Some(r_valid)) => {
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
+                    }
+                }
+
+                Ok(BooleanArray::from((
+                    self.name(),
+                    arrow2::array::BooleanArray::new(
+                        arrow2::datatypes::DataType::Boolean,
+                        result_values,
+                        None,
+                    ),
+                )))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    Ok(self.eq_null_safe(value)?)
+                } else {
+                    let result_values = match self.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(l_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    Ok(rhs.eq_null_safe(value)?)
+                } else {
+                    let result_values = match rhs.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(r_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
 }
 
 impl DaftCompare<&str> for Utf8Array {
@@ -1155,6 +1431,28 @@ impl DaftCompare<&str> for Utf8Array {
             comparison::utf8::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
+    }
+
+    fn eq_null_safe(&self, rhs: &str) -> Self::Output {
+        let arrow_array = self.as_arrow();
+
+        let result_values = comparison::utf8::eq_scalar(arrow_array, rhs)
+            .values()
+            .clone();
+
+        let final_values = match arrow_array.validity() {
+            None => result_values,
+            Some(valid) => arrow2::bitmap::and(&result_values, valid),
+        };
+
+        Ok(BooleanArray::from((
+            self.name(),
+            arrow2::array::BooleanArray::new(
+                arrow2::datatypes::DataType::Boolean,
+                final_values,
+                None,
+            ),
+        )))
     }
 }
 
@@ -1400,6 +1698,83 @@ impl DaftCompare<&Self> for BinaryArray {
             ))),
         }
     }
+
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let l_validity = self.as_arrow().validity();
+                let r_validity = rhs.as_arrow().validity();
+
+                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                    .values()
+                    .clone();
+
+                match (l_validity, r_validity) {
+                    (None, None) => {}
+                    (None, Some(r_valid)) => {
+                        result_values = arrow2::bitmap::and(&result_values, r_valid);
+                    }
+                    (Some(l_valid), None) => {
+                        result_values = arrow2::bitmap::and(&result_values, l_valid);
+                    }
+                    (Some(l_valid), Some(r_valid)) => {
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
+                    }
+                }
+
+                Ok(BooleanArray::from((
+                    self.name(),
+                    arrow2::array::BooleanArray::new(
+                        arrow2::datatypes::DataType::Boolean,
+                        result_values,
+                        None,
+                    ),
+                )))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    Ok(self.eq_null_safe(value)?)
+                } else {
+                    let result_values = match self.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(l_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    Ok(rhs.eq_null_safe(value)?)
+                } else {
+                    let result_values = match rhs.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(r_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
 }
 
 impl DaftCompare<&[u8]> for BinaryArray {
@@ -1451,6 +1826,28 @@ impl DaftCompare<&[u8]> for BinaryArray {
             comparison::binary::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
+    }
+
+    fn eq_null_safe(&self, rhs: &[u8]) -> Self::Output {
+        let arrow_array = self.as_arrow();
+
+        let result_values = comparison::binary::eq_scalar(arrow_array, rhs)
+            .values()
+            .clone();
+
+        let final_values = match arrow_array.validity() {
+            None => result_values,
+            Some(valid) => arrow2::bitmap::and(&result_values, valid),
+        };
+
+        Ok(BooleanArray::from((
+            self.name(),
+            arrow2::array::BooleanArray::new(
+                arrow2::datatypes::DataType::Boolean,
+                final_values,
+                None,
+            ),
+        )))
     }
 }
 
@@ -1711,6 +2108,85 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
             ))),
         }
     }
+
+    fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
+        println!("Starting eq_null_safe for DaftCompare<&Self> for FixedSizeBinaryArray");
+
+        match (self.len(), rhs.len()) {
+            (x, y) if x == y => {
+                let l_validity = self.as_arrow().validity();
+                let r_validity = rhs.as_arrow().validity();
+
+                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                    .values()
+                    .clone();
+
+                match (l_validity, r_validity) {
+                    (None, None) => {}
+                    (None, Some(r_valid)) => {
+                        result_values = arrow2::bitmap::and(&result_values, r_valid);
+                    }
+                    (Some(l_valid), None) => {
+                        result_values = arrow2::bitmap::and(&result_values, l_valid);
+                    }
+                    (Some(l_valid), Some(r_valid)) => {
+                        let nulls_match = arrow2::bitmap::bitwise_eq(l_valid, r_valid);
+                        result_values = arrow2::bitmap::and(&result_values, &nulls_match);
+                    }
+                }
+
+                Ok(BooleanArray::from((
+                    self.name(),
+                    arrow2::array::BooleanArray::new(
+                        arrow2::datatypes::DataType::Boolean,
+                        result_values,
+                        None,
+                    ),
+                )))
+            }
+            (l_size, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    Ok(self.eq_null_safe(value)?)
+                } else {
+                    let result_values = match self.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(l_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (1, r_size) => {
+                if let Some(value) = self.get(0) {
+                    Ok(rhs.eq_null_safe(value)?)
+                } else {
+                    let result_values = match rhs.as_arrow().validity() {
+                        None => arrow2::bitmap::Bitmap::new_zeroed(r_size),
+                        Some(validity) => validity.not(),
+                    };
+                    Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            result_values,
+                            None,
+                        ),
+                    )))
+                }
+            }
+            (l, r) => Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {}: {l} vs {}: {r}",
+                self.name(),
+                rhs.name()
+            ))),
+        }
+    }
 }
 
 impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
@@ -1738,6 +2214,28 @@ impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
 
     fn gte(&self, rhs: &[u8]) -> Self::Output {
         cmp_fixed_size_binary_scalar(self, rhs, |lhs, rhs| lhs >= rhs)
+    }
+
+    fn eq_null_safe(&self, rhs: &[u8]) -> Self::Output {
+        let arrow_array = self.as_arrow();
+
+        let result_values = arrow2::bitmap::Bitmap::from_trusted_len_iter(
+            arrow_array.values_iter().map(|lhs| lhs == rhs),
+        );
+
+        let final_values = match arrow_array.validity() {
+            None => result_values,
+            Some(valid) => arrow2::bitmap::and(&result_values, valid),
+        };
+
+        Ok(BooleanArray::from((
+            self.name(),
+            arrow2::array::BooleanArray::new(
+                arrow2::datatypes::DataType::Boolean,
+                final_values,
+                None,
+            ),
+        )))
     }
 }
 

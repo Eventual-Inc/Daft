@@ -2,6 +2,8 @@ use std::fmt::Write;
 
 use daft_core::prelude::*;
 
+use crate::error::ConnectResult;
+
 // note: right now this is only implemented for Schema, but we'll want to extend this for our dataframe output, and the plan repr.
 pub trait SparkDisplay {
     fn repr_spark_string(&self) -> String;
@@ -28,14 +30,14 @@ fn write_field(
     field_name: &str,
     dtype: &DataType,
     level: usize,
-) -> eyre::Result<()> {
+) -> ConnectResult<()> {
     fn write_field_inner(
         w: &mut String,
         field_name: &str,
         dtype: &DataType,
         level: usize,
         is_list: bool,
-    ) -> eyre::Result<()> {
+    ) -> ConnectResult<()> {
         let indent = make_indent(level);
 
         let dtype_str = type_to_string(dtype);
@@ -85,43 +87,43 @@ fn make_indent(level: usize) -> String {
 
 fn type_to_string(dtype: &DataType) -> String {
     match dtype {
-        DataType::Null => "null".to_string(),
-        DataType::Boolean => "boolean".to_string(),
-        DataType::Int8 => "byte".to_string(),
-        DataType::Int16 => "short".to_string(),
-        DataType::Int32 => "integer".to_string(),
-        DataType::Int64 => "long".to_string(),
-        DataType::Float32 => "float".to_string(),
-        DataType::Float64 => "double".to_string(),
-        DataType::Decimal128(precision, scale) => format!("decimal({precision},{scale})"),
-        DataType::Timestamp(_, _) => "timestamp".to_string(),
-        DataType::Date => "date".to_string(),
-        DataType::Time(_) => "time".to_string(),
-        DataType::Duration(_) => "duration".to_string(),
-        DataType::Interval => "interval".to_string(),
-        DataType::Binary => "binary".to_string(),
-        DataType::FixedSizeBinary(_) => "arrow.fixed_size_binary".to_string(),
-        DataType::Utf8 => "string".to_string(),
-        DataType::FixedSizeList(_, _) => "arrow.fixed_size_list".to_string(),
-        DataType::List(_) => "array".to_string(),
-        DataType::Struct(_) => "struct".to_string(),
-        DataType::Map { .. } => "map".to_string(),
-        DataType::Extension(_, _, _) => "daft.extension".to_string(),
-        DataType::Embedding(_, _) => "daft.embedding".to_string(),
-        DataType::Image(_) => "daft.image".to_string(),
-        DataType::FixedShapeImage(_, _, _) => "daft.fixed_shape_image".to_string(),
-        DataType::Tensor(_) => "daft.tensor".to_string(),
-        DataType::FixedShapeTensor(_, _) => "daft.fixed_shape_tensor".to_string(),
-        DataType::SparseTensor(_) => "daft.sparse_tensor".to_string(),
-        DataType::FixedShapeSparseTensor(_, _) => "daft.fixed_shape_sparse_tensor".to_string(),
-        #[cfg(feature = "python")]
-        DataType::Python => "daft.python".to_string(),
-        DataType::Unknown => "unknown".to_string(),
-        DataType::UInt8 => "arrow.uint8".to_string(),
-        DataType::UInt16 => "arrow.uint16".to_string(),
-        DataType::UInt32 => "arrow.uint32".to_string(),
-        DataType::UInt64 => "arrow.uint64".to_string(),
+        DataType::Null => "null",
+        DataType::Boolean => "boolean",
+        DataType::Int8 => "byte",
+        DataType::Int16 => "short",
+        DataType::Int32 => "integer",
+        DataType::Int64 => "long",
+        DataType::Float32 => "float",
+        DataType::Float64 => "double",
+        DataType::Decimal128(precision, scale) => return format!("decimal({precision},{scale})"),
+        DataType::Timestamp(_, _) => "timestamp",
+        DataType::Date => "date",
+        DataType::Time(_) => "time",
+        DataType::Duration(_) => "duration",
+        DataType::Interval => "interval",
+        DataType::Binary => "binary",
+        DataType::FixedSizeBinary(_) => "arrow.fixed_size_binary",
+        DataType::Utf8 => "string",
+        DataType::FixedSizeList(_, _) => "arrow.fixed_size_list",
+        DataType::List(_) => "array",
+        DataType::Struct(_) => "struct",
+        DataType::Map { .. } => "map",
+        DataType::Extension(_, _, _) => "daft.extension",
+        DataType::Embedding(_, _) => "daft.embedding",
+        DataType::Image(_) => "daft.image",
+        DataType::FixedShapeImage(_, _, _) => "daft.fixed_shape_image",
+        DataType::Tensor(_) => "daft.tensor",
+        DataType::FixedShapeTensor(_, _) => "daft.fixed_shape_tensor",
+        DataType::SparseTensor(_) => "daft.sparse_tensor",
+        DataType::FixedShapeSparseTensor(_, _) => "daft.fixed_shape_sparse_tensor",
+        DataType::Python => "daft.python",
+        DataType::Unknown => "unknown",
+        DataType::UInt8 => "arrow.uint8",
+        DataType::UInt16 => "arrow.uint16",
+        DataType::UInt32 => "arrow.uint32",
+        DataType::UInt64 => "arrow.uint64",
     }
+    .to_string()
 }
 
 #[cfg(test)]
@@ -129,7 +131,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_empty_schema() -> eyre::Result<()> {
+    fn test_empty_schema() -> ConnectResult<()> {
         let schema = Schema::empty();
         let output = schema.repr_spark_string();
         let expected = "root\n";
@@ -138,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn test_single_field_schema() -> eyre::Result<()> {
+    fn test_single_field_schema() -> ConnectResult<()> {
         let mut fields = Vec::new();
         fields.push(Field::new("step", DataType::Int32));
         let schema = Schema::new(fields)?;
@@ -149,7 +151,7 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_simple_fields() -> eyre::Result<()> {
+    fn test_multiple_simple_fields() -> ConnectResult<()> {
         let mut fields = Vec::new();
         fields.push(Field::new("step", DataType::Int32));
         fields.push(Field::new("type", DataType::Utf8));
@@ -167,7 +169,7 @@ root
     }
 
     #[test]
-    fn test_struct_field() -> eyre::Result<()> {
+    fn test_struct_field() -> ConnectResult<()> {
         // Create a schema with a struct field
         let inner_fields = vec![
             Field::new("inner1", DataType::Utf8),
@@ -193,7 +195,7 @@ root
     }
 
     #[test]
-    fn test_nested_struct_in_struct() -> eyre::Result<()> {
+    fn test_nested_struct_in_struct() -> ConnectResult<()> {
         let inner_struct = DataType::Struct(vec![
             Field::new("deep", DataType::Boolean),
             Field::new("deeper", DataType::Utf8),
@@ -221,7 +223,7 @@ root
     }
 
     #[test]
-    fn test_list_fields() -> eyre::Result<()> {
+    fn test_list_fields() -> ConnectResult<()> {
         let list_of_int = DataType::List(Box::new(DataType::Int16));
         let fixed_list_of_floats = DataType::FixedSizeList(Box::new(DataType::Float32), 3);
 
@@ -243,7 +245,7 @@ root
     }
 
     #[test]
-    fn test_map_field() -> eyre::Result<()> {
+    fn test_map_field() -> ConnectResult<()> {
         let map_type = DataType::Map {
             key: Box::new(DataType::Utf8),
             value: Box::new(DataType::Int32),
@@ -268,7 +270,7 @@ root
     }
 
     #[test]
-    fn test_extension_type() -> eyre::Result<()> {
+    fn test_extension_type() -> ConnectResult<()> {
         let extension_type =
             DataType::Extension("some_ext_type".to_string(), Box::new(DataType::Int32), None);
 
@@ -286,7 +288,7 @@ root
     }
 
     #[test]
-    fn test_complex_nested_schema() -> eyre::Result<()> {
+    fn test_complex_nested_schema() -> ConnectResult<()> {
         // A very nested schema to test indentation and various types together
         let struct_inner = DataType::Struct(vec![
             Field::new("sub_list", DataType::List(Box::new(DataType::Utf8))),
@@ -328,7 +330,7 @@ root
     }
 
     #[test]
-    fn test_field_name_special_chars() -> eyre::Result<()> {
+    fn test_field_name_special_chars() -> ConnectResult<()> {
         // Field with spaces and special characters
         let mut fields = Vec::new();
         fields.push(Field::new("weird field@!#", DataType::Utf8));
@@ -343,7 +345,7 @@ root
     }
 
     #[test]
-    fn test_zero_sized_fixed_list() -> eyre::Result<()> {
+    fn test_zero_sized_fixed_list() -> ConnectResult<()> {
         // Although unusual, test a fixed size list with size=0
         let zero_sized_list = DataType::FixedSizeList(Box::new(DataType::Int8), 0);
         let mut fields = Vec::new();
