@@ -961,8 +961,7 @@ impl Expr {
             }
             Self::IsIn(expr, items) => {
                 // Use the expr's field name, and infer membership op type.
-                let list_dtype =
-                    infer_list_type(items, schema)?.expect("Should have at least 1 child");
+                let list_dtype = infer_list_type(items, schema)?.unwrap_or(DataType::Null);
                 let expr_field = expr.to_field(schema)?;
                 let expr_type = &expr_field.dtype;
                 let field_name = &expr_field.name;
