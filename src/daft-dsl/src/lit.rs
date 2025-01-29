@@ -343,6 +343,35 @@ impl LiteralValue {
             _ => None,
         }
     }
+
+    /// If the literal is `Int8`, return it. Otherwise, return None.
+    pub fn as_i8(&self) -> Option<i8> {
+        match self {
+            Self::Int8(i) => Some(*i),
+            _ => None,
+        }
+    }
+    /// If the literal is `UInt8`, return it. Otherwise, return None.
+    pub fn as_u8(&self) -> Option<u8> {
+        match self {
+            Self::UInt8(i) => Some(*i),
+            _ => None,
+        }
+    }
+    /// If the literal is `Int16`, return it. Otherwise, return None.
+    pub fn as_i16(&self) -> Option<i16> {
+        match self {
+            Self::Int16(i) => Some(*i),
+            _ => None,
+        }
+    }
+    /// If the literal is `UInt16`, return it. Otherwise, return None.
+    pub fn as_u16(&self) -> Option<u16> {
+        match self {
+            Self::UInt16(i) => Some(*i),
+            _ => None,
+        }
+    }
     /// If the literal is `Int32`, return it. Otherwise, return None.
     pub fn as_i32(&self) -> Option<i32> {
         match self {
@@ -455,6 +484,10 @@ where
 }
 
 make_literal!(bool, Boolean);
+make_literal!(i8, Int8);
+make_literal!(u8, UInt8);
+make_literal!(i16, Int16);
+make_literal!(u16, UInt16);
 make_literal!(i32, Int32);
 make_literal!(u32, UInt32);
 make_literal!(i64, Int64);
@@ -535,6 +568,22 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
             let data = values.iter().map(|lit| unwrap_unchecked_ref!(lit, Binary));
             BinaryArray::from_iter("literal", data).into_series()
         }
+        DataType::Int8 => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Int8));
+            Int8Array::from_iter(Field::new("literal", DataType::Int8), data).into_series()
+        }
+        DataType::UInt8 => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt8));
+            UInt8Array::from_iter(Field::new("literal", DataType::UInt8), data).into_series()
+        }
+        DataType::Int16 => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, Int16));
+            Int16Array::from_iter(Field::new("literal", DataType::Int16), data).into_series()
+        }
+        DataType::UInt16 => {
+            let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt16));
+            UInt16Array::from_iter(Field::new("literal", DataType::UInt16), data).into_series()
+        }
         DataType::Int32 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Int32));
             Int32Array::from_iter(Field::new("literal", DataType::Int32), data).into_series()
@@ -609,6 +658,34 @@ mod test {
         ];
         let expected = vec![1, 2, 3];
         let expected = UInt64Array::from_values("literal", expected.into_iter());
+        let expected = expected.into_series();
+        let actual = super::literals_to_series(&values).unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_uint16_literals_to_series() {
+        let values = vec![
+            LiteralValue::UInt16(1),
+            LiteralValue::UInt16(2),
+            LiteralValue::UInt16(3),
+        ];
+        let expected = vec![1, 2, 3];
+        let expected = UInt16Array::from_values("literal", expected.into_iter());
+        let expected = expected.into_series();
+        let actual = super::literals_to_series(&values).unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_int8_literals_to_series() {
+        let values = vec![
+            LiteralValue::Int8(1),
+            LiteralValue::Int8(2),
+            LiteralValue::Int8(3),
+        ];
+        let expected = vec![1, 2, 3];
+        let expected = Int8Array::from_values("literal", expected.into_iter());
         let expected = expected.into_series();
         let actual = super::literals_to_series(&values).unwrap();
         assert_eq!(expected, actual);
