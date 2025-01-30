@@ -29,10 +29,6 @@ const geistMono = Geist_Mono({
     subsets: ['latin'],
 });
 
-function capitalize(word: string): string {
-    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-}
-
 function Layout({ children }: { children: React.ReactNode }) {
     const pathSegments = usePathname().split('/').filter(segment => segment);
     let pathSegment;
@@ -40,7 +36,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         pathSegment = 'Home';
     }
     else if (pathSegments.length === 1) {
-        pathSegment = capitalize(pathSegments[0]);
+        pathSegment = pathSegments[0];
     }
     else {
         throw new Error('Invalid path structure');
@@ -55,9 +51,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                     <Separator orientation="vertical" className="mr-2 h-4" />
                     <Breadcrumb>
                         <BreadcrumbList>
-                            <BreadcrumbSeparator className="hidden md:block" />
                             <BreadcrumbItem>
-                                <BreadcrumbPage>{pathSegment}</BreadcrumbPage>
+                                <BreadcrumbPage className='capitalize'>{pathSegment}</BreadcrumbPage>
                             </BreadcrumbItem>
                         </BreadcrumbList>
                     </Breadcrumb>
