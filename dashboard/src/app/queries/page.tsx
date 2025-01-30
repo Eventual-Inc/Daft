@@ -45,6 +45,10 @@ const data: Query[] = [
         [NAME_KEY]: "vibrant-edison",
         [STATUS_KEY]: "failed",
     },
+    {
+        [NAME_KEY]: "ecstatic-gauss",
+        [STATUS_KEY]: "cancelled",
+    },
 ];
 
 export default function DataTableDemo() {

@@ -7,6 +7,5 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export const main = Geist({
-    weight: "300",
     subsets: ["latin"],
 });
