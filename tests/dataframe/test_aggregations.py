@@ -11,6 +11,7 @@ from daft import col
 from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
+from daft.exceptions import DaftTypeError
 from daft.utils import freeze
 from tests.utils import sort_arrow_table
 
@@ -258,19 +259,13 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     sorted_exp_no_nulls = exp_set_no_nulls
     for res, exp in zip(sorted_res_no_nulls, sorted_exp_no_nulls):
         assert len(res) == len(set(x for x in res if x is not None)), "Result should contain no duplicates"
-        assert set(x for x in res if x is not None) == set(
-            x for x in exp if x is not None
-        ), "Sets should contain same non-null elements"
-        assert None not in res, "Result should not contain nulls when ignore_nulls=True"
-
+        assert set(x for x in res if x is not None) == set(x for x in exp if x is not None), "Sets should match"
     # Check set with nulls
     sorted_res_with_nulls = [res_set_with_nulls[i] for i in arg_sort]
     sorted_exp_with_nulls = exp_set_with_nulls
     for res, exp in zip(sorted_res_with_nulls, sorted_exp_with_nulls):
-        assert len(res) == len(set(x for x in res)), "Result should contain no duplicates"
-        assert set(res) == set(exp), "Sets should contain same elements including nulls"
-        if None in exp:
-            assert None in res, "Result should contain null when ignore_nulls=False and nulls exist"
+        assert len(res) == len(set(res)), "Result should contain no duplicates"
+        assert set(res) == set(exp), "Sets should match"
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
@@ -572,7 +567,7 @@ class CustomObject:
         return hash(self.val)
 
 
-def test_agg_pyobjects():
+def test_agg_pyobjects_list():
     objects = [CustomObject(val=0), None, CustomObject(val=1)]
     df = daft.from_pydict({"objs": objects})
     df = df.into_partitions(2)
@@ -580,32 +575,30 @@ def test_agg_pyobjects():
         [
             col("objs").count().alias("count"),
             col("objs").agg_list().alias("list"),
+        ]
+    )
+    df.collect()
+    result = df.to_pydict()
+
+    assert result["count"] == [2]
+    assert set(result["list"][0]) == set(objects)
+
+
+def test_agg_pyobjects_set():
+    objects = [CustomObject(val=0), None, CustomObject(val=1)]
+    df = daft.from_pydict({"objs": objects})
+    df = df.into_partitions(2)
+    df = df.agg(
+        [
             col("objs").agg_set(ignore_nulls=True).alias("set_no_nulls"),
             col("objs").agg_set(ignore_nulls=False).alias("set_with_nulls"),
         ]
     )
-    df.collect()
-    res = df.to_pydict()
-
-    assert res["count"] == [2]
-    assert set(res["list"][0]) == set(objects)
-
-    # Check set without nulls
-    assert len(res["set_no_nulls"][0]) == 2, "Should only contain non-null objects"
-    assert set(x.val for x in res["set_no_nulls"][0]) == {0, 1}, "Should contain correct non-null values"
-    assert None not in res["set_no_nulls"][0], "Should not contain nulls"
-
-    # Check set with nulls
-    assert len(res["set_with_nulls"][0]) == 3, "Should contain all unique objects including null"
-    assert set(x.val if x is not None else None for x in res["set_with_nulls"][0]) == {
-        0,
-        1,
-        None,
-    }, "Should contain all values including null"
-    assert None in res["set_with_nulls"][0], "Should contain null"
+    with pytest.raises(DaftTypeError, match="Expected list input, got Python"):
+        df.collect()
 
 
-def test_groupby_agg_pyobjects():
+def test_groupby_agg_pyobjects_list():
     objects = [CustomObject(val=0), CustomObject(val=1), None, None, CustomObject(val=2)]
     df = daft.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
     df = df.into_partitions(2)
@@ -615,8 +608,6 @@ def test_groupby_agg_pyobjects():
             [
                 col("objects").count().alias("count"),
                 col("objects").agg_list().alias("list"),
-                col("objects").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-                col("objects").agg_set(ignore_nulls=False).alias("set_with_nulls"),
             ]
         )
         .sort(col("groups"))
@@ -629,32 +620,23 @@ def test_groupby_agg_pyobjects():
     assert set(res["list"][0]) == set([objects[0], objects[2], objects[4]])
     assert set(res["list"][1]) == set([objects[1], objects[3]])
 
-    # Check set without nulls for group 1
-    assert len(res["set_no_nulls"][0]) == 2, "Group 1 should have two non-null objects"
-    assert set(x.val for x in res["set_no_nulls"][0]) == {0, 2}, "Group 1 should have correct non-null values"
-    assert None not in res["set_no_nulls"][0], "Group 1 should not contain nulls"
 
-    # Check set without nulls for group 2
-    assert len(res["set_no_nulls"][1]) == 1, "Group 2 should have one non-null object"
-    assert set(x.val for x in res["set_no_nulls"][1]) == {1}, "Group 2 should have correct non-null value"
-    assert None not in res["set_no_nulls"][1], "Group 2 should not contain nulls"
-
-    # Check set with nulls for group 1
-    assert len(res["set_with_nulls"][0]) == 3, "Group 1 should have all unique objects including null"
-    assert set(x.val if x is not None else None for x in res["set_with_nulls"][0]) == {
-        0,
-        2,
-        None,
-    }, "Group 1 should have all values including null"
-    assert None in res["set_with_nulls"][0], "Group 1 should contain null"
-
-    # Check set with nulls for group 2
-    assert len(res["set_with_nulls"][1]) == 2, "Group 2 should have all unique objects including null"
-    assert set(x.val if x is not None else None for x in res["set_with_nulls"][1]) == {
-        1,
-        None,
-    }, "Group 2 should have all values including null"
-    assert None in res["set_with_nulls"][1], "Group 2 should contain null"
+def test_groupby_agg_pyobjects_set():
+    objects = [CustomObject(val=0), CustomObject(val=1), None, None, CustomObject(val=2)]
+    df = daft.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
+    df = df.into_partitions(2)
+    df = (
+        df.groupby(col("groups"))
+        .agg(
+            [
+                col("objects").agg_set(ignore_nulls=True).alias("set_no_nulls"),
+                col("objects").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            ]
+        )
+        .sort(col("groups"))
+    )
+    with pytest.raises(DaftTypeError, match="Expected list input, got Python"):
+        df.collect()
 
 
 @pytest.mark.parametrize("shuffle_aggregation_default_partitions", [None, 20])

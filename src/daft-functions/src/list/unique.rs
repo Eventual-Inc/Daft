@@ -3,7 +3,7 @@ use std::{any::Any, sync::Arc};
 use arrow2::{compute::cast::cast, datatypes::DataType as ArrowDataType, offset::OffsetsBuffer};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ListArray,
+    array::{growable::make_growable, ListArray},
     datatypes::{DataType, Field},
     prelude::Schema,
     series::{IntoSeries, Series},
@@ -75,11 +75,12 @@ impl ScalarUDF for ListUnique {
                 };
 
                 let list = input.list()?;
-                let mut result: Vec<Series> = Vec::new();
                 let mut offsets = Vec::new();
                 offsets.push(0i64);
                 let mut current_offset = 0i64;
+                let mut result = Vec::new();
 
+                // First pass: collect all unique indices and build offsets
                 for sub_series in list {
                     if let Some(sub_series) = sub_series {
                         let probe_table = if self.ignore_nulls {
@@ -106,18 +107,45 @@ impl ScalarUDF for ListUnique {
                     }
                 }
 
-                // Concatenate all unique values into a single series
-                let mut arrow_arrays = Vec::new();
-                for series in &result {
-                    arrow_arrays.push(series.to_arrow());
+                // Create growable array with all unique series as sources
+                let field = Arc::new(input.field().to_exploded_field()?);
+                let child_data_type = if let DataType::List(inner_type) = input.data_type() {
+                    inner_type.as_ref().clone()
+                } else {
+                    return Err(DaftError::TypeError("Expected list type".into()));
+                };
+
+                // Handle empty list case
+                if current_offset == 0 {
+                    // Create an empty list array
+                    let empty_array = arrow2::array::new_empty_array(child_data_type.to_arrow()?);
+                    let list_array = ListArray::new(
+                        Arc::new(Field::new(input.name(), input.data_type().clone())),
+                        Series::from_arrow(field, empty_array)?,
+                        OffsetsBuffer::try_from(offsets)?,
+                        input.validity().cloned(),
+                    );
+                    return Ok(list_array.into_series());
                 }
-                let arrow_refs: Vec<&dyn arrow2::array::Array> =
-                    arrow_arrays.iter().map(|a| &**a).collect();
-                let concatenated = arrow2::compute::concatenate::concatenate(&arrow_refs)?;
+
+                // Convert result series into references for growable
+                let result_refs: Vec<&Series> = result.iter().collect();
+                let mut growable = make_growable(
+                    &field.name,
+                    &child_data_type,
+                    result_refs,
+                    false,
+                    current_offset as usize,
+                );
+
+                // Extend growable with unique values
+                for (i, series) in result.iter().enumerate() {
+                    growable.extend(i, 0, series.len());
+                }
 
                 let list_array = ListArray::new(
                     Arc::new(Field::new(input.name(), input.data_type().clone())),
-                    Series::from_arrow(Arc::new(input.field().to_exploded_field()?), concatenated)?,
+                    growable.build()?,
                     OffsetsBuffer::try_from(offsets)?,
                     input.validity().cloned(),
                 );

@@ -21,7 +21,7 @@ def test_list_unique():
     assert [x is None for x in result] == [x is None for x in expected]
 
     # For non-null lists, check that elements are distinct and sets match
-    for r, e in zip(result, expected):
+    for i, (r, e) in enumerate(zip(result, expected)):
         if r is not None:
             assert len(r) == len(set(r)), "Elements should be distinct"
             assert set(r) == set(e), "Sets should match"
@@ -39,7 +39,7 @@ def test_list_unique():
     assert [x is None for x in result] == [x is None for x in expected]
 
     # For non-null lists, check that elements are distinct and sets match
-    for r, e in zip(result, expected):
+    for i, (r, e) in enumerate(zip(result, expected)):
         if r is not None:
             assert len(r) == len(set(x for x in r)), "Elements should be distinct"
             assert set(r) == set(e), "Sets should match"
@@ -65,7 +65,7 @@ def test_list_unique_fixed_size():
     assert [x is None for x in result] == [x is None for x in expected]
 
     # For non-null lists, check that elements are distinct and sets match
-    for r, e in zip(result, expected):
+    for i, (r, e) in enumerate(zip(result, expected)):
         if r is not None:
             assert len(r) == len(set(r)), "Elements should be distinct"
             assert set(r) == set(e), "Sets should match"
@@ -83,7 +83,7 @@ def test_list_unique_fixed_size():
     assert [x is None for x in result] == [x is None for x in expected]
 
     # For non-null lists, check that elements are distinct and sets match
-    for r, e in zip(result, expected):
+    for i, (r, e) in enumerate(zip(result, expected)):
         if r is not None:
             assert len(r) == len(set(x for x in r)), "Elements should be distinct"
             assert set(r) == set(e), "Sets should match"
