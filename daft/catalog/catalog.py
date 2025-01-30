@@ -4,7 +4,17 @@
 - [] use catalogs without a session (implicit)
 - [] unity attach / create_external_catalog
 - [] iceberg attach / create_external_catalog
+- [] clean read_table with iceberg (impl) specific options
 """
+
+# class Namespace:
+
+#     def __init__(self) -> None:
+#         pass
+
+# class Name:
+#     def __init__(self) -> None:
+#         pass
 
 
 class Table:
@@ -14,9 +24,20 @@ class Table:
     def __repr__(self) -> str:
         return f"table({self._name})"
 
+    def name(self) -> str:
+        return self._name
+
+    def read():
+        raise Exception("read not implemented")
+
+    def schema():
+        raise Exception("schema not implemented")
+
+    def properties():
+        raise Exception("properties not implemented")
+
 
 class Catalog:
-
     def __init__(self, name: str = "default"):
         self._name = name
         self._tables = dict()
@@ -24,7 +45,10 @@ class Catalog:
     def __repr__(self) -> str:
         return f"catalog({self._name})"
 
-    # CREATE ACTIONS
+    def name(self) -> str:
+        return self._name
+
+    # ---
 
     def create_namespace(self):
         raise Exception("create_namespace not implemented")
@@ -32,7 +56,8 @@ class Catalog:
     def create_schema(self):
         raise Exception("create_schema not implemented")
 
-    def create_table(self, name: str) -> Table:
+    def create_table(self, name: str, schema: Schema, if_not_exists=False) -> Table:
+        """Create a new table"""
         table = Table(name)
         self._tables[name] = table
         return table
@@ -40,17 +65,17 @@ class Catalog:
     def create_view(self):
         raise Exception("create_view not implemented")
 
-    # CREATE EXTERNAL ACTIONS
+    # ---
 
     def create_external_table(self):
         raise Exception("create_external_table not implemented")
 
-    # GET ACTIONS
+    # ---
 
     def get_table(self, name: str) -> Table:
         raise Exception("not implemented")
 
-    # LIST ACTIONS
+    # ---
 
     def list_namespaces(self):
         raise Exception("not implemented")
@@ -64,7 +89,7 @@ class Catalog:
     def list_views(self):
         raise Exception("not implemented")
 
-    # DROP ACTIONS
+    # ---
 
     def drop_namespace(self):
         raise Exception("not implemented")

@@ -40,6 +40,7 @@ df2 = daft.sql("SELECT * FROM my_table")
 
 from __future__ import annotations
 
+from daft.catalog.catalog import Catalog, Table
 from daft.daft import catalog as native_catalog
 from daft.logical.builder import LogicalPlanBuilder
 
@@ -51,13 +52,32 @@ if TYPE_CHECKING:
     from pyiceberg.catalog import Catalog as PyIcebergCatalog
     from daft.unity_catalog import UnityCatalog
 
-
 __all__ = [
+    "Catalog",
+    "Table",
+    "create_catalog",
     "read_table",
     "register_python_catalog",
     "register_table",
     "unregister_catalog",
 ]
+
+
+def create_catalog(name: str) -> str:
+    """Creates a new catalog with the given name.
+
+    This function initializes a new instance of the Catalog class with the specified name and returns the name of the created catalog.
+
+    Args:
+        name (str): The name of the catalog to be created.
+
+    Returns:
+        str: The name of the created catalog.
+    """
+    return Catalog(name)
+
+
+# ------------------------------------------------------
 
 # Forward imports from the native catalog which don't require Python wrappers
 unregister_catalog = native_catalog.unregister_catalog
