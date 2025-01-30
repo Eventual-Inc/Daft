@@ -125,6 +125,8 @@ class DaftContext:
 
     _runner: Runner | None = None
 
+    _broadcast_metrics: bool = False
+
     _instance: ClassVar[DaftContext | None] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
@@ -195,6 +197,25 @@ _DaftContext = DaftContext()
 
 def get_context() -> DaftContext:
     return _DaftContext
+
+
+def broadcast_metrics(
+    broadcast_metrics: bool = True,
+) -> DaftContext:
+    """Broadcast all metrics collected by daft on the port 3238.
+
+    This enables the Daft Dashboard to collect metrics and display them.
+
+    Args:
+        broadcast_metrics: Whether or not the metrics should be broadcasted on port 3238. Defaults to true.
+
+    Returns:
+        DaftContext: Daft context after enabling or disabling metrics broadcasting.
+    """
+    ctx = get_context()
+    with ctx._lock:
+        ctx._broadcast_metrics = broadcast_metrics
+        return ctx
 
 
 def set_runner_ray(
