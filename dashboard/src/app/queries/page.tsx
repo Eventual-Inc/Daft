@@ -1,7 +1,6 @@
-'use client';
+"use client";
 
-import { Check, CircleX, LoaderCircle } from 'lucide-react';
-import * as React from 'react';
+import * as React from "react";
 import {
     ColumnDef,
     ColumnFiltersState,
@@ -11,11 +10,12 @@ import {
     getPaginationRowModel,
     getSortedRowModel,
     useReactTable,
-} from '@tanstack/react-table';
+} from "@tanstack/react-table";
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from "@/components/ui/badge"
+import StatusBadge, { BadgeStatus } from "@/components/status-badge";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
     Table,
     TableBody,
@@ -23,67 +23,43 @@ import {
     TableHead,
     TableHeader,
     TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 
 const NAME_KEY = "name";
 const STATUS_KEY = "status";
-
 type Query = {
     [NAME_KEY]: string
-    [STATUS_KEY]: QueryStatus
+    [STATUS_KEY]: BadgeStatus,
 }
-type QueryStatus = 'pending' | 'success' | 'failed';
 
 const data: Query[] = [
     {
-        [NAME_KEY]: '3u1reuv4',
-        [STATUS_KEY]: 'success',
+        [NAME_KEY]: "serene-darwin",
+        [STATUS_KEY]: "success",
     },
     {
-        [NAME_KEY]: 'derv1ws0',
-        [STATUS_KEY]: 'pending',
+        [NAME_KEY]: "curious-newton",
+        [STATUS_KEY]: "pending",
     },
     {
-        [NAME_KEY]: 'bhqecj4p',
-        [STATUS_KEY]: 'failed',
+        [NAME_KEY]: "vibrant-edison",
+        [STATUS_KEY]: "failed",
     },
 ];
-
-const columns: ColumnDef<Query>[] = [
-    {
-        accessorKey: NAME_KEY,
-        header: 'Name',
-        cell: ({ row }) => row.getValue(NAME_KEY),
-    },
-    {
-        accessorKey: STATUS_KEY,
-        header: 'Status',
-        cell: ({ row }) => {
-            const status = row.getValue(STATUS_KEY);
-            if (status === "success") { return Success() }
-            else if (status === "pending") { return Pending() }
-            else { return Failure() }
-        },
-    },
-];
-
-const Success = () => <Badge variant="outline" className="text-green-600">
-    <Check size={13} strokeWidth={3} />
-    <div className="px-[2px]" />
-    Success
-</Badge>;
-const Pending = () => <Badge variant="outline" className="text-yellow-600">
-    <LoaderCircle className="animate-spin" size={13} strokeWidth={3} />
-    <div className="px-[2px]" />
-    Pending
-</Badge>;
-const Failure = () => <Badge variant="outline" className="text-red-600">
-    <CircleX size={13} strokeWidth={3} />
-    <div className="px-[2px]" />
-    Failure
-</Badge>;
 
 export default function DataTableDemo() {
+    const columns: ColumnDef<Query>[] = [
+        {
+            accessorKey: NAME_KEY,
+            header: "Name",
+            cell: ({ row }) => row.getValue(NAME_KEY),
+        },
+        {
+            accessorKey: STATUS_KEY,
+            header: "Status",
+            cell: ({ row }) => <StatusBadge status={row.getValue(STATUS_KEY)} />,
+        },
+    ];
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
     const [rowSelection, setRowSelection] = React.useState({});
 
@@ -107,7 +83,7 @@ export default function DataTableDemo() {
             <div className="flex items-center py-4">
                 <Input
                     placeholder="Filter queries..."
-                    value={(table.getColumn(NAME_KEY)?.getFilterValue() as string) ?? ''}
+                    value={(table.getColumn(NAME_KEY)?.getFilterValue() as string) ?? ""}
                     onChange={(event) =>
                         table.getColumn(NAME_KEY)?.setFilterValue(event.target.value)
                     }
@@ -119,16 +95,14 @@ export default function DataTableDemo() {
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (
                             <TableRow key={headerGroup.id}>
-                                {headerGroup.headers.map((header) => {
-                                    return (
-                                        <TableHead key={header.id} className="px-[20px] text-xs">
-                                            {flexRender(
-                                                header.column.columnDef.header,
-                                                header.getContext()
-                                            )}
-                                        </TableHead>
-                                    );
-                                })}
+                                {headerGroup.headers.map((header) =>
+                                    <TableHead key={header.id} className="px-[20px] text-xs">
+                                        {flexRender(
+                                            header.column.columnDef.header,
+                                            header.getContext()
+                                        )}
+                                    </TableHead>
+                                )}
                             </TableRow>
                         ))}
                     </TableHeader>
@@ -137,7 +111,7 @@ export default function DataTableDemo() {
                             table.getRowModel().rows.map((row) => (
                                 <TableRow key={row.id}>
                                     {row.getAllCells().map(cell => (
-                                        <TableCell key={cell.id} className={`px-[20px] py-[15px] ${(cell.column.columnDef as { accessorKey: string }).accessorKey === "name" ? "w-[75%]" : ""}`}>
+                                        <TableCell key={cell.id} className={`px-[20px] py-[15px] ${(cell.column.columnDef as { accessorKey: string }).accessorKey === "name" ? "w-[75%]" : undefined}`}>
                                             <div className="truncate">
                                                 {flexRender(
                                                     cell.column.columnDef.cell,

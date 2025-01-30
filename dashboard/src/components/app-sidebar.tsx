@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { SearchForm } from '@/components/search-form';
-import { Home, TableProperties } from 'lucide-react';
-import { usePathname } from 'next/navigation';
+import React from "react";
+import { SearchForm } from "@/components/search-form";
+import { Home, TableProperties } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 import {
     Sidebar,
@@ -15,17 +15,17 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
-} from '@/components/ui/sidebar';
+} from "@/components/ui/sidebar";
 
 const items = [
     {
-        title: 'Home',
-        url: 'home',
+        title: "Home",
+        url: "home",
         icon: Home,
     },
     {
-        title: 'Queries',
-        url: 'queries',
+        title: "Queries",
+        url: "queries",
         icon: TableProperties,
     },
 ];
