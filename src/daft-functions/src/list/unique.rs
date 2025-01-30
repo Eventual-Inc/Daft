@@ -56,7 +56,6 @@ impl ScalarUDF for ListUnique {
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => {
-                // Convert fixed size list to regular list if needed
                 let input = if let DataType::FixedSizeList(inner_type, _) = input.data_type() {
                     let fixed_list = input.fixed_size_list()?;
                     let arrow_array = fixed_list.to_arrow();
@@ -80,7 +79,6 @@ impl ScalarUDF for ListUnique {
                 let mut current_offset = 0i64;
                 let mut result = Vec::new();
 
-                // First pass: collect all unique indices and build offsets
                 for sub_series in list {
                     if let Some(sub_series) = sub_series {
                         let probe_table = if self.ignore_nulls {
@@ -89,11 +87,9 @@ impl ScalarUDF for ListUnique {
                             sub_series.build_probe_table_with_nulls()?
                         };
 
-                        // Get indices in sorted order to preserve first occurrence order
                         let mut indices: Vec<_> = probe_table.keys().map(|k| k.idx).collect();
                         indices.sort_unstable();
 
-                        // Create a new series with just the unique values
                         let mut unique_values = Vec::new();
                         for idx in indices {
                             unique_values.push(sub_series.slice(idx as usize, (idx + 1) as usize)?);
@@ -107,7 +103,6 @@ impl ScalarUDF for ListUnique {
                     }
                 }
 
-                // Create growable array with all unique series as sources
                 let field = Arc::new(input.field().to_exploded_field()?);
                 let child_data_type = if let DataType::List(inner_type) = input.data_type() {
                     inner_type.as_ref().clone()
@@ -115,9 +110,7 @@ impl ScalarUDF for ListUnique {
                     return Err(DaftError::TypeError("Expected list type".into()));
                 };
 
-                // Handle empty list case
                 if current_offset == 0 {
-                    // Create an empty list array
                     let empty_array = arrow2::array::new_empty_array(child_data_type.to_arrow()?);
                     let list_array = ListArray::new(
                         Arc::new(Field::new(input.name(), input.data_type().clone())),
@@ -128,7 +121,6 @@ impl ScalarUDF for ListUnique {
                     return Ok(list_array.into_series());
                 }
 
-                // Convert result series into references for growable
                 let result_refs: Vec<&Series> = result.iter().collect();
                 let mut growable = make_growable(
                     &field.name,
@@ -138,7 +130,6 @@ impl ScalarUDF for ListUnique {
                     current_offset as usize,
                 );
 
-                // Extend growable with unique values
                 for (i, series) in result.iter().enumerate() {
                     growable.extend(i, 0, series.len());
                 }
