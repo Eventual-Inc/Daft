@@ -352,6 +352,7 @@ def set_execution_config(
     config: PyDaftExecutionConfig | None = None,
     scan_tasks_min_size_bytes: int | None = None,
     scan_tasks_max_size_bytes: int | None = None,
+    max_sources_per_scan_task: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
     parquet_split_row_groups_max_files: int | None = None,
     sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
@@ -389,6 +390,7 @@ def set_execution_config(
         scan_tasks_max_size_bytes: Maximum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will increase the upper bound of the size of merged ScanTasks, which leads to bigger but
             fewer partitions. (Defaults to 384 MiB)
+        max_sources_per_scan_task: Maximum number of sources in a single ScanTask. (Defaults to 10)
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
         parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
@@ -414,7 +416,7 @@ def set_execution_config(
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
         enable_native_executor: Enables the native executor, Defaults to False
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
-        shuffle_algorithm: The shuffle algorithm to use. Defaults to "map_reduce". Other options are "pre_shuffle_merge".
+        shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce" and "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
@@ -427,6 +429,7 @@ def set_execution_config(
         new_daft_execution_config = old_daft_execution_config.with_config_values(
             scan_tasks_min_size_bytes=scan_tasks_min_size_bytes,
             scan_tasks_max_size_bytes=scan_tasks_max_size_bytes,
+            max_sources_per_scan_task=max_sources_per_scan_task,
             broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
             parquet_split_row_groups_max_files=parquet_split_row_groups_max_files,
             sort_merge_join_sort_with_aligned_boundaries=sort_merge_join_sort_with_aligned_boundaries,

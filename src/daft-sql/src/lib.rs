@@ -32,8 +32,8 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
-        LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
+        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
     use error::SQLPlannerResult;
     use rstest::{fixture, rstest};
@@ -306,9 +306,7 @@ mod tests {
                 Some(vec![null_equals_null]),
                 JoinType::Inner,
                 None,
-                None,
-                Some("tbl3."),
-                true,
+                JoinOptions::default().prefix("tbl3."),
             )?
             .select(vec![col("*")])?
             .build();
@@ -334,9 +332,7 @@ mod tests {
                 Some(vec![false]),
                 JoinType::Inner,
                 None,
-                None,
-                Some("tbl3."),
-                true,
+                JoinOptions::default().prefix("tbl3."),
             )?
             .select(vec![col("*")])?
             .build();

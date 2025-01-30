@@ -20,7 +20,7 @@ use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
     utf8::{ilike, like, to_date, to_datetime},
 };
-use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
+use daft_logical_plan::{JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
@@ -759,11 +759,12 @@ impl<'a> SQLPlanner<'a> {
             for tbl in from_iter {
                 let right = self.plan_relation(&tbl.relation)?;
                 self.table_map.insert(right.get_name(), right.clone());
-                let right_join_prefix = Some(format!("{}.", right.get_name()));
+                let right_join_prefix = format!("{}.", right.get_name());
 
-                rel.inner =
-                    rel.inner
-                        .cross_join(right.inner, None, right_join_prefix.as_deref())?;
+                rel.inner = rel.inner.cross_join(
+                    right.inner,
+                    JoinOptions::default().prefix(right_join_prefix),
+                )?;
             }
             self.current_relation = Some(rel);
             return Ok(());
@@ -895,7 +896,7 @@ impl<'a> SQLPlanner<'a> {
             };
             let right_rel = self.plan_relation(&join.relation)?;
             let right_rel_name = right_rel.get_name();
-            let right_join_prefix = Some(format!("{right_rel_name}."));
+            let right_join_prefix = format!("{right_rel_name}.");
 
             // construct a planner with the right table to use for expr planning
             let mut right_planner = self.new_with_context();
@@ -920,7 +921,7 @@ impl<'a> SQLPlanner<'a> {
             let mut left_filters = Vec::new();
             let mut right_filters = Vec::new();
 
-            let (keep_join_keys, null_eq_nulls) = match &constraint {
+            let (merge_matching_join_keys, null_eq_nulls) = match &constraint {
                 JoinConstraint::On(expr) => {
                     let mut null_eq_nulls = Vec::new();
 
@@ -935,7 +936,7 @@ impl<'a> SQLPlanner<'a> {
                         &mut right_filters,
                     )?;
 
-                    (true, Some(null_eq_nulls))
+                    (false, Some(null_eq_nulls))
                 }
                 JoinConstraint::Using(idents) => {
                     left_on = idents
@@ -944,7 +945,7 @@ impl<'a> SQLPlanner<'a> {
                         .collect::<Vec<_>>();
                     right_on.clone_from(&left_on);
 
-                    (false, None)
+                    (true, None)
                 }
                 JoinConstraint::Natural => unsupported_sql_err!("NATURAL JOIN not supported"),
                 JoinConstraint::None => unsupported_sql_err!("JOIN without ON/USING not supported"),
@@ -967,9 +968,9 @@ impl<'a> SQLPlanner<'a> {
                 null_eq_nulls,
                 join_type,
                 None,
-                None,
-                right_join_prefix.as_deref(),
-                keep_join_keys,
+                JoinOptions::default()
+                    .prefix(right_join_prefix)
+                    .merge_matching_join_keys(merge_matching_join_keys),
             )?;
             self.table_map.insert(right_rel_name, right_rel);
         }

@@ -736,6 +736,20 @@ pub trait TreeNodeIterator: Iterator {
         self,
         f: F,
     ) -> Result<Transformed<Vec<Self::Item>>>;
+
+    /// Apples `f` to each item in this iterator
+    ///
+    /// # Returns
+    /// Error if `f` returns an error
+    ///
+    /// Ok(Transformed) such that:
+    /// 1. `transformed` is true if any return from `f` had transformed true
+    /// 2. `data` from the last invocation of `f`
+    /// 3. `tnr` from the last invocation of `f` or `Continue` if the iterator is empty
+    fn map_and_collect<F: FnMut(Self::Item) -> Result<Transformed<Self::Item>>>(
+        self,
+        f: F,
+    ) -> Result<Transformed<Vec<Self::Item>>>;
 }
 
 impl<I: Iterator> TreeNodeIterator for I {
@@ -767,6 +781,23 @@ impl<I: Iterator> TreeNodeIterator for I {
                 result.data
             }),
             TreeNodeRecursion::Stop => Ok(item),
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|data| Transformed::new(data, transformed, tnr))
+    }
+
+    fn map_and_collect<F: FnMut(Self::Item) -> Result<Transformed<Self::Item>>>(
+        self,
+        mut f: F,
+    ) -> Result<Transformed<Vec<Self::Item>>> {
+        let mut tnr = TreeNodeRecursion::Continue;
+        let mut transformed = false;
+        self.map(|item| {
+            f(item).map(|result| {
+                tnr = result.tnr;
+                transformed |= result.transformed;
+                result.data
+            })
         })
         .collect::<Result<Vec<_>>>()
         .map(|data| Transformed::new(data, transformed, tnr))

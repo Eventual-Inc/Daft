@@ -345,6 +345,7 @@ async fn stream_scan_task(
         FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit,
             field_id_mapping,
+            chunk_size,
             ..
         }) => {
             let inference_options =
@@ -373,6 +374,7 @@ async fn stream_scan_task(
                 metadata,
                 maintain_order,
                 delete_rows,
+                *chunk_size,
             )
             .await?
         }
