@@ -202,9 +202,12 @@ impl PyDaftExecutionConfig {
             config.default_morsel_size = default_morsel_size;
         }
         if let Some(shuffle_algorithm) = shuffle_algorithm {
-            if !matches!(shuffle_algorithm, "map_reduce" | "pre_shuffle_merge") {
+            if !matches!(
+                shuffle_algorithm,
+                "map_reduce" | "pre_shuffle_merge" | "auto"
+            ) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "shuffle_algorithm must be 'map_reduce' or 'pre_shuffle_merge'",
+                    "shuffle_algorithm must be 'auto', 'map_reduce' or 'pre_shuffle_merge'",
                 ));
             }
             config.shuffle_algorithm = shuffle_algorithm.to_string();
