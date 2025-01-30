@@ -1719,6 +1719,7 @@ class PyDaftExecutionConfig:
         self,
         scan_tasks_min_size_bytes: int | None = None,
         scan_tasks_max_size_bytes: int | None = None,
+        max_sources_per_scan_task: int | None = None,
         broadcast_join_size_bytes_threshold: int | None = None,
         parquet_split_row_groups_max_files: int | None = None,
         sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
@@ -1746,6 +1747,8 @@ class PyDaftExecutionConfig:
     def scan_tasks_min_size_bytes(self) -> int: ...
     @property
     def scan_tasks_max_size_bytes(self) -> int: ...
+    @property
+    def max_sources_per_scan_task(self) -> int: ...
     @property
     def broadcast_join_size_bytes_threshold(self) -> int: ...
     @property

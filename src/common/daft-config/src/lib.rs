@@ -40,6 +40,7 @@ impl DaftPlanningConfig {
 pub struct DaftExecutionConfig {
     pub scan_tasks_min_size_bytes: usize,
     pub scan_tasks_max_size_bytes: usize,
+    pub max_sources_per_scan_task: usize,
     pub broadcast_join_size_bytes_threshold: usize,
     pub sort_merge_join_sort_with_aligned_boundaries: bool,
     pub hash_join_partition_size_leniency: f64,
@@ -69,6 +70,7 @@ impl Default for DaftExecutionConfig {
         Self {
             scan_tasks_min_size_bytes: 96 * 1024 * 1024,  // 96MB
             scan_tasks_max_size_bytes: 384 * 1024 * 1024, // 384MB
+            max_sources_per_scan_task: 10,
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
             sort_merge_join_sort_with_aligned_boundaries: false,
             hash_join_partition_size_leniency: 0.5,
