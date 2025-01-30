@@ -1419,6 +1419,9 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
             _ => 1.0,
         },
 
+        // String contains
+        Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "contains" => 0.1,
+
         // Everything else that could be boolean gets 0.2, non-boolean gets 1.0
         Expr::ScalarFunction(_)
         | Expr::Function { .. }

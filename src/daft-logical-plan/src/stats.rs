@@ -48,9 +48,10 @@ impl Display for PlanStats {
         use num_format::{Locale, ToFormattedString};
         write!(
             f,
-            "{{ Approx num rows = {}, Approx size bytes = {} }}",
+            "{{ Approx num rows = {}, Approx size bytes = {}, Accumulated selectivity = {:.2} }}",
             self.approx_stats.num_rows.to_formatted_string(&Locale::en),
             bytes_to_human_readable(self.approx_stats.size_bytes),
+            self.approx_stats.acc_selectivity,
         )
     }
 }
@@ -101,10 +102,12 @@ impl<T: Display> Display for AlwaysSame<T> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct ApproxStats {
     pub num_rows: usize,
     pub size_bytes: usize,
+    // Accumulated selectivity, i.e. the selectivity of the current operator and its children.
+    pub acc_selectivity: f64,
 }
 
 impl ApproxStats {
@@ -112,12 +115,14 @@ impl ApproxStats {
         Self {
             num_rows: 0,
             size_bytes: 0,
+            acc_selectivity: 1.0,
         }
     }
     pub fn apply<F: Fn(usize) -> usize>(&self, f: F) -> Self {
         Self {
             num_rows: f(self.num_rows),
             size_bytes: f(self.size_bytes),
+            acc_selectivity: self.acc_selectivity,
         }
     }
 }
@@ -126,9 +131,25 @@ use std::ops::Add;
 impl Add for &ApproxStats {
     type Output = ApproxStats;
     fn add(self, rhs: Self) -> Self::Output {
+        // Take the weighted average of the selectivities.
+        let acc_selectivity = if self.acc_selectivity > 0.0 && rhs.acc_selectivity > 0.0 {
+            let current_rows = self.num_rows + rhs.num_rows;
+            let pre_filtered_rows = self.num_rows as f64 / self.acc_selectivity
+                + rhs.num_rows as f64 / rhs.acc_selectivity;
+            if pre_filtered_rows > 0.0 {
+                current_rows as f64 / pre_filtered_rows
+            } else {
+                // The only case where the number of pre-filtered rows can be 0 is when the number of rows is 0.
+                // In this case, the selectivity is 0.
+                0.0
+            }
+        } else {
+            0.0
+        };
         ApproxStats {
             num_rows: self.num_rows + rhs.num_rows,
             size_bytes: self.size_bytes + rhs.size_bytes,
+            acc_selectivity,
         }
     }
 }
