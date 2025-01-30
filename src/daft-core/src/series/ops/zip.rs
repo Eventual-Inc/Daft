@@ -8,28 +8,34 @@ use crate::{
 };
 
 impl Series {
-    /// Merges series into a single series of lists.
+    /// Zips series into a single series of lists.
     /// ex:
     /// ```text
     /// A: Series := ( a_0, a_1, .. , a_n )
     /// B: Series := ( b_0, b_1, .. , b_n )
-    /// C: Series := MERGE(A, B) <-> ( [a_0, b_0], [a_1, b_1], [a_2, b_2] )
+    /// C: Series := Zip(A, B) <-> ( [a_0, b_0], [a_1, b_1], [a_2, b_2] )
     /// ```
-    pub fn merge(field: Field, series: &[&Self]) -> DaftResult<Self> {
-        // err if no series to merge
+    pub fn zip(field: Field, series: &[&Self]) -> DaftResult<Self> {
+        // err if no series to zip
         if series.is_empty() {
             return Err(DaftError::ValueError(
-                "Need at least 1 series to perform merge".to_string(),
+                "Need at least 1 series to perform zip".to_string(),
             ));
         }
 
-        // homogeneity checks happen in lower-levels, assume ok.
-        let dtype = if let DataType::List(dtype) = &field.dtype {
-            dtype.as_ref()
-        } else {
-            return Err(DaftError::ValueError(
-                "Cannot merge field with non-list type".to_string(),
-            ));
+        // homogeneity checks naturally happen in make_growable's downcast.
+        let dtype = match &field.dtype {
+            DataType::List(dtype) => dtype.as_ref(),
+            DataType::FixedSizeList(..) => {
+                return Err(DaftError::ValueError(
+                    "Fixed size list constructor is currently not supported".to_string(),
+                ));
+            }
+            _ => {
+                return Err(DaftError::ValueError(
+                    "Cannot zip field with non-list type".to_string(),
+                ));
+            }
         };
 
         // build a null series mask so we can skip making full_nulls and avoid downcast "Null to T" errors.

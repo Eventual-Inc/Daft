@@ -2,7 +2,7 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import DataType, col
+from daft import DataType, col, list_
 from daft.daft import CountMode
 from daft.sql.sql import SQLCatalog
 
@@ -47,11 +47,11 @@ def test_list_constructor_heterogeneous():
         df  # for ruff ignore unused
 
 
-@pytest.mark.skip("Cannot do a multi-column list constructor from python API")
 def test_list_constructor_heterogeneous_with_cast():
     df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
     actual = daft.sql("SELECT [ CAST(x AS STRING), CAST(y AS STRING) ] FROM df")
-    print(df, actual)
+    expect = df.select(list_(col("x").cast(DataType.string()), col("y").cast(DataType.string())))
+    assert_eq(actual, expect)
 
 
 def test_list_constructor_mixed_null_first():
@@ -63,7 +63,7 @@ def test_list_constructor_mixed_null_first():
 
 def test_list_constructor_mixed_null_mid():
     df = daft.from_pydict({"x": [1, 2, 3]})
-    actual = daft.sql("SELECT [ -x, NULL, x ] FROM df")
+    actual = daft.sql("SELECT [ x * -1, NULL, x ] FROM df")
     expect = df.select(col("x").apply(lambda x: [x * -1, None, x], DataType.list(DataType.int64())).alias("list"))
     assert_eq(actual, expect)
 

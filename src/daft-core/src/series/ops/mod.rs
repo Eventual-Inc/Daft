@@ -29,7 +29,6 @@ pub mod list;
 pub mod log;
 pub mod logical;
 pub mod map;
-pub mod merge;
 pub mod minhash;
 pub mod not;
 pub mod null;
@@ -47,6 +46,7 @@ pub mod take;
 pub mod time;
 mod trigonometry;
 pub mod utf8;
+pub mod zip;
 
 pub fn cast_series_to_supertype(series: &[&Series]) -> DaftResult<Vec<Series>> {
     let supertype = series
