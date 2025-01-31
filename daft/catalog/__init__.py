@@ -47,6 +47,7 @@ from daft.logical.schema import Schema
 from daft.dataframe import DataFrame
 
 from daft.dataframe import DataFrame
+from daft.session import session
 
 from typing import TYPE_CHECKING, Any, Dict, Union
 
@@ -75,7 +76,9 @@ def create_table(name: str, source: Schema | DataFrame) -> Table:
         - CREATE TEMP TABLE [IF NOT EXISTS] t ( schema )
 
     """
-    return Table(name) 
+    session = session()
+    catalog = session.current_catalog()
+    return catalog.create_table(name, source)
 
 def create_table_if_not_exists(name: str, source: Schema | DataFrame) -> Table:
     raise NotImplemented

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from daft import Catalog
+
 from typing import ClassVar, Dict
 
 import threading
@@ -20,6 +22,8 @@ class Session:
     _instance: ClassVar[Session | None] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
+    _current_catalog: Catalog
+    _catalogs: Dict[str,Catalog]
     _properties: Dict[str,str]
 
     def __new__(cls):
@@ -33,11 +37,14 @@ class Session:
     def __init__(self) -> None:
         self._properties = dict()
 
-    def set_default_catalog(self, name: str):
-        self._properties["default_catalog"] = name
+    def current_catalog(self) -> Catalog:
+        raise NotImplemented
 
-    def set_default_namespace(self, name: str):
-        self._properties["default_namespace"] = name
+    # def set_default_catalog(self, name: str):
+    #     self._properties["default_catalog"] = name
+
+    # def set_default_namespace(self, name: str):
+    #     self._properties["default_namespace"] = name
 
     def __repr__(self) -> str:
         return f"session({repr(self._properties)})"

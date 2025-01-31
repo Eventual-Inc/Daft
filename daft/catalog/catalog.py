@@ -1,12 +1,5 @@
 """Goals.
-- [] use tables without catalogs
-- [] use catalogs without a session (implicit)
-- [] create catalog
-- [] create table
 
-- [] unity attach / create_external_catalog
-- [] iceberg attach / create_external_catalog
-- [] clean read_table with iceberg (impl) specific options
 """
 
 
@@ -22,7 +15,7 @@
 
 class Table:
     def __init__(self, name: str):
-        self._name = name
+        raise NotImplementedError("Creating a Table via __init__ is not supported")
 
     def __repr__(self) -> str:
         return f"table({self._name})"
@@ -30,26 +23,29 @@ class Table:
     def name(self) -> str:
         return self._name
 
-    def read():
+    def scan(self):
         raise Exception("read not implemented")
 
-    def schema():
+    def schema(self):
         raise Exception("schema not implemented")
 
-    def properties():
-        raise Exception("properties not implemented")
+    # def properties(self):
+    #     raise Exception("properties not implemented")
 
-    def insert():
-        """Insert..."""
-        raise Exception("not implemented")
+    # def insert(self):
+    #     """Insert..."""
+    #     raise Exception("not implemented")
 
-    def update():
-        """??"""
-        raise Exception("not implemented")
+    # def update(self):
+    #     """??"""
+    #     raise Exception("not implemented")
 
-    def delete():
-        """Delete..."""
-        raise Exception("not implemented")
+    # def delete(self):
+    #     """Delete..."""
+    #     raise Exception("not implemented")
+    
+    def show(self):
+        raise Exception("show not implemented")
 
 
 class Catalog:
@@ -117,16 +113,3 @@ class Catalog:
 
     def drop_view(self):
         raise Exception("not implemented")
-
-
-class Session:
-    def __init__(self):
-        self._catalogs = dict()
-
-    # verb?
-    def attach_catalog(self, catalog: Catalog):
-        raise Exception("attach not implemented")
-
-    # verb?
-    def detach_catalog(self):
-        raise Exception("detach not implemented")

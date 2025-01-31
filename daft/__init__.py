@@ -58,7 +58,7 @@ analytics_client.track_import()
 # Daft top-level imports
 ###
 
-from daft.catalog import create_catalog, read_table, register_table
+from daft.catalog import Catalog, create_table, read_table, register_table
 from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
 from daft.convert import (
     from_arrow,
@@ -95,6 +95,7 @@ from daft.viz import register_viz_hook
 to_struct = Expression.to_struct
 
 __all__ = [
+    "Catalog",
     "DataCatalogTable",
     "DataCatalogType",
     "DataFrame",
@@ -108,7 +109,6 @@ __all__ = [
     "TimeUnit",
     "coalesce",
     "col",
-    "create_catalog",
     "create_table",
     "execution_config_ctx",
     "from_arrow",
