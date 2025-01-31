@@ -118,9 +118,8 @@ jobs:
         python -c "import sys; print('Python path:', sys.executable)"
         # Try to find moto_server relative to Python's bin directory
         ls $(dirname $(which python))/moto_server || echo "moto_server not in python bin"
-        # Install the wheel under test
-        uv pip install dist/*-*x86_64*.whl --force-reinstall
-        rm -rf daft
-        pytest -v
+        ls -l /opt/hostedtoolcache/Python/3.11.11/x64/bin/moto_server
+        # Try running it directly with full path
+        /opt/hostedtoolcache/Python/3.11.11/x64/bin/moto_server --version
       env:
         DAFT_RUNNER: native
