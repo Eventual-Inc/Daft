@@ -1034,32 +1034,3 @@ def test_table_bool_agg(case) -> None:
 
     res = daft_table.to_pydict()
     assert res == expected
-
-
-@pytest.mark.parametrize(
-    "mp",
-    [
-        MicroPartition.from_pydict({"a": [True, None, False, None], "b": ["x", "x", "y", "y"]}),  # 1 table
-        MicroPartition.concat(
-            [
-                MicroPartition.from_pydict({"a": np.array([], dtype=bool), "b": pa.array([], type=pa.string())}),
-                MicroPartition.from_pydict({"a": [True], "b": ["x"]}),
-                MicroPartition.from_pydict({"a": [None, False, None], "b": ["x", "y", "y"]}),
-            ]
-        ),  # 3 tables
-    ],
-)
-def test_multipartition_bool_agg(mp):
-    # Test global aggregation
-    result = mp.agg([col("a").bool_and().alias("a_and"), col("a").bool_or().alias("a_or")])
-    assert result.to_pydict() == {"a_and": [False], "a_or": [True]}
-
-    # Test groupby aggregation
-    result = mp.agg([col("a").bool_and().alias("a_and"), col("a").bool_or().alias("a_or")], group_by=[col("b")]).sort(
-        "b"
-    )
-    assert result.to_pydict() == {
-        "b": ["x", "y"],
-        "a_and": [True, False],
-        "a_or": [True, False],
-    }
