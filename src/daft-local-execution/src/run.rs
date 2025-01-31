@@ -60,10 +60,7 @@ impl LocalPartitionIterator {
 }
 
 #[cfg(feature = "python")]
-#[cfg_attr(
-    feature = "python",
-    pyclass(module = "daft.daft", name = "NativeExecutor")
-)]
+#[pyclass(module = "daft.daft", name = "NativeExecutor")]
 pub struct PyNativeExecutor {
     executor: NativeExecutor,
     part_set_cache: Arc<PyObject>,
