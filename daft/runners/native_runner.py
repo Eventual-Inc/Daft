@@ -12,9 +12,10 @@ from daft.runners.partitioning import (
     LocalMaterializedResult,
     LocalPartitionSet,
     PartitionCacheEntry,
+    PartitionSet,
     PartitionSetCache,
 )
-from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
+from daft.runners.runner import Runner
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
@@ -47,17 +48,23 @@ class NativeRunner(Runner[MicroPartition]):
     name = "native"
 
     def __init__(self) -> None:
+        self._executor = NativeExecutor()
         super().__init__()
 
+    def get_partition_set_from_cache(self, pset_id: str) -> PartitionCacheEntry:
+        return self._executor._executor.get_partition_set(pset_id=pset_id)
+
+    def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
+        return self._executor._executor.put_partition_set(pset=pset)
+
     def initialize_partition_set_cache(self) -> PartitionSetCache:
-        return LOCAL_PARTITION_SET_CACHE
+        return self._executor._executor.get_partition_set_cache()
 
     def runner_io(self) -> NativeRunnerIO:
         return NativeRunnerIO()
 
     def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
         results = list(self.run_iter(builder))
-
         result_pset = LocalPartitionSet()
         for i, result in enumerate(results):
             result_pset.set_partition(i, result)
@@ -75,10 +82,9 @@ class NativeRunner(Runner[MicroPartition]):
 
         # Optimize the logical plan.
         builder = builder.optimize()
-        executor = NativeExecutor()
-        results_gen = executor.run(
+
+        results_gen = self._executor.run(
             builder,
-            {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
             daft_execution_config,
             results_buffer_size,
         )

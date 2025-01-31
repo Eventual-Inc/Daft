@@ -4,24 +4,20 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_micropartition::{partitioning::PartitionSetRef, MicroPartitionRef};
+use daft_micropartition::partitioning::{MicroPartitionSet, PartitionSet};
 use tracing::instrument;
 
 use super::source::Source;
 use crate::sources::source::SourceStream;
 
 pub struct InMemorySource {
-    data: Option<PartitionSetRef<MicroPartitionRef>>,
+    data: Option<Arc<MicroPartitionSet>>,
     size_bytes: usize,
     schema: SchemaRef,
 }
 
 impl InMemorySource {
-    pub fn new(
-        data: Option<PartitionSetRef<MicroPartitionRef>>,
-        schema: SchemaRef,
-        size_bytes: usize,
-    ) -> Self {
+    pub fn new(data: Option<Arc<MicroPartitionSet>>, schema: SchemaRef, size_bytes: usize) -> Self {
         Self {
             data,
             size_bytes,

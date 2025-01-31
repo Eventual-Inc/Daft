@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ffi::CStr,
     fs::File,
     io::Write,
     sync::Arc,
@@ -13,11 +14,16 @@ use common_tracing::refresh_chrome_trace;
 use daft_local_plan::translate;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
-    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
-    MicroPartition, MicroPartitionRef,
+    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet},
+    MicroPartition,
 };
 use futures::{FutureExt, Stream};
 use loole::RecvFuture;
+use pyo3::{
+    ffi::c_str,
+    intern,
+    types::{PyAnyMethods, PyDict},
+};
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -61,34 +67,56 @@ impl LocalPartitionIterator {
 )]
 pub struct PyNativeExecutor {
     executor: NativeExecutor,
-}
-
-#[cfg(feature = "python")]
-impl Default for PyNativeExecutor {
-    fn default() -> Self {
-        Self::new()
-    }
+    part_set_cache: Arc<PyObject>,
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyNativeExecutor {
     #[new]
-    pub fn new() -> Self {
-        Self {
+    pub fn new(py: Python) -> PyResult<Self> {
+        // from daft.runners.runner import LOCAL_PARTITION_SET_CACHE
+        let module = py.import(intern!(py, "daft.runners.runner"))?;
+        let local_partition_set_cache = module.getattr(intern!(py, "LOCAL_PARTITION_SET_CACHE"))?;
+        let local_partition_set_cache = local_partition_set_cache.unbind();
+        let local_partition_set_cache = Arc::new(local_partition_set_cache);
+
+        Ok(Self {
             executor: NativeExecutor::new(),
-        }
+            part_set_cache: local_partition_set_cache,
+        })
     }
 
-    #[pyo3(signature = (logical_plan_builder, psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (logical_plan_builder, cfg, results_buffer_size=None))]
     pub fn run<'a>(
-        &self,
+        &mut self,
         py: Python<'a>,
         logical_plan_builder: &PyLogicalPlanBuilder,
-        psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<Bound<'a, PyAny>> {
+        // i don't know how to do this in pyo3/rust, so we just `eval` the python code
+        let psets = {
+            const CODE_1: &CStr = c_str!(
+                "{k: v.values() for k, v in part_set_cache.get_all_partition_sets().items()}"
+            );
+
+            const CODE_2: &CStr = c_str!(
+                "{part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()}"
+            );
+
+            let locals = PyDict::new(py);
+
+            locals.set_item(intern!(py, "part_set_cache"), self.part_set_cache.as_ref())?;
+
+            let res = py.eval(CODE_1, None, Some(&locals))?;
+            let locals = PyDict::new(py);
+            locals.set_item(intern!(py, "psets"), res)?;
+
+            py.eval(CODE_2, None, Some(&locals))
+        }?;
+        let psets = psets.extract::<HashMap<String, Vec<PyMicroPartition>>>()?;
+
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
@@ -106,10 +134,10 @@ impl PyNativeExecutor {
             .collect();
         let psets = InMemoryPartitionSetCache::new(&native_psets);
         let out = py.allow_threads(|| {
+            self.executor.psets.copy_from(psets);
             self.executor
                 .run(
                     &logical_plan_builder.builder,
-                    &psets,
                     cfg.config,
                     results_buffer_size,
                 )
@@ -148,10 +176,25 @@ impl PyNativeExecutor {
             .executor
             .repr_mermaid(&logical_plan_builder.builder, cfg.config, options))
     }
+
+    pub fn get_partition_set_cache(&self) -> PyResult<&PyObject> {
+        Ok(self.part_set_cache.as_ref())
+    }
+
+    pub fn get_partition_set(&self, py: Python, pset_id: &str) -> PyResult<PyObject> {
+        self.part_set_cache
+            .call_method(py, "get_partition_set", (pset_id,), None)
+    }
+
+    pub fn put_partition_set(&self, py: Python, pset: PyObject) -> PyResult<PyObject> {
+        self.part_set_cache
+            .call_method(py, "put_partition_set", (pset,), None)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct NativeExecutor {
+    pub psets: InMemoryPartitionSetCache,
     cancel: CancellationToken,
     runtime: Option<Arc<tokio::runtime::Runtime>>,
     pb_manager: Option<Arc<dyn ProgressBarManager>>,
@@ -161,6 +204,7 @@ pub struct NativeExecutor {
 impl Default for NativeExecutor {
     fn default() -> Self {
         Self {
+            psets: InMemoryPartitionSetCache::empty(),
             cancel: CancellationToken::new(),
             runtime: None,
             pb_manager: should_enable_progress_bar().then(make_progress_bar_manager),
@@ -192,15 +236,15 @@ impl NativeExecutor {
     pub fn run(
         &self,
         logical_plan_builder: &LogicalPlanBuilder,
-        psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan)?;
+
         refresh_chrome_trace();
         let cancel = self.cancel.clone();
-        let pipeline = physical_plan_to_pipeline(&physical_plan, psets, &cfg)?;
+        let pipeline = physical_plan_to_pipeline(&physical_plan, &self.psets, &cfg)?;
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
 
         let rt = self.runtime.clone();

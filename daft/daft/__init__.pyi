@@ -1701,7 +1701,6 @@ class NativeExecutor:
     def run(
         self,
         builder: LogicalPlanBuilder,
-        psets: dict[str, list[PartitionT]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
     ) -> Iterator[PyMicroPartition]: ...

@@ -109,7 +109,10 @@ impl SparkAnalyzer<'_> {
                 } = pset.metadata();
                 let num_partitions = pset.num_partitions();
 
-                self.session.psets.put_partition_set(&partition_key, &pset);
+                self.session
+                    .engine
+                    .psets
+                    .put_partition_set(&partition_key, &pset);
 
                 let cache_entry = PartitionCacheEntry::new_rust(partition_key.clone(), pset);
 

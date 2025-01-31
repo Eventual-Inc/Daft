@@ -550,6 +550,7 @@ class DataFrame:
         if not parts:
             raise ValueError("Can't create a DataFrame from an empty list of tables.")
 
+        print("_from_tables")
         result_pset = LocalPartitionSet()
 
         for i, part in enumerate(parts):

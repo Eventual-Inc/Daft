@@ -67,9 +67,7 @@ impl Session {
 
                 let plan = lp.optimize_async().await?;
 
-                let results = this
-                    .engine
-                    .run(&plan, &*this.psets, Default::default(), None)?;
+                let results = this.engine.run(&plan, Default::default(), None)?;
                 Ok(results.into_stream().boxed())
             }
         }

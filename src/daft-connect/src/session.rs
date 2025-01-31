@@ -6,7 +6,6 @@ use std::{
 use common_runtime::RuntimeRef;
 use daft_catalog::DaftCatalog;
 use daft_local_execution::NativeExecutor;
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -20,7 +19,6 @@ pub struct Session {
     server_side_session_id: String,
     /// MicroPartitionSet associated with this session
     /// this will be filled up as the user runs queries
-    pub(crate) psets: Arc<InMemoryPartitionSetCache>,
     pub(crate) compute_runtime: RuntimeRef,
     pub(crate) engine: Arc<NativeExecutor>,
     pub(crate) catalog: Arc<RwLock<DaftCatalog>>,
@@ -44,7 +42,6 @@ impl Session {
             config_values: Default::default(),
             id,
             server_side_session_id,
-            psets: Arc::new(InMemoryPartitionSetCache::empty()),
             compute_runtime: rt.clone(),
             engine: Arc::new(NativeExecutor::default().with_runtime(rt.runtime.clone())),
             catalog: Arc::new(RwLock::new(DaftCatalog::default())),
