@@ -87,6 +87,7 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
+from daft.session import Session, session
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
@@ -108,6 +109,7 @@ __all__ = [
     "coalesce",
     "col",
     "create_catalog",
+    "create_table",
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
@@ -131,6 +133,7 @@ __all__ = [
     "refresh_logger",
     "register_table",
     "register_viz_hook",
+    "session",
     "set_execution_config",
     "set_planning_config",
     "sql",

@@ -43,10 +43,12 @@ from __future__ import annotations
 from daft.catalog.catalog import Catalog, Table
 from daft.daft import catalog as native_catalog
 from daft.logical.builder import LogicalPlanBuilder
+from daft.logical.schema import Schema
+from daft.dataframe import DataFrame
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Union
 
 if TYPE_CHECKING:
     from pyiceberg.catalog import Catalog as PyIcebergCatalog
@@ -56,25 +58,30 @@ __all__ = [
     "Catalog",
     "Table",
     "create_catalog",
+    "create_table",
+    "create_table_if_not_exists",
+    # OLD
     "read_table",
     "register_python_catalog",
     "register_table",
     "unregister_catalog",
 ]
 
+def create_table(name: str, source: Schema | DataFrame) -> Table:
+    """Creates a new temporary table scoped to the current session.
 
-def create_catalog(name: str) -> str:
-    """Creates a new catalog with the given name.
+    Support
+        - CREATE TEMP TABLE [IF NOT EXISTS] t AS df
+        - CREATE TEMP TABLE [IF NOT EXISTS] t ( schema )
 
-    This function initializes a new instance of the Catalog class with the specified name and returns the name of the created catalog.
-
-    Args:
-        name (str): The name of the catalog to be created.
-
-    Returns:
-        str: The name of the created catalog.
     """
-    return Catalog(name)
+    return Table(name) 
+
+def create_table_if_not_exists(name: str, source: Schema | DataFrame) -> Table:
+    raise NotImplemented
+
+def create_catalog(name: str) -> Catalog:
+    raise NotImplemented
 
 
 # ------------------------------------------------------

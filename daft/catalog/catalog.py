@@ -1,11 +1,14 @@
 """Goals.
-
 - [] use tables without catalogs
 - [] use catalogs without a session (implicit)
+- [] create catalog
+- [] create table
+
 - [] unity attach / create_external_catalog
 - [] iceberg attach / create_external_catalog
 - [] clean read_table with iceberg (impl) specific options
 """
+
 
 # class Namespace:
 
@@ -36,6 +39,18 @@ class Table:
     def properties():
         raise Exception("properties not implemented")
 
+    def insert():
+        """Insert..."""
+        raise Exception("not implemented")
+
+    def update():
+        """??"""
+        raise Exception("not implemented")
+
+    def delete():
+        """Delete..."""
+        raise Exception("not implemented")
+
 
 class Catalog:
     def __init__(self, name: str = "default"):
@@ -51,12 +66,12 @@ class Catalog:
     # ---
 
     def create_namespace(self):
-        raise Exception("create_namespace not implemented")
+        raise Exception("not implemented")
 
     def create_schema(self):
-        raise Exception("create_schema not implemented")
+        raise Exception("not implemented")
 
-    def create_table(self, name: str, schema: Schema, if_not_exists=False) -> Table:
+    def create_table(self, name: str) -> Table:
         """Create a new table"""
         table = Table(name)
         self._tables[name] = table
