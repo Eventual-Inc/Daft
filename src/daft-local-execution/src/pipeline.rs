@@ -109,17 +109,16 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             scan_tasks,
-            pushdowns,
             schema,
             stats_state,
+            ..
         }) => {
             let scan_tasks = scan_tasks
                 .iter()
                 .map(|task| task.clone().as_any_arc().downcast().unwrap())
                 .collect::<Vec<ScanTaskRef>>();
 
-            let scan_task_source =
-                ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
+            let scan_task_source = ScanTaskSource::new(scan_tasks, schema.clone());
             SourceNode::new(scan_task_source.arced(), stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, stats_state }) => {

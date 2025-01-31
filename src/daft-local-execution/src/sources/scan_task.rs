@@ -4,12 +4,11 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
-use common_scan_info::{Pushdowns, ScanTaskLike};
+use common_scan_info::ScanTaskLike;
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
@@ -33,44 +32,10 @@ pub struct ScanTaskSource {
 }
 
 impl ScanTaskSource {
-    pub fn new(
-        scan_tasks: Vec<Arc<ScanTask>>,
-        pushdowns: Pushdowns,
-        schema: SchemaRef,
-        cfg: &DaftExecutionConfig,
-    ) -> Self {
-        // Determine the number of parallel tasks to run based on available CPU cores and row limits
-        let mut num_parallel_tasks = match pushdowns.limit {
-            // If we have a row limit, we need to calculate how many parallel tasks we can run
-            // without exceeding the limit
-            Some(limit) => {
-                let mut count = 0;
-                let mut remaining_rows = limit as f64;
+    const DEFAULT_NUM_PARALLEL_TASKS: usize = 2;
 
-                // Only examine tasks up to the number of available CPU cores
-                for scan_task in scan_tasks.iter().take(*NUM_CPUS) {
-                    match scan_task.approx_num_rows(Some(cfg)) {
-                        // If we can estimate the number of rows for this task
-                        Some(estimated_rows) => {
-                            remaining_rows -= estimated_rows;
-                            count += 1;
-
-                            // Stop adding tasks if we would exceed the row limit
-                            if remaining_rows <= 0.0 {
-                                break;
-                            }
-                        }
-                        // If we can't estimate rows, conservatively include the task
-                        // This ensures we don't underutilize available resources
-                        None => count += 1,
-                    }
-                }
-                count
-            }
-            // If there's no row limit, use all available CPU cores
-            None => *NUM_CPUS,
-        };
-        num_parallel_tasks = num_parallel_tasks.min(scan_tasks.len());
+    pub fn new(scan_tasks: Vec<Arc<ScanTask>>, schema: SchemaRef) -> Self {
+        let num_parallel_tasks = Self::DEFAULT_NUM_PARALLEL_TASKS.min(scan_tasks.len());
         Self {
             scan_tasks,
             num_parallel_tasks,
