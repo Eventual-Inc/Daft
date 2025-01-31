@@ -344,19 +344,17 @@ def hash_join(
     how: JoinType,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Hash-based pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
-    left_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
-    right_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
+    left_tasks: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    right_tasks: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     left_stage_id = next(stage_id_counter)
+    right_stage_id = next(stage_id_counter)
 
     # First, fully materialize the left side of the join
-    left_partition_counter = 0
     for step in left_plan:
         if isinstance(step, PartitionTaskBuilder):
             step = step.finalize_partition_task_single_output(stage_id=left_stage_id)
-            left_tasks[left_partition_counter] = step
-            left_partition_counter += 1
+            left_tasks.append(step)
         yield step
-    right_stage_id = next(stage_id_counter)
 
     def create_join_step(
         left_task: SingleOutputPartitionTask[PartitionT], right_task: SingleOutputPartitionTask[PartitionT]
@@ -389,29 +387,19 @@ def hash_join(
             )
         )
 
-    right_partition_counter = 0
     while True:
-        # Find all partitions that are ready to be joined
-        ready_partitions = [
-            partition_num
-            for partition_num in left_tasks.keys() & right_tasks.keys()  # Intersection of keys
-            if left_tasks[partition_num].done() and right_tasks[partition_num].done()
-        ]
-
-        if len(ready_partitions) > 0:
-            # Process all ready pairs
-            for partition in ready_partitions:
-                left_task = left_tasks.pop(partition)
-                right_task = right_tasks.pop(partition)
-                yield create_join_step(left_task, right_task)
+        # Emit join steps as soon as both left and right partitions are available
+        while len(left_tasks) > 0 and len(right_tasks) > 0 and left_tasks[0].done() and right_tasks[0].done():
+            left_task = left_tasks.popleft()
+            right_task = right_tasks.popleft()
+            yield create_join_step(left_task, right_task)
         else:
             try:
                 # Process next right plan step
                 step = next(right_plan)
                 if isinstance(step, PartitionTaskBuilder):
                     step = step.finalize_partition_task_single_output(stage_id=right_stage_id)
-                    right_tasks[right_partition_counter] = step
-                    right_partition_counter += 1
+                    right_tasks.append(step)
                 yield step
 
             except StopIteration:
