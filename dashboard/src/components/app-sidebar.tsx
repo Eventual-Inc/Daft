@@ -43,15 +43,15 @@ export function AppSidebar() {
                     <SidebarGroupLabel>Application</SidebarGroupLabel>
                     <SidebarGroupContent>
                         <SidebarMenu>
-                            {items.map((item) => (
-                                <SidebarMenuItem key={item.title}>
+                            {items.map(({ title, url, icon: Icon }) => (
+                                <SidebarMenuItem key={title}>
                                     <SidebarMenuButton
                                         asChild
-                                        isActive={pathName === `/${item.url}`}
+                                        isActive={pathName === `/${url}`}
                                     >
-                                        <a href={item.url}>
-                                            <item.icon />
-                                            <span>{item.title}</span>
+                                        <a href={url}>
+                                            <Icon strokeWidth={1.5} />
+                                            <span className="font-normal">{title}</span>
                                         </a>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>
