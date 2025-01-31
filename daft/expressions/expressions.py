@@ -164,6 +164,38 @@ def col(name: str) -> Expression:
     return Expression._from_pyexpr(_col(name))
 
 
+def list_(*items: Expression | str):
+    """Constructs a list from the item expressions.
+
+    Example:
+        >>> import daft
+        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        >>> df = df.select(daft.list_("x", "y").alias("fwd"), daft.list_("y", "x").alias("rev"))
+        >>> df.show()
+        ╭─────────────┬─────────────╮
+        │ fwd         ┆ rev         │
+        │ ---         ┆ ---         │
+        │ List[Int64] ┆ List[Int64] │
+        ╞═════════════╪═════════════╡
+        │ [1, 4]      ┆ [4, 1]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [2, 5]      ┆ [5, 2]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [3, 6]      ┆ [6, 3]      │
+        ╰─────────────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    Args:
+        *items (Union[Expression, str]): item expressions to construct the list
+
+    Returns:
+        Expression: Expression representing the constructed list
+    """
+    assert len(items) > 0, "List constructor requires at least one item"
+    return Expression._from_pyexpr(native.list_([col(i)._expr if isinstance(i, str) else i._expr for i in items]))
+
+
 def interval(
     years: int | None = None,
     months: int | None = None,

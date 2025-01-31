@@ -1,9 +1,84 @@
 import pyarrow as pa
+import pytest
 
 import daft
-from daft import col
+from daft import DataType, col, list_
 from daft.daft import CountMode
 from daft.sql.sql import SQLCatalog
+
+
+def assert_eq(actual, expect):
+    """Asserts two dataframes are equal for tests."""
+    assert actual.collect().to_pydict() == expect.collect().to_pydict()
+
+
+def test_list_constructor_empty():
+    with pytest.raises(Exception, match="List constructor requires at least one item"):
+        df = daft.from_pydict({"x": [1, 2, 3]})
+        daft.sql("SELECT [ ] as list FROM df")
+        df  # for ruff ignore unused
+
+
+def test_list_constructor_different_lengths():
+    with pytest.raises(Exception, match="Expected all columns to be of the same length"):
+        df = daft.from_pydict({"x": [1, 2], "y": [3]})
+        daft.sql("SELECT [ x, y ] FROM df")
+        df  # for ruff ignore unused
+
+
+def test_list_constructor_singleton():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ x ] as list FROM df")
+    expect = df.select(col("x").apply(lambda x: [x], DataType.list(DataType.int64())).alias("list"))
+    assert_eq(actual, expect)
+
+
+def test_list_constructor_homogeneous():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ x * 1, x * 2, x * 3 ] FROM df")
+    expect = df.select(col("x").apply(lambda x: [x * 1, x * 2, x * 3], DataType.list(DataType.int64())).alias("list"))
+    assert_eq(actual, expect)
+
+
+def test_list_constructor_heterogeneous():
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
+    df = daft.sql("SELECT [ x, y ] AS heterogeneous FROM df").collect()
+    assert df.to_pydict() == {"heterogeneous": [[1, 1], [2, 1], [3, 0]]}
+
+
+def test_list_constructor_heterogeneous_with_cast():
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
+    actual = daft.sql("SELECT [ CAST(x AS STRING), CAST(y AS STRING) ] FROM df")
+    expect = df.select(list_(col("x").cast(DataType.string()), col("y").cast(DataType.string())))
+    assert_eq(actual, expect)
+
+
+def test_list_constructor_mixed_null_first():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ NULL, x ] FROM df")
+    expect = df.select(col("x").apply(lambda x: [None, x], DataType.list(DataType.int64())).alias("list"))
+    assert_eq(actual, expect)
+
+
+def test_list_constructor_mixed_null_mid():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ x * -1, NULL, x ] FROM df")
+    expect = df.select(col("x").apply(lambda x: [x * -1, None, x], DataType.list(DataType.int64())).alias("list"))
+    assert_eq(actual, expect)
+
+
+def test_list_constructor_mixed_null_last():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ x, NULL ] FROM df")
+    expect = df.select(col("x").apply(lambda x: [x, None], DataType.list(DataType.int64())).alias("list"))
+    assert_eq(actual, expect)
+
+
+def test_list_constructor_all_nulls():
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = daft.sql("SELECT [ NULL, NULL ] FROM df")
+    expect = df.select(col("x").apply(lambda x: [None, None], DataType.list(DataType.null())).alias("list"))
+    assert_eq(actual, expect)
 
 
 def test_list_chunk():
