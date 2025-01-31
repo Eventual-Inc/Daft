@@ -554,9 +554,19 @@ impl Table {
                 .is_in(&s)
             }
             Expr::List(items) => {
+                // compute list type to determine each child cast
                 let field = expr.to_field(&self.schema)?;
-                let items = items.iter().map(|item| self.eval_expression(item)).collect::<DaftResult<Vec<_>>>()?;
+                // extract list child type (could be de-duped with zip and moved to impl DataType)
+                let dtype = if let DataType::List(dtype) = &field.dtype {
+                    dtype
+                } else {
+                    return Err(DaftError::ComputeError("List expression must be of type List(T)".to_string()))
+                };
+                // compute child series with explicit casts to the supertype
+                let items = items.iter().map(|i| i.clone().cast(dtype)).collect::<Vec<_>>();
+                let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
                 let items = items.iter().collect::<Vec<&Series>>();
+                // zip the series into a single series of lists
                 Series::zip(field, items.as_slice())
             }
             Expr::Between(child, lower, upper) => self

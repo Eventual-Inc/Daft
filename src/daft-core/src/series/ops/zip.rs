@@ -1,3 +1,5 @@
+use std::cmp::{max, min};
+
 use arrow2::offset::Offsets;
 use common_error::{DaftError, DaftResult};
 use daft_schema::{dtype::DataType, field::Field};
@@ -38,20 +40,25 @@ impl Series {
             }
         };
 
+        // 0 -> index of child in 'arrays' vector
+        // 1 -> last index of child
+        type Child = (usize, usize);
+
         // build a null series mask so we can skip making full_nulls and avoid downcast "Null to T" errors.
-        let mut mask: Vec<Option<usize>> = vec![];
+        let mut mask: Vec<Option<Child>> = vec![];
         let mut rows = 0;
         let mut capacity = 0;
         let mut arrays = vec![];
+
         for s in series {
+            let len = s.len();
             if is_null(s) {
                 mask.push(None);
             } else {
-                mask.push(Some(arrays.len()));
+                mask.push(Some((arrays.len(), len - 1)));
                 arrays.push(*s);
             }
-            let len = s.len();
-            rows = std::cmp::max(rows, len);
+            rows = max(rows, len);
             capacity += len;
         }
 
@@ -63,8 +70,8 @@ impl Series {
         // merge each series based upon the mask
         for row in 0..rows {
             for i in &mask {
-                if let Some(i) = *i {
-                    child.extend(i, row, 1);
+                if let Some((i, end)) = *i {
+                    child.extend(i, min(row, end), 1);
                 } else {
                     child.extend_nulls(1);
                 }

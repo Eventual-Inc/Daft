@@ -1,13 +1,38 @@
 import pytest
 
 import daft
-from daft import DataType, col, list_, lit
+from daft import DataType as dt
+from daft import col, list_, lit
 
 
 def test_list_constructor_empty():
     with pytest.raises(Exception, match="List constructor requires at least one item"):
         df = daft.from_pydict({"x": [1, 2, 3]})
         df = df.select(list_())
+
+
+def test_list_constructor_with_coercions():
+    df = daft.from_pydict({"v_i32": [1, 2, 3], "v_bool": [True, True, False]})
+    df = df.select(list_(lit(1), col("v_i32"), col("v_bool")))
+    assert df.to_pydict() == {"list": [[1, 1, 1], [1, 2, 1], [1, 3, 0]]}
+
+
+def test_list_constructor_with_lit_first():
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    df = df.select(list_(lit(1), col("x"), col("y")))
+    assert df.to_pydict() == {"list": [[1, 1, 4], [1, 2, 5], [1, 3, 6]]}
+
+
+def test_list_constructor_with_lit_mid():
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    df = df.select(list_(col("x"), lit(1), col("y")))
+    assert df.to_pydict() == {"list": [[1, 1, 4], [2, 1, 5], [3, 1, 6]]}
+
+
+def test_list_constructor_with_lit_last():
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    df = df.select(list_(col("x"), col("y"), lit(1)))
+    assert df.to_pydict() == {"list": [[1, 4, 1], [2, 5, 1], [3, 6, 1]]}
 
 
 def test_list_constructor_multi_column():
@@ -35,15 +60,14 @@ def test_list_constructor_homogeneous():
 
 
 def test_list_constructor_heterogeneous():
-    with pytest.raises(Exception, match="Expected all arguments to be of the same type"):
-        df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
-        df = df.select(list_("x", "y"))
-        df.show()
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
+    df = df.select(list_("x", "y").alias("heterogeneous"))
+    assert df.to_pydict() == {"heterogeneous": [[1, 1], [2, 1], [3, 0]]}
 
 
 def test_list_constructor_heterogeneous_with_cast():
     df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
-    df = df.select(list_(col("x").cast(DataType.string()), col("y").cast(DataType.string())).alias("strs"))
+    df = df.select(list_(col("x").cast(dt.string()), col("y").cast(dt.string())).alias("strs"))
     assert df.to_pydict() == {"strs": [["1", "1"], ["2", "1"], ["3", "0"]]}
 
 

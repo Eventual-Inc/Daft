@@ -961,7 +961,7 @@ impl Expr {
             }
             Self::IsIn(expr, items) => {
                 // Use the expr's field name, and infer membership op type.
-                let list_dtype = infer_list_type(items, schema)?.unwrap_or(DataType::Null);
+                let list_dtype = try_get_collection_supertype(items, schema)?;
                 let expr_field = expr.to_field(schema)?;
                 let expr_type = &expr_field.dtype;
                 let field_name = &expr_field.name;
@@ -973,7 +973,7 @@ impl Expr {
             Self::List(items) => {
                 // Use "list" as the field name, and infer list type from items.
                 let field_name = "list";
-                let field_type = infer_list_type(items, schema)?.unwrap_or(DataType::Null);
+                let field_type = try_get_collection_supertype(items, schema)?;
                 Ok(Field::new(field_name, DataType::new_list(field_type)))
             }
             Self::Between(value, lower, upper) => {
@@ -1493,25 +1493,13 @@ pub fn deduplicate_expr_names(exprs: &[ExprRef]) -> Vec<ExprRef> {
         .collect()
 }
 
-/// Asserts an expr slice is homogeneous and returns the type, or None if empty or all nulls.
-/// None allows for context-dependent handling such as erroring or defaulting to Null.
-fn infer_list_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Option<DataType>> {
-    let mut dtype: Option<DataType> = None;
+/// Tries to get the supertype of all exprs in the collection.
+fn try_get_collection_supertype(exprs: &[ExprRef], schema: &Schema) -> DaftResult<DataType> {
+    let mut dtype = DataType::Null;
     for expr in exprs {
         let other_dtype = expr.get_type(schema)?;
-        // other is null, continue
-        if other_dtype == DataType::Null {
-            continue;
-        }
-        // other != null and dtype is unset -> set dtype
-        if dtype.is_none() {
-            dtype = Some(other_dtype);
-            continue;
-        }
-        // other != null and dtype is set -> compare or err!
-        if dtype.as_ref() != Some(&other_dtype) {
-            return Err(DaftError::TypeError(format!("Expected all arguments to be of the same type {}, but found element with type {other_dtype}", dtype.unwrap())));
-        }
+        let super_dtype = try_get_supertype(&dtype, &other_dtype)?;
+        dtype = super_dtype;
     }
     Ok(dtype)
 }
