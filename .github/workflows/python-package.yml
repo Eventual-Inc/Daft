@@ -108,16 +108,18 @@ jobs:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
         CFLAGS: -mtune=apple-m1
 
-    - name: Debug moto installation
-      run: |
-        which moto_server
-        moto_server --version
-        netstat -tulpn | grep 5000
-
     - name: Install and test built wheel - Linux and Mac x86_64
       if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64')  }}
       run: |
-        uv pip install -r requirements-dev.txt dist/*-*x86_64*.whl --force-reinstall
+        # Install requirements first, then check moto installation
+        uv pip install -r requirements-dev.txt
+        # Print the location of moto_server
+        python -c "import moto; print('Moto path:', moto.__file__)"
+        python -c "import sys; print('Python path:', sys.executable)"
+        # Try to find moto_server relative to Python's bin directory
+        ls $(dirname $(which python))/moto_server || echo "moto_server not in python bin"
+        # Install the wheel under test
+        uv pip install dist/*-*x86_64*.whl --force-reinstall
         rm -rf daft
         pytest -v
       env:
