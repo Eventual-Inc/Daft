@@ -19,11 +19,6 @@ use daft_micropartition::{
 };
 use futures::{FutureExt, Stream};
 use loole::RecvFuture;
-use pyo3::{
-    ffi::c_str,
-    intern,
-    types::{PyAnyMethods, PyDict},
-};
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -31,7 +26,10 @@ use {
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
     pyo3::{
-        pyclass, pymethods, Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
+        ffi::c_str,
+        intern, pyclass, pymethods,
+        types::{PyAnyMethods, PyDict},
+        Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
     },
 };
 
