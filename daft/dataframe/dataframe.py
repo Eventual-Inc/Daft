@@ -159,6 +159,7 @@ class DataFrame:
             return self._result_cache.value
 
     def explain_broadcast(self):
+        """Broadcast the mermaid-formatted plan on the given port (assuming metrics-broadcasting is enabled)."""
         import socket
 
         from daft.dataframe.display import MermaidFormatter
@@ -195,19 +196,7 @@ class DataFrame:
             file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
                 print (in Python, that should be sys.stdout)
         """
-        # ctx = get_context()
-        # broadcast_ip = None
-        # with ctx._lock:
-        #     if ctx._enable_broadcast:
-        #         broadcast_ip = f"{ctx._broadcast_addr}:{ctx._broadcast_port}"
-        #
-        # if ip := broadcast_ip:
-        #     from daft.dataframe.display import MermaidFormatter
-        #
-        #     instance = MermaidFormatter(self.__builder, show_all, simple, is_cached)
-        #     text = instance._repr_markdown_()
-        #     breakpoint()
-
+        self.explain_broadcast()
         is_cached = self._result_cache is not None
         if format == "mermaid":
             from daft.dataframe.display import MermaidFormatter
@@ -2849,6 +2838,7 @@ class DataFrame:
             DataFrame: DataFrame with materialized results.
         """
         self._materialize_results()
+        self.explain_broadcast()
 
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -2920,6 +2910,7 @@ class DataFrame:
             n: number of rows to show. Defaults to 8.
         """
         dataframe_display = self._construct_show_display(n)
+        self.explain_broadcast()
         try:
             from IPython.display import display
 
