@@ -158,6 +158,19 @@ class DataFrame:
         else:
             return self._result_cache.value
 
+    def explain_broadcast(self):
+        from daft.dataframe.display import MermaidFormatter
+
+        ctx = get_context()
+        with ctx._lock:
+            assert ctx._enable_broadcast, "This method should only be called when metrics broadcasting is enabled"
+            _ip = f"{ctx._broadcast_addr}:{ctx._broadcast_port}"
+
+        is_cached = self._result_cache is not None
+        instance = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
+
+        _text = instance._repr_markdown_()
+
     @DataframePublicAPI
     def explain(
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
@@ -177,6 +190,19 @@ class DataFrame:
             file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
                 print (in Python, that should be sys.stdout)
         """
+        # ctx = get_context()
+        # broadcast_ip = None
+        # with ctx._lock:
+        #     if ctx._enable_broadcast:
+        #         broadcast_ip = f"{ctx._broadcast_addr}:{ctx._broadcast_port}"
+        #
+        # if ip := broadcast_ip:
+        #     from daft.dataframe.display import MermaidFormatter
+        #
+        #     instance = MermaidFormatter(self.__builder, show_all, simple, is_cached)
+        #     text = instance._repr_markdown_()
+        #     breakpoint()
+
         is_cached = self._result_cache is not None
         if format == "mermaid":
             from daft.dataframe.display import MermaidFormatter
@@ -2308,9 +2334,9 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(result, DataFrame), (
-            f"Func returned an instance of type [{type(result)}], " "should have been DataFrame."
-        )
+        assert isinstance(
+            result, DataFrame
+        ), f"Func returned an instance of type [{type(result)}], should have been DataFrame."
         return result
 
     def _agg(
@@ -2588,7 +2614,11 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ...     {
+            ...         "pet": ["cat", "dog", "dog", "cat"],
+            ...         "age": [1, 2, 3, 4],
+            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
+            ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
@@ -3358,7 +3388,11 @@ class GroupedDataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ...     {
+            ...         "pet": ["cat", "dog", "dog", "cat"],
+            ...         "age": [1, 2, 3, 4],
+            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
+            ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
