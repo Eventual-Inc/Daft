@@ -1001,3 +1001,65 @@ def test_agg_concat_on_string_groupby_null_list() -> None:
     expected = [None, None]
     assert res["a"] == expected
     assert len(res["a"]) == len(expected)
+
+
+test_table_bool_agg_cases = [
+    ([], {"bool_and": [None], "bool_or": [None]}),
+    ([None], {"bool_and": [None], "bool_or": [None]}),
+    ([None, None, None], {"bool_and": [None], "bool_or": [None]}),
+    ([True], {"bool_and": [True], "bool_or": [True]}),
+    ([False], {"bool_and": [False], "bool_or": [False]}),
+    ([True, True], {"bool_and": [True], "bool_or": [True]}),
+    ([False, False], {"bool_and": [False], "bool_or": [False]}),
+    ([True, False], {"bool_and": [False], "bool_or": [True]}),
+    ([None, True], {"bool_and": [True], "bool_or": [True]}),
+    ([None, False], {"bool_and": [False], "bool_or": [False]}),
+    ([True, None, True], {"bool_and": [True], "bool_or": [True]}),
+    ([False, None, False], {"bool_and": [False], "bool_or": [False]}),
+    ([True, None, False], {"bool_and": [False], "bool_or": [True]}),
+]
+
+
+@pytest.mark.parametrize("case", test_table_bool_agg_cases, ids=[f"{_}" for _ in test_table_bool_agg_cases])
+def test_table_bool_agg(case) -> None:
+    input, expected = case
+    daft_table = MicroPartition.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(DataType.bool())])
+    daft_table = daft_table.eval_expression_list(
+        [
+            col("input").alias("bool_and").bool_and(),
+            col("input").alias("bool_or").bool_or(),
+        ]
+    )
+
+    res = daft_table.to_pydict()
+    assert res == expected
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        MicroPartition.from_pydict({"a": [True, None, False, None], "b": ["x", "x", "y", "y"]}),  # 1 table
+        MicroPartition.concat(
+            [
+                MicroPartition.from_pydict({"a": np.array([], dtype=bool), "b": pa.array([], type=pa.string())}),
+                MicroPartition.from_pydict({"a": [True], "b": ["x"]}),
+                MicroPartition.from_pydict({"a": [None, False, None], "b": ["x", "y", "y"]}),
+            ]
+        ),  # 3 tables
+    ],
+)
+def test_multipartition_bool_agg(mp):
+    # Test global aggregation
+    result = mp.agg([col("a").bool_and(), col("a").bool_or()])
+    assert len(result) == 1
+    assert result.to_pydict() == {"a_bool_and": [False], "a_bool_or": [True]}
+
+    # Test grouped aggregation
+    result = mp.agg([col("a").bool_and(), col("a").bool_or()], group_by=[col("b")])
+    assert len(result) == 2
+    assert result.to_pydict() == {
+        "b": ["x", "y"],
+        "a_bool_and": [True, False],
+        "a_bool_or": [True, False],
+    }

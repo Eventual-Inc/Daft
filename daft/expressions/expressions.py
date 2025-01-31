@@ -968,6 +968,16 @@ class Expression:
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
+    def bool_and(self) -> Expression:
+        """Calculates the boolean AND of each list. If no non-null values in a list, the result is null."""
+        expr = self._expr.bool_and()
+        return Expression._from_pyexpr(expr)
+
+    def bool_or(self) -> Expression:
+        """Calculates the boolean OR of each list. If no non-null values in a list, the result is null."""
+        expr = self._expr.bool_or()
+        return Expression._from_pyexpr(expr)
+
     def any_value(self, ignore_nulls=False) -> Expression:
         """Returns any value in the expression.
 
@@ -3195,6 +3205,14 @@ class ExpressionListNamespace(ExpressionNamespace):
             Expression: a Float64 expression with the type of the list values
         """
         return Expression._from_pyexpr(native.list_max(self._expr))
+
+    def bool_and(self) -> Expression:
+        """Calculates the boolean AND of each list. If no non-null values in a list, the result is null."""
+        return Expression._from_pyexpr(native.list_bool_and(self._expr))
+
+    def bool_or(self) -> Expression:
+        """Calculates the boolean OR of each list. If no non-null values in a list, the result is null."""
+        return Expression._from_pyexpr(native.list_bool_or(self._expr))
 
     def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.

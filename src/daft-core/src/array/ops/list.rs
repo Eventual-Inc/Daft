@@ -669,9 +669,131 @@ impl ListArray {
             None,
         ))
     }
+
+    pub fn list_bool_and(&self) -> DaftResult<BooleanArray> {
+        let child = &self.flat_child;
+        let offsets = self.offsets();
+        let validity = self.validity();
+
+        let mut result = Vec::with_capacity(self.len());
+        let mut result_validity = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            let is_valid = validity.map_or(true, |v| v.get(i).unwrap());
+            if !is_valid {
+                result.push(false);
+                result_validity.push(false);
+                continue;
+            }
+
+            let start = *offsets.get(i).unwrap() as usize;
+            let end = *offsets.get(i + 1).unwrap() as usize;
+            let slice = child.slice(start, end)?;
+
+            // If slice is empty or all null, return null
+            if slice.is_empty()
+                || slice
+                    .validity()
+                    .map_or(false, |v| v.unset_bits() == slice.len())
+            {
+                result.push(false);
+                result_validity.push(false);
+                continue;
+            }
+
+            // Look for first non-null false value
+            let mut all_true = true;
+            let bool_slice = slice.bool()?;
+            let bool_validity = bool_slice.validity();
+            let bool_data = bool_slice.as_arrow().values();
+            for j in 0..bool_slice.len() {
+                if bool_validity.map_or(true, |v| v.get(j).unwrap()) && !bool_data.get_bit(j) {
+                    all_true = false;
+                    break;
+                }
+            }
+            result.push(all_true);
+            result_validity.push(true);
+        }
+
+        let validity_bitmap = arrow2::bitmap::Bitmap::from_iter(result_validity.iter().copied());
+        let values = arrow2::bitmap::Bitmap::from_iter(result.iter().copied());
+        let arrow_array = arrow2::array::BooleanArray::new(
+            arrow2::datatypes::DataType::Boolean,
+            values,
+            Some(validity_bitmap),
+        );
+        Ok(BooleanArray::from((self.name(), Box::new(arrow_array))))
+    }
+
+    pub fn list_bool_or(&self) -> DaftResult<BooleanArray> {
+        let child = &self.flat_child;
+        let offsets = self.offsets();
+        let validity = self.validity();
+
+        let mut result = Vec::with_capacity(self.len());
+        let mut result_validity = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            let is_valid = validity.map_or(true, |v| v.get(i).unwrap());
+            if !is_valid {
+                result.push(false);
+                result_validity.push(false);
+                continue;
+            }
+
+            let start = *offsets.get(i).unwrap() as usize;
+            let end = *offsets.get(i + 1).unwrap() as usize;
+            let slice = child.slice(start, end)?;
+
+            // If slice is empty or all null, return null
+            if slice.is_empty()
+                || slice
+                    .validity()
+                    .map_or(false, |v| v.unset_bits() == slice.len())
+            {
+                result.push(false);
+                result_validity.push(false);
+                continue;
+            }
+
+            // Look for first non-null true value
+            let mut any_true = false;
+            let bool_slice = slice.bool()?;
+            let bool_validity = bool_slice.validity();
+            let bool_data = bool_slice.as_arrow().values();
+            for j in 0..bool_slice.len() {
+                if bool_validity.map_or(true, |v| v.get(j).unwrap()) && bool_data.get_bit(j) {
+                    any_true = true;
+                    break;
+                }
+            }
+            result.push(any_true);
+            result_validity.push(true);
+        }
+
+        let validity_bitmap = arrow2::bitmap::Bitmap::from_iter(result_validity.iter().copied());
+        let values = arrow2::bitmap::Bitmap::from_iter(result.iter().copied());
+        let arrow_array = arrow2::array::BooleanArray::new(
+            arrow2::datatypes::DataType::Boolean,
+            values,
+            Some(validity_bitmap),
+        );
+        Ok(BooleanArray::from((self.name(), Box::new(arrow_array))))
+    }
 }
 
 impl FixedSizeListArray {
+    pub fn list_bool_and(&self) -> DaftResult<BooleanArray> {
+        let list = self.to_list();
+        list.list_bool_and()
+    }
+
+    pub fn list_bool_or(&self) -> DaftResult<BooleanArray> {
+        let list = self.to_list();
+        list.list_bool_or()
+    }
+
     pub fn value_counts(&self) -> DaftResult<MapArray> {
         let list = self.to_list();
         list.value_counts()

@@ -846,6 +846,8 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
+                AggExpr::BoolAnd(e) => AggExpr::BoolAnd(Expr::Alias(e, name.clone()).into()),
+                AggExpr::BoolOr(e) => AggExpr::BoolOr(Expr::Alias(e, name.clone()).into()),
                 AggExpr::AnyValue(e, ignore_nulls) => {
                     AggExpr::AnyValue(Expr::Alias(e, name.clone()).into(), ignore_nulls)
                 }
@@ -1067,6 +1069,36 @@ pub fn populate_aggregation_stages(
                         col(max_id.clone()).alias(max_of_max_id.clone()),
                     ));
                 final_exprs.push(col(max_of_max_id.clone()).alias(output_name));
+            }
+            AggExpr::BoolAnd(e) => {
+                let bool_and_id = agg_expr.semantic_id(schema).id;
+                let bool_of_bool_and_id = AggExpr::BoolAnd(col(bool_and_id.clone()))
+                    .semantic_id(schema)
+                    .id;
+                first_stage_aggs
+                    .entry(bool_and_id.clone())
+                    .or_insert(AggExpr::BoolAnd(e.alias(bool_and_id.clone()).clone()));
+                second_stage_aggs
+                    .entry(bool_of_bool_and_id.clone())
+                    .or_insert(AggExpr::BoolAnd(
+                        col(bool_and_id.clone()).alias(bool_of_bool_and_id.clone()),
+                    ));
+                final_exprs.push(col(bool_of_bool_and_id.clone()).alias(output_name));
+            }
+            AggExpr::BoolOr(e) => {
+                let bool_or_id = agg_expr.semantic_id(schema).id;
+                let bool_of_bool_or_id = AggExpr::BoolOr(col(bool_or_id.clone()))
+                    .semantic_id(schema)
+                    .id;
+                first_stage_aggs
+                    .entry(bool_or_id.clone())
+                    .or_insert(AggExpr::BoolOr(e.alias(bool_or_id.clone()).clone()));
+                second_stage_aggs
+                    .entry(bool_of_bool_or_id.clone())
+                    .or_insert(AggExpr::BoolOr(
+                        col(bool_or_id.clone()).alias(bool_of_bool_or_id.clone()),
+                    ));
+                final_exprs.push(col(bool_of_bool_or_id.clone()).alias(output_name));
             }
             AggExpr::AnyValue(e, ignore_nulls) => {
                 let any_id = agg_expr.semantic_id(schema).id;

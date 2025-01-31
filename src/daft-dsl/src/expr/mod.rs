@@ -229,6 +229,12 @@ pub enum AggExpr {
     #[display("max({_0})")]
     Max(ExprRef),
 
+    #[display("bool_and({_0})")]
+    BoolAnd(ExprRef),
+
+    #[display("bool_or({_0})")]
+    BoolOr(ExprRef),
+
     #[display("any_value({_0}, ignore_nulls={_1})")]
     AnyValue(ExprRef, bool),
 
@@ -273,6 +279,8 @@ impl AggExpr {
             | Self::Stddev(expr)
             | Self::Min(expr)
             | Self::Max(expr)
+            | Self::BoolAnd(expr)
+            | Self::BoolOr(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Concat(expr) => expr.name(),
@@ -337,6 +345,14 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_max()"))
             }
+            Self::BoolAnd(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_bool_and()"))
+            }
+            Self::BoolOr(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_bool_or()"))
+            }
             Self::AnyValue(expr, ignore_nulls) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!(
@@ -368,6 +384,8 @@ impl AggExpr {
             | Self::Stddev(expr)
             | Self::Min(expr)
             | Self::Max(expr)
+            | Self::BoolAnd(expr)
+            | Self::BoolOr(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Concat(expr) => vec![expr.clone()],
@@ -390,6 +408,8 @@ impl AggExpr {
             Self::Stddev(_) => Self::Stddev(first_child()),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
+            Self::BoolAnd(_) => Self::BoolAnd(first_child()),
+            Self::BoolOr(_) => Self::BoolOr(first_child()),
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
             Self::List(_) => Self::List(first_child()),
             Self::Concat(_) => Self::Concat(first_child()),
@@ -505,6 +525,10 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
+            Self::BoolAnd(expr) | Self::BoolOr(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_str(), DataType::Boolean))
+            }
             Self::List(expr) => expr.to_field(schema)?.to_list_field(),
             Self::Concat(expr) => {
                 let field = expr.to_field(schema)?;
@@ -616,6 +640,14 @@ impl Expr {
 
     pub fn max(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Max(self)).into()
+    }
+
+    pub fn bool_and(self: ExprRef) -> ExprRef {
+        Arc::new(Self::Agg(AggExpr::BoolAnd(self)))
+    }
+
+    pub fn bool_or(self: ExprRef) -> ExprRef {
+        Arc::new(Self::Agg(AggExpr::BoolOr(self)))
     }
 
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
