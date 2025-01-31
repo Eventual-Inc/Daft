@@ -43,13 +43,10 @@ from __future__ import annotations
 from daft.catalog.catalog import Catalog, Table
 from daft.daft import catalog as native_catalog
 from daft.logical.builder import LogicalPlanBuilder
-from daft.logical.schema import Schema
 from daft.dataframe import DataFrame
 
-from daft.dataframe import DataFrame
-from daft.session import session
 
-from typing import TYPE_CHECKING, Any, Dict, Union
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pyiceberg.catalog import Catalog as PyIcebergCatalog
@@ -58,36 +55,12 @@ if TYPE_CHECKING:
 __all__ = [
     "Catalog",
     "Table",
-    "create_catalog",
-    "create_table",
-    "create_table_if_not_exists",
     # OLD
     "read_table",
     "register_python_catalog",
     "register_table",
     "unregister_catalog",
 ]
-
-def create_table(name: str, source: Schema | DataFrame) -> Table:
-    """Creates a new temporary table scoped to the current session.
-
-    Support
-        - CREATE TEMP TABLE [IF NOT EXISTS] t AS df
-        - CREATE TEMP TABLE [IF NOT EXISTS] t ( schema )
-
-    """
-    session = session()
-    catalog = session.current_catalog()
-    return catalog.create_table(name, source)
-
-def create_table_if_not_exists(name: str, source: Schema | DataFrame) -> Table:
-    raise NotImplemented
-
-def create_catalog(name: str) -> Catalog:
-    raise NotImplemented
-
-
-# ------------------------------------------------------
 
 # Forward imports from the native catalog which don't require Python wrappers
 unregister_catalog = native_catalog.unregister_catalog

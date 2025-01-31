@@ -58,7 +58,7 @@ analytics_client.track_import()
 # Daft top-level imports
 ###
 
-from daft.catalog import Catalog, create_table, read_table, register_table
+from daft.catalog import Catalog, read_table, register_table
 from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
 from daft.convert import (
     from_arrow,
@@ -87,7 +87,11 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
-from daft.session import Session, session
+from daft.session import (
+    Session,
+    current_catalog,
+    current_session,
+)
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
@@ -106,10 +110,12 @@ __all__ = [
     "ResourceRequest",
     "Schema",
     "Series",
+    "Session",
     "TimeUnit",
     "coalesce",
     "col",
-    "create_table",
+    "current_catalog",
+    "current_session",
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",

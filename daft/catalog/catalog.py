@@ -1,6 +1,4 @@
-"""Goals.
-
-"""
+"""Goals."""
 
 
 # class Namespace:
@@ -43,18 +41,18 @@ class Table:
     # def delete(self):
     #     """Delete..."""
     #     raise Exception("not implemented")
-    
+
     def show(self):
         raise Exception("show not implemented")
 
 
 class Catalog:
-    def __init__(self, name: str = "default"):
+    def __init__(self, name: str):
         self._name = name
         self._tables = dict()
 
     def __repr__(self) -> str:
-        return f"catalog({self._name})"
+        return f"catalog('{self._name}')"
 
     def name(self) -> str:
         return self._name
