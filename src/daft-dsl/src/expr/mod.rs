@@ -1363,7 +1363,7 @@ pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
 }
 
 pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
-    match expr {
+    let estimate = match expr {
         // Boolean operations that filter rows
         Expr::BinaryOp { op, left, right } => {
             let left_selectivity = estimated_selectivity(left, schema);
@@ -1419,6 +1419,9 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
             _ => 1.0,
         },
 
+        // String contains
+        Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "contains" => 0.1,
+
         // Everything else that could be boolean gets 0.2, non-boolean gets 1.0
         Expr::ScalarFunction(_)
         | Expr::Function { .. }
@@ -1433,7 +1436,10 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         // Everything else doesn't filter
         Expr::Subquery(_) => 1.0,
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
-    }
+    };
+
+    // Lower bound to 1% to prevent overly selective estimate
+    estimate.max(0.01)
 }
 
 pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult<SchemaRef> {

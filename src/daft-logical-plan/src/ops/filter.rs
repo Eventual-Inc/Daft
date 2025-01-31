@@ -51,6 +51,7 @@ impl Filter {
                 as usize,
             size_bytes: (input_stats.approx_stats.size_bytes as f64 * estimated_selectivity).ceil()
                 as usize,
+            acc_selectivity: input_stats.approx_stats.acc_selectivity * estimated_selectivity,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self

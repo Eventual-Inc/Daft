@@ -189,20 +189,30 @@ impl PhysicalPlan {
             Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => ApproxStats {
                 num_rows: in_memory_info.num_rows,
                 size_bytes: in_memory_info.size_bytes,
+                acc_selectivity: 1.0,
             },
             Self::TabularScan(TabularScan { scan_tasks, .. }) => {
                 let mut approx_stats = ApproxStats::empty();
                 for st in scan_tasks.iter() {
-                    approx_stats.num_rows += st
-                        .num_rows()
-                        .unwrap_or_else(|| st.approx_num_rows(None).unwrap_or(0.0) as usize);
+                    if let Some(num_rows) = st.num_rows() {
+                        approx_stats.num_rows += num_rows;
+                    } else if let Some(approx_num_rows) = st.approx_num_rows(None) {
+                        approx_stats.num_rows += approx_num_rows as usize;
+                    }
                     approx_stats.size_bytes += st.estimate_in_memory_size_bytes(None).unwrap_or(0);
                 }
+                approx_stats.acc_selectivity = if scan_tasks.len() == 0 {
+                    0.0
+                } else {
+                    let st = scan_tasks.first().unwrap();
+                    st.pushdowns().estimated_selectivity(st.schema().as_ref())
+                };
                 approx_stats
             }
             Self::EmptyScan(..) => ApproxStats {
                 num_rows: 0,
                 size_bytes: 0,
+                acc_selectivity: 0.0,
             },
             // Assume no row/column pruning in cardinality-affecting operations.
             // TODO(Clark): Estimate row/column pruning to get a better size approximation.
@@ -216,11 +226,21 @@ impl PhysicalPlan {
                     num_rows: (input_stats.num_rows as f64 * estimated_selectivity).ceil() as usize,
                     size_bytes: (input_stats.size_bytes as f64 * estimated_selectivity).ceil()
                         as usize,
+                    acc_selectivity: input_stats.acc_selectivity * estimated_selectivity,
                 }
             }
             Self::Limit(Limit { input, limit, .. }) => {
                 let input_stats = input.approximate_stats();
                 let limit = *limit as usize;
+                let limit_selectivity = if input_stats.num_rows > limit {
+                    if input_stats.num_rows == 0 {
+                        0.0
+                    } else {
+                        limit as f64 / input_stats.num_rows as f64
+                    }
+                } else {
+                    1.0
+                };
                 ApproxStats {
                     num_rows: limit.min(input_stats.num_rows),
                     size_bytes: if input_stats.num_rows > limit {
@@ -230,6 +250,7 @@ impl PhysicalPlan {
                     } else {
                         input_stats.size_bytes
                     },
+                    acc_selectivity: input_stats.acc_selectivity * limit_selectivity,
                 }
             }
             Self::Project(Project { input, .. })
@@ -245,10 +266,17 @@ impl PhysicalPlan {
                 .apply(|v| ((v as f64) * fraction) as usize),
             Self::Explode(Explode { input, .. }) => {
                 let input_stats = input.approximate_stats();
-                let est_num_exploded_rows = input_stats.num_rows * 4;
+                const EXPLODE_FACTOR: usize = 4;
+                let est_num_exploded_rows = input_stats.num_rows * EXPLODE_FACTOR;
+                let acc_selectivity = if input_stats.num_rows == 0 {
+                    0.0
+                } else {
+                    input_stats.acc_selectivity * EXPLODE_FACTOR as f64
+                };
                 ApproxStats {
                     num_rows: est_num_exploded_rows,
                     size_bytes: input_stats.size_bytes,
+                    acc_selectivity,
                 }
             }
             // Propagate child approximation for operations that don't affect cardinality.
@@ -272,9 +300,18 @@ impl PhysicalPlan {
                 let left_stats = left.approximate_stats();
                 let right_stats = right.approximate_stats();
 
+                // We assume that if one side of a join had its cardinality reduced by some operations
+                // (e.g. filters, limits, aggregations), then assuming a pk-fk join, the total number of
+                // rows output from the join will be reduced proportionally. Hence, apply the right side's
+                // selectivity to the number of rows/size in bytes on the left and vice versa.
+                let left_num_rows = left_stats.num_rows as f64 * right_stats.acc_selectivity;
+                let right_num_rows = right_stats.num_rows as f64 * left_stats.acc_selectivity;
+                let left_size = left_stats.size_bytes as f64 * right_stats.acc_selectivity;
+                let right_size = right_stats.size_bytes as f64 * left_stats.acc_selectivity;
                 ApproxStats {
-                    num_rows: left_stats.num_rows.max(right_stats.num_rows),
-                    size_bytes: left_stats.size_bytes.max(right_stats.size_bytes),
+                    num_rows: left_num_rows.max(right_num_rows).ceil() as usize,
+                    size_bytes: left_size.max(right_size).ceil() as usize,
+                    acc_selectivity: left_stats.acc_selectivity * right_stats.acc_selectivity,
                 }
             }
             // TODO(Clark): Approximate post-aggregation sizes via grouping estimates + aggregation type.
@@ -282,10 +319,16 @@ impl PhysicalPlan {
                 let input_stats = input.approximate_stats();
                 // TODO we should use schema inference here
                 let est_bytes_per_row = input_stats.size_bytes / (input_stats.num_rows.max(1));
+                let acc_selectivity = if input_stats.num_rows == 0 {
+                    0.0
+                } else {
+                    input_stats.acc_selectivity / input_stats.num_rows as f64
+                };
                 if groupby.is_empty() {
                     ApproxStats {
                         num_rows: 1,
                         size_bytes: est_bytes_per_row,
+                        acc_selectivity,
                     }
                 } else {
                     // Assume high cardinality for group by columns, and 80% of rows are unique.
@@ -293,6 +336,8 @@ impl PhysicalPlan {
                     ApproxStats {
                         num_rows: est_num_groups,
                         size_bytes: est_bytes_per_row * est_num_groups,
+                        acc_selectivity: input_stats.acc_selectivity * est_num_groups as f64
+                            / input_stats.num_rows as f64,
                     }
                 }
             }
@@ -302,6 +347,7 @@ impl PhysicalPlan {
                 ApproxStats {
                     num_rows: input_stats.num_rows * num_values,
                     size_bytes: input_stats.size_bytes,
+                    acc_selectivity: input_stats.acc_selectivity * num_values as f64,
                 }
             }
             // Post-write DataFrame will contain paths to files that were written.
