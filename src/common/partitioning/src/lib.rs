@@ -130,8 +130,8 @@ pub type PartitionSetRef<T> = Arc<dyn PartitionSet<T>>;
 pub trait PartitionSetCache<P: Partition, PS: PartitionSet<P>>:
     std::fmt::Debug + Send + Sync
 {
-    fn get_partition_set(&self, key: &str) -> Option<PartitionSetRef<P>>;
-    fn get_all_partition_sets(&self) -> Vec<PartitionSetRef<P>>;
+    fn get_partition_set(&self, key: &str) -> Option<PS>;
+    fn get_all_partition_sets(&self) -> Vec<PS>;
     fn put_partition_set(&self, key: &str, partition_set: &PS);
     fn rm_partition_set(&self, key: &str);
     fn clear(&self);

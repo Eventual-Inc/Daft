@@ -59,6 +59,7 @@ from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     LocalPartitionSet,
+    LocalPartitionSetCache,
     MaterializedResult,
     PartID,
     PartitionCacheEntry,
@@ -1208,7 +1209,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             )
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
-        return PartitionSetCache()
+        return LocalPartitionSetCache()
 
     def active_plans(self) -> list[str]:
         if self.ray_client_mode:

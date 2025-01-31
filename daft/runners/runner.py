@@ -4,6 +4,7 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, ClassVar, Generic, Iterator, Literal
 
 from daft.runners.partitioning import (
+    LocalPartitionSetCache,
     MaterializedResult,
     PartitionCacheEntry,
     PartitionSet,
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
     from daft.runners.runner_io import RunnerIO
     from daft.table import MicroPartition
 
-LOCAL_PARTITION_SET_CACHE = PartitionSetCache()
+LOCAL_PARTITION_SET_CACHE = LocalPartitionSetCache()
 
 
 class Runner(Generic[PartitionT]):

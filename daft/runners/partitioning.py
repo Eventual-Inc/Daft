@@ -387,6 +387,32 @@ class PartitionCacheEntry:
 
 
 class PartitionSetCache:
+    @abstractmethod
+    def __init__(self) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_partition_set(self, pset_id: str) -> PartitionCacheEntry:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_all_partition_sets(self) -> dict[str, PartitionSet]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def put_partition_set(self, pset: PartitionSet) -> PartitionCacheEntry:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def rm(self, pset_id: str) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def clear(self) -> None:
+        raise NotImplementedError()
+
+
+class LocalPartitionSetCache(PartitionSetCache):
     def __init__(self) -> None:
         self.__uuid_to_partition_set: weakref.WeakValueDictionary[str, PartitionCacheEntry] = (
             weakref.WeakValueDictionary()

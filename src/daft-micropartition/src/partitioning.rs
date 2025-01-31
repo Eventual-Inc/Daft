@@ -186,10 +186,14 @@ impl InMemoryPartitionSetCache {
     pub fn empty() -> Self {
         Self::default()
     }
+
+    pub fn copy_from(&mut self, other: Self) {
+        self.partition_sets.extend(other.partition_sets);
+    }
 }
 
 impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> for InMemoryPartitionSetCache {
-    fn get_partition_set(&self, key: &str) -> Option<PartitionSetRef<MicroPartitionRef>> {
+    fn get_partition_set(&self, key: &str) -> Option<Arc<MicroPartitionSet>> {
         let weak_pset = self.partition_sets.get(key).map(|v| v.value().clone())?;
         // if the partition set has been dropped, remove it from the cache
         let Some(pset) = weak_pset.upgrade() else {
@@ -198,10 +202,10 @@ impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> for InMemoryPa
             return None;
         };
 
-        Some(pset as _)
+        Some(pset)
     }
 
-    fn get_all_partition_sets(&self) -> Vec<PartitionSetRef<MicroPartitionRef>> {
+    fn get_all_partition_sets(&self) -> Vec<Arc<MicroPartitionSet>> {
         let psets = self.partition_sets.iter().filter_map(|v| {
             let pset = v.value().upgrade()?;
             Some(pset as _)

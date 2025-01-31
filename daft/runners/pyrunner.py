@@ -383,7 +383,6 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                 executor = NativeExecutor()
                 results_gen = executor.run(
                     builder,
-                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
                     daft_execution_config,
                     results_buffer_size,
                 )
