@@ -1051,15 +1051,15 @@ def test_table_bool_agg(case) -> None:
 )
 def test_multipartition_bool_agg(mp):
     # Test global aggregation
-    result = mp.agg([col("a").bool_and(), col("a").bool_or()])
-    assert len(result) == 1
-    assert result.to_pydict() == {"a_bool_and": [False], "a_bool_or": [True]}
+    result = mp.agg([col("a").bool_and().alias("a_and"), col("a").bool_or().alias("a_or")])
+    assert result.to_pydict() == {"a_and": [False], "a_or": [True]}
 
-    # Test grouped aggregation
-    result = mp.agg([col("a").bool_and(), col("a").bool_or()], group_by=[col("b")])
-    assert len(result) == 2
+    # Test groupby aggregation
+    result = mp.agg([col("a").bool_and().alias("a_and"), col("a").bool_or().alias("a_or")], group_by=[col("b")]).sort(
+        "b"
+    )
     assert result.to_pydict() == {
         "b": ["x", "y"],
-        "a_bool_and": [True, False],
-        "a_bool_or": [True, False],
+        "a_and": [True, False],
+        "a_or": [True, False],
     }
