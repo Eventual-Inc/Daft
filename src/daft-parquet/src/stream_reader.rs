@@ -599,11 +599,12 @@ pub async fn local_parquet_stream(
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
     maintain_order: bool,
     io_stats: Option<IOStatsRef>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<(
     Arc<parquet2::metadata::FileMetaData>,
     BoxStream<'static, DaftResult<Table>>,
 )> {
-    let chunk_size = PARQUET_MORSEL_SIZE;
+    let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
         uri,
         columns.as_deref(),

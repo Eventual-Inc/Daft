@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 
 import pyarrow as pa
-import pyarrow.compute as pac
 
 from daft.table import Table
 
@@ -13,10 +12,8 @@ TD_STYLE = 'style="text-align:left; max-width:192px; max-height:64px; overflow:a
 TH_STYLE = 'style="text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left"'
 
 
-def sort_arrow_table(tbl: pa.Table, sort_by: str):
-    """In arrow versions < 7, pa.Table does not support sorting yet so we add a helper method here."""
-    sort_indices = pac.sort_indices(tbl.column(sort_by))
-    return pac.take(tbl, sort_indices)
+def sort_arrow_table(tbl: pa.Table, *sort_by: str):
+    return tbl.sort_by([(name, "descending") for name in sort_by])
 
 
 def assert_pyarrow_tables_equal(from_daft: pa.Table, expected: pa.Table):

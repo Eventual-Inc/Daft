@@ -26,6 +26,7 @@ type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a
 /// * `scan_tasks`: A Boxed Iterator of ScanTaskRefs to perform merging on
 /// * `min_size_bytes`: Minimum size in bytes of a ScanTask, after which no more merging will be performed
 /// * `max_size_bytes`: Maximum size in bytes of a ScanTask, capping the maximum size of a merged ScanTask
+/// * `max_source_count`: Maximum number of ScanTasks to merge
 #[must_use]
 fn merge_by_sizes<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
@@ -57,6 +58,7 @@ fn merge_by_sizes<'a>(
                     target_upper_bound_size_bytes: (limit_bytes * 1.5) as usize,
                     target_lower_bound_size_bytes: (limit_bytes / 2.) as usize,
                     accumulator: None,
+                    max_source_count: cfg.max_sources_per_scan_task,
                 }) as BoxScanTaskIter;
             }
         }
@@ -69,6 +71,7 @@ fn merge_by_sizes<'a>(
             target_upper_bound_size_bytes: cfg.scan_tasks_max_size_bytes,
             target_lower_bound_size_bytes: cfg.scan_tasks_min_size_bytes,
             accumulator: None,
+            max_source_count: cfg.max_sources_per_scan_task,
         }) as BoxScanTaskIter
     }
 }
@@ -83,6 +86,9 @@ struct MergeByFileSize<'a> {
 
     // Current element being accumulated on
     accumulator: Option<ScanTaskRef>,
+
+    // Maximum number of files in a merged ScanTask
+    max_source_count: usize,
 }
 
 impl<'a> MergeByFileSize<'a> {
@@ -92,11 +98,11 @@ impl<'a> MergeByFileSize<'a> {
     /// in estimated bytes, as well as other factors including any limit pushdowns.
     fn accumulator_ready(&self) -> bool {
         // Emit the accumulator as soon as it is bigger than the specified `target_lower_bound_size_bytes`
-        if let Some(acc) = &self.accumulator
-            && let Some(acc_bytes) = acc.estimate_in_memory_size_bytes(Some(self.cfg))
-            && acc_bytes >= self.target_lower_bound_size_bytes
-        {
-            true
+        if let Some(acc) = &self.accumulator {
+            acc.sources.len() >= self.max_source_count
+                || acc
+                    .estimate_in_memory_size_bytes(Some(self.cfg))
+                    .map_or(false, |bytes| bytes >= self.target_lower_bound_size_bytes)
         } else {
             false
         }
@@ -143,7 +149,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
                 };
             }
 
-            // Emit accumulator if ready
+            // Emit accumulator if ready or if merge count limit is reached
             if self.accumulator_ready() {
                 return self.accumulator.take().map(Ok);
             }

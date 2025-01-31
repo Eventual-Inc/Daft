@@ -270,8 +270,8 @@ class LogicalPlanBuilder:
         right_on: list[Expression],
         how: JoinType = JoinType.Inner,
         strategy: JoinStrategy | None = None,
-        join_suffix: str | None = None,
-        join_prefix: str | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.join(
             right._builder,
@@ -279,8 +279,8 @@ class LogicalPlanBuilder:
             [expr._expr for expr in right_on],
             how,
             strategy,
-            join_suffix,
-            join_prefix,
+            prefix,
+            suffix,
         )
         return LogicalPlanBuilder(builder)
 
