@@ -55,6 +55,7 @@ theme:
   logo: img/daft.png
   favicon: img/favicon.png
   features:
+  - navigation.footer
   - search.suggest
   - search.highlight
   - content.code.copy   # add copy button to code sections
