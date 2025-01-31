@@ -1833,10 +1833,12 @@ impl<'a> SQLPlanner<'a> {
             // ---------------------------------
             // array/list
             // ---------------------------------
-            SQLDataType::Array(
-                ArrayElemTypeDef::AngleBracket(inner_type)
-                | ArrayElemTypeDef::SquareBracket(inner_type, None),
-            ) => DataType::List(Box::new(self.sql_dtype_to_dtype(inner_type)?)),
+            SQLDataType::Array(ArrayElemTypeDef::AngleBracket(_)) => {
+                unsupported_sql_err!("`array<...>` syntax is not supported, use array[..] instead")
+            }
+            SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, None)) => {
+                DataType::List(Box::new(self.sql_dtype_to_dtype(inner_type)?))
+            }
             SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, Some(size))) => {
                 DataType::FixedSizeList(
                     Box::new(self.sql_dtype_to_dtype(inner_type)?),
@@ -1849,9 +1851,12 @@ impl<'a> SQLPlanner<'a> {
             // ---------------------------------
             SQLDataType::Bytea
             | SQLDataType::Bytes(_)
-            | SQLDataType::Binary(_)
             | SQLDataType::Blob(_)
-            | SQLDataType::Varbinary(_) => DataType::Binary,
+            | SQLDataType::Varbinary(_) => {
+                unsupported_sql_err!("datatype {dtype} is not supported, did you mean `binary`?")
+            }
+            SQLDataType::Binary(None) => DataType::Binary,
+            SQLDataType::Binary(Some(n_bytes)) => DataType::FixedSizeBinary(*n_bytes as usize),
 
             // ---------------------------------
             // boolean
@@ -1860,23 +1865,23 @@ impl<'a> SQLPlanner<'a> {
             // ---------------------------------
             // signed integer
             // ---------------------------------
-            SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
-            SQLDataType::Int2(_) | SQLDataType::SmallInt(_) => DataType::Int16,
-            SQLDataType::Int4(_) | SQLDataType::MediumInt(_) => DataType::Int32,
-            SQLDataType::Int8(_) | SQLDataType::BigInt(_) => DataType::Int64,
             SQLDataType::TinyInt(_) => DataType::Int8,
+            SQLDataType::Int2(_) | SQLDataType::SmallInt(_) | SQLDataType::Int16 => DataType::Int16,
+            SQLDataType::Int(_) | SQLDataType::Integer(_) | SQLDataType::Int4(_) | SQLDataType::MediumInt(_)  | SQLDataType::Int32  => DataType::Int32,
+            SQLDataType::Int8(_) | SQLDataType::BigInt(_) | SQLDataType::Int64 => DataType::Int64,
+
             // ---------------------------------
             // unsigned integer
             // ---------------------------------
-            SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
-            SQLDataType::UnsignedInt2(_) | SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
-            SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => DataType::UInt32,
-            SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) => DataType::UInt64,
+
+            SQLDataType::UnsignedInt2(_) | SQLDataType::UnsignedSmallInt(_)| SQLDataType::UInt16 => DataType::UInt16,
+            SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) | SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) | SQLDataType::UInt32 => DataType::UInt32,
+            SQLDataType::UnsignedInt8(_) | SQLDataType::UnsignedBigInt(_) | SQLDataType::UInt64 => DataType::UInt64,
             SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
             // ---------------------------------
             // float
             // ---------------------------------
-            SQLDataType::Double | SQLDataType::DoublePrecision | SQLDataType::Float8 => {
+            SQLDataType::Double | SQLDataType::DoublePrecision | SQLDataType::Float8 | SQLDataType::Float64 => {
                 DataType::Float64
             }
             SQLDataType::Float(n_bytes) => match n_bytes {
@@ -1890,25 +1895,26 @@ impl<'a> SQLPlanner<'a> {
                 }
                 None => DataType::Float64,
             },
-            SQLDataType::Float4 | SQLDataType::Real => DataType::Float32,
+            SQLDataType::Float4 | SQLDataType::Real | SQLDataType::Float32 => DataType::Float32,
 
             // ---------------------------------
             // decimal
             // ---------------------------------
-            SQLDataType::Dec(info) | SQLDataType::Decimal(info) | SQLDataType::Numeric(info) => {
-                match *info {
-                    ExactNumberInfo::PrecisionAndScale(p, s) => {
-                        DataType::Decimal128(p as usize, s as usize)
-                    }
-                    ExactNumberInfo::Precision(p) => DataType::Decimal128(p as usize, 0),
-                    ExactNumberInfo::None => DataType::Decimal128(38, 9),
-                }
+            SQLDataType::Dec(_) | SQLDataType::Numeric(_) => {
+                unsupported_sql_err!("datatype {dtype} is not supported, did you mean `decimal`?")
             }
+            SQLDataType::Decimal(info) => match *info {
+                ExactNumberInfo::PrecisionAndScale(p, s) => {
+                    DataType::Decimal128(p as usize, s as usize)
+                }
+                ExactNumberInfo::Precision(p) => DataType::Decimal128(p as usize, 0),
+                ExactNumberInfo::None => DataType::Decimal128(38, 9),
+            },
             // ---------------------------------
             // temporal
             // ---------------------------------
             SQLDataType::Date => DataType::Date,
-            SQLDataType::Interval => DataType::Duration(TimeUnit::Microseconds),
+            SQLDataType::Interval => DataType::Interval,
             SQLDataType::Time(precision, tz) => match tz {
                 TimezoneInfo::None => DataType::Time(self.timeunit_from_precision(precision)?),
                 _ => unsupported_sql_err!("`time` with timezone is; found tz={}", tz),
@@ -1927,11 +1933,10 @@ impl<'a> SQLPlanner<'a> {
             | SQLDataType::CharVarying(_)
             | SQLDataType::Character(_)
             | SQLDataType::CharacterVarying(_)
-            | SQLDataType::Clob(_)
-            | SQLDataType::String(_)
-            | SQLDataType::Text
-            | SQLDataType::Uuid
-            | SQLDataType::Varchar(_) => DataType::Utf8,
+            | SQLDataType::Clob(_) => unsupported_sql_err!(
+                "datatype {dtype} is not supported, did you mean `string` or `text`?"
+            ),
+            SQLDataType::String(_) | SQLDataType::Text | SQLDataType::Varchar(_) => DataType::Utf8,
             // ---------------------------------
             // struct
             // ---------------------------------
@@ -1959,6 +1964,75 @@ impl<'a> SQLPlanner<'a> {
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
                 DataType::Struct(fields)
             }
+            SQLDataType::Custom(name, properties) => match name.to_string().as_str() {
+                "tensor" => match properties.as_slice() {
+                    [] => invalid_operation_err!("must specify inner datatype with 'tensor'. ex: `tensor(int)` or `tensor(int, 10, 10, 10)`"),
+                    [inner_dype] => {
+                        let inner_dtype = sql_datatype(inner_dype)?;
+                        DataType::Tensor(Box::new(inner_dtype))
+                    }
+                    [inner_dtype, rest @ ..] => {
+                        let inner_dtype = sql_datatype(inner_dtype)?;
+                        let rest = rest
+                            .iter()
+                            .map(|p| {
+                                p.parse().map_err(|_| {
+                                    PlannerError::unsupported_sql(
+                                        "invalid tensor shape".to_string(),
+                                    )
+                                })
+                            })
+                            .collect::<SQLPlannerResult<Vec<_>>>()?;
+                        DataType::FixedShapeTensor(Box::new(inner_dtype), rest)
+                    }
+                },
+                "image" => match properties.as_slice() {
+                    [] => DataType::Image(None),
+                    [mode] => {
+                        let mode = mode.parse().map_err(|_| {
+                            PlannerError::unsupported_sql("invalid image mode".to_string())
+                        })?;
+                        DataType::Image(Some(mode))
+
+                    },
+                    [mode, height, width] => {
+                        let mode = mode.parse().map_err(|_| {
+                            PlannerError::unsupported_sql("invalid image mode".to_string())
+                        })?;
+                        let height = height.parse().map_err(|_| {
+                            PlannerError::unsupported_sql("invalid image height".to_string())
+                        })?;
+                        let width = width.parse().map_err(|_| {
+                            PlannerError::unsupported_sql("invalid image width".to_string())
+                        })?;
+                        DataType::FixedShapeImage(mode, height, width)
+                    }
+                    _ => invalid_operation_err!("invalid image properties"),
+                },
+                "embedding" => match properties.as_slice() {
+                    [inner_dtype, size] => {
+                        let inner_dtype = sql_datatype(inner_dtype)?;
+                        let Ok(size) = size.parse() else {
+                            invalid_operation_err!("invalid embedding size, expected an integer")
+                        };
+                        DataType::Embedding(Box::new(inner_dtype), size)
+                    }
+                    _ => invalid_operation_err!(
+                        "embedding must have datatype and size: ex: `embedding(int, 10)`"
+                    ),
+                },
+                "f64" => DataType::Float64,
+                "f32" => DataType::Float32,
+                "i64" => DataType::Int64,
+                "i32" => DataType::Int32,
+                "i16" => DataType::Int16,
+                "i8" => DataType::Int8,
+                "u64" => DataType::UInt64,
+                "u32" => DataType::UInt32,
+                "u16" => DataType::UInt16,
+                "u8" => DataType::UInt8,
+                other => unsupported_sql_err!("custom data type: {other}"),
+            },
             other => unsupported_sql_err!("data type: {:?}", other),
         })
     }
@@ -2204,6 +2278,22 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
         invalid_operation_err!("expected a single expression, found {}", exprs.len())
     }
     Ok(exprs.into_iter().next().unwrap())
+}
+
+pub fn sql_datatype<S: AsRef<str>>(s: S) -> SQLPlannerResult<DataType> {
+    let planner = SQLPlanner::default();
+
+    let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
+
+    let mut parser = Parser::new(&GenericDialect {})
+        .with_options(ParserOptions {
+            trailing_commas: true,
+            ..Default::default()
+        })
+        .with_tokens(tokens);
+
+    let dtype = parser.parse_data_type()?;
+    planner.sql_dtype_to_dtype(&dtype)
 }
 
 // ----------------

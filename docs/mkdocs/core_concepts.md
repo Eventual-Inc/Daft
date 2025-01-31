@@ -1635,6 +1635,10 @@ Daft abstracts away the in-memory representation of your data and provides kerne
 
 Please add suggestions for new DataTypes to our Github Discussions page!
 
+### SQL Datatypes
+Most DataTypes also have a SQL equivalent that can be used in sql queries
+
+
 ## SQL
 
 Daft supports Structured Query Language (SQL) as a way of constructing query plans (represented in Python as a [`daft.DataFrame`]({{ api_path }}/dataframe_methods/daft.DataFrame.html)) and expressions ([`daft.Expression`]({{ api_path }}/dataframe_methods/daft.DataFrame.html)).
