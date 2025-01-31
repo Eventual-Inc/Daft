@@ -27,11 +27,9 @@ class Runner(Generic[PartitionT]):
         self._part_set_cache = self.initialize_partition_set_cache()
 
     def get_partition_set_from_cache(self, pset_id: str) -> PartitionCacheEntry:
-        print("RUNNER get_partition_set_from_cache")
         return self._part_set_cache.get_partition_set(pset_id=pset_id)
 
     def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
-        print("RUNNER put_partition_set_into_cache")
         return self._part_set_cache.put_partition_set(pset=pset)
 
     @abstractmethod
