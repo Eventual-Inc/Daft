@@ -125,7 +125,9 @@ class DaftContext:
 
     _runner: Runner | None = None
 
-    _broadcast_metrics: bool = False
+    _enable_broadcast: bool = False
+    _broadcast_addr: str = "127.0.0.1"
+    _broadcast_port: int = 3238
 
     _instance: ClassVar[DaftContext | None] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
@@ -200,21 +202,27 @@ def get_context() -> DaftContext:
 
 
 def broadcast_metrics(
-    broadcast_metrics: bool = True,
+    enable: bool = True,
+    addr: str = "127.0.0.1",
+    port: int = 3238,
 ) -> DaftContext:
-    """Broadcast all metrics collected by daft on the port 3238.
+    """Enable (or disable) the broadcasting of Daft metrics over the given address.
 
-    This enables the Daft Dashboard to collect metrics and display them.
+    This enables the Daft Dashboard to collect and display the data which is sent to it as Daft executes queries.
 
     Args:
-        broadcast_metrics: Whether or not the metrics should be broadcasted on port 3238. Defaults to true.
+        enable: Whether or not to enable broadcasting Daft metrics.
+        addr: The IP address on which to broadcast the metrics.
+        port: The port on which to broadcast the metrics.
 
     Returns:
         DaftContext: Daft context after enabling or disabling metrics broadcasting.
     """
     ctx = get_context()
     with ctx._lock:
-        ctx._broadcast_metrics = broadcast_metrics
+        ctx._enable_broadcast = enable
+        ctx._broadcast_addr = addr
+        ctx._broadcast_port = port
         return ctx
 
 
