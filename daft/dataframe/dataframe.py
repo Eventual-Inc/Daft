@@ -159,17 +159,22 @@ class DataFrame:
             return self._result_cache.value
 
     def explain_broadcast(self):
+        import socket
+
         from daft.dataframe.display import MermaidFormatter
 
         ctx = get_context()
         with ctx._lock:
-            assert ctx._enable_broadcast, "This method should only be called when metrics broadcasting is enabled"
-            _ip = f"{ctx._broadcast_addr}:{ctx._broadcast_port}"
+            if not ctx._enable_broadcast:
+                return
 
-        is_cached = self._result_cache is not None
-        instance = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
+            is_cached = self._result_cache is not None
+            instance = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
+            text = instance._repr_markdown_()
 
-        _text = instance._repr_markdown_()
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.connect((ctx._broadcast_addr, ctx._broadcast_port))
+                sock.sendall(text)
 
     @DataframePublicAPI
     def explain(
