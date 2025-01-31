@@ -276,4 +276,78 @@ impl Series {
             ))),
         }
     }
+
+    pub fn bool_and(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        use crate::array::ops::DaftBoolAggable;
+        match self.data_type() {
+            DataType::Boolean => {
+                let downcasted = self.bool()?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftBoolAggable::grouped_bool_and(downcasted, groups)?.into_series())
+                    }
+                    None => {
+                        if self.is_empty() {
+                            Ok(Self::full_null(
+                                self.field().name.as_str(),
+                                &DataType::Boolean,
+                                1,
+                            ))
+                        } else {
+                            Ok(DaftBoolAggable::bool_and(downcasted)?.into_series())
+                        }
+                    }
+                }
+            }
+            DataType::Null => {
+                // Return a single null value for null type
+                Ok(Self::full_null(
+                    self.field().name.as_str(),
+                    &DataType::Boolean,
+                    1,
+                ))
+            }
+            other => Err(DaftError::TypeError(format!(
+                "bool_and is not implemented for type {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn bool_or(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        use crate::array::ops::DaftBoolAggable;
+        match self.data_type() {
+            DataType::Boolean => {
+                let downcasted = self.bool()?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftBoolAggable::grouped_bool_or(downcasted, groups)?.into_series())
+                    }
+                    None => {
+                        if self.is_empty() {
+                            Ok(Self::full_null(
+                                self.field().name.as_str(),
+                                &DataType::Boolean,
+                                1,
+                            ))
+                        } else {
+                            Ok(DaftBoolAggable::bool_or(downcasted)?.into_series())
+                        }
+                    }
+                }
+            }
+            DataType::Null => {
+                // Return a single null value for null type
+                Ok(Self::full_null(
+                    self.field().name.as_str(),
+                    &DataType::Boolean,
+                    1,
+                ))
+            }
+            other => Err(DaftError::TypeError(format!(
+                "bool_or is not implemented for type {}",
+                other
+            ))),
+        }
+    }
 }

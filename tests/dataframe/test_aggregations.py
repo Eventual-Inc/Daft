@@ -592,3 +592,77 @@ def test_agg_with_groupby_key_in_agg(make_df, repartition_nparts, with_morsel_si
         "group_plus_1": [2, 3, 4],
         "id_plus_group": [7, 11, 15],
     }
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize(
+    "input_values,expected_and,expected_or",
+    [
+        ([True, True, None], True, True),
+        ([True, False, None], False, True),
+        ([False, False, None], False, False),
+        ([None, None, None], None, None),
+        ([True, True, True], True, True),
+        ([False, False, False], False, False),
+        ([], None, None),  # Empty case
+    ],
+    ids=[
+        "true_true_none",
+        "true_false_none",
+        "false_false_none",
+        "all_none",
+        "all_true",
+        "all_false",
+        "empty",
+    ],
+)
+def test_bool_agg_global(make_df, repartition_nparts, with_morsel_size, input_values, expected_and, expected_or):
+    df = make_df({"bool_col": input_values}, repartition=repartition_nparts)
+
+    res = df.agg(col("bool_col").bool_and())
+    assert res.to_pydict() == {"bool_col": [expected_and]}, f"bool_and failed for input {input_values}"
+
+    res = df.agg(col("bool_col").bool_or())
+    assert res.to_pydict() == {"bool_col": [expected_or]}, f"bool_or failed for input {input_values}"
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_bool_agg_groupby(make_df, repartition_nparts, with_morsel_size):
+    df = make_df(
+        {
+            "group": [1, 1, 1, 2, 2, 2, 3, 3, 3, 4],
+            "bool_col": [
+                True,
+                True,
+                None,  # Group 1: true for both and/or
+                False,
+                None,
+                False,  # Group 2: false for both and/or
+                None,
+                None,
+                None,  # Group 3: null for both and/or
+                True,  # Group 4: true for both and/or
+            ],
+        },
+        repartition=repartition_nparts,
+    )
+
+    # Test bool_and with groups
+    res = df.groupby("group").agg(col("bool_col").bool_and()).sort("group")
+    assert res.to_pydict() == {"group": [1, 2, 3, 4], "bool_col": [True, False, None, True]}
+
+    # Test bool_or with groups
+    res = df.groupby("group").agg(col("bool_col").bool_or()).sort("group")
+    assert res.to_pydict() == {"group": [1, 2, 3, 4], "bool_col": [True, False, None, True]}
+
+
+def test_bool_agg_type_error(make_df):
+    df = make_df({"int_col": [1, 2, 3]})
+
+    with pytest.raises(Exception) as exc_info:
+        df.agg(col("int_col").bool_and()).collect()
+    assert "bool_and is not implemented for type Int64" in str(exc_info.value)
+
+    with pytest.raises(Exception) as exc_info:
+        df.agg(col("int_col").bool_or()).collect()
+    assert "bool_or is not implemented for type Int64" in str(exc_info.value)

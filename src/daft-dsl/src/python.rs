@@ -344,6 +344,14 @@ impl PyExpr {
         Ok(self.expr.clone().max().into())
     }
 
+    pub fn bool_and(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().bool_and().into())
+    }
+
+    pub fn bool_or(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().bool_or().into())
+    }
+
     pub fn any_value(&self, ignore_nulls: bool) -> PyResult<Self> {
         Ok(self.expr.clone().any_value(ignore_nulls).into())
     }

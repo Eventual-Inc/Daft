@@ -497,6 +497,14 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Max, |_| e)
         }
+        AggExpr::BoolAnd(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::BoolAnd, |_| e)
+        }
+        AggExpr::BoolOr(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::BoolOr, |_| e)
+        }
         AggExpr::AnyValue(ref child, ignore_nulls) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
                 |transformed_child| AggExpr::AnyValue(transformed_child, ignore_nulls),
