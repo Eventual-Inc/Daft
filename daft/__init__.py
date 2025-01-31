@@ -72,7 +72,7 @@ from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.logical.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, list_, lit, interval, coalesce
+from daft.expressions import Expression, col, list_, lit, interval, struct, coalesce
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -90,8 +90,6 @@ from daft.series import Series
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
-
-to_struct = Expression.to_struct
 
 __all__ = [
     "DataCatalogTable",
@@ -135,6 +133,6 @@ __all__ = [
     "set_planning_config",
     "sql",
     "sql_expr",
-    "to_struct",
+    "struct",
     "udf",
 ]
