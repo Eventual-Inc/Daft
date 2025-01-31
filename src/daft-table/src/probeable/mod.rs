@@ -88,19 +88,38 @@ pub trait Probeable: Send + Sync {
 #[derive(Clone)]
 pub struct ProbeState {
     probeable: Arc<dyn Probeable>,
-    tables: Arc<Vec<Table>>,
+    table: Table,
+    prefix_sums: Vec<usize>,
 }
 
 impl ProbeState {
-    pub fn new(probeable: Arc<dyn Probeable>, tables: Arc<Vec<Table>>) -> Self {
-        Self { probeable, tables }
+    pub fn new(probeable: Arc<dyn Probeable>, tables: &[Table]) -> Self {
+        let prefix_sums = tables
+            .iter()
+            .scan(0, |acc, table| {
+                let len = table.len();
+                let old = *acc;
+                *acc += len;
+                Some(old)
+            })
+            .collect();
+        let table = Table::concat(tables).unwrap();
+        Self {
+            probeable,
+            table,
+            prefix_sums,
+        }
     }
 
     pub fn get_probeable(&self) -> &Arc<dyn Probeable> {
         &self.probeable
     }
 
-    pub fn get_tables(&self) -> &Arc<Vec<Table>> {
-        &self.tables
+    pub fn get_table(&self) -> &Table {
+        &self.table
+    }
+
+    pub fn get_prefix_sums(&self) -> &[usize] {
+        &self.prefix_sums
     }
 }

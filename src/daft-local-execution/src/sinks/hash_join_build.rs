@@ -75,7 +75,7 @@ impl ProbeTableState {
             let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
             let pt = ptb.build();
 
-            let ps = ProbeState::new(pt, tables.clone().into());
+            let ps = ProbeState::new(pt, tables);
             *self = Self::Done;
             ps
         } else {
