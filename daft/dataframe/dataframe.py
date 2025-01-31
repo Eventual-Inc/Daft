@@ -2334,9 +2334,9 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(
-            result, DataFrame
-        ), f"Func returned an instance of type [{type(result)}], should have been DataFrame."
+        assert isinstance(result, DataFrame), (
+            f"Func returned an instance of type [{type(result)}], " "should have been DataFrame."
+        )
         return result
 
     def _agg(
@@ -2614,11 +2614,7 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {
-            ...         "pet": ["cat", "dog", "dog", "cat"],
-            ...         "age": [1, 2, 3, 4],
-            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
-            ...     }
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
@@ -3388,11 +3384,7 @@ class GroupedDataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {
-            ...         "pet": ["cat", "dog", "dog", "cat"],
-            ...         "age": [1, 2, 3, 4],
-            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
-            ...     }
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
