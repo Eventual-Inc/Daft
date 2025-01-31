@@ -59,6 +59,7 @@ impl LocalPartitionIterator {
     }
 }
 
+#[cfg(feature = "python")]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "daft.daft", name = "NativeExecutor")
