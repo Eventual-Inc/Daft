@@ -1853,7 +1853,7 @@ impl<'a> SQLPlanner<'a> {
 
             | SQLDataType::Blob(_)
             | SQLDataType::Varbinary(_) => {
-                unsupported_sql_err!("datatype {dtype} is not supported, did you mean `binary`?")
+                unsupported_sql_err!("datatype {dtype} is not supported, did you mean `binary/bytes`?")
             }
             SQLDataType::Binary(None) | SQLDataType::Bytes(None) => DataType::Binary,
             SQLDataType::Binary(Some(n_bytes)) | SQLDataType::Bytes(Some(n_bytes)) => DataType::FixedSizeBinary(*n_bytes as usize),
