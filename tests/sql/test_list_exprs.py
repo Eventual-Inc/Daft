@@ -41,10 +41,9 @@ def test_list_constructor_homogeneous():
 
 
 def test_list_constructor_heterogeneous():
-    with pytest.raises(Exception, match="Expected all arguments to be of the same type"):
-        df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
-        daft.sql("SELECT [ x, y ] FROM df").collect()
-        df  # for ruff ignore unused
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
+    df = daft.sql("SELECT [ x, y ] AS heterogeneous FROM df").collect()
+    assert df.to_pydict() == {"heterogeneous": [[1, 1], [2, 1], [3, 0]]}
 
 
 def test_list_constructor_heterogeneous_with_cast():
