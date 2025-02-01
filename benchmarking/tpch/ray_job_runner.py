@@ -90,4 +90,31 @@ if __name__ == "__main__":
     get_df = get_df_with_parquet_folder(args.parquet_folder)
     answer = getattr(answers, f"q{args.question_number}")
     daft_df = answer(get_df)
-    daft_df.collect()
+
+    info_path = Path("/tmp") / "ray" / "session_latest" / "logs" / "info"
+    info_path.mkdir(parents=True, exist_ok=True)
+
+    explain_delta = None
+    with open(info_path / f"plan-{question}.txt", "w") as f:
+        explain_start = datetime.now()
+        query.explain(show_all=True, file=f, format="mermaid")
+        explain_end = datetime.now()
+        explain_delta = explain_end - explain_start
+
+    execute_delta = None
+    if not dry_run:
+        execute_start = datetime.now()
+        query.collect()
+        execute_end = datetime.now()
+        execute_delta = execute_end - execute_start
+
+    with open(info_path / f"stats-{question}.txt", "w") as f:
+        stats = json.dumps(
+            {
+                "question": question,
+                "scale-factor": scale_factor,
+                "planning-time": str(explain_delta),
+                "execution-time": str(execute_delta),
+            }
+        )
+        f.write(stats)
