@@ -23,9 +23,13 @@ jobs:
         max_attempts: 3
         retry_on: error
         command: blc https://www.getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daft_dataframe --exclude https://www.linkedin.com/company/eventualcomputing/
+  notify_on_failure:
+    runs-on: self-hosted
+    if: failure()
+    needs: check-links
+    steps:
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: failure()
       with:
         payload: |
           {
