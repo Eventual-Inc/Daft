@@ -4,21 +4,34 @@ import threading
 from typing import ClassVar, Dict
 
 from daft import Catalog
-from daft.catalog.catalog import Table
+from daft.catalog.catalog import Source, Table
 from daft.dataframe.dataframe import DataFrame
 from daft.logical.schema import Schema
 
-"""
+""".
+------------------------------------------
 BACKLOG
 ------------------------------------------
+- use tables without catalogs
+- use catalogs without a session (implicit)
+x create catalog
+- create table
 - make environment variables
 - create_table_if_not_exists
 - def use(self, identifier: str):
 - def use_schema(self, schema: str):
 - def use_namespace(self):
+- unity attach / create_external_catalog
+- iceberg attach / create_external_catalog
+- clean read_table with iceberg (impl) specific options
+- load a session from prior config
+- use catalog / namespace / schema in session
+- set session properties
 """
 
-"""Global session for the current python environment
+""".
+------------------------------------------
+Global session for the current python environment
 ------------------------------------------
 DAFT_SESSION_USER
 DAFT_SESSION_DEFAULT_CATALOG
@@ -56,10 +69,16 @@ class Session:
         return f"session({props!r})"
 
     def create_catalog(self, name: str) -> Catalog:
-        """Create a new catalog and attach to this session."""
+        """Create a new catalog scoped to this session."""
+        if name in self._catalogs:
+            raise Exception(f"Catalog {name} already exists in this session")
         catalog = Catalog(name)
         self._catalogs[name] = catalog
         return catalog
+
+    def create_table(self, name: str, source: Source) -> Table:
+        """Create a new table scoped to this session's current catalog"""
+        return self.current_catalog().create_table(name, source)
 
     def current_catalog(self) -> Catalog:
         """Returns the session's current catalog."""
@@ -68,7 +87,7 @@ class Session:
     def use_catalog(self, catalog: str):
         """Use the provided catalog or err if not exists."""
         if catalog not in self._catalogs:
-            raise ValueError(f"Catalog {catalog} does not exist in the session")
+            raise Exception(f"Catalog {catalog} does not exist in this session")
         self._curr_catalog = catalog
 
 
@@ -81,8 +100,8 @@ def create_catalog(name: str) -> Catalog:
     return _Session.create_catalog(name)
 
 
-def create_table(name: str, source: Schema | DataFrame) -> Table:
-    """Creates a new table scoped to the current session.
+def create_table(name: str, source: Schema | DataFrame | str) -> Table:
+    """Creates a new table scoped to the current session and catalog.
 
     SQL:
         - CREATE TEMP TABLE [IF NOT EXISTS] <table> AS <dataframe>

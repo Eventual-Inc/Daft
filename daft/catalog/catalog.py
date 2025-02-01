@@ -1,31 +1,64 @@
-"""Goals."""
+from __future__ import annotations
 
+from daft.dataframe.dataframe import DataFrame
+from daft.logical.schema import Schema
 
-# class Namespace:
+""".
+------------------------------------------
+BACKLOG
+------------------------------------------
+- class Identifier
+- class Namespace
+- class Name
+- Table._from_df
+- Table._from_path
+"""
 
-#     def __init__(self) -> None:
-#         pass
-
-# class Name:
-#     def __init__(self) -> None:
-#         pass
+# for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
+Source = Schema | DataFrame | str
 
 
 class Table:
-    def __init__(self, name: str):
+    _name: str
+    _schema: Schema
+
+    def __init__(self) -> Table:
         raise NotImplementedError("Creating a Table via __init__ is not supported")
 
     def __repr__(self) -> str:
-        return f"table({self._name})"
+        return f"table('{self._name}')"
+
+    @staticmethod
+    def _from_source(name: str, source: Source) -> Table:
+        if isinstance(source, DataFrame):
+            return Table._from_df(name, source)
+        elif isinstance(source, str):
+            return Table._from_path(name, source)
+        elif isinstance(source, Schema):
+            return Table._from_schema(name, source)
+        else:
+            raise Exception(f"Unknown table source: {source}")
+
+    @staticmethod
+    def _from_df(self, name: str, df: DataFrame) -> Table:
+        raise NotImplementedError("Table._from_df")
+
+    @staticmethod
+    def _from_path(self, name: str, path: str) -> Table:
+        raise NotImplementedError("Table._from_path")
+
+    @staticmethod
+    def _from_schema(name: str, schema: Schema) -> Table:
+        t = Table.__new__(Table)
+        t._name = name
+        t._schema = schema
+        return t
 
     def name(self) -> str:
         return self._name
 
-    def scan(self):
-        raise Exception("read not implemented")
-
-    def schema(self):
-        raise Exception("schema not implemented")
+    def schema(self) -> Schema:
+        return self._schema
 
     # def properties(self):
     #     raise Exception("properties not implemented")
@@ -41,6 +74,9 @@ class Table:
     # def delete(self):
     #     """Delete..."""
     #     raise Exception("not implemented")
+
+    def scan(self):
+        raise Exception("read not implemented")
 
     def show(self):
         raise Exception("show not implemented")
@@ -65,9 +101,9 @@ class Catalog:
     def create_schema(self):
         raise Exception("not implemented")
 
-    def create_table(self, name: str) -> Table:
-        """Create a new table"""
-        table = Table(name)
+    def create_table(self, name: str, source: Source) -> Table:
+        """Creates a new table scoped to this catalog and returns it"""
+        table = Table._from_source(name, source)
         self._tables[name] = table
         return table
 
