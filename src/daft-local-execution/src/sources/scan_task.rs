@@ -240,6 +240,8 @@ fn bulk_stream_scan_tasks(
 ) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
     let io_runtime = get_io_runtime(true);
     let (stream_producer, stream_receiver) = create_channel(0);
+
+    // Spawn a task to produce streams for each ScanTask
     let stream_producer_task = io_runtime.spawn(async move {
         for scan_task in scan_tasks {
             let delete_map = delete_map.clone();
@@ -252,14 +254,13 @@ fn bulk_stream_scan_tasks(
         DaftResult::Ok(())
     });
 
+    // Unfold the stream of streams into a single stream, only plucking a new stream when the current stream is exhausted
     let initial_state = (None, stream_receiver, Some(stream_producer_task));
-    let unfolded_stream = futures::stream::unfold(
+    futures::stream::unfold(
         initial_state,
         |(current_stream, stream_receiver, stream_producer_task)| async move {
             // If the stream_producer_task is None, it means that the stream_producer_task has finished, and we should stop
-            if stream_producer_task.is_none() {
-                return None;
-            }
+            stream_producer_task.as_ref()?;
 
             // If current_stream is None, we should wait for the next stream to be available
             let mut current_stream = match current_stream {
@@ -292,9 +293,7 @@ fn bulk_stream_scan_tasks(
                 }
             }
         },
-    );
-
-    unfolded_stream
+    )
 }
 
 async fn stream_scan_task(
