@@ -20,7 +20,6 @@ use daft_io::{parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{
     future::{join_all, try_join_all},
-    stream::BoxStream,
     Stream, StreamExt, TryStreamExt,
 };
 use itertools::Itertools;
@@ -879,7 +878,7 @@ pub async fn stream_parquet(
     maintain_order: bool,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
-) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
+) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let stream = stream_parquet_single(
         uri.to_string(),
         columns,
@@ -896,7 +895,7 @@ pub async fn stream_parquet(
         chunk_size,
     )
     .await?;
-    Ok(Box::pin(stream))
+    Ok(stream)
 }
 
 #[allow(clippy::too_many_arguments)]
