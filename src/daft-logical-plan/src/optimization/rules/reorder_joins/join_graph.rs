@@ -21,28 +21,56 @@ use crate::{
 /// TODO(desmond): In the future these trees should keep track of current cost estimates.
 #[derive(Clone, Debug)]
 pub(super) enum JoinOrderTree {
-    Relation(usize),                                                  // (ID).
-    Join(Box<JoinOrderTree>, Box<JoinOrderTree>, Vec<JoinCondition>), // (subtree, subtree, join conditions).
+    Relation(usize, usize), // (ID, cardinality).
+    Join(
+        Box<JoinOrderTree>,
+        Box<JoinOrderTree>,
+        Vec<JoinCondition>,
+        usize,
+    ), // (subtree, subtree, join conditions, cardinality).
 }
 
 impl JoinOrderTree {
-    pub(super) fn join(self, right: Self, conds: Vec<JoinCondition>) -> Self {
-        Self::Join(Box::new(self), Box::new(right), conds)
+    pub(super) fn join(self, right: Self, conds: Vec<JoinCondition>, card: usize) -> Self {
+        Self::Join(Box::new(self), Box::new(right), conds, card)
     }
 
     // Helper function that checks if the join order tree contains a given id.
     #[cfg(test)]
     pub(super) fn contains(&self, target_id: usize) -> bool {
         match self {
-            Self::Relation(id) => *id == target_id,
-            Self::Join(left, right, _) => left.contains(target_id) || right.contains(target_id),
+            Self::Relation(id, ..) => *id == target_id,
+            Self::Join(left, right, ..) => left.contains(target_id) || right.contains(target_id),
         }
     }
 
     fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
         match self {
-            Self::Relation(id) => Box::new(std::iter::once(*id)),
-            Self::Join(left, right, _) => Box::new(left.iter().chain(right.iter())),
+            Self::Relation(id, ..) => Box::new(std::iter::once(*id)),
+            Self::Join(left, right, ..) => Box::new(left.iter().chain(right.iter())),
+        }
+    }
+
+    pub(super) fn get_cardinality(&self) -> usize {
+        match self {
+            Self::Relation(_, cardinality) => *cardinality,
+            Self::Join(_, _, _, cardinality) => *cardinality,
+        }
+    }
+
+    #[cfg(test)]
+    // Check if the join structure is the same, regardless of cardinality or join conditions.
+    pub(super) fn order_eq(this: &Self, other: &Self) -> bool {
+        match (this, other) {
+            (JoinOrderTree::Relation(id1, _), JoinOrderTree::Relation(id2, _)) => id1 == id2,
+            (
+                JoinOrderTree::Join(left1, right1, _, _),
+                JoinOrderTree::Join(left2, right2, _, _),
+            ) => {
+                (Self::order_eq(left1, left2) && Self::order_eq(right1, right2))
+                    || (Self::order_eq(left1, right2) && Self::order_eq(right1, left2))
+            }
+            _ => false,
         }
     }
 }
@@ -86,12 +114,15 @@ impl Display for JoinNode {
 pub(super) struct JoinCondition {
     pub left_on: String,
     pub right_on: String,
+    // Estimated total domain of this edge, i.e. the number of distinct values in a join.
+    // For a pk-fk join, this would be the number of primary keys.
+    pub total_domain: usize,
 }
 
 pub(super) struct JoinAdjList {
     pub max_id: usize,
     plan_to_id: HashMap<*const LogicalPlan, usize>,
-    id_to_plan: HashMap<usize, LogicalPlanRef>,
+    pub id_to_plan: HashMap<usize, LogicalPlanRef>,
     pub edges: HashMap<usize, HashMap<usize, Vec<JoinCondition>>>,
 }
 
@@ -159,19 +190,39 @@ impl JoinAdjList {
         }
     }
 
-    fn add_unidirectional_edge(&mut self, left: &JoinNode, right: &JoinNode) {
+    pub(super) fn add_bidirectional_edge(&mut self, node1: JoinNode, node2: JoinNode) {
+        let node1_rows = node1.plan.materialized_stats().approx_stats.num_rows;
+        let node2_rows = node2.plan.materialized_stats().approx_stats.num_rows;
+        let total_domain = node1_rows.min(node2_rows);
+        self.add_bidirectional_edge_with_total_domain(node1, node2, total_domain);
+    }
+
+    pub(super) fn add_bidirectional_edge_with_total_domain(
+        &mut self,
+        node1: JoinNode,
+        node2: JoinNode,
+        td: usize,
+    ) {
+        self.add_unidirectional_edge_with_total_domain(&node1, &node2, td);
+        self.add_unidirectional_edge_with_total_domain(&node2, &node1, td);
+    }
+
+    fn add_unidirectional_edge_with_total_domain(
+        &mut self,
+        left: &JoinNode,
+        right: &JoinNode,
+        td: usize,
+    ) {
         let join_condition = JoinCondition {
             left_on: left.relation_name.clone(),
             right_on: right.relation_name.clone(),
+            // Assuming a pk-fk join, the total domain would be the number of distinct values of the
+            // primary key. We assume the smaller side is the primary key side.
+            total_domain: td,
         };
         let left_id = self.get_or_create_plan_id(&left.plan);
         let right_id = self.get_or_create_plan_id(&right.plan);
         self.add_join_condition(left_id, right_id, join_condition);
-    }
-
-    pub(super) fn add_bidirectional_edge(&mut self, node1: JoinNode, node2: JoinNode) {
-        self.add_unidirectional_edge(&node1, &node2);
-        self.add_unidirectional_edge(&node2, &node1);
     }
 
     pub(super) fn get_connections(
@@ -255,7 +306,7 @@ impl JoinGraph {
         join_order: &JoinOrderTree,
     ) -> DaftResult<LogicalPlanBuilder> {
         match join_order {
-            JoinOrderTree::Relation(id) => {
+            JoinOrderTree::Relation(id, ..) => {
                 let relation = self
                     .adj_list
                     .id_to_plan
@@ -263,7 +314,7 @@ impl JoinGraph {
                     .expect("Join order contains non-existent plan id 1");
                 Ok(LogicalPlanBuilder::from(relation.clone()))
             }
-            JoinOrderTree::Join(left_tree, right_tree, conds) => {
+            JoinOrderTree::Join(left_tree, right_tree, conds, _) => {
                 let left_builder = self.build_joins_from_join_order(left_tree)?;
                 let right_builder = self.build_joins_from_join_order(right_tree)?;
                 let mut left_cols = vec![];

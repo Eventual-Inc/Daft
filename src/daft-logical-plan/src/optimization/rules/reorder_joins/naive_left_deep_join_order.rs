@@ -12,10 +12,10 @@ impl NaiveLeftDeepJoinOrderer {
             return current_order;
         }
         for (index, candidate_node_id) in available.iter().enumerate() {
-            let right = JoinOrderTree::Relation(*candidate_node_id);
+            let right = JoinOrderTree::Relation(*candidate_node_id, 0);
             let connections = graph.adj_list.get_connections(&current_order, &right);
             if !connections.is_empty() {
-                let new_order = current_order.join(right, connections);
+                let new_order = current_order.join(right, connections, 0);
                 available.remove(index);
                 return Self::extend_order(graph, new_order, available);
             }
@@ -28,7 +28,7 @@ impl JoinOrderer for NaiveLeftDeepJoinOrderer {
     fn order(&self, graph: &JoinGraph) -> JoinOrderTree {
         let available: Vec<usize> = (1..graph.adj_list.max_id).collect();
         // Take a starting order of the node with id 0.
-        let starting_order = JoinOrderTree::Relation(0);
+        let starting_order = JoinOrderTree::Relation(0, 0);
         Self::extend_order(graph, starting_order, available)
     }
 }
@@ -36,12 +36,17 @@ impl JoinOrderer for NaiveLeftDeepJoinOrderer {
 #[cfg(test)]
 mod tests {
     use common_scan_info::Pushdowns;
+    use common_treenode::TransformedResult;
     use daft_schema::{dtype::DataType, field::Field};
     use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
     use super::{JoinGraph, JoinOrderTree, JoinOrderer, NaiveLeftDeepJoinOrderer};
     use crate::{
-        optimization::rules::reorder_joins::join_graph::{JoinAdjList, JoinNode},
+        optimization::rules::{
+            reorder_joins::join_graph::{JoinAdjList, JoinNode},
+            rule::OptimizerRule,
+            EnrichWithStats, MaterializeScans,
+        },
         test::{dummy_scan_node_with_pushdowns, dummy_scan_operator_with_size},
         LogicalPlanRef,
     };
@@ -59,11 +64,15 @@ mod tests {
     }
 
     fn create_scan_node(name: &str, size: Option<usize>) -> LogicalPlanRef {
-        dummy_scan_node_with_pushdowns(
+        let plan = dummy_scan_node_with_pushdowns(
             dummy_scan_operator_with_size(vec![Field::new(name, DataType::Int64)], size),
             Pushdowns::default(),
         )
-        .build()
+        .build();
+        let scan_materializer = MaterializeScans::new();
+        let plan = scan_materializer.try_optimize(plan).data().unwrap();
+        let stats_enricher = EnrichWithStats::new();
+        stats_enricher.try_optimize(plan).data().unwrap()
     }
 
     fn create_join_graph_with_edges(nodes: Vec<JoinNode>, edges: Vec<(usize, usize)>) -> JoinGraph {
