@@ -36,12 +36,17 @@ impl JoinOrderer for NaiveLeftDeepJoinOrderer {
 #[cfg(test)]
 mod tests {
     use common_scan_info::Pushdowns;
+    use common_treenode::TransformedResult;
     use daft_schema::{dtype::DataType, field::Field};
     use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
     use super::{JoinGraph, JoinOrderTree, JoinOrderer, NaiveLeftDeepJoinOrderer};
     use crate::{
-        optimization::rules::reorder_joins::join_graph::{JoinAdjList, JoinNode},
+        optimization::rules::{
+            reorder_joins::join_graph::{JoinAdjList, JoinNode},
+            rule::OptimizerRule,
+            EnrichWithStats, MaterializeScans,
+        },
         test::{dummy_scan_node_with_pushdowns, dummy_scan_operator_with_size},
         LogicalPlanRef,
     };
@@ -59,11 +64,15 @@ mod tests {
     }
 
     fn create_scan_node(name: &str, size: Option<usize>) -> LogicalPlanRef {
-        dummy_scan_node_with_pushdowns(
+        let plan = dummy_scan_node_with_pushdowns(
             dummy_scan_operator_with_size(vec![Field::new(name, DataType::Int64)], size),
             Pushdowns::default(),
         )
-        .build()
+        .build();
+        let scan_materializer = MaterializeScans::new();
+        let plan = scan_materializer.try_optimize(plan).data().unwrap();
+        let stats_enricher = EnrichWithStats::new();
+        stats_enricher.try_optimize(plan).data().unwrap()
     }
 
     fn create_join_graph_with_edges(nodes: Vec<JoinNode>, edges: Vec<(usize, usize)>) -> JoinGraph {
