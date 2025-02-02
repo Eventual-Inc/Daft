@@ -173,7 +173,8 @@ members = [
   # "src/spark-connect-script",
   "src/generated/spark-connect",
   "src/common/partitioning",
-  "src/daft-ray-execution"
+  "src/daft-ray-execution",
+  "dashboard/proxy-service"
 ]
 
 [workspace.dependencies]

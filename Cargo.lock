@@ -5266,6 +5266,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxy-service"
+version = "0.3.0-dev0"
+
+[[package]]
 name = "pyo3"
 version = "0.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

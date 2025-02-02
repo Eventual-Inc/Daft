@@ -1,0 +1,9 @@
+[dependencies]
+
+[lints]
+workspace = true
+
+[package]
+name = "proxy-service"
+edition.workspace = true
+version.workspace = true
