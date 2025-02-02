@@ -169,13 +169,16 @@ class DataFrame:
             if not ctx._enable_broadcast:
                 return
 
-            is_cached = self._result_cache is not None
-            instance = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
-            text = instance._repr_markdown_()
+            addr = ctx._broadcast_addr
+            port = ctx._broadcast_port
 
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.connect((ctx._broadcast_addr, ctx._broadcast_port))
-                sock.sendall(text)
+        is_cached = self._result_cache is not None
+        instance = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
+        text: str = instance._repr_markdown_()
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((addr, port))
+            sock.sendall(text.encode("utf-8"))
 
     @DataframePublicAPI
     def explain(
