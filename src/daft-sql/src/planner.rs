@@ -1921,8 +1921,7 @@ impl<'a> SQLPlanner<'a> {
             // ---------------------------------
             // decimal
             // ---------------------------------
-            SQLDataType::Dec(_) | SQLDataType::Numeric(_) => use_instead!(dtype, "`decimal`"),
-            SQLDataType::Decimal(info) => match *info {
+            SQLDataType::Dec(info) | SQLDataType::Numeric(info) |SQLDataType::Decimal(info) => match *info {
                 ExactNumberInfo::PrecisionAndScale(p, s) => {
                     DataType::Decimal128(p as usize, s as usize)
                 }
@@ -2480,6 +2479,16 @@ mod tests {
     #[case("float(24)", DataType::Float32)]
     #[case("float(25)", DataType::Float64)]
     #[case("float(53)", DataType::Float64)]
+    #[case("dec", DataType::Decimal128(38, 9))]
+    #[case("decimal", DataType::Decimal128(38, 9))]
+    #[case("decimal(10)", DataType::Decimal128(10, 0))]
+    #[case("decimal(10, 2)", DataType::Decimal128(10, 2))]
+    #[case("decimal(38, 9)", DataType::Decimal128(38, 9))]
+    #[case("numeric", DataType::Decimal128(38, 9))]
+    #[case("numeric(10)", DataType::Decimal128(10, 0))]
+    #[case("numeric(10, 2)", DataType::Decimal128(10, 2))]
+    #[case("numeric(38, 9)", DataType::Decimal128(38, 9))]
+    #[case("date", DataType::Date)]
     #[case("tensor(float)", DataType::Tensor(Box::new(DataType::Float64)))]
     #[case("tensor(float, 10, 10, 10)", DataType::FixedShapeTensor(Box::new(DataType::Float64), vec![10, 10, 10]))]
     #[case("image", DataType::Image(None))]
@@ -2566,8 +2575,6 @@ mod tests {
     #[case("mediumint unsigned", "`int unsigned` or `uint32`")]
     #[case("int8 unsigned", "`bigint unsigned` or `uint64` for 64-bit unsigned integer, or `unsigned tinyint` for 8-bit unsigned integer")]
     #[case("float4", "`float32` or `real`")]
-    #[case("dec", "`decimal`")]
-    #[case("numeric", "`decimal`")]
     #[case("char", "`string`, `text`, or `varchar`")]
     #[case("char varying", "`string`, `text`, or `varchar`")]
     #[case("character", "`string`, `text`, or `varchar`")]
