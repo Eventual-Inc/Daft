@@ -121,7 +121,7 @@ impl DaftCatalog {
         };
 
         if idents.len() != 1 {
-            return Err(Error::CompoundIdentifierNotSupported {
+            return Err(Error::QualifiedIdentifierNotSupported {
                 name: name.to_string(),
             });
         }

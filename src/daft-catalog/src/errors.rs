@@ -22,10 +22,10 @@ pub enum Error {
     InvalidTableName { name: String },
 
     #[snafu(display(
-        "Compound identifiers are not yet supported. Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`",
+        "Qualified identifiers are not yet supported. Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`",
         name
     ))]
-    CompoundIdentifierNotSupported { name: String },
+    QualifiedIdentifierNotSupported { name: String },
 
     #[cfg(feature = "python")]
     #[snafu(display("Python error during {}: {}", context, source))]
@@ -43,7 +43,7 @@ impl From<Error> for common_error::DaftError {
             Error::TableNotFound { .. }
             | Error::CatalogNotFound { .. }
             | Error::InvalidTableName { .. }
-            | Error::CompoundIdentifierNotSupported { .. } => {
+            | Error::QualifiedIdentifierNotSupported { .. } => {
                 common_error::DaftError::CatalogError(err.to_string())
             }
             #[cfg(feature = "python")]
