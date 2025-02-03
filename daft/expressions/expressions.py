@@ -241,18 +241,6 @@ def struct(*fields: Expression | str) -> Expression:
     return Expression._from_pyexpr(_struct(pyinputs))
 
 
-def to_struct(*fields: Expression | str) -> Expression:
-    """Constructs a struct from the input field expressions.
-
-    Renamed to 'struct' in https://github.com/Eventual-Inc/Daft/pull/3755.
-    """
-    warnings.warn(
-        "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'struct'",
-        category=DeprecationWarning,
-    )
-    return struct(*fields)
-
-
 def interval(
     years: int | None = None,
     months: int | None = None,
@@ -409,6 +397,18 @@ class Expression:
                 concurrency,
             )
         )
+
+    @staticmethod
+    def to_struct(*fields: Expression | builtins.str) -> Expression:
+        """Constructs a struct from the input field expressions.
+
+        Renamed to 'struct' in https://github.com/Eventual-Inc/Daft/pull/3755.
+        """
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'struct'",
+            category=DeprecationWarning,
+        )
+        return struct(*fields)
 
     def __bool__(self) -> bool:
         raise ValueError(
