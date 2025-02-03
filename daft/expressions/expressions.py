@@ -28,9 +28,9 @@ from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
+from daft.daft import struct as _struct
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
-from daft.daft import to_struct as _to_struct
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
@@ -238,7 +238,19 @@ def struct(*fields: Expression | str) -> Expression:
             pyinputs.append(col(field)._expr)
         else:
             raise TypeError("expected Expression or str as input for struct()")
-    return Expression._from_pyexpr(_to_struct(pyinputs))
+    return Expression._from_pyexpr(_struct(pyinputs))
+
+
+def to_struct(*fields: Expression | str) -> Expression:
+    """Constructs a struct from the input field expressions.
+
+    Renamed to 'struct' in https://github.com/Eventual-Inc/Daft/pull/3755.
+    """
+    warnings.warn(
+        "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'struct'",
+        category=DeprecationWarning,
+    )
+    return struct(*fields)
 
 
 def interval(
