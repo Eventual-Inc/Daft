@@ -129,4 +129,13 @@ impl ResponseBuilder<AnalyzePlanResponse> {
             )),
         }
     }
+    pub fn explain_response(&self, explain_string: String) -> AnalyzePlanResponse {
+        AnalyzePlanResponse {
+            session_id: self.session.clone(),
+            server_side_session_id: self.server_side_session_id.clone(),
+            result: Some(analyze_plan_response::Result::Explain(
+                analyze_plan_response::Explain { explain_string },
+            )),
+        }
+    }
 }
