@@ -121,6 +121,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.max
    Expression.any_value
    Expression.agg_list
+   Expression.agg_set
    Expression.agg_concat
    Expression.approx_percentiles
    Expression.approx_count_distinct
@@ -244,6 +245,7 @@ List
    Expression.list.slice
    Expression.list.sort
    Expression.list.sum
+   Expression.list.unique
    Expression.list.value_counts
 
 Struct

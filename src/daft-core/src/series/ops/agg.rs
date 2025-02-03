@@ -239,6 +239,10 @@ impl Series {
         self.inner.agg_list(groups)
     }
 
+    pub fn agg_set(&self, groups: Option<&GroupIndices>, ignore_nulls: bool) -> DaftResult<Self> {
+        self.inner.agg_set(groups, ignore_nulls)
+    }
+
     pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         use crate::array::ops::DaftConcatAggable;
         match self.data_type() {

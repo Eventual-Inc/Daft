@@ -1,5 +1,5 @@
 use arrow2::bitmap::Bitmap;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
 use crate::{
     datatypes::{DataType, Int32Array, UInt64Array},
@@ -8,8 +8,38 @@ use crate::{
 };
 
 impl Series {
+    fn is_hashable(dtype: &DataType) -> bool {
+        matches!(
+            dtype,
+            DataType::Null
+                | DataType::Boolean
+                | DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::Decimal128(..)
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+                | DataType::Float32
+                | DataType::Float64
+                | DataType::Utf8
+                | DataType::Binary
+                | DataType::FixedSizeBinary(_)
+                | DataType::List(_)
+                | DataType::FixedSizeList(_, _)
+                | DataType::Struct(_)
+        )
+    }
+
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let s = self.as_physical()?;
+        if !Self::is_hashable(s.data_type()) {
+            return Err(DaftError::ValueError(
+                "Elements of this type cannot be hashed".to_string(),
+            ));
+        }
         with_match_hashable_daft_types!(s.data_type(), |$T| {
             let downcasted = s.downcast::<<$T as DaftDataType>::ArrayType>()?;
             downcasted.hash(seed)

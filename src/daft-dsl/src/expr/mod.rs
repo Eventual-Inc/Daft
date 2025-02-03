@@ -240,6 +240,9 @@ pub enum AggExpr {
     #[display("list({_0})")]
     List(ExprRef),
 
+    #[display("set({_0}, ignore_nulls={_1})")]
+    Set(ExprRef, bool),
+
     #[display("list({_0})")]
     Concat(ExprRef),
 
@@ -280,6 +283,7 @@ impl AggExpr {
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr, _)
             | Self::Concat(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
@@ -352,6 +356,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_list()"))
             }
+            Self::Set(_expr, ignore_nulls) => {
+                let child_id = _expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_set(ignore_nulls={ignore_nulls})"))
+            }
             Self::Concat(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat()"))
@@ -375,6 +383,7 @@ impl AggExpr {
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr, _)
             | Self::Concat(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
@@ -397,6 +406,7 @@ impl AggExpr {
             Self::Max(_) => Self::Max(first_child()),
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
             Self::List(_) => Self::List(first_child()),
+            Self::Set(_expr, ignore_nulls) => Self::Set(first_child(), *ignore_nulls),
             Self::Concat(_) => Self::Concat(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
@@ -510,7 +520,7 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
-            Self::List(expr) => expr.to_field(schema)?.to_list_field(),
+            Self::List(expr) | Self::Set(expr, _) => expr.to_field(schema)?.to_list_field(),
             Self::Concat(expr) => {
                 let field = expr.to_field(schema)?;
                 match field.dtype {
@@ -629,6 +639,10 @@ impl Expr {
 
     pub fn agg_list(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::List(self)).into()
+    }
+
+    pub fn agg_set(self: ExprRef, ignore_nulls: bool) -> ExprRef {
+        Self::Agg(AggExpr::Set(self, ignore_nulls)).into()
     }
 
     pub fn agg_concat(self: ExprRef) -> ExprRef {

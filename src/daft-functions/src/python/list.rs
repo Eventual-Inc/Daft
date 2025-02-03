@@ -16,6 +16,12 @@ simple_python_wrapper!(list_sum, crate::list::sum, [expr: PyExpr]);
 simple_python_wrapper!(list_value_counts, crate::list::value_counts, [expr: PyExpr]);
 
 #[pyfunction]
+#[pyo3(signature = (expr, ignore_nulls=true))]
+pub fn list_unique(expr: PyExpr, ignore_nulls: bool) -> PyResult<PyExpr> {
+    Ok(crate::list::unique(expr.into(), ignore_nulls).into())
+}
+
+#[pyfunction]
 pub fn list_sort(expr: PyExpr, desc: PyExpr, nulls_first: PyExpr) -> PyResult<PyExpr> {
     Ok(crate::list::sort(expr.into(), Some(desc.into()), Some(nulls_first.into())).into())
 }
