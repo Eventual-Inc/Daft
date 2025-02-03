@@ -17,6 +17,7 @@ Constructors
     col
     lit
     list_
+    struct
 
 Generic
 #######
@@ -25,7 +26,6 @@ Generic
    :nosignatures:
    :toctree: doc_gen/expression_methods
 
-   to_struct
    Expression.alias
    Expression.cast
    Expression.if_else

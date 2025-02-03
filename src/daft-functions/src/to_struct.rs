@@ -23,13 +23,13 @@ impl ScalarUDF for ToStructFunction {
     }
 
     fn name(&self) -> &'static str {
-        "to_struct"
+        "struct"
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         if inputs.is_empty() {
             return Err(DaftError::ValueError(
-                "Cannot call to_struct with no inputs".to_string(),
+                "Cannot call struct with no inputs".to_string(),
             ));
         }
         Ok(series_to_struct(inputs))
@@ -38,7 +38,7 @@ impl ScalarUDF for ToStructFunction {
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         if inputs.is_empty() {
             return Err(DaftError::ValueError(
-                "Cannot call to_struct with no inputs".to_string(),
+                "Cannot call struct with no inputs".to_string(),
             ));
         }
         let child_fields = inputs

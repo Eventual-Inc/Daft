@@ -1125,7 +1125,7 @@ impl Expr {
                 _ => inputs.first().unwrap().name(),
             },
             Self::ScalarFunction(func) => match func.name() {
-                "to_struct" => "struct", // FIXME: make .name() use output name from schema
+                "struct" => "struct", // FIXME: make struct its own expr variant
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {
