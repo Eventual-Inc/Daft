@@ -91,6 +91,8 @@ from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
 
+to_struct = Expression.to_struct
+
 __all__ = [
     "DataCatalogTable",
     "DataCatalogType",
@@ -134,5 +136,6 @@ __all__ = [
     "sql",
     "sql_expr",
     "struct",
+    "to_struct",
     "udf",
 ]
