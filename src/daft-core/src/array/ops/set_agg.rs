@@ -14,21 +14,18 @@ use crate::{
     series::{IntoSeries, Series},
 };
 
-fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
+fn deduplicate_indices(series: &Series) -> DaftResult<Vec<u64>> {
     // Special handling for Null type
     if series.data_type() == &DataType::Null {
         let mut unique_indices = Vec::new();
         if !series.is_empty() {
             unique_indices.push(0); // Just take the first null value
         }
-        let indices_array = UInt64Array::from(("", unique_indices.clone())).into_series();
-        let result = series.take(&indices_array)?;
-        return Ok((result, unique_indices));
+        return Ok(unique_indices);
     }
 
     // Special handling for List type
     if let DataType::List(_) = series.data_type() {
-        let mut seen_lists = HashMap::new();
         let mut unique_indices = Vec::new();
         let mut has_null = false;
 
@@ -67,36 +64,30 @@ fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
             let start = list_array.offsets()[idx] as usize;
             let end = list_array.offsets()[idx + 1] as usize;
             let current_list = &values.values()[start..end];
-            let hash = hash_values.get(idx).unwrap();
+            let _hash = hash_values.get(idx).unwrap();
 
             let mut is_duplicate = false;
-            if let Some(existing_indices) = seen_lists.get(hash) {
-                for &existing_idx in existing_indices {
-                    let start = list_array.offsets()[existing_idx] as usize;
-                    let end = list_array.offsets()[existing_idx + 1] as usize;
-                    let other_list = &values.values()[start..end];
+            for &existing_idx in &unique_indices {
+                let start = list_array.offsets()[existing_idx as usize] as usize;
+                let end = list_array.offsets()[(existing_idx as usize) + 1] as usize;
+                let other_list = &values.values()[start..end];
 
-                    if current_list == other_list {
-                        is_duplicate = true;
-                        break;
-                    }
+                if current_list == other_list {
+                    is_duplicate = true;
+                    break;
                 }
             }
 
             if !is_duplicate {
-                seen_lists.entry(*hash).or_insert_with(Vec::new).push(idx);
                 unique_indices.push(idx as u64);
             }
         }
 
-        let indices_array = UInt64Array::from(("", unique_indices.clone())).into_series();
-        let result = series.take(&indices_array)?;
-        return Ok((result, unique_indices));
+        return Ok(unique_indices);
     }
 
     // Special handling for Struct type
     if let DataType::Struct(_) = series.data_type() {
-        let mut seen_structs: HashMap<u64, Vec<usize>> = HashMap::new();
         let mut unique_indices = Vec::new();
         let mut has_null = false;
 
@@ -117,24 +108,23 @@ fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
                 continue;
             }
 
-            let hash = hash_values.get(idx).unwrap();
+            let _hash = hash_values.get(idx).unwrap();
             let mut is_duplicate = false;
 
-            if let Some(existing_indices) = seen_structs.get(hash) {
-                // For structs, we can rely on the hash equality since the hash function
-                // takes into account all fields and their values
-                is_duplicate = !existing_indices.is_empty();
+            for &existing_idx in &unique_indices {
+                let existing_hash = hash_values.get(existing_idx as usize).unwrap();
+                if _hash == existing_hash {
+                    is_duplicate = true;
+                    break;
+                }
             }
 
             if !is_duplicate {
-                seen_structs.entry(*hash).or_default().push(idx);
                 unique_indices.push(idx as u64);
             }
         }
 
-        let indices_array = UInt64Array::from(("", unique_indices.clone())).into_series();
-        let result = series.take(&indices_array)?;
-        return Ok((result, unique_indices));
+        return Ok(unique_indices);
     }
 
     let hashes = series.hash(None).map_err(|_| {
@@ -174,9 +164,13 @@ fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
         }
     }
 
+    Ok(unique_indices)
+}
+
+fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
+    let unique_indices = deduplicate_indices(series)?;
     let indices_array = UInt64Array::from(("", unique_indices.clone())).into_series();
     let result = series.take(&indices_array)?;
-
     Ok((result, unique_indices))
 }
 
@@ -254,7 +248,7 @@ macro_rules! impl_daft_set_agg {
                 let group_indices = UInt64Array::from(("", filtered_group.clone())).into_series();
                 let group_series = filtered_series.take(&group_indices)?;
 
-                let (_, unique_indices) = deduplicate_series(&group_series)?;
+                let unique_indices = deduplicate_indices(&group_series)?;
 
                 for &local_idx in unique_indices.iter() {
                     let filtered_idx = filtered_group[local_idx as usize];
