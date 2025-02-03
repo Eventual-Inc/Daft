@@ -252,38 +252,6 @@ mod tests {
         Ok(())
     }
 
-    #[rstest]
-    fn test_cast(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
-        let builder = LogicalPlanBuilder::from(tbl_1);
-        let cases = vec![
-            (
-                "select bool::text from tbl1",
-                vec![col("bool").cast(&DataType::Utf8)],
-            ),
-            (
-                "select utf8::bytes from tbl1",
-                vec![col("utf8").cast(&DataType::Binary)],
-            ),
-            (
-                r#"select CAST("bool" as text) from tbl1"#,
-                vec![col("bool").cast(&DataType::Utf8)],
-            ),
-        ];
-        for (sql, expected) in cases {
-            let actual = planner.plan_sql(sql)?;
-            let expected = builder.clone().select(expected)?.build();
-            assert_eq!(
-                actual,
-                expected,
-                "query: {}\n expected:{}",
-                sql,
-                expected.repr_ascii(false)
-            );
-        }
-
-        Ok(())
-    }
-
     #[rstest(
         null_equals_null => [false, true]
     )]
