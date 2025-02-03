@@ -405,7 +405,7 @@ class Expression:
         Renamed to 'struct' in https://github.com/Eventual-Inc/Daft/pull/3755.
         """
         warnings.warn(
-            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'struct'",
+            "This function will be deprecated from Daft version >= 0.4.4!  Instead, please use 'struct'",
             category=DeprecationWarning,
         )
         return struct(*fields)
