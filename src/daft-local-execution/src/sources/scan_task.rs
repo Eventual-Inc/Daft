@@ -33,6 +33,8 @@ pub struct ScanTaskSource {
 }
 
 impl ScanTaskSource {
+    const MAX_PARALLEL_SCAN_TASKS: usize = 8;
+
     pub fn new(
         scan_tasks: Vec<Arc<ScanTask>>,
         pushdowns: Pushdowns,
@@ -48,7 +50,7 @@ impl ScanTaskSource {
                 let mut remaining_rows = limit as f64;
 
                 // Only examine tasks up to the number of available CPU cores
-                for scan_task in scan_tasks.iter().take(*NUM_CPUS) {
+                for scan_task in scan_tasks.iter().take(Self::MAX_PARALLEL_SCAN_TASKS) {
                     match scan_task.approx_num_rows(Some(cfg)) {
                         // If we can estimate the number of rows for this task
                         Some(estimated_rows) => {
@@ -68,7 +70,7 @@ impl ScanTaskSource {
                 count
             }
             // If there's no row limit, use all available CPU cores
-            None => *NUM_CPUS,
+            None => Self::MAX_PARALLEL_SCAN_TASKS,
         };
         num_parallel_tasks = num_parallel_tasks.min(scan_tasks.len());
         Self {
@@ -97,9 +99,12 @@ impl Source for ScanTaskSource {
             futures::stream::iter(self.scan_tasks.clone().into_iter().map(move |scan_task| {
                 let io_stats = io_stats.clone();
                 let delete_map = delete_map.clone();
-                io_runtime.spawn(async move {
-                    stream_scan_task(scan_task, io_stats, delete_map, maintain_order).await
-                })
+                io_runtime.spawn(stream_scan_task(
+                    scan_task,
+                    io_stats,
+                    delete_map,
+                    maintain_order,
+                ))
             }));
 
         match maintain_order {
@@ -112,9 +117,8 @@ impl Source for ScanTaskSource {
             }
             false => {
                 let buffered_and_flattened = stream_of_streams
-                    .buffer_unordered(self.num_parallel_tasks)
-                    .map(|r| r?)
-                    .try_flatten_unordered(None);
+                    .then(|r| async { r.await? })
+                    .try_flatten_unordered(self.num_parallel_tasks);
                 Ok(Box::pin(buffered_and_flattened))
             }
         }

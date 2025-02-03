@@ -72,7 +72,7 @@ from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.logical.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, lit, interval, coalesce
+from daft.expressions import Expression, col, list_, lit, interval, struct, coalesce
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -116,6 +116,7 @@ __all__ = [
     "from_pylist",
     "from_ray_dataset",
     "interval",
+    "list_",
     "lit",
     "planning_config_ctx",
     "read_csv",
@@ -134,6 +135,7 @@ __all__ = [
     "set_planning_config",
     "sql",
     "sql_expr",
+    "struct",
     "to_struct",
     "udf",
 ]
