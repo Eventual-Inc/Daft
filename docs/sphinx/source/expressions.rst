@@ -244,6 +244,7 @@ List
    Expression.list.slice
    Expression.list.sort
    Expression.list.sum
+   Expression.list.unique
    Expression.list.value_counts
 
 Struct
