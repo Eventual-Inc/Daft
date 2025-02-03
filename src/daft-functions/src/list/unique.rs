@@ -1,6 +1,6 @@
 use std::{any::Any, sync::Arc};
 
-use arrow2::{compute::cast::cast, datatypes::DataType as ArrowDataType, offset::OffsetsBuffer};
+use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::{growable::make_growable, ListArray},
@@ -57,18 +57,7 @@ impl ScalarUDF for ListUnique {
         match inputs {
             [input] => {
                 let input = if let DataType::FixedSizeList(inner_type, _) = input.data_type() {
-                    let fixed_list = input.fixed_size_list()?;
-                    let arrow_array = fixed_list.to_arrow();
-                    let list_type = ArrowDataType::List(Box::new(arrow2::datatypes::Field::new(
-                        "item",
-                        inner_type.as_ref().to_arrow()?,
-                        true,
-                    )));
-                    let list_array = cast(arrow_array.as_ref(), &list_type, Default::default())?;
-                    Series::try_from_field_and_arrow_array(
-                        Field::new(input.name(), DataType::List(inner_type.clone())),
-                        list_array,
-                    )?
+                    input.cast(&DataType::List(inner_type.clone()))?
                 } else {
                     input.clone()
                 };
