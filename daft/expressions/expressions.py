@@ -931,7 +931,7 @@ class Expression:
             │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═══════╪═════════════════════╪════════════════════════════════╡
             │ c     ┆ None                ┆ None                           │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
@@ -984,7 +984,39 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def agg_set(self) -> Expression:
-        """Aggregates the values in the expression into a set (ignoring nulls)."""
+        """Aggregates the values in the expression into a set (ignoring nulls).
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [1, 1, None, 2, 2, None]})
+            >>> df.agg(df["values"].agg_set().alias("unique_values")).show()
+            ╭───────────────╮
+            │ unique_values │
+            │ ---           │
+            │ List[Int64]   │
+            ╞═══════════════╡
+            │ [1, 2]        │
+            ╰───────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+            Note that null values are ignored by default:
+
+            >>> df = daft.from_pydict({"values": [None, None, None]})
+            >>> df.agg(df["values"].agg_set().alias("unique_values")).show()
+            ╭───────────────╮
+            │ unique_values │
+            │ ---           │
+            │ List[Int64]   │
+            ╞═══════════════╡
+            │ []            │
+            ╰───────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Returns:
+            Expression: A List expression containing the unique values from the input
+        """
         expr = self._expr.agg_set()
         return Expression._from_pyexpr(expr)
 
@@ -3242,7 +3274,7 @@ class ExpressionListNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1]]})
+            >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1], [None, 1, None, 1]]})
             >>> df.select(df["a"].list.distinct()).show()
             ╭─────────────╮
             │ a           │
@@ -3254,6 +3286,26 @@ class ExpressionListNamespace(ExpressionNamespace):
             │ [4, 6, 2]   │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ [6, 7, 1]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+
+            Note that null values are ignored:
+
+            >>> df = daft.from_pydict({"a": [[None, None], [1, None, 1], [None]]})
+            >>> df.select(df["a"].list.distinct()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ []          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ []          │
             ╰─────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
