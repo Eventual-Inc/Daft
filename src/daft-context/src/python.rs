@@ -1,5 +1,5 @@
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use crate::{DaftContext, Runner, RunnerConfig};
 
@@ -18,7 +18,7 @@ impl Default for PyDaftContext {
     }
 }
 
-#[pymethods] 
+#[pymethods]
 impl PyDaftContext {
     #[new]
     pub fn new() -> Self {
@@ -125,7 +125,7 @@ pub fn set_runner_ray(
             Ok(ctx) => Ok(ctx),
         }
     } else {
-        res.map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{:?}", e)))
+        res.map_err(|_| PyRuntimeError::new_err("Cannot set runner more than once"))
     }
 }
 
@@ -133,12 +133,12 @@ pub fn set_runner_ray(
 pub fn set_runner_native() -> PyResult<PyDaftContext> {
     super::set_runner_native()
         .map(|ctx| ctx.into())
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{:?}", e)))
+        .map_err(|_| PyRuntimeError::new_err("Cannot set runner more than once"))
 }
 
 #[pyfunction(signature = (use_thread_pool = None))]
 pub fn set_runner_py(use_thread_pool: Option<bool>) -> PyResult<PyDaftContext> {
     super::set_runner_py(use_thread_pool)
         .map(|ctx| ctx.into())
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{:?}", e)))
+        .map_err(|_| PyRuntimeError::new_err("Cannot set runner more than once"))
 }

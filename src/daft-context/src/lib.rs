@@ -249,6 +249,7 @@ fn get_runner_config_from_env() -> RunnerConfig {
     const RAY_ADDRESS: &str = "RAY_ADDRESS";
     const DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG: &str = "DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG";
     const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
+    const DAFT_DEVELOPER_USE_THREAD_POOL: &str = "DAFT_DEVELOPER_USE_THREAD_POOL";
 
     let runner_from_envvar = std::env::var(DAFT_RUNNER).unwrap_or_default();
     let address = std::env::var(DAFT_RAY_ADDRESS).ok();
@@ -303,14 +304,16 @@ fn get_runner_config_from_env() -> RunnerConfig {
     });
 
     dbg!(&runner_from_envvar);
-    match runner_from_envvar.as_str() {
+    match runner_from_envvar.to_lowercase().as_str() {
         "ray" => RunnerConfig::Ray {
             address,
             max_task_backlog,
             force_client_mode,
         },
         "py" => RunnerConfig::Py {
-            use_thread_pool: None,
+            use_thread_pool: std::env::var(DAFT_DEVELOPER_USE_THREAD_POOL)
+                .ok()
+                .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1")),
         },
         _ if !in_ray_worker && (ray_is_initialized || ray_is_in_job) => RunnerConfig::Ray {
             address: None,

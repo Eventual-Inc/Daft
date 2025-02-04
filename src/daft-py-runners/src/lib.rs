@@ -212,15 +212,15 @@ impl Runner {
     pub fn to_pyobj(self: Arc<Self>, py: Python) -> PyObject {
         let runner = self.as_ref();
         match runner {
-            Runner::Ray(ray) => {
+            Self::Ray(ray) => {
                 let pyobj = ray.ray_runner.as_ref();
                 pyobj.clone_ref(py)
             }
-            Runner::Native(native) => {
+            Self::Native(native) => {
                 let pyobj = native.instance.as_ref();
                 pyobj.clone_ref(py)
             }
-            Runner::Py(py_runner) => {
+            Self::Py(py_runner) => {
                 let pyobj = py_runner.instance.as_ref();
                 pyobj.clone_ref(py)
             }
