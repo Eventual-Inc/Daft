@@ -8,53 +8,110 @@ use super::join_graph::{JoinGraph, JoinOrderTree, JoinOrderer};
 // optimal join order.
 pub(crate) struct BruteForceJoinOrderer {}
 
-// Takes the following arguments:
-// - elements: The list of elements to choose from.
-// - cur_idx: The current index in the list of elements to choose from.
-// - remaining: The number of elements to choose.
-// - chosen: The list of elements that have already been chosen.
-// - unchosen: The list of elements that have not yet been chosen.
-//
-// Returns a list of tuples, where each tuple contains two lists:
-// - The first list is the list of elements that have been chosen.
-// - The second list is the list of elements that have not been chosen.
-fn generate_combinations(
-    elements: &[usize],
-    cur_idx: usize,
-    remaining: usize,
-    chosen: Vec<usize>,
-    mut unchosen: Vec<usize>,
-) -> Vec<(Vec<usize>, Vec<usize>)> {
-    if remaining == 0 {
-        for &element in elements.iter().skip(cur_idx) {
-            unchosen.push(element);
-        }
-        return vec![(chosen, unchosen)];
-    }
-    if cur_idx >= elements.len() {
-        return vec![];
-    }
-    let mut chosen_clone = chosen.clone();
-    chosen_clone.push(elements[cur_idx]);
-    let mut unchosen_clone = unchosen.clone();
-    unchosen_clone.push(elements[cur_idx]);
-    let mut results =
-        generate_combinations(elements, cur_idx + 1, remaining, chosen, unchosen_clone);
-    results.extend(generate_combinations(
-        elements,
-        cur_idx + 1,
-        remaining - 1,
-        chosen_clone,
-        unchosen,
-    ));
-    results
-}
-
 impl BruteForceJoinOrderer {
+    // Takes the following arguments:
+    // - The join graph we're evaluating on.
+    // - elements: The list of elements to choose from.
+    // - cur_idx: The current index in the list of elements to choose from.
+    // - remaining: The number of elements to choose.
+    // - min_cost: The current minimum cost (if any) of all the generated combinations.
+    // - chosen_plan: The current join order tree (if any) that corresponds to the minimum cost.
+    //
+    // Loops through all (n choose k) combinations of elements, where n = length of elements and k = k_to_pick, and computes
+    // the minimum cost order where the chosen elements go into the left subtree and the non-chosen elements go into the right
+    // subtree. Updates min_cost and chosen_plan if some combination produces a plan with a lower cost than the current minimum cost.
+    fn evaluate_combinations(
+        graph: &JoinGraph,
+        elements: &mut [usize],
+        cur_idx: usize,
+        pick_idx: usize,
+        k_to_pick: usize,
+        min_cost: &mut Option<usize>,
+        chosen_plan: &mut Option<JoinOrderTree>,
+    ) {
+        if cur_idx >= k_to_pick {
+            let (left, right) = elements.split_at_mut(cur_idx);
+            if let Some((left_cost, left_join_order_tree)) = Self::find_min_cost_order(graph, left)
+                && let Some((right_cost, right_join_order_tree)) =
+                    Self::find_min_cost_order(graph, right)
+            {
+                let connections = graph
+                    .adj_list
+                    .get_connections(&left_join_order_tree, &right_join_order_tree);
+                if !connections.is_empty() {
+                    // If there is a connection between the left and right subgraphs, we compute the cardinality of the
+                    // joined graph as the product of all the cardinalities of the relations in the left and right subgraphs,
+                    // divided by the selectivity of the join.
+                    // Assuming that join keys are uniformly distributed and independent, the selectivity is computed as the reciprocal
+                    // of the product of the largest total domains that form a minimum spanning tree of the relations.
+
+                    // TODO(desmond): This is a hack to get the selectivity of the join. We should expand this to take the minimum spanning tree
+                    // of edges to connect the relations. For simple graphs (e.g. the queries in the TPCH benchmark), taking the max of the total
+                    // domains is a good proxy.
+                    let denominator = connections
+                        .iter()
+                        .map(|conn| conn.total_domain)
+                        .max()
+                        .expect("There should be at least one total domain");
+                    let cardinality = left_join_order_tree.get_cardinality()
+                        * right_join_order_tree.get_cardinality()
+                        / denominator;
+                    // The cost of the join is the sum of the cardinalities of the left and right subgraphs, plus the cardinality of the joined graph.
+                    let cur_cost = cardinality + left_cost + right_cost;
+                    // Take the join with the lowest summed cardinality.
+                    if let Some(ref mut cur_min_cost) = min_cost {
+                        if *cur_min_cost > cur_cost {
+                            *cur_min_cost = cur_cost;
+                            *chosen_plan = Some(left_join_order_tree.join(
+                                right_join_order_tree,
+                                connections,
+                                cardinality,
+                            ));
+                        }
+                    } else {
+                        *min_cost = Some(cur_cost);
+                        *chosen_plan = Some(left_join_order_tree.join(
+                            right_join_order_tree,
+                            connections,
+                            cardinality,
+                        ));
+                    }
+                }
+            }
+            return;
+        }
+        if pick_idx >= elements.len() {
+            return;
+        }
+        // Case 1: Include the current element.
+        elements.swap(cur_idx, pick_idx);
+        Self::evaluate_combinations(
+            graph,
+            elements,
+            cur_idx + 1,
+            pick_idx + 1,
+            k_to_pick,
+            min_cost,
+            chosen_plan,
+        );
+        elements.swap(cur_idx, pick_idx); // Backtrack.
+
+        // Case 2: Exclude the current element in the chosen set.
+        Self::evaluate_combinations(
+            graph,
+            elements,
+            cur_idx,
+            pick_idx + 1,
+            k_to_pick,
+            min_cost,
+            chosen_plan,
+        );
+    }
+
     // Enumerates all possible join orders and returns the one with the lowest summed cardinality.
     fn find_min_cost_order(
         graph: &JoinGraph,
-        available: Vec<usize>,
+        available: &mut [usize],
     ) -> Option<(usize, JoinOrderTree)> {
         if available.len() == 1 {
             // Base case: if there is only one element, we return the cost of the relation and the join order tree.
@@ -75,58 +132,16 @@ impl BruteForceJoinOrderer {
         let mut min_cost = None;
         let mut chosen_plan = None;
         for left_split_size in 1..=max_left_size {
-            for (chosen, unchosen) in
-                generate_combinations(&available, 0, left_split_size, vec![], vec![])
-            {
-                if let Some((left_cost, left_join_order_tree)) =
-                    Self::find_min_cost_order(graph, chosen)
-                    && let Some((right_cost, right_join_order_tree)) =
-                        Self::find_min_cost_order(graph, unchosen)
-                {
-                    let connections = graph
-                        .adj_list
-                        .get_connections(&left_join_order_tree, &right_join_order_tree);
-                    if !connections.is_empty() {
-                        // If there is a connection between the left and right subgraphs, we compute the cardinality of the
-                        // joined graph as the product of all the cardinalities of the relations in the left and right subgraphs,
-                        // divided by the selectivity of the join.
-                        // Assuming that join keys are uniformly distributed and independent, the selectivity is computed as the reciprocal
-                        // of the product of the largest total domains that form a minimum spanning tree of the relations.
-
-                        // TODO(desmond): This is a hack to get the selectivity of the join. We should expand this to take the minimum spanning tree
-                        // of edges to connect the relations. For simple graphs (e.g. the queries in the TPCH benchmark), taking the max of the total
-                        // domains is a good proxy.
-                        let denominator = connections
-                            .iter()
-                            .map(|conn| conn.total_domain)
-                            .max()
-                            .expect("There should be at least one total domain");
-                        let cardinality = left_join_order_tree.get_cardinality()
-                            * right_join_order_tree.get_cardinality()
-                            / denominator;
-                        // The cost of the join is the sum of the cardinalities of the left and right subgraphs, plus the cardinality of the joined graph.
-                        let cur_cost = cardinality + left_cost + right_cost;
-                        // Take the join with the lowest summed cardinality.
-                        if let Some(cur_min_cost) = min_cost {
-                            if cur_min_cost > cur_cost {
-                                min_cost = Some(cur_cost);
-                                chosen_plan = Some(left_join_order_tree.join(
-                                    right_join_order_tree,
-                                    connections,
-                                    cardinality,
-                                ));
-                            }
-                        } else {
-                            min_cost = Some(cur_cost);
-                            chosen_plan = Some(left_join_order_tree.join(
-                                right_join_order_tree,
-                                connections,
-                                cardinality,
-                            ));
-                        }
-                    }
-                }
-            }
+            // Evaluate the cost of all possible combinations and keep the plan with the lowest cost.
+            Self::evaluate_combinations(
+                graph,
+                available,
+                0,
+                0,
+                left_split_size,
+                &mut min_cost,
+                &mut chosen_plan,
+            );
         }
         if let Some(min_cost) = min_cost
             && let Some(chosen_plan) = chosen_plan
@@ -140,8 +155,9 @@ impl BruteForceJoinOrderer {
 
 impl JoinOrderer for BruteForceJoinOrderer {
     fn order(&self, graph: &JoinGraph) -> JoinOrderTree {
-        let available: Vec<usize> = (0..graph.adj_list.max_id).collect();
-        if let Some((_cost, join_order_tree)) = Self::find_min_cost_order(graph, available) {
+        let mut available: Vec<usize> = (0..graph.adj_list.max_id).collect();
+        if let Some((_cost, join_order_tree)) = Self::find_min_cost_order(graph, &mut available[..])
+        {
             join_order_tree
         } else {
             panic!("Tried to get join order from non-fully connected join graph")
