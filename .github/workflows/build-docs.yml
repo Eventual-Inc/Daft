@@ -41,9 +41,8 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        source venv/bin/activate
         pip install uv
-        uv venv
-        source .venv/bin/activate
     - name: Install dependencies
       run: |
         uv pip install -r requirements-dev.txt
