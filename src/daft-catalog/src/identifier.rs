@@ -1,39 +1,26 @@
-use std::fmt::Display;
+use std::{fmt::Display, iter::once, vec::IntoIter};
 
 use crate::errors::{Error, Result};
 
 /// An object's namespace (location).
 pub type Namespace = Vec<String>;
 
-/// An object's name.
-pub type Name = String;
-
 /// A reference (path) to some catalog object.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
-    namespace: Namespace,
-    name: Name,
+    pub namespace: Namespace,
+    pub name: String,
 }
 
 impl Identifier {
     /// Creates an identifier from its namespace and name.
-    pub fn new(namespace: Namespace, name: Name) -> Self {
+    pub fn new(namespace: Namespace, name: String) -> Self {
         Self { namespace, name }
-    }
-
-    /// Returns the namespace
-    pub fn namespace(&self) -> &Namespace {
-        &self.namespace
-    }
-
-    /// Returns the name
-    pub fn name(&self) -> &Name {
-        &self.name
     }
 
     /// Returns true if this is a qualified identifier e.g. has a namespace.
     pub fn has_namespace(&self) -> bool {
-        !self.namespace().is_empty()
+        !self.namespace.is_empty()
     }
 
     /// Parses an identifier using sqlparser to validate the input.
@@ -43,13 +30,11 @@ impl Identifier {
         let err = Error::InvalidIdentifier {
             input: input.to_string(),
         };
-        let mut parser = match Parser::new(&PostgreSqlDialect {}).try_with_sql(input) {
-            Ok(res) => res,
-            Err(_) => return Err(err),
+        let Ok(mut parser) = Parser::new(&PostgreSqlDialect {}).try_with_sql(input) else {
+            return Err(err);
         };
-        let parts = match parser.parse_identifiers() {
-            Ok(res) => res,
-            Err(_) => return Err(err),
+        let Ok(parts) = parser.parse_identifiers() else {
+            return Err(err);
         };
         // TODO Identifier normalization is omitted until further discussion.
         let mut parts = parts
@@ -65,12 +50,38 @@ impl Identifier {
 impl Display for Identifier {
     /// Joins the identifier to a dot-delimited path.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.namespace().is_empty() {
+        if self.namespace.is_empty() {
             f.write_str(&self.name)
         } else {
             let prefix = self.namespace.join(".");
             let string = format!("{}.{}", prefix, self.name);
             f.write_str(&string)
         }
+    }
+}
+
+impl IntoIterator for Identifier {
+    type Item = String;
+    type IntoIter = IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.namespace
+            .into_iter()
+            .chain(once(self.name))
+            .collect::<Vec<String>>()
+            .into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Identifier {
+    type Item = &'a String;
+    type IntoIter = IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.namespace
+            .iter()
+            .chain(once(&self.name))
+            .collect::<Vec<&String>>()
+            .into_iter()
     }
 }

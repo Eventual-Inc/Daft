@@ -109,8 +109,7 @@ impl DaftCatalog {
                 message: format!("Qualified identifiers are not yet supported. Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name),
             });
         }
-        self.named_tables
-            .insert(identifier.name().to_string(), view.into());
+        self.named_tables.insert(identifier.name, view.into());
         Ok(())
     }
 

@@ -40,6 +40,7 @@ df2 = daft.sql("SELECT * FROM my_table")
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from daft.daft import catalog as native_catalog
 from daft.logical.builder import LogicalPlanBuilder
 
@@ -159,7 +160,7 @@ def register_python_catalog(catalog: PyIcebergCatalog | UnityCatalog, name: str 
     return native_catalog.register_python_catalog(python_catalog, name)
 
 
-class Identifier:
+class Identifier(Sequence):
     """A reference (path) to a catalog object.
 
     Example:
@@ -174,6 +175,7 @@ class Identifier:
 
         Example:
         >>> id = Identifier("schema", "table")
+        >>> id  # Identifier('schema.table')
 
         Returns:
             Identifier: A new identifier.
@@ -182,15 +184,13 @@ class Identifier:
             raise ValueError("Identifier requires at least one part.")
         self._identifier = native_catalog.PyIdentifier(parts[:-1], parts[-1])
 
-    def __repr__(self) -> str:
-        return self._identifier.__repr__()
-
     @staticmethod
     def parse(input: str) -> Identifier:
         """Parses an Identifier from an SQL string.
 
         Example:
         >>> id = Identifier.parse("schema.table")
+        >>> assert len(id) == 2
 
         Returns:
             Identifier: A new identifier.
@@ -198,3 +198,20 @@ class Identifier:
         i = Identifier.__new__(Identifier)
         i._identifier = native_catalog.PyIdentifier.parse(input)
         return i
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Identifier):
+            return False
+        return self._identifier.eq(other._identifier)
+
+    def __getitem__(self, index: int | slice) -> str | Sequence[str]:
+        if isinstance(index, slice):
+            raise IndexError("slicing not supported")
+        if isinstance(index, int):
+            return self._identifier.getitem(index)
+
+    def __len__(self) -> int:
+        return self._identifier.len()
+
+    def __repr__(self) -> str:
+        return f"Identifier('{self._identifier.__repr__()}')"

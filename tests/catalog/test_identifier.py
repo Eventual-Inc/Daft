@@ -2,8 +2,7 @@ from daft import Identifier
 
 
 def assert_eq(parsed_id, expect_id):
-    # TODO equality
-    assert parsed_id.__repr__() == expect_id.__repr__()
+    assert parsed_id == expect_id
 
 
 def test_identifier_regular_single():
@@ -52,3 +51,17 @@ def test_identifier_special():
     expect_id = Identifier("a.b", "-^-")
     # TODO equality
     assert_eq(parsed_id, expect_id)
+
+
+def test_identifier_sequence():
+    parts = ["a", "b", "c"]
+    ident = Identifier(*parts)
+    # __len__
+    assert len(parts) == len(ident)
+    # __getitem__
+    for i in range(len(parts)):
+        assert parts[i] == ident[i]
+        assert parts[-i] == ident[-i]
+    # __iter__ (derived)
+    for i, part in enumerate(ident):
+        assert parts[i] == part
