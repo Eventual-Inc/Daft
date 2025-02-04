@@ -17,7 +17,7 @@ use pyo3::{
 #[cfg(feature = "python")]
 #[derive(Debug)]
 pub struct RayRunner {
-    pub ray_runner: Arc<PyObject>,
+    pub pyobj: Arc<PyObject>,
 }
 
 #[cfg(feature = "python")]
@@ -39,47 +39,16 @@ impl RayRunner {
             let instance = instance.unbind();
 
             Ok(Self {
-                ray_runner: Arc::new(instance),
+                pyobj: Arc::new(instance),
             })
         })
-    }
-
-    pub fn run_iter_impl(
-        &self,
-        py: Python<'_>,
-        lp: LogicalPlanBuilder,
-        results_buffer_size: Option<usize>,
-    ) -> DaftResult<Vec<DaftResult<MicroPartitionRef>>> {
-        let py_lp = PyLogicalPlanBuilder::new(lp);
-        let builder = py.import(intern!(py, "daft.logical.builder"))?;
-        let builder = builder.getattr(intern!(py, "LogicalPlanBuilder"))?;
-        let builder = builder.call((py_lp,), None)?;
-        let result = self.ray_runner.call_method(
-            py,
-            intern!(py, "run_iter_tables"),
-            (builder, results_buffer_size),
-            None,
-        )?;
-
-        let result = result.bind(py);
-        let iter = PyIterator::from_object(result)?;
-
-        let iter = iter.map(|item| {
-            let item = item?;
-            let partition = item.getattr(intern!(py, "_micropartition"))?;
-            let partition = partition.extract::<PyMicroPartition>()?;
-            let partition = partition.inner;
-            Ok::<_, DaftError>(partition)
-        });
-
-        Ok(iter.collect())
     }
 }
 
 #[cfg(feature = "python")]
 #[derive(Debug)]
 pub struct NativeRunner {
-    pub instance: Arc<PyObject>,
+    pub pyobj: Arc<PyObject>,
 }
 
 #[cfg(feature = "python")]
@@ -93,47 +62,16 @@ impl NativeRunner {
             let instance = instance.unbind();
 
             Ok(Self {
-                instance: Arc::new(instance),
+                pyobj: Arc::new(instance),
             })
         })
-    }
-
-    pub fn run_iter_impl(
-        &self,
-        py: Python<'_>,
-        lp: LogicalPlanBuilder,
-        results_buffer_size: Option<usize>,
-    ) -> DaftResult<Vec<DaftResult<MicroPartitionRef>>> {
-        let py_lp = PyLogicalPlanBuilder::new(lp);
-        let builder = py.import(intern!(py, "daft.logical.builder"))?;
-        let builder = builder.getattr(intern!(py, "LogicalPlanBuilder"))?;
-        let builder = builder.call((py_lp,), None)?;
-        let result = self.instance.call_method(
-            py,
-            intern!(py, "run_iter_tables"),
-            (builder, results_buffer_size),
-            None,
-        )?;
-
-        let result = result.bind(py);
-        let iter = PyIterator::from_object(result)?;
-
-        let iter = iter.map(|item| {
-            let item = item?;
-            let partition = item.getattr(intern!(py, "_micropartition"))?;
-            let partition = partition.extract::<PyMicroPartition>()?;
-            let partition = partition.inner;
-            Ok::<_, DaftError>(partition)
-        });
-
-        Ok(iter.collect())
     }
 }
 
 #[cfg(feature = "python")]
 #[derive(Debug)]
 pub struct PyRunner {
-    pub instance: Arc<PyObject>,
+    pub pyobj: Arc<PyObject>,
 }
 
 #[cfg(feature = "python")]
@@ -149,22 +87,41 @@ impl PyRunner {
             let instance = instance.unbind();
 
             Ok(Self {
-                instance: Arc::new(instance),
+                pyobj: Arc::new(instance),
             })
         })
     }
+}
 
+#[derive(Debug)]
+#[cfg(feature = "python")]
+pub enum Runner {
+    Ray(RayRunner),
+    Native(NativeRunner),
+    Py(PyRunner),
+}
+
+#[cfg(feature = "python")]
+impl Runner {
+    fn get_runner_ref(&self) -> &PyObject {
+        match self {
+            Self::Ray(RayRunner { pyobj }) => pyobj.as_ref(),
+            Self::Native(NativeRunner { pyobj }) => pyobj.as_ref(),
+            Self::Py(PyRunner { pyobj }) => pyobj.as_ref(),
+        }
+    }
     pub fn run_iter_impl(
         &self,
         py: Python<'_>,
         lp: LogicalPlanBuilder,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<Vec<DaftResult<MicroPartitionRef>>> {
+        let pyobj = self.get_runner_ref();
         let py_lp = PyLogicalPlanBuilder::new(lp);
         let builder = py.import(intern!(py, "daft.logical.builder"))?;
         let builder = builder.getattr(intern!(py, "LogicalPlanBuilder"))?;
         let builder = builder.call((py_lp,), None)?;
-        let result = self.instance.call_method(
+        let result = pyobj.call_method(
             py,
             intern!(py, "run_iter_tables"),
             (builder, results_buffer_size),
@@ -184,47 +141,10 @@ impl PyRunner {
 
         Ok(iter.collect())
     }
-}
-
-#[derive(Debug)]
-#[cfg(feature = "python")]
-pub enum Runner {
-    Ray(RayRunner),
-    Native(NativeRunner),
-    Py(PyRunner),
-}
-
-#[cfg(feature = "python")]
-impl Runner {
-    pub fn run_iter_impl(
-        &self,
-        py: Python<'_>,
-        lp: LogicalPlanBuilder,
-        results_buffer_size: Option<usize>,
-    ) -> DaftResult<Vec<DaftResult<MicroPartitionRef>>> {
-        match self {
-            Self::Ray(ray) => ray.run_iter_impl(py, lp, results_buffer_size),
-            Self::Native(native) => native.run_iter_impl(py, lp, results_buffer_size),
-            Self::Py(py_runner) => py_runner.run_iter_impl(py, lp, results_buffer_size),
-        }
-    }
 
     pub fn to_pyobj(self: Arc<Self>, py: Python) -> PyObject {
-        let runner = self.as_ref();
-        match runner {
-            Self::Ray(ray) => {
-                let pyobj = ray.ray_runner.as_ref();
-                pyobj.clone_ref(py)
-            }
-            Self::Native(native) => {
-                let pyobj = native.instance.as_ref();
-                pyobj.clone_ref(py)
-            }
-            Self::Py(py_runner) => {
-                let pyobj = py_runner.instance.as_ref();
-                pyobj.clone_ref(py)
-            }
-        }
+        let runner = self.get_runner_ref();
+        runner.clone_ref(py)
     }
 }
 

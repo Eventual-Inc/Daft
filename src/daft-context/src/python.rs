@@ -37,15 +37,15 @@ impl PyDaftContext {
         let runner = lock.get_or_create_runner()?;
         match runner.as_ref() {
             Runner::Ray(ray) => {
-                let pyobj = ray.ray_runner.as_ref();
+                let pyobj = ray.pyobj.as_ref();
                 Ok(pyobj.clone_ref(py))
             }
             Runner::Native(native) => {
-                let pyobj = native.instance.as_ref();
+                let pyobj = native.pyobj.as_ref();
                 Ok(pyobj.clone_ref(py))
             }
             Runner::Py(py_runner) => {
-                let pyobj = py_runner.instance.as_ref();
+                let pyobj = py_runner.pyobj.as_ref();
                 Ok(pyobj.clone_ref(py))
             }
         }
