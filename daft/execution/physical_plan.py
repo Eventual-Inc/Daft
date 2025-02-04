@@ -344,21 +344,23 @@ def hash_join(
     how: JoinType,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Hash-based pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
-    left_tasks: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-    right_tasks: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    left_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
+    right_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
+
     left_stage_id = next(stage_id_counter)
     right_stage_id = next(stage_id_counter)
+    hash_join_stage_id = next(stage_id_counter)
 
     # First, fully materialize the left side of the join
     for step in left_plan:
         if isinstance(step, PartitionTaskBuilder):
             step = step.finalize_partition_task_single_output(stage_id=left_stage_id)
-            left_tasks.append(step)
+            left_tasks[len(left_tasks)] = step
         yield step
 
     def create_join_step(
         left_task: SingleOutputPartitionTask[PartitionT], right_task: SingleOutputPartitionTask[PartitionT]
-    ) -> PartitionTaskBuilder[PartitionT]:
+    ) -> SingleOutputPartitionTask[PartitionT]:
         """Helper function to create a join step for a pair of tasks."""
         left_size_bytes = left_task.partition_metadata().size_bytes
         right_size_bytes = right_task.partition_metadata().size_bytes
@@ -373,37 +375,54 @@ def hash_join(
         elif left_size_bytes is not None and right_size_bytes is not None:
             size_bytes = left_size_bytes + right_size_bytes
 
-        return PartitionTaskBuilder[PartitionT](
-            inputs=[left_task.partition(), right_task.partition()],
-            partial_metadatas=[left_task.partition_metadata(), right_task.partition_metadata()],
-            resource_request=ResourceRequest(memory_bytes=size_bytes),
-        ).add_instruction(
-            instruction=execution_step.HashJoin(
-                left_on=left_on,
-                right_on=right_on,
-                null_equals_nulls=null_equals_nulls,
-                how=how,
-                is_swapped=False,
+        join_step = (
+            PartitionTaskBuilder[PartitionT](
+                inputs=[left_task.partition(), right_task.partition()],
+                partial_metadatas=[left_task.partition_metadata(), right_task.partition_metadata()],
+                resource_request=ResourceRequest(memory_bytes=size_bytes),
             )
+            .add_instruction(
+                instruction=execution_step.HashJoin(
+                    left_on=left_on,
+                    right_on=right_on,
+                    null_equals_nulls=null_equals_nulls,
+                    how=how,
+                    is_swapped=False,
+                )
+            )
+            .finalize_partition_task_single_output(stage_id=hash_join_stage_id)
         )
+        return join_step
 
+    join_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
+    right_partition_counter = 0
     while True:
-        # Emit join steps as soon as both left and right partitions are available
-        while len(left_tasks) > 0 and len(right_tasks) > 0 and left_tasks[0].done() and right_tasks[0].done():
-            left_task = left_tasks.popleft()
-            right_task = right_tasks.popleft()
-            yield create_join_step(left_task, right_task)
+        # Find all partitions that are ready to be joined
+        ready_partitions = [
+            partition_num
+            for partition_num in left_tasks.keys() & right_tasks.keys()  # Intersection of keys
+            if left_tasks[partition_num].done() and right_tasks[partition_num].done()
+        ]
+
+        if len(ready_partitions) > 0:
+            # Process all ready pairs
+            for partition in ready_partitions:
+                left_task = left_tasks.pop(partition)
+                right_task = right_tasks.pop(partition)
+                join_task = create_join_step(left_task, right_task)
+                join_tasks[partition] = join_task
+                yield join_task
         else:
             try:
                 # Process next right plan step
                 step = next(right_plan)
                 if isinstance(step, PartitionTaskBuilder):
                     step = step.finalize_partition_task_single_output(stage_id=right_stage_id)
-                    right_tasks.append(step)
+                    right_tasks[right_partition_counter] = step
+                    right_partition_counter += 1
                 yield step
 
             except StopIteration:
-                # Left and right child plans have been emitted, waiting for them to complete
                 if left_tasks or right_tasks:
                     logger.debug(
                         "join blocked on completion of sources.\n Left sources: %s\nRight sources: %s",
@@ -411,9 +430,21 @@ def hash_join(
                         right_tasks,
                     )
                     yield None
-                # Both child plans have been exhausted
                 else:
-                    return
+                    break
+
+    # yield results of join tasks in order of partition number
+    for partition in range(len(join_tasks)):
+        while not join_tasks[partition].done():
+            logger.debug("join blocked on completion of join task %s", join_tasks[partition])
+            yield None
+
+        finished_join_task = join_tasks.pop(partition)
+        yield PartitionTaskBuilder[PartitionT](
+            inputs=[finished_join_task.partition()],
+            partial_metadatas=[finished_join_task.partition_metadata()],
+            resource_request=ResourceRequest(),
+        )
 
 
 def _create_broadcast_join_step(
@@ -1508,7 +1539,6 @@ def reduce(
     """
     materializations = list()
     stage_id = next(stage_id_counter)
-
     # Dispatch all fanouts.
     for step in fanout_plan:
         if isinstance(step, PartitionTaskBuilder):
