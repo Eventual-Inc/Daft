@@ -251,73 +251,72 @@ fn get_runner_config_from_env() -> RunnerConfig {
     const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
 
     let runner_from_envvar = std::env::var(DAFT_RUNNER).unwrap_or_default();
-    match runner_from_envvar.as_str() {
-        "ray" => {
-            use pyo3::prelude::*;
-            let address = std::env::var(DAFT_RAY_ADDRESS).ok();
-            let address = if address.is_some() {
-                log::warn!(
-                    "Detected usage of the $DAFT_RAY_ADDRESS environment variable. This will be deprecated, please use $RAY_ADDRESS instead."
-                );
-                address
-            } else {
-                std::env::var(RAY_ADDRESS).ok()
-            };
+    let address = std::env::var(DAFT_RAY_ADDRESS).ok();
+    let address = if address.is_some() {
+        log::warn!(
+            "Detected usage of the $DAFT_RAY_ADDRESS environment variable. This will be deprecated, please use $RAY_ADDRESS instead."
+        );
+        address
+    } else {
+        std::env::var(RAY_ADDRESS).ok()
+    };
 
-            let max_task_backlog = std::env::var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG)
-                .ok()
-                .map(|s| s.parse().unwrap());
+    let max_task_backlog = std::env::var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG)
+        .ok()
+        .map(|s| s.parse().unwrap());
 
-            let force_client_mode = std::env::var(DAFT_RAY_FORCE_CLIENT_MODE)
-                .ok()
-                .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1"));
+    let force_client_mode = std::env::var(DAFT_RAY_FORCE_CLIENT_MODE)
+        .ok()
+        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1"));
 
-            let mut ray_is_in_job = false;
-            let mut in_ray_worker = false;
-            let mut ray_is_initialized = false;
+    let mut ray_is_in_job = false;
+    let mut in_ray_worker = false;
+    let mut ray_is_initialized = false;
 
-            pyo3::Python::with_gil(|py| {
-                let ray = py.import("ray").ok()?;
+    pyo3::Python::with_gil(|py| {
+        let ray = py.import("ray").ok()?;
 
-                ray_is_initialized = ray
-                    .call_method0("is_initialized")
-                    .ok()?
-                    .extract::<bool>()
-                    .ok()?;
-                let worker_mode = ray
-                    .getattr("_private")
-                    .ok()?
-                    .getattr("worker")
-                    .ok()?
-                    .getattr("global_worker")
-                    .ok()?
-                    .getattr("mode")
-                    .ok()?;
+        ray_is_initialized = ray
+            .call_method0("is_initialized")
+            .ok()?
+            .extract::<bool>()
+            .ok()?;
 
-                let ray_worker_mode = ray.getattr("WORKER_MODE").ok()?;
-                if worker_mode.eq(ray_worker_mode).ok()? {
-                    in_ray_worker = true;
-                }
-                if std::env::var("RAY_JOB_ID").is_ok() {
-                    ray_is_in_job = true;
-                }
-                Some(())
-            });
+        let worker_mode = ray
+            .getattr("_private")
+            .ok()?
+            .getattr("worker")
+            .ok()?
+            .getattr("global_worker")
+            .ok()?
+            .getattr("mode")
+            .ok()?;
 
-            if !in_ray_worker && (ray_is_initialized || ray_is_in_job) {
-                RunnerConfig::Ray {
-                    address: None,
-                    max_task_backlog,
-                    force_client_mode,
-                }
-            } else {
-                RunnerConfig::Ray {
-                    address,
-                    max_task_backlog,
-                    force_client_mode,
-                }
-            }
+        let ray_worker_mode = ray.getattr("WORKER_MODE").ok()?;
+        if worker_mode.eq(ray_worker_mode).ok()? {
+            in_ray_worker = true;
         }
+        if std::env::var("RAY_JOB_ID").is_ok() {
+            ray_is_in_job = true;
+        }
+        Some(())
+    });
+
+    dbg!(&runner_from_envvar);
+    match runner_from_envvar.as_str() {
+        "ray" => RunnerConfig::Ray {
+            address,
+            max_task_backlog,
+            force_client_mode,
+        },
+        "py" => RunnerConfig::Py {
+            use_thread_pool: None,
+        },
+        _ if !in_ray_worker && (ray_is_initialized || ray_is_in_job) => RunnerConfig::Ray {
+            address: None,
+            max_task_backlog,
+            force_client_mode,
+        },
         _ => RunnerConfig::Native,
     }
 }
