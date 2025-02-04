@@ -1,3 +1,5 @@
+import pytest
+
 from daft import Identifier
 
 
@@ -65,3 +67,19 @@ def test_identifier_sequence():
     # __iter__ (derived)
     for i, part in enumerate(ident):
         assert parts[i] == part
+
+
+@pytest.mark.parametrize(
+    "input",
+    [
+        "1",  # can't start with numbers
+        "a.",  # invalid: .
+        "a b",  # invalid: <space>
+        "a-b",  # invalid: -
+        "'a'",  # string literal, not an ident
+        "`a`",  # backtick non-ANSI.
+    ],
+)
+def test_invalid_identifier(input):
+    with pytest.raises(Exception, match="Invalid identifier"):
+        Identifier.parse(input)

@@ -33,9 +33,12 @@ impl Identifier {
         let Ok(mut parser) = Parser::new(&PostgreSqlDialect {}).try_with_sql(input) else {
             return Err(err);
         };
-        let Ok(parts) = parser.parse_identifiers() else {
+        let Ok(parts) = parser.parse_multipart_identifier() else {
             return Err(err);
         };
+        if parts.is_empty() {
+            return Err(err);
+        }
         // TODO Identifier normalization is omitted until further discussion.
         let mut parts = parts
             .iter()

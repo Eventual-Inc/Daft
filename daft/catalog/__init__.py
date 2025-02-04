@@ -211,7 +211,7 @@ class Identifier(Sequence):
             return self._identifier.getitem(index)
 
     def __len__(self) -> int:
-        return self._identifier.len()
+        return self._identifier.__len__()
 
     def __repr__(self) -> str:
         return f"Identifier('{self._identifier.__repr__()}')"

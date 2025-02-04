@@ -22,11 +22,9 @@ def test_sql_catalog_table_names(table_name):
 def test_sql_catalog_table_names_invalid(table_name):
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
     catalog = {table_name: df1}
-    try:
+    with pytest.raises(Exception):
         actual = daft.sql(f"select * from {table_name}", catalog=SQLCatalog(catalog)).to_pydict()
         assert actual == df1.to_pydict()
-    except Exception as e:
-        assert True, f"Expected exception: {e}"
 
 
 def test_sql_register_globals():
