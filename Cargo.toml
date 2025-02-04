@@ -38,6 +38,7 @@ daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
+daft-session = {path = "src/daft-session", default-features = false}
 lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
@@ -77,6 +78,7 @@ python = [
   "daft-stats/python",
   "daft-table/python",
   "daft-writers/python",
+  "daft-session/python",
   "dep:daft-catalog-python-catalog",
   "dep:daft-connect",
   "dep:pyo3",
@@ -174,7 +176,7 @@ members = [
   "src/generated/spark-connect",
   "src/common/partitioning",
   "src/daft-ray-execution"
-]
+, "src/daft-session"]
 
 [workspace.dependencies]
 approx = "0.5.1"

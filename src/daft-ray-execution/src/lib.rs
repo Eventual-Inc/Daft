@@ -1,4 +1,6 @@
 //! Wrapper around the python RayRunner class
+use std::sync::Arc;
+
 #[cfg(feature = "python")]
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
@@ -13,8 +15,9 @@ use pyo3::{
 };
 
 #[cfg(feature = "python")]
+#[derive(Debug)]
 pub struct RayEngine {
-    ray_runner: PyObject,
+    pub ray_runner: Arc<PyObject>,
 }
 
 #[cfg(feature = "python")]
@@ -36,7 +39,7 @@ impl RayEngine {
             let instance = instance.unbind();
 
             Ok(Self {
-                ray_runner: instance,
+                ray_runner: Arc::new(instance),
             })
         })
     }

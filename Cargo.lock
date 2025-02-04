@@ -1946,6 +1946,7 @@ dependencies = [
  "daft-ray-execution",
  "daft-scan",
  "daft-scheduler",
+ "daft-session",
  "daft-sql",
  "daft-stats",
  "daft-table",
@@ -2570,6 +2571,24 @@ dependencies = [
  "pyo3",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "daft-session"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-daft-config",
+ "common-error",
+ "common-io-config",
+ "common-partitioning",
+ "common-runtime",
+ "daft-catalog",
+ "daft-local-execution",
+ "daft-micropartition",
+ "daft-ray-execution",
+ "log",
+ "once_cell",
+ "pyo3",
 ]
 
 [[package]]
