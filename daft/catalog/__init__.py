@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "Identifier",
     "read_table",
     "register_python_catalog",
     "register_table",
@@ -156,3 +157,44 @@ def register_python_catalog(catalog: PyIcebergCatalog | UnityCatalog, name: str 
         raise ValueError(f"Unsupported catalog type: {type(catalog)}")
 
     return native_catalog.register_python_catalog(python_catalog, name)
+
+
+class Identifier:
+    """A reference (path) to a catalog object.
+
+    Example:
+    >>> id1 = Identifier("a", "b")
+    >>> id2 = Identifier.parse("a.b")
+    """
+
+    _identifier: native_catalog.PyIdentifier
+
+    def __init__(self, *parts: str):
+        """Creates an Identifier from its parts.
+
+        Example:
+        >>> id = Identifier("schema", "table")
+
+        Returns:
+            Identifier: A new identifier.
+        """
+        if len(parts) < 1:
+            raise ValueError("Identifier requires at least one part.")
+        self._identifier = native_catalog.PyIdentifier(parts[:-1], parts[-1])
+
+    def __repr__(self) -> str:
+        return self._identifier.__repr__()
+
+    @staticmethod
+    def parse(input: str) -> Identifier:
+        """Parses an Identifier from an SQL string.
+
+        Example:
+        >>> id = Identifier.parse("schema.table")
+
+        Returns:
+            Identifier: A new identifier.
+        """
+        i = Identifier.__new__(Identifier)
+        i._identifier = native_catalog.PyIdentifier.parse(input)
+        return i

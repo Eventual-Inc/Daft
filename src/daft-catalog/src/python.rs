@@ -1,7 +1,10 @@
 use daft_logical_plan::PyLogicalPlanBuilder;
 use pyo3::prelude::*;
 
-use crate::global_catalog;
+use crate::{
+    global_catalog,
+    identifier::{Identifier, Name, Namespace},
+};
 
 /// Read a table from the specified `DaftMetaCatalog`.
 ///
@@ -88,13 +91,41 @@ pub fn py_unregister_catalog(catalog_name: Option<&str>) -> bool {
     crate::global_catalog::unregister_catalog(catalog_name)
 }
 
+/// Bridge from identifier.py to identifier.rs
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyIdentifier(Identifier);
+
+#[pymethods]
+impl PyIdentifier {
+    #[new]
+    pub fn new(namespace: Namespace, name: Name) -> PyIdentifier {
+        Identifier::new(namespace, name).into()
+    }
+
+    #[staticmethod]
+    pub fn parse(input: &str) -> PyResult<PyIdentifier> {
+        Ok(Identifier::parse(input)?.into())
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.0))
+    }
+}
+
+impl From<Identifier> for PyIdentifier {
+    fn from(value: Identifier) -> Self {
+        Self(value)
+    }
+}
+
+/// Defines the python daft.
 pub fn register_modules<'py>(parent: &Bound<'py, PyModule>) -> PyResult<Bound<'py, PyModule>> {
     let module = PyModule::new(parent.py(), "catalog")?;
-
+    module.add_class::<PyIdentifier>()?;
     module.add_wrapped(wrap_pyfunction!(py_read_table))?;
     module.add_wrapped(wrap_pyfunction!(py_register_table))?;
     module.add_wrapped(wrap_pyfunction!(py_unregister_catalog))?;
-
     parent.add_submodule(&module)?;
     Ok(module)
 }
