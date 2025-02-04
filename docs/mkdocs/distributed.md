@@ -1,7 +1,5 @@
 # Distributed Computing
 
-<!-- todo(docs - jay): need to add jessie's k8s instructions -->
-
 By default, Daft runs using your local machine's resources and your operations are thus limited by the CPUs, memory and GPUs available to you in your single local development machine.
 
 However, Daft has strong integrations with [Ray](https://www.ray.io) which is a distributed computing framework for distributing computations across a cluster of machines. Here is a snippet showing how you can connect Daft to a Ray cluster:
@@ -73,52 +71,71 @@ You can take the IP address and port and pass it to Daft:
     (Showing first 2 of 2 rows)
     ```
 
-## Daft Launcher
+## Daft CLI
 
-Daft Launcher is a convenient command-line tool that provides simple abstractions over Ray, enabling a quick uptime for users to leverage Daft for distributed computations. Rather than worrying about the complexities of managing Ray, users can simply run a few CLI commands to spin up a cluster, submit a job, observe the status of jobs and clusters, and spin down a cluster.
+Daft CLI is a convenient command-line tool that simplifies running Daft in distributed environments. It provides two modes of operation to suit different needs:
+
+1. **Provisioned Mode**: Automatically provisions and manages Ray clusters in AWS. This is perfect for teams who want a turnkey solution with minimal setup.
+
+2. **BYOC (Bring Your Own Cluster) Mode**: Connects to existing Kubernetes clusters and handles Ray/Daft setup for you. This is ideal for organizations with existing infrastructure or specific compliance requirements.
+
+### When to Choose Each Mode
+
+Choose **Provisioned Mode** if you:
+- Want a fully managed solution with minimal setup
+- Are using AWS (GCP and Azure support coming soon)
+- Need quick deployment without existing infrastructure
+
+Choose **BYOC Mode** if you:
+- Have existing Kubernetes infrastructure
+- Need multi-cloud support
+- Have specific security or compliance requirements
+- Want to use local development clusters
+- Want more control over your cluster configuration
 
 ### Prerequisites
 
 The following should be installed on your machine:
 
-- The [AWS CLI](https://aws.amazon.com/cli) tool. (Assuming you're using AWS as your cloud provider)
+- A python package manager. We recommend using `uv` to manage everything (i.e., dependencies, as well as the python version itself)
 
-- A python package manager. We recommend using `uv` to manage everything (i.e., dependencies, as well as the python version itself). It's much cleaner and faster than `pip`.
+Additional mode-specific requirements:
 
-### Install Daft Launcher
+**For Provisioned Mode:**
+- The [AWS CLI](https://aws.amazon.com/cli) tool
+- AWS account with appropriate IAM permissions
+- SSH key pair for cluster access
+
+**For BYOC Mode:**
+- Running Kubernetes cluster (local, cloud-managed, or on-premise)
+- `kubectl` configured with correct context
+- Appropriate namespace permissions
+
+### Installation
 
 Run the following commands in your terminal to initialize your project:
 
 ```bash
 # Create a project directory
-cd some/working/directory
-mkdir launch-test
-cd launch-test
+mkdir my-project
+cd my-project
 
 # Initialize the project
 uv init --python 3.12
 uv venv
 source .venv/bin/activate
 
-# Install Daft Launcher
-uv pip install "daft-launcher"
+# Install Daft CLI
+uv pip install "daft-cli"
 ```
 
-In your virtual environment, you should have Daft launcher installed — you can verify this by running `daft --version` which will return the latest version of Daft launcher available. You should also have a basic working directly that may look something like this:
+In your virtual environment, you should have Daft CLI installed — you can verify this by running `daft --version`.
 
-```bash
-/
-|- .venv/
-|- hello.py
-|- pyproject.toml
-|- README.md
-|- .python-version
-```
+### Mode-Specific Setup
 
-### Configure AWS Credentials
+#### Provisioned Mode Setup
 
-Establish an SSO connection to configure your AWS credentials:
-
+1. Configure AWS credentials:
 ```bash
 # Configure your SSO
 aws configure sso
@@ -127,177 +144,183 @@ aws configure sso
 aws sso login
 ```
 
-These commands should open your browsers. Accept the prompted requests and then return to your terminal, you should see a success message from the AWS CLI tool. At this point, your AWS CLI tool has been configured and your environment is fully setup.
+2. Generate and configure SSH keys:
+```bash
+# Generate key pair
+ssh-keygen -t rsa -b 2048 -f ~/.ssh/daft-key
 
-### Initialize Configuration File
+# Import to AWS
+aws ec2 import-key-pair \
+  --key-name "daft-key" \
+  --public-key-material fileb://~/.ssh/daft-key.pub
 
-Initialize a default configuration file to store default values that you can later tune, and they are denoted as required and optional respectively.
-
-```python
-# Initialize the default .daft.toml configuration file
-daft init-config
-
-# Optionally you can also specify a custom name for your file
-daft init-config my-custom-config.toml
+# Set permissions
+chmod 600 ~/.ssh/daft-key
 ```
 
-Fill out the required values in your `.daft.toml` file. Optional configurations will have a default value pre-defined.
+#### BYOC Mode Setup
 
+Ensure your Kubernetes context is properly configured:
+```bash
+# Verify your kubernetes connection
+kubectl cluster-info
+
+# Set the correct context if needed
+kubectl config use-context my-context
+```
+
+### Configuration
+
+Initialize a configuration file based on your chosen mode:
+
+```bash
+# For Provisioned Mode
+daft config init --provider provisioned
+
+# For BYOC Mode
+daft config init --provider byoc
+```
+
+#### Example Configurations
+
+**Provisioned Mode (.daft.toml)**:
 ```toml
 [setup]
+name = "my-daft-cluster"
+python-version = "3.11"
+ray-version = "2.40.0"
+provider = "provisioned"
 
-# (required)
-# The name of the cluster.
-name = ...
+[setup.provisioned]
+region = "us-west-2"
+number-of-workers = 4
+ssh-user = "ubuntu"
+ssh-private-key = "~/.ssh/daft-key"
+instance-type = "i3.2xlarge"
+image-id = "ami-04dd23e62ed049936"
 
-# (required)
-# The cloud provider that this cluster will be created in.
-# Has to be one of the following:
-# - "aws"
-# - "gcp"
-# - "azure"
-provider = ...
-
-# (optional; default = None)
-# The IAM instance profile ARN which will provide this cluster with the necessary permissions to perform whatever actions.
-# Please note that if you don't specify this field, Ray will create an automatic instance profile for you.
-# That instance profile will be minimal and may restrict some of the feature of Daft.
-iam_instance_profile_arn = ...
-
-# (required)
-# The AWS region in which to place this cluster.
-region = ...
-
-# (optional; default = "ec2-user")
-# The ssh user name when connecting to the cluster.
-ssh_user = ...
-
-# (optional; default = 2)
-# The number of worker nodes to create in the cluster.
-number_of_workers = ...
-
-# (optional; default = "m7g.medium")
-# The instance type to use for the head and worker nodes.
-instance_type = ...
-
-# (optional; default = "ami-01c3c55948a949a52")
-# The AMI ID to use for the head and worker nodes.
-image_id = ...
-
-# (optional; default = [])
-# A list of dependencies to install on the head and worker nodes.
-# These will be installed using UV (https://docs.astral.sh/uv/).
-dependencies = [...]
-
-[run]
-
-# (optional; default = ['echo "Hello, World!"'])
-# Any post-setup commands that you want to invoke manually.
-# This is a good location to install any custom dependencies or run some arbitrary script.
-setup_commands = [...]
-
+[[job]]
+name = "example-job"
+command = "python my_script.py"
+working-dir = "~/my_project"
 ```
 
-### Spin Up a Cluster
+**BYOC Mode (.daft.toml)**:
+```toml
+[setup]
+name = "my-daft-cluster"
+python-version = "3.11"
+ray-version = "2.40.0"
+provider = "byoc"
 
-`daft up` will spin up a cluster given the configuration file you initialized earlier. The configuration file contains all required information necessary for Daft launcher to know how to spin up a cluster.
+[setup.byoc]
+namespace = "default"
 
-```python
-# Spin up a cluster using the default .daft.toml configuration file created earlier
-daft up
-
-# Alternatively spin up a cluster using a custom configuration file created earlier
-daft up -c my-custom-config.toml
+[[job]]
+name = "example-job"
+command = "python my_script.py"
+working-dir = "~/my_project"
 ```
 
-This command will do a couple of things:
+### Cluster Operations
 
-1. First, it will reach into your cloud provider and spin up the necessary resources. This includes things such as the worker nodes, security groups, permissions, etc.
+#### Provisioned Mode
 
-2. When the nodes are spun up, the ray and daft dependencies will be downloaded into a python virtual environment.
+```bash
+# Spin up a cluster
+daft provisioned up
 
-3. Next, any other custom dependencies that you've specified in the configuration file will then be downloaded.
+# List clusters and their status
+daft provisioned list
 
-4. Finally, the setup commands that you've specified in the configuration file will be run on the head node.
+# Connect to Ray dashboard
+daft provisioned connect
 
-!!! note "Note"
+# SSH into head node
+daft provisioned ssh
 
-    `daft up` will only return successfully when the head node is fully set up. Even though the command will request the worker nodes to also spin up, it will not wait for them to be spun up before returning. Therefore, when the command completes and you type `daft list`, the worker nodes may be in a “pending” state immediately after. Give it a few seconds and they should be fully running.
+# Gracefully shutdown cluster
+daft provisioned down
 
-### Submit a Job
-
-`daft submit` enables you to submit a working directory and command or a “job” to the remote cluster to be run.
-
-```python
-# Submit a job using the default .daft.toml configuration file
-daft submit -i my-keypair.pem -w my-working-director
-
-# Alternatively submit a job using a custom configuration file
-daft submit -c my-custom-config.toml -i my-keypair.pem -w my-working-director
+# Force terminate cluster
+daft provisioned kill
 ```
 
-### Run a SQL Query
+#### BYOC Mode
 
-Daft supports SQL API so you can use `daft sql` to run raw SQL queries against your data. The SQL dialect is the postgres standard.
+```bash
+# Initialize Ray/Daft on your cluster
+daft byoc init
 
-```python
-# Run a sql query using the default .daft.toml configuration file
+# Connect to your cluster
+daft byoc connect
+
+# Clean up Ray/Daft resources
+daft byoc cleanup
+```
+
+### Job Management
+
+Jobs can be submitted and managed similarly in both modes:
+
+```bash
+# Submit a job
+daft job submit example-job
+
+# Check job status (provisioned mode only)
+daft job status example-job
+
+# View job logs (provisioned mode only)
+daft job logs example-job
+```
+
+### SQL Query Support
+
+Daft supports running SQL queries against your data using the postgres dialect:
+
+```bash
+# Run a SQL query
 daft sql -- "\"SELECT * FROM my_table\""
-
-# Alternatively you can run a sql query using a custom configuration file
-daft sql -c my-custom-config.toml -- "\"SELECT * FROM my_table\""
 ```
 
-### View Ray Dashboard
+### Ray Dashboard Access
 
-You can view the Ray dashboard of your running cluster with `daft connect` which establishes a port-forward over SSH from your local machine to the head node of the cluster (connecting `localhost:8265` to the remote head's `8265`).
+The Ray dashboard provides insights into your cluster's performance and job status:
 
-```python
-# Establish the port-forward using the default .daft.toml configuration file
-daft connect -i my-keypair.pem
+```bash
+# For Provisioned Mode
+daft provisioned connect
 
-# Alternatively establish the port-forward using a custom configuration file
-daft connect -c my-custom-config.toml -i my-keypair.pem
+# For BYOC Mode
+daft byoc connect
 ```
 
 !!! note "Note"
+    For Provisioned Mode, you'll need your SSH key to access the dashboard. BYOC Mode uses your Kubernetes credentials.
 
-    `daft connect` will require you to have the appropriate SSH keypair to authenticate against the remote head’s public SSH keypair. Make sure to pass this SSH keypair as an argument to the command.
+### Example Daft Script
 
-### Spin Down a Cluster
-
-`daft down` will spin down all instances of the cluster specified in the configuration file, not just the head node.
+When submitting jobs to your cluster, here's a simple example script:
 
 ```python
-# Spin down a cluster using the default .daft.toml configuration file
-daft down
+import daft
 
-# Alternatively spin down a cluster using a custom configuration file
-daft down -c my-custom-config.toml
+# Ray context is automatically set by Daft CLI
+df = daft.from_pydict({"nums": [1,2,3]})
+df.agg(daft.col("nums").mean()).show()
 ```
 
-### List Running and Terminated Clusters
+### Monitoring Cluster State
 
-`daft list` allows you to view the current state of all clusters, running and terminated, and includes each instance name and their given IPs (assuming the cluster is running). Here’s an example output after running `daft list`:
-
-```python
-Running:
-  - daft-demo, head, i-053f9d4856d92ea3d, 35.94.91.91
-  - daft-demo, worker, i-00c340dc39d54772d
-  - daft-demo, worker, i-042a96ce1413c1dd6
+For Provisioned Mode, `daft provisioned list` shows cluster status:
 ```
-
-Say we spun up another cluster `new-cluster` and then terminated it, here’s what the output of `daft list` would look like immediately after:
-
-```python
 Running:
   - daft-demo, head, i-053f9d4856d92ea3d, 35.94.91.91
   - daft-demo, worker, i-00c340dc39d54772d, 44.234.112.173
   - daft-demo, worker, i-042a96ce1413c1dd6, 35.94.206.130
-Shutting-down:
-  - new-cluster, head, i-0be0db9803bd06652, 35.86.200.101
-  - new-cluster, worker, i-056f46bd69e1dd3f1, 44.242.166.108
-  - new-cluster, worker, i-09ff0e1d8e67b8451, 35.87.221.180
 ```
 
-In a few seconds later, the state of `new-cluster` will be finalized to “Terminated”.
+For BYOC Mode, use standard Kubernetes tools:
+```bash
+kubectl get pods -n your-namespace
+```
