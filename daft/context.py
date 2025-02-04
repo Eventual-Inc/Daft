@@ -6,11 +6,10 @@ import logging
 from typing import TYPE_CHECKING, ClassVar
 
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
+from daft.daft import get_context as _get_context
 from daft.daft import set_runner_native as _set_runner_native
 from daft.daft import set_runner_py as _set_runner_py
 from daft.daft import set_runner_ray as _set_runner_ray
-from daft.daft import get_context as _get_context
-
 
 if TYPE_CHECKING:
     from daft.runners.runner import Runner

@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_catalog::DaftCatalog;
 use daft_py_runners::{NativeRunner, RayRunner, Runner, RunnerConfig};
 use once_cell::sync::OnceCell;
@@ -23,13 +23,21 @@ pub struct ContextState {
     pub config: Config,
     /// The data catalog
     pub catalog: DaftCatalog,
+
     /// The runner to use for executing queries.
-    /// Since planning of queries requires a runner, this can only be set once.
-    /// Setting it more than once will result in an error.
-    runner: OnceCell<Arc<Runner>>,
+    /// most scenarios of etting it more than once will result in an error.
+    /// Since native and py both use the same partition set, they can be swapped out freely
+    /// valid runner changes are:
+    /// native -> py
+    /// py -> native
+    /// but not:
+    /// native -> ray
+    /// py -> ray
+    /// ray -> native
+    /// ray -> py
+    runner: Option<Arc<Runner>>,
 }
 
-#[cfg_attr(feature = "python", pyo3::prelude::pyclass)]
 #[derive(Debug, Default)]
 pub struct Config {
     pub execution: Arc<DaftExecutionConfig>,
@@ -42,7 +50,7 @@ impl ContextState {
     ///
     /// WARNING: This will set the runner if it has not yet been set.
     pub fn get_or_create_runner(&mut self) -> DaftResult<Arc<Runner>> {
-        if let Some(runner) = self.runner.get() {
+        if let Some(runner) = self.runner.as_ref() {
             return Ok(runner.clone());
         }
 
@@ -50,9 +58,8 @@ impl ContextState {
         let runner = runner_cfg.create_runner()?;
 
         let runner = Arc::new(runner);
-        self.runner.set(runner.clone()).map_err(|_| {
-            common_error::DaftError::InternalError("Failed to set runner".to_string())
-        })?;
+        self.runner = Some(runner.clone());
+
         Ok(runner)
     }
 }
@@ -79,7 +86,7 @@ impl DaftContext {
         let state = ContextState {
             config: Default::default(),
             catalog: DaftCatalog::default(),
-            runner: OnceCell::new(),
+            runner: None,
         };
         let state = RwLock::new(state);
         let state = Arc::new(state);
@@ -99,24 +106,40 @@ impl DaftContext {
 
     /// Get the current runner, if one has been set.
     pub fn runner(&self) -> Option<Arc<Runner>> {
-        self.state.read().unwrap().runner.get().cloned()
+        self.state.read().unwrap().runner.clone()
     }
 
     /// Set the runner.
     /// IMPORTANT: This can only be set once. Setting it more than once will error.
     pub fn set_runner(&self, runner: Arc<Runner>) -> DaftResult<()> {
-        if self.runner().is_some() {
-            return Err(common_error::DaftError::InternalError(
-                "Cannot set runner more than once".to_string(),
-            ))?;
+        use Runner::{Native, Py};
+        if let Some(current_runner) = self.runner() {
+            let runner = match (current_runner.as_ref(), runner.as_ref()) {
+                (Native(_), Native(_)) | (Py(_), Py(_)) => return Ok(()),
+                (Py(_), Native(_)) | (Native(_), Py(_)) => runner,
+
+                _ => {
+                    return Err(DaftError::InternalError(
+                        "Cannot set runner more than once".to_string(),
+                    ));
+                }
+            };
+
+            let mut state = self.state.write().map_err(|_| {
+                DaftError::InternalError("Failed to acquire write lock on DaftContext".to_string())
+            })?;
+
+            state.runner.replace(runner);
+
+            Ok(())
+        } else {
+            let mut state = self.state.write().map_err(|_| {
+                DaftError::InternalError("Failed to acquire write lock on DaftContext".to_string())
+            })?;
+
+            state.runner.replace(runner);
+            Ok(())
         }
-        self.state
-            .write()
-            .unwrap()
-            .runner
-            .set(runner)
-            .expect("Failed to set runner");
-        Ok(())
     }
 
     /// Get a read only reference to the state.
@@ -303,7 +326,6 @@ fn get_runner_config_from_env() -> RunnerConfig {
         Some(())
     });
 
-    dbg!(&runner_from_envvar);
     match runner_from_envvar.to_lowercase().as_str() {
         "ray" => RunnerConfig::Ray {
             address,
@@ -340,6 +362,5 @@ pub fn register_modules(parent: &Bound<PyModule>) -> pyo3::PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::set_runner_native, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::set_runner_py, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
-    parent.add_class::<Config>()?;
     Ok(())
 }

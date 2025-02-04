@@ -81,7 +81,7 @@ impl PyDaftContext {
     #[getter(_runner)]
     pub fn get_runner(&self, py: Python) -> Option<PyObject> {
         let state = self.inner.state.read().unwrap();
-        state.runner.get().map(|r| r.clone().to_pyobj(py))
+        state.runner.clone().map(|r| r.to_pyobj(py))
     }
 }
 impl From<DaftContext> for PyDaftContext {

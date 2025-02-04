@@ -1,10 +1,7 @@
 [dependencies]
 common-daft-config = {path = "../common/daft-config"}
 common-error = {path = "../common/error"}
-common-io-config = {path = "../common/io-config", default-features = false}
-common-runtime = {workspace = true}
 daft-catalog = {path = "../daft-catalog"}
-daft-micropartition = {workspace = true}
 daft-py-runners = {workspace = true}
 log = {workspace = true}
 once_cell = {workspace = true}
@@ -15,7 +12,6 @@ python = [
   "dep:pyo3",
   "common-error/python",
   "daft-catalog/python",
-  "daft-micropartition/python",
   "daft-py-runners/python"
 ]
 

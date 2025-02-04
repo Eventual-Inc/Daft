@@ -94,10 +94,12 @@ impl PyRunner {
 }
 
 #[derive(Debug)]
-#[cfg(feature = "python")]
 pub enum Runner {
+    #[cfg(feature = "python")]
     Ray(RayRunner),
+    #[cfg(feature = "python")]
     Native(NativeRunner),
+    #[cfg(feature = "python")]
     Py(PyRunner),
 }
 
@@ -149,19 +151,20 @@ impl Runner {
 }
 
 #[derive(Debug)]
-#[cfg(feature = "python")]
 pub enum RunnerConfig {
+    #[cfg(feature = "python")]
     Native,
+    #[cfg(feature = "python")]
     Ray {
         address: Option<String>,
         max_task_backlog: Option<usize>,
         force_client_mode: Option<bool>,
     },
-    Py {
-        use_thread_pool: Option<bool>,
-    },
+    #[cfg(feature = "python")]
+    Py { use_thread_pool: Option<bool> },
 }
 
+#[cfg(feature = "python")]
 impl RunnerConfig {
     pub fn create_runner(self) -> DaftResult<Runner> {
         match self {

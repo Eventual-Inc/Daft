@@ -6,10 +6,7 @@ common-file-formats = {workspace = true, optional = true, features = [
   "python"
 ]}
 common-runtime = {workspace = true}
-daft-catalog = {path = "../daft-catalog", optional = true, features = [
-  "python"
-]}
-daft-context = {workspace = true, optional = true}
+daft-context = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
 daft-local-execution = {workspace = true, optional = true, features = [
@@ -53,7 +50,6 @@ python = [
   "dep:daft-schema",
   "dep:daft-sql",
   "dep:daft-table",
-  "dep:daft-catalog",
   "dep:daft-context"
 ]
 
@@ -64,3 +60,6 @@ workspace = true
 edition = {workspace = true}
 name = "daft-connect"
 version = {workspace = true}
+
+[package.metadata.cargo-machete]
+ignored = ["daft-local-execution"]  # needed by num-derive
