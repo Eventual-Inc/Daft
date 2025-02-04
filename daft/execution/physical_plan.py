@@ -440,10 +440,11 @@ def hash_join(
             yield None
 
         finished_join_task = join_tasks.pop(partition)
+        size_bytes = finished_join_task.partition_metadata().size_bytes
         yield PartitionTaskBuilder[PartitionT](
             inputs=[finished_join_task.partition()],
             partial_metadatas=[finished_join_task.partition_metadata()],
-            resource_request=ResourceRequest(),
+            resource_request=ResourceRequest(memory_bytes=size_bytes),
         )
 
 
@@ -1539,6 +1540,7 @@ def reduce(
     """
     materializations = list()
     stage_id = next(stage_id_counter)
+
     # Dispatch all fanouts.
     for step in fanout_plan:
         if isinstance(step, PartitionTaskBuilder):
