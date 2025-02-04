@@ -9,6 +9,8 @@ from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlan
 from daft.daft import set_runner_native as _set_runner_native
 from daft.daft import set_runner_py as _set_runner_py
 from daft.daft import set_runner_ray as _set_runner_ray
+from daft.daft import get_context as _get_context
+
 
 if TYPE_CHECKING:
     from daft.runners.runner import Runner
@@ -25,7 +27,7 @@ class DaftContext:
     _ctx: PyDaftContext
 
     _lock: ClassVar[threading.Lock] = threading.Lock()
-    
+
     @property
     def _runner(self) -> Runner:
         return self._ctx._runner
@@ -42,7 +44,6 @@ class DaftContext:
 
     def get_or_create_runner(self) -> Runner:
         return self._ctx.get_or_create_runner()
-        
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -53,11 +54,8 @@ class DaftContext:
         return self._ctx._daft_planning_config
 
 
-_DaftContext = DaftContext()
-
-
 def get_context() -> DaftContext:
-    return _DaftContext
+    return DaftContext(_get_context())
 
 
 def set_runner_ray(
