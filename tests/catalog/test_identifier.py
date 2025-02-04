@@ -83,3 +83,9 @@ def test_identifier_sequence():
 def test_invalid_identifier(input):
     with pytest.raises(Exception, match="Invalid identifier"):
         Identifier.parse(input)
+
+
+# ensure we can support the customer ask: https://github.com/Eventual-Inc/Daft/issues/3758
+def test_identifier_with_periods():
+    assert 3 == len(Identifier.parse("a.b.c"))
+    assert 1 == len(Identifier.parse('"a.b.c"'))
