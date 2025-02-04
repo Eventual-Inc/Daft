@@ -1943,7 +1943,7 @@ dependencies = [
  "daft-minhash",
  "daft-parquet",
  "daft-physical-plan",
- "daft-ray-execution",
+ "daft-py-runners",
  "daft-scan",
  "daft-scheduler",
  "daft-session",
@@ -2020,7 +2020,7 @@ dependencies = [
  "daft-local-execution",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-ray-execution",
+ "daft-py-runners",
  "daft-scan",
  "daft-schema",
  "daft-sql",
@@ -2486,7 +2486,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-ray-execution"
+name = "daft-py-runners"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
@@ -2580,12 +2580,10 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-io-config",
- "common-partitioning",
  "common-runtime",
  "daft-catalog",
- "daft-local-execution",
  "daft-micropartition",
- "daft-ray-execution",
+ "daft-py-runners",
  "log",
  "once_cell",
  "pyo3",

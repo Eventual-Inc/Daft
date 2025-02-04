@@ -5,7 +5,7 @@ use common_file_formats::FileFormat;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
-use daft_ray_execution::RayEngine;
+use daft_py_runners::RayRunner;
 use daft_table::Table;
 use futures::{
     stream::{self, BoxStream},
@@ -53,7 +53,7 @@ impl Session {
                 let runner_address = self.config_values().get("daft.runner.ray.address");
                 let runner_address = runner_address.map(|s| s.to_string());
 
-                let runner = RayEngine::try_new(runner_address, None, None)?;
+                let runner = RayRunner::try_new(runner_address, None, None)?;
                 let result_set = tokio::task::spawn_blocking(move || {
                     Python::with_gil(|py| runner.run_iter_impl(py, lp, None))
                 })

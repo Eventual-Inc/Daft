@@ -10,10 +10,8 @@ common-io-config = {path = "../common/io-config", default-features = false}
 common-runtime = {workspace = true}
 daft-catalog = {path = "../daft-catalog"}
 pyo3 = {workspace = true, optional = true}
-daft-ray-execution = {workspace = true}
+daft-py-runners = {workspace = true}
 daft-micropartition = {workspace = true}
-common-partitioning = {path = "../common/partitioning", default-features = false}
-daft-local-execution = {workspace = true}
 log = {workspace = true}
 once_cell = {workspace = true}
 
@@ -22,10 +20,8 @@ python = [
   "dep:pyo3",
   "common-error/python",
   "daft-catalog/python",
-  "daft-local-execution/python",
   "daft-micropartition/python",
-  "daft-ray-execution/python",
-  "common-partitioning/python"
+  "daft-py-runners/python"
 
 ]
 

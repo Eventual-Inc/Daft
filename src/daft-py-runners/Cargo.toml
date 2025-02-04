@@ -17,6 +17,6 @@ python = [
 workspace = true
 
 [package]
-name = "daft-ray-execution"
+name = "daft-py-runners"
 edition.workspace = true
 version.workspace = true

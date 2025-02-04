@@ -18,7 +18,7 @@ daft-logical-plan = {workspace = true, optional = true, features = ["python"]}
 daft-micropartition = {workspace = true, optional = true, features = [
   "python"
 ]}
-daft-ray-execution = {workspace = true, optional = true, features = [
+daft-py-runners = {workspace = true, optional = true, features = [
   "python"
 ]}
 daft-scan = {workspace = true, optional = true, features = ["python"]}
@@ -49,7 +49,7 @@ python = [
   "dep:daft-local-execution",
   "dep:daft-logical-plan",
   "dep:daft-micropartition",
-  "dep:daft-ray-execution",
+  "dep:daft-py-runners",
   "dep:daft-scan",
   "dep:daft-schema",
   "dep:daft-sql",

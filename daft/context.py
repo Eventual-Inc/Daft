@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig, PyRunner
 from daft.daft import set_runner_native as _set_runner_native
@@ -21,8 +21,6 @@ __all__ = [
     "set_runner_ray",
 ]
 
-if TYPE_CHECKING:
-    from daft.runners.runner import Runner
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +32,6 @@ class DaftContext:
     """Global context for the current Daft execution environment."""
 
     _ctx: PyDaftContext
-
-    # When a dataframe is executed, this config is copied into the Runner
-    # which then keeps track of a per-unique-execution-ID copy of the config, using it consistently throughout the execution
-    _daft_execution_config: PyDaftExecutionConfig = PyDaftExecutionConfig.from_env()
-
-    # Non-execution calls (e.g. creation of a dataframe, logical plan building etc) directly reference values in this config
-    _daft_planning_config: PyDaftPlanningConfig = PyDaftPlanningConfig.from_env()
-
-    _runner: Runner | None = None
 
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
@@ -60,11 +49,11 @@ class DaftContext:
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
-        return self._ctx.daft_execution_config
+        return self._ctx._daft_execution_config
 
     @property
     def daft_planning_config(self) -> PyDaftPlanningConfig:
-        return self._ctx.daft_planning_config
+        return self._ctx._daft_planning_config
 
 
 _DaftContext = DaftContext()
@@ -82,6 +71,7 @@ def set_runner_ray(
 ) -> DaftContext:
     py_ctx = _set_runner_ray(
         address=address,
+        noop_if_initialized=noop_if_initialized,
         max_task_backlog=max_task_backlog,
         force_client_mode=force_client_mode,
     )
@@ -147,19 +137,19 @@ def set_planning_config(
     # Replace values in the DaftPlanningConfig with user-specified overrides
     ctx = get_context()
     with ctx._lock:
-        old_daft_planning_config = ctx.daft_planning_config if config is None else config
+        old_daft_planning_config = ctx._daft_planning_config if config is None else config
         new_daft_planning_config = old_daft_planning_config.with_config_values(
             default_io_config=default_io_config,
         )
 
-        ctx.daft_planning_config = new_daft_planning_config
+        ctx._daft_planning_config = new_daft_planning_config
         return ctx
 
 
 @contextlib.contextmanager
 def execution_config_ctx(**kwargs):
     """Context manager that wraps set_execution_config to reset the config to its original setting afternwards."""
-    original_config = get_context().daft_execution_config
+    original_config = get_context()._ctx._daft_execution_config
     try:
         set_execution_config(**kwargs)
         yield
@@ -243,7 +233,8 @@ def set_execution_config(
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
     with ctx._lock:
-        old_daft_execution_config = ctx.daft_execution_config if config is None else config
+        ctx = ctx._ctx
+        old_daft_execution_config = ctx._daft_execution_config if config is None else config
 
         new_daft_execution_config = old_daft_execution_config.with_config_values(
             scan_tasks_min_size_bytes=scan_tasks_min_size_bytes,
@@ -273,5 +264,5 @@ def set_execution_config(
             scantask_splitting_level=scantask_splitting_level,
         )
 
-        ctx.daft_execution_config = new_daft_execution_config
+        ctx._daft_execution_config = new_daft_execution_config
         return ctx

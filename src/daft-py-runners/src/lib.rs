@@ -16,12 +16,12 @@ use pyo3::{
 
 #[cfg(feature = "python")]
 #[derive(Debug)]
-pub struct RayEngine {
+pub struct RayRunner {
     pub ray_runner: Arc<PyObject>,
 }
 
 #[cfg(feature = "python")]
-impl RayEngine {
+impl RayRunner {
     pub fn try_new(
         address: Option<String>,
         max_task_backlog: Option<usize>,
@@ -55,6 +55,60 @@ impl RayEngine {
         let builder = builder.getattr(intern!(py, "LogicalPlanBuilder"))?;
         let builder = builder.call((py_lp,), None)?;
         let result = self.ray_runner.call_method(
+            py,
+            intern!(py, "run_iter_tables"),
+            (builder, results_buffer_size),
+            None,
+        )?;
+
+        let result = result.bind(py);
+        let iter = PyIterator::from_object(result)?;
+
+        let iter = iter.map(|item| {
+            let item = item?;
+            let partition = item.getattr(intern!(py, "_micropartition"))?;
+            let partition = partition.extract::<PyMicroPartition>()?;
+            let partition = partition.inner;
+            Ok::<_, DaftError>(partition)
+        });
+
+        Ok(iter.collect())
+    }
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug)]
+pub struct NativeRunner {
+    pub instance: Arc<PyObject>,
+}
+
+#[cfg(feature = "python")]
+impl NativeRunner {
+    pub fn try_new() -> DaftResult<Self> {
+        Python::with_gil(|py| {
+            let native_runner_module = py.import(intern!(py, "daft.runners.native_runner"))?;
+            let native_runner = native_runner_module.getattr(intern!(py, "NativeRunner"))?;
+
+            let instance = native_runner.call0()?;
+            let instance = instance.unbind();
+
+            Ok(Self {
+                instance: Arc::new(instance),
+            })
+        })
+    }
+
+    pub fn run_iter_impl(
+        &self,
+        py: Python<'_>,
+        lp: LogicalPlanBuilder,
+        results_buffer_size: Option<usize>,
+    ) -> DaftResult<Vec<DaftResult<MicroPartitionRef>>> {
+        let py_lp = PyLogicalPlanBuilder::new(lp);
+        let builder = py.import(intern!(py, "daft.logical.builder"))?;
+        let builder = builder.getattr(intern!(py, "LogicalPlanBuilder"))?;
+        let builder = builder.call((py_lp,), None)?;
+        let result = self.instance.call_method(
             py,
             intern!(py, "run_iter_tables"),
             (builder, results_buffer_size),
