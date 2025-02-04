@@ -33,8 +33,11 @@ use crate::{
 
 impl Session {
     fn get_runner_config_from_session(&self) -> ConnectResult<RunnerConfig> {
-        let runner = self.config_values().get("daft.runner").map(|s| s.as_str());
-        match runner {
+        let runner = self
+            .config_values()
+            .get("daft.runner")
+            .map(|s| s.to_lowercase());
+        match runner.as_deref() {
             Some("ray") => {
                 let address = self.config_values().get("daft.runner.ray.address").cloned();
                 let max_task_backlog = self
@@ -52,7 +55,15 @@ impl Session {
                     force_client_mode,
                 })
             }
+            Some("py") => {
+                let use_thread_pool = self
+                    .config_values()
+                    .get("daft.runner.py.use_thread_pool")
+                    .map(|s| s.parse().unwrap());
 
+                Ok(RunnerConfig::Py { use_thread_pool })
+            }
+            Some("native") => Ok(RunnerConfig::Native),
             Some(other) => invalid_argument_err!("Invalid runner: {}", other),
             _ => Ok(RunnerConfig::Native),
         }
@@ -76,7 +87,7 @@ impl Session {
         let runner = self.get_or_create_runner()?;
 
         let result_set = tokio::task::spawn_blocking(move || {
-            Python::with_gil(|py| runner.run_iter_impl(py, lp, None))
+            Python::with_gil(|py| runner.run_iter_tables(py, lp, None))
         })
         .await??;
 

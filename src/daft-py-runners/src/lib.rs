@@ -110,7 +110,7 @@ impl Runner {
             Self::Py(PyRunner { pyobj }) => pyobj.as_ref(),
         }
     }
-    pub fn run_iter_impl(
+    pub fn run_iter_tables(
         &self,
         py: Python<'_>,
         lp: LogicalPlanBuilder,
