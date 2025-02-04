@@ -44,4 +44,4 @@ jobs:
             ]
           }
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-        webhook-type: webhook-trigger
+        webhook-type: incoming-webhook
