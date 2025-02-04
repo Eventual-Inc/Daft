@@ -1,5 +1,5 @@
 [package]
-name = "daft-session"
+name = "daft-context"
 edition.workspace = true
 version.workspace = true
 

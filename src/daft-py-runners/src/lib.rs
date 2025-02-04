@@ -129,3 +129,53 @@ impl NativeRunner {
         Ok(iter.collect())
     }
 }
+
+#[derive(Debug)]
+#[cfg(feature = "python")]
+pub enum Runner {
+    Ray(RayRunner),
+    Native(NativeRunner),
+}
+
+#[cfg(feature = "python")]
+impl Runner {
+    pub fn run_iter_impl(
+        &self,
+        py: Python<'_>,
+        lp: LogicalPlanBuilder,
+        results_buffer_size: Option<usize>,
+    ) -> DaftResult<Vec<DaftResult<MicroPartitionRef>>> {
+        match self {
+            Runner::Ray(ray) => ray.run_iter_impl(py, lp, results_buffer_size),
+            Runner::Native(native) => native.run_iter_impl(py, lp, results_buffer_size),
+        }
+    }
+}
+
+#[derive(Debug)]
+#[cfg(feature = "python")]
+pub enum RunnerConfig {
+    Native,
+    Ray {
+        address: Option<String>,
+        max_task_backlog: Option<usize>,
+        force_client_mode: Option<bool>,
+    },
+}
+
+impl RunnerConfig {
+    pub fn create_runner(self) -> DaftResult<Runner> {
+        match self {
+            RunnerConfig::Native => Ok(Runner::Native(NativeRunner::try_new()?)),
+            RunnerConfig::Ray {
+                address,
+                max_task_backlog,
+                force_client_mode,
+            } => Ok(Runner::Ray(RayRunner::try_new(
+                address,
+                max_task_backlog,
+                force_client_mode,
+            )?)),
+        }
+    }
+}

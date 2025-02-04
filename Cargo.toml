@@ -38,7 +38,7 @@ daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
-daft-session = {path = "src/daft-session", default-features = false}
+daft-context = {path = "src/daft-context", default-features = false}
 lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
@@ -78,7 +78,7 @@ python = [
   "daft-stats/python",
   "daft-table/python",
   "daft-writers/python",
-  "daft-session/python",
+  "daft-context/python",
   "dep:daft-catalog-python-catalog",
   "dep:daft-connect",
   "dep:pyo3",
@@ -176,7 +176,7 @@ members = [
   "src/generated/spark-connect",
   "src/common/partitioning",
   "src/daft-py-runners"
-, "src/daft-session"]
+, "src/daft-context"]
 
 [workspace.dependencies]
 approx = "0.5.1"
@@ -197,6 +197,7 @@ common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
 common-runtime = {path = "src/common/runtime", default-features = false}
+daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-hash = {path = "src/daft-hash"}

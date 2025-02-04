@@ -1927,6 +1927,7 @@ dependencies = [
  "daft-catalog-python-catalog",
  "daft-compression",
  "daft-connect",
+ "daft-context",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1946,7 +1947,6 @@ dependencies = [
  "daft-py-runners",
  "daft-scan",
  "daft-scheduler",
- "daft-session",
  "daft-sql",
  "daft-stats",
  "daft-table",
@@ -2015,6 +2015,7 @@ dependencies = [
  "common-file-formats",
  "common-runtime",
  "daft-catalog",
+ "daft-context",
  "daft-core",
  "daft-dsl",
  "daft-local-execution",
@@ -2037,6 +2038,22 @@ dependencies = [
  "tonic",
  "tracing",
  "uuid 1.11.0",
+]
+
+[[package]]
+name = "daft-context"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-daft-config",
+ "common-error",
+ "common-io-config",
+ "common-runtime",
+ "daft-catalog",
+ "daft-micropartition",
+ "daft-py-runners",
+ "log",
+ "once_cell",
+ "pyo3",
 ]
 
 [[package]]
@@ -2571,22 +2588,6 @@ dependencies = [
  "pyo3",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "daft-session"
-version = "0.3.0-dev0"
-dependencies = [
- "common-daft-config",
- "common-error",
- "common-io-config",
- "common-runtime",
- "daft-catalog",
- "daft-micropartition",
- "daft-py-runners",
- "log",
- "once_cell",
- "pyo3",
 ]
 
 [[package]]

@@ -1,17 +1,17 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_error::DaftResult;
 use daft_catalog::DaftCatalog;
-use daft_py_runners::{NativeRunner, RayRunner};
+use daft_py_runners::{NativeRunner, RayRunner, Runner, RunnerConfig};
 use once_cell::sync::OnceCell;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 #[derive(Debug)]
 pub struct ContextState {
-    pub config: Arc<RwLock<Config>>,
-    _catalog: Arc<RwLock<DaftCatalog>>,
+    pub config: Config,
+    pub catalog: DaftCatalog,
     runner: OnceCell<Arc<Runner>>,
 }
 
@@ -22,27 +22,10 @@ pub struct Config {
     pub planning: Arc<DaftPlanningConfig>,
 }
 
-#[derive(Debug)]
-#[cfg(feature = "python")]
-pub enum Runner {
-    Ray(RayRunner),
-    Native(NativeRunner),
-}
-
-#[derive(Debug)]
-#[cfg(feature = "python")]
-enum RunnerConfig {
-    Native,
-    Ray {
-        address: Option<String>,
-        max_task_backlog: Option<usize>,
-        force_client_mode: Option<bool>,
-    },
-}
-
 #[cfg(feature = "python")]
 impl ContextState {
     /// Retrieves the runner.
+    ///
     /// WARNING: This will set the runner if it has not yet been set.
     pub fn get_or_create_runner(&mut self) -> Arc<Runner> {
         if let Some(runner) = self.runner.get() {
@@ -50,34 +33,12 @@ impl ContextState {
         }
 
         let runner_cfg = get_runner_config_from_env();
-        match runner_cfg {
-            RunnerConfig::Native => {
-                let runner =
-                    Runner::Native(NativeRunner::try_new().expect("Failed to create NativeRunner"));
-                let runner = Arc::new(runner);
-                self.runner
-                    .set(runner.clone())
-                    .expect("Failed to set runner");
-
-                runner
-            }
-            #[cfg(feature = "python")]
-            RunnerConfig::Ray {
-                address,
-                max_task_backlog,
-                force_client_mode,
-            } => {
-                let ray_engine = RayRunner::try_new(address, max_task_backlog, force_client_mode)
-                    .expect("Failed to create RayEngine");
-
-                let runner = Runner::Ray(ray_engine);
-                let runner = Arc::new(runner);
-                self.runner
-                    .set(runner.clone())
-                    .expect("Failed to set runner");
-                runner
-            }
-        }
+        let runner = runner_cfg.create_runner().expect("Failed to create runner");
+        let runner = Arc::new(runner);
+        self.runner
+            .set(runner.clone())
+            .expect("Failed to set runner");
+        runner
     }
 }
 
@@ -94,6 +55,40 @@ impl DaftContext {
 #[derive(Debug, Clone)]
 pub struct DaftContext {
     state: Arc<RwLock<ContextState>>,
+}
+
+impl DaftContext {
+    pub fn new() -> Self {
+        let state = ContextState {
+            config: Default::default(),
+            catalog: DaftCatalog::default(),
+            runner: OnceCell::new(),
+        };
+        let state = RwLock::new(state);
+        let state = Arc::new(state);
+        Self { state }
+    }
+
+    pub fn runner(&self) -> Option<Arc<Runner>> {
+        self.state.read().unwrap().runner.get().cloned()
+    }
+
+    pub fn set_runner(&self, runner: Arc<Runner>) {
+        self.state
+            .write()
+            .unwrap()
+            .runner
+            .set(runner)
+            .expect("Failed to set runner");
+    }
+
+    pub fn state(&self) -> RwLockReadGuard<'_, ContextState> {
+        self.state.read().unwrap()
+    }
+
+    pub fn state_mut(&self) -> std::sync::RwLockWriteGuard<'_, ContextState> {
+        self.state.write().unwrap()
+    }
 }
 
 impl std::ops::Deref for DaftContext {
@@ -117,15 +112,7 @@ pub fn get_context() -> DaftContext {
     match DAFT_CONTEXT.get() {
         Some(ctx) => ctx.clone(),
         None => {
-            let state = ContextState {
-                config: Default::default(),
-                _catalog: Arc::new(RwLock::new(DaftCatalog::default())),
-                runner: OnceCell::new(),
-            };
-            let state = RwLock::new(state);
-            let state = Arc::new(state);
-            let ctx = DaftContext { state };
-
+            let ctx = DaftContext::new();
             DAFT_CONTEXT
                 .set(ctx.clone())
                 .expect("Failed to set DaftContext");
@@ -315,7 +302,7 @@ mod python {
         #[getter(_daft_execution_config)]
         pub fn get_daft_execution_config(&self) -> PyResult<PyDaftExecutionConfig> {
             let state = self.inner.state.read().unwrap();
-            let config = state.config.read().unwrap().execution.clone();
+            let config = state.config.execution.clone();
             let config = PyDaftExecutionConfig { config };
             Ok(config)
         }
@@ -323,21 +310,21 @@ mod python {
         #[getter(_daft_planning_config)]
         pub fn get_daft_planning_config(&self) -> PyResult<PyDaftPlanningConfig> {
             let state = self.inner.state.read().unwrap();
-            let config = state.config.read().unwrap().planning.clone();
+            let config = state.config.planning.clone();
             let config = PyDaftPlanningConfig { config };
             Ok(config)
         }
 
         #[setter(_daft_execution_config)]
         pub fn set_daft_execution_config(&mut self, config: PyDaftExecutionConfig) {
-            let state = self.inner.state.write().unwrap();
-            state.config.write().unwrap().execution = config.config;
+            let mut state = self.inner.state.write().unwrap();
+            state.config.execution = config.config;
         }
 
         #[setter(_daft_planning_config)]
         pub fn set_daft_planning_config(&mut self, config: PyDaftPlanningConfig) {
-            let state = self.inner.state.write().unwrap();
-            state.config.write().unwrap().planning = config.config;
+            let mut state = self.inner.state.write().unwrap();
+            state.config.planning = config.config;
         }
     }
     impl From<DaftContext> for PyDaftContext {

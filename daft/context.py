@@ -9,19 +9,6 @@ from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlan
 from daft.daft import set_runner_native as _set_runner_native
 from daft.daft import set_runner_ray as _set_runner_ray
 
-__all__ = [
-    "DaftContext",
-    "execution_config_ctx",
-    "get_context",
-    "planning_config_ctx",
-    "set_execution_config",
-    "set_planning_config",
-    "set_runner_native",
-    "set_runner_py",
-    "set_runner_ray",
-]
-
-
 logger = logging.getLogger(__name__)
 
 import threading

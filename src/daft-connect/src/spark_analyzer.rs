@@ -48,7 +48,6 @@ use crate::{
     internal_err, invalid_argument_err, not_yet_implemented,
     session::Session,
     util::FromOptionalField,
-    Runner,
 };
 
 #[derive(Clone)]
@@ -75,55 +74,26 @@ impl SparkAnalyzer<'_> {
         schema: Arc<Schema>,
         tables: Vec<Table>,
     ) -> ConnectResult<LogicalPlanBuilder> {
-        let runner = self.session.get_runner()?;
+        let runner = self.session.get_or_create_runner()?;
+        let mp = MicroPartition::new_loaded(schema, Arc::new(tables), None);
+        Python::with_gil(|py| {
+            // Convert MicroPartition to a logical plan using Python interop.
+            let py_micropartition = py
+                .import(intern!(py, "daft.table"))?
+                .getattr(intern!(py, "MicroPartition"))?
+                .getattr(intern!(py, "_from_pymicropartition"))?
+                .call1((PyMicroPartition::from(mp),))?;
 
-        match runner {
-            Runner::Ray => {
-                let mp = MicroPartition::new_loaded(schema, Arc::new(tables), None);
-                Python::with_gil(|py| {
-                    // Convert MicroPartition to a logical plan using Python interop.
-                    let py_micropartition = py
-                        .import(intern!(py, "daft.table"))?
-                        .getattr(intern!(py, "MicroPartition"))?
-                        .getattr(intern!(py, "_from_pymicropartition"))?
-                        .call1((PyMicroPartition::from(mp),))?;
+            // ERROR:   2: AttributeError: 'daft.daft.PySchema' object has no attribute '_schema'
+            let py_plan_builder = py
+                .import(intern!(py, "daft.dataframe.dataframe"))?
+                .getattr(intern!(py, "to_logical_plan_builder"))?
+                .call1((py_micropartition,))?;
+            let py_plan_builder = py_plan_builder.getattr(intern!(py, "_builder"))?;
+            let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
 
-                    // ERROR:   2: AttributeError: 'daft.daft.PySchema' object has no attribute '_schema'
-                    let py_plan_builder = py
-                        .import(intern!(py, "daft.dataframe.dataframe"))?
-                        .getattr(intern!(py, "to_logical_plan_builder"))?
-                        .call1((py_micropartition,))?;
-                    let py_plan_builder = py_plan_builder.getattr(intern!(py, "_builder"))?;
-                    let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
-
-                    Ok::<_, ConnectError>(plan.builder)
-                })
-            }
-            Runner::Native => {
-                let partition_key = uuid::Uuid::new_v4().to_string();
-
-                let pset = Arc::new(MicroPartitionSet::from_tables(plan_id, tables)?);
-
-                let PartitionMetadata {
-                    num_rows,
-                    size_bytes,
-                } = pset.metadata();
-                let num_partitions = pset.num_partitions();
-
-                self.session.psets.put_partition_set(&partition_key, &pset);
-
-                let cache_entry = PartitionCacheEntry::new_rust(partition_key.clone(), pset);
-
-                Ok(LogicalPlanBuilder::in_memory_scan(
-                    &partition_key,
-                    cache_entry,
-                    schema,
-                    num_partitions,
-                    size_bytes,
-                    num_rows,
-                )?)
-            }
-        }
+            Ok::<_, ConnectError>(plan.builder)
+        })
     }
 
     pub async fn to_logical_plan(&self, relation: Relation) -> ConnectResult<LogicalPlanBuilder> {
@@ -697,12 +667,8 @@ impl SparkAnalyzer<'_> {
             not_yet_implemented!("pos_arguments");
         }
 
-        let catalog = self
-            .session
-            .catalog
-            .read()
-            .map_err(|e| ConnectError::internal(format!("Failed to read catalog: {e}")))?;
-        let catalog = catalog.clone();
+        let state = self.session.ctx().state();
+        let catalog = state.catalog.clone();
 
         let mut planner = SQLPlanner::new(catalog);
         let plan = planner.plan_sql(&query)?;
