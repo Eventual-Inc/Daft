@@ -3,11 +3,15 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
-from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig, PyRunner
+from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
 from daft.daft import set_runner_native as _set_runner_native
+from daft.daft import set_runner_py as _set_runner_py
 from daft.daft import set_runner_ray as _set_runner_ray
+
+if TYPE_CHECKING:
+    from daft.runners.runner import Runner
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,12 @@ class DaftContext:
     _ctx: PyDaftContext
 
     _lock: ClassVar[threading.Lock] = threading.Lock()
+    
+    @property
+    def _runner(self) -> Runner:
+        return self._ctx._runner
 
+    @staticmethod
     def _from_native(ctx: PyDaftContext) -> DaftContext:
         return DaftContext(ctx=ctx)
 
@@ -31,8 +40,9 @@ class DaftContext:
         else:
             self._ctx = PyDaftContext()
 
-    def get_or_create_runner(self) -> PyRunner:
+    def get_or_create_runner(self) -> Runner:
         return self._ctx.get_or_create_runner()
+        
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -73,15 +83,10 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the Py runner
     """
-    ctx = get_context()
-    with ctx._lock:
-        if ctx._runner is not None and ctx._runner.name not in {"py", "native"}:
-            raise RuntimeError("Cannot set runner more than once")
-
-        from daft.runners.pyrunner import PyRunner
-
-        ctx._runner = PyRunner(use_thread_pool=use_thread_pool)
-        return ctx
+    py_ctx = _set_runner_py(
+        use_thread_pool=use_thread_pool,
+    )
+    return DaftContext._from_native(py_ctx)
 
 
 def set_runner_native() -> DaftContext:
@@ -124,12 +129,12 @@ def set_planning_config(
     # Replace values in the DaftPlanningConfig with user-specified overrides
     ctx = get_context()
     with ctx._lock:
-        old_daft_planning_config = ctx._daft_planning_config if config is None else config
+        old_daft_planning_config = ctx._ctx._daft_planning_config if config is None else config
         new_daft_planning_config = old_daft_planning_config.with_config_values(
             default_io_config=default_io_config,
         )
 
-        ctx._daft_planning_config = new_daft_planning_config
+        ctx._ctx._daft_planning_config = new_daft_planning_config
         return ctx
 
 
@@ -220,8 +225,7 @@ def set_execution_config(
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
     with ctx._lock:
-        ctx = ctx._ctx
-        old_daft_execution_config = ctx._daft_execution_config if config is None else config
+        old_daft_execution_config = ctx._ctx._daft_execution_config if config is None else config
 
         new_daft_execution_config = old_daft_execution_config.with_config_values(
             scan_tasks_min_size_bytes=scan_tasks_min_size_bytes,
@@ -251,5 +255,5 @@ def set_execution_config(
             scantask_splitting_level=scantask_splitting_level,
         )
 
-        ctx._daft_execution_config = new_daft_execution_config
+        ctx._ctx._daft_execution_config = new_daft_execution_config
         return ctx

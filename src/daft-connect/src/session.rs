@@ -22,6 +22,10 @@ impl Session {
         &self.ctx
     }
 
+    pub fn ctx_mut(&mut self) -> &mut DaftContext {
+        &mut self.ctx
+    }
+
     pub fn config_values(&self) -> &BTreeMap<String, String> {
         &self.config_values
     }

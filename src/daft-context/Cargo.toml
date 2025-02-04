@@ -1,19 +1,14 @@
-[package]
-name = "daft-context"
-edition.workspace = true
-version.workspace = true
-
 [dependencies]
 common-daft-config = {path = "../common/daft-config"}
 common-error = {path = "../common/error"}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-runtime = {workspace = true}
 daft-catalog = {path = "../daft-catalog"}
-pyo3 = {workspace = true, optional = true}
-daft-py-runners = {workspace = true}
 daft-micropartition = {workspace = true}
+daft-py-runners = {workspace = true}
 log = {workspace = true}
 once_cell = {workspace = true}
+pyo3 = {workspace = true, optional = true}
 
 [features]
 python = [
@@ -22,9 +17,12 @@ python = [
   "daft-catalog/python",
   "daft-micropartition/python",
   "daft-py-runners/python"
-
 ]
-
 
 [lints]
 workspace = true
+
+[package]
+name = "daft-context"
+edition.workspace = true
+version.workspace = true

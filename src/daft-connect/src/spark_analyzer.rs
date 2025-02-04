@@ -9,13 +9,7 @@ use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::series::Series;
 use daft_dsl::col;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
-use daft_micropartition::{
-    partitioning::{
-        MicroPartitionSet, PartitionCacheEntry, PartitionMetadata, PartitionSet, PartitionSetCache,
-    },
-    python::PyMicroPartition,
-    MicroPartition,
-};
+use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
@@ -70,11 +64,10 @@ impl SparkAnalyzer<'_> {
     ///
     pub fn create_in_memory_scan(
         &self,
-        plan_id: usize,
+        _plan_id: usize,
         schema: Arc<Schema>,
         tables: Vec<Table>,
     ) -> ConnectResult<LogicalPlanBuilder> {
-        let runner = self.session.get_or_create_runner()?;
         let mp = MicroPartition::new_loaded(schema, Arc::new(tables), None);
         Python::with_gil(|py| {
             // Convert MicroPartition to a logical plan using Python interop.

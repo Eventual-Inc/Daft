@@ -65,7 +65,7 @@ impl Session {
         let cfg = self.get_runner_config_from_session()?;
         let runner = cfg.create_runner()?;
         let runner = Arc::new(runner);
-        self.ctx().set_runner(runner.clone());
+        self.ctx().set_runner(runner.clone())?;
         Ok(runner)
     }
 
@@ -73,8 +73,7 @@ impl Session {
         &self,
         lp: LogicalPlanBuilder,
     ) -> ConnectResult<BoxStream<DaftResult<Arc<MicroPartition>>>> {
-        let ctx = self.ctx();
-        let runner = ctx.get_or_create_runner();
+        let runner = self.get_or_create_runner()?;
 
         let result_set = tokio::task::spawn_blocking(move || {
             Python::with_gil(|py| runner.run_iter_impl(py, lp, None))
@@ -94,7 +93,6 @@ impl Session {
         let result_complete = res.result_complete_response();
 
         let (tx, rx) = tokio::sync::mpsc::channel::<ConnectResult<ExecutePlanResponse>>(1);
-        let rt = common_runtime::get_compute_runtime();
         let this = self.clone();
         self.compute_runtime.runtime.spawn(async move {
             let execution_fut = async {
