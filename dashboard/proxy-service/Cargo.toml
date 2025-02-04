@@ -1,6 +1,7 @@
 [dependencies]
-anyhow = "1.0.95"
-tokio-tungstenite = "0.26.1"
+anyhow = "1.0"
+simdutf8 = "0.1"
+tokio-tungstenite = "0.26"
 futures.workspace = true
 tokio.workspace = true
 

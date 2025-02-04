@@ -22,27 +22,27 @@ async fn run_daft_server(tx: Sender<String>) {
             loop {
                 stream.readable().await?;
 
-                const MAX_MESSAGE_SIZE: usize = 2usize.pow(20);
-                if total_size >= MAX_MESSAGE_SIZE {
-                    anyhow::bail!("Maximum message size exceeded; max: {MAX_MESSAGE_SIZE}, total-size: {total_size}");
-                }
-
                 const BUFFER_SIZE: usize = 2usize.pow(10);
                 let mut buf = [0; BUFFER_SIZE];
 
                 match stream.try_read(&mut buf) {
                     Ok(0) => break,
                     Ok(bytes_read) => {
-                        let new = String::from_utf8_lossy(&buf[0..bytes_read]);
-                        string.push_str(&new);
                         total_size += bytes_read;
+
+                        const MAX_MESSAGE_SIZE: usize = 2usize.pow(20);
+                        if total_size > MAX_MESSAGE_SIZE {
+                            anyhow::bail!("Maximum message size exceeded; max: {MAX_MESSAGE_SIZE}, message-size: {total_size}");
+                        }
+
+                        let new = simdutf8::basic::from_utf8(&buf[0..bytes_read])?;
+                        string.push_str(new);
                     }
                     Err(err) if err.kind() == ErrorKind::WouldBlock => (),
                     Err(err) => Err(err)?,
                 }
             }
 
-            // If `tx.subscribe()` is not called before this line executes, an error saying something like "No receivers found" will be thrown.
             tx.send(string)?;
         }
     }
