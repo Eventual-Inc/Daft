@@ -10,10 +10,11 @@ pub(crate) struct BruteForceJoinOrderer {}
 
 impl BruteForceJoinOrderer {
     // Takes the following arguments:
-    // - The join graph we're evaluating on.
+    // - graph: The join graph we're evaluating on.
     // - elements: The list of elements to choose from.
-    // - cur_idx: The current index in the list of elements to choose from.
-    // - remaining: The number of elements to choose.
+    // - cur_idx: The current index (out of the `k_to_pick` elements we're choosing) to swap into.
+    // - pick_idx: The current index in the list of elements to pick from.
+    // - k_to_pick: The number of elements to pick.
     // - min_cost: The current minimum cost (if any) of all the generated combinations.
     // - chosen_plan: The current join order tree (if any) that corresponds to the minimum cost.
     //
