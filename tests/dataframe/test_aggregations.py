@@ -33,8 +33,7 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            col("values").agg_set().alias("set"),
         ]
     )
     expected = {
@@ -44,8 +43,7 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
         "max": [2],
         "count": [2],
         "list": [[1, None, 2]],
-        "set_no_nulls": [[1, 2]],
-        "set_with_nulls": [[1, None, 2]],
+        "set": [[1, 2]],
     }
 
     daft_df.collect()
@@ -53,10 +51,8 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
 
     res_list = daft_cols.pop("list")
     exp_list = expected.pop("list")
-    res_set_no_nulls = daft_cols.pop("set_no_nulls")
-    exp_set_no_nulls = expected.pop("set_no_nulls")
-    res_set_with_nulls = daft_cols.pop("set_with_nulls")
-    exp_set_with_nulls = expected.pop("set_with_nulls")
+    res_set = daft_cols.pop("set")
+    exp_set = expected.pop("set")
 
     assert pa.Table.from_pydict(daft_cols) == pa.Table.from_pydict(expected)
 
@@ -65,21 +61,11 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
     assert set(res_list[0]) == set(exp_list[0])
 
     # Check set agg without nulls
-    assert len(res_set_no_nulls) == 1
-    assert len(res_set_no_nulls[0]) == len(
-        set(x for x in res_set_no_nulls[0] if x is not None)
-    ), "Result should contain no duplicates"
-    assert set(x for x in res_set_no_nulls[0] if x is not None) == set(
-        x for x in exp_set_no_nulls[0] if x is not None
+    assert len(res_set) == 1
+    assert len(res_set[0]) == len(set(x for x in res_set[0] if x is not None)), "Result should contain no duplicates"
+    assert set(x for x in res_set[0] if x is not None) == set(
+        x for x in exp_set[0] if x is not None
     ), "Sets should contain same non-null elements"
-
-    # Check set agg with nulls
-    assert len(res_set_with_nulls) == 1
-    assert len(res_set_with_nulls[0]) == len(
-        set(x for x in res_set_with_nulls[0])
-    ), "Result should contain no duplicates"
-    assert None in res_set_with_nulls[0], "Result should contain null when ignore_nulls=False"
-    assert set(res_set_with_nulls[0]) == set(exp_set_with_nulls[0]), "Sets should contain same elements including nulls"
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -99,8 +85,7 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            col("values").agg_set().alias("set"),
         ]
     )
     expected = {
@@ -110,8 +95,7 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
         "max": [None],
         "count": [0],
         "list": [[None, None, None]],
-        "set_no_nulls": [[]],  # Empty list since no non-null values
-        "set_with_nulls": [[None]],  # List with single null since all values are null
+        "set": [[]],  # Empty list since no non-null values
     }
 
     daft_df.collect()
@@ -120,10 +104,8 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
     # Handle list and set results separately
     res_list = daft_cols.pop("list")
     exp_list = expected.pop("list")
-    res_set_no_nulls = daft_cols.pop("set_no_nulls")
-    exp_set_no_nulls = expected.pop("set_no_nulls")
-    res_set_with_nulls = daft_cols.pop("set_with_nulls")
-    exp_set_with_nulls = expected.pop("set_with_nulls")
+    res_set = daft_cols.pop("set")
+    exp_set = expected.pop("set")
 
     # Check regular aggregations
     assert pa.Table.from_pydict(daft_cols) == pa.Table.from_pydict(expected)
@@ -133,12 +115,8 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
     assert res_list[0] == exp_list[0]
 
     # Check set without nulls
-    assert len(res_set_no_nulls) == 1
-    assert res_set_no_nulls[0] == exp_set_no_nulls[0], "Should be empty list when no non-null values exist"
-
-    # Check set with nulls
-    assert len(res_set_with_nulls) == 1
-    assert res_set_with_nulls[0] == exp_set_with_nulls[0], "Should contain single null when all values are null"
+    assert len(res_set) == 1
+    assert res_set[0] == exp_set[0], "Should be empty list when no non-null values exist"
 
 
 def test_agg_global_empty(make_df):
@@ -157,8 +135,7 @@ def test_agg_global_empty(make_df):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            col("values").agg_set().alias("set"),
         ]
     )
     expected = {
@@ -168,8 +145,7 @@ def test_agg_global_empty(make_df):
         "max": [None],
         "count": [0],
         "list": [[]],
-        "set_no_nulls": [[]],  # Empty list since DataFrame is empty
-        "set_with_nulls": [[]],  # Empty list since DataFrame is empty
+        "set": [[]],  # Empty list since DataFrame is empty
     }
 
     daft_df.collect()
@@ -178,10 +154,8 @@ def test_agg_global_empty(make_df):
     # Handle list and set results separately
     res_list = daft_cols.pop("list")
     exp_list = expected.pop("list")
-    res_set_no_nulls = daft_cols.pop("set_no_nulls")
-    exp_set_no_nulls = expected.pop("set_no_nulls")
-    res_set_with_nulls = daft_cols.pop("set_with_nulls")
-    exp_set_with_nulls = expected.pop("set_with_nulls")
+    res_set = daft_cols.pop("set")
+    exp_set = expected.pop("set")
 
     # Check regular aggregations
     assert pa.Table.from_pydict(daft_cols) == pa.Table.from_pydict(expected)
@@ -191,12 +165,8 @@ def test_agg_global_empty(make_df):
     assert res_list[0] == exp_list[0], "List should be empty for empty DataFrame"
 
     # Check set without nulls
-    assert len(res_set_no_nulls) == 1
-    assert res_set_no_nulls[0] == exp_set_no_nulls[0], "Set should be empty for empty DataFrame"
-
-    # Check set with nulls
-    assert len(res_set_with_nulls) == 1
-    assert res_set_with_nulls[0] == exp_set_with_nulls[0], "Set should be empty for empty DataFrame"
+    assert len(res_set) == 1
+    assert res_set[0] == exp_set[0], "Set should be empty for empty DataFrame"
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 7])
@@ -216,8 +186,7 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            col("values").agg_set().alias("set"),
         ]
     )
     expected = {
@@ -228,8 +197,7 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
         "max": [2, 4],
         "count": [2, 2],
         "list": [[1, None, 2], [2, None, 4]],
-        "set_no_nulls": [[1, 2], [2, 4]],  # Only non-null values, preserving order
-        "set_with_nulls": [[1, None, 2], [2, None, 4]],  # All unique values including nulls
+        "set": [[1, 2], [2, 4]],  # Only non-null values, preserving order
     }
 
     daft_df.collect()
@@ -238,10 +206,8 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     # Handle list and set results separately
     res_list = daft_cols.pop("list")
     exp_list = expected.pop("list")
-    res_set_no_nulls = daft_cols.pop("set_no_nulls")
-    exp_set_no_nulls = expected.pop("set_no_nulls")
-    res_set_with_nulls = daft_cols.pop("set_with_nulls")
-    exp_set_with_nulls = expected.pop("set_with_nulls")
+    res_set = daft_cols.pop("set")
+    exp_set = expected.pop("set")
 
     # Check regular aggregations
     assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group") == sort_arrow_table(
@@ -255,17 +221,11 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     assert freeze([list(map(set, res_list))[i] for i in arg_sort]) == freeze(list(map(set, exp_list)))
 
     # Check set without nulls
-    sorted_res_no_nulls = [res_set_no_nulls[i] for i in arg_sort]
-    sorted_exp_no_nulls = exp_set_no_nulls
-    for res, exp in zip(sorted_res_no_nulls, sorted_exp_no_nulls):
+    sorted_res = [res_set[i] for i in arg_sort]
+    sorted_exp = exp_set
+    for res, exp in zip(sorted_res, sorted_exp):
         assert len(res) == len(set(x for x in res if x is not None)), "Result should contain no duplicates"
         assert set(x for x in res if x is not None) == set(x for x in exp if x is not None), "Sets should match"
-    # Check set with nulls
-    sorted_res_with_nulls = [res_set_with_nulls[i] for i in arg_sort]
-    sorted_exp_with_nulls = exp_set_with_nulls
-    for res, exp in zip(sorted_res_with_nulls, sorted_exp_with_nulls):
-        assert len(res) == len(set(res)), "Result should contain no duplicates"
-        assert set(res) == set(exp), "Sets should match"
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
@@ -288,8 +248,7 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            col("values").agg_set().alias("set"),
         ]
     )
 
@@ -301,8 +260,7 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
         "max": [None, None],
         "count": [0, 0],
         "list": [[None, None], [None, None]],
-        "set_no_nulls": [[], []],  # Empty lists since no non-null values in any group
-        "set_with_nulls": [[None], [None]],  # Single null per group since all values are null
+        "set": [[], []],  # Empty lists since no non-null values in any group
     }
 
     daft_df.collect()
@@ -311,10 +269,8 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
     # Handle list and set results separately
     res_list = daft_cols.pop("list")
     exp_list = expected.pop("list")
-    res_set_no_nulls = daft_cols.pop("set_no_nulls")
-    exp_set_no_nulls = expected.pop("set_no_nulls")
-    res_set_with_nulls = daft_cols.pop("set_with_nulls")
-    exp_set_with_nulls = expected.pop("set_with_nulls")
+    res_set = daft_cols.pop("set")
+    exp_set = expected.pop("set")
 
     # Check regular aggregations
     assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group") == sort_arrow_table(
@@ -329,17 +285,10 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
     assert sorted_res_list == exp_list
 
     # Check set without nulls
-    sorted_res_no_nulls = [res_set_no_nulls[i] for i in arg_sort]
-    for res, exp in zip(sorted_res_no_nulls, exp_set_no_nulls):
+    sorted_res = [res_set[i] for i in arg_sort]
+    for res, exp in zip(sorted_res, exp_set):
         assert res == exp, "Should be empty list when no non-null values exist"
         assert len(res) == 0, "Should be empty list when no non-null values exist"
-
-    # Check set with nulls
-    sorted_res_with_nulls = [res_set_with_nulls[i] for i in arg_sort]
-    for res, exp in zip(sorted_res_with_nulls, exp_set_with_nulls):
-        assert res == exp, "Should contain single null when all values are null"
-        assert len(res) == 1, "Should contain exactly one null when all values are null"
-        assert None in res, "Should contain null when ignore_nulls=False"
 
 
 def test_agg_groupby_null_type_column(make_df):
@@ -396,8 +345,7 @@ def test_all_null_groupby_keys(make_df, repartition_nparts, with_morsel_size):
         .agg(
             col("values").agg_list().alias("list"),
             col("values").mean().alias("mean"),
-            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            col("values").agg_set().alias("set"),
         )
     )
 
@@ -412,15 +360,9 @@ def test_all_null_groupby_keys(make_df, repartition_nparts, with_morsel_size):
     assert set(daft_cols["list"][0]) == {1, 2, 3}
 
     # Check set without nulls (should be same as with nulls since no nulls in values)
-    assert len(daft_cols["set_no_nulls"]) == 1
-    assert len(daft_cols["set_no_nulls"][0]) == 3, "Should contain all unique non-null values"
-    assert set(daft_cols["set_no_nulls"][0]) == {1, 2, 3}, "Should contain all unique values"
-    assert None not in daft_cols["set_no_nulls"][0], "Should not contain nulls"
-
-    # Check set with nulls (should be same as without nulls since no nulls in values)
-    assert len(daft_cols["set_with_nulls"]) == 1
-    assert len(daft_cols["set_with_nulls"][0]) == 3, "Should contain all unique values"
-    assert set(daft_cols["set_with_nulls"][0]) == {1, 2, 3}, "Should contain all unique values"
+    assert len(daft_cols["set"]) == 1
+    assert len(daft_cols["set"][0]) == 3, "Should contain all unique non-null values"
+    assert set(daft_cols["set"][0]) == {1, 2, 3}, "Should contain all unique values"
 
 
 def test_null_type_column_groupby_keys(make_df):
@@ -455,8 +397,7 @@ def test_agg_groupby_empty(make_df):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            col("values").agg_set().alias("set"),
         ]
     )
 
@@ -468,8 +409,7 @@ def test_agg_groupby_empty(make_df):
         "max": [],
         "count": [],
         "list": [],
-        "set_no_nulls": [],  # Empty since DataFrame is empty
-        "set_with_nulls": [],  # Empty since DataFrame is empty
+        "set": [],  # Empty since DataFrame is empty
     }
 
     daft_df.collect()
@@ -501,8 +441,7 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
-            col("values").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-            col("values").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            col("values").agg_set().alias("set"),
         ]
     )
     expected = {
@@ -513,8 +452,7 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
         "max": [2, 4],
         "count": [2, 2],
         "list": [[1, None, 2], [2, None, 4]],
-        "set_no_nulls": [[1, 2], [2, 4]],  # Only non-null values, preserving order
-        "set_with_nulls": [[1, None, 2], [2, None, 4]],  # All unique values including nulls
+        "set": [[1, 2], [2, 4]],  # Only non-null values, preserving order
     }
 
     daft_df.collect()
@@ -523,10 +461,8 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
     # Handle list and set results separately
     res_list = daft_cols.pop("list")
     exp_list = expected.pop("list")
-    res_set_no_nulls = daft_cols.pop("set_no_nulls")
-    exp_set_no_nulls = expected.pop("set_no_nulls")
-    res_set_with_nulls = daft_cols.pop("set_with_nulls")
-    exp_set_with_nulls = expected.pop("set_with_nulls")
+    res_set = daft_cols.pop("set")
+    exp_set = expected.pop("set")
 
     # Check regular aggregations
     assert sort_arrow_table(pa.Table.from_pydict(daft_cols), "group_alias") == sort_arrow_table(
@@ -540,23 +476,14 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
     assert freeze([list(map(set, res_list))[i] for i in arg_sort]) == freeze(list(map(set, exp_list)))
 
     # Check set without nulls
-    sorted_res_no_nulls = [res_set_no_nulls[i] for i in arg_sort]
-    sorted_exp_no_nulls = exp_set_no_nulls
-    for res, exp in zip(sorted_res_no_nulls, sorted_exp_no_nulls):
+    sorted_res = [res_set[i] for i in arg_sort]
+    sorted_exp = exp_set
+    for res, exp in zip(sorted_res, sorted_exp):
         assert len(res) == len(set(x for x in res if x is not None)), "Result should contain no duplicates"
         assert set(x for x in res if x is not None) == set(
             x for x in exp if x is not None
         ), "Sets should contain same non-null elements"
-        assert None not in res, "Result should not contain nulls when ignore_nulls=True"
-
-    # Check set with nulls
-    sorted_res_with_nulls = [res_set_with_nulls[i] for i in arg_sort]
-    sorted_exp_with_nulls = exp_set_with_nulls
-    for res, exp in zip(sorted_res_with_nulls, sorted_exp_with_nulls):
-        assert len(res) == len(set(x for x in res)), "Result should contain no duplicates"
-        assert set(res) == set(exp), "Sets should contain same elements including nulls"
-        if None in exp:
-            assert None in res, "Result should contain null when ignore_nulls=False and nulls exist"
+        assert None not in res, "Result should not contain nulls"
 
 
 @dataclass
@@ -590,8 +517,7 @@ def test_agg_pyobjects_set():
     df = df.into_partitions(2)
     df = df.agg(
         [
-            col("objs").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-            col("objs").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+            col("objs").agg_set().alias("set"),
         ]
     )
     with pytest.raises(DaftTypeError, match="Expected list input, got Python"):
@@ -629,8 +555,7 @@ def test_groupby_agg_pyobjects_set():
         df.groupby(col("groups"))
         .agg(
             [
-                col("objects").agg_set(ignore_nulls=True).alias("set_no_nulls"),
-                col("objects").agg_set(ignore_nulls=False).alias("set_with_nulls"),
+                col("objects").agg_set().alias("set"),
             ]
         )
         .sort(col("groups"))

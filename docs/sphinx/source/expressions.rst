@@ -235,6 +235,7 @@ List
 
    Expression.list.chunk
    Expression.list.count
+   Expression.list.count_distinct
    Expression.list.get
    Expression.list.join
    Expression.list.length
@@ -244,7 +245,7 @@ List
    Expression.list.slice
    Expression.list.sort
    Expression.list.sum
-   Expression.list.unique
+   Expression.list.distinct
    Expression.list.value_counts
 
 Struct

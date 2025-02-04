@@ -334,8 +334,7 @@ test_table_agg_global_cases = [
             "min": [None],
             "max": [None],
             "list": [[]],
-            "set_no_nulls": [[]],  # Empty since DataFrame is empty
-            "set_with_nulls": [[]],  # Empty since DataFrame is empty
+            "set": [[]],
         },
     ),
     (
@@ -347,8 +346,7 @@ test_table_agg_global_cases = [
             "min": [None],
             "max": [None],
             "list": [[None]],
-            "set_no_nulls": [[]],  # Empty since no non-null values
-            "set_with_nulls": [[None]],  # Single null since all values are null
+            "set": [[]],
         },
     ),
     (
@@ -360,8 +358,7 @@ test_table_agg_global_cases = [
             "min": [None],
             "max": [None],
             "list": [[None, None, None]],
-            "set_no_nulls": [[]],  # Empty since no non-null values
-            "set_with_nulls": [[None]],  # Single null since all values are null
+            "set": [[]],
         },
     ),
     (
@@ -373,8 +370,7 @@ test_table_agg_global_cases = [
             "min": [0],
             "max": [3],
             "list": [[None, 3, None, None, 1, 2, 0, None]],
-            "set_no_nulls": [[0, 1, 2, 3]],  # Only non-null values, preserving order
-            "set_with_nulls": [[None, 0, 1, 2, 3]],  # All unique values including null
+            "set": [[0, 1, 2, 3]],
         },
     ),
 ]
@@ -393,8 +389,7 @@ def test_table_agg_global(case) -> None:
             col("input").cast(DataType.int32()).alias("min").min(),
             col("input").cast(DataType.int32()).alias("max").max(),
             col("input").cast(DataType.int32()).alias("list").agg_list(),
-            col("input").cast(DataType.int32()).alias("set_no_nulls").agg_set(ignore_nulls=True),
-            col("input").cast(DataType.int32()).alias("set_with_nulls").agg_set(ignore_nulls=False),
+            col("input").cast(DataType.int32()).alias("set").agg_set(),
         ]
     )
 
@@ -403,10 +398,8 @@ def test_table_agg_global(case) -> None:
     # Handle list and set results separately
     res_list = result.pop("list")
     exp_list = expected.pop("list")
-    res_set_no_nulls = result.pop("set_no_nulls")
-    exp_set_no_nulls = expected.pop("set_no_nulls")
-    res_set_with_nulls = result.pop("set_with_nulls")
-    exp_set_with_nulls = expected.pop("set_with_nulls")
+    res_set = result.pop("set")
+    exp_set = expected.pop("set")
 
     # Check regular aggregations
     for key, value in expected.items():
@@ -417,23 +410,12 @@ def test_table_agg_global(case) -> None:
     assert res_list[0] == exp_list[0]
 
     # Check set without nulls
-    assert len(res_set_no_nulls) == 1
-    assert len(res_set_no_nulls[0]) == len(
-        set(x for x in res_set_no_nulls[0] if x is not None)
-    ), "Result should contain no duplicates"
-    assert set(x for x in res_set_no_nulls[0] if x is not None) == set(
-        x for x in exp_set_no_nulls[0] if x is not None
+    assert len(res_set) == 1
+    assert len(res_set[0]) == len(set(x for x in res_set[0] if x is not None)), "Result should contain no duplicates"
+    assert set(x for x in res_set[0] if x is not None) == set(
+        x for x in exp_set[0] if x is not None
     ), "Sets should contain same non-null elements"
-    assert None not in res_set_no_nulls[0], "Result should not contain nulls when ignore_nulls=True"
-
-    # Check set with nulls
-    assert len(res_set_with_nulls) == 1
-    assert len(res_set_with_nulls[0]) == len(
-        set(x for x in res_set_with_nulls[0])
-    ), "Result should contain no duplicates"
-    assert set(res_set_with_nulls[0]) == set(exp_set_with_nulls[0]), "Sets should contain same elements including nulls"
-    if None in exp_set_with_nulls[0]:
-        assert None in res_set_with_nulls[0], "Result should contain null when ignore_nulls=False and nulls exist"
+    assert None not in res_set[0], "Result should not contain nulls"
 
 
 @pytest.mark.parametrize(
@@ -463,17 +445,14 @@ test_table_agg_groupby_cases = [
             col("cookies").alias("sum").sum(),
             col("name").alias("count").count(),
             col("cookies").alias("list").agg_list(),
-            col("cookies").alias("set_no_nulls").agg_set(ignore_nulls=True),
-            col("cookies").alias("set_with_nulls").agg_set(ignore_nulls=False),
+            col("cookies").alias("set").agg_set(),
         ],
         "expected": {
             "name": ["Alice", "Bob", None],
             "sum": [None, 10, 7],
             "count": [4, 4, 0],
             "list": [[None] * 4, [None, None, 5, 5], [None, 5, None, 2]],
-            # Remove order dependency by using sets for comparison
-            "set_no_nulls": [set(), {5}, {2, 5}],
-            "set_with_nulls": [{None}, {None, 5}, {None, 2, 5}],
+            "set": [set(), {5}, {2, 5}],
         },
     },
     {
@@ -532,13 +511,13 @@ def test_table_agg_groupby(case) -> None:
 
     # Compare non-set columns normally
     for key in result:
-        if key not in ["set_no_nulls", "set_with_nulls"]:
-            assert result[key] == expected[key], f"Mismatch in column {key}"
-        else:
+        if key == "set":
             # Compare set columns by converting to sets
             assert len(result[key]) == len(expected[key]), f"Length mismatch in column {key}"
             for res, exp in zip(result[key], expected[key]):
                 assert set(res) == exp, f"Set mismatch in column {key}"
+        else:
+            assert result[key] == expected[key], f"Mismatch in column {key}"
 
 
 @pytest.mark.parametrize("dtype", daft_comparable_types, ids=[f"{_}" for _ in daft_comparable_types])
@@ -1104,24 +1083,14 @@ def test_global_set_aggs(dtype) -> None:
     daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
 
     # Test without nulls
-    result_no_nulls = daft_table.eval_expression_list([col("input").alias("set").agg_set(ignore_nulls=True)])
-    assert result_no_nulls.get_column("set").datatype() == DataType.list(dtype)
-    expected_no_nulls = [x for x in set(input) if x is not None]
-    result_set = result_no_nulls.to_pydict()["set"][0]
+    result = daft_table.eval_expression_list([col("input").alias("set").agg_set()])
+    assert result.get_column("set").datatype() == DataType.list(dtype)
+    expected = [x for x in set(input) if x is not None]
+    result_set = result.to_pydict()["set"][0]
     # Check length
-    assert len(result_set) == len(expected_no_nulls)
+    assert len(result_set) == len(expected)
     # Convert both to sets to ignore order
-    assert set(result_set) == set(expected_no_nulls)
-
-    # Test with nulls
-    result_with_nulls = daft_table.eval_expression_list([col("input").alias("set").agg_set(ignore_nulls=False)])
-    assert result_with_nulls.get_column("set").datatype() == DataType.list(dtype)
-    expected_with_nulls = list(set(input))
-    result_set_with_nulls = result_with_nulls.to_pydict()["set"][0]
-    # Check length
-    assert len(result_set_with_nulls) == len(expected_with_nulls)
-    # Convert both to sets to ignore order
-    assert set(result_set_with_nulls) == set(expected_with_nulls)
+    assert set(result_set) == set(expected)
 
 
 def test_global_pyobj_set_aggs() -> None:
@@ -1129,13 +1098,9 @@ def test_global_pyobj_set_aggs() -> None:
     input = [obj1, obj2, None, obj3, obj1, None, obj2]
     table = MicroPartition.from_pydict({"input": input})
 
-    # Test without nulls - should error because Python objects are not hashable
+    # Should error because Python objects are not hashable
     with pytest.raises(ValueError, match="Cannot perform set aggregation on elements that are not hashable"):
-        table.eval_expression_list([col("input").alias("set").agg_set(ignore_nulls=True)])
-
-    # Test with nulls - should also error
-    with pytest.raises(ValueError, match="Cannot perform set aggregation on elements that are not hashable"):
-        table.eval_expression_list([col("input").alias("set").agg_set(ignore_nulls=False)])
+        table.eval_expression_list([col("input").alias("set").agg_set()])
 
 
 @pytest.mark.parametrize(
@@ -1160,17 +1125,15 @@ def test_grouped_set_aggs(dtype) -> None:
     daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
     input_as_dtype = daft_table.get_column("input").to_pylist()
 
-    result_no_nulls = daft_table.agg(
-        [col("input").alias("set").agg_set(ignore_nulls=True)], group_by=[col("groups")]
-    ).sort([col("groups")])
-    assert result_no_nulls.get_column("set").datatype() == DataType.list(dtype)
+    result = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("set").datatype() == DataType.list(dtype)
 
-    result_dict_no_nulls = result_no_nulls.to_pydict()
-    assert sorted(result_dict_no_nulls["groups"]) == [1, 2, 3]
+    result_dict = result.to_pydict()
+    assert sorted(result_dict["groups"]) == [1, 2, 3]
 
-    group1_set = set(result_dict_no_nulls["set"][0])
-    group2_set = set(result_dict_no_nulls["set"][1])
-    group3_set = set(result_dict_no_nulls["set"][2])
+    group1_set = set(result_dict["set"][0])
+    group2_set = set(result_dict["set"][1])
+    group3_set = set(result_dict["set"][2])
 
     group1_expected = {input_as_dtype[i] for i in [3, 9]}
     group2_expected = {input_as_dtype[i] for i in [1, 4, 7]}
@@ -1186,37 +1149,6 @@ def test_grouped_set_aggs(dtype) -> None:
     assert group3_set == group3_expected, f"Group 3 set incorrect. Expected {group3_expected}, got {group3_set}"
     assert None not in group1_set and None not in group2_set and None not in group3_set
 
-    result_with_nulls = daft_table.agg(
-        [col("input").alias("set").agg_set(ignore_nulls=False)], group_by=[col("groups")]
-    ).sort([col("groups")])
-    assert result_with_nulls.get_column("set").datatype() == DataType.list(dtype)
-
-    result_dict_with_nulls = result_with_nulls.to_pydict()
-    assert sorted(result_dict_with_nulls["groups"]) == [1, 2, 3]
-
-    group1_set_with_nulls = set(result_dict_with_nulls["set"][0])
-    group2_set_with_nulls = set(result_dict_with_nulls["set"][1])
-    group3_set_with_nulls = set(result_dict_with_nulls["set"][2])
-
-    group1_expected = {input_as_dtype[i] for i in [0, 3, 9]}
-    group2_expected = {input_as_dtype[i] for i in [1, 4, 7]}
-    group3_expected = {input_as_dtype[i] for i in [2, 5, 8]}
-
-    if dtype == DataType.null():
-        group1_expected = {None}
-        group2_expected = {None}
-        group3_expected = {None}
-
-    assert (
-        group1_set_with_nulls == group1_expected
-    ), f"Group 1 set incorrect. Expected {group1_expected}, got {group1_set_with_nulls}"
-    assert (
-        group2_set_with_nulls == group2_expected
-    ), f"Group 2 set incorrect. Expected {group2_expected}, got {group2_set_with_nulls}"
-    assert (
-        group3_set_with_nulls == group3_expected
-    ), f"Group 3 set incorrect. Expected {group3_expected}, got {group3_set_with_nulls}"
-
 
 def test_grouped_pyobj_set_aggs() -> None:
     obj1, obj2, obj3 = object(), object(), object()
@@ -1225,13 +1157,9 @@ def test_grouped_pyobj_set_aggs() -> None:
 
     table = MicroPartition.from_pydict({"groups": groups, "input": input})
 
-    # Test without nulls - should error because Python objects are not hashable
+    # Should error because Python objects are not hashable
     with pytest.raises(ValueError, match="Cannot perform set aggregation on elements that are not hashable"):
-        table.agg([col("input").alias("set").agg_set(ignore_nulls=True)], group_by=[col("groups")])
-
-    # Test with nulls - should also error
-    with pytest.raises(ValueError, match="Cannot perform set aggregation on elements that are not hashable"):
-        table.agg([col("input").alias("set").agg_set(ignore_nulls=False)], group_by=[col("groups")])
+        table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")])
 
 
 def test_grouped_list_set_aggs() -> None:
@@ -1243,10 +1171,8 @@ def test_grouped_list_set_aggs() -> None:
     daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
 
     # Test without nulls
-    result_no_nulls = daft_table.agg(
-        [col("input").alias("set").agg_set(ignore_nulls=True)], group_by=[col("groups")]
-    ).sort([col("groups")])
-    assert result_no_nulls.get_column("set").datatype() == DataType.list(DataType.list(DataType.int64()))
+    result = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("set").datatype() == DataType.list(DataType.list(DataType.int64()))
     input_as_dtype = daft_table.get_column("input").to_pylist()
 
     # Convert lists to tuples for hashing
@@ -1263,27 +1189,7 @@ def test_grouped_list_set_aggs() -> None:
         # Convert back to lists for comparison
         expected_groups_no_nulls.append([list(x) for x in sorted_values])
 
-    assert result_no_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
-
-    # Test with nulls
-    result_with_nulls = daft_table.agg(
-        [col("input").alias("set").agg_set(ignore_nulls=False)], group_by=[col("groups")]
-    ).sort([col("groups")])
-    assert result_with_nulls.get_column("set").datatype() == DataType.list(DataType.list(DataType.int64()))
-
-    expected_groups_with_nulls = []
-    for group in expected_idx:
-        group_values = [input_as_dtype[i] for i in group]
-        # First collect unique values
-        unique_values = set(to_hashable(x) for x in group_values)
-        # Handle None and non-None values separately
-        has_null = None in unique_values
-        sorted_values = sorted(v for v in unique_values if v is not None)
-        # Convert back to lists and add None if it was present
-        result = [list(x) for x in sorted_values]
-        if has_null:
-            result = [None] + result
-        expected_groups_with_nulls.append(result)
+    assert result.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
 
 
 def test_grouped_struct_set_aggs() -> None:
@@ -1303,10 +1209,8 @@ def test_grouped_struct_set_aggs() -> None:
     daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
 
     # Test without nulls
-    result_no_nulls = daft_table.agg(
-        [col("input").alias("set").agg_set(ignore_nulls=True)], group_by=[col("groups")]
-    ).sort([col("groups")])
-    assert result_no_nulls.get_column("set").datatype() == DataType.list(
+    result = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("set").datatype() == DataType.list(
         DataType.struct({"x": DataType.int64(), "y": DataType.int64()})
     )
     input_as_dtype = daft_table.get_column("input").to_pylist()
@@ -1325,46 +1229,16 @@ def test_grouped_struct_set_aggs() -> None:
         # Convert back to dicts for comparison
         expected_groups_no_nulls.append([dict(x) for x in sorted_values])
 
-    assert result_no_nulls.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
-
-    # Test with nulls
-    result_with_nulls = daft_table.agg(
-        [col("input").alias("set").agg_set(ignore_nulls=False)], group_by=[col("groups")]
-    ).sort([col("groups")])
-    assert result_with_nulls.get_column("set").datatype() == DataType.list(
-        DataType.struct({"x": DataType.int64(), "y": DataType.int64()})
-    )
-
-    expected_groups_with_nulls = []
-    for group in expected_idx:
-        group_values = [input_as_dtype[i] for i in group]
-        # First collect unique values
-        unique_values = set(to_hashable(x) for x in group_values)
-        # Handle None and non-None values separately
-        has_null = None in unique_values
-        sorted_values = sorted(v for v in unique_values if v is not None)
-        # Convert back to dicts and add None if it was present
-        result = [dict(x) for x in sorted_values]
-        if has_null:
-            result = [None] + result
-        expected_groups_with_nulls.append(result)
+    assert result.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
 
 
 def test_set_aggs_empty() -> None:
     daft_table = MicroPartition.from_pydict({"col_A": [], "col_B": []})
 
     # Test without nulls
-    result_no_nulls = daft_table.agg(
-        [col("col_A").cast(DataType.int32()).alias("set").agg_set(ignore_nulls=True)],
+    result = daft_table.agg(
+        [col("col_A").cast(DataType.int32()).alias("set").agg_set()],
         group_by=[col("col_B")],
     )
-    assert result_no_nulls.get_column("set").datatype() == DataType.list(DataType.int32())
-    assert result_no_nulls.to_pydict() == {"col_B": [], "set": []}
-
-    # Test with nulls
-    result_with_nulls = daft_table.agg(
-        [col("col_A").cast(DataType.int32()).alias("set").agg_set(ignore_nulls=False)],
-        group_by=[col("col_B")],
-    )
-    assert result_with_nulls.get_column("set").datatype() == DataType.list(DataType.int32())
-    assert result_with_nulls.to_pydict() == {"col_B": [], "set": []}
+    assert result.get_column("set").datatype() == DataType.list(DataType.int32())
+    assert result.to_pydict() == {"col_B": [], "set": []}

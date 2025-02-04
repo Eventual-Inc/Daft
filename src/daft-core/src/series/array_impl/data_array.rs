@@ -160,16 +160,10 @@ macro_rules! impl_series_like_for_data_array {
                 }
             }
 
-            fn agg_set(
-                &self,
-                groups: Option<&GroupIndices>,
-                ignore_nulls: bool,
-            ) -> DaftResult<Series> {
+            fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
                 match groups {
-                    Some(groups) => {
-                        Ok(self.0.grouped_distinct(groups, ignore_nulls)?.into_series())
-                    }
-                    None => Ok(self.0.distinct(ignore_nulls)?.into_series()),
+                    Some(groups) => Ok(self.0.grouped_distinct(groups)?.into_series()),
+                    None => Ok(self.0.distinct()?.into_series()),
                 }
             }
         }

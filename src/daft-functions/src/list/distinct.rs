@@ -12,18 +12,16 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListUnique {
-    ignore_nulls: bool,
-}
+pub struct ListDistinct {}
 
 #[typetag::serde]
-impl ScalarUDF for ListUnique {
+impl ScalarUDF for ListDistinct {
     fn as_any(&self) -> &dyn Any {
         self
     }
 
     fn name(&self) -> &'static str {
-        "list_unique"
+        "list_distinct"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
@@ -52,7 +50,7 @@ impl ScalarUDF for ListUnique {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.list_unique(self.ignore_nulls),
+            [input] => input.list_distinct(),
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -61,10 +59,7 @@ impl ScalarUDF for ListUnique {
     }
 }
 
-/// Returns a list of unique elements in each list, preserving order of first occurrence.
-///
-/// When ignore_nulls is true (default), nulls are excluded from the result.
-/// When ignore_nulls is false, nulls are included in the result.
-pub fn list_unique(expr: ExprRef, ignore_nulls: bool) -> ExprRef {
-    ScalarFunction::new(ListUnique { ignore_nulls }, vec![expr]).into()
+/// Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
+pub fn list_distinct(expr: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListDistinct {}, vec![expr]).into()
 }

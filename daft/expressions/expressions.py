@@ -25,8 +25,8 @@ from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
+from daft.daft import list_distinct as _list_distinct
 from daft.daft import list_sort as _list_sort
-from daft.daft import list_unique as _list_unique
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
@@ -983,9 +983,9 @@ class Expression:
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
 
-    def agg_set(self, ignore_nulls: bool = True) -> Expression:
-        """Aggregates the values in the expression into a set."""
-        expr = self._expr.agg_set(ignore_nulls)
+    def agg_set(self) -> Expression:
+        """Aggregates the values in the expression into a set (ignoring nulls)."""
+        expr = self._expr.agg_set()
         return Expression._from_pyexpr(expr)
 
     def agg_concat(self) -> Expression:
@@ -3237,13 +3237,13 @@ class ExpressionListNamespace(ExpressionNamespace):
             nulls_first = Expression._to_expression(nulls_first)
         return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
 
-    def unique(self, ignore_nulls: bool = True) -> Expression:
-        """Returns a list of unique elements in each list, preserving order of first occurrence.
+    def distinct(self) -> Expression:
+        """Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1]]})
-            >>> df.select(df["a"].list.unique()).show()
+            >>> df.select(df["a"].list.distinct()).show()
             ╭─────────────╮
             │ a           │
             │ ---         │
@@ -3258,13 +3258,10 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            ignore_nulls: Whether to ignore null values in the result. Defaults to True.
-
         Returns:
             Expression: An expression with lists containing only unique elements
         """
-        return Expression._from_pyexpr(_list_unique(self._expr, ignore_nulls))
+        return Expression._from_pyexpr(_list_distinct(self._expr))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):

@@ -28,7 +28,7 @@ impl Series {
     }
 
     pub fn count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        let series = self.agg_list(groups)?.list_unique_count()?;
+        let series = self.agg_list(groups)?.list_count_distinct()?;
         Ok(series)
     }
 
@@ -239,8 +239,8 @@ impl Series {
         self.inner.agg_list(groups)
     }
 
-    pub fn agg_set(&self, groups: Option<&GroupIndices>, ignore_nulls: bool) -> DaftResult<Self> {
-        self.inner.agg_set(groups, ignore_nulls)
+    pub fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        self.inner.agg_set(groups)
     }
 
     pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {

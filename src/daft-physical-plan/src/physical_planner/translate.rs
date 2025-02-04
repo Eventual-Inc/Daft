@@ -14,7 +14,7 @@ use daft_dsl::{
     ApproxPercentileParams, Expr, ExprRef, SketchType,
 };
 use daft_functions::{
-    list::{unique, unique_count},
+    list::{count_distinct, distinct},
     numeric::sqrt,
 };
 use daft_logical_plan::{
@@ -846,7 +846,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::AnyValue(Expr::Alias(e, name.clone()).into(), ignore_nulls)
                 }
                 AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
-                AggExpr::Set(e, ignore_nulls) => AggExpr::Set(Expr::Alias(e, name.clone()).into(), ignore_nulls),
+                AggExpr::Set(e) => AggExpr::Set(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
                 AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,
@@ -929,7 +929,7 @@ pub fn populate_aggregation_stages(
                 );
 
                 // Final projection
-                let result = unique_count(col(list_concat_id.clone())).alias(output_name);
+                let result = count_distinct(col(list_concat_id.clone())).alias(output_name);
                 final_exprs.push(result);
             }
             AggExpr::Sum(e) => {
@@ -1098,7 +1098,7 @@ pub fn populate_aggregation_stages(
                     ));
                 final_exprs.push(col(concat_of_list_id.clone()).alias(output_name));
             }
-            AggExpr::Set(e, ignore_nulls) => {
+            AggExpr::Set(e) => {
                 let list_agg_id =
                     add_to_stage(AggExpr::List, e.clone(), schema, &mut first_stage_aggs);
                 let list_concat_id = add_to_stage(
@@ -1107,7 +1107,7 @@ pub fn populate_aggregation_stages(
                     schema,
                     &mut second_stage_aggs,
                 );
-                let result = unique(col(list_concat_id.clone()), *ignore_nulls).alias(output_name);
+                let result = distinct(col(list_concat_id.clone())).alias(output_name);
                 final_exprs.push(result);
             }
             AggExpr::Concat(e) => {

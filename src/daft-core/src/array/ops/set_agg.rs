@@ -14,20 +14,15 @@ use crate::{
     series::{IntoSeries, Series},
 };
 
-fn deduplicate_indices(series: &Series, ignore_nulls: bool) -> DaftResult<Vec<u64>> {
+fn deduplicate_indices(series: &Series) -> DaftResult<Vec<u64>> {
     // Special handling for Null type
     if series.data_type() == &DataType::Null {
-        let mut unique_indices = Vec::new();
-        if !series.is_empty() && !ignore_nulls {
-            unique_indices.push(0); // Just take the first null value
-        }
-        return Ok(unique_indices);
+        return Ok(vec![]);
     }
 
     // Special handling for List type
     if let DataType::List(_) = series.data_type() {
         let mut unique_indices = Vec::new();
-        let mut has_null = false;
 
         let list_array = series.to_arrow();
         let list_array = list_array
@@ -54,10 +49,6 @@ fn deduplicate_indices(series: &Series, ignore_nulls: bool) -> DaftResult<Vec<u6
 
         for idx in 0..series.len() {
             if !series.is_valid(idx) {
-                if !ignore_nulls && !has_null {
-                    has_null = true;
-                    unique_indices.push(idx as u64);
-                }
                 continue;
             }
 
@@ -89,7 +80,6 @@ fn deduplicate_indices(series: &Series, ignore_nulls: bool) -> DaftResult<Vec<u6
     // Special handling for Struct type
     if let DataType::Struct(_) = series.data_type() {
         let mut unique_indices = Vec::new();
-        let mut has_null = false;
 
         let hash_series = series.hash(None).map_err(|_| {
             DaftError::ValueError(
@@ -101,10 +91,6 @@ fn deduplicate_indices(series: &Series, ignore_nulls: bool) -> DaftResult<Vec<u6
 
         for idx in 0..series.len() {
             if !series.is_valid(idx) {
-                if !ignore_nulls && !has_null {
-                    has_null = true;
-                    unique_indices.push(idx as u64);
-                }
                 continue;
             }
 
@@ -137,16 +123,10 @@ fn deduplicate_indices(series: &Series, ignore_nulls: bool) -> DaftResult<Vec<u6
     let comparator = build_is_equal(&*array, &*array, true, false)?;
     let mut seen_hashes = HashMap::<u64, Vec<usize>>::new();
     let mut unique_indices = Vec::new();
-    let mut has_null = false;
 
     let hash_array = hashes.as_arrow();
     for (idx, hash) in hash_array.values_iter().enumerate() {
-        if !series.is_valid(idx) {
-            if !ignore_nulls && !has_null {
-                has_null = true;
-                unique_indices.push(idx as u64);
-            }
-        } else {
+        if series.is_valid(idx) {
             let mut is_duplicate = false;
             if let Some(existing_indices) = seen_hashes.get(hash) {
                 for &existing_idx in existing_indices {
@@ -167,8 +147,8 @@ fn deduplicate_indices(series: &Series, ignore_nulls: bool) -> DaftResult<Vec<u6
     Ok(unique_indices)
 }
 
-fn deduplicate_series(series: &Series, ignore_nulls: bool) -> DaftResult<(Series, Vec<u64>)> {
-    let unique_indices = deduplicate_indices(series, ignore_nulls)?;
+fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
+    let unique_indices = deduplicate_indices(series)?;
     let indices_array = UInt64Array::from(("", unique_indices.clone())).into_series();
     let result = series.take(&indices_array)?;
     Ok((result, unique_indices))
@@ -178,9 +158,9 @@ macro_rules! impl_daft_set_agg {
     () => {
         type Output = DaftResult<ListArray>;
 
-        fn distinct(&self, ignore_nulls: bool) -> Self::Output {
+        fn distinct(&self) -> Self::Output {
             let child_series = self.clone().into_series();
-            let (deduped_series, _) = deduplicate_series(&child_series, ignore_nulls)?;
+            let (deduped_series, _) = deduplicate_series(&child_series)?;
 
             let offsets =
                 arrow2::offset::OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
@@ -188,7 +168,7 @@ macro_rules! impl_daft_set_agg {
             Ok(ListArray::new(list_field, deduped_series, offsets, None))
         }
 
-        fn grouped_distinct(&self, groups: &GroupIndices, ignore_nulls: bool) -> Self::Output {
+        fn grouped_distinct(&self, groups: &GroupIndices) -> Self::Output {
             let series = self.clone().into_series();
 
             let mut offsets = Vec::with_capacity(groups.len() + 1);
@@ -211,7 +191,7 @@ macro_rules! impl_daft_set_agg {
                 let group_indices = UInt64Array::from(("", group.to_vec())).into_series();
                 let group_series = series.take(&group_indices)?;
 
-                let unique_indices = deduplicate_indices(&group_series, ignore_nulls)?;
+                let unique_indices = deduplicate_indices(&group_series)?;
 
                 for &local_idx in unique_indices.iter() {
                     let orig_idx = group[local_idx as usize];
@@ -259,13 +239,13 @@ impl DaftSetAggable for StructArray {
 impl DaftSetAggable for crate::datatypes::PythonArray {
     type Output = DaftResult<Self>;
 
-    fn distinct(&self, _: bool) -> Self::Output {
+    fn distinct(&self) -> Self::Output {
         Err(DaftError::ValueError(
             "Cannot perform set aggregation on elements that are not hashable".to_string(),
         ))
     }
 
-    fn grouped_distinct(&self, _: &GroupIndices, _: bool) -> Self::Output {
+    fn grouped_distinct(&self, _: &GroupIndices) -> Self::Output {
         Err(DaftError::ValueError(
             "Cannot perform set aggregation on elements that are not hashable".to_string(),
         ))

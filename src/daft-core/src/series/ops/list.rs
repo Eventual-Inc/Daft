@@ -190,7 +190,7 @@ impl Series {
     /// ```txt
     /// [[1, 2, 3], [1, 1, 1], [NULL, NULL, 5]] -> [3, 1, 1]
     /// ```
-    pub fn list_unique_count(&self) -> DaftResult<Self> {
+    pub fn list_count_distinct(&self) -> DaftResult<Self> {
         let field = Field::new(self.name(), DataType::UInt64);
         match self.data_type() {
             DataType::List(..) => {
@@ -232,11 +232,13 @@ impl Series {
         ListArray::list_fill(self, num).map(|arr| arr.into_series())
     }
 
-    /// Returns a list of unique elements in each list, preserving order of first occurrence.
+    /// Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
     ///
-    /// When ignore_nulls is true, nulls are excluded from the result.
-    /// When ignore_nulls is false, nulls are included in the result.
-    pub fn list_unique(&self, ignore_nulls: bool) -> DaftResult<Self> {
+    /// # Example
+    /// ```txt
+    /// [[1, 2, 3], [1, 1, 1], [NULL, NULL, 5]] -> [[1, 2, 3], [1], [5]]
+    /// ```
+    pub fn list_distinct(&self) -> DaftResult<Self> {
         let input = if let DataType::FixedSizeList(inner_type, _) = self.data_type() {
             self.cast(&DataType::List(inner_type.clone()))?
         } else {
@@ -251,11 +253,7 @@ impl Series {
 
         for sub_series in list {
             if let Some(sub_series) = sub_series {
-                let probe_table = if ignore_nulls {
-                    sub_series.build_probe_table_without_nulls()?
-                } else {
-                    sub_series.build_probe_table_with_nulls()?
-                };
+                let probe_table = sub_series.build_probe_table_without_nulls()?;
 
                 let mut indices: Vec<_> = probe_table.keys().map(|k| k.idx).collect();
                 indices.sort_unstable();

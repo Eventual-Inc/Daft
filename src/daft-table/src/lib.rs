@@ -523,14 +523,7 @@ impl Table {
                 self.eval_expression(expr)?.any_value(groups, ignore_nulls)
             }
             AggExpr::List(expr) => self.eval_expression(expr)?.agg_list(groups),
-            // AggExpr::Set(expr) => {
-            //     let list = self.eval_expression(expr)?.agg_list(groups)?;
-            //     let unique_expr = unique(col(list.name()), false);
-            //     self.eval_expression(&unique_expr)
-            // }
-            AggExpr::Set(expr, ignore_nulls) => {
-                self.eval_expression(expr)?.agg_set(groups, *ignore_nulls)
-            }
+            AggExpr::Set(expr) => self.eval_expression(expr)?.agg_set(groups),
             AggExpr::Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),

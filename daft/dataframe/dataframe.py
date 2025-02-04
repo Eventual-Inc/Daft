@@ -2337,9 +2337,7 @@ class DataFrame:
         elif op == "list":
             return expr.agg_list()
         elif op == "set":
-            return expr.agg_set(ignore_nulls=True)
-        elif op == "set_with_nulls":
-            return expr.agg_set(ignore_nulls=False)
+            return expr.agg_set()
         elif op == "concat":
             return expr.agg_concat()
 
@@ -2524,21 +2522,16 @@ class DataFrame:
         return self._apply_agg_fn(Expression.agg_list, cols)
 
     @DataframePublicAPI
-    def agg_set(self, *cols: ColumnInputType, ignore_nulls: bool = True) -> "DataFrame":
-        """Performs a global set agg on the DataFrame.
+    def agg_set(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global set agg on the DataFrame (ignoring nulls).
 
         Args:
             *cols (Union[str, Expression]): columns to form into a set
-            ignore_nulls (bool): Whether to ignore null values in the result. Defaults to True.
 
         Returns:
             DataFrame: Globally aggregated set. Should be a single row.
         """
-
-        def set_fn(expr: Expression) -> Expression:
-            return Expression.agg_set(expr, ignore_nulls)
-
-        return self._apply_agg_fn(set_fn, cols)
+        return self._apply_agg_fn(Expression.agg_set, cols)
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3362,21 +3355,16 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.agg_list, cols, self.group_by)
 
-    def agg_set(self, *cols: ColumnInputType, ignore_nulls: bool = True) -> "DataFrame":
-        """Performs grouped set on this GroupedDataFrame.
+    def agg_set(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs grouped set on this GroupedDataFrame (ignoring nulls).
 
         Args:
             *cols (Union[str, Expression]): columns to form into a set
-            ignore_nulls (bool): Whether to ignore null values in the result. Defaults to True.
 
         Returns:
             DataFrame: DataFrame with grouped set per column.
         """
-
-        def set_fn(expr: Expression) -> Expression:
-            return Expression.agg_set(expr, ignore_nulls)
-
-        return self.df._apply_agg_fn(set_fn, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.agg_set, cols, self.group_by)
 
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped concat on this GroupedDataFrame.

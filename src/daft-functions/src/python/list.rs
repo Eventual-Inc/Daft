@@ -3,7 +3,7 @@ use daft_dsl::python::PyExpr;
 use pyo3::{pyfunction, PyResult};
 
 simple_python_wrapper!(list_chunk, crate::list::chunk, [expr: PyExpr, size: usize]);
-simple_python_wrapper!(list_unique_count, crate::list::unique_count, [expr: PyExpr]);
+simple_python_wrapper!(list_count_distinct, crate::list::count_distinct, [expr: PyExpr]);
 simple_python_wrapper!(list_count, crate::list::count, [expr: PyExpr, mode: CountMode]);
 simple_python_wrapper!(explode, crate::list::explode, [expr: PyExpr]);
 simple_python_wrapper!(list_get, crate::list::get, [expr: PyExpr, idx: PyExpr, default_value: PyExpr]);
@@ -16,9 +16,8 @@ simple_python_wrapper!(list_sum, crate::list::sum, [expr: PyExpr]);
 simple_python_wrapper!(list_value_counts, crate::list::value_counts, [expr: PyExpr]);
 
 #[pyfunction]
-#[pyo3(signature = (expr, ignore_nulls=true))]
-pub fn list_unique(expr: PyExpr, ignore_nulls: bool) -> PyResult<PyExpr> {
-    Ok(crate::list::unique(expr.into(), ignore_nulls).into())
+pub fn list_distinct(expr: PyExpr) -> PyResult<PyExpr> {
+    Ok(crate::list::distinct(expr.into()).into())
 }
 
 #[pyfunction]

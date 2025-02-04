@@ -244,6 +244,6 @@ pub trait DaftHllMergeAggable {
 
 pub trait DaftSetAggable {
     type Output;
-    fn distinct(&self, ignore_nulls: bool) -> Self::Output;
-    fn grouped_distinct(&self, groups: &GroupIndices, ignore_nulls: bool) -> Self::Output;
+    fn distinct(&self) -> Self::Output;
+    fn grouped_distinct(&self, groups: &GroupIndices) -> Self::Output;
 }
