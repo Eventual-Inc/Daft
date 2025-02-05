@@ -1,0 +1,14 @@
+[dependencies]
+anyhow = "1.0"
+simdutf8 = "0.1"
+tokio-tungstenite = "0.26"
+futures.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true
+
+[package]
+name = "proxy-service"
+edition.workspace = true
+version.workspace = true

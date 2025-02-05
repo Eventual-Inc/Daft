@@ -66,7 +66,6 @@ export default function DataTableDemo() {
     ];
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
     const [rowSelection, setRowSelection] = React.useState({});
-
     const table = useReactTable({
         data,
         columns,
@@ -81,6 +80,12 @@ export default function DataTableDemo() {
             rowSelection,
         },
     });
+
+    React.useEffect(() => {
+        const socket = new WebSocket('ws://127.0.0.1:3239');
+        socket.onopen = () => socket.send('Hello, world! From Prasad.');
+        socket.onmessage = (event) => console.log(event);
+    }, []);
 
     return (
         <div className="mx-[20px]">
