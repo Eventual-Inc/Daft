@@ -65,6 +65,17 @@ ColumnInputType = Union[Expression, str]
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
+def BroadcastMetrics(func):
+    """Calls `self._explain_broadcast()` prior to executing the rest of the function."""
+
+    def wrapper(self, *args, **kwargs):
+        result = func(self, *args, **kwargs)
+        self._explain_broadcast()
+        return result
+
+    return wrapper
+
+
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
     """Creates a Daft DataFrame from a single Table.
 
@@ -183,6 +194,7 @@ class DataFrame:
             )
             raise conn_error
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def explain(
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
@@ -202,7 +214,6 @@ class DataFrame:
             file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
                 print (in Python, that should be sys.stdout)
         """
-        self._explain_broadcast()
         is_cached = self._result_cache is not None
         if format == "mermaid":
             from daft.dataframe.display import MermaidFormatter
@@ -2830,6 +2841,7 @@ class DataFrame:
             assert result is not None
             result.wait()
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
         """Executes the entire DataFrame and materializes the results.
@@ -2844,7 +2856,6 @@ class DataFrame:
             DataFrame: DataFrame with materialized results.
         """
         self._materialize_results()
-        self._explain_broadcast()
 
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -2902,6 +2913,7 @@ class DataFrame:
 
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def show(self, n: int = 8) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
@@ -2916,7 +2928,6 @@ class DataFrame:
             n: number of rows to show. Defaults to 8.
         """
         dataframe_display = self._construct_show_display(n)
-        self._explain_broadcast()
         try:
             from IPython.display import display
 
