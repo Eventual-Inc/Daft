@@ -41,10 +41,10 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        source venv/bin/activate
         pip install uv
     - name: Install dependencies
       run: |
+        activate
         uv pip install -r requirements-dev.txt
     - name: Build Daft in development mode and generate docs
       # TODO: Break on any Sphinx warnings with nitpicks
