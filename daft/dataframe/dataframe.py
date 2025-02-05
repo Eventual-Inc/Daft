@@ -629,6 +629,7 @@ class DataFrame:
     # Write methods
     ###
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_parquet(
         self,
@@ -708,6 +709,7 @@ class DataFrame:
                 }
             )
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_csv(
         self,
@@ -779,6 +781,7 @@ class DataFrame:
                 }
             )
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_iceberg(
         self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
@@ -929,6 +932,7 @@ class DataFrame:
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         return from_pydict(with_operations)
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_deltalake(
         self,
@@ -1140,6 +1144,7 @@ class DataFrame:
 
         return with_operations
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_lance(
         self,
