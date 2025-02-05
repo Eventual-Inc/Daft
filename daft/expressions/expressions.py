@@ -994,7 +994,8 @@ class Expression:
             │ []            ┆ null    │
             ╰───────────────┴─────────╯
         """
-        return Expression._from_pyexpr(native.list_bool_and(self._expr))
+        expr = self._expr.bool_and()
+        return Expression._from_pyexpr(expr)
 
     def bool_or(self) -> Expression:
         """Calculates the boolean OR of all values in a list.
@@ -1022,7 +1023,8 @@ class Expression:
             │ []            ┆ null    │
             ╰───────────────┴─────────╯
         """
-        return Expression._from_pyexpr(native.list_bool_or(self._expr))
+        expr = self._expr.bool_or()
+        return Expression._from_pyexpr(expr)
 
     def any_value(self, ignore_nulls=False) -> Expression:
         """Returns any value in the expression.
