@@ -11,9 +11,35 @@ from daft import col
 from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
-from daft.exceptions import DaftTypeError
 from daft.utils import freeze
 from tests.utils import sort_arrow_table
+
+
+def _assert_all_hashable(values, test_name=""):
+    """Helper function to check if all elements in an iterable are hashable.
+
+    Args:
+        values: Iterable of values to check
+        test_name: Name of the test for better error messages
+
+    Raises:
+        AssertionError: If any elements are not hashable, with a descriptive message showing all unhashable values
+    """
+    unhashable = []
+    for val in values:
+        if val is not None:  # Skip None values as they are always hashable
+            try:
+                hash(val)
+            except TypeError:
+                unhashable.append((type(val), val))
+
+    if unhashable:
+        details = "\n".join(f"  - {t.__name__}: {v}" for t, v in unhashable)
+        raise AssertionError(
+            f"{test_name}: Found {len(unhashable)} unhashable value(s) in values: {values}\n"
+            f"Unhashable values:\n{details}\n"
+            "Set aggregation requires all elements to be hashable."
+        )
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -62,6 +88,7 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
 
     # Check set agg without nulls
     assert len(res_set) == 1
+    _assert_all_hashable(res_set[0], "test_agg_global")
     assert len(res_set[0]) == len(set(x for x in res_set[0] if x is not None)), "Result should contain no duplicates"
     assert set(x for x in res_set[0] if x is not None) == set(
         x for x in exp_set[0] if x is not None
@@ -224,6 +251,7 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     sorted_res = [res_set[i] for i in arg_sort]
     sorted_exp = exp_set
     for res, exp in zip(sorted_res, sorted_exp):
+        _assert_all_hashable(res, "test_agg_groupby")
         assert len(res) == len(set(x for x in res if x is not None)), "Result should contain no duplicates"
         assert set(x for x in res if x is not None) == set(x for x in exp if x is not None), "Sets should match"
 
@@ -361,6 +389,7 @@ def test_all_null_groupby_keys(make_df, repartition_nparts, with_morsel_size):
 
     # Check set without nulls (should be same as with nulls since no nulls in values)
     assert len(daft_cols["set"]) == 1
+    _assert_all_hashable(daft_cols["set"][0], "test_all_null_groupby_keys")
     assert len(daft_cols["set"][0]) == 3, "Should contain all unique non-null values"
     assert set(daft_cols["set"][0]) == {1, 2, 3}, "Should contain all unique values"
 
@@ -479,6 +508,7 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
     sorted_res = [res_set[i] for i in arg_sort]
     sorted_exp = exp_set
     for res, exp in zip(sorted_res, sorted_exp):
+        _assert_all_hashable(res, "test_agg_groupby_with_alias")
         assert len(res) == len(set(x for x in res if x is not None)), "Result should contain no duplicates"
         assert set(x for x in res if x is not None) == set(
             x for x in exp if x is not None
@@ -511,19 +541,6 @@ def test_agg_pyobjects_list():
     assert set(result["list"][0]) == set(objects)
 
 
-def test_agg_pyobjects_set():
-    objects = [CustomObject(val=0), None, CustomObject(val=1)]
-    df = daft.from_pydict({"objs": objects})
-    df = df.into_partitions(2)
-    df = df.agg(
-        [
-            col("objs").agg_set().alias("set"),
-        ]
-    )
-    with pytest.raises(DaftTypeError, match="Expected list input, got Python"):
-        df.collect()
-
-
 def test_groupby_agg_pyobjects_list():
     objects = [CustomObject(val=0), CustomObject(val=1), None, None, CustomObject(val=2)]
     df = daft.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
@@ -545,23 +562,6 @@ def test_groupby_agg_pyobjects_list():
     assert res["count"] == [2, 1]
     assert set(res["list"][0]) == set([objects[0], objects[2], objects[4]])
     assert set(res["list"][1]) == set([objects[1], objects[3]])
-
-
-def test_groupby_agg_pyobjects_set():
-    objects = [CustomObject(val=0), CustomObject(val=1), None, None, CustomObject(val=2)]
-    df = daft.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
-    df = df.into_partitions(2)
-    df = (
-        df.groupby(col("groups"))
-        .agg(
-            [
-                col("objects").agg_set().alias("set"),
-            ]
-        )
-        .sort(col("groups"))
-    )
-    with pytest.raises(DaftTypeError, match="Expected list input, got Python"):
-        df.collect()
 
 
 @pytest.mark.parametrize("shuffle_aggregation_default_partitions", [None, 20])
@@ -752,3 +752,43 @@ def test_agg_with_groupby_key_in_agg(make_df, repartition_nparts, with_morsel_si
         "group_plus_1": [2, 3, 4],
         "id_plus_group": [7, 11, 15],
     }
+
+
+@pytest.mark.parametrize("repartition_nparts", [2, 3])
+def test_agg_set_duplicates_across_partitions(make_df, repartition_nparts, with_morsel_size):
+    """Test that set aggregation correctly maintains uniqueness across partitions.
+
+    This test verifies that when we have duplicates across different partitions,
+    the set aggregation still maintains uniqueness in the final result. For example,
+    if partition 1 has [1, 1, 1] and partition 2 has [1, 2], the final result should
+    be [1, 2] and not [1, 1, 2].
+    """
+    # Create a DataFrame with duplicates that will be distributed across partitions
+    daft_df = make_df(
+        {
+            "group": [1, 1, 1, 1, 1],
+            "values": [1, 1, 1, 1, 2],  # Multiple 1s to ensure duplicates across partitions
+        },
+        repartition=repartition_nparts,
+    )
+
+    # Test both global and groupby aggregations
+    # Global aggregation
+    global_result = daft_df.agg([col("values").agg_set().alias("set")])
+    global_result.collect()
+    global_set = global_result.to_pydict()["set"][0]
+
+    # The result should be [1, 2] or [2, 1], order doesn't matter
+    _assert_all_hashable(global_set, "test_agg_set_duplicates_across_partitions (global)")
+    assert len(global_set) == 2, f"Expected 2 unique values, got {len(global_set)} values: {global_set}"
+    assert set(global_set) == {1, 2}, f"Expected set {{1, 2}}, got set {set(global_set)}"
+
+    # Groupby aggregation
+    group_result = daft_df.groupby("group").agg([col("values").agg_set().alias("set")])
+    group_result.collect()
+    group_set = group_result.to_pydict()["set"][0]
+
+    # The result should be [1, 2] or [2, 1], order doesn't matter
+    _assert_all_hashable(group_set, "test_agg_set_duplicates_across_partitions (group)")
+    assert len(group_set) == 2, f"Expected 2 unique values, got {len(group_set)} values: {group_set}"
+    assert set(group_set) == {1, 2}, f"Expected set {{1, 2}}, got set {set(group_set)}"

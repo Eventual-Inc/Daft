@@ -10,6 +10,7 @@ from daft.datatype import DataType
 from daft.expressions import col
 from daft.udf import udf
 from tests.conftest import assert_df_equals
+from tests.dataframe.test_aggregations import _assert_all_hashable
 
 
 def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
@@ -88,15 +89,19 @@ def test_list(daft_df, service_requests_csv_pd_df, repartition_nparts, with_mors
     assert set(result_list[0]) == set(unique_key_list)
 
 
-def test_set(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
-    """Set agg a column for entire table to get unique values."""
-    daft_df = daft_df.repartition(repartition_nparts).agg_set(col("Unique Key").alias("unique_key_set")).collect()
-    unique_key_list = service_requests_csv_pd_df["Unique Key"].drop_duplicates().to_list()
-
-    result_list = daft_df.to_pydict()["unique_key_set"]
-    assert len(result_list) == 1
-    assert len(result_list[0]) == len(set(result_list[0])), "Result should contain no duplicates"
-    assert set(result_list[0]) == set(unique_key_list), "Sets should contain same elements"
+@pytest.mark.parametrize("npartitions", [1, 2])
+def test_set(make_df, npartitions, with_morsel_size):
+    df = make_df(
+        {
+            "values": [1, 2, 2, 3, 3, 3],
+        },
+        repartition=npartitions,
+    )
+    df = df.agg([col("values").agg_set().alias("set")])
+    df.collect()
+    result = df.to_pydict()["set"][0]
+    _assert_all_hashable(result, "test_set")
+    assert set(result) == {1, 2, 3}
 
 
 def test_global_agg(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):

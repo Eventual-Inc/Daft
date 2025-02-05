@@ -1100,7 +1100,7 @@ pub fn populate_aggregation_stages(
             }
             AggExpr::Set(e) => {
                 let list_agg_id =
-                    add_to_stage(AggExpr::List, e.clone(), schema, &mut first_stage_aggs);
+                    add_to_stage(AggExpr::Set, e.clone(), schema, &mut first_stage_aggs);
                 let list_concat_id = add_to_stage(
                     AggExpr::Concat,
                     col(list_agg_id.clone()),

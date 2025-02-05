@@ -11,6 +11,7 @@ from daft import DataType, col, from_pydict, utils
 from daft.logical.schema import Schema
 from daft.series import Series
 from daft.table import MicroPartition
+from tests.dataframe.test_aggregations import _assert_all_hashable
 from tests.table import (
     daft_comparable_types,
     daft_floating_types,
@@ -411,6 +412,7 @@ def test_table_agg_global(case) -> None:
 
     # Check set without nulls
     assert len(res_set) == 1
+    _assert_all_hashable(res_set[0], "test_table_agg_global")
     assert len(res_set[0]) == len(set(x for x in res_set[0] if x is not None)), "Result should contain no duplicates"
     assert set(x for x in res_set[0] if x is not None) == set(
         x for x in exp_set[0] if x is not None
@@ -515,6 +517,7 @@ def test_table_agg_groupby(case) -> None:
             # Compare set columns by converting to sets
             assert len(result[key]) == len(expected[key]), f"Length mismatch in column {key}"
             for res, exp in zip(result[key], expected[key]):
+                _assert_all_hashable(res, "test_table_agg_groupby")
                 assert set(res) == exp, f"Set mismatch in column {key}"
         else:
             assert result[key] == expected[key], f"Mismatch in column {key}"
@@ -1087,6 +1090,7 @@ def test_global_set_aggs(dtype) -> None:
     assert result.get_column("set").datatype() == DataType.list(dtype)
     expected = [x for x in set(input) if x is not None]
     result_set = result.to_pydict()["set"][0]
+    _assert_all_hashable(result_set, "test_global_set_aggs")
     # Check length
     assert len(result_set) == len(expected)
     # Convert both to sets to ignore order
@@ -1130,6 +1134,9 @@ def test_grouped_set_aggs(dtype) -> None:
 
     result_dict = result.to_pydict()
     assert sorted(result_dict["groups"]) == [1, 2, 3]
+
+    for i, group_set in enumerate(result_dict["set"]):
+        _assert_all_hashable(group_set, f"test_grouped_set_aggs (group {result_dict['groups'][i]})")
 
     group1_set = set(result_dict["set"][0])
     group2_set = set(result_dict["set"][1])
