@@ -256,66 +256,66 @@ def test_from_pandas_roundtrip() -> None:
 
 
 def test_from_pydict_list() -> None:
-    daft_table = MicroPartition.from_pydict({"a": [1, 2, 3]})
-    assert "a" in daft_table.column_names()
-    assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int64())
+    daft_recordbatch = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    assert "a" in daft_recordbatch.column_names()
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int64())
 
 
 def test_from_pydict_np() -> None:
-    daft_table = MicroPartition.from_pydict({"a": np.array([1, 2, 3], dtype=np.int64)})
-    assert "a" in daft_table.column_names()
-    assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int64())
+    daft_recordbatch = MicroPartition.from_pydict({"a": np.array([1, 2, 3], dtype=np.int64)})
+    assert "a" in daft_recordbatch.column_names()
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int64())
 
 
 def test_from_pydict_arrow() -> None:
-    daft_table = MicroPartition.from_pydict({"a": pa.array([1, 2, 3], type=pa.int8())})
-    assert "a" in daft_table.column_names()
-    assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
+    daft_recordbatch = MicroPartition.from_pydict({"a": pa.array([1, 2, 3], type=pa.int8())})
+    assert "a" in daft_recordbatch.column_names()
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
 
 
 @pytest.mark.parametrize("list_type", [pa.list_, pa.large_list])
 def test_from_pydict_arrow_list_array(list_type) -> None:
     arrow_arr = pa.array([["a", "b"], ["c"], None, [None, "d", "e"]], list_type(pa.string()))
-    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_pydict({"a": arrow_arr})
+    assert "a" in daft_recordbatch.column_names()
     # Perform expected Daft cast, where the outer list array is cast to a large list array
     # (if the outer list array wasn't already a large list in the first place), and
     # the inner string array is cast to a large string array.
     expected = arrow_arr.cast(pa.large_list(pa.large_string()))
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_pydict_arrow_fixed_size_list_array() -> None:
     data = [["a", "b"], ["c", "d"], None, [None, "e"]]
     arrow_arr = pa.array(data, pa.list_(pa.string(), 2))
-    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_pydict({"a": arrow_arr})
+    assert "a" in daft_recordbatch.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
     expected = pa.array(data, type=pa.list_(pa.large_string(), 2))
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_pydict_arrow_map_array() -> None:
     data = [[(1, 2.0), (3, 4.0)], None, [(5, 6.0), (7, 8.0)]]
     arrow_arr = pa.array(data, pa.map_(pa.int64(), pa.float64()))
-    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_pydict({"a": arrow_arr})
+    assert "a" in daft_recordbatch.column_names()
     # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
     expected = arrow_arr.cast(pa.map_(pa.int64(), pa.float64()))
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
-    assert daft_table.to_pydict()["a"] == data
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_pydict()["a"] == data
 
 
 def test_from_pydict_arrow_struct_array() -> None:
     data = [{"a": "foo", "b": "bar"}, {"b": "baz", "c": "quux"}]
     arrow_arr = pa.array(data)
-    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_pydict({"a": arrow_arr})
+    assert "a" in daft_recordbatch.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
     expected = pa.array(
         data, type=pa.struct([("a", pa.large_string()), ("b", pa.large_string()), ("c", pa.large_string())])
     )
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
 
 
 @pytest.mark.skipif(
@@ -327,11 +327,11 @@ def test_from_pydict_arrow_extension_array(uuid_ext_type) -> None:
     pydata[2] = None
     storage = pa.array(pydata)
     arrow_arr = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
-    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_pydict({"a": arrow_arr})
+    assert "a" in daft_recordbatch.column_names()
     # Although Daft will internally represent the binary storage array as a large_binary array,
     # it should be cast back to the ingress extension type.
-    result = daft_table.to_arrow()["a"]
+    result = daft_recordbatch.to_arrow()["a"]
     assert result.type == uuid_ext_type
     assert result.to_pylist() == arrow_arr.to_pylist()
 
@@ -340,15 +340,15 @@ def test_from_pydict_arrow_deeply_nested() -> None:
     # Test a struct of lists of struct of lists of strings.
     data = [{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}]
     arrow_arr = pa.array(data)
-    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_pydict({"a": arrow_arr})
+    assert "a" in daft_recordbatch.column_names()
     # Perform the expected Daft cast, where each list array is cast to a large list array and
     # the string array is cast to a large string array.
     expected = pa.array(
         data,
         type=pa.struct([("a", pa.large_list(pa.field("item", pa.struct([("b", pa.large_list(pa.large_string()))]))))]),
     )
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
 
 
 @pytest.mark.parametrize(
@@ -374,11 +374,11 @@ def test_from_pydict_arrow_deeply_nested() -> None:
 def test_from_pydict_arrow_with_nulls_roundtrip(data, out_dtype, chunked) -> None:
     if chunked:
         data = pa.chunked_array(data)
-    daft_table = MicroPartition.from_pydict({"a": data})
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_pydict({"a": data})
+    assert "a" in daft_recordbatch.column_names()
     if chunked:
         data = data.combine_chunks()
-    assert daft_table.to_arrow()["a"].combine_chunks() == pac.cast(data, out_dtype)
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == pac.cast(data, out_dtype)
 
 
 @pytest.mark.parametrize(
@@ -424,17 +424,17 @@ def test_from_pydict_arrow_sliced_roundtrip(data, out_dtype, chunked, slice_) ->
     sliced_data = data.slice(offset, length)
     if chunked:
         sliced_data = pa.chunked_array(sliced_data)
-    daft_table = MicroPartition.from_pydict({"a": sliced_data})
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_pydict({"a": sliced_data})
+    assert "a" in daft_recordbatch.column_names()
     if chunked:
         sliced_data = sliced_data.combine_chunks()
-    assert daft_table.to_arrow()["a"].combine_chunks() == pac.cast(sliced_data, out_dtype)
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == pac.cast(sliced_data, out_dtype)
 
 
 def test_from_pydict_series() -> None:
-    daft_table = MicroPartition.from_pydict({"a": Series.from_arrow(pa.array([1, 2, 3], type=pa.int8()))})
-    assert "a" in daft_table.column_names()
-    assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
+    daft_recordbatch = MicroPartition.from_pydict({"a": Series.from_arrow(pa.array([1, 2, 3], type=pa.int8()))})
+    assert "a" in daft_recordbatch.column_names()
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
 
 
 @pytest.mark.parametrize(
@@ -477,54 +477,54 @@ def test_from_arrow_sliced_roundtrip(data, out_dtype, slice_) -> None:
     offset, end = slice_
     length = end - offset
     sliced_data = data.slice(offset, length)
-    daft_table = MicroPartition.from_arrow(pa.table({"a": sliced_data}))
-    assert "a" in daft_table.column_names()
-    assert daft_table.to_arrow()["a"].combine_chunks() == pac.cast(sliced_data, out_dtype)
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": sliced_data}))
+    assert "a" in daft_recordbatch.column_names()
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == pac.cast(sliced_data, out_dtype)
 
 
 @pytest.mark.parametrize("list_type", [pa.list_, pa.large_list])
 def test_from_arrow_list_array(list_type) -> None:
     arrow_arr = pa.array([["a", "b"], ["c"], None, [None, "d", "e"]], list_type(pa.string()))
-    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_recordbatch.column_names()
     # Perform expected Daft cast, where the outer list array is cast to a large list array
     # (if the outer list array wasn't already a large list in the first place), and
     # the inner string array is cast to a large string array.
     expected = arrow_arr.cast(pa.large_list(pa.large_string()))
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_arrow_fixed_size_list_array() -> None:
     data = [["a", "b"], ["c", "d"], None, [None, "e"]]
     arrow_arr = pa.array(data, pa.list_(pa.string(), 2))
-    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_recordbatch.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
     expected = pa.array(data, type=pa.list_(pa.large_string(), 2))
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_arrow_struct_array() -> None:
     data = [{"a": "foo", "b": "bar"}, {"b": "baz", "c": "quux"}]
     arrow_arr = pa.array(data)
-    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_recordbatch.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
     expected = pa.array(
         data, type=pa.struct([("a", pa.large_string()), ("b", pa.large_string()), ("c", pa.large_string())])
     )
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_arrow_map_array() -> None:
     data = [[(1.0, 1), (2.0, 2)], [(3.0, 3), (4.0, 4)]]
     arrow_arr = pa.array(data, pa.map_(pa.float32(), pa.int32()))
-    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_recordbatch.column_names()
     # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
     expected = arrow_arr.cast(pa.map_(pa.float32(), pa.int32()))
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
-    assert daft_table.to_pydict()["a"] == data
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_pydict()["a"] == data
 
 
 @pytest.mark.skipif(
@@ -536,11 +536,11 @@ def test_from_arrow_extension_array(uuid_ext_type) -> None:
     pydata[2] = None
     storage = pa.array(pydata)
     arrow_arr = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
-    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_recordbatch.column_names()
     # Although Daft will internally represent the binary storage array as a large_binary array,
     # it should be cast back to the ingress extension type.
-    result = daft_table.to_arrow()["a"]
+    result = daft_recordbatch.to_arrow()["a"]
     assert result.type == uuid_ext_type
     assert result.to_pylist() == arrow_arr.to_pylist()
 
@@ -549,8 +549,8 @@ def test_from_arrow_deeply_nested() -> None:
     # Test a struct of lists of struct of lists of strings.
     data = [{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}]
     arrow_arr = pa.array(data)
-    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
-    assert "a" in daft_table.column_names()
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_recordbatch.column_names()
     # Perform the expected Daft cast, where each list array is cast to a large list array and
     # the string array is cast to a large string array.
     expected = pa.array(
@@ -567,7 +567,7 @@ def test_from_arrow_deeply_nested() -> None:
         ),
     )
 
-    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
 
 
 def test_from_pydict_bad_input() -> None:

@@ -2,9 +2,9 @@ use common_error::{DaftError, DaftResult};
 use daft_core::series::Series;
 use daft_dsl::ExprRef;
 
-use crate::Table;
+use crate::RecordBatch;
 
-impl Table {
+impl RecordBatch {
     pub fn sort(
         &self,
         sort_keys: &[ExprRef],

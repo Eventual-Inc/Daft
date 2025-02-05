@@ -32,7 +32,7 @@ mod ops;
 mod probeable;
 mod repr_html;
 
-pub use growable::GrowableTable;
+pub use growable::GrowableRecordBatch;
 pub use probeable::{make_probeable_builder, ProbeState, Probeable, ProbeableBuilder};
 
 #[cfg(feature = "python")]
@@ -43,13 +43,13 @@ use rand::seq::index::sample;
 use repr_html::html_value;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Table {
+pub struct RecordBatch {
     pub schema: SchemaRef,
     columns: Arc<Vec<Series>>,
     num_rows: usize,
 }
 
-impl Hash for Table {
+impl Hash for RecordBatch {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.schema.hash(state);
         for col in &*self.columns {
@@ -73,7 +73,7 @@ fn _validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     Ok(())
 }
 
-impl Table {
+impl RecordBatch {
     /// Create a new [`Table`] and handle broadcasting of any unit-length columns
     ///
     /// Note that this function is slow. You might instead be looking for [`Table::new_with_size`] which does not perform broadcasting
@@ -848,10 +848,10 @@ impl Table {
         )
     }
 }
-impl TryFrom<Table> for FileInfos {
+impl TryFrom<RecordBatch> for FileInfos {
     type Error = DaftError;
 
-    fn try_from(table: Table) -> DaftResult<Self> {
+    fn try_from(table: RecordBatch) -> DaftResult<Self> {
         let file_paths = table
             .get_column("path")?
             .utf8()?
@@ -886,7 +886,7 @@ impl TryFrom<Table> for FileInfos {
     }
 }
 
-impl TryFrom<&FileInfos> for Table {
+impl TryFrom<&FileInfos> for RecordBatch {
     type Error = DaftError;
 
     fn try_from(file_info: &FileInfos) -> DaftResult<Self> {
@@ -909,7 +909,7 @@ impl TryFrom<&FileInfos> for Table {
     }
 }
 
-impl PartialEq for Table {
+impl PartialEq for RecordBatch {
     fn eq(&self, other: &Self) -> bool {
         if self.len() != other.len() {
             return false;
@@ -926,7 +926,7 @@ impl PartialEq for Table {
     }
 }
 
-impl Display for Table {
+impl Display for RecordBatch {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
         let table = self.to_comfy_table(Some(32));
@@ -934,13 +934,13 @@ impl Display for Table {
     }
 }
 
-impl AsRef<Self> for Table {
+impl AsRef<Self> for RecordBatch {
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl<'a> IntoIterator for &'a Table {
+impl<'a> IntoIterator for &'a RecordBatch {
     type Item = &'a Series;
     type IntoIter = slice::Iter<'a, Series>;
     fn into_iter(self) -> Self::IntoIter {
@@ -954,7 +954,7 @@ mod test {
     use daft_core::prelude::*;
     use daft_dsl::col;
 
-    use crate::Table;
+    use crate::RecordBatch;
 
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
@@ -964,7 +964,7 @@ mod test {
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),
         ])?;
-        let table = Table::from_nonempty_columns(vec![a, b])?;
+        let table = RecordBatch::from_nonempty_columns(vec![a, b])?;
         let e1 = col("a").add(col("b"));
         let result = table.eval_expression(&e1)?;
         assert_eq!(*result.data_type(), DataType::Float64);

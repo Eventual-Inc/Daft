@@ -19,7 +19,7 @@ use daft_micropartition::{
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
 use itertools::zip_eq;
@@ -63,7 +63,7 @@ impl SparkAnalyzer<'_> {
 
     /// Creates a logical source (scan) operator from a vec of tables.
     ///
-    /// Consider moving into LogicalBuilder, but this would re-introduce the daft-table dependency.
+    /// Consider moving into LogicalBuilder, but this would re-introduce the daft-recordbatch dependency.
     ///
     /// TODOs
     ///   * https://github.com/Eventual-Inc/Daft/pull/3250
@@ -73,7 +73,7 @@ impl SparkAnalyzer<'_> {
         &self,
         plan_id: usize,
         schema: Arc<Schema>,
-        tables: Vec<Table>,
+        tables: Vec<RecordBatch>,
     ) -> ConnectResult<LogicalPlanBuilder> {
         let runner = self.session.get_runner()?;
 
@@ -502,7 +502,7 @@ impl SparkAnalyzer<'_> {
                 })
                 .collect::<ConnectResult<Vec<_>>>()?;
 
-            let batch = Table::from_nonempty_columns(columns)?;
+            let batch = RecordBatch::from_nonempty_columns(columns)?;
 
             Ok(batch)
          }).collect::<ConnectResult<Vec<_>>>()?;

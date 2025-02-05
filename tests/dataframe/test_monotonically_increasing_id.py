@@ -4,7 +4,7 @@ import pytest
 
 from daft.datatype import DataType
 from daft.io._generator import read_generator
-from daft.table.table import Table
+from daft.table.table import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -57,7 +57,7 @@ def test_monotonically_increasing_id_multiple_partitions_with_into_partition(mak
 
 def test_monotonically_increasing_id_from_generator() -> None:
     ITEMS = list(range(10))
-    table = Table.from_pydict({"a": ITEMS})
+    table = RecordBatch.from_pydict({"a": ITEMS})
 
     num_tables = 3
     num_generators = 3

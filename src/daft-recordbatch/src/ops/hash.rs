@@ -7,9 +7,9 @@ use daft_core::{
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
 
-use crate::Table;
+use crate::RecordBatch;
 
-impl Table {
+impl RecordBatch {
     pub fn hash_rows(&self) -> DaftResult<UInt64Array> {
         if self.num_columns() == 0 {
             return Err(DaftError::ValueError(

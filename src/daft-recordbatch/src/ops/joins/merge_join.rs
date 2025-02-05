@@ -8,7 +8,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 
-use crate::Table;
+use crate::RecordBatch;
 
 /// A state machine for the below merge-join algorithm.
 ///
@@ -41,7 +41,7 @@ enum MergeJoinState {
     StagedRightEqualRun(usize),
 }
 
-pub fn merge_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Series)> {
+pub fn merge_inner_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(Series, Series)> {
     if left.num_columns() != right.num_columns() {
         return Err(DaftError::ValueError(format!(
             "Mismatch of join on clauses: left: {:?} vs right: {:?}",

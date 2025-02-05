@@ -11,7 +11,7 @@ use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use futures::{future::try_join_all, stream::BoxStream, StreamExt};
 use parquet2::{
     page::{CompressedPage, Page},
@@ -405,7 +405,7 @@ impl ParquetFileReader {
         original_columns: Option<Vec<String>>,
         original_num_rows: Option<usize>,
         delete_rows: Option<Vec<i64>>,
-    ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
+    ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
         let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(
             self.arrow_schema.as_ref(),
         )?);
@@ -556,7 +556,7 @@ impl ParquetFileReader {
     pub async fn read_from_ranges_into_table(
         self,
         ranges: Arc<RangesContainer>,
-    ) -> DaftResult<Table> {
+    ) -> DaftResult<RecordBatch> {
         let metadata = self.metadata;
         let all_handles = self
             .arrow_schema
@@ -731,7 +731,7 @@ impl ParquetFileReader {
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
 
-        Table::new_with_size(
+        RecordBatch::new_with_size(
             Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
             all_series,
             self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),

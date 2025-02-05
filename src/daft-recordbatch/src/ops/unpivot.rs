@@ -4,9 +4,9 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, series::cast_series_to_supertype};
 use daft_dsl::ExprRef;
 
-use crate::Table;
+use crate::RecordBatch;
 
-impl Table {
+impl RecordBatch {
     pub fn unpivot(
         &self,
         ids: &[ExprRef],

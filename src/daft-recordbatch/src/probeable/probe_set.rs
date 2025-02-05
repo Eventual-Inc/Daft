@@ -14,7 +14,7 @@ use daft_core::{
 };
 
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
-use crate::Table;
+use crate::RecordBatch;
 pub struct ProbeSet {
     schema: SchemaRef,
     hash_table: HashMap<IndexHash, (), IdentityBuildHasher>,
@@ -61,7 +61,7 @@ impl ProbeSet {
         })
     }
 
-    fn probe<'a>(&'a self, input: &'a Table) -> DaftResult<impl Iterator<Item = bool> + 'a> {
+    fn probe<'a>(&'a self, input: &'a RecordBatch) -> DaftResult<impl Iterator<Item = bool> + 'a> {
         assert_eq!(self.schema.len(), input.schema.len());
         assert!(self
             .schema
@@ -101,7 +101,7 @@ impl ProbeSet {
         }))
     }
 
-    fn add_table(&mut self, table: &Table) -> DaftResult<()> {
+    fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {
         // we have to cast to the join key schema
         assert_eq!(table.schema, self.schema);
         let hashes = table.hash_rows()?;
@@ -160,12 +160,12 @@ impl ProbeSet {
 impl Probeable for ProbeSet {
     fn probe_exists<'a>(
         &'a self,
-        table: &'a Table,
+        table: &'a RecordBatch,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>> {
         Ok(Box::new(self.probe(table)?))
     }
 
-    fn probe_indices<'a>(&'a self, _table: &'a Table) -> DaftResult<IndicesMapper<'a>> {
+    fn probe_indices<'a>(&'a self, _table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>> {
         panic!("Probe indices is not supported for ProbeSet")
     }
 }
@@ -173,7 +173,7 @@ impl Probeable for ProbeSet {
 pub struct ProbeSetBuilder(pub ProbeSet);
 
 impl ProbeableBuilder for ProbeSetBuilder {
-    fn add_table(&mut self, table: &Table) -> DaftResult<()> {
+    fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {
         self.0.add_table(table)
     }
 

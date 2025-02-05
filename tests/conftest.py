@@ -118,11 +118,11 @@ def make_df(data_source, tmp_path) -> daft.Dataframe:
             import pyarrow.parquet as papq
 
             name = str(uuid.uuid4())
-            daft_table = MicroPartition.from_arrow(pa_table)
+            daft_recordbatch = MicroPartition.from_arrow(pa_table)
             partitioned_tables = (
-                daft_table.partition_by_random(repartition, 0)
+                daft_recordbatch.partition_by_random(repartition, 0)
                 if len(repartition_columns) == 0
-                else daft_table.partition_by_hash([daft.col(c) for c in repartition_columns], repartition)
+                else daft_recordbatch.partition_by_hash([daft.col(c) for c in repartition_columns], repartition)
             )
             for i, tbl in enumerate(partitioned_tables):
                 tmp_file = tmp_path / (name + f"-{i}")

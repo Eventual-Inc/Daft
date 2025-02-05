@@ -8,7 +8,7 @@ use daft_core::{array::ops::as_arrow::AsArrow, utils::identity_hash_set::IndexHa
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::{FileWriter, WriterFactory};
 
@@ -17,16 +17,16 @@ use crate::{FileWriter, WriterFactory};
 struct PartitionedWriter {
     // TODO: Figure out a way to NOT use the IndexHash + RawEntryMut pattern here. Ideally we want to store ScalarValues, aka. single Rows of the partition values as keys for the hashmap.
     per_partition_writers:
-        HashMap<IndexHash, Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<Table>>>>,
-    saved_partition_values: Vec<Table>,
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+        HashMap<IndexHash, Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>>,
+    saved_partition_values: Vec<RecordBatch>,
+    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     partition_by: Vec<ExprRef>,
     is_closed: bool,
 }
 
 impl PartitionedWriter {
     pub fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
         partition_by: Vec<ExprRef>,
     ) -> Self {
         Self {
@@ -41,7 +41,7 @@ impl PartitionedWriter {
     fn partition(
         partition_cols: &[ExprRef],
         data: Arc<MicroPartition>,
-    ) -> DaftResult<(Vec<Table>, Table)> {
+    ) -> DaftResult<(Vec<RecordBatch>, RecordBatch)> {
         let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
         let table = data.first().unwrap();
         let (split_tables, partition_values) = table.partition_by_value(partition_cols)?;
@@ -51,7 +51,7 @@ impl PartitionedWriter {
 
 impl FileWriter for PartitionedWriter {
     type Input = Arc<MicroPartition>;
-    type Result = Vec<Table>;
+    type Result = Vec<RecordBatch>;
 
     fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
         assert!(
@@ -130,13 +130,13 @@ impl FileWriter for PartitionedWriter {
 }
 
 pub(crate) struct PartitionedWriterFactory {
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     partition_cols: Vec<ExprRef>,
 }
 
 impl PartitionedWriterFactory {
     pub(crate) fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
         partition_cols: Vec<ExprRef>,
     ) -> Self {
         Self {
@@ -147,12 +147,12 @@ impl PartitionedWriterFactory {
 }
 impl WriterFactory for PartitionedWriterFactory {
     type Input = Arc<MicroPartition>;
-    type Result = Vec<Table>;
+    type Result = Vec<RecordBatch>;
 
     fn create_writer(
         &self,
         _file_idx: usize,
-        _partition_values: Option<&Table>,
+        _partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(PartitionedWriter::new(
             self.writer_factory.clone(),

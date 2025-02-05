@@ -9,7 +9,7 @@ use daft_core::{
 };
 use daft_dsl::Expr;
 
-use crate::Table;
+use crate::RecordBatch;
 
 fn lengths_to_indices(lengths: &UInt64Array, capacity: usize) -> DaftResult<UInt64Array> {
     let mut indices = Vec::with_capacity(capacity);
@@ -20,7 +20,7 @@ fn lengths_to_indices(lengths: &UInt64Array, capacity: usize) -> DaftResult<UInt
     Ok(UInt64Array::from(("indices", indices)))
 }
 
-impl Table {
+impl RecordBatch {
     pub fn explode<E: AsRef<Expr>>(&self, exprs: &[E]) -> DaftResult<Self> {
         if exprs.is_empty() {
             return Err(DaftError::ValueError(format!(

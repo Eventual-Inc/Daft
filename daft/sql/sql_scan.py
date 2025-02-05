@@ -11,14 +11,14 @@ from daft.daft import (
     DatabaseSourceConfig,
     FileFormatConfig,
     Pushdowns,
-    PyTable,
+    PyRecordBatch,
     ScanTask,
     StorageConfig,
 )
 from daft.expressions.expressions import lit
 from daft.io.common import _get_schema_from_dict
 from daft.io.scan import PartitionField, ScanOperator
-from daft.table import Table
+from daft.table import RecordBatch
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -111,7 +111,7 @@ class SQLScanOperator(ScanOperator):
             right_clause = (
                 f"{self._partition_col} {'<' if i < num_scan_tasks - 1 else '<='} {partition_bounds_sql[i + 1]}"
             )
-            stats = Table.from_pydict({self._partition_col: [partition_bounds[i], partition_bounds[i + 1]]})
+            stats = RecordBatch.from_pydict({self._partition_col: [partition_bounds[i], partition_bounds[i + 1]]})
             scan_task = self._construct_scan_task(
                 pushdowns,
                 num_rows=None,
@@ -210,7 +210,7 @@ class SQLScanOperator(ScanOperator):
                 if pa_table.num_columns != num_scan_tasks + 1:
                     raise RuntimeError(f"Expected {num_scan_tasks + 1} percentiles, but got {pa_table.num_columns}.")
 
-                pydict = Table.from_arrow(pa_table).to_pydict()
+                pydict = RecordBatch.from_arrow(pa_table).to_pydict()
                 assert pydict.keys() == {f"bound_{i}" for i in range(num_scan_tasks + 1)}
                 return [pydict[f"bound_{i}"][0] for i in range(num_scan_tasks + 1)]
 
@@ -232,7 +232,7 @@ class SQLScanOperator(ScanOperator):
         if pa_table.num_columns != 2:
             raise RuntimeError(f"Failed to get partition bounds: expected 2 columns, but got {pa_table.num_columns}.")
 
-        pydict = Table.from_arrow(pa_table).to_pydict()
+        pydict = RecordBatch.from_arrow(pa_table).to_pydict()
         assert pydict.keys() == {"min", "max"}
         min_val = pydict["min"][0]
         max_val = pydict["max"][0]
@@ -248,7 +248,7 @@ class SQLScanOperator(ScanOperator):
         num_rows: int | None = None,
         size_bytes: int | None = None,
         partition_bounds: tuple[str, str] | None = None,
-        stats: PyTable | None = None,
+        stats: PyRecordBatch | None = None,
     ) -> ScanTask:
         predicate_sql = pushdowns.filters.to_sql() if pushdowns.filters is not None else None
         apply_pushdowns_to_sql = not self._disable_pushdowns_to_sql and (

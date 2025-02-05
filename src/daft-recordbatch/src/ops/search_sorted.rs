@@ -4,9 +4,9 @@ use daft_core::{
     series::Series,
 };
 
-use crate::Table;
+use crate::RecordBatch;
 
-impl Table {
+impl RecordBatch {
     pub fn search_sorted(&self, keys: &Self, descending: &[bool]) -> DaftResult<UInt64Array> {
         if self.schema != keys.schema {
             return Err(DaftError::SchemaMismatch(format!(

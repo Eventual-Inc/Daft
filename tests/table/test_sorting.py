@@ -55,20 +55,20 @@ def test_table_single_col_sorting(sort_dtype, value_dtype, first_col) -> None:
 
     argsort_order = Series.from_pylist([3, 2, 1, 4, 0])
 
-    daft_table = MicroPartition.from_arrow(pa_table)
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
 
     if first_col:
-        daft_table = daft_table.eval_expression_list([col("a").cast(sort_dtype), col("b").cast(value_dtype)])
+        daft_recordbatch = daft_recordbatch.eval_expression_list([col("a").cast(sort_dtype), col("b").cast(value_dtype)])
     else:
-        daft_table = daft_table.eval_expression_list([col("b").cast(value_dtype), col("a").cast(sort_dtype)])
+        daft_recordbatch = daft_recordbatch.eval_expression_list([col("b").cast(value_dtype), col("a").cast(sort_dtype)])
 
-    assert len(daft_table) == 5
+    assert len(daft_recordbatch) == 5
     if first_col:
-        assert daft_table.column_names() == ["a", "b"]
+        assert daft_recordbatch.column_names() == ["a", "b"]
     else:
-        assert daft_table.column_names() == ["b", "a"]
+        assert daft_recordbatch.column_names() == ["b", "a"]
 
-    sorted_table = daft_table.sort([col("a")])
+    sorted_table = daft_recordbatch.sort([col("a")])
 
     assert len(sorted_table) == 5
 
@@ -77,17 +77,17 @@ def test_table_single_col_sorting(sort_dtype, value_dtype, first_col) -> None:
     else:
         assert sorted_table.column_names() == ["b", "a"]
 
-    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
-    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+    assert sorted_table.get_column("a").datatype() == daft_recordbatch.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_recordbatch.get_column("b").datatype()
 
-    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()
-    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("a").to_pylist() == daft_recordbatch.get_column("a").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("b").to_pylist() == daft_recordbatch.get_column("b").take(argsort_order).to_pylist()
 
-    assert daft_table.argsort([col("a")]).to_pylist() == argsort_order.to_pylist()
+    assert daft_recordbatch.argsort([col("a")]).to_pylist() == argsort_order.to_pylist()
 
     # Descending
 
-    sorted_table = daft_table.sort([col("a")], descending=True)
+    sorted_table = daft_recordbatch.sort([col("a")], descending=True)
 
     assert len(sorted_table) == 5
     if first_col:
@@ -95,13 +95,13 @@ def test_table_single_col_sorting(sort_dtype, value_dtype, first_col) -> None:
     else:
         assert sorted_table.column_names() == ["b", "a"]
 
-    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
-    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+    assert sorted_table.get_column("a").datatype() == daft_recordbatch.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_recordbatch.get_column("b").datatype()
 
-    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()[::-1]
-    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("a").to_pylist() == daft_recordbatch.get_column("a").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("b").to_pylist() == daft_recordbatch.get_column("b").take(argsort_order).to_pylist()[::-1]
 
-    assert daft_table.argsort([col("a")], descending=True).to_pylist() == argsort_order.to_pylist()[::-1]
+    assert daft_recordbatch.argsort([col("a")], descending=True).to_pylist() == argsort_order.to_pylist()[::-1]
 
 
 @pytest.mark.parametrize(
@@ -127,45 +127,45 @@ def test_table_multiple_col_sorting(sort_dtype, value_dtype, data) -> None:
 
     argsort_order = Series.from_pylist(expected)
 
-    daft_table = MicroPartition.from_arrow(pa_table)
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
 
-    daft_table = daft_table.eval_expression_list([col("a").cast(sort_dtype), col("b").cast(value_dtype)])
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("a").cast(sort_dtype), col("b").cast(value_dtype)])
 
-    assert len(daft_table) == 5
-    assert daft_table.column_names() == ["a", "b"]
+    assert len(daft_recordbatch) == 5
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
-    sorted_table = daft_table.sort([col("a"), col("b")], descending=[a_desc, b_desc])
+    sorted_table = daft_recordbatch.sort([col("a"), col("b")], descending=[a_desc, b_desc])
 
     assert len(sorted_table) == 5
 
     assert sorted_table.column_names() == ["a", "b"]
 
-    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
-    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+    assert sorted_table.get_column("a").datatype() == daft_recordbatch.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_recordbatch.get_column("b").datatype()
 
-    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()
-    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("a").to_pylist() == daft_recordbatch.get_column("a").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("b").to_pylist() == daft_recordbatch.get_column("b").take(argsort_order).to_pylist()
 
     assert (
-        daft_table.argsort([col("a"), col("b")], descending=[a_desc, b_desc]).to_pylist() == argsort_order.to_pylist()
+        daft_recordbatch.argsort([col("a"), col("b")], descending=[a_desc, b_desc]).to_pylist() == argsort_order.to_pylist()
     )
 
     # Descending
 
-    sorted_table = daft_table.sort([col("a"), col("b")], descending=[not a_desc, not b_desc])
+    sorted_table = daft_recordbatch.sort([col("a"), col("b")], descending=[not a_desc, not b_desc])
 
     assert len(sorted_table) == 5
 
     assert sorted_table.column_names() == ["a", "b"]
 
-    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
-    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+    assert sorted_table.get_column("a").datatype() == daft_recordbatch.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_recordbatch.get_column("b").datatype()
 
-    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()[::-1]
-    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("a").to_pylist() == daft_recordbatch.get_column("a").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("b").to_pylist() == daft_recordbatch.get_column("b").take(argsort_order).to_pylist()[::-1]
 
     assert (
-        daft_table.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
+        daft_recordbatch.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
         == argsort_order.to_pylist()[::-1]
     )
 
@@ -192,42 +192,42 @@ def test_table_multiple_col_sorting_binary(data) -> None:
 
     argsort_order = Series.from_pylist(expected)
 
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 5
-    assert daft_table.column_names() == ["a", "b"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 5
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
-    sorted_table = daft_table.sort([col("a"), col("b")], descending=[a_desc, b_desc])
+    sorted_table = daft_recordbatch.sort([col("a"), col("b")], descending=[a_desc, b_desc])
 
     assert len(sorted_table) == 5
 
     assert sorted_table.column_names() == ["a", "b"]
 
-    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
-    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+    assert sorted_table.get_column("a").datatype() == daft_recordbatch.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_recordbatch.get_column("b").datatype()
 
-    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()
-    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("a").to_pylist() == daft_recordbatch.get_column("a").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("b").to_pylist() == daft_recordbatch.get_column("b").take(argsort_order).to_pylist()
 
     assert (
-        daft_table.argsort([col("a"), col("b")], descending=[a_desc, b_desc]).to_pylist() == argsort_order.to_pylist()
+        daft_recordbatch.argsort([col("a"), col("b")], descending=[a_desc, b_desc]).to_pylist() == argsort_order.to_pylist()
     )
 
     # Descending
 
-    sorted_table = daft_table.sort([col("a"), col("b")], descending=[not a_desc, not b_desc])
+    sorted_table = daft_recordbatch.sort([col("a"), col("b")], descending=[not a_desc, not b_desc])
 
     assert len(sorted_table) == 5
 
     assert sorted_table.column_names() == ["a", "b"]
 
-    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
-    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+    assert sorted_table.get_column("a").datatype() == daft_recordbatch.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_recordbatch.get_column("b").datatype()
 
-    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()[::-1]
-    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("a").to_pylist() == daft_recordbatch.get_column("a").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("b").to_pylist() == daft_recordbatch.get_column("b").take(argsort_order).to_pylist()[::-1]
 
     assert (
-        daft_table.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
+        daft_recordbatch.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
         == argsort_order.to_pylist()[::-1]
     )
 
@@ -251,45 +251,45 @@ def test_table_boolean_multiple_col_sorting(second_dtype, data) -> None:
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
     argsort_order = Series.from_pylist(expected)
 
-    daft_table = MicroPartition.from_arrow(pa_table)
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
 
-    daft_table = daft_table.eval_expression_list([col("a"), col("b").cast(second_dtype)])
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("a"), col("b").cast(second_dtype)])
 
-    assert len(daft_table) == 5
-    assert daft_table.column_names() == ["a", "b"]
+    assert len(daft_recordbatch) == 5
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
-    sorted_table = daft_table.sort([col("a"), col("b")], descending=[a_desc, b_desc])
+    sorted_table = daft_recordbatch.sort([col("a"), col("b")], descending=[a_desc, b_desc])
 
     assert len(sorted_table) == 5
 
     assert sorted_table.column_names() == ["a", "b"]
 
-    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
-    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+    assert sorted_table.get_column("a").datatype() == daft_recordbatch.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_recordbatch.get_column("b").datatype()
 
-    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()
-    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("a").to_pylist() == daft_recordbatch.get_column("a").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("b").to_pylist() == daft_recordbatch.get_column("b").take(argsort_order).to_pylist()
 
     assert (
-        daft_table.argsort([col("a"), col("b")], descending=[a_desc, b_desc]).to_pylist() == argsort_order.to_pylist()
+        daft_recordbatch.argsort([col("a"), col("b")], descending=[a_desc, b_desc]).to_pylist() == argsort_order.to_pylist()
     )
 
     # Descending
 
-    sorted_table = daft_table.sort([col("a"), col("b")], descending=[not a_desc, not b_desc])
+    sorted_table = daft_recordbatch.sort([col("a"), col("b")], descending=[not a_desc, not b_desc])
 
     assert len(sorted_table) == 5
 
     assert sorted_table.column_names() == ["a", "b"]
 
-    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
-    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+    assert sorted_table.get_column("a").datatype() == daft_recordbatch.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_recordbatch.get_column("b").datatype()
 
-    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()[::-1]
-    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("a").to_pylist() == daft_recordbatch.get_column("a").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("b").to_pylist() == daft_recordbatch.get_column("b").take(argsort_order).to_pylist()[::-1]
 
     assert (
-        daft_table.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
+        daft_recordbatch.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
         == argsort_order.to_pylist()[::-1]
     )
 
@@ -298,12 +298,12 @@ def test_table_sample() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     source_pairs = {(1, 5), (2, 6), (3, 7), (4, 8)}
 
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 4
-    assert daft_table.column_names() == ["a", "b"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 4
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
     # subsample
-    sampled = daft_table.sample(size=3)
+    sampled = daft_recordbatch.sample(size=3)
     assert len(sampled) == 3
     assert sampled.column_names() == ["a", "b"]
     assert all(
@@ -311,7 +311,7 @@ def test_table_sample() -> None:
     )
 
     # oversample
-    sampled = daft_table.sample(size=4)
+    sampled = daft_recordbatch.sample(size=4)
     assert len(sampled) == 4
     assert sampled.column_names() == ["a", "b"]
     assert all(
@@ -320,23 +320,23 @@ def test_table_sample() -> None:
 
     # negative sample
     with pytest.raises(ValueError, match="negative size"):
-        daft_table.sample(size=-1)
+        daft_recordbatch.sample(size=-1)
 
     # fraction > 1.0
     with pytest.raises(ValueError, match="fraction greater than 1.0"):
-        daft_table.sample(fraction=1.1)
+        daft_recordbatch.sample(fraction=1.1)
 
     # fraction < 0.0
     with pytest.raises(ValueError, match="negative fraction"):
-        daft_table.sample(fraction=-0.1)
+        daft_recordbatch.sample(fraction=-0.1)
 
     # size and fraction
     with pytest.raises(ValueError, match="Must specify either `fraction` or `size`"):
-        daft_table.sample(size=1, fraction=0.5)
+        daft_recordbatch.sample(size=1, fraction=0.5)
 
     # no arguments
     with pytest.raises(ValueError, match="Must specify either `fraction` or `size`"):
-        daft_table.sample()
+        daft_recordbatch.sample()
 
 
 @pytest.mark.parametrize("size, k", itertools.product([0, 1, 10, 33, 100, 101], [0, 1, 2, 3, 100, 101, 200]))
@@ -345,12 +345,12 @@ def test_table_quantiles(size, k) -> None:
 
     second = 2 * first
 
-    daft_table = MicroPartition.from_pydict({"a": first, "b": second})
-    assert len(daft_table) == size
-    assert daft_table.column_names() == ["a", "b"]
+    daft_recordbatch = MicroPartition.from_pydict({"a": first, "b": second})
+    assert len(daft_recordbatch) == size
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
     # sub
-    quantiles = daft_table.quantiles(k)
+    quantiles = daft_recordbatch.quantiles(k)
 
     if size > 0:
         assert len(quantiles) == max(k - 1, 0)
@@ -377,14 +377,14 @@ def test_table_quantiles_bad_input() -> None:
 
     pa_table = pa.Table.from_pydict({"a": first, "b": second})
 
-    daft_table = MicroPartition.from_arrow(pa_table)
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
 
     with pytest.raises(ValueError, match="negative number"):
-        daft_table.quantiles(-1)
+        daft_recordbatch.quantiles(-1)
 
 
 def test_string_table_sorting():
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "firstname": [
                 "bob",
@@ -398,7 +398,7 @@ def test_string_table_sorting():
             "lastname": ["a", "a", "a", "bond", None, None, "a"],
         }
     )
-    sorted_table = daft_table.sort([col("firstname"), col("lastname")])
+    sorted_table = daft_recordbatch.sort([col("firstname"), col("lastname")])
     assert sorted_table.to_pydict() == {
         "firstname": ["alice", "alice", "bob", "bob", "eve", None, None],
         "lastname": ["a", "a", "a", None, "a", "bond", None],

@@ -6,15 +6,15 @@ use daft_core::{
 };
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyList};
 
-use crate::Table;
+use crate::RecordBatch;
 
 pub fn record_batches_to_table(
     py: Python,
     batches: &[Bound<PyAny>],
     schema: SchemaRef,
-) -> PyResult<Table> {
+) -> PyResult<RecordBatch> {
     if batches.is_empty() {
-        return Ok(Table::empty(Some(schema))?);
+        return Ok(RecordBatch::empty(Some(schema))?);
     }
 
     let names = schema.names();
@@ -37,7 +37,7 @@ pub fn record_batches_to_table(
     }
     // Now do the heavy lifting (casting and concats) without the GIL.
     py.allow_threads(|| {
-        let mut tables: Vec<Table> = Vec::with_capacity(num_batches);
+        let mut tables: Vec<RecordBatch> = Vec::with_capacity(num_batches);
         for (cols, num_rows) in extracted_arrow_arrays {
             let columns = cols
                 .into_iter()
@@ -47,15 +47,15 @@ pub fn record_batches_to_table(
                     Series::try_from((names.get(i).unwrap().as_str(), cast_array))
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            tables.push(Table::new_with_size(schema.clone(), columns, num_rows)?);
+            tables.push(RecordBatch::new_with_size(schema.clone(), columns, num_rows)?);
         }
-        Ok(Table::concat(tables.as_slice())?)
+        Ok(RecordBatch::concat(tables.as_slice())?)
     })
 }
 
 pub fn table_to_record_batch(
     py: Python,
-    table: &Table,
+    table: &RecordBatch,
     pyarrow: Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let mut arrays = Vec::with_capacity(table.num_columns());

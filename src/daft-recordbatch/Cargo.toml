@@ -23,5 +23,5 @@ workspace = true
 
 [package]
 edition = {workspace = true}
-name = "daft-table"
+name = "daft-recordbatch"
 version = {workspace = true}

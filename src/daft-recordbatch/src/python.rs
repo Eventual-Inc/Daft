@@ -9,16 +9,16 @@ use daft_logical_plan::FileInfos;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
-use crate::{ffi, Table};
+use crate::{ffi, RecordBatch};
 
 #[pyclass]
 #[derive(Clone)]
-pub struct PyTable {
-    pub table: Table,
+pub struct PyRecordBatch {
+    pub table: RecordBatch,
 }
 
 #[pymethods]
-impl PyTable {
+impl PyRecordBatch {
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(PySchema {
             schema: self.table.schema.clone(),
@@ -349,12 +349,12 @@ impl PyTable {
             .collect();
         py.allow_threads(|| {
             let (tables, values) = self.table.partition_by_value(exprs.as_slice())?;
-            let pytables = tables
+            let PyRecordBatchs = tables
                 .into_iter()
                 .map(std::convert::Into::into)
                 .collect::<Vec<Self>>();
             let values = values.into();
-            Ok((pytables, values))
+            Ok((PyRecordBatchs, values))
         })
     }
 
@@ -409,7 +409,7 @@ impl PyTable {
     #[staticmethod]
     pub fn concat(py: Python, tables: Vec<Self>) -> PyResult<Self> {
         let tables: Vec<_> = tables.iter().map(|t| &t.table).collect();
-        py.allow_threads(|| Ok(Table::concat(tables.as_slice())?.into()))
+        py.allow_threads(|| Ok(RecordBatch::concat(tables.as_slice())?.into()))
     }
 
     pub fn slice(&self, start: i64, end: i64) -> PyResult<Self> {
@@ -471,7 +471,7 @@ impl PyTable {
         }
 
         Ok(Self {
-            table: Table::new_with_broadcast(Schema::new(fields)?, columns, num_rows)?,
+            table: RecordBatch::new_with_broadcast(Schema::new(fields)?, columns, num_rows)?,
         })
     }
 
@@ -485,7 +485,7 @@ impl PyTable {
     #[staticmethod]
     #[pyo3(signature = (schema=None))]
     pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
-        Ok(Table::empty(match schema {
+        Ok(RecordBatch::empty(match schema {
             Some(s) => Some(s.schema),
             None => None,
         })?
@@ -499,30 +499,30 @@ impl PyTable {
 
     #[staticmethod]
     pub fn from_file_infos(file_infos: &FileInfos) -> PyResult<Self> {
-        let table: Table = file_infos.try_into()?;
+        let table: RecordBatch = file_infos.try_into()?;
         Ok(table.into())
     }
 }
 
-impl From<Table> for PyTable {
-    fn from(value: Table) -> Self {
+impl From<RecordBatch> for PyRecordBatch {
+    fn from(value: RecordBatch) -> Self {
         Self { table: value }
     }
 }
 
-impl From<PyTable> for Table {
-    fn from(item: PyTable) -> Self {
+impl From<PyRecordBatch> for RecordBatch {
+    fn from(item: PyRecordBatch) -> Self {
         item.table
     }
 }
 
-impl AsRef<Table> for PyTable {
-    fn as_ref(&self) -> &Table {
+impl AsRef<RecordBatch> for PyRecordBatch {
+    fn as_ref(&self) -> &RecordBatch {
         &self.table
     }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<PyTable>()?;
+    parent.add_class::<PyRecordBatch>()?;
     Ok(())
 }

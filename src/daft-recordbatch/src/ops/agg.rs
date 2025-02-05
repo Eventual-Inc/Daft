@@ -2,9 +2,9 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, prelude::*};
 use daft_dsl::{functions::FunctionExpr, AggExpr, Expr, ExprRef};
 
-use crate::Table;
+use crate::RecordBatch;
 
-impl Table {
+impl RecordBatch {
     pub fn agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
         // Dispatch depending on whether we're doing groupby or just a global agg.
         match group_by.len() {

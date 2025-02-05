@@ -10,7 +10,7 @@ import daft
 import daft.table
 from daft.exceptions import ConnectTimeoutError, ReadTimeoutError
 from daft.filesystem import get_filesystem, get_protocol_from_path
-from daft.table import MicroPartition, Table
+from daft.table import MicroPartition, RecordBatch
 
 
 def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
@@ -281,7 +281,7 @@ def test_parquet_read_table_bulk(parquet_file, public_storage_io_config, multith
     pa_read = MicroPartition.from_arrow(read_parquet_with_pyarrow(url))
 
     # Legacy Table returns a list[Table]
-    if MicroPartition == Table:
+    if MicroPartition == RecordBatch:
         for daft_native_read in daft_native_reads:
             assert daft_native_read.schema() == pa_read.schema()
             pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
@@ -365,7 +365,7 @@ def test_row_groups_selection_bulk(public_storage_io_config, multithreaded_io):
     url = ["s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"] * 11
     row_groups = [list(range(10))] + [[i] for i in range(10)]
 
-    if MicroPartition == Table:
+    if MicroPartition == RecordBatch:
         first, *rest = MicroPartition.read_parquet_bulk(
             url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups_per_path=row_groups
         )

@@ -53,7 +53,7 @@ impl MicroPartition {
                 all_stats = Some(curr_stats.union(stats)?);
             }
         }
-        let new_len = all_tables.iter().map(daft_table::Table::len).sum();
+        let new_len = all_tables.iter().map(daft_recordbatch::RecordBatch::len).sum();
 
         Ok(Self {
             schema: first_schema.clone(),

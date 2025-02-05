@@ -14,7 +14,7 @@ use daft_core::{
 };
 
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
-use crate::Table;
+use crate::RecordBatch;
 
 pub struct ProbeTable {
     schema: SchemaRef,
@@ -62,7 +62,7 @@ impl ProbeTable {
 
     fn probe<'a>(
         &'a self,
-        input: &'a Table,
+        input: &'a RecordBatch,
     ) -> DaftResult<impl Iterator<Item = Option<&'a [u64]>> + 'a> {
         assert_eq!(self.schema.len(), input.schema.len());
         assert!(self
@@ -107,7 +107,7 @@ impl ProbeTable {
         })))
     }
 
-    fn add_table(&mut self, table: &Table) -> DaftResult<()> {
+    fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {
         // we have to cast to the join key schema
         assert_eq!(table.schema, self.schema);
         let hashes = table.hash_rows()?;
@@ -166,7 +166,7 @@ impl ProbeTable {
 }
 
 impl Probeable for ProbeTable {
-    fn probe_indices<'a>(&'a self, table: &'a Table) -> DaftResult<IndicesMapper<'a>> {
+    fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>> {
         let iter = self.probe(table)?;
         Ok(IndicesMapper::new(
             Box::new(iter),
@@ -177,7 +177,7 @@ impl Probeable for ProbeTable {
 
     fn probe_exists<'a>(
         &'a self,
-        table: &'a Table,
+        table: &'a RecordBatch,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>> {
         let iter = self.probe(table)?;
         Ok(Box::new(iter.map(|indices| indices.is_some())))
@@ -187,7 +187,7 @@ impl Probeable for ProbeTable {
 pub struct ProbeTableBuilder(pub ProbeTable);
 
 impl ProbeableBuilder for ProbeTableBuilder {
-    fn add_table(&mut self, table: &Table) -> DaftResult<()> {
+    fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {
         self.0.add_table(table)
     }
 

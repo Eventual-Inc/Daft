@@ -8,7 +8,7 @@ use daft_core::prelude::SchemaRef;
 use probe_set::{ProbeSet, ProbeSetBuilder};
 use probe_table::{ProbeTable, ProbeTableBuilder};
 
-use crate::Table;
+use crate::RecordBatch;
 
 struct ArrowTableEntry(Vec<Box<dyn arrow2::array::Array>>);
 
@@ -31,7 +31,7 @@ pub fn make_probeable_builder(
 }
 
 pub trait ProbeableBuilder: Send + Sync {
-    fn add_table(&mut self, table: &Table) -> DaftResult<()>;
+    fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()>;
     fn build(self: Box<Self>) -> Arc<dyn Probeable>;
 }
 
@@ -76,23 +76,23 @@ pub trait Probeable: Send + Sync {
     /// The inner iterator, if present, iterates over the rows of the left table that match the right row.
     /// Otherwise, if the inner iterator is None, indicates that the right row has no matches.
     /// NOTE: This function only works if track_indices is true.
-    fn probe_indices<'a>(&'a self, table: &'a Table) -> DaftResult<IndicesMapper<'a>>;
+    fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>>;
 
     /// Probe_exists returns an iterator of booleans. The iterator iterates over the rows of the right table.
     fn probe_exists<'a>(
         &'a self,
-        table: &'a Table,
+        table: &'a RecordBatch,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>>;
 }
 
 #[derive(Clone)]
 pub struct ProbeState {
     probeable: Arc<dyn Probeable>,
-    tables: Arc<Vec<Table>>,
+    tables: Arc<Vec<RecordBatch>>,
 }
 
 impl ProbeState {
-    pub fn new(probeable: Arc<dyn Probeable>, tables: Arc<Vec<Table>>) -> Self {
+    pub fn new(probeable: Arc<dyn Probeable>, tables: Arc<Vec<RecordBatch>>) -> Self {
         Self { probeable, tables }
     }
 
@@ -100,7 +100,7 @@ impl ProbeState {
         &self.probeable
     }
 
-    pub fn get_tables(&self) -> &Arc<Vec<Table>> {
+    pub fn get_tables(&self) -> &Arc<Vec<RecordBatch>> {
         &self.tables
     }
 }

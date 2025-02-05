@@ -15,13 +15,13 @@ from daft.daft import (
     JsonReadOptions,
 )
 from daft.daft import PyMicroPartition as _PyMicroPartition
-from daft.daft import PyTable as _PyTable
+from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.daft import ScanTask as _ScanTask
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
-from daft.table.table import Table
+from daft.table.table import RecordBatch
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -72,8 +72,8 @@ class MicroPartition:
         return MicroPartition._from_pymicropartition(_PyMicroPartition.from_scan_task(scan_task))
 
     @staticmethod
-    def _from_pytable(pyt: _PyTable) -> MicroPartition:
-        assert isinstance(pyt, _PyTable)
+    def _from_pytable(pyt: _PyRecordBatch) -> MicroPartition:
+        assert isinstance(pyt, _PyRecordBatch)
         return MicroPartition._from_pymicropartition(_PyMicroPartition.from_tables([pyt]))
 
     @staticmethod
@@ -84,12 +84,12 @@ class MicroPartition:
         return tab
 
     @staticmethod
-    def _from_tables(tables: list[Table]) -> MicroPartition:
+    def _from_tables(tables: list[RecordBatch]) -> MicroPartition:
         return MicroPartition._from_pymicropartition(_PyMicroPartition.from_tables([t._table for t in tables]))
 
     @staticmethod
     def from_arrow(arrow_table: pa.Table) -> MicroPartition:
-        table = Table.from_arrow(arrow_table)
+        table = RecordBatch.from_arrow(arrow_table)
         return MicroPartition._from_tables([table])
 
     @staticmethod
@@ -100,12 +100,12 @@ class MicroPartition:
 
     @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> MicroPartition:
-        table = Table.from_pandas(pd_df)
+        table = RecordBatch.from_pandas(pd_df)
         return MicroPartition._from_tables([table])
 
     @staticmethod
     def from_pydict(data: dict) -> MicroPartition:
-        table = Table.from_pydict(data)
+        table = RecordBatch.from_pydict(data)
         return MicroPartition._from_tables([table])
 
     @classmethod
@@ -128,8 +128,8 @@ class MicroPartition:
     # Exporting methods
     ###
 
-    def to_table(self) -> Table:
-        return Table._from_pytable(self._micropartition.to_table())
+    def to_table(self) -> RecordBatch:
+        return RecordBatch._from_pytable(self._micropartition.to_table())
 
     def to_arrow(self) -> pa.Table:
         return self.to_table().to_arrow()
@@ -339,10 +339,10 @@ class MicroPartition:
         ]
 
     def partition_by_range(
-        self, partition_keys: ExpressionsProjection, boundaries: Table, descending: list[bool]
+        self, partition_keys: ExpressionsProjection, boundaries: RecordBatch, descending: list[bool]
     ) -> list[MicroPartition]:
-        if not isinstance(boundaries, Table):
-            raise TypeError(f"Expected a Table for `boundaries` in partition_by_range but got {type(boundaries)}")
+        if not isinstance(boundaries, RecordBatch):
+            raise TypeError(f"Expected a RecordBatch for `boundaries` in partition_by_range but got {type(boundaries)}")
 
         exprs = [e._expr for e in partition_keys]
         return [
@@ -424,8 +424,8 @@ class MicroPartition:
         paths: Series | list[str],
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
-    ) -> Table:
-        return Table.read_parquet_statistics(paths=paths, io_config=io_config, multithreaded_io=multithreaded_io)
+    ) -> RecordBatch:
+        return RecordBatch.read_parquet_statistics(paths=paths, io_config=io_config, multithreaded_io=multithreaded_io)
 
     @classmethod
     def read_parquet(

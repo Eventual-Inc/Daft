@@ -8,7 +8,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{Expr, ExprRef};
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use indexmap::{IndexMap, IndexSet};
 
 use crate::column_stats::ColumnRangeStatistics;
@@ -28,7 +28,7 @@ impl Hash for TableStatistics {
 }
 
 impl TableStatistics {
-    pub fn from_stats_table(table: &Table) -> DaftResult<Self> {
+    pub fn from_stats_table(table: &RecordBatch) -> DaftResult<Self> {
         // Assumed format is each column having 2 rows:
         // - row 0: Minimum value for the column.
         // - row 1: Maximum value for the column.
@@ -45,7 +45,7 @@ impl TableStatistics {
     }
 
     #[must_use]
-    pub fn from_table(table: &Table) -> Self {
+    pub fn from_table(table: &RecordBatch) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
             let col = table.get_column(&name).unwrap();
@@ -202,7 +202,7 @@ impl Display for TableStatistics {
             .map(|(s, c)| c.combined_series().unwrap().rename(s))
             .collect::<Vec<_>>();
         let tbl_schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect()).unwrap();
-        let tab = Table::new_with_size(tbl_schema, columns, 2).unwrap();
+        let tab = RecordBatch::new_with_size(tbl_schema, columns, 2).unwrap();
         write!(f, "{tab}")
     }
 }
@@ -211,14 +211,14 @@ impl Display for TableStatistics {
 mod test {
     use daft_core::prelude::*;
     use daft_dsl::{col, lit};
-    use daft_table::Table;
+    use daft_recordbatch::RecordBatch;
 
     use super::TableStatistics;
     use crate::column_stats::TruthValue;
 
     #[test]
     fn test_equal() -> crate::Result<()> {
-        let table = Table::from_nonempty_columns(vec![
+        let table = RecordBatch::from_nonempty_columns(vec![
             Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()
         ])
         .unwrap();
@@ -236,7 +236,7 @@ mod test {
 
         // True case
         let table =
-            Table::from_nonempty_columns(
+            RecordBatch::from_nonempty_columns(
                 vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()],
             )
             .unwrap();

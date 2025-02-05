@@ -13,7 +13,7 @@ from daft.daft import (
     JsonParseOptions,
     JsonReadOptions,
 )
-from daft.daft import PyTable as _PyTable
+from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.daft import ScanTask as _ScanTask
 from daft.daft import read_csv as _read_csv
 from daft.daft import read_json as _read_json
@@ -34,11 +34,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Table:
-    _table: _PyTable
+class RecordBatch:
+    _table: _PyRecordBatch
 
     def __init__(self) -> None:
-        raise NotImplementedError("We do not support creating a Table via __init__ ")
+        raise NotImplementedError("We do not support creating a RecordBatch via __init__ ")
 
     def schema(self) -> Schema:
         return Schema._from_pyschema(self._table.schema())
@@ -66,23 +66,23 @@ class Table:
     ###
 
     @staticmethod
-    def empty(schema: Schema | None = None) -> Table:
-        pyt = _PyTable.empty(None) if schema is None else _PyTable.empty(schema._schema)
-        return Table._from_pytable(pyt)
+    def empty(schema: Schema | None = None) -> RecordBatch:
+        pyt = _PyRecordBatch.empty(None) if schema is None else _PyRecordBatch.empty(schema._schema)
+        return RecordBatch._from_pytable(pyt)
 
     @staticmethod
-    def _from_scan_task(_: _ScanTask) -> Table:
-        raise NotImplementedError("_from_scan_task is not implemented for legacy Python Table.")
+    def _from_scan_task(_: _ScanTask) -> RecordBatch:
+        raise NotImplementedError("_from_scan_task is not implemented for legacy Python RecordBatch.")
 
     @staticmethod
-    def _from_pytable(pyt: _PyTable) -> Table:
-        assert isinstance(pyt, _PyTable)
-        tab = Table.__new__(Table)
+    def _from_pytable(pyt: _PyRecordBatch) -> RecordBatch:
+        assert isinstance(pyt, _PyRecordBatch)
+        tab = RecordBatch.__new__(RecordBatch)
         tab._table = pyt
         return tab
 
     @staticmethod
-    def from_arrow(arrow_table: pa.Table) -> Table:
+    def from_arrow(arrow_table: pa.Table) -> RecordBatch:
         assert isinstance(arrow_table, pa.Table)
         schema = Schema._from_field_name_and_types(
             [(f.name, DataType.from_arrow_type(f.type)) for f in arrow_table.schema]
@@ -100,21 +100,21 @@ class Table:
             # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()
             # path.
             logger.debug("Unsupported Arrow types detected for columns: %s", non_native_fields)
-            return Table.from_pydict(dict(zip(arrow_table.column_names, arrow_table.columns)))
+            return RecordBatch.from_pydict(dict(zip(arrow_table.column_names, arrow_table.columns)))
         else:
             # Otherwise, go through record batch happy path.
             arrow_table = ensure_table(arrow_table)
-            pyt = _PyTable.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
-            return Table._from_pytable(pyt)
+            pyt = _PyRecordBatch.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
+            return RecordBatch._from_pytable(pyt)
 
     @staticmethod
-    def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> Table:
+    def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> RecordBatch:
         schema = Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
-        pyt = _PyTable.from_arrow_record_batches(rbs, schema._schema)
-        return Table._from_pytable(pyt)
+        pyt = _PyRecordBatch.from_arrow_record_batches(rbs, schema._schema)
+        return RecordBatch._from_pytable(pyt)
 
     @staticmethod
-    def from_pandas(pd_df: pd.DataFrame) -> Table:
+    def from_pandas(pd_df: pd.DataFrame) -> RecordBatch:
         if not pd.module_available():
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
         assert isinstance(pd_df, pd.DataFrame)
@@ -123,40 +123,40 @@ class Table:
         except pa.ArrowInvalid:
             pass
         else:
-            return Table.from_arrow(arrow_table)
+            return RecordBatch.from_arrow(arrow_table)
         # Fall back to pydict path.
         df_as_dict = pd_df.to_dict(orient="series")
-        return Table.from_pydict(df_as_dict)
+        return RecordBatch.from_pydict(df_as_dict)
 
     @staticmethod
-    def from_pydict(data: dict) -> Table:
+    def from_pydict(data: dict) -> RecordBatch:
         series_dict = dict()
         for k, v in data.items():
             series = item_to_series(k, v)
             series_dict[k] = series._series
-        return Table._from_pytable(_PyTable.from_pylist_series(series_dict))
+        return RecordBatch._from_pytable(_PyRecordBatch.from_pylist_series(series_dict))
 
     @classmethod
-    def concat(cls, to_merge: list[Table]) -> Table:
+    def concat(cls, to_merge: list[RecordBatch]) -> RecordBatch:
         tables = []
         for t in to_merge:
-            if not isinstance(t, Table):
+            if not isinstance(t, RecordBatch):
                 raise TypeError(f"Expected a Table for concat, got {type(t)}")
             tables.append(t._table)
-        return Table._from_pytable(_PyTable.concat(tables))
+        return RecordBatch._from_pytable(_PyRecordBatch.concat(tables))
 
-    def slice(self, start: int, end: int) -> Table:
+    def slice(self, start: int, end: int) -> RecordBatch:
         if not isinstance(start, int):
             raise TypeError(f"expected int for start but got {type(start)}")
         if not isinstance(end, int):
             raise TypeError(f"expected int for end but got {type(end)}")
-        return Table._from_pytable(self._table.slice(start, end))
+        return RecordBatch._from_pytable(self._table.slice(start, end))
 
     ###
     # Exporting methods
     ###
 
-    def to_table(self) -> Table:
+    def to_table(self) -> RecordBatch:
         """For compatibility with MicroPartition."""
         return self
 
@@ -220,33 +220,33 @@ class Table:
     # Compute methods (Table -> Table)
     ###
 
-    def cast_to_schema(self, schema: Schema) -> Table:
-        """Casts a Table into the provided schema."""
-        return Table._from_pytable(self._table.cast_to_schema(schema._schema))
+    def cast_to_schema(self, schema: Schema) -> RecordBatch:
+        """Casts a RecordBatch into the provided schema."""
+        return RecordBatch._from_pytable(self._table.cast_to_schema(schema._schema))
 
-    def eval_expression_list(self, exprs: ExpressionsProjection) -> Table:
+    def eval_expression_list(self, exprs: ExpressionsProjection) -> RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
-        return Table._from_pytable(self._table.eval_expression_list(pyexprs))
+        return RecordBatch._from_pytable(self._table.eval_expression_list(pyexprs))
 
-    def head(self, num: int) -> Table:
-        return Table._from_pytable(self._table.head(num))
+    def head(self, num: int) -> RecordBatch:
+        return RecordBatch._from_pytable(self._table.head(num))
 
-    def take(self, indices: Series) -> Table:
+    def take(self, indices: Series) -> RecordBatch:
         assert isinstance(indices, Series)
-        return Table._from_pytable(self._table.take(indices._series))
+        return RecordBatch._from_pytable(self._table.take(indices._series))
 
-    def filter(self, exprs: ExpressionsProjection) -> Table:
+    def filter(self, exprs: ExpressionsProjection) -> RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
-        return Table._from_pytable(self._table.filter(pyexprs))
+        return RecordBatch._from_pytable(self._table.filter(pyexprs))
 
     def sort(
         self,
         sort_keys: ExpressionsProjection,
         descending: bool | list[bool] | None = None,
         nulls_first: bool | list[bool] | None = None,
-    ) -> Table:
+    ) -> RecordBatch:
         assert all(isinstance(e, Expression) for e in sort_keys)
         pyexprs = [e._expr for e in sort_keys]
         if descending is None:
@@ -273,7 +273,7 @@ class Table:
                 )
             else:
                 nulls_first = [bool(x) for x in nulls_first]
-        return Table._from_pytable(self._table.sort(pyexprs, descending, nulls_first))
+        return RecordBatch._from_pytable(self._table.sort(pyexprs, descending, nulls_first))
 
     def sample(
         self,
@@ -281,65 +281,65 @@ class Table:
         size: int | None = None,
         with_replacement: bool = False,
         seed: int | None = None,
-    ) -> Table:
+    ) -> RecordBatch:
         if fraction is not None and size is not None:
             raise ValueError("Must specify either `fraction` or `size`, but not both")
         elif fraction is not None:
-            return Table._from_pytable(self._table.sample_by_fraction(fraction, with_replacement, seed))
+            return RecordBatch._from_pytable(self._table.sample_by_fraction(fraction, with_replacement, seed))
         elif size is not None:
-            return Table._from_pytable(self._table.sample_by_size(size, with_replacement, seed))
+            return RecordBatch._from_pytable(self._table.sample_by_size(size, with_replacement, seed))
         else:
             raise ValueError("Must specify either `fraction` or `size`")
 
-    def agg(self, to_agg: list[Expression], group_by: ExpressionsProjection | None = None) -> Table:
+    def agg(self, to_agg: list[Expression], group_by: ExpressionsProjection | None = None) -> RecordBatch:
         to_agg_pyexprs = [e._expr for e in to_agg]
         group_by_pyexprs = [e._expr for e in group_by] if group_by is not None else []
-        return Table._from_pytable(self._table.agg(to_agg_pyexprs, group_by_pyexprs))
+        return RecordBatch._from_pytable(self._table.agg(to_agg_pyexprs, group_by_pyexprs))
 
     def pivot(
         self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
-    ) -> Table:
+    ) -> RecordBatch:
         group_by_pyexprs = [e._expr for e in group_by]
-        return Table._from_pytable(self._table.pivot(group_by_pyexprs, pivot_column._expr, values_column._expr, names))
+        return RecordBatch._from_pytable(self._table.pivot(group_by_pyexprs, pivot_column._expr, values_column._expr, names))
 
-    def quantiles(self, num: int) -> Table:
-        return Table._from_pytable(self._table.quantiles(num))
+    def quantiles(self, num: int) -> RecordBatch:
+        return RecordBatch._from_pytable(self._table.quantiles(num))
 
-    def explode(self, columns: ExpressionsProjection) -> Table:
+    def explode(self, columns: ExpressionsProjection) -> RecordBatch:
         """NOTE: Expressions here must be Explode expressions."""
         to_explode_pyexprs = [e._expr for e in columns]
-        return Table._from_pytable(self._table.explode(to_explode_pyexprs))
+        return RecordBatch._from_pytable(self._table.explode(to_explode_pyexprs))
 
     def hash_join(
         self,
-        right: Table,
+        right: RecordBatch,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
         how: JoinType = JoinType.Inner,
-    ) -> Table:
+    ) -> RecordBatch:
         if len(left_on) != len(right_on):
             raise ValueError(
                 f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
             )
 
-        if not isinstance(right, Table):
+        if not isinstance(right, RecordBatch):
             raise TypeError(f"Expected a Table for `right` in join but got {type(right)}")
 
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
 
-        return Table._from_pytable(
+        return RecordBatch._from_pytable(
             self._table.hash_join(right._table, left_on=left_exprs, right_on=right_exprs, how=how)
         )
 
     def sort_merge_join(
         self,
-        right: Table,
+        right: RecordBatch,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
         how: JoinType = JoinType.Inner,
         is_sorted: bool = False,
-    ) -> Table:
+    ) -> RecordBatch:
         if how != JoinType.Inner:
             raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):
@@ -347,49 +347,49 @@ class Table:
                 f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
             )
 
-        if not isinstance(right, Table):
+        if not isinstance(right, RecordBatch):
             raise TypeError(f"Expected a Table for `right` in join but got {type(right)}")
 
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
 
-        return Table._from_pytable(
+        return RecordBatch._from_pytable(
             self._table.sort_merge_join(right._table, left_on=left_exprs, right_on=right_exprs, is_sorted=is_sorted)
         )
 
-    def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
+    def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[RecordBatch]:
         if not isinstance(num_partitions, int):
             raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
 
         pyexprs = [e._expr for e in exprs]
-        return [Table._from_pytable(t) for t in self._table.partition_by_hash(pyexprs, num_partitions)]
+        return [RecordBatch._from_pytable(t) for t in self._table.partition_by_hash(pyexprs, num_partitions)]
 
     def partition_by_range(
-        self, partition_keys: ExpressionsProjection, boundaries: Table, descending: list[bool]
-    ) -> list[Table]:
-        if not isinstance(boundaries, Table):
-            raise TypeError(f"Expected a Table for `boundaries` in partition_by_range but got {type(boundaries)}")
+        self, partition_keys: ExpressionsProjection, boundaries: RecordBatch, descending: list[bool]
+    ) -> list[RecordBatch]:
+        if not isinstance(boundaries, RecordBatch):
+            raise TypeError(f"Expected a RecordBatch for `boundaries` in partition_by_range but got {type(boundaries)}")
 
         exprs = [e._expr for e in partition_keys]
-        return [Table._from_pytable(t) for t in self._table.partition_by_range(exprs, boundaries._table, descending)]
+        return [RecordBatch._from_pytable(t) for t in self._table.partition_by_range(exprs, boundaries._table, descending)]
 
-    def partition_by_random(self, num_partitions: int, seed: int) -> list[Table]:
+    def partition_by_random(self, num_partitions: int, seed: int) -> list[RecordBatch]:
         if not isinstance(num_partitions, int):
             raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
 
         if not isinstance(seed, int):
             raise TypeError(f"Expected a seed to be int, got {type(seed)}")
 
-        return [Table._from_pytable(t) for t in self._table.partition_by_random(num_partitions, seed)]
+        return [RecordBatch._from_pytable(t) for t in self._table.partition_by_random(num_partitions, seed)]
 
-    def partition_by_value(self, partition_keys: ExpressionsProjection) -> tuple[list[Table], Table]:
+    def partition_by_value(self, partition_keys: ExpressionsProjection) -> tuple[list[RecordBatch], RecordBatch]:
         exprs = [e._expr for e in partition_keys]
         pytables, values = self._table.partition_by_value(exprs)
 
-        return [Table._from_pytable(t) for t in pytables], Table._from_pytable(values)
+        return [RecordBatch._from_pytable(t) for t in pytables], RecordBatch._from_pytable(values)
 
-    def add_monotonically_increasing_id(self, partition_num: int, column_name: str) -> Table:
-        return Table._from_pytable(self._table.add_monotonically_increasing_id(partition_num, column_name))
+    def add_monotonically_increasing_id(self, partition_num: int, column_name: str) -> RecordBatch:
+        return RecordBatch._from_pytable(self._table.add_monotonically_increasing_id(partition_num, column_name))
 
     ###
     # Compute methods (Table -> Series)
@@ -433,7 +433,7 @@ class Table:
 
     def __reduce__(self) -> tuple:
         names = self.column_names()
-        return Table.from_pydict, ({name: self.get_column(name) for name in names},)
+        return RecordBatch.from_pydict, ({name: self.get_column(name) for name in names},)
 
     @classmethod
     def read_parquet(
@@ -447,8 +447,8 @@ class Table:
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
-    ) -> Table:
-        return Table._from_pytable(
+    ) -> RecordBatch:
+        return RecordBatch._from_pytable(
             _read_parquet(
                 uri=path,
                 columns=columns,
@@ -475,7 +475,7 @@ class Table:
         num_parallel_tasks: int | None = 128,
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
-    ) -> list[Table]:
+    ) -> list[RecordBatch]:
         pytables = _read_parquet_bulk(
             uris=paths,
             columns=columns,
@@ -488,7 +488,7 @@ class Table:
             multithreaded_io=multithreaded_io,
             coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
         )
-        return [Table._from_pytable(t) for t in pytables]
+        return [RecordBatch._from_pytable(t) for t in pytables]
 
     @classmethod
     def read_parquet_statistics(
@@ -496,11 +496,11 @@ class Table:
         paths: Series | list[str],
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
-    ) -> Table:
+    ) -> RecordBatch:
         if not isinstance(paths, Series):
             paths = Series.from_pylist(paths, name="uris").cast(DataType.string())
         assert paths.name() == "uris", f"Expected input series to have name 'uris', but found: {paths.name()}"
-        return Table._from_pytable(
+        return RecordBatch._from_pytable(
             _read_parquet_statistics(
                 uris=paths._series,
                 io_config=io_config,
@@ -517,8 +517,8 @@ class Table:
         read_options: CsvReadOptions | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
-    ) -> Table:
-        return Table._from_pytable(
+    ) -> RecordBatch:
+        return RecordBatch._from_pytable(
             _read_csv(
                 uri=path,
                 convert_options=convert_options,
@@ -539,8 +539,8 @@ class Table:
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
         max_chunks_in_flight: int | None = None,
-    ) -> Table:
-        return Table._from_pytable(
+    ) -> RecordBatch:
+        return RecordBatch._from_pytable(
             _read_json(
                 uri=path,
                 convert_options=convert_options,

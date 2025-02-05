@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_micropartition::{python::PyMicroPartition, MicroPartition};
-use daft_table::{python::PyTable, Table};
+use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
 use pyo3::{types::PyAnyMethods, PyObject, Python};
 
 use crate::FileWriter;
@@ -19,18 +19,18 @@ impl PyArrowWriter {
         file_idx: usize,
         compression: &Option<String>,
         io_config: &Option<daft_io::IOConfig>,
-        partition_values: Option<&Table>,
+        partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("ParquetFileWriter")?;
-            let _from_pytable = py
+            let _from_PyRecordBatch = py
                 .import(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "Table"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .getattr(pyo3::intern!(py, "_from_PyRecordBatch"))?;
             let partition_values = match partition_values {
                 Some(pv) => {
-                    let py_table = _from_pytable.call1((PyTable::from(pv.clone()),))?;
+                    let py_table = _from_PyRecordBatch.call1((PyRecordBatch::from(pv.clone()),))?;
                     Some(py_table)
                 }
                 None => None,
@@ -57,18 +57,18 @@ impl PyArrowWriter {
         root_dir: &str,
         file_idx: usize,
         io_config: &Option<daft_io::IOConfig>,
-        partition_values: Option<&Table>,
+        partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("CSVFileWriter")?;
-            let _from_pytable = py
+            let _from_PyRecordBatch = py
                 .import(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "Table"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .getattr(pyo3::intern!(py, "_from_PyRecordBatch"))?;
             let partition_values = match partition_values {
                 Some(pv) => {
-                    let py_table = _from_pytable.call1((PyTable::from(pv.clone()),))?;
+                    let py_table = _from_PyRecordBatch.call1((PyRecordBatch::from(pv.clone()),))?;
                     Some(py_table)
                 }
                 None => None,
@@ -95,19 +95,19 @@ impl PyArrowWriter {
         schema: &pyo3::Py<pyo3::PyAny>,
         properties: &pyo3::Py<pyo3::PyAny>,
         partition_spec_id: i64,
-        partition_values: Option<&Table>,
+        partition_values: Option<&RecordBatch>,
         io_config: &Option<daft_io::IOConfig>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("IcebergWriter")?;
-            let _from_pytable = py
+            let _from_PyRecordBatch = py
                 .import(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "Table"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .getattr(pyo3::intern!(py, "_from_PyRecordBatch"))?;
             let partition_values = match partition_values {
                 Some(pv) => {
-                    let py_table = _from_pytable.call1((PyTable::from(pv.clone()),))?;
+                    let py_table = _from_PyRecordBatch.call1((PyRecordBatch::from(pv.clone()),))?;
                     Some(py_table)
                 }
                 None => None,
@@ -136,19 +136,19 @@ impl PyArrowWriter {
         file_idx: usize,
         version: i32,
         large_dtypes: bool,
-        partition_values: Option<&Table>,
+        partition_values: Option<&RecordBatch>,
         io_config: &Option<daft_io::IOConfig>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("DeltalakeWriter")?;
-            let _from_pytable = py
+            let _from_PyRecordBatch = py
                 .import(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "Table"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .getattr(pyo3::intern!(py, "_from_PyRecordBatch"))?;
             let partition_values = match partition_values {
                 Some(pv) => {
-                    let py_table = _from_pytable.call1((PyTable::from(pv.clone()),))?;
+                    let py_table = _from_PyRecordBatch.call1((PyRecordBatch::from(pv.clone()),))?;
                     Some(py_table)
                 }
                 None => None,
@@ -174,7 +174,7 @@ impl PyArrowWriter {
 
 impl FileWriter for PyArrowWriter {
     type Input = Arc<MicroPartition>;
-    type Result = Option<Table>;
+    type Result = Option<RecordBatch>;
 
     fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         assert!(!self.is_closed, "Cannot write to a closed PyArrowWriter");
@@ -203,7 +203,7 @@ impl FileWriter for PyArrowWriter {
                 .py_writer
                 .call_method0(py, pyo3::intern!(py, "close"))?
                 .getattr(py, pyo3::intern!(py, "_table"))?;
-            Ok(Some(result.extract::<PyTable>(py)?.into()))
+            Ok(Some(result.extract::<PyRecordBatch>(py)?.into()))
         })
     }
 }

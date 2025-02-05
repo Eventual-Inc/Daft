@@ -66,7 +66,7 @@ ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
-    """Creates a Daft DataFrame from a single Table.
+    """Creates a Daft DataFrame from a single RecordBatch.
 
     Args:
         parts: The Tables that we wish to convert into a Daft DataFrame.
@@ -539,7 +539,7 @@ class DataFrame:
 
     @classmethod
     def _from_tables(cls, *parts: MicroPartition) -> "DataFrame":
-        """Creates a Daft DataFrame from a single Table.
+        """Creates a Daft DataFrame from a single RecordBatch.
 
         Args:
             parts: The Tables that we wish to convert into a Daft DataFrame.

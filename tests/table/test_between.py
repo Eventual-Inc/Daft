@@ -52,9 +52,9 @@ from daft.table import MicroPartition
     ],
 )
 def test_table_expr_between_scalars(value, lower, upper, expected) -> None:
-    daft_table = MicroPartition.from_pydict({"value": value})
-    daft_table = daft_table.eval_expression_list([col("value").between(lower, upper)])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"value": value})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("value").between(lower, upper)])
+    pydict = daft_recordbatch.to_pydict()
     assert pydict["value"] == expected
 
 
@@ -130,9 +130,9 @@ def test_table_expr_between_scalars(value, lower, upper, expected) -> None:
 )
 def test_between_columns(value, lower, upper, expected) -> None:
     table = {"value": value, "lower": lower, "upper": upper}
-    daft_table = MicroPartition.from_pydict(table)
-    daft_table = daft_table.eval_expression_list([col("value").between(col("lower"), col("upper"))])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict(table)
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("value").between(col("lower"), col("upper"))])
+    pydict = daft_recordbatch.to_pydict()
     assert pydict["value"] == expected
 
 
@@ -144,15 +144,15 @@ def test_between_columns(value, lower, upper, expected) -> None:
     ],
 )
 def test_between_between_different_types(value, lower, upper) -> None:
-    daft_table = MicroPartition.from_pydict({"a": value})
+    daft_recordbatch = MicroPartition.from_pydict({"a": value})
     with pytest.raises(ValueError):
-        daft_table = daft_table.eval_expression_list([col("a").between(lower, upper)])
+        daft_recordbatch = daft_recordbatch.eval_expression_list([col("a").between(lower, upper)])
 
 
 def test_between_bad_input() -> None:
-    daft_table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    daft_recordbatch = MicroPartition.from_pydict({"a": [1, 2, 3]})
     with pytest.raises(TypeError):
-        daft_table = daft_table.eval_expression_list([col("a").between([1, 2, 3], 1)])
+        daft_recordbatch = daft_recordbatch.eval_expression_list([col("a").between([1, 2, 3], 1)])
 
 
 @pytest.mark.parametrize(
@@ -184,7 +184,7 @@ def test_between_bad_input() -> None:
 )
 def test_table_expr_between_col_and_scalar(value, lower, upper, expected) -> None:
     table = {"value": value, "lower": lower}
-    daft_table = MicroPartition.from_pydict(table)
-    daft_table = daft_table.eval_expression_list([col("value").between(col("lower"), upper)])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict(table)
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("value").between(col("lower"), upper)])
+    pydict = daft_recordbatch.to_pydict()
     assert pydict["value"] == expected

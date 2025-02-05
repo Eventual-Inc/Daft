@@ -10,9 +10,9 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use rand::SeedableRng;
 
-use crate::Table;
+use crate::RecordBatch;
 
-impl Table {
+impl RecordBatch {
     fn partition_by_index(
         &self,
         targets: &UInt64Array,

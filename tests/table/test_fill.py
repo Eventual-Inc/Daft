@@ -39,9 +39,9 @@ from daft.table.micropartition import MicroPartition
     ],
 )
 def test_table_expr_fill_null(input, fill_value, expected) -> None:
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").fill_null(fill_value)])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").fill_null(fill_value)])
+    pydict = daft_recordbatch.to_pydict()
 
     assert pydict["input"] == expected
 
@@ -55,8 +55,8 @@ def test_table_expr_fill_nan(float_dtype) -> None:
     fill_value = 2.0
     expected = [1.0, None, 3.0, 2.0]
 
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").cast(float_dtype).float.fill_nan(fill_value)])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(float_dtype).float.fill_nan(fill_value)])
+    pydict = daft_recordbatch.to_pydict()
 
     assert pydict["input"] == expected

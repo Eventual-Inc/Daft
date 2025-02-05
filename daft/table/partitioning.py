@@ -2,7 +2,7 @@ from typing import Dict, List, Optional, Union
 
 from daft import Series
 from daft.expressions import ExpressionsProjection
-from daft.table.table import Table
+from daft.table.table import RecordBatch
 
 from .micropartition import MicroPartition
 
@@ -19,7 +19,7 @@ def partition_strings_to_path(
 
 
 def partition_values_to_str_mapping(
-    partition_values: Union[MicroPartition, Table],
+    partition_values: Union[MicroPartition, RecordBatch],
 ) -> Dict[str, Series]:
     null_part = Series.from_pylist(
         [None]

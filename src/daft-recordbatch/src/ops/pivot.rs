@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, prelude::*};
 use daft_dsl::ExprRef;
 
-use crate::Table;
+use crate::RecordBatch;
 
 fn map_name_to_pivot_key_idx<'a>(
     pivot_series: &'a Series,
@@ -66,7 +66,7 @@ fn map_pivot_key_idx_to_values_indices(
     Ok(pivot_key_idx_to_values_indices)
 }
 
-impl Table {
+impl RecordBatch {
     pub fn pivot(
         &self,
         group_by: &[ExprRef],

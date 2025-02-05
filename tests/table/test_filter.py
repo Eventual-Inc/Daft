@@ -10,12 +10,12 @@ from daft.table import MicroPartition
 
 def test_table_filter_all_pass() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 4
-    assert daft_table.column_names() == ["a", "b"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 4
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
     exprs = [col("a") < col("b"), col("a") < 5]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 4
     assert new_table.column_names() == ["a", "b"]
     result = new_table.to_pydict()
@@ -23,7 +23,7 @@ def test_table_filter_all_pass() -> None:
     assert result["b"] == [5, 6, 7, 8]
 
     exprs = [lit(True), lit(True)]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 4
     assert new_table.column_names() == ["a", "b"]
     result = new_table.to_pydict()
@@ -33,12 +33,12 @@ def test_table_filter_all_pass() -> None:
 
 def test_table_filter_some_pass() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 4
-    assert daft_table.column_names() == ["a", "b"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 4
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
     exprs = [((col("a") * 4) < col("b")) | (col("b") == 8)]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["a", "b"]
     result = new_table.to_pydict()
@@ -46,7 +46,7 @@ def test_table_filter_some_pass() -> None:
     assert result["b"] == [5, 8]
 
     exprs = [(col("b") / col("a")) >= 3]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["a", "b"]
     result = new_table.to_pydict()
@@ -56,12 +56,12 @@ def test_table_filter_some_pass() -> None:
 
 def test_table_filter_none_pass() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 4
-    assert daft_table.column_names() == ["a", "b"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 4
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
     exprs = [col("a") < col("b"), col("a") > 5]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 0
     assert new_table.column_names() == ["a", "b"]
     result = new_table.to_pydict()
@@ -69,7 +69,7 @@ def test_table_filter_none_pass() -> None:
     assert result["b"] == []
 
     exprs = [col("a") < col("b"), lit(False)]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 0
     assert new_table.column_names() == ["a", "b"]
     result = new_table.to_pydict()
@@ -79,12 +79,12 @@ def test_table_filter_none_pass() -> None:
 
 def test_table_filter_with_null_filter() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 4
-    assert daft_table.column_names() == ["a", "b"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 4
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
     exprs = [lit(None).cast(DataType.bool())]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 0
     assert new_table.column_names() == ["a", "b"]
     result = new_table.to_pydict()
@@ -94,14 +94,14 @@ def test_table_filter_with_null_filter() -> None:
 
 def test_table_filter_bad_expression() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 4
-    assert daft_table.column_names() == ["a", "b"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 4
+    assert daft_recordbatch.column_names() == ["a", "b"]
 
     exprs = [col("a") + 1]
 
     with pytest.raises(ValueError, match="Boolean Series"):
-        daft_table.filter(exprs)
+        daft_recordbatch.filter(exprs)
 
 
 def test_table_filter_with_dates() -> None:
@@ -114,12 +114,12 @@ def test_table_filter_with_dates() -> None:
 
     days = list(map(date_maker, [5, 4, 1, None, 2, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 6
-    assert daft_table.column_names() == ["days", "enum"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 6
+    assert daft_recordbatch.column_names() == ["days", "enum"]
 
     exprs = [(col("days") > date(2023, 1, 2)) & (col("enum") > 0)]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 1
     assert new_table.column_names() == ["days", "enum"]
     result = new_table.to_pydict()
@@ -137,12 +137,12 @@ def test_table_filter_with_date_days() -> None:
 
     days = list(map(date_maker, [3, 28, None, 9, 18, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 6
-    assert daft_table.column_names() == ["days", "enum"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 6
+    assert daft_recordbatch.column_names() == ["days", "enum"]
 
     exprs = [col("days").dt.day() > 15]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["days", "enum"]
     result = new_table.to_pydict()
@@ -160,12 +160,12 @@ def test_table_filter_with_date_months() -> None:
 
     days = list(map(date_maker, [2, 6, None, 4, 11, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 6
-    assert daft_table.column_names() == ["days", "enum"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 6
+    assert daft_recordbatch.column_names() == ["days", "enum"]
 
     exprs = [col("days").dt.month() > 5]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["days", "enum"]
     result = new_table.to_pydict()
@@ -183,12 +183,12 @@ def test_table_filter_with_date_years() -> None:
 
     days = list(map(date_maker, [5, 4000, 1, None, 2022, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 6
-    assert daft_table.column_names() == ["days", "enum"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 6
+    assert daft_recordbatch.column_names() == ["days", "enum"]
 
     exprs = [col("days").dt.year() > 2000]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["days", "enum"]
     result = new_table.to_pydict()
@@ -207,12 +207,12 @@ def test_table_filter_with_date_days_of_week() -> None:
     # 04/03/2023 is a Monday.
     days = list(map(date_maker, [8, 5, None, 15, 12, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = MicroPartition.from_arrow(pa_table)
-    assert len(daft_table) == 6
-    assert daft_table.column_names() == ["days", "enum"]
+    daft_recordbatch = MicroPartition.from_arrow(pa_table)
+    assert len(daft_recordbatch) == 6
+    assert daft_recordbatch.column_names() == ["days", "enum"]
 
     exprs = [col("days").dt.day_of_week() == 2]
-    new_table = daft_table.filter(exprs)
+    new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["days", "enum"]
     result = new_table.to_pydict()

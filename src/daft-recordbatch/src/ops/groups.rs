@@ -8,9 +8,9 @@ use daft_core::{
     series::Series,
 };
 
-use crate::Table;
+use crate::RecordBatch;
 
-impl Table {
+impl RecordBatch {
     fn hash_grouper(&self) -> DaftResult<GroupIndicesPair> {
         // Group equal rows together.
         //
@@ -111,7 +111,7 @@ impl Table {
     }
 }
 
-impl IntoGroups for Table {
+impl IntoGroups for RecordBatch {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair> {
         self.as_physical()?.hash_grouper()
     }

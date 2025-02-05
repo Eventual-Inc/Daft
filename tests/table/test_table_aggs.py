@@ -77,29 +77,29 @@ def test_table_count(idx_dtype, case) -> None:
     input, expected = case
     if idx_dtype == DataType.date():
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
-    daft_table = daft_table.eval_expression_list([col("input").alias("count").count()])
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(idx_dtype)])
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").alias("count").count()])
 
-    res = daft_table.to_pydict()
+    res = daft_recordbatch.to_pydict()
     assert res == expected
 
 
 @pytest.mark.parametrize("length", [0, 1, 10])
 def test_table_count_nulltype(length) -> None:
-    daft_table = MicroPartition.from_pydict({"input": [None] * length})
-    daft_table = daft_table.eval_expression_list([col("input").cast(DataType.null())])
-    daft_table = daft_table.eval_expression_list([col("input").alias("count").count()])
+    daft_recordbatch = MicroPartition.from_pydict({"input": [None] * length})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(DataType.null())])
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").alias("count").count()])
 
-    res = daft_table.to_pydict()["count"]
+    res = daft_recordbatch.to_pydict()["count"]
     assert res == [0]
 
 
 def test_table_count_pyobject() -> None:
-    daft_table = MicroPartition.from_pydict({"objs": [object(), object(), None, object(), None]})
-    daft_table = daft_table.eval_expression_list([col("objs").alias("count").count()])
+    daft_recordbatch = MicroPartition.from_pydict({"objs": [object(), object(), None, object(), None]})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("objs").alias("count").count()])
 
-    res = daft_table.to_pydict()["count"]
+    res = daft_recordbatch.to_pydict()["count"]
     assert res == [3]
 
 
@@ -119,16 +119,16 @@ test_table_minmax_numerics_cases = [
 )
 def test_table_minmax_numerics(idx_dtype, case) -> None:
     input, expected = case
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
-    daft_table = daft_table.eval_expression_list(
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(idx_dtype)])
+    daft_recordbatch = daft_recordbatch.eval_expression_list(
         [
             col("input").alias("min").min(),
             col("input").alias("max").max(),
         ]
     )
 
-    res = daft_table.to_pydict()
+    res = daft_recordbatch.to_pydict()
     assert res == expected
 
 
@@ -146,16 +146,16 @@ test_table_minmax_string_cases = [
 @pytest.mark.parametrize("case", test_table_minmax_string_cases, ids=[f"{_}" for _ in test_table_minmax_string_cases])
 def test_table_minmax_string(idx_dtype, case) -> None:
     input, expected = case
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
-    daft_table = daft_table.eval_expression_list(
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(idx_dtype)])
+    daft_recordbatch = daft_recordbatch.eval_expression_list(
         [
             col("input").alias("min").min(),
             col("input").alias("max").max(),
         ]
     )
 
-    res = daft_table.to_pydict()
+    res = daft_recordbatch.to_pydict()
     assert res == expected
 
 
@@ -171,16 +171,16 @@ test_table_minmax_bool_cases = [
 @pytest.mark.parametrize("case", test_table_minmax_bool_cases, ids=[f"{_}" for _ in test_table_minmax_bool_cases])
 def test_table_minmax_bool(case) -> None:
     input, expected = case
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").cast(DataType.bool())])
-    daft_table = daft_table.eval_expression_list(
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(DataType.bool())])
+    daft_recordbatch = daft_recordbatch.eval_expression_list(
         [
             col("input").alias("min").min(),
             col("input").alias("max").max(),
         ]
     )
 
-    res = daft_table.to_pydict()
+    res = daft_recordbatch.to_pydict()
     assert res == expected
 
 
@@ -198,15 +198,15 @@ test_table_minmax_binary_cases = [
 @pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
 def test_table_minmax_binary(case, type) -> None:
     input, expected = case
-    daft_table = MicroPartition.from_arrow(pa.table({"input": pa.array(input, type=type)}))
-    daft_table = daft_table.eval_expression_list(
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"input": pa.array(input, type=type)}))
+    daft_recordbatch = daft_recordbatch.eval_expression_list(
         [
             col("input").alias("min").min(),
             col("input").alias("max").max(),
         ]
     )
 
-    res = daft_table.to_pydict()
+    res = daft_recordbatch.to_pydict()
     assert res == expected
 
 
@@ -224,38 +224,38 @@ test_table_sum_mean_cases = [
 @pytest.mark.parametrize("case", test_table_sum_mean_cases, ids=[f"{_}" for _ in test_table_sum_mean_cases])
 def test_table_sum_mean(idx_dtype, case) -> None:
     input, expected = case
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
-    daft_table = daft_table.eval_expression_list(
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(idx_dtype)])
+    daft_recordbatch = daft_recordbatch.eval_expression_list(
         [
             col("input").alias("sum").sum(),
             col("input").alias("mean").mean(),
         ]
     )
 
-    res = daft_table.to_pydict()
+    res = daft_recordbatch.to_pydict()
     assert res == expected
 
 
 @pytest.mark.parametrize("nptype", [np.uint8, np.uint16, np.uint32, np.int8, np.int16, np.int32])
 def test_table_sum_upcast(nptype) -> None:
     """Tests correctness, including type upcasting, of sum aggregations."""
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "maxes": np.full(128, fill_value=np.iinfo(nptype).max, dtype=nptype),
             "mins": np.full(128, fill_value=np.iinfo(nptype).min, dtype=nptype),
         }
     )
-    daft_table = daft_table.eval_expression_list([col("maxes").sum(), col("mins").sum()])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("maxes").sum(), col("mins").sum()])
+    pydict = daft_recordbatch.to_pydict()
     assert pydict["maxes"] == [128 * np.iinfo(nptype).max]
     assert pydict["mins"] == [128 * np.iinfo(nptype).min]
 
 
 def test_table_sum_badtype() -> None:
-    daft_table = MicroPartition.from_pydict({"a": ["str1", "str2"]})
+    daft_recordbatch = MicroPartition.from_pydict({"a": ["str1", "str2"]})
     with pytest.raises(ValueError):
-        daft_table = daft_table.eval_expression_list([col("a").sum()])
+        daft_recordbatch = daft_recordbatch.eval_expression_list([col("a").sum()])
 
 
 test_micropartition_any_value_cases = [
@@ -311,14 +311,14 @@ test_table_any_value_cases = [
 
 @pytest.mark.parametrize("case,expected_nulls,expected_no_nulls", test_table_any_value_cases)
 def test_table_any_value(case, expected_nulls, expected_no_nulls):
-    daft_table = MicroPartition.from_pydict(case)
+    daft_recordbatch = MicroPartition.from_pydict(case)
 
-    any_values = daft_table.agg([col("a").any_value(False)], group_by=[col("b")]).to_pydict()
+    any_values = daft_recordbatch.agg([col("a").any_value(False)], group_by=[col("b")]).to_pydict()
     assert len(any_values["b"]) == len(expected_nulls)
     for k, v in zip(any_values["b"], any_values["a"]):
         assert expected_nulls[k] or v is not None
 
-    any_values = daft_table.agg([col("a").any_value(True)], group_by=[col("b")]).to_pydict()
+    any_values = daft_recordbatch.agg([col("a").any_value(True)], group_by=[col("b")]).to_pydict()
     assert len(any_values["b"]) == len(expected_no_nulls)
     for k, v in zip(any_values["b"], any_values["a"]):
         assert expected_no_nulls[k] or v is not None
@@ -355,8 +355,8 @@ test_table_agg_global_cases = [
 def test_table_agg_global(case) -> None:
     """Test that global aggregation works at the API layer."""
     input, expected = case
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.agg(
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.agg(
         [
             col("input").cast(DataType.int32()).alias("count").count(),
             col("input").cast(DataType.int32()).alias("sum").sum(),
@@ -367,7 +367,7 @@ def test_table_agg_global(case) -> None:
         ]
     )
 
-    result = daft_table.to_pydict()
+    result = daft_recordbatch.to_pydict()
     for key, value in expected.items():
         assert result[key] == value
 
@@ -381,12 +381,12 @@ def test_table_agg_global(case) -> None:
 )
 def test_table_agg_groupby_empty(groups_and_aggs) -> None:
     groups, aggs = groups_and_aggs
-    daft_table = MicroPartition.from_pydict({"col_A": [], "col_B": []})
-    daft_table = daft_table.agg(
+    daft_recordbatch = MicroPartition.from_pydict({"col_A": [], "col_B": []})
+    daft_recordbatch = daft_recordbatch.agg(
         [col(a).count() for a in aggs],
         [col(g).cast(DataType.int32()) for g in groups],
     )
-    res = daft_table.to_pydict()
+    res = daft_recordbatch.to_pydict()
 
     assert res == {"col_A": [], "col_B": []}
 
@@ -444,30 +444,30 @@ def test_table_agg_groupby(case) -> None:
         ("Alice", None),
         ("Alice", None),
     ]
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "name": [_[0] for _ in values],
             "cookies": [_[1] for _ in values],
         }
     )
-    daft_table = daft_table.agg(
+    daft_recordbatch = daft_recordbatch.agg(
         [aggexpr for aggexpr in case["aggs"]],
         [col(group) for group in case["groups"]],
     )
-    assert set(utils.freeze(utils.pydict_to_rows(daft_table.to_pydict()))) == set(
+    assert set(utils.freeze(utils.pydict_to_rows(daft_recordbatch.to_pydict()))) == set(
         utils.freeze(utils.pydict_to_rows(case["expected"]))
     )
 
 
 @pytest.mark.parametrize("dtype", daft_comparable_types, ids=[f"{_}" for _ in daft_comparable_types])
 def test_groupby_all_nulls(dtype) -> None:
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([None, None, None]).cast(dtype),
             "cookies": [1, 2, 3],
         }
     )
-    result_table = daft_table.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_recordbatch.agg([col("cookies").sum()], group_by=[col("group")])
     assert result_table.to_pydict() == {"group": [None], "cookies": [6]}
 
 
@@ -477,13 +477,13 @@ def test_groupby_all_nulls(dtype) -> None:
     ids=[f"{_}" for _ in daft_numeric_types + daft_string_types + [DataType.bool()]],
 )
 def test_groupby_numeric_string_bool_some_nulls(dtype) -> None:
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([1, 1, None]).cast(dtype),
             "cookies": [2, 2, 3],
         }
     )
-    result_table = daft_table.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_recordbatch.agg([col("cookies").sum()], group_by=[col("group")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([1, None]).cast(dtype),
@@ -502,13 +502,13 @@ def test_groupby_numeric_string_bool_some_nulls(dtype) -> None:
     ids=[f"{_}" for _ in daft_numeric_types + daft_string_types + [DataType.bool()]],
 )
 def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([1, 0, 1, 0]).cast(dtype),
             "cookies": [1, 2, 2, 3],
         }
     )
-    result_table = daft_table.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_recordbatch.agg([col("cookies").sum()], group_by=[col("group")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([0, 1]).cast(dtype),
@@ -530,13 +530,13 @@ def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
     ],
 )
 def test_groupby_binary_bool_some_nulls(type, agg, expected) -> None:
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "group": Series.from_arrow(pa.array([b"1", b"1", None, None], type=type)),
             "cookies": Series.from_arrow(pa.array([b"1", b"2", b"3", b"4"], type=type)),
         }
     )
-    result_table = daft_table.agg([agg], group_by=[col("group")])
+    result_table = daft_recordbatch.agg([agg], group_by=[col("group")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([b"1", None]),
@@ -558,13 +558,13 @@ def test_groupby_binary_bool_some_nulls(type, agg, expected) -> None:
     ],
 )
 def test_groupby_binary_no_nulls(type, agg, expected) -> None:
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "group": Series.from_arrow(pa.array([b"1", b"0", b"1", b"0"], type=type)),
             "cookies": Series.from_arrow(pa.array([b"1", b"2", b"3", b"4"], type=type)),
         }
     )
-    result_table = daft_table.agg([agg], group_by=[col("group")])
+    result_table = daft_recordbatch.agg([agg], group_by=[col("group")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([b"0", b"1"]),
@@ -586,7 +586,7 @@ def test_groupby_floats_nan(dtype) -> None:
     NAN = float("nan")
     INF = float("inf")
 
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([None, 1.0, NAN, 5 * NAN, -1 * NAN, -NAN, 1.0, None, INF, -INF, INF]).cast(
                 dtype
@@ -594,7 +594,7 @@ def test_groupby_floats_nan(dtype) -> None:
             "cookies": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         }
     )
-    result_table = daft_table.agg([col("cookies").count()], group_by=[col("group")])
+    result_table = daft_recordbatch.agg([col("cookies").count()], group_by=[col("group")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([None, 1.0, NAN, -INF, INF]).cast(dtype),
@@ -610,7 +610,7 @@ def test_groupby_floats_nan(dtype) -> None:
 
 
 def test_groupby_timestamp() -> None:
-    daft_table = MicroPartition.from_pydict(
+    daft_recordbatch = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist(
                 [
@@ -628,7 +628,7 @@ def test_groupby_timestamp() -> None:
             "value": [1, 1, 1, 2, 2, 2, 3, 3, 3],
         }
     )
-    result_table = daft_table.agg([col("value").sum()], group_by=[col("group").dt.truncate("1 hour")])
+    result_table = daft_recordbatch.agg([col("value").sum()], group_by=[col("group").dt.truncate("1 hour")])
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist(
@@ -654,11 +654,11 @@ def test_global_list_aggs(dtype) -> None:
     input = [None, 0, 1, 2, None, 4]
     if dtype == DataType.date():
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
-    result = daft_table.eval_expression_list([col("input").alias("list").agg_list()])
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(dtype)])
+    result = daft_recordbatch.eval_expression_list([col("input").alias("list").agg_list()])
     assert result.get_column("list").datatype() == DataType.list(dtype)
-    assert result.to_pydict() == {"list": [daft_table.to_pydict()["input"]]}
+    assert result.to_pydict() == {"list": [daft_recordbatch.to_pydict()["input"]]}
 
 
 def test_global_pyobj_list_aggs() -> None:
@@ -705,12 +705,12 @@ def test_grouped_list_aggs(dtype) -> None:
 
     if dtype == DataType.date():
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
-    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
-    daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
-    result = daft_table.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    daft_recordbatch = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("groups"), col("input").cast(dtype)])
+    result = daft_recordbatch.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
     assert result.get_column("list").datatype() == DataType.list(dtype)
 
-    input_as_dtype = daft_table.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
 
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
@@ -721,8 +721,8 @@ def test_grouped_pyobj_list_aggs() -> None:
     input = [None, object(), object(), object(), None, object()]
     expected_idx = [[1, 3], [4, 5], [0, 2]]
 
-    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
-    result = daft_table.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    daft_recordbatch = MicroPartition.from_pydict({"groups": groups, "input": input})
+    result = daft_recordbatch.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
     expected_groups = [[input[i] for i in group] for group in expected_idx]
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
 
@@ -732,12 +732,12 @@ def test_grouped_list_list_aggs() -> None:
     input = [[1], [2, 3, 4], [5, None], None, [], [8, 9]]
     expected_idx = [[1, 3], [4, 5], [0, 2]]
 
-    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
-    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
-    result = daft_table.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    daft_recordbatch = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("groups"), col("input")])
+    result = daft_recordbatch.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
     assert result.get_column("list").datatype() == DataType.list(DataType.list(DataType.int64()))
 
-    input_as_dtype = daft_table.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
 
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
@@ -750,12 +750,12 @@ def test_grouped_fixed_size_list_list_aggs() -> None:
     )
     expected_idx = [[1, 3], [4, 5], [0, 2]]
 
-    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
-    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
-    result = daft_table.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    daft_recordbatch = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("groups"), col("input")])
+    result = daft_recordbatch.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
     assert result.get_column("list").datatype() == DataType.list(DataType.fixed_size_list(DataType.int64(), 2))
 
-    input_as_dtype = daft_table.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
 
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
@@ -766,27 +766,27 @@ def test_grouped_struct_list_aggs() -> None:
     input = [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 5, "y": None}, None, {"x": 6, "y": 7}, {"x": 8, "y": 9}]
     expected_idx = [[1, 3], [4, 5], [0, 2]]
 
-    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
-    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
-    result = daft_table.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    daft_recordbatch = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("groups"), col("input")])
+    result = daft_recordbatch.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
     assert result.get_column("list").datatype() == DataType.list(
         DataType.struct({"x": DataType.int64(), "y": DataType.int64()})
     )
 
-    input_as_dtype = daft_table.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
 
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
 
 
 def test_list_aggs_empty() -> None:
-    daft_table = MicroPartition.from_pydict({"col_A": [], "col_B": []})
-    daft_table = daft_table.agg(
+    daft_recordbatch = MicroPartition.from_pydict({"col_A": [], "col_B": []})
+    daft_recordbatch = daft_recordbatch.agg(
         [col("col_A").cast(DataType.int32()).alias("list").agg_list()],
         group_by=[col("col_B")],
     )
-    assert daft_table.get_column("list").datatype() == DataType.list(DataType.int32())
-    res = daft_table.to_pydict()
+    assert daft_recordbatch.get_column("list").datatype() == DataType.list(DataType.int32())
+    res = daft_recordbatch.to_pydict()
 
     assert res == {"col_B": [], "list": []}
 
@@ -805,13 +805,13 @@ def test_global_concat_aggs(dtype, with_null) -> None:
     if with_null:
         input += [None]
 
-    daft_table = MicroPartition.from_pydict({"input": input}).eval_expression_list(
+    daft_recordbatch = MicroPartition.from_pydict({"input": input}).eval_expression_list(
         [col("input").cast(DataType.list(dtype))]
     )
-    concated = daft_table.agg([col("input").alias("concat").agg_concat()])
+    concated = daft_recordbatch.agg([col("input").alias("concat").agg_concat()])
     assert concated.get_column("concat").datatype() == DataType.list(dtype)
 
-    input_as_dtype = daft_table.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
     # We should ignore Null Array elements when performing the concat agg
     expected = [[val[0] for val in input_as_dtype if val is not None]]
     assert concated.to_pydict() == {"concat": expected}
@@ -843,15 +843,15 @@ def test_grouped_concat_aggs(dtype) -> None:
 
     input = [[x] for x in input] + [None]
     groups = [1, 2, 3, 4, 5, 6, 7]
-    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input}).eval_expression_list(
+    daft_recordbatch = MicroPartition.from_pydict({"groups": groups, "input": input}).eval_expression_list(
         [col("groups"), col("input").cast(DataType.list(dtype))]
     )
-    concat_grouped = daft_table.agg([col("input").alias("concat").agg_concat()], group_by=[col("groups") % 2]).sort(
+    concat_grouped = daft_recordbatch.agg([col("input").alias("concat").agg_concat()], group_by=[col("groups") % 2]).sort(
         [col("groups")]
     )
     assert concat_grouped.get_column("concat").datatype() == DataType.list(dtype)
 
-    input_as_dtype = daft_table.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
     # We should ignore Null Array elements when performing the concat agg
     expected_groups = [
         [input_as_dtype[i][0] for i in group if input_as_dtype[i] is not None] for group in [[1, 3, 5], [0, 2, 4, 6]]
@@ -884,14 +884,14 @@ def test_grouped_concat_aggs_pyobj() -> None:
 
 
 def test_concat_aggs_empty() -> None:
-    daft_table = MicroPartition.from_pydict({"col_A": [], "col_B": []})
-    daft_table = daft_table.agg(
+    daft_recordbatch = MicroPartition.from_pydict({"col_A": [], "col_B": []})
+    daft_recordbatch = daft_recordbatch.agg(
         [col("col_A").cast(DataType.list(DataType.int32())).alias("concat").agg_concat()],
         group_by=[col("col_B")],
     )
 
-    assert daft_table.get_column("concat").datatype() == DataType.list(DataType.int32())
-    res = daft_table.to_pydict()
+    assert daft_recordbatch.get_column("concat").datatype() == DataType.list(DataType.int32())
+    res = daft_recordbatch.to_pydict()
 
     assert res == {"col_B": [], "concat": []}
 

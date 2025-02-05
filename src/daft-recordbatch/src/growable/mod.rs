@@ -4,14 +4,14 @@ use daft_core::{
     series::Series,
 };
 
-use crate::Table;
+use crate::RecordBatch;
 
-pub struct GrowableTable<'a> {
+pub struct GrowableRecordBatch<'a> {
     growables: Vec<Box<dyn Growable + 'a>>,
 }
 
-impl<'a> GrowableTable<'a> {
-    pub fn new(tables: &[&'a Table], use_validity: bool, capacity: usize) -> DaftResult<Self> {
+impl<'a> GrowableRecordBatch<'a> {
+    pub fn new(tables: &[&'a RecordBatch], use_validity: bool, capacity: usize) -> DaftResult<Self> {
         let num_tables = tables.len();
         if tables.is_empty() {
             return Err(DaftError::ValueError(
@@ -65,16 +65,16 @@ impl<'a> GrowableTable<'a> {
     }
 
     /// Builds an array from the [`Growable`]
-    pub fn build(&mut self) -> DaftResult<Table> {
+    pub fn build(&mut self) -> DaftResult<RecordBatch> {
         if self.growables.is_empty() {
-            Table::empty(None)
+            RecordBatch::empty(None)
         } else {
             let columns = self
                 .growables
                 .iter_mut()
                 .map(|g| g.build())
                 .collect::<DaftResult<Vec<_>>>()?;
-            Table::from_nonempty_columns(columns)
+            RecordBatch::from_nonempty_columns(columns)
         }
     }
 }

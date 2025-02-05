@@ -12,14 +12,14 @@ use daft_dsl::{
 };
 
 use super::{add_non_join_key_columns, match_types_for_tables};
-use crate::Table;
+use crate::RecordBatch;
 pub(super) fn hash_inner_join(
-    left: &Table,
-    right: &Table,
+    left: &RecordBatch,
+    right: &RecordBatch,
     left_on: &[ExprRef],
     right_on: &[ExprRef],
     null_equals_nulls: &[bool],
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Inner)?;
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
@@ -95,17 +95,17 @@ pub(super) fn hash_inner_join(
     let num_rows = lidx.len();
     join_series = add_non_join_key_columns(left, right, lidx, ridx, join_series)?;
 
-    Table::new_with_size(join_schema, join_series, num_rows)
+    RecordBatch::new_with_size(join_schema, join_series, num_rows)
 }
 
 pub(super) fn hash_left_right_join(
-    left: &Table,
-    right: &Table,
+    left: &RecordBatch,
+    right: &RecordBatch,
     left_on: &[ExprRef],
     right_on: &[ExprRef],
     null_equals_nulls: &[bool],
     left_side: bool,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Right)?;
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
@@ -205,17 +205,17 @@ pub(super) fn hash_left_right_join(
     let num_rows = lidx.len();
     join_series = add_non_join_key_columns(left, right, lidx, ridx, join_series)?;
 
-    Table::new_with_size(join_schema, join_series, num_rows)
+    RecordBatch::new_with_size(join_schema, join_series, num_rows)
 }
 
 pub(super) fn hash_semi_anti_join(
-    left: &Table,
-    right: &Table,
+    left: &RecordBatch,
+    right: &RecordBatch,
     left_on: &[ExprRef],
     right_on: &[ExprRef],
     null_equals_nulls: &[bool],
     is_anti: bool,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
 
@@ -270,12 +270,12 @@ pub(super) fn hash_semi_anti_join(
 }
 
 pub(super) fn hash_outer_join(
-    left: &Table,
-    right: &Table,
+    left: &RecordBatch,
+    right: &RecordBatch,
     left_on: &[ExprRef],
     right_on: &[ExprRef],
     null_equals_nulls: &[bool],
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Outer)?;
     let lkeys = left.eval_expression_list(left_on)?;
     let rkeys = right.eval_expression_list(right_on)?;
@@ -409,5 +409,5 @@ pub(super) fn hash_outer_join(
     let num_rows = lidx.len();
     join_series = add_non_join_key_columns(left, right, lidx, ridx, join_series)?;
 
-    Table::new_with_size(join_schema, join_series, num_rows)
+    RecordBatch::new_with_size(join_schema, join_series, num_rows)
 }

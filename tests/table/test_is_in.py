@@ -62,9 +62,9 @@ class CustomClassWithoutHash:
     ],
 )
 def test_table_expr_is_in_same_types(input, items, expected) -> None:
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(items)])
+    pydict = daft_recordbatch.to_pydict()
 
     assert pydict["input"] == expected
 
@@ -103,14 +103,14 @@ def test_table_expr_is_in_same_types(input, items, expected) -> None:
     ],
 )
 def test_table_expr_is_in_different_types_castable(input, items, expected) -> None:
-    daft_table = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
 
     if expected is None:
         with pytest.raises(ValueError, match="Cannot perform comparison on types:"):
-            daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
+            daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(items)])
     else:
-        daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
-        pydict = daft_table.to_pydict()
+        daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(items)])
+        pydict = daft_recordbatch.to_pydict()
         assert pydict["input"] == expected
 
 
@@ -126,9 +126,9 @@ def test_table_expr_is_in_different_types_castable(input, items, expected) -> No
     ],
 )
 def test_table_expr_is_in_items_is_none(input, items, expected) -> None:
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(items)])
+    pydict = daft_recordbatch.to_pydict()
 
     assert pydict["input"] == expected
 
@@ -143,31 +143,31 @@ def test_table_expr_is_in_items_is_none(input, items, expected) -> None:
     ],
 )
 def test_table_expr_is_in_different_input_types(input, items, expected) -> None:
-    daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(items)])
+    pydict = daft_recordbatch.to_pydict()
 
     assert pydict["input"] == expected
 
 
 def test_table_expr_is_in_with_another_df_column() -> None:
-    daft_table = MicroPartition.from_pydict({"input": [1, 2, 3, 4], "items": [3, 4, 5, 6]})
-    daft_table = daft_table.eval_expression_list([col("input").is_in(col("items"))])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"input": [1, 2, 3, 4], "items": [3, 4, 5, 6]})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(col("items"))])
+    pydict = daft_recordbatch.to_pydict()
 
     assert pydict["input"] == [False, False, True, True]
 
 
 def test_table_expr_is_in_empty_items() -> None:
-    daft_table = MicroPartition.from_pydict({"input": [1, 2, 3, 4]})
-    daft_table = daft_table.eval_expression_list([col("input").is_in([])])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"input": [1, 2, 3, 4]})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in([])])
+    pydict = daft_recordbatch.to_pydict()
 
     assert pydict["input"] == [False, False, False, False]
 
 
 def test_table_expr_is_in_items_invalid_input() -> None:
-    daft_table = MicroPartition.from_pydict({"input": [1, 2, 3, 4]})
+    daft_recordbatch = MicroPartition.from_pydict({"input": [1, 2, 3, 4]})
 
     with pytest.raises(ValueError, match="Creating a Series from data of type"):
-        daft_table.eval_expression_list([col("input").is_in(1)])
+        daft_recordbatch.eval_expression_list([col("input").is_in(1)])

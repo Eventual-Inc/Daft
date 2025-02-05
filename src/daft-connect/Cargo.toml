@@ -24,7 +24,7 @@ daft-ray-execution = {workspace = true, optional = true, features = [
 daft-scan = {workspace = true, optional = true, features = ["python"]}
 daft-schema = {workspace = true, optional = true, features = ["python"]}
 daft-sql = {workspace = true, optional = true, features = ["python"]}
-daft-table = {workspace = true, optional = true, features = ["python"]}
+daft-recordbatch = {workspace = true, optional = true, features = ["python"]}
 dashmap = "6.1.0"
 futures = "0.3.31"
 itertools = {workspace = true}
@@ -53,7 +53,7 @@ python = [
   "dep:daft-scan",
   "dep:daft-schema",
   "dep:daft-sql",
-  "dep:daft-table",
+  "dep:daft-recordbatch",
   "dep:daft-catalog"
 ]
 

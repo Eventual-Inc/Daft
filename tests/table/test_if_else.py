@@ -19,9 +19,9 @@ from daft.table.micropartition import MicroPartition
     ],
 )
 def test_table_expr_if_else(predicate, if_true, if_false, expected) -> None:
-    daft_table = MicroPartition.from_pydict({"predicate": predicate, "if_true": if_true, "if_false": if_false})
-    daft_table = daft_table.eval_expression_list([col("predicate").if_else(col("if_true"), col("if_false"))])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"predicate": predicate, "if_true": if_true, "if_false": if_false})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("predicate").if_else(col("if_true"), col("if_false"))])
+    pydict = daft_recordbatch.to_pydict()
 
     assert pydict["if_true"] == expected
 
@@ -34,8 +34,8 @@ def test_table_expr_if_else(predicate, if_true, if_false, expected) -> None:
     ],
 )
 def test_table_expr_if_else_literal_predicate(if_else_expr) -> None:
-    daft_table = MicroPartition.from_pydict({"struct": [{"key": "value"}]})
-    daft_table = daft_table.eval_expression_list([if_else_expr])
-    pydict = daft_table.to_pydict()
+    daft_recordbatch = MicroPartition.from_pydict({"struct": [{"key": "value"}]})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([if_else_expr])
+    pydict = daft_recordbatch.to_pydict()
 
     assert pydict == {if_else_expr.name(): ["value"]}

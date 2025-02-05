@@ -11,11 +11,11 @@ use daft_dsl::{
 use hash_join::hash_semi_anti_join;
 
 use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
-use crate::Table;
+use crate::RecordBatch;
 mod hash_join;
 mod merge_join;
 
-fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Table)> {
+fn match_types_for_tables(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(RecordBatch, RecordBatch)> {
     let mut lseries = vec![];
     let mut rseries = vec![];
 
@@ -33,14 +33,14 @@ fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Tab
         }
     }
     Ok((
-        Table::from_nonempty_columns(lseries)?,
-        Table::from_nonempty_columns(rseries)?,
+        RecordBatch::from_nonempty_columns(lseries)?,
+        RecordBatch::from_nonempty_columns(rseries)?,
     ))
 }
 
 fn add_non_join_key_columns(
-    left: &Table,
-    right: &Table,
+    left: &RecordBatch,
+    right: &RecordBatch,
     lidx: Series,
     ridx: Series,
     mut join_series: Vec<Series>,
@@ -71,7 +71,7 @@ fn add_non_join_key_columns(
     Ok(join_series)
 }
 
-impl Table {
+impl RecordBatch {
     pub fn hash_join(
         &self,
         right: &Self,
@@ -195,7 +195,7 @@ impl Table {
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {
         /// Create a new table by repeating each column of the input table `inner_len` times in a row, thus preserving sort order.
-        fn create_outer_loop_table(input: &Table, inner_len: usize) -> DaftResult<Table> {
+        fn create_outer_loop_table(input: &RecordBatch, inner_len: usize) -> DaftResult<RecordBatch> {
             let idx = (0..input.len() as u64)
                 .flat_map(|i| std::iter::repeat(i).take(inner_len))
                 .collect::<Vec<_>>();
@@ -206,8 +206,8 @@ impl Table {
         }
 
         /// Create a enw table by repeating the entire table `outer_len` number of times
-        fn create_inner_loop_table(input: &Table, outer_len: usize) -> DaftResult<Table> {
-            Table::concat(&vec![input; outer_len])
+        fn create_inner_loop_table(input: &RecordBatch, outer_len: usize) -> DaftResult<RecordBatch> {
+            RecordBatch::concat(&vec![input; outer_len])
         }
 
         let (left_table, right_table) = match outer_loop_side {
