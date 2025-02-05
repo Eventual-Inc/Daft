@@ -13,7 +13,6 @@ daft-logical-plan = {workspace = true, optional = true, features = ["python"]}
 daft-micropartition = {workspace = true, optional = true, features = [
   "python"
 ]}
-daft-py-runners = {workspace = true, optional = true, features = ["python"]}
 daft-scan = {workspace = true, optional = true, features = ["python"]}
 daft-schema = {workspace = true, optional = true, features = ["python"]}
 daft-sql = {workspace = true, optional = true, features = ["python"]}
@@ -40,7 +39,6 @@ python = [
   "dep:daft-dsl",
   "dep:daft-logical-plan",
   "dep:daft-micropartition",
-  "dep:daft-py-runners",
   "dep:daft-scan",
   "dep:daft-schema",
   "dep:daft-sql",
