@@ -1070,15 +1070,22 @@ impl<'a> SQLPlanner<'a> {
 
     /// Plan a `FROM <table>` table factor.
     pub(crate) fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
-        let table_name = name.to_string();
+        // Consider parsing again via Identifier::parse, but it's unnecessary at the moment.
+        let ident = &name.0;
+        if ident.len() > 1 {
+            unsupported_sql_err!("qualified identifier {}", name.to_string())
+        }
+        // Because the catalog does not support qualified identifiers, we can just use name.
+        let table_name = &ident.last().unwrap().value;
+        // TODO case-normalization of regular identifiers in name position (rvalue) https://github.com/Eventual-Inc/Daft/issues/3765
         let Some(rel) = self
             .table_map
-            .get(&table_name)
+            .get(table_name)
             .cloned()
-            .or_else(|| self.cte_map().get(&table_name).cloned())
+            .or_else(|| self.cte_map().get(table_name).cloned())
             .or_else(|| {
                 self.catalog()
-                    .read_table(&table_name)
+                    .read_table(table_name)
                     .ok()
                     .map(|table| Relation::new(table, table_name.clone()))
             })
