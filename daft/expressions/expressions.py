@@ -989,9 +989,9 @@ class Expression:
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ [true, false] ┆ false   │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [null, null]  ┆ null    │
+            │ [None, None]  ┆ None    │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ []            ┆ null    │
+            │ []            ┆ None    │
             ╰───────────────┴─────────╯
         """
         expr = self._expr.bool_and()
@@ -1018,9 +1018,9 @@ class Expression:
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ [false, false]┆ false   │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [null, null]  ┆ null    │
+            │ [None, None]  ┆ None    │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ []            ┆ null    │
+            │ []            ┆ None    │
             ╰───────────────┴─────────╯
         """
         expr = self._expr.bool_or()
