@@ -2,10 +2,10 @@ use std::{future::ready, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
+use daft_context::get_context;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
-use daft_py_runners::{Runner, RunnerConfig};
 use daft_table::Table;
 use futures::{
     stream::{self, BoxStream},
@@ -23,7 +23,7 @@ use tracing::debug;
 
 use crate::{
     error::{ConnectError, ConnectResult, Context},
-    invalid_argument_err, not_yet_implemented,
+    not_yet_implemented,
     response_builder::ResponseBuilder,
     session::Session,
     spark_analyzer::SparkAnalyzer,
@@ -32,59 +32,11 @@ use crate::{
 };
 
 impl Session {
-    fn get_runner_config_from_session(&self) -> ConnectResult<RunnerConfig> {
-        let runner = self
-            .config_values()
-            .get("daft.runner")
-            .map(|s| s.to_lowercase());
-        match runner.as_deref() {
-            Some("ray") => {
-                let address = self.config_values().get("daft.runner.ray.address").cloned();
-                let max_task_backlog = self
-                    .config_values()
-                    .get("daft.runner.ray.max_task_backlog")
-                    .map(|s| s.parse().unwrap());
-                let force_client_mode = self
-                    .config_values()
-                    .get("daft.runner.ray.force_client_mode")
-                    .map(|s| s.parse().unwrap());
-
-                Ok(RunnerConfig::Ray {
-                    address,
-                    max_task_backlog,
-                    force_client_mode,
-                })
-            }
-            Some("py") => {
-                let use_thread_pool = self
-                    .config_values()
-                    .get("daft.runner.py.use_thread_pool")
-                    .map(|s| s.parse().unwrap());
-
-                Ok(RunnerConfig::Py { use_thread_pool })
-            }
-            Some("native") => Ok(RunnerConfig::Native),
-            Some(other) => invalid_argument_err!("Invalid runner: {}", other),
-            _ => Ok(RunnerConfig::Native),
-        }
-    }
-
-    pub fn get_or_create_runner(&self) -> ConnectResult<Arc<Runner>> {
-        if let Some(runner) = self.ctx().runner() {
-            return Ok(runner);
-        }
-        let cfg = self.get_runner_config_from_session()?;
-        let runner = cfg.create_runner()?;
-        let runner = Arc::new(runner);
-        self.ctx().set_runner(runner.clone())?;
-        Ok(runner)
-    }
-
     pub async fn run_query(
         &self,
         lp: LogicalPlanBuilder,
     ) -> ConnectResult<BoxStream<DaftResult<Arc<MicroPartition>>>> {
-        let runner = self.get_or_create_runner()?;
+        let runner = get_context().get_or_create_runner()?;
 
         let result_set = tokio::task::spawn_blocking(move || {
             Python::with_gil(|py| runner.run_iter_tables(py, lp, None))
@@ -282,7 +234,7 @@ impl Session {
             })?;
 
         {
-            let ctx = self.ctx();
+            let ctx = get_context();
             let state = ctx.state();
 
             if !replace && state.catalog.contains_table(&name) {
@@ -290,7 +242,7 @@ impl Session {
             }
         }
 
-        let ctx = self.ctx();
+        let ctx = get_context();
         let mut state = ctx.state_mut();
 
         state.catalog.register_table(&name, input).map_err(|e| {
@@ -332,7 +284,8 @@ impl Session {
             not_yet_implemented!("Input");
         }
 
-        let state = self.ctx().state();
+        let ctx = get_context();
+        let state = ctx.state();
         let catalog = state.catalog.clone();
 
         let mut planner = daft_sql::SQLPlanner::new(catalog);

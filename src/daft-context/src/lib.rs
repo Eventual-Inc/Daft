@@ -13,8 +13,10 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 mod python;
 
-#[derive(Debug, Clone)]
 /// Wrapper around the ContextState to provide a thread-safe interface.
+/// IMPORTANT: Do not create this directly, use `get_context` instead.
+/// This is a singleton, and should only be created once.
+#[derive(Debug, Clone)]
 pub struct DaftContext {
     state: Arc<RwLock<ContextState>>,
 }
@@ -74,17 +76,13 @@ impl ContextState {
 }
 
 #[cfg(feature = "python")]
-impl Default for DaftContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(feature = "python")]
 impl DaftContext {
     /// Creates a new DaftContext
     #[cfg(feature = "python")]
-    pub fn new() -> Self {
+    #[allow(clippy::new_without_default)]
+    /// This is not `pub` because it should only be used by the `get_context` function.
+    /// we also don't want a `default` because we only want a single instance of the context.
+    fn new() -> Self {
         let state = ContextState {
             config: Default::default(),
             catalog: DaftCatalog::default(),
@@ -157,6 +155,7 @@ impl DaftContext {
 
 #[cfg(not(feature = "python"))]
 impl DaftContext {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         unimplemented!()
     }
