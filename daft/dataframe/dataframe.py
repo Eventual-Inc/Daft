@@ -171,9 +171,8 @@ class DataFrame:
         addr = ctx._broadcast_addr
         port = ctx._broadcast_port
         is_cached = self._result_cache is not None
-        mermaid_instance = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
-
-        text: str = mermaid_instance._repr_markdown_()
+        mermaid_formatter = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
+        text: str = mermaid_formatter._repr_markdown_()
 
         try:
             requests.post(f"http://{addr}:{port}", data=text)
