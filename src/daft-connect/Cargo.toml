@@ -9,9 +9,6 @@ common-runtime = {workspace = true}
 daft-context = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
-daft-local-execution = {workspace = true, optional = true, features = [
-  "python"
-]}
 daft-logical-plan = {workspace = true, optional = true, features = ["python"]}
 daft-micropartition = {workspace = true, optional = true, features = [
   "python"
@@ -35,14 +32,12 @@ uuid = {version = "1.10.0", features = ["v4"]}
 snafu.workspace = true
 
 [features]
-default = ["python"]
 python = [
   "dep:pyo3",
   "dep:common-error",
   "dep:common-file-formats",
   "dep:daft-core",
   "dep:daft-dsl",
-  "dep:daft-local-execution",
   "dep:daft-logical-plan",
   "dep:daft-micropartition",
   "dep:daft-py-runners",

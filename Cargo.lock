@@ -2017,7 +2017,6 @@ dependencies = [
  "daft-context",
  "daft-core",
  "daft-dsl",
- "daft-local-execution",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-py-runners",
