@@ -283,8 +283,8 @@ impl Series {
             DataType::Boolean => {
                 let downcasted = self.bool()?;
                 Ok(match groups {
-                    Some(groups) => DaftBoolAggable::grouped_bool_and(downcasted, groups)?,
-                    None => DaftBoolAggable::bool_and(downcasted)?,
+                    Some(groups) => downcasted.grouped_bool_and(groups)?,
+                    None => downcasted.bool_and()?,
                 }
                 .into_series())
             }
@@ -309,8 +309,8 @@ impl Series {
             DataType::Boolean => {
                 let downcasted = self.bool()?;
                 Ok(match groups {
-                    Some(groups) => DaftBoolAggable::grouped_bool_or(downcasted, groups)?,
-                    None => DaftBoolAggable::bool_or(downcasted)?,
+                    Some(groups) => downcasted.grouped_bool_or(groups)?,
+                    None => downcasted.bool_or()?,
                 }
                 .into_series())
             }

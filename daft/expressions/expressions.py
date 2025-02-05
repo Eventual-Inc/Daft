@@ -3268,16 +3268,16 @@ class ExpressionListNamespace(ExpressionNamespace):
             >>> df.with_column("result", df["values"].list.bool_and()).collect()
             ╭───────────────┬─────────╮
             │ values        ┆ result  │
-            │ ---          ┆ ---     │
+            │ ---           ┆ ---     │
             │ List[Boolean] ┆ Boolean │
             ╞═══════════════╪═════════╡
             │ [true, true]  ┆ true    │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ [true, false] ┆ false   │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [null, null]  ┆ null    │
+            │ [None, None]  ┆ None    │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ []            ┆ null    │
+            │ []            ┆ None    │
             ╰───────────────┴─────────╯
         """
         return Expression._from_pyexpr(native.list_bool_and(self._expr))
@@ -3296,16 +3296,16 @@ class ExpressionListNamespace(ExpressionNamespace):
             >>> df.with_column("result", df["values"].list.bool_or()).collect()
             ╭───────────────┬─────────╮
             │ values        ┆ result  │
-            │ ---          ┆ ---     │
+            │ ---           ┆ ---     │
             │ List[Boolean] ┆ Boolean │
             ╞═══════════════╪═════════╡
             │ [true, false] ┆ true    │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ [false, false]┆ false   │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [null, null]  ┆ null    │
+            │ [None, None]  ┆ None    │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ []            ┆ null    │
+            │ []            ┆ None    │
             ╰───────────────┴─────────╯
         """
         return Expression._from_pyexpr(native.list_bool_or(self._expr))
