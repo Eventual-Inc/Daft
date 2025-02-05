@@ -159,17 +159,26 @@ class DataFrame:
             return self._result_cache.value
 
     def explain_broadcast(self):
+        """Broadcast the mermaid-formatted plan on the given port (assuming metrics-broadcasting is enabled)."""
+        import socket
+
         from daft.dataframe.display import MermaidFormatter
 
         ctx = get_context()
         with ctx._lock:
-            assert ctx._enable_broadcast, "This method should only be called when metrics broadcasting is enabled"
-            _ip = f"{ctx._broadcast_addr}:{ctx._broadcast_port}"
+            if not ctx._enable_broadcast:
+                return
+
+            addr = ctx._broadcast_addr
+            port = ctx._broadcast_port
 
         is_cached = self._result_cache is not None
         instance = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
+        text: str = instance._repr_markdown_()
 
-        _text = instance._repr_markdown_()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((addr, port))
+            sock.sendall(text.encode("utf-8"))
 
     @DataframePublicAPI
     def explain(
@@ -190,19 +199,7 @@ class DataFrame:
             file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
                 print (in Python, that should be sys.stdout)
         """
-        # ctx = get_context()
-        # broadcast_ip = None
-        # with ctx._lock:
-        #     if ctx._enable_broadcast:
-        #         broadcast_ip = f"{ctx._broadcast_addr}:{ctx._broadcast_port}"
-        #
-        # if ip := broadcast_ip:
-        #     from daft.dataframe.display import MermaidFormatter
-        #
-        #     instance = MermaidFormatter(self.__builder, show_all, simple, is_cached)
-        #     text = instance._repr_markdown_()
-        #     breakpoint()
-
+        self.explain_broadcast()
         is_cached = self._result_cache is not None
         if format == "mermaid":
             from daft.dataframe.display import MermaidFormatter
@@ -2334,9 +2331,9 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(
-            result, DataFrame
-        ), f"Func returned an instance of type [{type(result)}], should have been DataFrame."
+        assert isinstance(result, DataFrame), (
+            f"Func returned an instance of type [{type(result)}], " "should have been DataFrame."
+        )
         return result
 
     def _agg(
@@ -2614,11 +2611,7 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {
-            ...         "pet": ["cat", "dog", "dog", "cat"],
-            ...         "age": [1, 2, 3, 4],
-            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
-            ...     }
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
@@ -2848,6 +2841,7 @@ class DataFrame:
             DataFrame: DataFrame with materialized results.
         """
         self._materialize_results()
+        self.explain_broadcast()
 
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -2919,6 +2913,7 @@ class DataFrame:
             n: number of rows to show. Defaults to 8.
         """
         dataframe_display = self._construct_show_display(n)
+        self.explain_broadcast()
         try:
             from IPython.display import display
 
@@ -3388,11 +3383,7 @@ class GroupedDataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {
-            ...         "pet": ["cat", "dog", "dog", "cat"],
-            ...         "age": [1, 2, 3, 4],
-            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
-            ...     }
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
