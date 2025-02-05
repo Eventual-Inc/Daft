@@ -81,6 +81,7 @@ python = [
   "daft-context/python",
   "dep:daft-catalog-python-catalog",
   "dep:daft-connect",
+  "daft-connect/python",
   "dep:pyo3",
   "dep:pyo3-log"
 ]
