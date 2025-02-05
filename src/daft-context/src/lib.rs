@@ -3,7 +3,9 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_error::{DaftError, DaftResult};
 use daft_catalog::DaftCatalog;
-use daft_py_runners::{NativeRunner, RayRunner, Runner, RunnerConfig};
+#[cfg(feature = "python")]
+use daft_py_runners::{NativeRunner, PyRunner, RayRunner};
+use daft_py_runners::{Runner, RunnerConfig};
 use once_cell::sync::OnceCell;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -248,8 +250,6 @@ pub fn set_runner_native() -> DaftResult<DaftContext> {
 
 #[cfg(feature = "python")]
 pub fn set_runner_py(use_thread_pool: Option<bool>) -> DaftResult<DaftContext> {
-    use daft_py_runners::PyRunner;
-
     let ctx = get_context();
 
     let runner = Runner::Py(PyRunner::try_new(use_thread_pool)?);

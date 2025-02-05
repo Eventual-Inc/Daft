@@ -223,8 +223,6 @@ impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> for InMemoryPa
         self.partition_sets.clear();
     }
 }
-pub type MicroPartitionSetCacheRef =
-    Arc<dyn PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>>>;
 
 #[cfg(test)]
 mod tests {
