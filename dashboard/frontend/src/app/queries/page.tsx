@@ -80,10 +80,9 @@ export default function DataTableDemo() {
             rowSelection,
         },
     });
-
     React.useEffect(() => {
         const socket = new WebSocket('ws://127.0.0.1:3239');
-        socket.onmessage = (event) => console.log(event);
+        socket.onmessage = ({ data }) => console.log(data);
     }, []);
 
     return (
