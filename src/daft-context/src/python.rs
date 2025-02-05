@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
@@ -12,6 +14,7 @@ pub struct PyRunnerConfig {
 pub struct PyDaftContext {
     inner: crate::DaftContext,
 }
+
 impl Default for PyDaftContext {
     fn default() -> Self {
         Self::new()
@@ -82,6 +85,19 @@ impl PyDaftContext {
     pub fn get_runner(&self, py: Python) -> Option<PyObject> {
         let state = self.inner.state.read().unwrap();
         state.runner.clone().map(|r| r.to_pyobj(py))
+    }
+
+    #[setter(_runner)]
+    pub fn set_runner(&self, runner: Option<PyObject>) -> PyResult<()> {
+        if let Some(runner) = runner {
+            let runner = Runner::from_pyobj(runner)?;
+            let runner = Arc::new(runner);
+            self.inner.set_runner(runner)?;
+            Ok(())
+        } else {
+            self.inner.state.write().unwrap().runner = None;
+            Ok(())
+        }
     }
 }
 impl From<DaftContext> for PyDaftContext {

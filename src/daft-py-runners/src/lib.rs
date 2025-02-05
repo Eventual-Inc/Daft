@@ -105,6 +105,35 @@ pub enum Runner {
 
 #[cfg(feature = "python")]
 impl Runner {
+    pub fn from_pyobj(obj: PyObject) -> PyResult<Self> {
+        Python::with_gil(|py| {
+            let name = obj.getattr(py, "name")?.extract::<String>(py)?;
+            match name.as_ref() {
+                "ray" => {
+                    let ray_runner = RayRunner {
+                        pyobj: Arc::new(obj),
+                    };
+                    Ok(Self::Ray(ray_runner))
+                }
+                "native" => {
+                    let native_runner = NativeRunner {
+                        pyobj: Arc::new(obj),
+                    };
+                    Ok(Self::Native(native_runner))
+                }
+                "py" => {
+                    let py_runner = PyRunner {
+                        pyobj: Arc::new(obj),
+                    };
+                    Ok(Self::Py(py_runner))
+                }
+                _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown runner type: {name}"
+                ))),
+            }
+        })
+    }
+
     fn get_runner_ref(&self) -> &PyObject {
         match self {
             Self::Ray(RayRunner { pyobj }) => pyobj.as_ref(),
