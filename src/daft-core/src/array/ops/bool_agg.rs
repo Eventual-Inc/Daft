@@ -16,7 +16,7 @@ impl DaftBoolAggable for DataArray<BooleanType> {
         let array = self.data();
         let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
 
-        // If array is all null, return null
+        // If array is empty or all null, return null
         if array.null_count() == array.len() {
             return Ok(Self::from((
                 self.field.name.as_ref(),
@@ -43,7 +43,7 @@ impl DaftBoolAggable for DataArray<BooleanType> {
         let array = self.data();
         let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
 
-        // If array is all null, return null
+        // If array is empty or all null, return null
         if array.null_count() == array.len() {
             return Ok(Self::from((
                 self.field.name.as_ref(),

@@ -785,18 +785,15 @@ impl ListArray {
 
 impl FixedSizeListArray {
     pub fn list_bool_and(&self) -> DaftResult<BooleanArray> {
-        let list = self.to_list();
-        list.list_bool_and()
+        self.to_list().list_bool_and()
     }
 
     pub fn list_bool_or(&self) -> DaftResult<BooleanArray> {
-        let list = self.to_list();
-        list.list_bool_or()
+        self.to_list().list_bool_or()
     }
 
     pub fn value_counts(&self) -> DaftResult<MapArray> {
-        let list = self.to_list();
-        list.value_counts()
+        self.to_list().value_counts()
     }
 
     pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
