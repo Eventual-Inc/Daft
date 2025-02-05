@@ -1,80 +1,50 @@
-use std::{io::ErrorKind, net::Ipv4Addr};
+use std::net::Ipv4Addr;
 
-use futures::{SinkExt, StreamExt};
+use http_body_util::Full;
+use hyper::{body::Bytes, server::conn::http2, service::service_fn, Request, Response};
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::{
     net::TcpListener,
+    spawn,
     sync::broadcast::{self, Receiver, Sender},
 };
-use tokio_tungstenite::tungstenite::Message;
 
-const DAFT_BROADCAST_PORT: u16 = 3238;
-const DASHBOARD_WEBSOCKET_PORT: u16 = DAFT_BROADCAST_PORT + 1;
+type Message = ();
+const DAFT_PORT: u16 = 3238;
 
-async fn run_daft_server(tx: Sender<String>) {
-    async fn run(tx: Sender<String>) -> anyhow::Result<()> {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, DAFT_BROADCAST_PORT)).await?;
+async fn daft_http_application(
+    _: Sender<Message>,
+    _: Request<hyper::body::Incoming>,
+) -> anyhow::Result<Response<Full<Bytes>>> {
+    todo!()
+}
 
-        loop {
-            let (stream, _) = listener.accept().await?;
-            let mut string = String::default();
-            let mut total_size = 0;
-
-            loop {
-                stream.readable().await?;
-
-                const BUFFER_SIZE: usize = 2usize.pow(10);
-                let mut buf = [0; BUFFER_SIZE];
-
-                match stream.try_read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(bytes_read) => {
-                        total_size += bytes_read;
-
-                        const MAX_MESSAGE_SIZE: usize = 2usize.pow(20);
-                        if total_size > MAX_MESSAGE_SIZE {
-                            anyhow::bail!("Maximum message size exceeded; max: {MAX_MESSAGE_SIZE}, message-size: {total_size}");
-                        }
-
-                        let new = simdutf8::basic::from_utf8(&buf[0..bytes_read])?;
-                        string.push_str(new);
-                    }
-                    Err(err) if err.kind() == ErrorKind::WouldBlock => (),
-                    Err(err) => Err(err)?,
-                }
-            }
-
-            tx.send(string)?;
-        }
-    }
-
+async fn run_daft_server(tx: Sender<Message>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, DAFT_PORT))
+        .await
+        .unwrap();
     loop {
-        if let Err(err) = run(tx.clone()).await {
-            eprintln!("Error while running daft server: {err}");
-        }
+        let (stream, _) = listener.accept().await.unwrap();
+        let io = TokioIo::new(stream);
+        let tx = tx.clone();
+        spawn(async move {
+            if let Err(err) = http2::Builder::new(TokioExecutor::default())
+                .serve_connection(
+                    io,
+                    service_fn(move |req| daft_http_application(tx.clone(), req)),
+                )
+                .await
+            {
+                eprintln!("Error: {err}");
+            };
+        });
     }
 }
 
-async fn run_dashboard_server(mut rx: Receiver<String>) {
-    async fn run(rx: &mut Receiver<String>) -> anyhow::Result<()> {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, DASHBOARD_WEBSOCKET_PORT)).await?;
-        let (stream, _) = listener.accept().await?;
-        let (mut ws_send, _) = tokio_tungstenite::accept_async(stream).await?.split();
-
-        loop {
-            let string = rx.recv().await?;
-            ws_send.send(Message::text(string)).await?;
-        }
-    }
-
-    loop {
-        if let Err(err) = run(&mut rx).await {
-            eprintln!("Error while running dashboard server: {err}");
-        }
-    }
-}
+async fn run_dashboard_server(_: Receiver<Message>) {}
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 3)]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
     const CHANNEL_SIZE: usize = 16;
     let (tx, rx) = broadcast::channel(CHANNEL_SIZE);
     tokio::join!(run_daft_server(tx), run_dashboard_server(rx));
