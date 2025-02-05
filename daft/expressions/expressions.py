@@ -1009,19 +1009,19 @@ class Expression:
             >>> import daft
             >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
             >>> df.with_column("result", df["values"].list.bool_or()).collect()
-            ╭───────────────┬─────────╮
-            │ values        ┆ result  │
-            │ ---           ┆ ---     │
-            │ List[Boolean] ┆ Boolean │
-            ╞═══════════════╪═════════╡
-            │ [true, false] ┆ true    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [false, false]┆ false   │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [None, None]  ┆ None    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ []            ┆ None    │
-            ╰───────────────┴─────────╯
+            ╭────────────────┬─────────╮
+            │ values         ┆ result  │
+            │ ---            ┆ ---     │
+            │ List[Boolean]  ┆ Boolean │
+            ╞════════════════╪═════════╡
+            │ [true, false]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [false, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]   ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []             ┆ None    │
+            ╰────────────────┴─────────╯
         """
         expr = self._expr.bool_or()
         return Expression._from_pyexpr(expr)
@@ -3294,19 +3294,19 @@ class ExpressionListNamespace(ExpressionNamespace):
             >>> import daft
             >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
             >>> df.with_column("result", df["values"].list.bool_or()).collect()
-            ╭───────────────┬─────────╮
-            │ values        ┆ result  │
-            │ ---           ┆ ---     │
-            │ List[Boolean] ┆ Boolean │
-            ╞═══════════════╪═════════╡
-            │ [true, false] ┆ true    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [false, false]┆ false   │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [None, None]  ┆ None    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ []            ┆ None    │
-            ╰───────────────┴─────────╯
+            ╭────────────────┬─────────╮
+            │ values         ┆ result  │
+            │ ---            ┆ ---     │
+            │ List[Boolean]  ┆ Boolean │
+            ╞════════════════╪═════════╡
+            │ [true, false]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [false, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]   ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []             ┆ None    │
+            ╰────────────────┴─────────╯
         """
         return Expression._from_pyexpr(native.list_bool_or(self._expr))
 
