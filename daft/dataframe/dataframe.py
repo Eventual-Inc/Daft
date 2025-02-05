@@ -158,27 +158,31 @@ class DataFrame:
         else:
             return self._result_cache.value
 
-    def explain_broadcast(self):
+    def _explain_broadcast(self):
         """Broadcast the mermaid-formatted plan on the given port (assuming metrics-broadcasting is enabled)."""
-        import socket
+        import requests
 
         from daft.dataframe.display import MermaidFormatter
 
         ctx = get_context()
-        with ctx._lock:
-            if not ctx._enable_broadcast:
-                return
+        if not ctx._enable_broadcast:
+            return
 
-            addr = ctx._broadcast_addr
-            port = ctx._broadcast_port
-
+        addr = ctx._broadcast_addr
+        port = ctx._broadcast_port
         is_cached = self._result_cache is not None
-        instance = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
-        text: str = instance._repr_markdown_()
+        mermaid_instance = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.connect((addr, port))
-            sock.sendall(text.encode("utf-8"))
+        text: str = mermaid_instance._repr_markdown_()
+
+        try:
+            requests.post(f"http://{addr}:{port}", data=text)
+        except requests.exceptions.ConnectionError as conn_error:
+            warnings.warn(
+                "Unable to broadcast daft query plan over http."
+                " Are you sure the dashboard (and proxy server) are running?"
+            )
+            raise conn_error
 
     @DataframePublicAPI
     def explain(
@@ -199,7 +203,7 @@ class DataFrame:
             file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
                 print (in Python, that should be sys.stdout)
         """
-        self.explain_broadcast()
+        self._explain_broadcast()
         is_cached = self._result_cache is not None
         if format == "mermaid":
             from daft.dataframe.display import MermaidFormatter
@@ -2841,7 +2845,7 @@ class DataFrame:
             DataFrame: DataFrame with materialized results.
         """
         self._materialize_results()
-        self.explain_broadcast()
+        self._explain_broadcast()
 
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -2913,7 +2917,7 @@ class DataFrame:
             n: number of rows to show. Defaults to 8.
         """
         dataframe_display = self._construct_show_display(n)
-        self.explain_broadcast()
+        self._explain_broadcast()
         try:
             from IPython.display import display
 
