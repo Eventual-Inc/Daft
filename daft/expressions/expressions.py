@@ -993,6 +993,8 @@ class Expression:
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ []            ┆ None    │
             ╰───────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
         """
         expr = self._expr.bool_and()
         return Expression._from_pyexpr(expr)
@@ -1022,6 +1024,8 @@ class Expression:
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ []             ┆ None    │
             ╰────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
         """
         expr = self._expr.bool_or()
         return Expression._from_pyexpr(expr)
@@ -3279,6 +3283,8 @@ class ExpressionListNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ []            ┆ None    │
             ╰───────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
         """
         return Expression._from_pyexpr(native.list_bool_and(self._expr))
 
@@ -3307,6 +3313,8 @@ class ExpressionListNamespace(ExpressionNamespace):
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
             │ []             ┆ None    │
             ╰────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
         """
         return Expression._from_pyexpr(native.list_bool_or(self._expr))
 
