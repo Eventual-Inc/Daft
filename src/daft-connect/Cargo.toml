@@ -62,4 +62,4 @@ name = "daft-connect"
 version = {workspace = true}
 
 [package.metadata.cargo-machete]
-ignored = ["daft-local-execution"]  # needed by num-derive
+ignored = ["daft-local-execution"]  # idk why it fails to compile if i remove this
