@@ -662,8 +662,7 @@ impl SparkAnalyzer<'_> {
         }
 
         let ctx = get_context();
-        let state = ctx.state();
-        let catalog = state.catalog.clone();
+        let catalog = ctx.catalog().clone();
 
         let mut planner = SQLPlanner::new(catalog);
         let plan = planner.plan_sql(&query)?;

@@ -1,3 +1,4 @@
+#![feature(mapped_lock_guards)]
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
@@ -150,6 +151,26 @@ impl DaftContext {
     /// get a mutable reference to the state.
     pub fn state_mut(&self) -> std::sync::RwLockWriteGuard<'_, ContextState> {
         self.state.write().unwrap()
+    }
+
+    /// get a read only reference to the catalog
+    pub fn catalog(&self) -> std::sync::MappedRwLockReadGuard<'_, DaftCatalog> {
+        RwLockReadGuard::map(self.state(), |state| &state.catalog)
+    }
+
+    /// get a mutable reference to the catalog
+    pub fn catalog_mut(&self) -> std::sync::MappedRwLockWriteGuard<'_, DaftCatalog> {
+        std::sync::RwLockWriteGuard::map(self.state_mut(), |state| &mut state.catalog)
+    }
+
+    /// get the execution config
+    pub fn execution_config(&self) -> Arc<DaftExecutionConfig> {
+        self.state().config.execution.clone()
+    }
+
+    /// get the planning config
+    pub fn planning_config(&self) -> Arc<DaftPlanningConfig> {
+        self.state().config.planning.clone()
     }
 }
 
