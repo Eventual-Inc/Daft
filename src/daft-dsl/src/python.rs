@@ -182,6 +182,11 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     }
 }
 
+#[pyfunction]
+pub fn list_(items: Vec<PyExpr>) -> PyExpr {
+    Expr::List(items.into_iter().map(|item| item.into()).collect()).into()
+}
+
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature = (
     name,

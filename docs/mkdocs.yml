@@ -3,18 +3,19 @@
 
 # Project Information
 site_name: Daft Documentation
+site_url: https://www.getdaft.io/projects/docs/en/stable/
+site_description: >-
+  Welcome to Daft Documentation! Daft is a unified data engine for data engineering, analytics, and ML/AI.
 
+# Repository
+repo_name: Daft
+repo_url: https://github.com/Eventual-Inc/Daft
 docs_dir: mkdocs
 
 # Scarf pixel for tracking analytics
 # image:
 #   referrerpolicy: "no-referrer-when-downgrade"
 #   src: "https://static.scarf.sh/a.png?x-pxid=c9065f3a-a090-4243-8f69-145d5de7bfca"
-
-
-# Repository
-repo_name: Daft
-repo_url: https://github.com/Eventual-Inc/Daft
 
 # Sitemap
 nav:
@@ -42,7 +43,7 @@ nav:
     - Architecture: resources/architecture.md
     - DataFrame Comparison: resources/dataframe_comparison.md
     - Tutorials: resources/tutorials.md
-    - Benchmarks: resources/benchmarks/tpch.md     # Benchmarks can expand into a folder once we have more
+    - Benchmarks: resources/benchmarks/tpch.md # Benchmarks can expand into a folder once we have more
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
@@ -55,6 +56,7 @@ theme:
   logo: img/daft.png
   favicon: img/favicon.png
   features:
+  - navigation.footer
   - search.suggest
   - search.highlight
   - content.code.copy   # add copy button to code sections
@@ -64,16 +66,11 @@ theme:
   - navigation.tracking   # url in address bar is automatically updated with active anchor as highlighted in TOC
   - navigation.tabs   # moves nav bar to top, with secondary left-hand menu
   - navigation.tabs.sticky   # top nav bar remains visible when scrolling down
+  - navigation.top   # back-to-top button
     # - navigation.sections # fixed sections
     # - navigation.expand # drop down sections
     # - navigation.path # breadcrumb navigation is rendered above title of each page
-  - navigation.top   # back-to-top button
     # - navigation.indexes # section header can also be a doc BUT! clashes with toc.integrate for the top-level page
-
-# Issue:
-# If we enable toc.integrate and navigation.indexes together, it doesn't show subsections for the top-level page that is a section header, but works fine for all lower pages
-# If we only enable toc.integrate, section headers are now plain text
-# If we only enable navigation.indexes, page subsections get moved back to right-hand menu
 
   palette:
   - media: "(prefers-color-scheme)"
@@ -114,6 +111,7 @@ extra:
   # When referring to methods, the syntax is {{ api_path }}/path/to/method
   api_path: api_docs/doc_gen
 
+# Additional Style
 extra_css:
 - css/extra.css
 
