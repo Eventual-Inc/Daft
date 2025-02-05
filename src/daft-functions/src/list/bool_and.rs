@@ -10,7 +10,7 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListBoolAnd {}
+pub struct ListBoolAnd;
 
 #[typetag::serde]
 impl ScalarUDF for ListBoolAnd {
@@ -51,5 +51,5 @@ impl ScalarUDF for ListBoolAnd {
 
 #[must_use]
 pub fn list_bool_and(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListBoolAnd {}, vec![expr]).into()
+    ScalarFunction::new(ListBoolAnd, vec![expr]).into()
 }
