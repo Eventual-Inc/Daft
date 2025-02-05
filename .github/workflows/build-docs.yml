@@ -44,7 +44,7 @@ jobs:
         pip install uv
     - name: Install dependencies
       run: |
-        activate
+        source venv/bin/activate
         uv pip install -r requirements-dev.txt
     - name: Build Daft in development mode and generate docs
       # TODO: Break on any Sphinx warnings with nitpicks
