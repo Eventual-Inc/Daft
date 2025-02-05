@@ -113,6 +113,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    :toctree: doc_gen/expression_methods
 
    Expression.count
+   Expression.count_distinct
    Expression.sum
    Expression.mean
    Expression.stddev
@@ -235,7 +236,6 @@ List
 
    Expression.list.chunk
    Expression.list.count
-   Expression.list.count_distinct
    Expression.list.get
    Expression.list.join
    Expression.list.length
