@@ -42,6 +42,7 @@ pub mod global_catalog {
             .unregister_catalog(name)
     }
 }
+use sqlparser::{dialect::GenericDialect, parser::Parser, tokenizer::Tokenizer};
 
 /// Name of the default catalog
 static DEFAULT_CATALOG_NAME: &str = "default";
@@ -101,12 +102,31 @@ impl DaftCatalog {
         name: &str,
         view: impl Into<LogicalPlanBuilder>,
     ) -> Result<()> {
-        if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            return Err(Error::InvalidTableName {
+        let parser = Parser::new(&GenericDialect {});
+
+        let err = || {
+            Err(Error::InvalidTableName {
+                name: name.to_string(),
+            })
+        };
+
+        let Ok(tokens) = Tokenizer::new(&GenericDialect {}, name).tokenize() else {
+            return err();
+        };
+
+        let mut parser = parser.with_tokens(tokens);
+
+        let Ok(idents) = parser.parse_identifiers() else {
+            return err();
+        };
+
+        if idents.len() != 1 {
+            return Err(Error::QualifiedIdentifierNotSupported {
                 name: name.to_string(),
             });
         }
-        self.named_tables.insert(name.to_string(), view.into());
+
+        self.named_tables.insert(idents[0].to_string(), view.into());
         Ok(())
     }
 
