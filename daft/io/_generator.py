@@ -9,7 +9,7 @@ from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
-    from daft.table.table import RecordBatch
+    from daft.recordbatch.recordbatch import RecordBatch
 
 
 def _generator_factory_function(func: Callable[[], Iterator["RecordBatch"]]) -> Iterator["PyRecordBatch"]:
@@ -26,7 +26,7 @@ def read_generator(
     Example:
         >>> import daft
         >>> from daft.io._generator import read_generator
-        >>> from daft.table.table import RecordBatch
+        >>> from daft.recordbatch.recordbatch import RecordBatch
         >>> from functools import partial
         >>>
         >>> # Set runner to Ray for distributed processing

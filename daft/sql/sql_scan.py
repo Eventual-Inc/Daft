@@ -18,7 +18,7 @@ from daft.daft import (
 from daft.expressions.expressions import lit
 from daft.io.common import _get_schema_from_dict
 from daft.io.scan import PartitionField, ScanOperator
-from daft.table import RecordBatch
+from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

@@ -11,7 +11,11 @@ pub struct GrowableRecordBatch<'a> {
 }
 
 impl<'a> GrowableRecordBatch<'a> {
-    pub fn new(tables: &[&'a RecordBatch], use_validity: bool, capacity: usize) -> DaftResult<Self> {
+    pub fn new(
+        tables: &[&'a RecordBatch],
+        use_validity: bool,
+        capacity: usize,
+    ) -> DaftResult<Self> {
         let num_tables = tables.len();
         if tables.is_empty() {
             return Err(DaftError::ValueError(

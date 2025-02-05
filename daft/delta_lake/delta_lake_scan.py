@@ -191,7 +191,7 @@ class DeltaLakeScanOperator(ScanOperator):
                         # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
                         arrow_arr = pa.array([part_values[field_name].as_py()], type=dtype.field(field_idx).type)
                     arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
-                partition_values = daft.table.RecordBatch.from_pydict(arrays)._table
+                partition_values = daft.recordbatch.RecordBatch.from_pydict(arrays)._table
             else:
                 partition_values = None
 
@@ -217,7 +217,7 @@ class DeltaLakeScanOperator(ScanOperator):
                             type=dtype.field(field_idx).type,
                         )
                     arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
-                stats = daft.table.RecordBatch.from_pydict(arrays)
+                stats = daft.recordbatch.RecordBatch.from_pydict(arrays)
             else:
                 stats = None
             st = ScanTask.catalog_scan_task(

@@ -9,7 +9,7 @@ import pytest
 
 import daft
 import daft.context
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 # import all conftest
 from tests.integration.io.conftest import *

@@ -10,7 +10,7 @@ from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
-from daft.table import RecordBatch
+from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
     import lance
@@ -20,7 +20,8 @@ def _lancedb_table_factory_function(
     fragment: "lance.LanceFragment", required_columns: Optional[List[str]]
 ) -> Iterator["PyRecordBatch"]:
     return (
-        RecordBatch.from_arrow_record_batches([rb], rb.schema)._table for rb in fragment.to_batches(columns=required_columns)
+        RecordBatch.from_arrow_record_batches([rb], rb.schema)._table
+        for rb in fragment.to_batches(columns=required_columns)
     )
 
 

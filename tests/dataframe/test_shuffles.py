@@ -8,7 +8,7 @@ import pytest
 
 import daft
 from daft.io._generator import read_generator
-from daft.table.table import RecordBatch
+from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
 
 

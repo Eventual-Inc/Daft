@@ -12,11 +12,11 @@ use daft_dsl::python::PyExpr;
 use daft_io::{python::IOConfig, IOStatsContext};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
 use daft_scan::{
     python::pylib::PyScanTask, storage_config::StorageConfig, DataSource, ScanTask, ScanTaskRef,
 };
 use daft_stats::{TableMetadata, TableStatistics};
-use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
 use snafu::ResultExt;
 
@@ -124,7 +124,9 @@ impl PyMicroPartition {
         // TODO: Cleanup and refactor code for sharing with Table
         let tables = record_batches
             .into_iter()
-            .map(|rb| daft_recordbatch::ffi::record_batches_to_table(py, &[rb], schema.schema.clone()))
+            .map(|rb| {
+                daft_recordbatch::ffi::record_batches_to_table(py, &[rb], schema.schema.clone())
+            })
             .collect::<PyResult<Vec<_>>>()?;
 
         Ok(MicroPartition::new_loaded(schema.schema.clone(), Arc::new(tables), None).into())
@@ -820,7 +822,7 @@ impl PyMicroPartition {
         let guard = self.inner.state.lock().unwrap();
         if let TableState::Loaded(tables) = &*guard {
             let _from_pytable = py
-                .import(pyo3::intern!(py, "daft.table"))?
+                .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
                 .getattr(pyo3::intern!(py, "_from_pytable"))?;
 
@@ -874,7 +876,7 @@ pub fn read_json_into_py_table(
         .getattr(pyo3::intern!(py, "Schema"))?
         .getattr(pyo3::intern!(py, "_from_pyschema"))?
         .call1((schema,))?;
-    py.import(pyo3::intern!(py, "daft.table.table_io"))?
+    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_json"))?
         .call1((uri, py_schema, storage_config, read_options))?
         .getattr(pyo3::intern!(py, "to_table"))?
@@ -909,7 +911,7 @@ pub fn read_csv_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableParseCSVOptions"))?
         .call1((delimiter, header_idx, double_quote))?;
-    py.import(pyo3::intern!(py, "daft.table.table_io"))?
+    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_csv"))?
         .call1((uri, py_schema, storage_config, parse_options, read_options))?
         .getattr(pyo3::intern!(py, "to_table"))?
@@ -945,7 +947,7 @@ pub fn read_parquet_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableParseParquetOptions"))?
         .call1((py_coerce_int96_timestamp_unit,))?;
-    py.import(pyo3::intern!(py, "daft.table.table_io"))?
+    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_parquet"))?
         .call1((uri, py_schema, storage_config, read_options, parse_options))?
         .getattr(pyo3::intern!(py, "to_table"))?
@@ -981,7 +983,7 @@ pub fn read_sql_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableReadOptions"))?
         .call1((num_rows, include_columns))?;
-    py.import(pyo3::intern!(py, "daft.table.table_io"))?
+    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_sql"))?
         .call1((sql, conn, py_schema, read_options, py_predicate))?
         .getattr(pyo3::intern!(py, "to_table"))?

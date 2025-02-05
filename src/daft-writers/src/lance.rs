@@ -37,12 +37,12 @@ impl FileWriter for LanceWriter {
             .expect("MicroPartition should have size_bytes for LanceWriter");
         Python::with_gil(|py| {
             let py_micropartition = py
-                .import(pyo3::intern!(py, "daft.table"))?
+                .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "MicroPartition"))?
                 .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
                 .call1((PyMicroPartition::from(data),))?;
             let written_fragments: PyRecordBatch = py
-                .import(pyo3::intern!(py, "daft.table.table_io"))?
+                .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
                 .getattr(pyo3::intern!(py, "write_lance"))?
                 .call1((
                     py_micropartition,

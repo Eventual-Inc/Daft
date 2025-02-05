@@ -14,7 +14,7 @@ import pyarrow as pa
 import daft
 import daft.context
 from daft.io._generator import read_generator
-from daft.table.table import RecordBatch
+from daft.recordbatch.recordbatch import RecordBatch
 
 # Constants
 GB = 1 << 30

@@ -16,10 +16,10 @@ use daft_micropartition::{
     python::PyMicroPartition,
     MicroPartition,
 };
+use daft_recordbatch::RecordBatch;
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
-use daft_recordbatch::RecordBatch;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
 use itertools::zip_eq;
@@ -83,7 +83,7 @@ impl SparkAnalyzer<'_> {
                 Python::with_gil(|py| {
                     // Convert MicroPartition to a logical plan using Python interop.
                     let py_micropartition = py
-                        .import(intern!(py, "daft.table"))?
+                        .import(intern!(py, "daft.recordbatch"))?
                         .getattr(intern!(py, "MicroPartition"))?
                         .getattr(intern!(py, "_from_pymicropartition"))?
                         .call1((PyMicroPartition::from(mp),))?;

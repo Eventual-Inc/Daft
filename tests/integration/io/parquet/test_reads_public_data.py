@@ -7,10 +7,10 @@ import pytest
 from pyarrow import parquet as pq
 
 import daft
-import daft.table
+import daft.recordbatch
 from daft.exceptions import ConnectTimeoutError, ReadTimeoutError
 from daft.filesystem import get_filesystem, get_protocol_from_path
-from daft.table import MicroPartition, RecordBatch
+from daft.recordbatch import MicroPartition, RecordBatch
 
 
 def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
@@ -259,7 +259,7 @@ def test_parquet_read_table(parquet_file, public_storage_io_config, multithreade
 )
 def test_parquet_read_table_into_pyarrow(parquet_file, public_storage_io_config, multithreaded_io):
     _, url = parquet_file
-    daft_native_read = daft.table.read_parquet_into_pyarrow(
+    daft_native_read = daft.recordbatch.read_parquet_into_pyarrow(
         url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io
     )
     pa_read = read_parquet_with_pyarrow(url)
@@ -300,7 +300,7 @@ def test_parquet_read_table_bulk(parquet_file, public_storage_io_config, multith
 )
 def test_parquet_into_pyarrow_bulk(parquet_file, public_storage_io_config, multithreaded_io):
     _, url = parquet_file
-    daft_native_reads = daft.table.read_parquet_into_pyarrow_bulk(
+    daft_native_reads = daft.recordbatch.read_parquet_into_pyarrow_bulk(
         [url] * 2, io_config=public_storage_io_config, multithreaded_io=multithreaded_io
     )
     pa_read = read_parquet_with_pyarrow(url)
@@ -392,7 +392,7 @@ def test_row_groups_selection_bulk(public_storage_io_config, multithreaded_io):
 def test_row_groups_selection_into_pyarrow_bulk(public_storage_io_config, multithreaded_io):
     url = ["s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"] * 11
     row_groups = [list(range(10))] + [[i] for i in range(10)]
-    first, *rest = daft.table.read_parquet_into_pyarrow_bulk(
+    first, *rest = daft.recordbatch.read_parquet_into_pyarrow_bulk(
         url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups_per_path=row_groups
     )
     assert len(first) == 100
@@ -458,7 +458,7 @@ def test_read_file_level_timeout():
     )
 
     with pytest.raises((ReadTimeoutError), match=f"Parquet reader timed out while trying to read: {url}"):
-        daft.table.read_parquet_into_pyarrow(url, io_config=read_timeout_config, file_timeout_ms=2)
+        daft.recordbatch.read_parquet_into_pyarrow(url, io_config=read_timeout_config, file_timeout_ms=2)
 
 
 @pytest.mark.integration()

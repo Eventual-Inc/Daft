@@ -10,8 +10,8 @@ use common_runtime::get_compute_runtime;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
-use daft_stats::TruthValue;
 use daft_recordbatch::RecordBatch;
+use daft_stats::TruthValue;
 use futures::{future::try_join_all, stream::BoxStream, StreamExt};
 use parquet2::{
     page::{CompressedPage, Page},

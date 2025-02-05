@@ -16,8 +16,10 @@ use crate::{FileWriter, WriterFactory};
 /// to a separate file. It uses a map to keep track of the writers for each partition.
 struct PartitionedWriter {
     // TODO: Figure out a way to NOT use the IndexHash + RawEntryMut pattern here. Ideally we want to store ScalarValues, aka. single Rows of the partition values as keys for the hashmap.
-    per_partition_writers:
-        HashMap<IndexHash, Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>>,
+    per_partition_writers: HashMap<
+        IndexHash,
+        Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    >,
     saved_partition_values: Vec<RecordBatch>,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     partition_by: Vec<ExprRef>,
@@ -26,7 +28,9 @@ struct PartitionedWriter {
 
 impl PartitionedWriter {
     pub fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
+        >,
         partition_by: Vec<ExprRef>,
     ) -> Self {
         Self {
@@ -136,7 +140,9 @@ pub(crate) struct PartitionedWriterFactory {
 
 impl PartitionedWriterFactory {
     pub(crate) fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
+        >,
         partition_cols: Vec<ExprRef>,
     ) -> Self {
         Self {

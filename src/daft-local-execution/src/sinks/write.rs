@@ -58,7 +58,9 @@ pub(crate) struct WriteSink {
 impl WriteSink {
     pub(crate) fn new(
         write_format: WriteFormat,
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
+        >,
         partition_by: Option<Vec<ExprRef>>,
         file_schema: SchemaRef,
     ) -> Self {

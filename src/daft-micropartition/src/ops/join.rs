@@ -7,8 +7,8 @@ use daft_core::{
 };
 use daft_dsl::{join::infer_join_schema, ExprRef};
 use daft_io::IOStatsContext;
-use daft_stats::TruthValue;
 use daft_recordbatch::RecordBatch;
+use daft_stats::TruthValue;
 
 use crate::micropartition::MicroPartition;
 
@@ -23,7 +23,13 @@ impl MicroPartition {
         table_join: F,
     ) -> DaftResult<Self>
     where
-        F: FnOnce(&RecordBatch, &RecordBatch, &[ExprRef], &[ExprRef], JoinType) -> DaftResult<RecordBatch>,
+        F: FnOnce(
+            &RecordBatch,
+            &RecordBatch,
+            &[ExprRef],
+            &[ExprRef],
+            JoinType,
+        ) -> DaftResult<RecordBatch>,
     {
         let join_schema = infer_join_schema(&self.schema, &right.schema, how)?;
         match (how, self.len(), right.len()) {
@@ -124,9 +130,10 @@ impl MicroPartition {
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::cross_join");
 
-        let table_join = |lt: &RecordBatch, rt: &RecordBatch, _: &[ExprRef], _: &[ExprRef], _: JoinType| {
-            RecordBatch::cross_join(lt, rt, outer_loop_side)
-        };
+        let table_join =
+            |lt: &RecordBatch, rt: &RecordBatch, _: &[ExprRef], _: &[ExprRef], _: JoinType| {
+                RecordBatch::cross_join(lt, rt, outer_loop_side)
+            };
 
         self.join(right, io_stats, &[], &[], JoinType::Inner, table_join)
     }

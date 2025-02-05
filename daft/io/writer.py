@@ -15,13 +15,13 @@ from daft.iceberg.iceberg_write import (
     make_iceberg_data_file,
     make_iceberg_record,
 )
-from daft.series import Series
-from daft.table.micropartition import MicroPartition
-from daft.table.partitioning import (
+from daft.recordbatch.micropartition import MicroPartition
+from daft.recordbatch.partitioning import (
     partition_strings_to_path,
     partition_values_to_str_mapping,
 )
-from daft.table.table import RecordBatch
+from daft.recordbatch.recordbatch import RecordBatch
+from daft.series import Series
 
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema

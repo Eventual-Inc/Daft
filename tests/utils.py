@@ -4,7 +4,7 @@ import re
 
 import pyarrow as pa
 
-from daft.table import RecordBatch
+from daft.recordbatch import RecordBatch
 
 ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 

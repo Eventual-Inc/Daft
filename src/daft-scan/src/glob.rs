@@ -8,13 +8,13 @@ use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_recordbatch::RecordBatch;
 use daft_schema::{
     dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
 use daft_stats::PartitionSpec;
-use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 

@@ -47,7 +47,11 @@ pub fn record_batches_to_table(
                     Series::try_from((names.get(i).unwrap().as_str(), cast_array))
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            tables.push(RecordBatch::new_with_size(schema.clone(), columns, num_rows)?);
+            tables.push(RecordBatch::new_with_size(
+                schema.clone(),
+                columns,
+                num_rows,
+            )?);
         }
         Ok(RecordBatch::concat(tables.as_slice())?)
     })

@@ -15,7 +15,10 @@ use crate::RecordBatch;
 mod hash_join;
 mod merge_join;
 
-fn match_types_for_tables(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(RecordBatch, RecordBatch)> {
+fn match_types_for_tables(
+    left: &RecordBatch,
+    right: &RecordBatch,
+) -> DaftResult<(RecordBatch, RecordBatch)> {
     let mut lseries = vec![];
     let mut rseries = vec![];
 
@@ -195,7 +198,10 @@ impl RecordBatch {
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {
         /// Create a new table by repeating each column of the input table `inner_len` times in a row, thus preserving sort order.
-        fn create_outer_loop_table(input: &RecordBatch, inner_len: usize) -> DaftResult<RecordBatch> {
+        fn create_outer_loop_table(
+            input: &RecordBatch,
+            inner_len: usize,
+        ) -> DaftResult<RecordBatch> {
             let idx = (0..input.len() as u64)
                 .flat_map(|i| std::iter::repeat(i).take(inner_len))
                 .collect::<Vec<_>>();
@@ -206,7 +212,10 @@ impl RecordBatch {
         }
 
         /// Create a enw table by repeating the entire table `outer_len` number of times
-        fn create_inner_loop_table(input: &RecordBatch, outer_len: usize) -> DaftResult<RecordBatch> {
+        fn create_inner_loop_table(
+            input: &RecordBatch,
+            outer_len: usize,
+        ) -> DaftResult<RecordBatch> {
             RecordBatch::concat(&vec![input; outer_len])
         }
 

@@ -200,13 +200,16 @@ impl FileWriter for TargetBatchWriter {
 }
 
 pub struct TargetBatchWriterFactory {
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    writer_factory:
+        Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
 }
 
 impl TargetBatchWriterFactory {
     pub fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+        >,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> Self {
         Self {

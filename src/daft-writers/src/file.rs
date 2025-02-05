@@ -13,7 +13,8 @@ struct TargetFileSizeWriter {
     current_in_memory_bytes_written: usize,
     total_physical_bytes_written: usize,
     current_writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    writer_factory:
+        Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     results: Vec<RecordBatch>,
     partition_values: Option<RecordBatch>,
@@ -22,7 +23,9 @@ struct TargetFileSizeWriter {
 
 impl TargetFileSizeWriter {
     fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+        >,
         partition_values: Option<RecordBatch>,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> DaftResult<Self> {
@@ -152,13 +155,16 @@ impl FileWriter for TargetFileSizeWriter {
 }
 
 pub(crate) struct TargetFileSizeWriterFactory {
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    writer_factory:
+        Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
 }
 
 impl TargetFileSizeWriterFactory {
     pub(crate) fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+        >,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> Self {
         Self {

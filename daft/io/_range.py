@@ -8,10 +8,12 @@ if TYPE_CHECKING:
 from daft import DataType
 from daft.io._generator import GeneratorScanOperator
 from daft.logical.schema import Schema
-from daft.table.table import RecordBatch
+from daft.recordbatch.recordbatch import RecordBatch
 
 
-def _range_generators(start: int, end: int, step: int, partitions: int) -> Iterator[Callable[[], Iterator[RecordBatch]]]:
+def _range_generators(
+    start: int, end: int, step: int, partitions: int
+) -> Iterator[Callable[[], Iterator[RecordBatch]]]:
     # TODO: Partitioning with range scan is currently untested and unused.
     # There may be issues with balanced partitions and step size.
 
