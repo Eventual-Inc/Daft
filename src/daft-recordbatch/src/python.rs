@@ -349,12 +349,12 @@ impl PyRecordBatch {
             .collect();
         py.allow_threads(|| {
             let (tables, values) = self.table.partition_by_value(exprs.as_slice())?;
-            let PyRecordBatchs = tables
+            let pyrecordbatches = tables
                 .into_iter()
                 .map(std::convert::Into::into)
                 .collect::<Vec<Self>>();
             let values = values.into();
-            Ok((PyRecordBatchs, values))
+            Ok((pyrecordbatches, values))
         })
     }
 

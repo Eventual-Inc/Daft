@@ -821,7 +821,7 @@ impl PyMicroPartition {
         if let TableState::Loaded(tables) = &*guard {
             let _from_pytable = py
                 .import(pyo3::intern!(py, "daft.table"))?
-                .getattr(pyo3::intern!(py, "Table"))?
+                .getattr(pyo3::intern!(py, "RecordBatch"))?
                 .getattr(pyo3::intern!(py, "_from_pytable"))?;
 
             let pytables = tables.iter().map(|t| PyRecordBatch { table: t.clone() });
