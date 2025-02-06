@@ -1,6 +1,7 @@
 mod data_catalog;
 mod data_catalog_table;
 pub mod errors;
+pub mod identifier;
 
 // Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
@@ -42,7 +43,7 @@ pub mod global_catalog {
             .unregister_catalog(name)
     }
 }
-use sqlparser::{dialect::GenericDialect, parser::Parser, tokenizer::Tokenizer};
+use identifier::Identifier;
 
 /// Name of the default catalog
 static DEFAULT_CATALOG_NAME: &str = "default";
@@ -102,31 +103,13 @@ impl DaftCatalog {
         name: &str,
         view: impl Into<LogicalPlanBuilder>,
     ) -> Result<()> {
-        let parser = Parser::new(&GenericDialect {});
-
-        let err = || {
-            Err(Error::InvalidTableName {
-                name: name.to_string(),
-            })
-        };
-
-        let Ok(tokens) = Tokenizer::new(&GenericDialect {}, name).tokenize() else {
-            return err();
-        };
-
-        let mut parser = parser.with_tokens(tokens);
-
-        let Ok(idents) = parser.parse_identifiers() else {
-            return err();
-        };
-
-        if idents.len() != 1 {
-            return Err(Error::QualifiedIdentifierNotSupported {
-                name: name.to_string(),
+        let identifier = Identifier::parse(name)?;
+        if identifier.has_namespace() {
+            return Err(Error::Unsupported {
+                message: format!("Qualified identifiers are not yet supported. Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name),
             });
         }
-
-        self.named_tables.insert(idents[0].to_string(), view.into());
+        self.named_tables.insert(identifier.name, view.into());
         Ok(())
     }
 

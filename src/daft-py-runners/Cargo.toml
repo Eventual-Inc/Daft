@@ -5,7 +5,6 @@ daft-micropartition = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 
 [features]
-default = ["python"]
 python = [
   "dep:pyo3",
   "common-error/python",
@@ -17,6 +16,6 @@ python = [
 workspace = true
 
 [package]
-name = "daft-ray-execution"
+name = "daft-py-runners"
 edition.workspace = true
 version.workspace = true

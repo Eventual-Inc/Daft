@@ -1,4 +1,6 @@
+mod brute_force_join_order;
 mod join_graph;
+#[cfg(test)]
 mod naive_left_deep_join_order;
 
 #[derive(Default, Debug)]
@@ -11,10 +13,10 @@ impl ReorderJoins {
 }
 use std::sync::Arc;
 
+use brute_force_join_order::BruteForceJoinOrderer;
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use join_graph::JoinGraphBuilder;
-use naive_left_deep_join_order::NaiveLeftDeepJoinOrderer;
 
 use crate::{
     optimization::rules::{reorder_joins::join_graph::JoinOrderer, OptimizerRule},
@@ -44,7 +46,7 @@ impl OptimizerRule for ReorderJoins {
             if !join_graph.could_reorder() {
                 return Ok(Transformed::no(plan));
             }
-            let orderer = NaiveLeftDeepJoinOrderer {};
+            let orderer = BruteForceJoinOrderer {};
             let join_order = orderer.order(&join_graph);
             join_graph
                 .build_logical_plan(join_order)

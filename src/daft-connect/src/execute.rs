@@ -2,10 +2,10 @@ use std::{future::ready, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
+use daft_context::get_context;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
-use daft_ray_execution::RayEngine;
 use daft_table::Table;
 use futures::{
     stream::{self, BoxStream},
@@ -23,56 +23,27 @@ use tracing::debug;
 
 use crate::{
     error::{ConnectError, ConnectResult, Context},
-    invalid_argument_err, not_yet_implemented,
+    not_yet_implemented,
     response_builder::ResponseBuilder,
     session::Session,
     spark_analyzer::SparkAnalyzer,
     util::FromOptionalField,
-    ExecuteStream, Runner,
+    ExecuteStream,
 };
 
 impl Session {
-    pub fn get_runner(&self) -> ConnectResult<Runner> {
-        let runner = match self.config_values().get("daft.runner") {
-            Some(runner) => match runner.as_str() {
-                "ray" => Runner::Ray,
-                "native" => Runner::Native,
-                _ => invalid_argument_err!("Invalid runner: {}", runner),
-            },
-            None => Runner::Native,
-        };
-        Ok(runner)
-    }
-
     pub async fn run_query(
         &self,
         lp: LogicalPlanBuilder,
     ) -> ConnectResult<BoxStream<DaftResult<Arc<MicroPartition>>>> {
-        match self.get_runner()? {
-            Runner::Ray => {
-                let runner_address = self.config_values().get("daft.runner.ray.address");
-                let runner_address = runner_address.map(|s| s.to_string());
+        let runner = get_context().get_or_create_runner()?;
 
-                let runner = RayEngine::try_new(runner_address, None, None)?;
-                let result_set = tokio::task::spawn_blocking(move || {
-                    Python::with_gil(|py| runner.run_iter_impl(py, lp, None))
-                })
-                .await??;
+        let result_set = tokio::task::spawn_blocking(move || {
+            Python::with_gil(|py| runner.run_iter_tables(py, lp, None))
+        })
+        .await??;
 
-                Ok(Box::pin(stream::iter(result_set)))
-            }
-
-            Runner::Native => {
-                let this = self.clone();
-
-                let plan = lp.optimize_async().await?;
-
-                let results = this
-                    .engine
-                    .run(&plan, &*this.psets, Default::default(), None)?;
-                Ok(results.into_stream().boxed())
-            }
-        }
+        Ok(Box::pin(stream::iter(result_set)))
     }
 
     pub async fn execute_command(
@@ -85,7 +56,6 @@ impl Session {
         let result_complete = res.result_complete_response();
 
         let (tx, rx) = tokio::sync::mpsc::channel::<ConnectResult<ExecutePlanResponse>>(1);
-
         let this = self.clone();
         self.compute_runtime.runtime.spawn(async move {
             let execution_fut = async {
@@ -264,13 +234,14 @@ impl Session {
             })?;
 
         {
-            let catalog = self.catalog.read().unwrap();
+            let catalog = self.catalog();
+
             if !replace && catalog.contains_table(&name) {
                 return Err(Status::internal("Dataframe view already exists"));
             }
         }
 
-        let mut catalog = self.catalog.write().unwrap();
+        let mut catalog = self.catalog_mut();
 
         catalog.register_table(&name, input).map_err(|e| {
             Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
@@ -311,8 +282,7 @@ impl Session {
             not_yet_implemented!("Input");
         }
 
-        let catalog = self.catalog.read().unwrap();
-        let catalog = catalog.clone();
+        let catalog = self.catalog().clone();
 
         let mut planner = daft_sql::SQLPlanner::new(catalog);
 

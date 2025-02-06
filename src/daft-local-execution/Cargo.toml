@@ -41,9 +41,12 @@ tracing = {workspace = true}
 python = [
   "dep:pyo3",
   "common-daft-config/python",
-  "common-file-formats/python",
+  "common-display/python",
   "common-error/python",
+  "common-file-formats/python",
   "common-scan-info/python",
+  "daft-core/python",
+  "daft-functions/python",
   "daft-dsl/python",
   "daft-io/python",
   "daft-local-plan/python",
@@ -51,8 +54,7 @@ python = [
   "daft-micropartition/python",
   "daft-physical-plan/python",
   "daft-scan/python",
-  "daft-writers/python",
-  "common-display/python"
+  "daft-writers/python"
 ]
 
 [lints]
