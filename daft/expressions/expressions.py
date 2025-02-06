@@ -28,9 +28,9 @@ from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
+from daft.daft import struct as _struct
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
-from daft.daft import to_struct as _to_struct
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
@@ -196,6 +196,51 @@ def list_(*items: Expression | str):
     return Expression._from_pyexpr(native.list_([col(i)._expr if isinstance(i, str) else i._expr for i in items]))
 
 
+def struct(*fields: Expression | str) -> Expression:
+    """Constructs a struct from the input field expressions.
+
+    Example:
+        >>> import daft
+        >>> from daft import col
+        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+        >>> df.select(daft.struct(col("a") * 2, col("b"))).show()
+        ╭───────────────────────────╮
+        │ struct                    │
+        │ ---                       │
+        │ Struct[a: Int64, b: Utf8] │
+        ╞═══════════════════════════╡
+        │ {a: 2,                    │
+        │ b: a,                     │
+        │ }                         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {a: 4,                    │
+        │ b: b,                     │
+        │ }                         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {a: 6,                    │
+        │ b: c,                     │
+        │ }                         │
+        ╰───────────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    Args:
+        inputs: Expressions to be converted into struct fields.
+
+    Returns:
+        An expression for a struct column with the input columns as its fields.
+    """
+    pyinputs = []
+    for field in fields:
+        if isinstance(field, Expression):
+            pyinputs.append(field._expr)
+        elif isinstance(field, str):
+            pyinputs.append(col(field)._expr)
+        else:
+            raise TypeError("expected Expression or str as input for struct()")
+    return Expression._from_pyexpr(_struct(pyinputs))
+
+
 def interval(
     years: int | None = None,
     months: int | None = None,
@@ -354,49 +399,16 @@ class Expression:
         )
 
     @staticmethod
-    def to_struct(*inputs: Expression | builtins.str) -> Expression:
-        """Converts multiple input expressions or column names into a struct.
+    def to_struct(*fields: Expression | builtins.str) -> Expression:
+        """Constructs a struct from the input field expressions.
 
-        Example:
-            >>> import daft
-            >>> from daft import col
-            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
-            >>> df.select(daft.to_struct(col("a") * 2, col("b"))).show()
-            ╭───────────────────────────╮
-            │ struct                    │
-            │ ---                       │
-            │ Struct[a: Int64, b: Utf8] │
-            ╞═══════════════════════════╡
-            │ {a: 2,                    │
-            │ b: a,                     │
-            │ }                         │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ {a: 4,                    │
-            │ b: b,                     │
-            │ }                         │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ {a: 6,                    │
-            │ b: c,                     │
-            │ }                         │
-            ╰───────────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        Args:
-            inputs: Expressions to be converted into struct fields.
-
-        Returns:
-            An expression for a struct column with the input columns as its fields.
+        Renamed to 'struct' in https://github.com/Eventual-Inc/Daft/pull/3755.
         """
-        pyinputs = []
-        for x in inputs:
-            if isinstance(x, Expression):
-                pyinputs.append(x._expr)
-            elif isinstance(x, str):
-                pyinputs.append(col(x)._expr)
-            else:
-                raise TypeError("expected Expression or str as input for to_struct")
-        return Expression._from_pyexpr(_to_struct(pyinputs))
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.4.4!  Instead, please use 'struct'",
+            category=DeprecationWarning,
+        )
+        return struct(*fields)
 
     def __bool__(self) -> bool:
         raise ValueError(

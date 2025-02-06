@@ -5,6 +5,7 @@ use pyo3::{exceptions::PyValueError, pyfunction, PyResult};
 simple_python_wrapper!(utf8_count_matches, crate::count_matches::utf8_count_matches, [expr: PyExpr, patterns: PyExpr, whole_words: bool, case_sensitive: bool]);
 
 #[pyfunction]
+#[pyo3(name = "struct")]
 pub fn to_struct(inputs: Vec<PyExpr>) -> PyResult<PyExpr> {
     let inputs = inputs.into_iter().map(Into::into).collect();
     Ok(crate::to_struct::to_struct(inputs).into())
