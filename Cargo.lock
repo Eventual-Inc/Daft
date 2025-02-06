@@ -5290,10 +5290,12 @@ name = "proxy-service"
 version = "0.3.0-dev0"
 dependencies = [
  "anyhow",
+ "chrono",
  "futures",
  "http-body-util",
  "hyper 1.6.0",
  "hyper-util",
+ "parking_lot 0.12.3",
  "serde",
  "serde_json",
  "simdutf8",
