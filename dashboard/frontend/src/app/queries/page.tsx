@@ -3,7 +3,6 @@
 import * as React from "react";
 import {
     ColumnDef,
-    ColumnFiltersState,
     flexRender,
     getCoreRowModel,
     getFilteredRowModel,
@@ -12,7 +11,7 @@ import {
     useReactTable,
 } from "@tanstack/react-table";
 
-import StatusBadge, { BadgeStatus } from "@/components/status-badge";
+import StatusBadge from "@/components/status-badge";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,75 +23,76 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { useAtom } from 'jotai';
+import { queryInfoAtom, QueryInfo, ID, STATUS, MERMAID_PLAN } from '@/atoms/query_info';
 
-const NAME_KEY = "name";
-const STATUS_KEY = "status";
-type Query = {
-    [NAME_KEY]: string
-    [STATUS_KEY]: BadgeStatus,
-}
+// const NAME_KEY = "name";
+// const STATUS_KEY = "status";
+// type Query = {
+//     [NAME_KEY]: string
+//     [STATUS_KEY]: BadgeStatus,
+// }
+// const data: Query[] = [
+//     {
+//         [NAME_KEY]: "serene-darwin",
+//         [STATUS_KEY]: "success",
+//     },
+//     {
+//         [NAME_KEY]: "curious-newton",
+//         [STATUS_KEY]: "pending",
+//     },
+//     {
+//         [NAME_KEY]: "vibrant-edison",
+//         [STATUS_KEY]: "failed",
+//     },
+//     {
+//         [NAME_KEY]: "ecstatic-gauss",
+//         [STATUS_KEY]: "cancelled",
+//     },
+// ];
 
-const data: Query[] = [
+const columns: ColumnDef<QueryInfo>[] = [
     {
-        [NAME_KEY]: "serene-darwin",
-        [STATUS_KEY]: "success",
+        accessorKey: ID,
+        header: "Name",
+        cell: ({ row }) => row.getValue(ID),
     },
     {
-        [NAME_KEY]: "curious-newton",
-        [STATUS_KEY]: "pending",
-    },
-    {
-        [NAME_KEY]: "vibrant-edison",
-        [STATUS_KEY]: "failed",
-    },
-    {
-        [NAME_KEY]: "ecstatic-gauss",
-        [STATUS_KEY]: "cancelled",
+        accessorKey: STATUS,
+        header: "Status",
+        cell: ({ row }) => <StatusBadge status={row.getValue(STATUS)} />,
     },
 ];
 
 export default function DataTableDemo() {
-    const columns: ColumnDef<Query>[] = [
-        {
-            accessorKey: NAME_KEY,
-            header: "Name",
-            cell: ({ row }) => row.getValue(NAME_KEY),
-        },
-        {
-            accessorKey: STATUS_KEY,
-            header: "Status",
-            cell: ({ row }) => <StatusBadge status={row.getValue(STATUS_KEY)} />,
-        },
-    ];
-    const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
-    const [rowSelection, setRowSelection] = React.useState({});
+    const [queryInfo, setQueryInfo] = useAtom(queryInfoAtom);
+    React.useEffect(() => {
+        (async () => {
+            try {
+                const response = await fetch('http://localhost:3239');
+                const json = await response.json();
+                console.log(json);
+                setQueryInfo(json);
+            } catch (error) { }
+        })();
+    });
     const table = useReactTable({
-        data,
+        data: queryInfo!,
         columns,
-        onColumnFiltersChange: setColumnFilters,
         getCoreRowModel: getCoreRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
-        onRowSelectionChange: setRowSelection,
-        state: {
-            columnFilters,
-            rowSelection,
-        },
     });
-    React.useEffect(() => {
-        const socket = new WebSocket('ws://127.0.0.1:3239');
-        socket.onmessage = ({ data }) => console.log(data);
-    }, []);
 
     return (
         <div className="mx-[20px]">
             <div className="flex items-center py-4">
                 <Input
                     placeholder="Filter queries..."
-                    value={(table.getColumn(NAME_KEY)?.getFilterValue() as string) ?? ""}
+                    value={(table.getColumn(ID)?.getFilterValue() as string) ?? ""}
                     onChange={(event) =>
-                        table.getColumn(NAME_KEY)?.setFilterValue(event.target.value)
+                        table.getColumn(ID)?.setFilterValue(event.target.value)
                     }
                     className="max-w-sm"
                 />
