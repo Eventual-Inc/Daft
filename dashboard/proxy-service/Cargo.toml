@@ -3,9 +3,11 @@ anyhow = "1.0"
 http-body-util = "0.1"
 hyper = {features = ["full"], version = "1.6"}
 hyper-util = {features = ["full"], version = "0.1"}
+serde_json = "1.0"
 simdutf8 = "0.1"
 tokio-tungstenite = "0.26"
 futures.workspace = true
+serde.workspace = true
 tokio.workspace = true
 
 [lints]
