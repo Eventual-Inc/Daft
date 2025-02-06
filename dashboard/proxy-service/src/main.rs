@@ -50,18 +50,18 @@ where
 {
     let listener = TcpListener::bind((addr, port))
         .await
-        .unwrap_or_else(|_| panic!("Unable to bind to {addr}:{port}"));
+        .expect("Failed to bind to port");
     loop {
         let (stream, _) = listener
             .accept()
             .await
-            .unwrap_or_else(|_| panic!("Unable to accept incoming connection at {addr}:{port}"));
+            .expect("Unable to accept incoming connection");
         let io = TokioIo::new(stream);
         spawn(async move {
             http1::Builder::new()
                 .serve_connection(io, service_fn(f))
                 .await
-                .unwrap_or_else(|_| panic!("Failed to serve endpoint at {addr}:{port}"));
+                .expect("Failed to serve endpoint");
         });
     }
 }

@@ -4,7 +4,6 @@
 # in order to support runtime typechecking across different Python versions.
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
-import datetime
 import io
 import multiprocessing
 import os
@@ -29,9 +28,7 @@ from typing import (
     TypeVar,
     Union,
 )
-from uuid import UUID, uuid4
-
-from dataclasses_json import LetterCase, dataclass_json
+from uuid import uuid4
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -186,25 +183,21 @@ class DataFrame:
         addr = ctx._broadcast_addr
         port = ctx._broadcast_port
         is_cached = self._result_cache is not None
-        plan_time_start = str(datetime.datetime.now())
+        # plan_time_start = str(datetime.datetime.now())
         mermaid_formatter = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
         mermaid_plan: str = mermaid_formatter._repr_markdown_()
-        plan_time_end = str(datetime.datetime.now())
-        id = uuid4()
-
-        @dataclass_json(letter_case=LetterCase.KEBAB)
-        @dataclass
-        class QueryMetadata:
-            id: UUID
-            mermaid_plan: str
-            plan_time_start: str
-            plan_time_end: str
+        # plan_time_end = str(datetime.datetime.now())
 
         try:
-            query_metadata = QueryMetadata(
-                id=id, mermaid_plan=mermaid_plan, plan_time_start=plan_time_start, plan_time_end=plan_time_end
+            requests.post(
+                f"http://{addr}:{port}",
+                json={
+                    "id": uuid4(),
+                    "mermaid-plan": mermaid_plan,
+                    "plan-time-start": "2025-02-06T00:32:15.077156Z",
+                    "plan-time-end": "2025-02-06T00:32:15.077861Z",
+                },
             )
-            requests.post(f"http://{addr}:{port}", json=query_metadata.to_json())
         except requests.exceptions.ConnectionError as conn_error:
             warnings.warn(
                 "Unable to broadcast daft query plan over http."
