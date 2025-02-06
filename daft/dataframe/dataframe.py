@@ -170,6 +170,7 @@ class DataFrame:
             return self._result_cache.value
 
     def _explain_broadcast(self):
+        import json
         from urllib import request
 
         from daft.dataframe.display import MermaidFormatter
@@ -195,13 +196,15 @@ class DataFrame:
         headers = {
             "Content-Type": "application/json",
         }
-        data = {
-            "id": str(uuid4()),
-            "mermaid-plan": mermaid_plan,
-            "plan-time-start": str(plan_time_start),
-            "plan-time-end": str(plan_time_end),
-        }
-        req = request.Request(f"http://{addr}:{port}", headers=headers, data=str(data).encode("utf-8"))
+        data = json.dumps(
+            {
+                "id": str(uuid4()),
+                "mermaid-plan": mermaid_plan,
+                "plan-time-start": str(plan_time_start),
+                "plan-time-end": str(plan_time_end),
+            }
+        ).encode("utf-8")
+        req = request.Request(f"http://{addr}:{port}", headers=headers, data=data)
         request.urlopen(req)
 
     @broadcast_metrics
