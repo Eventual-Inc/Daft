@@ -216,9 +216,7 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
                 else item_to_series(name, column)
             )
             series_dict[name] = series._series
-        return MicroPartition._from_tables(
-            [RecordBatch._from_PyRecordBatch(_PyRecordBatch.from_pylist_series(series_dict))]
-        )
+        return MicroPartition._from_tables([RecordBatch._from_pytable(_PyRecordBatch.from_pylist_series(series_dict))])
     return MicroPartition.from_arrow(arrow_table)
 
 

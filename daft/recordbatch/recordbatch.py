@@ -68,14 +68,14 @@ class RecordBatch:
     @staticmethod
     def empty(schema: Schema | None = None) -> RecordBatch:
         pyt = _PyRecordBatch.empty(None) if schema is None else _PyRecordBatch.empty(schema._schema)
-        return RecordBatch._from_PyRecordBatch(pyt)
+        return RecordBatch._from_pytable(pyt)
 
     @staticmethod
     def _from_scan_task(_: _ScanTask) -> RecordBatch:
         raise NotImplementedError("_from_scan_task is not implemented for legacy Python RecordBatch.")
 
     @staticmethod
-    def _from_PyRecordBatch(pyt: _PyRecordBatch) -> RecordBatch:
+    def _from_pytable(pyt: _PyRecordBatch) -> RecordBatch:
         assert isinstance(pyt, _PyRecordBatch)
         tab = RecordBatch.__new__(RecordBatch)
         tab._table = pyt
@@ -105,13 +105,13 @@ class RecordBatch:
             # Otherwise, go through record batch happy path.
             arrow_table = ensure_table(arrow_table)
             pyt = _PyRecordBatch.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
-            return RecordBatch._from_PyRecordBatch(pyt)
+            return RecordBatch._from_pytable(pyt)
 
     @staticmethod
     def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> RecordBatch:
         schema = Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
         pyt = _PyRecordBatch.from_arrow_record_batches(rbs, schema._schema)
-        return RecordBatch._from_PyRecordBatch(pyt)
+        return RecordBatch._from_pytable(pyt)
 
     @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> RecordBatch:
@@ -134,7 +134,7 @@ class RecordBatch:
         for k, v in data.items():
             series = item_to_series(k, v)
             series_dict[k] = series._series
-        return RecordBatch._from_PyRecordBatch(_PyRecordBatch.from_pylist_series(series_dict))
+        return RecordBatch._from_pytable(_PyRecordBatch.from_pylist_series(series_dict))
 
     @classmethod
     def concat(cls, to_merge: list[RecordBatch]) -> RecordBatch:
@@ -143,14 +143,14 @@ class RecordBatch:
             if not isinstance(t, RecordBatch):
                 raise TypeError(f"Expected a Table for concat, got {type(t)}")
             tables.append(t._table)
-        return RecordBatch._from_PyRecordBatch(_PyRecordBatch.concat(tables))
+        return RecordBatch._from_pytable(_PyRecordBatch.concat(tables))
 
     def slice(self, start: int, end: int) -> RecordBatch:
         if not isinstance(start, int):
             raise TypeError(f"expected int for start but got {type(start)}")
         if not isinstance(end, int):
             raise TypeError(f"expected int for end but got {type(end)}")
-        return RecordBatch._from_PyRecordBatch(self._table.slice(start, end))
+        return RecordBatch._from_pytable(self._table.slice(start, end))
 
     ###
     # Exporting methods
@@ -222,24 +222,24 @@ class RecordBatch:
 
     def cast_to_schema(self, schema: Schema) -> RecordBatch:
         """Casts a RecordBatch into the provided schema."""
-        return RecordBatch._from_PyRecordBatch(self._table.cast_to_schema(schema._schema))
+        return RecordBatch._from_pytable(self._table.cast_to_schema(schema._schema))
 
     def eval_expression_list(self, exprs: ExpressionsProjection) -> RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
-        return RecordBatch._from_PyRecordBatch(self._table.eval_expression_list(pyexprs))
+        return RecordBatch._from_pytable(self._table.eval_expression_list(pyexprs))
 
     def head(self, num: int) -> RecordBatch:
-        return RecordBatch._from_PyRecordBatch(self._table.head(num))
+        return RecordBatch._from_pytable(self._table.head(num))
 
     def take(self, indices: Series) -> RecordBatch:
         assert isinstance(indices, Series)
-        return RecordBatch._from_PyRecordBatch(self._table.take(indices._series))
+        return RecordBatch._from_pytable(self._table.take(indices._series))
 
     def filter(self, exprs: ExpressionsProjection) -> RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
-        return RecordBatch._from_PyRecordBatch(self._table.filter(pyexprs))
+        return RecordBatch._from_pytable(self._table.filter(pyexprs))
 
     def sort(
         self,
@@ -273,7 +273,7 @@ class RecordBatch:
                 )
             else:
                 nulls_first = [bool(x) for x in nulls_first]
-        return RecordBatch._from_PyRecordBatch(self._table.sort(pyexprs, descending, nulls_first))
+        return RecordBatch._from_pytable(self._table.sort(pyexprs, descending, nulls_first))
 
     def sample(
         self,
@@ -285,32 +285,32 @@ class RecordBatch:
         if fraction is not None and size is not None:
             raise ValueError("Must specify either `fraction` or `size`, but not both")
         elif fraction is not None:
-            return RecordBatch._from_PyRecordBatch(self._table.sample_by_fraction(fraction, with_replacement, seed))
+            return RecordBatch._from_pytable(self._table.sample_by_fraction(fraction, with_replacement, seed))
         elif size is not None:
-            return RecordBatch._from_PyRecordBatch(self._table.sample_by_size(size, with_replacement, seed))
+            return RecordBatch._from_pytable(self._table.sample_by_size(size, with_replacement, seed))
         else:
             raise ValueError("Must specify either `fraction` or `size`")
 
     def agg(self, to_agg: list[Expression], group_by: ExpressionsProjection | None = None) -> RecordBatch:
         to_agg_pyexprs = [e._expr for e in to_agg]
         group_by_pyexprs = [e._expr for e in group_by] if group_by is not None else []
-        return RecordBatch._from_PyRecordBatch(self._table.agg(to_agg_pyexprs, group_by_pyexprs))
+        return RecordBatch._from_pytable(self._table.agg(to_agg_pyexprs, group_by_pyexprs))
 
     def pivot(
         self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
     ) -> RecordBatch:
         group_by_pyexprs = [e._expr for e in group_by]
-        return RecordBatch._from_PyRecordBatch(
+        return RecordBatch._from_pytable(
             self._table.pivot(group_by_pyexprs, pivot_column._expr, values_column._expr, names)
         )
 
     def quantiles(self, num: int) -> RecordBatch:
-        return RecordBatch._from_PyRecordBatch(self._table.quantiles(num))
+        return RecordBatch._from_pytable(self._table.quantiles(num))
 
     def explode(self, columns: ExpressionsProjection) -> RecordBatch:
         """NOTE: Expressions here must be Explode expressions."""
         to_explode_pyexprs = [e._expr for e in columns]
-        return RecordBatch._from_PyRecordBatch(self._table.explode(to_explode_pyexprs))
+        return RecordBatch._from_pytable(self._table.explode(to_explode_pyexprs))
 
     def hash_join(
         self,
@@ -330,7 +330,7 @@ class RecordBatch:
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
 
-        return RecordBatch._from_PyRecordBatch(
+        return RecordBatch._from_pytable(
             self._table.hash_join(right._table, left_on=left_exprs, right_on=right_exprs, how=how)
         )
 
@@ -355,7 +355,7 @@ class RecordBatch:
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
 
-        return RecordBatch._from_PyRecordBatch(
+        return RecordBatch._from_pytable(
             self._table.sort_merge_join(right._table, left_on=left_exprs, right_on=right_exprs, is_sorted=is_sorted)
         )
 
@@ -364,7 +364,7 @@ class RecordBatch:
             raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
 
         pyexprs = [e._expr for e in exprs]
-        return [RecordBatch._from_PyRecordBatch(t) for t in self._table.partition_by_hash(pyexprs, num_partitions)]
+        return [RecordBatch._from_pytable(t) for t in self._table.partition_by_hash(pyexprs, num_partitions)]
 
     def partition_by_range(
         self, partition_keys: ExpressionsProjection, boundaries: RecordBatch, descending: list[bool]
@@ -374,8 +374,7 @@ class RecordBatch:
 
         exprs = [e._expr for e in partition_keys]
         return [
-            RecordBatch._from_PyRecordBatch(t)
-            for t in self._table.partition_by_range(exprs, boundaries._table, descending)
+            RecordBatch._from_pytable(t) for t in self._table.partition_by_range(exprs, boundaries._table, descending)
         ]
 
     def partition_by_random(self, num_partitions: int, seed: int) -> list[RecordBatch]:
@@ -385,16 +384,16 @@ class RecordBatch:
         if not isinstance(seed, int):
             raise TypeError(f"Expected a seed to be int, got {type(seed)}")
 
-        return [RecordBatch._from_PyRecordBatch(t) for t in self._table.partition_by_random(num_partitions, seed)]
+        return [RecordBatch._from_pytable(t) for t in self._table.partition_by_random(num_partitions, seed)]
 
     def partition_by_value(self, partition_keys: ExpressionsProjection) -> tuple[list[RecordBatch], RecordBatch]:
         exprs = [e._expr for e in partition_keys]
         PyRecordBatchs, values = self._table.partition_by_value(exprs)
 
-        return [RecordBatch._from_PyRecordBatch(t) for t in PyRecordBatchs], RecordBatch._from_PyRecordBatch(values)
+        return [RecordBatch._from_pytable(t) for t in PyRecordBatchs], RecordBatch._from_pytable(values)
 
     def add_monotonically_increasing_id(self, partition_num: int, column_name: str) -> RecordBatch:
-        return RecordBatch._from_PyRecordBatch(self._table.add_monotonically_increasing_id(partition_num, column_name))
+        return RecordBatch._from_pytable(self._table.add_monotonically_increasing_id(partition_num, column_name))
 
     ###
     # Compute methods (Table -> Series)
@@ -453,7 +452,7 @@ class RecordBatch:
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> RecordBatch:
-        return RecordBatch._from_PyRecordBatch(
+        return RecordBatch._from_pytable(
             _read_parquet(
                 uri=path,
                 columns=columns,
@@ -493,7 +492,7 @@ class RecordBatch:
             multithreaded_io=multithreaded_io,
             coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
         )
-        return [RecordBatch._from_PyRecordBatch(t) for t in PyRecordBatchs]
+        return [RecordBatch._from_pytable(t) for t in PyRecordBatchs]
 
     @classmethod
     def read_parquet_statistics(
@@ -505,7 +504,7 @@ class RecordBatch:
         if not isinstance(paths, Series):
             paths = Series.from_pylist(paths, name="uris").cast(DataType.string())
         assert paths.name() == "uris", f"Expected input series to have name 'uris', but found: {paths.name()}"
-        return RecordBatch._from_PyRecordBatch(
+        return RecordBatch._from_pytable(
             _read_parquet_statistics(
                 uris=paths._series,
                 io_config=io_config,
@@ -523,7 +522,7 @@ class RecordBatch:
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
     ) -> RecordBatch:
-        return RecordBatch._from_PyRecordBatch(
+        return RecordBatch._from_pytable(
             _read_csv(
                 uri=path,
                 convert_options=convert_options,
@@ -545,7 +544,7 @@ class RecordBatch:
         multithreaded_io: bool | None = None,
         max_chunks_in_flight: int | None = None,
     ) -> RecordBatch:
-        return RecordBatch._from_PyRecordBatch(
+        return RecordBatch._from_pytable(
             _read_json(
                 uri=path,
                 convert_options=convert_options,

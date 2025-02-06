@@ -72,7 +72,7 @@ class MicroPartition:
         return MicroPartition._from_pymicropartition(_PyMicroPartition.from_scan_task(scan_task))
 
     @staticmethod
-    def _from_PyRecordBatch(pyt: _PyRecordBatch) -> MicroPartition:
+    def _from_pytable(pyt: _PyRecordBatch) -> MicroPartition:
         assert isinstance(pyt, _PyRecordBatch)
         return MicroPartition._from_pymicropartition(_PyMicroPartition.from_tables([pyt]))
 
@@ -129,7 +129,7 @@ class MicroPartition:
     ###
 
     def to_table(self) -> RecordBatch:
-        return RecordBatch._from_PyRecordBatch(self._micropartition.to_table())
+        return RecordBatch._from_pytable(self._micropartition.to_table())
 
     def to_arrow(self) -> pa.Table:
         return self.to_table().to_arrow()
