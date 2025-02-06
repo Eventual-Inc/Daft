@@ -17,6 +17,7 @@ pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
+    fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn broadcast(&self, num: usize) -> DaftResult<Series>;
     fn cast(&self, datatype: &DataType) -> DaftResult<Series>;
     fn filter(&self, mask: &BooleanArray) -> DaftResult<Series>;

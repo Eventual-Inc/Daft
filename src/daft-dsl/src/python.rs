@@ -360,6 +360,10 @@ impl PyExpr {
         Ok(self.expr.clone().agg_list().into())
     }
 
+    pub fn agg_set(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().agg_set().into())
+    }
+
     pub fn agg_concat(&self) -> PyResult<Self> {
         Ok(self.expr.clone().agg_concat().into())
     }
