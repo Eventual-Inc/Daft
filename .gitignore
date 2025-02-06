@@ -31,9 +31,6 @@ log/
 # pytest benchmarks
 .benchmarks
 
-# docs autogen
-/docs/source/api_docs/doc_gen/
-
 # Added by pyenv
 .python-version
 
@@ -46,3 +43,17 @@ log/
 
 # uv
 uv.lock
+
+# dependencies
+node_modules
+
+# next.js
+.next
+out
+
+# production
+/build
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

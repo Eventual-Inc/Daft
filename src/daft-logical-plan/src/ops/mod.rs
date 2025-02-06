@@ -4,7 +4,7 @@ mod concat;
 mod distinct;
 mod explode;
 mod filter;
-mod join;
+pub mod join;
 mod limit;
 mod monotonically_increasing_id;
 mod pivot;

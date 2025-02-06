@@ -79,13 +79,20 @@ impl ShuffleExchange {
                     target_num_partitions,
                 ));
             }
-            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
+            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                target_spec,
+                pre_shuffle_merge_threshold,
+            } => {
                 res.push("Strategy: MapReduceWithPreShuffleMerge".to_string());
                 res.push(format!("Target Spec: {:?}", target_spec));
                 res.push(format!(
                     "Number of Partitions: {} → {}",
                     self.input.clustering_spec().num_partitions(),
                     target_spec.num_partitions(),
+                ));
+                res.push(format!(
+                    "Pre-Shuffle Merge Threshold: {}",
+                    pre_shuffle_merge_threshold
                 ));
             }
         }
@@ -104,8 +111,72 @@ pub struct ShuffleExchangeFactory {
 }
 
 impl ShuffleExchangeFactory {
+    const PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE: usize = 200;
+
     pub fn new(input: PhysicalPlanRef) -> Self {
         Self { input }
+    }
+
+    fn should_use_pre_shuffle_merge(
+        &self,
+        input_num_partitions: usize,
+        target_num_partitions: usize,
+    ) -> bool {
+        let total_num_partitions = input_num_partitions * target_num_partitions;
+        let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
+        geometric_mean > Self::PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE
+    }
+
+    fn get_shuffle_strategy(
+        &self,
+        clustering_spec: Arc<ClusteringSpec>,
+        cfg: Option<&DaftExecutionConfig>,
+    ) -> ShuffleExchangeStrategy {
+        match cfg {
+            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
+                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                    target_spec: clustering_spec,
+                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
+                }
+            }
+            Some(cfg) if cfg.shuffle_algorithm == "map_reduce" => {
+                ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+                    target_spec: clustering_spec,
+                }
+            }
+            Some(cfg) if cfg.shuffle_algorithm == "auto" => {
+                if self.should_use_pre_shuffle_merge(
+                    self.input.clustering_spec().num_partitions(),
+                    clustering_spec.num_partitions(),
+                ) {
+                    ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                        target_spec: clustering_spec,
+                        pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
+                    }
+                } else {
+                    ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+                        target_spec: clustering_spec,
+                    }
+                }
+            }
+            None => {
+                if self.should_use_pre_shuffle_merge(
+                    self.input.clustering_spec().num_partitions(),
+                    clustering_spec.num_partitions(),
+                ) {
+                    ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                        target_spec: clustering_spec,
+                        pre_shuffle_merge_threshold: DaftExecutionConfig::default()
+                            .pre_shuffle_merge_threshold,
+                    }
+                } else {
+                    ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+                        target_spec: clustering_spec,
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
     }
 
     pub fn get_hash_partitioning(
@@ -119,17 +190,7 @@ impl ShuffleExchangeFactory {
             by,
         )));
 
-        let strategy = match cfg {
-            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
-                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
-                    target_spec: clustering_spec,
-                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
-                }
-            }
-            _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
-                target_spec: clustering_spec,
-            },
-        };
+        let strategy = self.get_shuffle_strategy(clustering_spec, cfg);
 
         ShuffleExchange {
             input: self.input.clone(),
@@ -150,17 +211,7 @@ impl ShuffleExchangeFactory {
             descending,
         )));
 
-        let strategy = match cfg {
-            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
-                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
-                    target_spec: clustering_spec,
-                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
-                }
-            }
-            _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
-                target_spec: clustering_spec,
-            },
-        };
+        let strategy = self.get_shuffle_strategy(clustering_spec, cfg);
 
         ShuffleExchange {
             input: self.input.clone(),
@@ -177,17 +228,7 @@ impl ShuffleExchangeFactory {
             num_partitions,
         )));
 
-        let strategy = match cfg {
-            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
-                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
-                    target_spec: clustering_spec,
-                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
-                }
-            }
-            _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
-                target_spec: clustering_spec,
-            },
-        };
+        let strategy = self.get_shuffle_strategy(clustering_spec, cfg);
 
         ShuffleExchange {
             input: self.input.clone(),

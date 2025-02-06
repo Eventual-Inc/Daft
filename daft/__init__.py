@@ -58,7 +58,11 @@ analytics_client.track_import()
 # Daft top-level imports
 ###
 
-from daft.catalog import read_table, register_table
+from daft.catalog import (
+    Identifier,
+    read_table,
+    register_table,
+)
 from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
 from daft.convert import (
     from_arrow,
@@ -72,7 +76,7 @@ from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.logical.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, lit, interval, coalesce
+from daft.expressions import Expression, col, list_, lit, interval, struct, coalesce
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -99,6 +103,7 @@ __all__ = [
     "DataFrame",
     "DataType",
     "Expression",
+    "Identifier",
     "ImageFormat",
     "ImageMode",
     "ResourceRequest",
@@ -116,6 +121,7 @@ __all__ = [
     "from_pylist",
     "from_ray_dataset",
     "interval",
+    "list_",
     "lit",
     "planning_config_ctx",
     "read_csv",
@@ -134,6 +140,7 @@ __all__ = [
     "set_planning_config",
     "sql",
     "sql_expr",
+    "struct",
     "to_struct",
     "udf",
 ]

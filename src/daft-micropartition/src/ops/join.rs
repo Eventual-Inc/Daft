@@ -25,7 +25,7 @@ impl MicroPartition {
     where
         F: FnOnce(&Table, &Table, &[ExprRef], &[ExprRef], JoinType) -> DaftResult<Table>,
     {
-        let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on, how)?;
+        let join_schema = infer_join_schema(&self.schema, &right.schema, how)?;
         match (how, self.len(), right.len()) {
             (JoinType::Inner | JoinType::Left | JoinType::Semi, 0, _)
             | (JoinType::Inner | JoinType::Right, _, 0)

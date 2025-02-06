@@ -1968,6 +1968,7 @@ dependencies = [
  "common-treenode",
  "daft-dsl",
  "daft-schema",
+ "indexmap 2.7.0",
  "rstest",
 ]
 
@@ -1981,6 +1982,7 @@ dependencies = [
  "lazy_static",
  "pyo3",
  "snafu",
+ "sqlparser",
 ]
 
 [[package]]
@@ -2322,6 +2324,7 @@ dependencies = [
  "futures",
  "indexmap 2.7.0",
  "indicatif",
+ "itertools 0.11.0",
  "lazy_static",
  "log",
  "loole",
@@ -2371,6 +2374,7 @@ dependencies = [
  "indexmap 2.7.0",
  "itertools 0.11.0",
  "log",
+ "num-format",
  "pretty_assertions",
  "pyo3",
  "rand 0.8.5",

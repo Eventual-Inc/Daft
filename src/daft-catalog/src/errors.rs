@@ -15,11 +15,11 @@ pub enum Error {
     #[snafu(display("Catalog not found: {}", name))]
     CatalogNotFound { name: String },
 
-    #[snafu(display(
-        "Invalid table name (expected only alphanumeric characters and '_'): {}",
-        name
-    ))]
-    InvalidTableName { name: String },
+    #[snafu(display("Invalid identifier `{input}`."))]
+    InvalidIdentifier { input: String },
+
+    #[snafu(display("{message}"))]
+    Unsupported { message: String },
 
     #[cfg(feature = "python")]
     #[snafu(display("Python error during {}: {}", context, source))]
@@ -36,9 +36,8 @@ impl From<Error> for common_error::DaftError {
         match &err {
             Error::TableNotFound { .. }
             | Error::CatalogNotFound { .. }
-            | Error::InvalidTableName { .. } => {
-                common_error::DaftError::CatalogError(err.to_string())
-            }
+            | Error::InvalidIdentifier { .. }
+            | Error::Unsupported { .. } => common_error::DaftError::CatalogError(err.to_string()),
             #[cfg(feature = "python")]
             Error::PythonError { .. } => common_error::DaftError::CatalogError(err.to_string()),
         }

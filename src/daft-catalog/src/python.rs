@@ -1,7 +1,10 @@
 use daft_logical_plan::PyLogicalPlanBuilder;
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyIndexError, prelude::*};
 
-use crate::global_catalog;
+use crate::{
+    global_catalog,
+    identifier::{Identifier, Namespace},
+};
 
 /// Read a table from the specified `DaftMetaCatalog`.
 ///
@@ -88,13 +91,67 @@ pub fn py_unregister_catalog(catalog_name: Option<&str>) -> bool {
     crate::global_catalog::unregister_catalog(catalog_name)
 }
 
+/// Bridge from identifier.py to identifier.rs
+#[pyclass(sequence)]
+#[derive(Debug, Clone)]
+pub struct PyIdentifier(Identifier);
+
+#[pymethods]
+impl PyIdentifier {
+    #[new]
+    pub fn new(namespace: Namespace, name: String) -> PyIdentifier {
+        Identifier::new(namespace, name).into()
+    }
+
+    #[staticmethod]
+    pub fn parse(input: &str) -> PyResult<PyIdentifier> {
+        Ok(Identifier::parse(input)?.into())
+    }
+
+    pub fn eq(&self, other: &Self) -> PyResult<bool> {
+        Ok(self.0.eq(&other.0))
+    }
+
+    pub fn getitem(&self, index: isize) -> PyResult<String> {
+        let mut i = index;
+        let len = self.__len__()?;
+        if i < 0 {
+            // negative index
+            i = (len as isize) + index;
+        }
+        if i < 0 || len <= i as usize {
+            // out of range
+            return Err(PyIndexError::new_err(i));
+        }
+        if i as usize == len - 1 {
+            // last is name
+            return Ok(self.0.name.to_string());
+        }
+        Ok(self.0.namespace[i as usize].to_string())
+    }
+
+    pub fn __len__(&self) -> PyResult<usize> {
+        Ok(self.0.namespace.len() + 1)
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.0))
+    }
+}
+
+impl From<Identifier> for PyIdentifier {
+    fn from(value: Identifier) -> Self {
+        Self(value)
+    }
+}
+
+/// Defines the python daft.
 pub fn register_modules<'py>(parent: &Bound<'py, PyModule>) -> PyResult<Bound<'py, PyModule>> {
     let module = PyModule::new(parent.py(), "catalog")?;
-
+    module.add_class::<PyIdentifier>()?;
     module.add_wrapped(wrap_pyfunction!(py_read_table))?;
     module.add_wrapped(wrap_pyfunction!(py_register_table))?;
     module.add_wrapped(wrap_pyfunction!(py_unregister_catalog))?;
-
     parent.add_submodule(&module)?;
     Ok(module)
 }

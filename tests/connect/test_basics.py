@@ -345,3 +345,18 @@ def test_with_columns_renamed(spark_session):
     # assert set(renamed_df.columns) == {"number", "character"}
     # assert "id" not in renamed_df.columns
     # assert [(row["number"], row["character"]) for row in collected] == [(0, 0), (1, 1)]
+
+
+def test_explain(spark_session, capsys):
+    df = spark_session.createDataFrame([(1, 2), (2, 2)], ["a", "b"])
+    df.explain()
+    actual = capsys.readouterr()
+
+    expected = """* Project: col(a), col(b)
+|
+* Source:
+|   Number of partitions = 1
+|   Output schema = a#Int64, b#Int64
+
+"""
+    assert actual.out == expected

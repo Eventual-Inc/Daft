@@ -70,8 +70,8 @@ def test_series_cast_null(target_dtype) -> None:
     [
         (DataType.null(), [None, None, None]),
         (DataType.bool(), [True, False, None]),
-        (DataType.string(), ["1", "0", "0"]),
-        (DataType.binary(), [b"1", b"0", b"0"]),
+        (DataType.string(), ["true", "false", None]),
+        (DataType.binary(), [b"1", b"0", None]),
         (DataType.python(), [True, False, None]),
     ]
     + [(dtype, [1, 0, None]) for dtype in daft_int_types]

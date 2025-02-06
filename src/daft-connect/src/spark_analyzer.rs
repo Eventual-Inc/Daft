@@ -36,7 +36,8 @@ use spark_connect::{
     },
     read::ReadType,
     relation::RelType,
-    Deduplicate, Expression, Limit, Range, Relation, Sort, Sql,
+    set_operation::SetOpType,
+    Deduplicate, Expression, Limit, Range, Relation, SetOperation, Sort, Sql,
 };
 use tracing::debug;
 
@@ -60,6 +61,14 @@ impl SparkAnalyzer<'_> {
         SparkAnalyzer { session }
     }
 
+    /// Creates a logical source (scan) operator from a vec of tables.
+    ///
+    /// Consider moving into LogicalBuilder, but this would re-introduce the daft-table dependency.
+    ///
+    /// TODOs
+    ///   * https://github.com/Eventual-Inc/Daft/pull/3250
+    ///   * https://github.com/Eventual-Inc/Daft/issues/3718
+    ///
     pub fn create_in_memory_scan(
         &self,
         plan_id: usize,
@@ -70,8 +79,7 @@ impl SparkAnalyzer<'_> {
 
         match runner {
             Runner::Ray => {
-                let mp =
-                    MicroPartition::new_loaded(tables[0].schema.clone(), Arc::new(tables), None);
+                let mp = MicroPartition::new_loaded(schema, Arc::new(tables), None);
                 Python::with_gil(|py| {
                     // Convert MicroPartition to a logical plan using Python interop.
                     let py_micropartition = py
@@ -146,6 +154,7 @@ impl SparkAnalyzer<'_> {
             RelType::Deduplicate(rel) => self.deduplicate(*rel).await,
             RelType::Sort(rel) => self.sort(*rel).await,
             RelType::Sql(sql) => self.sql(sql).await,
+            RelType::SetOp(set_op) => self.set_op(*set_op).await,
             plan => not_yet_implemented!(r#"relation type: "{}""#, rel_name(&plan)),
         }
     }
@@ -597,6 +606,29 @@ impl SparkAnalyzer<'_> {
             .select(column_names)
             .wrap_err("Failed to add columns to logical plan")?;
         Ok(plan)
+    }
+
+    async fn set_op(&self, set_op: SetOperation) -> ConnectResult<LogicalPlanBuilder> {
+        let set_op_type = set_op.set_op_type;
+        let left = set_op.left_input.required("left_input")?;
+        let right = set_op.right_input.required("right_input")?;
+        let is_all = set_op.is_all.required("is_all")?;
+
+        let set_op_type =
+            SetOpType::try_from(set_op_type).wrap_err("Invalid set operation type")?;
+
+        let left = Box::pin(self.to_logical_plan(*left)).await?;
+        let right = Box::pin(self.to_logical_plan(*right)).await?;
+
+        match set_op_type {
+            SetOpType::Except => left.except(&right, is_all),
+            SetOpType::Intersect => left.intersect(&right, is_all),
+            SetOpType::Union => left.union(&right, is_all),
+            SetOpType::Unspecified => {
+                invalid_argument_err!("SetOpType must be specified; got Unspecified")
+            }
+        }
+        .map_err(Into::into)
     }
 
     pub async fn relation_to_spark_schema(
