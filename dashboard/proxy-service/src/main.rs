@@ -3,6 +3,7 @@ use std::net::Ipv4Addr;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
     body::{Bytes, Incoming},
+    header,
     server::conn::http1,
     service::service_fn,
     Method, Request, Response, StatusCode,
@@ -33,6 +34,14 @@ fn response(status: StatusCode, body: impl Serialize) -> Res {
     Response::builder()
         .status(status)
         .header("Content-Type", "application/json")
+        .header(
+            header::ACCESS_CONTROL_ALLOW_ORIGIN,
+            format!("http://{}:{}", Ipv4Addr::LOCALHOST, DASHBOARD_PORT),
+        )
+        .header(
+            header::ACCESS_CONTROL_ALLOW_METHODS,
+            Method::GET.to_string(),
+        )
         .body(Full::new(body.into()).boxed())
         .expect("Responses should always be able to be constructed")
 }
