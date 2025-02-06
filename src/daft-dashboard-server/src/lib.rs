@@ -44,28 +44,6 @@ async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> anyhow::Result<R
     Ok(Request::from_parts(parts, body))
 }
 
-async fn run_server<F>(f: fn(Req) -> F, addr: Ipv4Addr, port: u16)
-where
-    F: 'static + Send + Future<Output = anyhow::Result<Res>>,
-{
-    let listener = TcpListener::bind((addr, port))
-        .await
-        .expect("Failed to bind to port");
-    loop {
-        let (stream, _) = listener
-            .accept()
-            .await
-            .expect("Unable to accept incoming connection");
-        let io = TokioIo::new(stream);
-        spawn(async move {
-            http1::Builder::new()
-                .serve_connection(io, service_fn(f))
-                .await
-                .expect("Failed to serve endpoint");
-        });
-    }
-}
-
 async fn daft_http_application(req: Req) -> anyhow::Result<Res> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/") => {
@@ -90,8 +68,29 @@ async fn dashboard_http_application(req: Req) -> anyhow::Result<Res> {
     }
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
-async fn main() {
+pub async fn run() {
+    async fn run_server<F>(f: fn(Req) -> F, addr: Ipv4Addr, port: u16)
+    where
+        F: 'static + Send + Future<Output = anyhow::Result<Res>>,
+    {
+        let listener = TcpListener::bind((addr, port))
+            .await
+            .expect("Failed to bind to port");
+        loop {
+            let (stream, _) = listener
+                .accept()
+                .await
+                .expect("Unable to accept incoming connection");
+            let io = TokioIo::new(stream);
+            spawn(async move {
+                http1::Builder::new()
+                    .serve_connection(io, service_fn(f))
+                    .await
+                    .expect("Failed to serve endpoint");
+            });
+        }
+    }
+
     tokio::join!(
         run_server(daft_http_application, Ipv4Addr::LOCALHOST, DAFT_PORT),
         run_server(

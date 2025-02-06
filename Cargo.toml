@@ -170,11 +170,10 @@ members = [
   "src/hyperloglog",
   "src/daft-connect",
   "src/parquet2",
-  # "src/spark-connect-script",
   "src/generated/spark-connect",
   "src/common/partitioning",
   "src/daft-ray-execution",
-  "dashboard/proxy-service"
+  "src/daft-dashboard-server"
 ]
 
 [workspace.dependencies]
