@@ -190,15 +190,17 @@ class DataFrame:
         plan_time_end = datetime.now(timezone.utc)
 
         try:
+            id = uuid4()
             requests.post(
                 f"http://{addr}:{port}",
                 json={
-                    "id": str(uuid4()),
+                    "id": str(id),
                     "mermaid-plan": mermaid_plan,
                     "plan-time-start": str(plan_time_start),
                     "plan-time-end": str(plan_time_end),
                 },
             )
+            print(f"Query ID: {id}")
         except requests.exceptions.ConnectionError as conn_error:
             warnings.warn(
                 "Unable to broadcast daft query plan over http."
