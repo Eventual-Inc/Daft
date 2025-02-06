@@ -192,13 +192,16 @@ class DataFrame:
         )._repr_markdown_()
         plan_time_end = datetime.now(timezone.utc)
 
+        headers = {
+            "Content-Type": "application/json",
+        }
         data = {
             "id": str(uuid4()),
             "mermaid-plan": mermaid_plan,
             "plan-time-start": str(plan_time_start),
             "plan-time-end": str(plan_time_end),
         }
-        req = request.Request(f"http://{addr}:{port}", data=str(data).encode("utf-8"))
+        req = request.Request(f"http://{addr}:{port}", headers=headers, data=str(data).encode("utf-8"))
         request.urlopen(req)
 
     @broadcast_metrics
