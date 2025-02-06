@@ -22,9 +22,9 @@ pub struct DaftContext {
 }
 
 #[derive(Debug)]
-pub struct ContextState {
+struct ContextState {
     /// Shared configuration for the context
-    pub config: Config,
+    config: Config,
     /// The runner to use for executing queries.
     /// most scenarios of etting it more than once will result in an error.
     /// Since native and py both use the same partition set, they can be swapped out freely
@@ -50,7 +50,7 @@ impl ContextState {
     /// Retrieves the runner.
     ///
     /// WARNING: This will set the runner if it has not yet been set.
-    pub fn get_or_create_runner(&mut self) -> DaftResult<Arc<Runner>> {
+    fn get_or_create_runner(&mut self) -> DaftResult<Arc<Runner>> {
         if let Some(runner) = self.runner.as_ref() {
             return Ok(runner.clone());
         }
@@ -67,28 +67,13 @@ impl ContextState {
 
 #[cfg(not(feature = "python"))]
 impl ContextState {
-    pub fn get_or_create_runner(&mut self) -> DaftResult<Arc<Runner>> {
+    fn get_or_create_runner(&mut self) -> DaftResult<Arc<Runner>> {
         unimplemented!()
     }
 }
 
 #[cfg(feature = "python")]
 impl DaftContext {
-    /// Creates a new DaftContext
-    #[cfg(feature = "python")]
-    #[allow(clippy::new_without_default)]
-    /// This is not `pub` because it should only be used by the `get_context` function.
-    /// we also don't want a `default` because we only want a single instance of the context.
-    fn new() -> Self {
-        let state = ContextState {
-            config: Default::default(),
-            runner: None,
-        };
-        let state = RwLock::new(state);
-        let state = Arc::new(state);
-        Self { state }
-    }
-
     /// Retrieves the runner.
     ///
     /// WARNING: This will set the runner if it has not yet been set.
@@ -139,13 +124,8 @@ impl DaftContext {
     }
 
     /// Get a read only reference to the state.
-    pub fn state(&self) -> RwLockReadGuard<'_, ContextState> {
+    fn state(&self) -> RwLockReadGuard<'_, ContextState> {
         self.state.read().unwrap()
-    }
-
-    /// get a mutable reference to the state.
-    pub fn state_mut(&self) -> std::sync::RwLockWriteGuard<'_, ContextState> {
-        self.state.write().unwrap()
     }
 
     /// get the execution config
@@ -161,11 +141,6 @@ impl DaftContext {
 
 #[cfg(not(feature = "python"))]
 impl DaftContext {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        unimplemented!()
-    }
-
     pub fn get_or_create_runner(&self) -> DaftResult<Arc<Runner>> {
         unimplemented!()
     }
@@ -194,7 +169,14 @@ pub fn get_context() -> DaftContext {
     match DAFT_CONTEXT.get() {
         Some(ctx) => ctx.clone(),
         None => {
-            let ctx = DaftContext::new();
+            let state = ContextState {
+                config: Default::default(),
+                runner: None,
+            };
+            let state = RwLock::new(state);
+            let state = Arc::new(state);
+            let ctx = DaftContext { state };
+
             DAFT_CONTEXT
                 .set(ctx.clone())
                 .expect("Failed to set DaftContext");
