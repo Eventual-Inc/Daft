@@ -1,5 +1,6 @@
 use std::{net::Ipv4Addr, sync::OnceLock};
 
+use chrono::{DateTime, Utc};
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
     body::{Bytes, Incoming},
@@ -26,9 +27,12 @@ fn query_metadatas() -> &'static RwLock<Vec<QueryMetadata>> {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct QueryMetadata {
+    id: String,
     mermaid_plan: String,
+    plan_time_start: DateTime<Utc>,
+    plan_time_end: DateTime<Utc>,
 }
 
 fn response(status: StatusCode, body: impl Serialize) -> Res {
