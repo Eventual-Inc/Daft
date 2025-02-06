@@ -1,8 +1,13 @@
 use std::net::Ipv4Addr;
 
-use http_body_util::Full;
-use hyper::{body::Bytes, server::conn::http2, service::service_fn, Request, Response};
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use http_body_util::{combinators::BoxBody, BodyExt, Empty};
+use hyper::{
+    body::{Bytes, Incoming},
+    server::conn::http1,
+    service::service_fn,
+    Method, Request, Response, StatusCode,
+};
+use hyper_util::rt::TokioIo;
 use tokio::{
     net::TcpListener,
     spawn,
@@ -10,13 +15,30 @@ use tokio::{
 };
 
 type Message = ();
+type Req<T = Incoming> = Request<T>;
+type Res = Response<BoxBody<Bytes, std::convert::Infallible>>;
+
 const DAFT_PORT: u16 = 3238;
 
-async fn daft_http_application(
-    _: Sender<Message>,
-    _: Request<hyper::body::Incoming>,
-) -> anyhow::Result<Response<Full<Bytes>>> {
-    todo!()
+// fn response(status: StatusCode, body: impl Into<Bytes>) -> Res {
+//     Response::builder()
+//         .status(status)
+//         .body(Full::new(body.into()).boxed())
+//         .expect("Responses should always be able to be constructed")
+// }
+
+fn empty_response(status: StatusCode) -> Res {
+    Response::builder()
+        .status(status)
+        .body(Empty::default().boxed())
+        .expect("Responses should always be able to be constructed")
+}
+
+async fn daft_http_application(_: Sender<Message>, req: Req) -> anyhow::Result<Res> {
+    match (req.method(), req.uri().path()) {
+        (&Method::POST, "/") => Ok(empty_response(StatusCode::OK)),
+        _ => Ok(empty_response(StatusCode::NOT_FOUND)),
+    }
 }
 
 async fn run_daft_server(tx: Sender<Message>) {
@@ -28,7 +50,7 @@ async fn run_daft_server(tx: Sender<Message>) {
         let io = TokioIo::new(stream);
         let tx = tx.clone();
         spawn(async move {
-            if let Err(err) = http2::Builder::new(TokioExecutor::default())
+            if let Err(err) = http1::Builder::new()
                 .serve_connection(
                     io,
                     service_fn(move |req| daft_http_application(tx.clone(), req)),
