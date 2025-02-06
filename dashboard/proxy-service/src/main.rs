@@ -1,4 +1,7 @@
-use std::net::Ipv4Addr;
+use std::{
+    net::Ipv4Addr,
+    sync::{Mutex, OnceLock},
+};
 
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
@@ -10,18 +13,19 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    net::TcpListener,
-    spawn,
-    sync::broadcast::{self, error::TryRecvError, Receiver, Sender},
-};
+use tokio::{net::TcpListener, spawn};
 
-type Message = DaftBroadcast;
 type Req<T = Incoming> = Request<T>;
 type Res = Response<BoxBody<Bytes, std::convert::Infallible>>;
 
 const DAFT_PORT: u16 = 3238;
 const DASHBOARD_PORT: u16 = DAFT_PORT + 1;
+
+static QUERIES: OnceLock<Mutex<Vec<DaftBroadcast>>> = OnceLock::new();
+
+fn queries() -> &'static Mutex<Vec<DaftBroadcast>> {
+    QUERIES.get_or_init(Mutex::default)
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -30,22 +34,11 @@ struct DaftBroadcast {
 }
 
 fn response(status: StatusCode, body: impl Serialize) -> Res {
-    /// This will allow the dashboard application server to hit this cross-origin endpoint.
-    ///
-    /// # Note
-    /// If you run the Next.js server application on *any* other port than 3000, you will need to
-    /// change the below port value to match. Otherwise, CORS policies will fail the request.
-    const CORS_POLICY_ALLOW: &str = "http://localhost:3000";
-
     let body = serde_json::to_string(&body).expect("Body should always be serializable");
     Response::builder()
         .status(status)
         .header("Content-Type", "application/json")
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, CORS_POLICY_ALLOW)
-        .header(
-            header::ACCESS_CONTROL_ALLOW_METHODS,
-            Method::GET.to_string(),
-        )
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000")
         .body(Full::new(body.into()).boxed())
         .expect("Responses should always be able to be constructed")
 }
@@ -65,12 +58,14 @@ async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> anyhow::Result<R
     Ok(Request::from_parts(parts, body))
 }
 
-async fn run_daft_server(tx: Sender<Message>) {
-    async fn daft_http_application(tx: Sender<Message>, req: Req) -> anyhow::Result<Res> {
+async fn run_daft_server() {
+    async fn daft_http_application(req: Req) -> anyhow::Result<Res> {
         match (req.method(), req.uri().path()) {
             (&Method::POST, "/") => {
                 let req = deserialize::<DaftBroadcast>(req).await?;
-                let _ = tx.send(req.into_body())?;
+                let mut queries = queries().lock().unwrap();
+                queries.push(req.into_body());
+                // let _ = tx.send(req.into_body())?;
                 Ok(empty_response(StatusCode::OK))
             }
             _ => Ok(empty_response(StatusCode::NOT_FOUND)),
@@ -83,26 +78,20 @@ async fn run_daft_server(tx: Sender<Message>) {
     loop {
         let (stream, _) = listener.accept().await.unwrap();
         let io = TokioIo::new(stream);
-        let tx = tx.clone();
         spawn(async move {
             http1::Builder::new()
-                .serve_connection(
-                    io,
-                    service_fn(move |req| daft_http_application(tx.clone(), req)),
-                )
+                .serve_connection(io, service_fn(daft_http_application))
                 .await
                 .ok();
         });
     }
 }
 
-async fn run_dashboard_server(mut rx: Receiver<Message>) {
-    async fn dashboard_http_application(
-        queries: &[DaftBroadcast],
-        req: Req,
-    ) -> anyhow::Result<Res> {
+async fn run_dashboard_server() {
+    async fn dashboard_http_application(req: Req) -> anyhow::Result<Res> {
+        let queries = queries().lock().unwrap();
         match (req.method(), req.uri().path()) {
-            (&Method::GET, "/") => Ok(response(StatusCode::OK, queries.to_vec())),
+            (&Method::GET, "/") => Ok(response(StatusCode::OK, &*queries)),
             _ => Ok(empty_response(StatusCode::NOT_FOUND)),
         }
     }
@@ -110,37 +99,20 @@ async fn run_dashboard_server(mut rx: Receiver<Message>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, DASHBOARD_PORT))
         .await
         .unwrap();
-    let mut queries = vec![];
     loop {
         let (stream, _) = listener.accept().await.unwrap();
         let io = TokioIo::new(stream);
-        loop {
-            match rx.try_recv() {
-                Ok(daft_broadcast) => queries.push(daft_broadcast),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Lagged(..)) => continue,
-                Err(TryRecvError::Closed) => panic!("Receiver has forcibly closed"),
-            }
-        }
-        spawn({
-            let queries = queries.clone();
-            async move {
-                http1::Builder::new()
-                    .serve_connection(
-                        io,
-                        service_fn(|req| dashboard_http_application(&queries, req)),
-                    )
-                    .await
-                    .ok();
-            }
+        spawn(async move {
+            http1::Builder::new()
+                .serve_connection(io, service_fn(dashboard_http_application))
+                .await
+                .ok();
         });
     }
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 3)]
 async fn main() {
-    const CHANNEL_SIZE: usize = 256;
-    let (tx, rx) = broadcast::channel(CHANNEL_SIZE);
-    tokio::join!(run_daft_server(tx), run_dashboard_server(rx));
+    tokio::join!(run_daft_server(), run_dashboard_server());
     unreachable!("The daft and dashboard servers should be infinitely running processes");
 }
