@@ -6,7 +6,6 @@ mod literal;
 use std::{io::Cursor, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
-use daft_context::get_context;
 use daft_core::series::Series;
 use daft_dsl::col;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
@@ -661,8 +660,7 @@ impl SparkAnalyzer<'_> {
             not_yet_implemented!("pos_arguments");
         }
 
-        let ctx = get_context();
-        let catalog = ctx.catalog().clone();
+        let catalog = self.session.catalog().clone();
 
         let mut planner = SQLPlanner::new(catalog);
         let plan = planner.plan_sql(&query)?;

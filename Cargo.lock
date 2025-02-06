@@ -2014,6 +2014,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-runtime",
+ "daft-catalog",
  "daft-context",
  "daft-core",
  "daft-dsl",
@@ -2043,7 +2044,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-error",
- "daft-catalog",
  "daft-py-runners",
  "log",
  "once_cell",

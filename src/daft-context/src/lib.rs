@@ -3,7 +3,6 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_error::{DaftError, DaftResult};
-use daft_catalog::DaftCatalog;
 #[cfg(feature = "python")]
 use daft_py_runners::{NativeRunner, PyRunner, RayRunner};
 use daft_py_runners::{Runner, RunnerConfig};
@@ -26,9 +25,6 @@ pub struct DaftContext {
 pub struct ContextState {
     /// Shared configuration for the context
     pub config: Config,
-    /// The data catalog
-    pub catalog: DaftCatalog,
-
     /// The runner to use for executing queries.
     /// most scenarios of etting it more than once will result in an error.
     /// Since native and py both use the same partition set, they can be swapped out freely
@@ -86,7 +82,6 @@ impl DaftContext {
     fn new() -> Self {
         let state = ContextState {
             config: Default::default(),
-            catalog: DaftCatalog::default(),
             runner: None,
         };
         let state = RwLock::new(state);
@@ -151,16 +146,6 @@ impl DaftContext {
     /// get a mutable reference to the state.
     pub fn state_mut(&self) -> std::sync::RwLockWriteGuard<'_, ContextState> {
         self.state.write().unwrap()
-    }
-
-    /// get a read only reference to the catalog
-    pub fn catalog(&self) -> std::sync::MappedRwLockReadGuard<'_, DaftCatalog> {
-        RwLockReadGuard::map(self.state(), |state| &state.catalog)
-    }
-
-    /// get a mutable reference to the catalog
-    pub fn catalog_mut(&self) -> std::sync::MappedRwLockWriteGuard<'_, DaftCatalog> {
-        std::sync::RwLockWriteGuard::map(self.state_mut(), |state| &mut state.catalog)
     }
 
     /// get the execution config

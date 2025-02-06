@@ -234,16 +234,14 @@ impl Session {
             })?;
 
         {
-            let ctx = get_context();
-            let catalog = ctx.catalog();
+            let catalog = self.catalog();
 
             if !replace && catalog.contains_table(&name) {
                 return Err(Status::internal("Dataframe view already exists"));
             }
         }
 
-        let ctx = get_context();
-        let mut catalog = ctx.catalog_mut();
+        let mut catalog = self.catalog_mut();
 
         catalog.register_table(&name, input).map_err(|e| {
             Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
@@ -284,8 +282,7 @@ impl Session {
             not_yet_implemented!("Input");
         }
 
-        let ctx = get_context();
-        let catalog = ctx.catalog().clone();
+        let catalog = self.catalog().clone();
 
         let mut planner = daft_sql::SQLPlanner::new(catalog);
 
