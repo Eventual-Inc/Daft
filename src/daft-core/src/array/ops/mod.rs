@@ -9,6 +9,7 @@ pub mod as_arrow;
 mod between;
 mod binary;
 mod bitwise;
+mod bool_agg;
 pub(crate) mod broadcast;
 pub(crate) mod cast;
 mod cbrt;
@@ -239,4 +240,12 @@ pub trait DaftHllMergeAggable {
     type Output;
     fn hll_merge(&self) -> Self::Output;
     fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftBoolAggable {
+    type Output;
+    fn bool_and(&self) -> Self::Output;
+    fn bool_or(&self) -> Self::Output;
+    fn grouped_bool_and(&self, groups: &GroupIndices) -> Self::Output;
+    fn grouped_bool_or(&self, groups: &GroupIndices) -> Self::Output;
 }
