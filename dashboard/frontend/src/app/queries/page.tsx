@@ -75,7 +75,7 @@ export default function DataTableDemo() {
                 setQueryInfo(json);
             } catch (error) { }
         })();
-    });
+    }, []);
     const table = useReactTable({
         data: queryInfo!,
         columns,
