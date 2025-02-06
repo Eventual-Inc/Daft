@@ -1,7 +1,4 @@
-use std::{
-    net::Ipv4Addr,
-    sync::{Mutex, OnceLock},
-};
+use std::{net::Ipv4Addr, sync::OnceLock};
 
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
@@ -12,6 +9,7 @@ use hyper::{
     Method, Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, spawn};
 
@@ -21,24 +19,31 @@ type Res = Response<BoxBody<Bytes, std::convert::Infallible>>;
 const DAFT_PORT: u16 = 3238;
 const DASHBOARD_PORT: u16 = DAFT_PORT + 1;
 
-static QUERIES: OnceLock<Mutex<Vec<DaftBroadcast>>> = OnceLock::new();
+static QUERY_METADATAS: OnceLock<RwLock<Vec<QueryMetadata>>> = OnceLock::new();
 
-fn queries() -> &'static Mutex<Vec<DaftBroadcast>> {
-    QUERIES.get_or_init(Mutex::default)
+fn query_metadatas() -> &'static RwLock<Vec<QueryMetadata>> {
+    QUERY_METADATAS.get_or_init(RwLock::default)
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-struct DaftBroadcast {
+struct QueryMetadata {
     mermaid_plan: String,
 }
 
 fn response(status: StatusCode, body: impl Serialize) -> Res {
+    /// This bypasses CORS restrictions.
+    ///
+    /// # Note
+    /// If you are running the web application from another port than 3000, you will need to change
+    /// the below port. If you do not, you will get a CORS policy error.
+    const CORS_ALLOW_ORIGIN: &str = "http://localhost:3000";
+
     let body = serde_json::to_string(&body).expect("Body should always be serializable");
     Response::builder()
         .status(status)
         .header("Content-Type", "application/json")
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, CORS_ALLOW_ORIGIN)
         .body(Full::new(body.into()).boxed())
         .expect("Responses should always be able to be constructed")
 }
@@ -62,10 +67,8 @@ async fn run_daft_server() {
     async fn daft_http_application(req: Req) -> anyhow::Result<Res> {
         match (req.method(), req.uri().path()) {
             (&Method::POST, "/") => {
-                let req = deserialize::<DaftBroadcast>(req).await?;
-                let mut queries = queries().lock().unwrap();
-                queries.push(req.into_body());
-                // let _ = tx.send(req.into_body())?;
+                let req = deserialize::<QueryMetadata>(req).await?;
+                query_metadatas().write().push(req.into_body());
                 Ok(empty_response(StatusCode::OK))
             }
             _ => Ok(empty_response(StatusCode::NOT_FOUND)),
@@ -89,9 +92,9 @@ async fn run_daft_server() {
 
 async fn run_dashboard_server() {
     async fn dashboard_http_application(req: Req) -> anyhow::Result<Res> {
-        let queries = queries().lock().unwrap();
+        let query_metadatas = query_metadatas().read();
         match (req.method(), req.uri().path()) {
-            (&Method::GET, "/") => Ok(response(StatusCode::OK, &*queries)),
+            (&Method::GET, "/") => Ok(response(StatusCode::OK, query_metadatas.as_slice())),
             _ => Ok(empty_response(StatusCode::NOT_FOUND)),
         }
     }
