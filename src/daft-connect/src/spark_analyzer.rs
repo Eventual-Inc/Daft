@@ -72,7 +72,7 @@ impl SparkAnalyzer<'_> {
         Python::with_gil(|py| {
             // Convert MicroPartition to a logical plan using Python interop.
             let py_micropartition = py
-                .import(intern!(py, "daft.table"))?
+                .import(intern!(py, "daft.recordbatch"))?
                 .getattr(intern!(py, "MicroPartition"))?
                 .getattr(intern!(py, "_from_pymicropartition"))?
                 .call1((PyMicroPartition::from(mp),))?;

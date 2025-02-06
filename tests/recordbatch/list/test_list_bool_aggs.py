@@ -4,7 +4,7 @@ import pytest
 
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 # Test data includes various combinations of boolean values and nulls
 table = MicroPartition.from_pydict(
