@@ -58,6 +58,7 @@ version = "0.8.5"
 [features]
 python = [
   "common-arrow-ffi/python",
+  "common-display/python",
   "common-error/python",
   "common-py-serde/python",
   "daft-schema/python",
