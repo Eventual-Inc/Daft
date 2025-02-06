@@ -186,7 +186,7 @@ class DataFrame:
         text: str = mermaid_formatter._repr_markdown_()
 
         try:
-            requests.post(f"http://{addr}:{port}", data=text)
+            requests.post(f"http://{addr}:{port}", json={"mermaid_plan": text})
         except requests.exceptions.ConnectionError as conn_error:
             warnings.warn(
                 "Unable to broadcast daft query plan over http."
