@@ -68,6 +68,8 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(list::list_count_distinct);
     add!(list::list_value_counts);
     add!(list::list_distinct);
+    add!(list::list_bool_and);
+    add!(list::list_bool_or);
 
     add!(misc::to_struct);
     add!(misc::utf8_count_matches);

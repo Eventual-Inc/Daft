@@ -35,12 +35,7 @@ impl OptimizerRule for SimplifyExpressionsRule {
             return Ok(Transformed::no(plan));
         }
 
-        let schema = plan.schema();
-        plan.transform(|plan| {
-            Ok(Arc::unwrap_or_clone(plan)
-                .map_expressions(|expr| simplify_expr(Arc::unwrap_or_clone(expr), &schema))?
-                .update_data(Arc::new))
-        })
+        plan.transform(|plan| plan.map_expressions(simplify_expr))
     }
 }
 

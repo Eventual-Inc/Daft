@@ -32,8 +32,8 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
-        LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
+        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
     use error::SQLPlannerResult;
     use rstest::{fixture, rstest};
@@ -252,38 +252,6 @@ mod tests {
         Ok(())
     }
 
-    #[rstest]
-    fn test_cast(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
-        let builder = LogicalPlanBuilder::from(tbl_1);
-        let cases = vec![
-            (
-                "select bool::text from tbl1",
-                vec![col("bool").cast(&DataType::Utf8)],
-            ),
-            (
-                "select utf8::bytes from tbl1",
-                vec![col("utf8").cast(&DataType::Binary)],
-            ),
-            (
-                r#"select CAST("bool" as text) from tbl1"#,
-                vec![col("bool").cast(&DataType::Utf8)],
-            ),
-        ];
-        for (sql, expected) in cases {
-            let actual = planner.plan_sql(sql)?;
-            let expected = builder.clone().select(expected)?.build();
-            assert_eq!(
-                actual,
-                expected,
-                "query: {}\n expected:{}",
-                sql,
-                expected.repr_ascii(false)
-            );
-        }
-
-        Ok(())
-    }
-
     #[rstest(
         null_equals_null => [false, true]
     )]
@@ -306,9 +274,7 @@ mod tests {
                 Some(vec![null_equals_null]),
                 JoinType::Inner,
                 None,
-                None,
-                Some("tbl3."),
-                true,
+                JoinOptions::default().prefix("tbl3."),
             )?
             .select(vec![col("*")])?
             .build();
@@ -334,9 +300,7 @@ mod tests {
                 Some(vec![false]),
                 JoinType::Inner,
                 None,
-                None,
-                Some("tbl3."),
-                true,
+                JoinOptions::default().prefix("tbl3."),
             )?
             .select(vec![col("*")])?
             .build();

@@ -177,9 +177,14 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
         SQLNumericExpr::Round => {
             ensure!(args.len() == 2, "round takes exactly two arguments");
             let precision = match args[1].as_ref().as_literal() {
+                Some(LiteralValue::Int8(i)) => *i as i32,
+                Some(LiteralValue::UInt8(u)) => *u as i32,
+                Some(LiteralValue::Int16(i)) => *i as i32,
+                Some(LiteralValue::UInt16(u)) => *u as i32,
                 Some(LiteralValue::Int32(i)) => *i,
                 Some(LiteralValue::UInt32(u)) => *u as i32,
                 Some(LiteralValue::Int64(i)) => *i as i32,
+                Some(LiteralValue::UInt64(u)) => *u as i32,
                 _ => invalid_operation_err!("round precision must be an integer"),
             };
             Ok(round(args[0].clone(), precision))
@@ -250,6 +255,10 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
                 .as_literal()
                 .and_then(|lit| match lit {
                     LiteralValue::Float64(f) => Some(*f),
+                    LiteralValue::Int8(i) => Some(f64::from(*i)),
+                    LiteralValue::UInt8(u) => Some(f64::from(*u)),
+                    LiteralValue::Int16(i) => Some(f64::from(*i)),
+                    LiteralValue::UInt16(u) => Some(f64::from(*u)),
                     LiteralValue::Int32(i) => Some(f64::from(*i)),
                     LiteralValue::UInt32(u) => Some(f64::from(*u)),
                     LiteralValue::Int64(i) => Some(*i as f64),

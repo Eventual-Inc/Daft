@@ -202,16 +202,15 @@ impl Project {
     }
 }
 
+/// Constructs a new copy of this expression
+/// with all occurrences of subexprs_to_replace replaced with a column selection.
+/// e.g. e := (a+b)+c, subexprs := {FieldID("(a + b)")}
+///  -> Col("(a + b)") + c
 fn replace_column_with_semantic_id(
     e: ExprRef,
     subexprs_to_replace: &IndexSet<FieldID>,
     schema: &Schema,
 ) -> Transformed<ExprRef> {
-    // Constructs a new copy of this expression
-    // with all occurrences of subexprs_to_replace replaced with a column selection.
-    // e.g. e := (a+b)+c, subexprs := {FieldID("(a + b)")}
-    //  -> Col("(a + b)") + c
-
     let sem_id = e.semantic_id(schema);
     if subexprs_to_replace.contains(&sem_id) {
         let new_expr = Expr::Column(sem_id.id);
@@ -306,6 +305,22 @@ fn replace_column_with_semantic_id(
                         .into(),
                     )
                 }
+            }
+            Expr::List(items) => {
+                let mut transformed = false;
+                let mut new_items = Vec::<ExprRef>::new();
+                for item in items {
+                    let new_item =
+                        replace_column_with_semantic_id(item.clone(), subexprs_to_replace, schema);
+                    if new_item.transformed {
+                        new_items.push(new_item.data.clone());
+                        transformed = true;
+                    }
+                }
+                if transformed {
+                    return Transformed::yes(Expr::List(new_items).into());
+                }
+                Transformed::no(e)
             }
             Expr::Between(child, lower, upper) => {
                 let child =
@@ -481,6 +496,14 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::Max(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Max, |_| e)
+        }
+        AggExpr::BoolAnd(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::BoolAnd, |_| e)
+        }
+        AggExpr::BoolOr(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::BoolOr, |_| e)
         }
         AggExpr::AnyValue(ref child, ignore_nulls) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(

@@ -28,6 +28,32 @@ impl Series {
         Ok(series)
     }
 
+    pub fn list_bool_and(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::List(_) => Ok(self.list()?.list_bool_and()?.into_series()),
+            DataType::FixedSizeList(..) => {
+                Ok(self.fixed_size_list()?.list_bool_and()?.into_series())
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "list_bool_and not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn list_bool_or(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::List(_) => Ok(self.list()?.list_bool_or()?.into_series()),
+            DataType::FixedSizeList(..) => {
+                Ok(self.fixed_size_list()?.list_bool_or()?.into_series())
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "list_bool_or not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
     pub fn explode(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.explode(),

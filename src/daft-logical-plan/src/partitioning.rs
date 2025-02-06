@@ -297,6 +297,13 @@ fn translate_clustering_spec_expr(
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(newchild.is_in(newitems))
         }
+        Expr::List(items) => {
+            let new_items = items
+                .iter()
+                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Expr::List(new_items).into())
+        }
         Expr::Between(child, lower, upper) => {
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
             let newlower = translate_clustering_spec_expr(lower, old_colname_to_new_colname)?;

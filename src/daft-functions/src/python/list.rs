@@ -14,6 +14,8 @@ simple_python_wrapper!(list_min, crate::list::min, [expr: PyExpr]);
 simple_python_wrapper!(list_slice, crate::list::slice, [expr: PyExpr, start: PyExpr, end: PyExpr]);
 simple_python_wrapper!(list_sum, crate::list::sum, [expr: PyExpr]);
 simple_python_wrapper!(list_value_counts, crate::list::value_counts, [expr: PyExpr]);
+simple_python_wrapper!(list_bool_and, crate::list::bool_and, [expr: PyExpr]);
+simple_python_wrapper!(list_bool_or, crate::list::bool_or, [expr: PyExpr]);
 
 #[pyfunction]
 pub fn list_distinct(expr: PyExpr) -> PyResult<PyExpr> {

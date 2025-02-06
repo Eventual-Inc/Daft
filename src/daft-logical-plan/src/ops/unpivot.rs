@@ -92,6 +92,7 @@ impl Unpivot {
         let approx_stats = ApproxStats {
             num_rows: input_stats.approx_stats.num_rows * num_values,
             size_bytes: input_stats.approx_stats.size_bytes,
+            acc_selectivity: input_stats.approx_stats.acc_selectivity * num_values as f64,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self

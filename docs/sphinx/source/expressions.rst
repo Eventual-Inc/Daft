@@ -16,6 +16,8 @@ Constructors
 
     col
     lit
+    list_
+    struct
 
 Generic
 #######
@@ -24,7 +26,6 @@ Generic
    :nosignatures:
    :toctree: doc_gen/expression_methods
 
-   to_struct
    Expression.alias
    Expression.cast
    Expression.if_else
@@ -112,6 +113,8 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
 .. autosummary::
    :toctree: doc_gen/expression_methods
 
+   Expression.bool_and
+   Expression.bool_or
    Expression.count
    Expression.count_distinct
    Expression.sum
@@ -234,6 +237,8 @@ List
    :toctree: doc_gen/expression_methods
    :template: autosummary/accessor_method.rst
 
+   Expression.list.bool_and
+   Expression.list.bool_or
    Expression.list.chunk
    Expression.list.count
    Expression.list.get

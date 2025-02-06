@@ -182,6 +182,11 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     }
 }
 
+#[pyfunction]
+pub fn list_(items: Vec<PyExpr>) -> PyExpr {
+    Expr::List(items.into_iter().map(|item| item.into()).collect()).into()
+}
+
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature = (
     name,
@@ -337,6 +342,14 @@ impl PyExpr {
 
     pub fn max(&self) -> PyResult<Self> {
         Ok(self.expr.clone().max().into())
+    }
+
+    pub fn bool_and(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().bool_and().into())
+    }
+
+    pub fn bool_or(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().bool_or().into())
     }
 
     pub fn any_value(&self, ignore_nulls: bool) -> PyResult<Self> {

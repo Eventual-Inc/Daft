@@ -40,6 +40,7 @@ df2 = daft.sql("SELECT * FROM my_table")
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from daft.daft import catalog as native_catalog
 from daft.logical.builder import LogicalPlanBuilder
 
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "Identifier",
     "read_table",
     "register_python_catalog",
     "register_table",
@@ -156,3 +158,60 @@ def register_python_catalog(catalog: PyIcebergCatalog | UnityCatalog, name: str 
         raise ValueError(f"Unsupported catalog type: {type(catalog)}")
 
     return native_catalog.register_python_catalog(python_catalog, name)
+
+
+class Identifier(Sequence):
+    """A reference (path) to a catalog object.
+
+    Example:
+    >>> id1 = Identifier("a", "b")
+    >>> id2 = Identifier.parse("a.b")
+    """
+
+    _identifier: native_catalog.PyIdentifier
+
+    def __init__(self, *parts: str):
+        """Creates an Identifier from its parts.
+
+        Example:
+        >>> id = Identifier("schema", "table")
+        >>> id  # Identifier('schema.table')
+
+        Returns:
+            Identifier: A new identifier.
+        """
+        if len(parts) < 1:
+            raise ValueError("Identifier requires at least one part.")
+        self._identifier = native_catalog.PyIdentifier(parts[:-1], parts[-1])
+
+    @staticmethod
+    def parse(input: str) -> Identifier:
+        """Parses an Identifier from an SQL string.
+
+        Example:
+        >>> id = Identifier.parse("schema.table")
+        >>> assert len(id) == 2
+
+        Returns:
+            Identifier: A new identifier.
+        """
+        i = Identifier.__new__(Identifier)
+        i._identifier = native_catalog.PyIdentifier.parse(input)
+        return i
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Identifier):
+            return False
+        return self._identifier.eq(other._identifier)
+
+    def __getitem__(self, index: int | slice) -> str | Sequence[str]:
+        if isinstance(index, slice):
+            raise IndexError("slicing not supported")
+        if isinstance(index, int):
+            return self._identifier.getitem(index)
+
+    def __len__(self) -> int:
+        return self._identifier.__len__()
+
+    def __repr__(self) -> str:
+        return f"Identifier('{self._identifier.__repr__()}')"

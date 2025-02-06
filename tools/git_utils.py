@@ -62,17 +62,36 @@ def get_latest_run(workflow: Workflow) -> WorkflowRun:
     raise RuntimeError("Unable to list all workflow invocations")
 
 
-def get_name_and_commit_hash(branch_name: Optional[str]) -> tuple[str, str]:
-    branch_name = branch_name or "HEAD"
-    name = (
-        subprocess.check_output(["git", "rev-parse", "--abbrev-ref", branch_name], stderr=subprocess.STDOUT)
+def get_name_and_commit_hash(local_branch_name: Optional[str]) -> tuple[str, str]:
+    local_branch_name = local_branch_name or "HEAD"
+    remote_branch_name = local_branch_name
+
+    try:
+        # Check if the branch has a remote tracking branch.
+        local_branch_name = (
+            subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", f"{local_branch_name}@{{upstream}}"], stderr=subprocess.STDOUT
+            )
+            .strip()
+            .decode("utf-8")
+        )
+        # Strip the upstream name from the branch to get the branch name on the remote repo.
+        remote_branch_name = local_branch_name.split("/", 1)[1]
+    except subprocess.CalledProcessError:
+        local_branch_name = (
+            subprocess.check_output(["git", "rev-parse", "--abbrev-ref", local_branch_name], stderr=subprocess.STDOUT)
+            .strip()
+            .decode("utf-8")
+        )
+        remote_branch_name = local_branch_name
+
+    commit_hash = (
+        subprocess.check_output(["git", "rev-parse", local_branch_name], stderr=subprocess.STDOUT)
         .strip()
         .decode("utf-8")
     )
-    commit_hash = (
-        subprocess.check_output(["git", "rev-parse", branch_name], stderr=subprocess.STDOUT).strip().decode("utf-8")
-    )
-    return name, commit_hash
+    # Return the remote branch name for the github action.
+    return remote_branch_name, commit_hash
 
 
 def parse_questions(questions: Optional[str], total_number_of_questions: int) -> list[int]:

@@ -519,6 +519,8 @@ impl Table {
             AggExpr::Stddev(expr) => self.eval_expression(expr)?.stddev(groups),
             AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
+            AggExpr::BoolAnd(expr) => self.eval_expression(expr)?.bool_and(groups),
+            AggExpr::BoolOr(expr) => self.eval_expression(expr)?.bool_or(groups),
             &AggExpr::AnyValue(ref expr, ignore_nulls) => {
                 self.eval_expression(expr)?.any_value(groups, ignore_nulls)
             }
@@ -554,7 +556,22 @@ impl Table {
                 .eval_expression(child)?
                 .is_in(&s)
             }
-
+            Expr::List(items) => {
+                // compute list type to determine each child cast
+                let field = expr.to_field(&self.schema)?;
+                // extract list child type (could be de-duped with zip and moved to impl DataType)
+                let dtype = if let DataType::List(dtype) = &field.dtype {
+                    dtype
+                } else {
+                    return Err(DaftError::ComputeError("List expression must be of type List(T)".to_string()))
+                };
+                // compute child series with explicit casts to the supertype
+                let items = items.iter().map(|i| i.clone().cast(dtype)).collect::<Vec<_>>();
+                let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
+                let items = items.iter().collect::<Vec<&Series>>();
+                // zip the series into a single series of lists
+                Series::zip(field, items.as_slice())
+            }
             Expr::Between(child, lower, upper) => self
                 .eval_expression(child)?
                 .between(&self.eval_expression(lower)?, &self.eval_expression(upper)?),

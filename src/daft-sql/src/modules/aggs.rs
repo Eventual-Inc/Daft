@@ -26,6 +26,8 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("mean", AggExpr::Mean(nil.clone()));
         parent.add_fn("min", AggExpr::Min(nil.clone()));
         parent.add_fn("max", AggExpr::Max(nil.clone()));
+        parent.add_fn("bool_and", AggExpr::BoolAnd(nil.clone()));
+        parent.add_fn("bool_or", AggExpr::BoolOr(nil.clone()));
         parent.add_fn("stddev", AggExpr::Stddev(nil.clone()));
         parent.add_fn("stddev_samp", AggExpr::Stddev(nil));
     }
@@ -51,6 +53,8 @@ impl SQLFunction for AggExpr {
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
             Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
             Self::Stddev(_) => static_docs::STDDEV_DOCSTRING.to_string(),
+            Self::BoolAnd(_) => static_docs::BOOL_AND_DOCSTRING.to_string(),
+            Self::BoolOr(_) => static_docs::BOOL_OR_DOCSTRING.to_string(),
             e => unimplemented!("Need to implement docstrings for {e}"),
         }
     }
@@ -63,7 +67,9 @@ impl SQLFunction for AggExpr {
             | Self::Mean(_)
             | Self::Min(_)
             | Self::Max(_)
-            | Self::Stddev(_) => &["input"],
+            | Self::Stddev(_)
+            | Self::BoolAnd(_)
+            | Self::BoolOr(_) => &["input"],
             e => unimplemented!("Need to implement arg names for {e}"),
         }
     }
@@ -130,6 +136,14 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         AggExpr::Max(_) => {
             ensure!(args.len() == 1, "max takes exactly one argument");
             Ok(args[0].clone().max())
+        }
+        AggExpr::BoolAnd(_) => {
+            ensure!(args.len() == 1, "bool_and takes exactly one argument");
+            Ok(args[0].clone().bool_and())
+        }
+        AggExpr::BoolOr(_) => {
+            ensure!(args.len() == 1, "bool_or takes exactly one argument");
+            Ok(args[0].clone().bool_or())
         }
         AggExpr::AnyValue(_, _) => unsupported_sql_err!("any_value"),
         AggExpr::List(_) => unsupported_sql_err!("list"),
@@ -412,5 +426,81 @@ Example:
     ╞══════════════╡
     │ 70.710678118 │
     ╰──────────────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const BOOL_AND_DOCSTRING: &str =
+        "Returns true if all non-null elements in the input expression are true, false if any are false, and null if all elements are null.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT bool_and(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Boolean │
+    ╞═════════╡
+    │ true    │
+    ├╌╌╌╌╌╌╌╌╌┤
+    │ true    │
+    ├╌╌╌╌╌╌╌╌╌┤
+    │ null    │
+    ╰─────────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Boolean │
+    ╞═════════╡
+    │ true    │
+    ╰─────────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const BOOL_OR_DOCSTRING: &str =
+        "Returns true if any non-null elements in the input expression are true, false if all are false, and null if all elements are null.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT bool_or(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Boolean │
+    ╞═════════╡
+    │ false   │
+    ├╌╌╌╌╌╌╌╌╌┤
+    │ true    │
+    ├╌╌╌╌╌╌╌╌╌┤
+    │ null    │
+    ╰─────────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Boolean │
+    ╞═════════╡
+    │ true    │
+    ╰─────────╯
     (Showing first 1 of 1 rows)";
 }

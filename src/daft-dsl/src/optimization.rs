@@ -31,6 +31,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::NotNull(..)
         | Expr::FillNull(..)
         | Expr::IsIn { .. }
+        | Expr::List { .. }
         | Expr::Between { .. }
         | Expr::IfElse { .. }
         | Expr::Subquery { .. }
