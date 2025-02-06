@@ -178,7 +178,7 @@ members = [
   "src/common/partitioning",
   "src/daft-py-runners",
   "src/daft-context",
-  "dashboard/proxy-service"
+  "src/daft-dashboard-server"
 ]
 
 [workspace.dependencies]
