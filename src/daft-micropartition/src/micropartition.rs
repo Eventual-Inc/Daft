@@ -21,9 +21,9 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
+use daft_recordbatch::RecordBatch;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
-use daft_table::Table;
 use futures::{Future, Stream};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
@@ -33,7 +33,7 @@ use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 #[derive(Debug)]
 pub enum TableState {
     Unloaded(Arc<ScanTask>),
-    Loaded(Arc<Vec<Table>>),
+    Loaded(Arc<Vec<RecordBatch>>),
 }
 
 impl Display for TableState {
@@ -87,7 +87,7 @@ pub struct MicroPartition {
     pub(crate) statistics: Option<TableStatistics>,
 }
 
-/// Helper to run all the IO and compute required to materialize a [`ScanTask`] into a `Vec<Table>`
+/// Helper to run all the IO and compute required to materialize a [`ScanTask`] into a `Vec<RecordBatch>`
 ///
 /// All [`Table`] objects returned will have the same [`Schema`] as [`ScanTask::materialized_schema`].
 ///
@@ -98,7 +98,7 @@ pub struct MicroPartition {
 fn materialize_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
-) -> crate::Result<(Vec<Table>, SchemaRef)> {
+) -> crate::Result<(Vec<RecordBatch>, SchemaRef)> {
     let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
         v.iter()
             .map(std::string::String::as_str)
@@ -352,11 +352,11 @@ impl MicroPartition {
     #[must_use]
     pub fn new_loaded(
         schema: SchemaRef,
-        tables: Arc<Vec<Table>>,
+        record_batches: Arc<Vec<RecordBatch>>,
         statistics: Option<TableStatistics>,
     ) -> Self {
         // Check and validate invariants with asserts
-        for table in tables.iter() {
+        for table in record_batches.iter() {
             assert!(
                 table.schema == schema,
                 "Loaded MicroPartition's tables' schema must match its own schema exactly"
@@ -368,11 +368,14 @@ impl MicroPartition {
                 .cast_to_schema(schema.clone())
                 .expect("Statistics cannot be casted to schema")
         });
-        let tables_len_sum = tables.iter().map(daft_table::Table::len).sum();
+        let tables_len_sum = record_batches
+            .iter()
+            .map(daft_recordbatch::RecordBatch::len)
+            .sum();
 
         Self {
             schema,
-            state: Mutex::new(TableState::Loaded(tables)),
+            state: Mutex::new(TableState::Loaded(record_batches)),
             metadata: TableMetadata {
                 length: tables_len_sum,
             },
@@ -508,7 +511,7 @@ impl MicroPartition {
         let size_bytes = if let TableState::Loaded(tables) = &*guard {
             let total_size: usize = tables
                 .iter()
-                .map(daft_table::Table::size_bytes)
+                .map(daft_recordbatch::RecordBatch::size_bytes)
                 .collect::<DaftResult<Vec<_>>>()?
                 .iter()
                 .sum();
@@ -532,7 +535,10 @@ impl MicroPartition {
     ///
     /// "Reading if necessary" means I/O operations only occur for unloaded data,
     /// optimizing performance by avoiding redundant reads.
-    pub(crate) fn tables_or_read(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
+    pub(crate) fn tables_or_read(
+        &self,
+        io_stats: IOStatsRef,
+    ) -> crate::Result<Arc<Vec<RecordBatch>>> {
         let mut guard = self.state.lock().unwrap();
         match &*guard {
             TableState::Unloaded(scan_task) => {
@@ -548,12 +554,12 @@ impl MicroPartition {
         }
     }
 
-    pub fn get_tables(&self) -> crate::Result<Arc<Vec<Table>>> {
+    pub fn get_tables(&self) -> crate::Result<Arc<Vec<RecordBatch>>> {
         let tables = self.tables_or_read(IOStatsContext::new("get tables"))?;
         Ok(tables)
     }
 
-    pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
+    pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<RecordBatch>>> {
         let tables = self.tables_or_read(io_stats)?;
         if tables.len() <= 1 {
             return Ok(tables);
@@ -562,7 +568,7 @@ impl MicroPartition {
         let mut guard = self.state.lock().unwrap();
 
         if tables.len() > 1 {
-            let new_table = Table::concat(tables.iter().collect::<Vec<_>>().as_slice())
+            let new_table = RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
                 .context(DaftCoreComputeSnafu)?;
             *guard = TableState::Loaded(Arc::new(vec![new_table]));
         };
@@ -1193,11 +1199,11 @@ impl Display for MicroPartition {
 struct MicroPartitionStreamAdapter {
     state: TableState,
     current: usize,
-    pending_task: Option<tokio::task::JoinHandle<DaftResult<Vec<Table>>>>,
+    pending_task: Option<tokio::task::JoinHandle<DaftResult<Vec<RecordBatch>>>>,
 }
 
 impl Stream for MicroPartitionStreamAdapter {
-    type Item = DaftResult<Table>;
+    type Item = DaftResult<RecordBatch>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -1246,7 +1252,7 @@ impl Stream for MicroPartitionStreamAdapter {
     }
 }
 impl MicroPartition {
-    pub fn into_stream(self: Arc<Self>) -> DaftResult<impl Stream<Item = DaftResult<Table>>> {
+    pub fn into_stream(self: Arc<Self>) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>>> {
         let state = match &*self.state.lock().unwrap() {
             TableState::Unloaded(scan_task) => TableState::Unloaded(scan_task.clone()),
             TableState::Loaded(tables) => TableState::Loaded(tables.clone()),
@@ -1270,7 +1276,7 @@ mod tests {
         prelude::Schema,
         series::IntoSeries,
     };
-    use daft_table::Table;
+    use daft_recordbatch::RecordBatch;
     use futures::StreamExt;
 
     use crate::MicroPartition;
@@ -1281,8 +1287,8 @@ mod tests {
         let columns2 = vec![Int32Array::from_values("a", vec![2].into_iter()).into_series()];
         let schema = Schema::new(vec![Field::new("a", DataType::Int32)])?;
 
-        let table1 = Table::from_nonempty_columns(columns)?;
-        let table2 = Table::from_nonempty_columns(columns2)?;
+        let table1 = RecordBatch::from_nonempty_columns(columns)?;
+        let table2 = RecordBatch::from_nonempty_columns(columns2)?;
 
         let mp = MicroPartition::new_loaded(
             Arc::new(schema),

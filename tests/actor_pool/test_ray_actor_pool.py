@@ -4,9 +4,9 @@ import daft
 from daft import DataType, ResourceRequest
 from daft.daft import PyDaftExecutionConfig
 from daft.expressions import ExpressionsProjection
+from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import PartialPartitionMetadata
 from daft.runners.ray_runner import RayRoundRobinActorPool
-from daft.table import MicroPartition
 
 
 @daft.udf(return_dtype=DataType.int64())

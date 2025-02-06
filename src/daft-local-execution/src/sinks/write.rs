@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use daft_writers::{FileWriter, WriterFactory};
 use tracing::{instrument, Span};
 
@@ -31,12 +31,12 @@ pub enum WriteFormat {
 }
 
 struct WriteState {
-    writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+    writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
 }
 
 impl WriteState {
     pub fn new(
-        writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+        writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     ) -> Self {
         Self { writer }
     }
@@ -50,7 +50,7 @@ impl BlockingSinkState for WriteState {
 
 pub(crate) struct WriteSink {
     write_format: WriteFormat,
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     partition_by: Option<Vec<ExprRef>>,
     file_schema: SchemaRef,
 }
@@ -58,7 +58,9 @@ pub(crate) struct WriteSink {
 impl WriteSink {
     pub(crate) fn new(
         write_format: WriteFormat,
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
+        >,
         partition_by: Option<Vec<ExprRef>>,
         file_schema: SchemaRef,
     ) -> Self {

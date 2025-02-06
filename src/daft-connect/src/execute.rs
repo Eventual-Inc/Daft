@@ -6,7 +6,7 @@ use daft_context::get_context;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
@@ -357,14 +357,14 @@ impl Session {
             .ok_or_else(|| ConnectError::internal("no results"))?;
 
         let tbls = single_batch.get_tables()?;
-        let tbl = Table::concat(&tbls)?;
+        let tbl = RecordBatch::concat(&tbls)?;
         let output = tbl.to_comfy_table(None).to_string();
 
         let s = LiteralValue::Utf8(output)
             .into_single_value_series()?
             .rename("show_string");
 
-        let tbl = Table::from_nonempty_columns(vec![s])?;
+        let tbl = RecordBatch::from_nonempty_columns(vec![s])?;
         response_builder.arrow_batch_response(&tbl)
     }
 }

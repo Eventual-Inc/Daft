@@ -4,7 +4,7 @@ import pyarrow as pa
 import pytest
 
 from daft.expressions import col, lit
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 
 @pytest.mark.parametrize(

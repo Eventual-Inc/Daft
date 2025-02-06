@@ -1,5 +1,5 @@
 use arrow2::io::ipc::write::StreamWriter;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use spark_connect::{
     analyze_plan_response,
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
@@ -65,7 +65,7 @@ impl ResponseBuilder<ExecutePlanResponse> {
     }
 
     /// Send an arrow batch response to the client
-    pub fn arrow_batch_response(&self, table: &Table) -> ConnectResult<ExecutePlanResponse> {
+    pub fn arrow_batch_response(&self, table: &RecordBatch) -> ConnectResult<ExecutePlanResponse> {
         let mut data = Vec::new();
 
         let mut writer = StreamWriter::new(

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.table import MicroPartition
+    from daft.recordbatch import MicroPartition
 
 
 def scan_with_tasks(

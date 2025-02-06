@@ -9,7 +9,7 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-decoding = {path = "../daft-decoding"}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
-daft-table = {path = "../daft-table", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 memchr = "2.7.2"
@@ -35,7 +35,7 @@ python = [
   "common-py-serde/python",
   "daft-core/python",
   "daft-io/python",
-  "daft-table/python",
+  "daft-recordbatch/python",
   "daft-dsl/python"
 ]
 

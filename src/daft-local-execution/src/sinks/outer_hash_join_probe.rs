@@ -10,7 +10,7 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_table::{GrowableTable, ProbeState, Table};
+use daft_recordbatch::{GrowableRecordBatch, ProbeState, RecordBatch};
 use futures::{stream, StreamExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -31,7 +31,7 @@ pub(crate) struct IndexBitmapBuilder {
 }
 
 impl IndexBitmapBuilder {
-    pub fn new(tables: &[Table]) -> Self {
+    pub fn new(tables: &[RecordBatch]) -> Self {
         Self {
             mutable_bitmaps: tables
                 .iter()
@@ -222,7 +222,7 @@ impl OuterHashJoinProbeSink {
         let tables = probe_state.get_tables();
 
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
-        let mut build_side_growable = GrowableTable::new(
+        let mut build_side_growable = GrowableRecordBatch::new(
             &tables.iter().collect::<Vec<_>>(),
             false,
             tables.iter().map(|t| t.len()).sum(),
@@ -230,7 +230,7 @@ impl OuterHashJoinProbeSink {
 
         let input_tables = input.get_tables()?;
         let mut probe_side_growable =
-            GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
+            GrowableRecordBatch::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
 
         drop(_growables);
         {
@@ -289,7 +289,7 @@ impl OuterHashJoinProbeSink {
         let tables = probe_state.get_tables();
 
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
-        let mut build_side_growable = GrowableTable::new(
+        let mut build_side_growable = GrowableRecordBatch::new(
             &tables.iter().collect::<Vec<_>>(),
             true,
             tables.iter().map(|t| t.len()).sum(),
@@ -297,7 +297,7 @@ impl OuterHashJoinProbeSink {
 
         let input_tables = input.get_tables()?;
         let mut probe_side_growable =
-            GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
+            GrowableRecordBatch::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
 
         drop(_growables);
         {
@@ -362,7 +362,7 @@ impl OuterHashJoinProbeSink {
 
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
         // Need to set use_validity to true here because we add nulls to the build side
-        let mut build_side_growable = GrowableTable::new(
+        let mut build_side_growable = GrowableRecordBatch::new(
             &tables.iter().collect::<Vec<_>>(),
             true,
             tables.iter().map(|t| t.len()).sum(),
@@ -370,7 +370,7 @@ impl OuterHashJoinProbeSink {
 
         let input_tables = input.get_tables()?;
         let mut probe_side_growable =
-            GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
+            GrowableRecordBatch::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
 
         drop(_growables);
         {
@@ -420,7 +420,7 @@ impl OuterHashJoinProbeSink {
 
     async fn merge_bitmaps_and_construct_null_table(
         mut states: Vec<Box<dyn StreamingSinkState>>,
-    ) -> DaftResult<Table> {
+    ) -> DaftResult<RecordBatch> {
         let mut states_iter = states.iter_mut();
         let first_state = states_iter
             .next()
@@ -470,7 +470,7 @@ impl OuterHashJoinProbeSink {
             .map(|(bitmap, table)| table.mask_filter(&bitmap.into_series()))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        Table::concat(&leftovers)
+        RecordBatch::concat(&leftovers)
     }
 
     async fn finalize_outer(
@@ -492,7 +492,7 @@ impl OuterHashJoinProbeSink {
                 .values()
                 .map(|field| Series::full_null(&field.name, &field.dtype, left.len()))
                 .collect::<Vec<_>>();
-            Table::new_unchecked(right_non_join_schema.clone(), columns, left.len())
+            RecordBatch::new_unchecked(right_non_join_schema.clone(), columns, left.len())
         };
         // If we built the probe table on the right, flip the order of union.
         let (left, right) = if build_on_left {
@@ -523,7 +523,7 @@ impl OuterHashJoinProbeSink {
                 .values()
                 .map(|field| Series::full_null(&field.name, &field.dtype, left.len()))
                 .collect::<Vec<_>>();
-            Table::new_unchecked(right_non_join_schema.clone(), columns, left.len())
+            RecordBatch::new_unchecked(right_non_join_schema.clone(), columns, left.len())
         };
         let final_table = join_table.union(&left)?.union(&right)?;
         Ok(Some(Arc::new(MicroPartition::new_loaded(
@@ -547,7 +547,7 @@ impl OuterHashJoinProbeSink {
                 .values()
                 .map(|field| Series::full_null(&field.name, &field.dtype, build_side_table.len()))
                 .collect::<Vec<_>>();
-            Table::new_unchecked(
+            RecordBatch::new_unchecked(
                 left_non_join_schema.clone(),
                 columns,
                 build_side_table.len(),

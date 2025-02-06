@@ -3,7 +3,7 @@ import pyarrow.parquet as papq
 import pytest
 
 from daft.daft import testing as native_testing_utils
-from daft.table.micropartition import MicroPartition
+from daft.recordbatch.micropartition import MicroPartition
 
 pytest.skip(allow_module_level=True, reason="Skipping because these tests don't currently pass")
 

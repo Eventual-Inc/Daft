@@ -18,12 +18,12 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import PyTable as _PyTable
+from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
+from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
 from daft.runners.progress_bar import ProgressBar
 from daft.series import Series, item_to_series
-from daft.table import Table
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ from daft.execution.execution_step import (
 from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
+from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     LocalPartitionSet,
@@ -68,7 +69,6 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
-from daft.table import MicroPartition
 
 if TYPE_CHECKING:
     import dask
@@ -216,7 +216,7 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
                 else item_to_series(name, column)
             )
             series_dict[name] = series._series
-        return MicroPartition._from_tables([Table._from_pytable(_PyTable.from_pylist_series(series_dict))])
+        return MicroPartition._from_tables([RecordBatch._from_pytable(_PyRecordBatch.from_pylist_series(series_dict))])
     return MicroPartition.from_arrow(arrow_table)
 
 

@@ -27,7 +27,7 @@ use common_file_formats::FileFormat;
 use daft_dsl::ExprRef;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use file::TargetFileSizeWriterFactory;
 #[cfg(feature = "python")]
 pub use lance::make_lance_writer_factory;
@@ -60,14 +60,14 @@ pub trait WriterFactory: Send + Sync {
     fn create_writer(
         &self,
         file_idx: usize,
-        partition_values: Option<&Table>,
+        partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>>;
 }
 
 pub fn make_physical_writer_factory(
     file_info: &OutputFileInfo,
     cfg: &DaftExecutionConfig,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>> {
+) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
     let base_writer_factory = PhysicalWriterFactory::new(file_info.clone());
     match file_info.file_format {
         FileFormat::Parquet => {
@@ -131,7 +131,7 @@ pub fn make_catalog_writer_factory(
     catalog_info: &daft_logical_plan::CatalogType,
     partition_cols: &Option<Vec<ExprRef>>,
     cfg: &DaftExecutionConfig,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>> {
+) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
     use catalog::CatalogWriterFactory;
 
     let base_writer_factory = CatalogWriterFactory::new(catalog_info.clone());

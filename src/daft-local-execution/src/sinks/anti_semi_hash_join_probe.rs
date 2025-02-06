@@ -5,7 +5,7 @@ use daft_core::{prelude::SchemaRef, series::IntoSeries};
 use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_table::{GrowableTable, ProbeState, Probeable, Table};
+use daft_recordbatch::{GrowableRecordBatch, ProbeState, Probeable, RecordBatch};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
@@ -99,7 +99,7 @@ impl AntiSemiProbeSink {
 
         let input_tables = input.get_tables()?;
 
-        let mut probe_side_growable = GrowableTable::new(
+        let mut probe_side_growable = GrowableRecordBatch::new(
             &input_tables.iter().collect::<Vec<_>>(),
             false,
             Self::DEFAULT_GROWABLE_SIZE,
@@ -214,7 +214,7 @@ impl AntiSemiProbeSink {
             .map(|(bitmap, table)| table.mask_filter(&bitmap.into_series()))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let build_side_table = Table::concat(&leftovers)?;
+        let build_side_table = RecordBatch::concat(&leftovers)?;
         Ok(Some(Arc::new(MicroPartition::new_loaded(
             build_side_table.schema.clone(),
             Arc::new(vec![build_side_table]),

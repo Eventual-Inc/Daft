@@ -81,7 +81,7 @@ You can use [`df.write_deltalake`](../{{ api_path }}/dataframe_methods/daft.Data
 === "🐍 Python"
 
     ```python
-    df.write_deltalake("tmp/daft-table", mode="overwrite")
+    df.write_deltalake("tmp/daft-recordbatch", mode="overwrite")
     ```
 
 Daft supports multiple write modes. See the API docs for [`daft.DataFrame.write_deltalake`](../{{ api_path }}/dataframe_methods/daft.DataFrame.write_deltalake.html) for more details.

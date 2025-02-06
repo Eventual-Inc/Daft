@@ -4,13 +4,13 @@ from typing import TYPE_CHECKING, Iterator, List, Optional
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, Pushdowns, PyTable, ScanOperatorHandle, ScanTask
+from daft.daft import IOConfig, Pushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
-from daft.table import Table
+from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
     import lance
@@ -18,9 +18,10 @@ if TYPE_CHECKING:
 
 def _lancedb_table_factory_function(
     fragment: "lance.LanceFragment", required_columns: Optional[List[str]]
-) -> Iterator["PyTable"]:
+) -> Iterator["PyRecordBatch"]:
     return (
-        Table.from_arrow_record_batches([rb], rb.schema)._table for rb in fragment.to_batches(columns=required_columns)
+        RecordBatch.from_arrow_record_batches([rb], rb.schema)._table
+        for rb in fragment.to_batches(columns=required_columns)
     )
 
 

@@ -9,8 +9,8 @@ from daft import col
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
+from daft.recordbatch import MicroPartition
 from daft.series import Series
-from daft.table import MicroPartition
 from daft.udf import udf
 
 

@@ -17,7 +17,7 @@ use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator},
@@ -48,7 +48,7 @@ impl<S> ByteRecordChunkStream for S where
 use crate::local::{read_csv_local, stream_csv_local};
 
 type TableChunkResult =
-    super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
+    super::Result<Context<JoinHandle<DaftResult<RecordBatch>>, super::JoinSnafu, super::Error>>;
 trait TableStream: Stream<Item = TableChunkResult> {}
 impl<S> TableStream for S where S: Stream<Item = TableChunkResult> {}
 
@@ -62,7 +62,7 @@ pub fn read_csv(
     io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let runtime_handle = get_io_runtime(multithreaded_io);
     runtime_handle.block_on_current_thread(async {
         read_csv_single_into_table(
@@ -89,7 +89,7 @@ pub fn read_csv_bulk(
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
     num_parallel_tasks: usize,
-) -> DaftResult<Vec<Table>> {
+) -> DaftResult<Vec<RecordBatch>> {
     let runtime_handle = get_io_runtime(multithreaded_io);
     let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
@@ -154,7 +154,7 @@ pub async fn stream_csv(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let uri = uri.as_str();
     let (source_type, _) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
@@ -185,7 +185,7 @@ pub async fn stream_csv(
     }
 }
 
-pub fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+pub fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBatch> {
     if tables.is_empty() {
         return Err(DaftError::ValueError(
             "Need at least 1 Table to perform concat".to_string(),
@@ -216,10 +216,10 @@ pub fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    Table::new_with_size(
+    RecordBatch::new_with_size(
         first_table.schema.clone(),
         new_series,
-        tables.iter().map(daft_table::Table::len).sum(),
+        tables.iter().map(daft_recordbatch::RecordBatch::len).sum(),
     )
 }
 
@@ -232,7 +232,7 @@ async fn read_csv_single_into_table(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let (source_type, _) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
     if matches!(source_type, SourceType::File) && !is_compressed {
@@ -350,7 +350,7 @@ async fn read_csv_single_into_table(
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
     if collected_tables.is_empty() {
-        return Table::empty(Some(schema));
+        return RecordBatch::empty(Some(schema));
     }
 
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
@@ -373,7 +373,7 @@ pub async fn stream_csv_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -667,7 +667,7 @@ fn parse_into_column_array_chunk_stream(
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
                     let num_rows = chunk.first().map_or(0, daft_core::series::Series::len);
-                    Ok(Table::new_unchecked(read_schema, chunk, num_rows))
+                    Ok(RecordBatch::new_unchecked(read_schema, chunk, num_rows))
                 })();
                 let _ = send.send(result);
             });
@@ -713,7 +713,7 @@ mod tests {
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
     use daft_io::{IOClient, IOConfig};
-    use daft_table::Table;
+    use daft_recordbatch::RecordBatch;
     use rstest::rstest;
 
     use super::read_csv;
@@ -722,7 +722,7 @@ mod tests {
     #[allow(clippy::too_many_arguments)]
     fn check_equal_local_arrow2(
         path: &str,
-        out: &Table,
+        out: &RecordBatch,
         has_header: bool,
         delimiter: Option<char>,
         double_quote: bool,

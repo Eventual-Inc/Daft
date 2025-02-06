@@ -17,6 +17,7 @@ from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_visible_devices
+from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     LocalMaterializedResult,
@@ -30,7 +31,6 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
 from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
-from daft.table import MicroPartition
 
 if TYPE_CHECKING:
     from daft.execution import physical_plan

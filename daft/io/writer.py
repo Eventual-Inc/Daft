@@ -15,13 +15,13 @@ from daft.iceberg.iceberg_write import (
     make_iceberg_data_file,
     make_iceberg_record,
 )
-from daft.series import Series
-from daft.table.micropartition import MicroPartition
-from daft.table.partitioning import (
+from daft.recordbatch.micropartition import MicroPartition
+from daft.recordbatch.partitioning import (
     partition_strings_to_path,
     partition_values_to_str_mapping,
 )
-from daft.table.table import Table
+from daft.recordbatch.recordbatch import RecordBatch
+from daft.series import Series
 
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
@@ -34,7 +34,7 @@ class FileWriterBase(ABC):
         root_dir: str,
         file_idx: int,
         file_format: str,
-        partition_values: Optional[Table] = None,
+        partition_values: Optional[RecordBatch] = None,
         compression: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
         version: Optional[int] = None,
@@ -93,11 +93,11 @@ class FileWriterBase(ABC):
         pass
 
     @abstractmethod
-    def close(self) -> Table:
+    def close(self) -> RecordBatch:
         """Close the writer and return metadata about the written file. Write should not be called after close.
 
         Returns:
-            Table containing metadata about the written file, including path and partition values.
+            RecordBatch containing metadata about the written file, including path and partition values.
         """
         pass
 
@@ -107,7 +107,7 @@ class ParquetFileWriter(FileWriterBase):
         self,
         root_dir: str,
         file_idx: int,
-        partition_values: Optional[Table] = None,
+        partition_values: Optional[RecordBatch] = None,
         compression: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
         version: Optional[int] = None,
@@ -152,7 +152,7 @@ class ParquetFileWriter(FileWriterBase):
         self.position = current_position
         return bytes_written
 
-    def close(self) -> Table:
+    def close(self) -> RecordBatch:
         if self.current_writer is not None:
             self.current_writer.close()
 
@@ -161,7 +161,7 @@ class ParquetFileWriter(FileWriterBase):
         if self.partition_values is not None:
             for col_name in self.partition_values.column_names():
                 metadata[col_name] = self.partition_values.get_column(col_name)
-        return Table.from_pydict(metadata)
+        return RecordBatch.from_pydict(metadata)
 
 
 class CSVFileWriter(FileWriterBase):
@@ -169,7 +169,7 @@ class CSVFileWriter(FileWriterBase):
         self,
         root_dir: str,
         file_idx: int,
-        partition_values: Optional[Table] = None,
+        partition_values: Optional[RecordBatch] = None,
         io_config: Optional[IOConfig] = None,
     ):
         super().__init__(
@@ -202,7 +202,7 @@ class CSVFileWriter(FileWriterBase):
         self.position = current_position
         return bytes_written
 
-    def close(self) -> Table:
+    def close(self) -> RecordBatch:
         if self.current_writer is not None:
             self.current_writer.close()
 
@@ -211,7 +211,7 @@ class CSVFileWriter(FileWriterBase):
         if self.partition_values is not None:
             for col_name in self.partition_values.column_names():
                 metadata[col_name] = self.partition_values.get_column(col_name)
-        return Table.from_pydict(metadata)
+        return RecordBatch.from_pydict(metadata)
 
 
 class IcebergWriter(ParquetFileWriter):
@@ -222,7 +222,7 @@ class IcebergWriter(ParquetFileWriter):
         schema: "IcebergSchema",
         properties: "IcebergTableProperties",
         partition_spec_id: int,
-        partition_values: Optional[Table] = None,
+        partition_values: Optional[RecordBatch] = None,
         io_config: Optional[IOConfig] = None,
     ):
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -258,7 +258,7 @@ class IcebergWriter(ParquetFileWriter):
         self.position = current_position
         return bytes_written
 
-    def close(self) -> Table:
+    def close(self) -> RecordBatch:
         if self.current_writer is not None:
             self.current_writer.close()
         self.is_closed = True
@@ -275,7 +275,7 @@ class IcebergWriter(ParquetFileWriter):
             self.iceberg_schema,
             self.properties,
         )
-        return Table.from_pydict({"data_file": [data_file]})
+        return RecordBatch.from_pydict({"data_file": [data_file]})
 
 
 class DeltalakeWriter(ParquetFileWriter):
@@ -285,7 +285,7 @@ class DeltalakeWriter(ParquetFileWriter):
         file_idx: int,
         version: int,
         large_dtypes: bool,
-        partition_values: Optional[Table] = None,
+        partition_values: Optional[RecordBatch] = None,
         io_config: Optional[IOConfig] = None,
     ):
         super().__init__(
@@ -321,7 +321,7 @@ class DeltalakeWriter(ParquetFileWriter):
         self.position = current_position
         return bytes_written
 
-    def close(self) -> Table:
+    def close(self) -> RecordBatch:
         if self.current_writer is not None:
             self.current_writer.close()
         self.is_closed = True
@@ -336,4 +336,4 @@ class DeltalakeWriter(ParquetFileWriter):
             partition_values=self.partition_strings,
         )
 
-        return Table.from_pydict({"add_action": [add_action]})
+        return RecordBatch.from_pydict({"add_action": [add_action]})

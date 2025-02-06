@@ -13,7 +13,7 @@ from daft.convert import from_pydict
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.dependencies import fsspec, pafs
 from daft.expressions.expressions import col, lit
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
     from daft import DataFrame

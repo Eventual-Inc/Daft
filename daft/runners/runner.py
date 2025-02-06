@@ -13,8 +13,8 @@ from daft.runners.partitioning import (
 
 if TYPE_CHECKING:
     from daft.logical.builder import LogicalPlanBuilder
+    from daft.recordbatch import MicroPartition
     from daft.runners.runner_io import RunnerIO
-    from daft.table import MicroPartition
 
 LOCAL_PARTITION_SET_CACHE = PartitionSetCache()
 

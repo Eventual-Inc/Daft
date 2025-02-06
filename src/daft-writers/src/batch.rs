@@ -6,7 +6,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
 
@@ -15,7 +15,7 @@ use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
 // Having a size range instead of exact size allows for more flexibility in the size of the produced Micropartitions,
 // and reducing the amount of '.slice' operations.
 struct SizeBasedBuffer {
-    buffer: VecDeque<(Table, usize)>,
+    buffer: VecDeque<(RecordBatch, usize)>,
     size_bytes: usize,
 }
 
@@ -121,7 +121,7 @@ impl SizeBasedBuffer {
 // a row group at a time.
 pub struct TargetBatchWriter {
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
-    writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
+    writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     buffer: SizeBasedBuffer,
     is_closed: bool,
 }
@@ -133,7 +133,7 @@ impl TargetBatchWriter {
 
     pub fn new(
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
-        writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
+        writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     ) -> Self {
         Self {
             size_calculator,
@@ -157,7 +157,7 @@ impl TargetBatchWriter {
 
 impl FileWriter for TargetBatchWriter {
     type Input = Arc<MicroPartition>;
-    type Result = Option<Table>;
+    type Result = Option<RecordBatch>;
 
     fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
         assert!(
@@ -200,13 +200,16 @@ impl FileWriter for TargetBatchWriter {
 }
 
 pub struct TargetBatchWriterFactory {
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
+    writer_factory:
+        Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
 }
 
 impl TargetBatchWriterFactory {
     pub fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+        >,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> Self {
         Self {
@@ -218,12 +221,12 @@ impl TargetBatchWriterFactory {
 
 impl WriterFactory for TargetBatchWriterFactory {
     type Input = Arc<MicroPartition>;
-    type Result = Option<Table>;
+    type Result = Option<RecordBatch>;
 
     fn create_writer(
         &self,
         file_idx: usize,
-        partition_values: Option<&Table>,
+        partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
         let writer = self
             .writer_factory

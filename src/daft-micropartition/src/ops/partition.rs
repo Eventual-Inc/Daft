@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::micropartition::MicroPartition;
 
@@ -27,7 +27,7 @@ fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
 }
 
 impl MicroPartition {
-    fn vec_part_tables_to_mps(&self, part_tables: Vec<Vec<Table>>) -> DaftResult<Vec<Self>> {
+    fn vec_part_tables_to_mps(&self, part_tables: Vec<Vec<RecordBatch>>) -> DaftResult<Vec<Self>> {
         let part_tables = transpose2(part_tables);
         Ok(part_tables
             .into_iter()
@@ -83,7 +83,7 @@ impl MicroPartition {
     pub fn partition_by_range(
         &self,
         partition_keys: &[ExprRef],
-        boundaries: &Table,
+        boundaries: &RecordBatch,
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
         let io_stats = IOStatsContext::new("MicroPartition::partition_by_range");

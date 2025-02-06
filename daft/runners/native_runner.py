@@ -7,6 +7,7 @@ from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
+from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     LocalMaterializedResult,
@@ -15,7 +16,6 @@ from daft.runners.partitioning import (
     PartitionSetCache,
 )
 from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
-from daft.table import MicroPartition
 
 if TYPE_CHECKING:
     from daft.logical.builder import LogicalPlanBuilder

@@ -8,13 +8,13 @@ use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_recordbatch::RecordBatch;
 use daft_schema::{
     dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
 use daft_stats::PartitionSpec;
-use daft_table::Table;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
@@ -421,7 +421,7 @@ impl ScanOperator for GlobScanOperator {
                     }
                     let (partition_spec, generated_fields) = if !partition_values.is_empty() {
                         let partition_values_table =
-                            Table::from_nonempty_columns(partition_values)?;
+                            RecordBatch::from_nonempty_columns(partition_values)?;
                         // If there are partition values, evaluate them against partition filters, if any.
                         if let Some(partition_filters) = &pushdowns.partition_filters {
                             let filter_result =

@@ -16,7 +16,7 @@ use daft_core::{
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt};
 use rayon::{
     iter::IndexedParallelIterator,
@@ -149,7 +149,7 @@ pub async fn read_csv_local(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let stream = stream_csv_local(
         uri,
         convert_options.clone(),
@@ -176,7 +176,7 @@ pub async fn read_csv_local(
             io_stats,
         )
         .await?;
-        return Table::empty(Some(Arc::new(Schema::try_from(&schema)?)));
+        return RecordBatch::empty(Some(Arc::new(Schema::try_from(&schema)?)));
     }
     let concated_table = tables_concat(collected_tables)?;
 
@@ -200,7 +200,7 @@ pub async fn stream_csv_local(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
 
@@ -544,7 +544,7 @@ fn stream_csv_as_tables(
     predicate: Option<Arc<Expr>>,
     limit: Option<usize>,
     n_threads: usize,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     // Create a slab iterator over the file.
     let slabpool = FileSlabPool::new();
     let slab_iterator = SlabIterator::new(file, slabpool);
@@ -606,7 +606,7 @@ fn stream_csv_as_tables(
                 .context(super::OneShotRecvSnafu {})?
         });
     let flattened = stream
-        .map(|result: DaftResult<Vec<Table>>| {
+        .map(|result: DaftResult<Vec<RecordBatch>>| {
             let tables = result?;
             DaftResult::Ok(futures::stream::iter(tables.into_iter().map(Ok)))
         })
@@ -831,7 +831,7 @@ fn collect_tables<R>(
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     limit: Option<usize>,
-) -> DaftResult<Vec<Table>>
+) -> DaftResult<Vec<RecordBatch>>
 where
     R: std::io::Read,
 {
@@ -871,7 +871,7 @@ fn parse_csv_chunk<R>(
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     limit: Option<usize>,
-) -> DaftResult<Vec<Table>>
+) -> DaftResult<Vec<RecordBatch>>
 where
     R: std::io::Read,
 {
@@ -898,7 +898,7 @@ where
             })
             .collect::<DaftResult<Vec<Series>>>()?;
         let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
-        let table = Table::new_unchecked(read_schema.clone(), chunk, num_rows);
+        let table = RecordBatch::new_unchecked(read_schema.clone(), chunk, num_rows);
         let table = if let Some(predicate) = &predicate {
             let filtered = table.filter(&[predicate.clone()])?;
             if let Some(include_columns) = &include_columns {

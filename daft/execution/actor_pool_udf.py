@@ -5,7 +5,7 @@ import multiprocessing as mp
 from typing import TYPE_CHECKING
 
 from daft.expressions import Expression, ExpressionsProjection
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
     from multiprocessing.connection import Connection

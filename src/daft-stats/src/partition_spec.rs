@@ -5,11 +5,11 @@ use std::{
 
 use daft_core::array::ops::{DaftCompare, DaftLogical};
 use daft_dsl::{ExprRef, Literal};
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PartitionSpec {
-    pub keys: Table,
+    pub keys: RecordBatch,
 }
 
 impl PartitionSpec {

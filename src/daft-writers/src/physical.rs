@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::{FileWriter, WriterFactory};
 
@@ -25,12 +25,12 @@ impl PhysicalWriterFactory {
 
 impl WriterFactory for PhysicalWriterFactory {
     type Input = Arc<MicroPartition>;
-    type Result = Option<Table>;
+    type Result = Option<RecordBatch>;
 
     fn create_writer(
         &self,
         file_idx: usize,
-        partition_values: Option<&Table>,
+        partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
         match self.native {
             true => unimplemented!(),
@@ -55,8 +55,8 @@ pub fn create_pyarrow_file_writer(
     compression: &Option<String>,
     io_config: &Option<daft_io::IOConfig>,
     format: FileFormat,
-    partition: Option<&Table>,
-) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>> {
+    partition: Option<&RecordBatch>,
+) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>> {
     match format {
         #[cfg(feature = "python")]
         FileFormat::Parquet => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(

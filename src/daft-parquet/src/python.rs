@@ -7,7 +7,7 @@ pub mod pylib {
     use daft_core::python::{PySchema, PySeries, PyTimeUnit};
     use daft_dsl::python::PyExpr;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
-    use daft_table::python::PyTable;
+    use daft_recordbatch::python::PyRecordBatch;
     use pyo3::{pyfunction, types::PyModule, Bound, PyResult, Python};
 
     use crate::read::{
@@ -36,7 +36,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-    ) -> PyResult<PyTable> {
+    ) -> PyResult<PyRecordBatch> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uri}"));
 
@@ -175,7 +175,7 @@ pub mod pylib {
         num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-    ) -> PyResult<Vec<PyTable>> {
+    ) -> PyResult<Vec<PyRecordBatch>> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new("read_parquet_bulk");
 
@@ -313,7 +313,7 @@ pub mod pylib {
         uris: PySeries,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
-    ) -> PyResult<PyTable> {
+    ) -> PyResult<PyRecordBatch> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new("read_parquet_statistics");
 

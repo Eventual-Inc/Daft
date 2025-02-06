@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 BUCKETS = ["head-retries-parquet-bucket", "get-retries-parquet-bucket"]
 

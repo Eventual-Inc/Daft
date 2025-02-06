@@ -5,7 +5,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 pub use common_partitioning::*;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use futures::stream::BoxStream;
 
@@ -48,7 +48,7 @@ impl MicroPartitionSet {
         Self::default()
     }
 
-    pub fn from_tables(id: PartitionId, tables: Vec<Table>) -> DaftResult<Self> {
+    pub fn from_tables(id: PartitionId, tables: Vec<RecordBatch>) -> DaftResult<Self> {
         if tables.is_empty() {
             return Ok(Self::empty());
         }

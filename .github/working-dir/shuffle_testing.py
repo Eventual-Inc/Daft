@@ -14,7 +14,7 @@ import pyarrow as pa
 import daft
 import daft.context
 from daft.io._generator import read_generator
-from daft.table.table import Table
+from daft.recordbatch.recordbatch import RecordBatch
 
 # Constants
 GB = 1 << 30
@@ -110,7 +110,7 @@ def generate(
         delay = random.uniform(0, timing_variation)
         time.sleep(delay)
 
-    yield Table.from_pydict(data)
+    yield RecordBatch.from_pydict(data)
 
 
 def generator(

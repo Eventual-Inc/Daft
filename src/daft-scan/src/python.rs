@@ -77,9 +77,9 @@ pub mod pylib {
         PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike, ScanTaskLikeRef,
     };
     use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+    use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
-    use daft_table::{python::PyTable, Table};
     use pyo3::{prelude::*, pyclass, types::PyIterator};
     use serde::{Deserialize, Serialize};
 
@@ -368,8 +368,8 @@ pub mod pylib {
             size_bytes: Option<u64>,
             iceberg_delete_files: Option<Vec<String>>,
             pushdowns: Option<PyPushdowns>,
-            partition_values: Option<PyTable>,
-            stats: Option<PyTable>,
+            partition_values: Option<PyRecordBatch>,
+            stats: Option<PyRecordBatch>,
         ) -> PyResult<Option<Self>> {
             if let Some(ref pvalues) = partition_values
                 && let Some(Some(ref partition_filters)) =
@@ -391,7 +391,8 @@ pub mod pylib {
             // TODO(Clark): Filter out scan tasks with pushed down filters + table stats?
 
             let pspec = PartitionSpec {
-                keys: partition_values.map_or_else(|| Table::empty(None).unwrap(), |p| p.table),
+                keys: partition_values
+                    .map_or_else(|| RecordBatch::empty(None).unwrap(), |p| p.table),
             };
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))
@@ -441,7 +442,7 @@ pub mod pylib {
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
-            stats: Option<PyTable>,
+            stats: Option<PyRecordBatch>,
         ) -> PyResult<Self> {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))
@@ -484,7 +485,7 @@ pub mod pylib {
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
-            stats: Option<PyTable>,
+            stats: Option<PyRecordBatch>,
         ) -> PyResult<Self> {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))

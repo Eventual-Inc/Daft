@@ -124,7 +124,9 @@ class IcebergScanOperator(ScanOperator):
     def partitioning_keys(self) -> list[PartitionField]:
         return self._partition_keys
 
-    def _iceberg_record_to_partition_spec(self, spec: IcebergPartitionSpec, record: Record) -> daft.table.Table | None:
+    def _iceberg_record_to_partition_spec(
+        self, spec: IcebergPartitionSpec, record: Record
+    ) -> daft.recordbatch.RecordBatch | None:
         partition_fields = iceberg_partition_spec_to_fields(self._table.schema(), spec)
         arrays = dict()
         assert len(record._position_to_field_name) == len(partition_fields)
@@ -137,7 +139,7 @@ class IcebergScanOperator(ScanOperator):
                 field_dtype
             )
         if len(arrays) > 0:
-            return daft.table.Table.from_pydict(arrays)
+            return daft.recordbatch.RecordBatch.from_pydict(arrays)
         else:
             return None
 

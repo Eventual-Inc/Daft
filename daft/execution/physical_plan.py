@@ -43,11 +43,11 @@ from daft.execution.execution_step import (
     calculate_cross_join_stats,
 )
 from daft.expressions import ExpressionsProjection
+from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
     MaterializedResult,
     PartitionT,
 )
-from daft.table.micropartition import MicroPartition
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from daft.table import MicroPartition
+    from daft.recordbatch import MicroPartition
 
 
 @dataclass(frozen=True)

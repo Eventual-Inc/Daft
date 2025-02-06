@@ -6,7 +6,7 @@ use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use snafu::{
@@ -26,7 +26,7 @@ use crate::{
 };
 
 type TableChunkResult =
-    super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
+    super::Result<Context<JoinHandle<DaftResult<RecordBatch>>, super::JoinSnafu, super::Error>>;
 
 type LineChunkResult = super::Result<Vec<String>>;
 
@@ -46,7 +46,7 @@ pub fn read_json(
     io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let runtime_handle = get_io_runtime(multithreaded_io);
     runtime_handle.block_on_current_thread(async {
         read_json_single_into_table(
@@ -73,7 +73,7 @@ pub fn read_json_bulk(
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
     num_parallel_tasks: usize,
-) -> DaftResult<Vec<Table>> {
+) -> DaftResult<Vec<RecordBatch>> {
     let runtime_handle = get_io_runtime(multithreaded_io);
     let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
@@ -131,7 +131,7 @@ pub fn read_json_bulk(
 
 // Parallel version of table concat
 // get rid of this once Table APIs are parallel
-pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+pub(crate) fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBatch> {
     if tables.is_empty() {
         return Err(DaftError::ValueError(
             "Need at least 1 Table to perform concat".to_string(),
@@ -162,10 +162,10 @@ pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    Table::new_with_size(
+    RecordBatch::new_with_size(
         first_table.schema.clone(),
         new_series,
-        tables.iter().map(daft_table::Table::len).sum(),
+        tables.iter().map(daft_recordbatch::RecordBatch::len).sum(),
     )
 }
 
@@ -177,7 +177,7 @@ async fn read_json_single_into_table(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let (source_type, fixed_uri) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
     if matches!(source_type, SourceType::File) && !is_compressed {
@@ -273,7 +273,7 @@ async fn read_json_single_into_table(
     // Handle empty table case.
     if collected_tables.is_empty() {
         let daft_schema = Arc::new(Schema::try_from(&schema)?);
-        return Table::empty(Some(daft_schema));
+        return RecordBatch::empty(Some(daft_schema));
     }
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
     let concated_table = tables_concat(collected_tables)?;
@@ -295,7 +295,7 @@ pub async fn stream_json(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -545,7 +545,7 @@ fn parse_into_column_array_chunk_stream(
                             )
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(Table::new_unchecked(
+                    Ok(RecordBatch::new_unchecked(
                         daft_schema.clone(),
                         all_series,
                         num_rows,
@@ -569,7 +569,7 @@ mod tests {
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
     use daft_io::{IOClient, IOConfig};
-    use daft_table::Table;
+    use daft_recordbatch::RecordBatch;
     use indexmap::IndexMap;
     use rstest::rstest;
 
@@ -582,7 +582,7 @@ mod tests {
 
     fn check_equal_local_arrow2(
         path: &str,
-        out: &Table,
+        out: &RecordBatch,
         limit: Option<usize>,
         projection: Option<Vec<String>>,
     ) {
