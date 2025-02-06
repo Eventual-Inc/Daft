@@ -172,19 +172,13 @@ class DataFrame:
     def _explain_broadcast(self):
         import json
         from urllib import request
+        from urllib.error import URLError
 
         from daft.dataframe.display import MermaidFormatter
 
-        try:
-            enable_dashboard = int(os.environ.get("DAFT_DASHBOARD_ENABLE", "0"))
-        except ValueError:
+        dashboard_addr = os.environ.get("DAFT_DASHBOARD")
+        if not dashboard_addr:
             return
-
-        if not enable_dashboard:
-            return
-
-        addr = os.environ.get("DAFT_DASHBOARD_ADDR", "localhost")
-        port = int(os.environ.get("DAFT_DASHBOARD_PORT", 3238))
 
         is_cached = self._result_cache is not None
         plan_time_start = datetime.now(timezone.utc)
@@ -204,8 +198,12 @@ class DataFrame:
                 "plan-time-end": str(plan_time_end),
             }
         ).encode("utf-8")
-        req = request.Request(f"http://{addr}:{port}", headers=headers, data=data)
-        request.urlopen(req)
+        req = request.Request(f"http://{dashboard_addr}", headers=headers, data=data)
+
+        try:
+            request.urlopen(req, timeout=3)
+        except URLError as e:
+            warnings.warn(f"Failed to broadcast metrics on addr {dashboard_addr}: {e}")
 
     @broadcast_metrics
     @DataframePublicAPI
