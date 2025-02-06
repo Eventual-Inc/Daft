@@ -1,6 +1,11 @@
-import { clsx, ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { clsx, ClassValue } from "clsx";
+import { Geist } from "next/font/google";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
+
+export const main = Geist({
+    subsets: ["latin"],
+});

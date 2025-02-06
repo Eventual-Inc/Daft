@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { SearchForm } from '@/components/search-form';
-import { Home, TableProperties } from 'lucide-react';
-import { usePathname } from 'next/navigation';
+import React from "react";
+import { SearchForm } from "@/components/search-form";
+import { Home, TableProperties } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 import {
     Sidebar,
@@ -15,17 +15,17 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
-} from '@/components/ui/sidebar';
+} from "@/components/ui/sidebar";
 
 const items = [
     {
-        title: 'Home',
-        url: 'home',
+        title: "Home",
+        url: "home",
         icon: Home,
     },
     {
-        title: 'Queries',
-        url: 'queries',
+        title: "Queries",
+        url: "queries",
         icon: TableProperties,
     },
 ];
@@ -43,15 +43,15 @@ export function AppSidebar() {
                     <SidebarGroupLabel>Application</SidebarGroupLabel>
                     <SidebarGroupContent>
                         <SidebarMenu>
-                            {items.map((item) => (
-                                <SidebarMenuItem key={item.title}>
+                            {items.map(({ title, url, icon: Icon }) => (
+                                <SidebarMenuItem key={title}>
                                     <SidebarMenuButton
                                         asChild
-                                        isActive={pathName === `/${item.url}`}
+                                        isActive={pathName === `/${url}`}
                                     >
-                                        <a href={item.url}>
-                                            <item.icon />
-                                            <span>{item.title}</span>
+                                        <a href={url}>
+                                            <Icon strokeWidth={1.5} />
+                                            <span className="font-normal">{title}</span>
                                         </a>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>
