@@ -65,6 +65,17 @@ ColumnInputType = Union[Expression, str]
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
+def BroadcastMetrics(func):
+    """Calls `self._explain_broadcast()` prior to executing the rest of the function."""
+
+    def wrapper(self, *args, **kwargs):
+        result = func(self, *args, **kwargs)
+        self._explain_broadcast()
+        return result
+
+    return wrapper
+
+
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
     """Creates a Daft DataFrame from a single Table.
 
@@ -158,6 +169,32 @@ class DataFrame:
         else:
             return self._result_cache.value
 
+    def _explain_broadcast(self):
+        """Broadcast the mermaid-formatted plan on the given port (assuming metrics-broadcasting is enabled)."""
+        import requests
+
+        from daft.dataframe.display import MermaidFormatter
+
+        ctx = get_context()
+        if not ctx._enable_broadcast:
+            return
+
+        addr = ctx._broadcast_addr
+        port = ctx._broadcast_port
+        is_cached = self._result_cache is not None
+        mermaid_formatter = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
+        text: str = mermaid_formatter._repr_markdown_()
+
+        try:
+            requests.post(f"http://{addr}:{port}", data=text)
+        except requests.exceptions.ConnectionError as conn_error:
+            warnings.warn(
+                "Unable to broadcast daft query plan over http."
+                " Are you sure the dashboard (and proxy server) are running?"
+            )
+            raise conn_error
+
+    @BroadcastMetrics
     @DataframePublicAPI
     def explain(
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
@@ -592,6 +629,7 @@ class DataFrame:
     # Write methods
     ###
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_parquet(
         self,
@@ -671,6 +709,7 @@ class DataFrame:
                 }
             )
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_csv(
         self,
@@ -742,6 +781,7 @@ class DataFrame:
                 }
             )
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_iceberg(
         self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
@@ -892,6 +932,7 @@ class DataFrame:
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         return from_pydict(with_operations)
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_deltalake(
         self,
@@ -1103,6 +1144,7 @@ class DataFrame:
 
         return with_operations
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def write_lance(
         self,
@@ -2804,6 +2846,7 @@ class DataFrame:
             assert result is not None
             result.wait()
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
         """Executes the entire DataFrame and materializes the results.
@@ -2875,6 +2918,7 @@ class DataFrame:
 
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
 
+    @BroadcastMetrics
     @DataframePublicAPI
     def show(self, n: int = 8) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
