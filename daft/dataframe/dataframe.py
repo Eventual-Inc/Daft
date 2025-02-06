@@ -11,6 +11,7 @@ import pathlib
 import typing
 import warnings
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import partial, reduce
 from typing import (
     TYPE_CHECKING,
@@ -183,19 +184,19 @@ class DataFrame:
         addr = ctx._broadcast_addr
         port = ctx._broadcast_port
         is_cached = self._result_cache is not None
-        # plan_time_start = str(datetime.datetime.now())
+        plan_time_start = datetime.now(timezone.utc)
         mermaid_formatter = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
         mermaid_plan: str = mermaid_formatter._repr_markdown_()
-        # plan_time_end = str(datetime.datetime.now())
+        plan_time_end = datetime.now(timezone.utc)
 
         try:
             requests.post(
                 f"http://{addr}:{port}",
                 json={
-                    "id": uuid4(),
+                    "id": str(uuid4()),
                     "mermaid-plan": mermaid_plan,
-                    "plan-time-start": "2025-02-06T00:32:15.077156Z",
-                    "plan-time-end": "2025-02-06T00:32:15.077861Z",
+                    "plan-time-start": str(plan_time_start),
+                    "plan-time-end": str(plan_time_end),
                 },
             )
         except requests.exceptions.ConnectionError as conn_error:
