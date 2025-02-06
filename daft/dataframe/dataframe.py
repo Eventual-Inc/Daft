@@ -12,7 +12,7 @@ import typing
 import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import partial, reduce
+from functools import partial, reduce, wraps
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -67,15 +67,13 @@ ColumnInputType = Union[Expression, str]
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
-def BroadcastMetrics(func):
-    """Calls `self._explain_broadcast()` prior to executing the rest of the function."""
-
-    def wrapper(self, *args, **kwargs):
-        result = func(self, *args, **kwargs)
+def broadcast_metrics(f):
+    @wraps(f)
+    def wrapped(self, *args, **kwargs):
         self._explain_broadcast()
-        return result
+        return f(self, *args, **kwargs)
 
-    return wrapper
+    return wrapped
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
@@ -172,43 +170,41 @@ class DataFrame:
             return self._result_cache.value
 
     def _explain_broadcast(self):
-        """Broadcast the mermaid-formatted plan on the given port (assuming metrics-broadcasting is enabled)."""
-        import requests
+        from urllib import request
 
         from daft.dataframe.display import MermaidFormatter
 
-        ctx = get_context()
-        if not ctx._enable_broadcast:
+        try:
+            enable_dashboard = int(os.environ.get("DAFT_DASHBOARD_ENABLE", "0"))
+        except ValueError:
             return
 
-        addr = ctx._broadcast_addr
-        port = ctx._broadcast_port
+        if not enable_dashboard:
+            return
+
+        addr = os.environ.get("DAFT_DASHBOARD_ADDR", "localhost")
+        port = int(os.environ.get("DAFT_DASHBOARD_PORT", 3238))
+
         is_cached = self._result_cache is not None
         plan_time_start = datetime.now(timezone.utc)
-        mermaid_formatter = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
-        mermaid_plan: str = mermaid_formatter._repr_markdown_()
+        mermaid_plan = MermaidFormatter(
+            builder=self.__builder, show_all=True, simple=False, is_cached=is_cached
+        )._repr_markdown_()
         plan_time_end = datetime.now(timezone.utc)
 
-        try:
-            id = uuid4()
-            requests.post(
-                f"http://{addr}:{port}",
-                json={
-                    "id": str(id),
-                    "mermaid-plan": mermaid_plan,
-                    "plan-time-start": str(plan_time_start),
-                    "plan-time-end": str(plan_time_end),
-                },
-            )
-            print(f"Query ID: {id}")
-        except requests.exceptions.ConnectionError as conn_error:
-            warnings.warn(
-                "Unable to broadcast daft query plan over http."
-                " Are you sure the dashboard (and proxy server) are running?"
-            )
-            raise conn_error
+        headers = {
+            "Content-Type": "application/json",
+        }
+        data = {
+            "id": str(uuid4()),
+            "mermaid-plan": mermaid_plan,
+            "plan-time-start": str(plan_time_start),
+            "plan-time-end": str(plan_time_end),
+        }
+        req = request.Request(f"http://{addr}:{port}", headers=headers, data=str(data).encode("utf-8"))
+        request.urlopen(req)
 
-    @BroadcastMetrics
+    @broadcast_metrics
     @DataframePublicAPI
     def explain(
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
@@ -643,7 +639,7 @@ class DataFrame:
     # Write methods
     ###
 
-    @BroadcastMetrics
+    @broadcast_metrics
     @DataframePublicAPI
     def write_parquet(
         self,
@@ -723,7 +719,7 @@ class DataFrame:
                 }
             )
 
-    @BroadcastMetrics
+    @broadcast_metrics
     @DataframePublicAPI
     def write_csv(
         self,
@@ -795,7 +791,7 @@ class DataFrame:
                 }
             )
 
-    @BroadcastMetrics
+    @broadcast_metrics
     @DataframePublicAPI
     def write_iceberg(
         self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
@@ -946,7 +942,7 @@ class DataFrame:
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         return from_pydict(with_operations)
 
-    @BroadcastMetrics
+    @broadcast_metrics
     @DataframePublicAPI
     def write_deltalake(
         self,
@@ -1158,7 +1154,7 @@ class DataFrame:
 
         return with_operations
 
-    @BroadcastMetrics
+    @broadcast_metrics
     @DataframePublicAPI
     def write_lance(
         self,
@@ -2364,9 +2360,9 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(
-            result, DataFrame
-        ), f"Func returned an instance of type [{type(result)}], should have been DataFrame."
+        assert isinstance(result, DataFrame), (
+            f"Func returned an instance of type [{type(result)}], " "should have been DataFrame."
+        )
         return result
 
     def _agg(
@@ -2644,11 +2640,7 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {
-            ...         "pet": ["cat", "dog", "dog", "cat"],
-            ...         "age": [1, 2, 3, 4],
-            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
-            ...     }
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
@@ -2864,7 +2856,7 @@ class DataFrame:
             assert result is not None
             result.wait()
 
-    @BroadcastMetrics
+    @broadcast_metrics
     @DataframePublicAPI
     def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
         """Executes the entire DataFrame and materializes the results.
@@ -2936,7 +2928,7 @@ class DataFrame:
 
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
 
-    @BroadcastMetrics
+    @broadcast_metrics
     @DataframePublicAPI
     def show(self, n: int = 8) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
@@ -3420,11 +3412,7 @@ class GroupedDataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {
-            ...         "pet": ["cat", "dog", "dog", "cat"],
-            ...         "age": [1, 2, 3, 4],
-            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
-            ...     }
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
