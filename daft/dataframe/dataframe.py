@@ -29,6 +29,8 @@ from typing import (
     Union,
 )
 
+from dataclasses_json import LetterCase, dataclass_json
+
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
@@ -185,8 +187,17 @@ class DataFrame:
         mermaid_formatter = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
         text: str = mermaid_formatter._repr_markdown_()
 
+        @dataclass_json(letter_case=LetterCase.KEBAB)
+        @dataclass
+        class QueryMetadata:
+            id: str
+            mermaid_plan: str
+            plan_time_start: str
+            plan_time_end: str
+
         try:
-            requests.post(f"http://{addr}:{port}", json={"mermaid-plan": text})
+            query_metadata = QueryMetadata(id="", mermaid_plan=text, plan_time_start="0", plan_time_end="0")
+            requests.post(f"http://{addr}:{port}", json=query_metadata.to_json())
         except requests.exceptions.ConnectionError as conn_error:
             warnings.warn(
                 "Unable to broadcast daft query plan over http."
@@ -2350,9 +2361,9 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(result, DataFrame), (
-            f"Func returned an instance of type [{type(result)}], " "should have been DataFrame."
-        )
+        assert isinstance(
+            result, DataFrame
+        ), f"Func returned an instance of type [{type(result)}], should have been DataFrame."
         return result
 
     def _agg(
@@ -2630,7 +2641,11 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ...     {
+            ...         "pet": ["cat", "dog", "dog", "cat"],
+            ...         "age": [1, 2, 3, 4],
+            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
+            ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
@@ -3402,7 +3417,11 @@ class GroupedDataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ...     {
+            ...         "pet": ["cat", "dog", "dog", "cat"],
+            ...         "age": [1, 2, 3, 4],
+            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
+            ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
