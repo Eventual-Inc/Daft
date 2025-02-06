@@ -23,6 +23,7 @@ const DAFT_PORT: u16 = 3238;
 const DASHBOARD_PORT: u16 = DAFT_PORT + 1;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
 struct DaftBroadcast {
     mermaid_plan: String,
 }
@@ -104,7 +105,8 @@ async fn run_dashboard_server(mut rx: Receiver<Message>) {
             match rx.try_recv() {
                 Ok(daft_broadcast) => queries.push(daft_broadcast),
                 Err(TryRecvError::Empty) => break,
-                Err(err) => panic!("{err}"),
+                Err(TryRecvError::Lagged(..)) => continue,
+                Err(TryRecvError::Closed) => panic!("Receiver has forcibly closed"),
             }
         }
         spawn({
@@ -124,7 +126,7 @@ async fn run_dashboard_server(mut rx: Receiver<Message>) {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 3)]
 async fn main() {
-    const CHANNEL_SIZE: usize = 16;
+    const CHANNEL_SIZE: usize = 256;
     let (tx, rx) = broadcast::channel(CHANNEL_SIZE);
     tokio::join!(run_daft_server(tx), run_dashboard_server(rx));
     unreachable!("The daft and dashboard servers should be infinitely running processes");
