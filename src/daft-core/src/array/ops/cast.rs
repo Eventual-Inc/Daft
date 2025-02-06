@@ -1425,10 +1425,10 @@ impl TensorArray {
                             offset
                         })
                         .collect();
-                    let ofssets_indices_arr =
+                    let offsets_indices_arr =
                         UInt64Array::from(("item", offsets_values.clone())).into_series();
                     non_zero_values.push(data);
-                    non_zero_indices.push(ofssets_indices_arr);
+                    non_zero_indices.push(offsets_indices_arr);
                 }
 
                 let offsets: Offsets<i64> =
@@ -2005,10 +2005,10 @@ impl FixedShapeTensorArray {
                         })
                         .collect();
 
-                    let ofssets_indices_arr =
+                    let offsets_indices_arr =
                         UInt64Array::from(("item", offsets_values.clone())).into_series();
                     non_zero_values.push(data);
-                    non_zero_indices.push(ofssets_indices_arr);
+                    non_zero_indices.push(offsets_indices_arr);
                 }
                 let offsets: Offsets<i64> =
                     Offsets::try_from_iter(non_zero_values.iter().map(|s| s.len()))?;
