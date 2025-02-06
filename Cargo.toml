@@ -173,7 +173,8 @@ members = [
   # "src/spark-connect-script",
   "src/generated/spark-connect",
   "src/common/partitioning",
-  "src/daft-ray-execution"
+  "src/daft-ray-execution",
+  "dashboard/proxy-service"
 ]
 
 [workspace.dependencies]
@@ -247,7 +248,8 @@ tokio = {version = "1.37.0", features = [
   "signal",
   "macros",
   "rt",
-  "rt-multi-thread"
+  "rt-multi-thread",
+  "sync"
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
