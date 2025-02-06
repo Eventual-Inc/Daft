@@ -6,8 +6,7 @@ site_name: Daft Documentation
 site_url: https://www.getdaft.io/projects/docs/en/stable/
 site_description: |
   Welcome to Daft Documentation! Daft is a unified data engine for data engineering, analytics, and ML/AI.
-copyright: Copyright &copy; 2025 Eventual Inc. <img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=2293a436-7808-4c74-9bf3-d3e86e4eed91" />
-
+copyright: '&copy; Copyright 2025, Eventual <img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=2293a436-7808-4c74-9bf3-d3e86e4eed91" />'
 
 # Repository
 repo_name: Daft
@@ -103,6 +102,20 @@ extra:
   analytics:
     provider: google
     property: G-YN4QSRPV0K
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: >-
+            Thanks for your feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page could be improved
+          data: 0
+          note: >-
+            Thanks for your feedback! Help us improve this page by
+            <a href="https://github.com/Eventual-Inc/Daft/issues" target="_blank" rel="noopener">submitting an issue</a> on our Daft repo.
   social:
   - icon: fontawesome/brands/github
     link: https://github.com/squidfunk
