@@ -12,7 +12,7 @@ import typing
 import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import partial, reduce, wraps
+from functools import partial, reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -65,15 +65,6 @@ UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 ColumnInputType = Union[Expression, str]
 
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
-
-
-def broadcast_metrics(f):
-    @wraps(f)
-    def wrapped(self, *args, **kwargs):
-        self._explain_broadcast()
-        return f(self, *args, **kwargs)
-
-    return wrapped
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
@@ -206,7 +197,6 @@ class DataFrame:
         except URLError as e:
             warnings.warn(f"Failed to broadcast metrics over {dashboard_http_addr}: {e}")
 
-    @broadcast_metrics
     @DataframePublicAPI
     def explain(
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
@@ -641,7 +631,6 @@ class DataFrame:
     # Write methods
     ###
 
-    @broadcast_metrics
     @DataframePublicAPI
     def write_parquet(
         self,
@@ -721,7 +710,6 @@ class DataFrame:
                 }
             )
 
-    @broadcast_metrics
     @DataframePublicAPI
     def write_csv(
         self,
@@ -793,7 +781,6 @@ class DataFrame:
                 }
             )
 
-    @broadcast_metrics
     @DataframePublicAPI
     def write_iceberg(
         self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
@@ -944,7 +931,6 @@ class DataFrame:
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         return from_pydict(with_operations)
 
-    @broadcast_metrics
     @DataframePublicAPI
     def write_deltalake(
         self,
@@ -1156,7 +1142,6 @@ class DataFrame:
 
         return with_operations
 
-    @broadcast_metrics
     @DataframePublicAPI
     def write_lance(
         self,
@@ -2858,7 +2843,6 @@ class DataFrame:
             assert result is not None
             result.wait()
 
-    @broadcast_metrics
     @DataframePublicAPI
     def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
         """Executes the entire DataFrame and materializes the results.
@@ -2873,6 +2857,7 @@ class DataFrame:
             DataFrame: DataFrame with materialized results.
         """
         self._materialize_results()
+        self._explain_broadcast()
 
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -2930,7 +2915,6 @@ class DataFrame:
 
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
 
-    @broadcast_metrics
     @DataframePublicAPI
     def show(self, n: int = 8) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
@@ -2945,6 +2929,8 @@ class DataFrame:
             n: number of rows to show. Defaults to 8.
         """
         dataframe_display = self._construct_show_display(n)
+        self._explain_broadcast()
+
         try:
             from IPython.display import display
 
