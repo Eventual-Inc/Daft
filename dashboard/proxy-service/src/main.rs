@@ -20,7 +20,6 @@ type Message = DaftBroadcast;
 type Req<T = Incoming> = Request<T>;
 type Res = Response<BoxBody<Bytes, std::convert::Infallible>>;
 
-const BROWSER_PORT: u16 = 3000;
 const DAFT_PORT: u16 = 3238;
 const DASHBOARD_PORT: u16 = DAFT_PORT + 1;
 
@@ -31,14 +30,18 @@ struct DaftBroadcast {
 }
 
 fn response(status: StatusCode, body: impl Serialize) -> Res {
+    /// This will allow the dashboard application server to hit this cross-origin endpoint.
+    ///
+    /// # Note
+    /// If you run the Next.js server application on *any* other port than 3000, you will need to
+    /// change the below port value to match. Otherwise, CORS policies will fail the request.
+    const CORS_POLICY_ALLOW: &str = "http://localhost:3000";
+
     let body = serde_json::to_string(&body).expect("Body should always be serializable");
     Response::builder()
         .status(status)
         .header("Content-Type", "application/json")
-        .header(
-            header::ACCESS_CONTROL_ALLOW_ORIGIN,
-            format!("http://{}:{BROWSER_PORT}", Ipv4Addr::LOCALHOST),
-        )
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, CORS_POLICY_ALLOW)
         .header(
             header::ACCESS_CONTROL_ALLOW_METHODS,
             Method::GET.to_string(),
