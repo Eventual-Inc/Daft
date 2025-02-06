@@ -20,6 +20,7 @@ type Message = DaftBroadcast;
 type Req<T = Incoming> = Request<T>;
 type Res = Response<BoxBody<Bytes, std::convert::Infallible>>;
 
+const BROWSER_PORT: u16 = 3000;
 const DAFT_PORT: u16 = 3238;
 const DASHBOARD_PORT: u16 = DAFT_PORT + 1;
 
@@ -36,7 +37,7 @@ fn response(status: StatusCode, body: impl Serialize) -> Res {
         .header("Content-Type", "application/json")
         .header(
             header::ACCESS_CONTROL_ALLOW_ORIGIN,
-            format!("http://{}:{}", Ipv4Addr::LOCALHOST, DASHBOARD_PORT),
+            format!("http://{}:{BROWSER_PORT}", Ipv4Addr::LOCALHOST),
         )
         .header(
             header::ACCESS_CONTROL_ALLOW_METHODS,
