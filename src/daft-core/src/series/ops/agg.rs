@@ -276,4 +276,56 @@ impl Series {
             ))),
         }
     }
+
+    pub fn bool_and(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        use crate::array::ops::DaftBoolAggable;
+        match self.data_type() {
+            DataType::Boolean => {
+                let downcasted = self.bool()?;
+                Ok(match groups {
+                    Some(groups) => downcasted.grouped_bool_and(groups)?,
+                    None => downcasted.bool_and()?,
+                }
+                .into_series())
+            }
+            DataType::Null => {
+                // Return a single null value for null type
+                Ok(Self::full_null(
+                    self.field().name.as_str(),
+                    &DataType::Boolean,
+                    1,
+                ))
+            }
+            other => Err(DaftError::TypeError(format!(
+                "bool_and is not implemented for type {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn bool_or(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        use crate::array::ops::DaftBoolAggable;
+        match self.data_type() {
+            DataType::Boolean => {
+                let downcasted = self.bool()?;
+                Ok(match groups {
+                    Some(groups) => downcasted.grouped_bool_or(groups)?,
+                    None => downcasted.bool_or()?,
+                }
+                .into_series())
+            }
+            DataType::Null => {
+                // Return a single null value for null type
+                Ok(Self::full_null(
+                    self.field().name.as_str(),
+                    &DataType::Boolean,
+                    1,
+                ))
+            }
+            other => Err(DaftError::TypeError(format!(
+                "bool_or is not implemented for type {}",
+                other
+            ))),
+        }
+    }
 }

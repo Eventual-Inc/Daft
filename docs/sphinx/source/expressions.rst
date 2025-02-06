@@ -113,6 +113,8 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
 .. autosummary::
    :toctree: doc_gen/expression_methods
 
+   Expression.bool_and
+   Expression.bool_or
    Expression.count
    Expression.sum
    Expression.mean
@@ -233,6 +235,8 @@ List
    :toctree: doc_gen/expression_methods
    :template: autosummary/accessor_method.rst
 
+   Expression.list.bool_and
+   Expression.list.bool_or
    Expression.list.chunk
    Expression.list.count
    Expression.list.get

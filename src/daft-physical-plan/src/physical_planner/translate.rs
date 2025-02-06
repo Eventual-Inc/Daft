@@ -846,6 +846,8 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
+                AggExpr::BoolAnd(e) => AggExpr::BoolAnd(Expr::Alias(e, name.clone()).into()),
+                AggExpr::BoolOr(e) => AggExpr::BoolOr(Expr::Alias(e, name.clone()).into()),
                 AggExpr::AnyValue(e, ignore_nulls) => {
                     AggExpr::AnyValue(Expr::Alias(e, name.clone()).into(), ignore_nulls)
                 }
@@ -1067,6 +1069,38 @@ pub fn populate_aggregation_stages(
                         col(max_id.clone()).alias(max_of_max_id.clone()),
                     ));
                 final_exprs.push(col(max_of_max_id.clone()).alias(output_name));
+            }
+            AggExpr::BoolAnd(e) => {
+                // First stage
+                let bool_and_id =
+                    add_to_stage(AggExpr::BoolAnd, e.clone(), schema, &mut first_stage_aggs);
+
+                // Second stage
+                let bool_of_bool_and_id = add_to_stage(
+                    AggExpr::BoolAnd,
+                    col(bool_and_id.clone()),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+
+                // Final projection
+                final_exprs.push(col(bool_of_bool_and_id.clone()).alias(output_name));
+            }
+            AggExpr::BoolOr(e) => {
+                // First stage
+                let bool_or_id =
+                    add_to_stage(AggExpr::BoolOr, e.clone(), schema, &mut first_stage_aggs);
+
+                // Second stage
+                let bool_of_bool_or_id = add_to_stage(
+                    AggExpr::BoolOr,
+                    col(bool_or_id.clone()),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+
+                // Final projection
+                final_exprs.push(col(bool_of_bool_or_id.clone()).alias(output_name));
             }
             AggExpr::AnyValue(e, ignore_nulls) => {
                 let any_id = agg_expr.semantic_id(schema).id;

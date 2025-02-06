@@ -519,6 +519,8 @@ impl RecordBatch {
             AggExpr::Stddev(expr) => self.eval_expression(expr)?.stddev(groups),
             AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
+            AggExpr::BoolAnd(expr) => self.eval_expression(expr)?.bool_and(groups),
+            AggExpr::BoolOr(expr) => self.eval_expression(expr)?.bool_or(groups),
             &AggExpr::AnyValue(ref expr, ignore_nulls) => {
                 self.eval_expression(expr)?.any_value(groups, ignore_nulls)
             }
