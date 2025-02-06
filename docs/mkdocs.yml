@@ -119,7 +119,7 @@ extra:
           <a href="https://github.com/Eventual-Inc/Daft/issues" target="_blank" rel="noopener">submitting an issue</a> on our Daft repo.
   social:
   - icon: fontawesome/brands/github
-    link: https://github.com/squidfunk
+    link: https://github.com/Eventual-Inc/Daft
   - icon: fontawesome/brands/slack
     link: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
   - icon: fontawesome/brands/linkedin
