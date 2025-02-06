@@ -179,6 +179,7 @@ class DataFrame:
         dashboard_addr = os.environ.get("DAFT_DASHBOARD")
         if not dashboard_addr:
             return
+        dashboard_http_addr = f"http://{dashboard_addr}"
 
         is_cached = self._result_cache is not None
         plan_time_start = datetime.now(timezone.utc)
@@ -198,12 +199,12 @@ class DataFrame:
                 "plan-time-end": str(plan_time_end),
             }
         ).encode("utf-8")
-        req = request.Request(f"http://{dashboard_addr}", headers=headers, data=data)
+        req = request.Request(dashboard_http_addr, headers=headers, data=data)
 
         try:
             request.urlopen(req, timeout=3)
         except URLError as e:
-            warnings.warn(f"Failed to broadcast metrics on addr {dashboard_addr}: {e}")
+            warnings.warn(f"Failed to broadcast metrics over {dashboard_http_addr}: {e}")
 
     @broadcast_metrics
     @DataframePublicAPI
