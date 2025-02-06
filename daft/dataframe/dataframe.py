@@ -4,6 +4,7 @@
 # in order to support runtime typechecking across different Python versions.
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
+import datetime
 import io
 import multiprocessing
 import os
@@ -28,6 +29,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from uuid import UUID, uuid4
 
 from dataclasses_json import LetterCase, dataclass_json
 
@@ -184,19 +186,24 @@ class DataFrame:
         addr = ctx._broadcast_addr
         port = ctx._broadcast_port
         is_cached = self._result_cache is not None
+        plan_time_start = str(datetime.datetime.now())
         mermaid_formatter = MermaidFormatter(builder=self.__builder, show_all=True, simple=False, is_cached=is_cached)
-        text: str = mermaid_formatter._repr_markdown_()
+        mermaid_plan: str = mermaid_formatter._repr_markdown_()
+        plan_time_end = str(datetime.datetime.now())
+        id = uuid4()
 
         @dataclass_json(letter_case=LetterCase.KEBAB)
         @dataclass
         class QueryMetadata:
-            id: str
+            id: UUID
             mermaid_plan: str
             plan_time_start: str
             plan_time_end: str
 
         try:
-            query_metadata = QueryMetadata(id="", mermaid_plan=text, plan_time_start="0", plan_time_end="0")
+            query_metadata = QueryMetadata(
+                id=id, mermaid_plan=mermaid_plan, plan_time_start=plan_time_start, plan_time_end=plan_time_end
+            )
             requests.post(f"http://{addr}:{port}", json=query_metadata.to_json())
         except requests.exceptions.ConnectionError as conn_error:
             warnings.warn(
