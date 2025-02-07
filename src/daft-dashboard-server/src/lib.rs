@@ -12,6 +12,11 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use parking_lot::RwLock;
+use pyo3::{
+    pyfunction,
+    types::{PyModule, PyModuleMethods},
+    wrap_pyfunction, Bound, PyResult,
+};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, spawn};
 
@@ -68,8 +73,8 @@ async fn dashboard_http_application(req: Req) -> anyhow::Result<Res> {
     }
 }
 
-pub async fn run() {
-    async fn run_server<F>(f: fn(Req) -> F, addr: Ipv4Addr, port: u16)
+async fn run() {
+    async fn run_http_application<F>(f: fn(Req) -> F, addr: Ipv4Addr, port: u16)
     where
         F: 'static + Send + Future<Output = anyhow::Result<Res>>,
     {
@@ -92,12 +97,29 @@ pub async fn run() {
     }
 
     tokio::join!(
-        run_server(daft_http_application, Ipv4Addr::LOCALHOST, DAFT_PORT),
-        run_server(
+        run_http_application(daft_http_application, Ipv4Addr::LOCALHOST, DAFT_PORT),
+        run_http_application(
             dashboard_http_application,
             Ipv4Addr::LOCALHOST,
             DASHBOARD_PORT,
         ),
     );
     unreachable!("The daft and dashboard servers should be infinitely running processes");
+}
+
+#[pyfunction]
+fn launch() {
+    if matches!(fork::daemon(false, false), Ok(fork::Fork::Child)) {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(3)
+            .enable_all()
+            .build()
+            .expect("Failed to launch server")
+            .block_on(run());
+    }
+}
+
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_function(wrap_pyfunction!(launch, parent)?)?;
+    Ok(())
 }

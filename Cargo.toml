@@ -17,6 +17,7 @@ daft-compression = {path = "src/daft-compression", default-features = false}
 daft-connect = {path = "src/daft-connect", optional = true}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
+daft-dashboard-server = {path = "src/daft-dashboard-server"}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
