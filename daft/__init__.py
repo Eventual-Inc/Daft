@@ -55,6 +55,17 @@ analytics_client = init_analytics(get_version(), get_build_type(), user_opted_ou
 analytics_client.track_import()
 
 ###
+# Scarf Analytics
+###
+
+from daft.scarf_telemetry import scarf_analytics
+
+try:
+    scarf_analytics()
+except Exception:
+    pass
+
+###
 # Daft top-level imports
 ###
 
