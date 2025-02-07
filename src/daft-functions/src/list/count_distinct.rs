@@ -12,16 +12,16 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListUniqueCount;
+pub struct ListCountDistinct;
 
 #[typetag::serde]
-impl ScalarUDF for ListUniqueCount {
+impl ScalarUDF for ListCountDistinct {
     fn as_any(&self) -> &dyn Any {
         self
     }
 
     fn name(&self) -> &'static str {
-        "list_unique_count"
+        "list_count_distinct"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
@@ -39,7 +39,7 @@ impl ScalarUDF for ListUniqueCount {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.list_unique_count(),
+            [input] => input.list_count_distinct(),
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -49,6 +49,6 @@ impl ScalarUDF for ListUniqueCount {
 }
 
 #[must_use]
-pub fn list_unique_count(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListUniqueCount, vec![expr]).into()
+pub fn list_count_distinct(expr: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListCountDistinct, vec![expr]).into()
 }

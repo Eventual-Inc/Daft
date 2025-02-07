@@ -46,6 +46,7 @@ mod pairwise;
 mod repr;
 mod round;
 mod search_sorted;
+pub mod set_agg;
 mod shift;
 mod sign;
 mod sketch_percentile;
@@ -240,6 +241,12 @@ pub trait DaftHllMergeAggable {
     type Output;
     fn hll_merge(&self) -> Self::Output;
     fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftSetAggable {
+    type Output;
+    fn distinct(&self) -> Self::Output;
+    fn grouped_distinct(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftBoolAggable {

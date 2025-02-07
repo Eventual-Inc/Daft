@@ -430,6 +430,10 @@ impl PySeries {
         Ok((self.series).agg_list(None)?.into())
     }
 
+    pub fn agg_set(&self) -> PyResult<Self> {
+        Ok((self.series).agg_set(None)?.into())
+    }
+
     pub fn cast(&self, dtype: PyDataType) -> PyResult<Self> {
         Ok(self.series.cast(&dtype.into())?.into())
     }
