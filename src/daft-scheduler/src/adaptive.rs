@@ -20,7 +20,6 @@ pub struct AdaptivePhysicalPlanScheduler {
 }
 
 impl AdaptivePhysicalPlanScheduler {
-    #[must_use]
     pub fn new(logical_plan: Arc<LogicalPlan>, cfg: Arc<DaftExecutionConfig>) -> DaftResult<Self> {
         let physical_plan = logical_to_physical(logical_plan, cfg)?;
         Ok(Self {

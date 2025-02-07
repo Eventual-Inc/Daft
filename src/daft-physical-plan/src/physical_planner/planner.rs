@@ -38,14 +38,6 @@ pub(super) struct QueryStagePhysicalPlanTranslator {
     pub source_id: Option<usize>,
 }
 
-fn is_query_stage_boundary(plan: &PhysicalPlan) -> bool {
-    use crate::PhysicalPlan::*;
-    match plan {
-        ShuffleExchange(_) => true,
-        _ => false,
-    }
-}
-
 impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
     type Node = PhysicalPlanRef;
 
@@ -60,10 +52,11 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
             return Ok(Transformed::no(node));
         }
 
-        let is_query_stage_boundary = is_query_stage_boundary(&node);
+        let is_query_stage_boundary: bool =
+            matches!(node.as_ref(), PhysicalPlan::ShuffleExchange(..));
         if is_query_stage_boundary {
-            self.result = Some(node.clone());
-            let placeholder = PlaceholderScan::new(node.clustering_spec().clone());
+            let placeholder = PlaceholderScan::new(node.clustering_spec());
+            self.result = Some(node);
             self.source_id = Some(placeholder.source_id());
             let new_scan = PhysicalPlan::PlaceholderScan(placeholder).arced();
             Ok(Transformed::new(new_scan, true, TreeNodeRecursion::Stop))
