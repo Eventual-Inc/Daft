@@ -50,27 +50,26 @@ async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> anyhow::Result<R
 }
 
 async fn daft_http_application(req: Req) -> anyhow::Result<Res> {
-    match (req.method(), req.uri().path()) {
+    Ok(match (req.method(), req.uri().path()) {
         (&Method::POST, "/") => {
             let req = deserialize::<QueryMetadata>(req).await?;
             query_metadatas().write().push(req.into_body());
-            Ok(response::empty(StatusCode::OK))
+            response::empty(StatusCode::OK)
         }
-        _ => Ok(response::empty(StatusCode::NOT_FOUND)),
-    }
+        (&Method::GET, "/health") => response::empty(StatusCode::OK),
+        _ => response::empty(StatusCode::NOT_FOUND),
+    })
 }
 
 async fn dashboard_http_application(req: Req) -> anyhow::Result<Res> {
-    match (req.method(), req.uri().path()) {
+    Ok(match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
             let query_metadatas = query_metadatas().read();
-            Ok(response::with_body(
-                StatusCode::OK,
-                query_metadatas.as_slice(),
-            ))
+            response::with_body(StatusCode::OK, query_metadatas.as_slice())
         }
-        _ => Ok(response::empty(StatusCode::NOT_FOUND)),
-    }
+        (&Method::GET, "/health") => response::empty(StatusCode::OK),
+        _ => response::empty(StatusCode::NOT_FOUND),
+    })
 }
 
 async fn run() {
@@ -104,7 +103,7 @@ async fn run() {
             DASHBOARD_PORT,
         ),
     );
-    unreachable!("The daft and dashboard servers should be infinitely running processes");
+    unreachable!("The daft and dashboard http applications should be infinitely running processes");
 }
 
 #[pyfunction]
