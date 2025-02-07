@@ -1,16 +1,16 @@
 import { atom } from 'jotai';
-import { BadgeStatus } from "@/components/status-badge";
-
-export const ID = "id";
-export const STATUS = "status";
-export const MERMAID_PLAN = "mermaid-plan";
 
 export type QueryInfo = {
-    [ID]: string
-    [STATUS]: BadgeStatus
-    [MERMAID_PLAN]: string
+    id: string
+    'mermaid-plan': string
+    'plan-time-start': string
+    'plan-time-end': string
+};
+
+export type QueryInfoMap = {
+    [_: string]: QueryInfo,
 };
 
 export type Keys = keyof QueryInfo;
 
-export const queryInfoAtom = atom<QueryInfo[]>([]);
+export const queryInfoAtom = atom<QueryInfoMap>({});

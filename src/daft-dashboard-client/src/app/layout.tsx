@@ -6,6 +6,7 @@ import {
     BreadcrumbItem,
     BreadcrumbList,
     BreadcrumbPage,
+    BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -20,14 +21,6 @@ import React from "react";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     const pathSegments = usePathname().split("/").filter(segment => segment);
-    let pathSegment;
-    if (pathSegments.length === 0) {
-        pathSegment = "Home";
-    } else if (pathSegments.length === 1) {
-        pathSegment = pathSegments[0];
-    } else {
-        throw new Error("Invalid path structure");
-    }
 
     return (
         <html lang="en">
@@ -40,9 +33,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                             <Separator orientation="vertical" className="mr-2 h-4" />
                             <Breadcrumb>
                                 <BreadcrumbList>
-                                    <BreadcrumbItem>
-                                        <BreadcrumbPage className="capitalize">{pathSegment}</BreadcrumbPage>
-                                    </BreadcrumbItem>
+                                    {
+                                        pathSegments.map((pathSegment, index) => (
+                                            index === (pathSegments.length - 1) ?
+                                                <BreadcrumbItem key={index}>
+                                                    <BreadcrumbPage className="capitalize">{pathSegment}</BreadcrumbPage>
+                                                </BreadcrumbItem>
+                                                :
+                                                <div key={index} className="flex flex-row items-center gap-3">
+                                                    <BreadcrumbItem>
+                                                        <BreadcrumbPage className="capitalize text-gray-500">{pathSegment}</BreadcrumbPage>
+                                                    </BreadcrumbItem>
+                                                    <BreadcrumbSeparator className="hidden md:block" />
+                                                </div>
+                                        ))
+                                    }
                                 </BreadcrumbList>
                             </Breadcrumb>
                         </header>

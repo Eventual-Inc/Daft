@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-    ColumnDef,
     flexRender,
     getCoreRowModel,
     getFilteredRowModel,
@@ -10,8 +9,6 @@ import {
     getSortedRowModel,
     useReactTable,
 } from "@tanstack/react-table";
-
-import StatusBadge from "@/components/status-badge";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,43 +21,35 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { useAtom } from 'jotai';
-import { queryInfoAtom, QueryInfo, ID, STATUS, MERMAID_PLAN } from '@/atoms/query_info';
+import { queryInfoAtom, QueryInfo, QueryInfoMap } from '@/atoms/query_info';
+import { toHumanReadableDate, delta } from '@/lib/utils';
+import { useRouter } from "next/navigation";
 
-// const NAME_KEY = "name";
-// const STATUS_KEY = "status";
-// type Query = {
-//     [NAME_KEY]: string
-//     [STATUS_KEY]: BadgeStatus,
-// }
-// const data: Query[] = [
-//     {
-//         [NAME_KEY]: "serene-darwin",
-//         [STATUS_KEY]: "success",
-//     },
-//     {
-//         [NAME_KEY]: "curious-newton",
-//         [STATUS_KEY]: "pending",
-//     },
-//     {
-//         [NAME_KEY]: "vibrant-edison",
-//         [STATUS_KEY]: "failed",
-//     },
-//     {
-//         [NAME_KEY]: "ecstatic-gauss",
-//         [STATUS_KEY]: "cancelled",
-//     },
-// ];
+const NAME: string = "id";
+const START_TIME: string = "plan-time-start";
+const END_TIME: string = "plan-time-end";
+const TIME_DELTA: string = "time-delta";
 
-const columns: ColumnDef<QueryInfo>[] = [
+const columns = (queryInfoMap: QueryInfoMap) => [
     {
-        accessorKey: ID,
+        accessorKey: NAME,
         header: "Name",
-        cell: ({ row }) => row.getValue(ID),
+        cell: ({ row }: any) => row.getValue(NAME),
     },
     {
-        accessorKey: STATUS,
-        header: "Status",
-        cell: ({ row }) => <StatusBadge status={row.getValue(STATUS)} />,
+        accessorKey: START_TIME,
+        header: "Start Time",
+        cell: ({ row }: any) => toHumanReadableDate(row.getValue(START_TIME)),
+    },
+    {
+        accessorKey: TIME_DELTA,
+        header: "Planning Length",
+        cell: ({ row }: any) => {
+            return delta(
+                row.getValue(START_TIME),
+                queryInfoMap[row.getValue(NAME)][END_TIME as keyof QueryInfo]
+            );
+        },
     },
 ];
 
@@ -70,29 +59,36 @@ export default function DataTableDemo() {
         (async () => {
             try {
                 const response = await fetch('http://localhost:3239');
-                const json = await response.json();
+                const json: QueryInfo[] = await response.json();
                 console.log(json);
-                setQueryInfo(json);
+                const queryInfoMap: QueryInfoMap = {};
+                for (const queryInfo of json) {
+                    queryInfoMap[queryInfo.id] = queryInfo;
+                }
+                setQueryInfo(queryInfoMap);
             } catch (error) { }
         })();
     }, []);
     const table = useReactTable({
-        data: queryInfo!,
-        columns,
+        data: Object.values(queryInfo),
+        columns: columns(queryInfo),
         getCoreRowModel: getCoreRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
+        enableSorting: true,
     });
+
+    const router = useRouter();
 
     return (
         <div className="mx-[20px]">
             <div className="flex items-center py-4">
                 <Input
                     placeholder="Filter queries..."
-                    value={(table.getColumn(ID)?.getFilterValue() as string) ?? ""}
+                    value={(table.getColumn(NAME)?.getFilterValue() as string) ?? ""}
                     onChange={(event) =>
-                        table.getColumn(ID)?.setFilterValue(event.target.value)
+                        table.getColumn(NAME)?.setFilterValue(event.target.value)
                     }
                     className="max-w-sm"
                 />
@@ -118,7 +114,11 @@ export default function DataTableDemo() {
                             table.getRowModel().rows.map((row) => (
                                 <TableRow key={row.id}>
                                     {row.getAllCells().map(cell => (
-                                        <TableCell key={cell.id} className={`px-[20px] py-[15px] ${(cell.column.columnDef as { accessorKey: string }).accessorKey === "name" ? "w-[75%]" : undefined}`}>
+                                        <TableCell
+                                            key={cell.id}
+                                            className={`px-[20px] py-[15px] ${(cell.column.columnDef as { accessorKey: string }).accessorKey === NAME ? "w-[75%]" : undefined}`}
+                                            onClick={() => router.push(`/queries/${row.id}`)}
+                                        >
                                             <div className="truncate">
                                                 {flexRender(
                                                     cell.column.columnDef.cell,

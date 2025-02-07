@@ -3,7 +3,7 @@
 import React from "react";
 import { SearchForm } from "@/components/search-form";
 import { Home, TableProperties } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import {
     Sidebar,
@@ -32,6 +32,7 @@ const items = [
 
 export function AppSidebar() {
     const pathName = usePathname();
+    const router = useRouter();
 
     return (
         <Sidebar>
@@ -43,11 +44,13 @@ export function AppSidebar() {
                     <SidebarGroupLabel>Application</SidebarGroupLabel>
                     <SidebarGroupContent>
                         <SidebarMenu>
-                            {items.map(({ title, url, icon: Icon }) => (
+                            {items.map(({ title, url, icon: Icon }) => {
+                                console.log({ url });
+                                return (
                                 <SidebarMenuItem key={title}>
                                     <SidebarMenuButton
                                         asChild
-                                        isActive={pathName === `/${url}`}
+                                        isActive={pathName.startsWith(`/${url}`)}
                                     >
                                         <a href={url}>
                                             <Icon strokeWidth={1.5} />
@@ -55,7 +58,7 @@ export function AppSidebar() {
                                         </a>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>
-                            ))}
+                            )})}
                         </SidebarMenu>
                     </SidebarGroupContent>
                 </SidebarGroup>
