@@ -165,12 +165,14 @@ class DataFrame:
         from urllib import request
         from urllib.error import URLError
 
+        from daft.dashboard import DAFT_DASHBOARD_ADDR
         from daft.dataframe.display import MermaidFormatter
 
         dashboard_addr = os.environ.get("DAFT_DASHBOARD")
         if not dashboard_addr:
             return
-        dashboard_http_addr = f"http://{dashboard_addr}"
+        elif not int(dashboard_addr):
+            return
 
         is_cached = self._result_cache is not None
         plan_time_start = datetime.now(timezone.utc)
@@ -190,12 +192,12 @@ class DataFrame:
                 "plan-time-end": str(plan_time_end),
             }
         ).encode("utf-8")
-        req = request.Request(dashboard_http_addr, headers=headers, data=data)
+        req = request.Request(DAFT_DASHBOARD_ADDR, headers=headers, data=data)
 
         try:
-            request.urlopen(req, timeout=3)
+            request.urlopen(req, timeout=1)
         except URLError as e:
-            warnings.warn(f"Failed to broadcast metrics over {dashboard_http_addr}: {e}")
+            warnings.warn(f"Failed to broadcast metrics over {DAFT_DASHBOARD_ADDR}: {e}")
 
     @DataframePublicAPI
     def explain(

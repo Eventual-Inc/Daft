@@ -12,6 +12,11 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use parking_lot::RwLock;
+use pyo3::{
+    pyfunction,
+    types::{PyModule, PyModuleMethods},
+    wrap_pyfunction, Bound, PyResult,
+};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, spawn};
 
@@ -44,28 +49,6 @@ async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> anyhow::Result<R
     Ok(Request::from_parts(parts, body))
 }
 
-async fn run_server<F>(f: fn(Req) -> F, addr: Ipv4Addr, port: u16)
-where
-    F: 'static + Send + Future<Output = anyhow::Result<Res>>,
-{
-    let listener = TcpListener::bind((addr, port))
-        .await
-        .expect("Failed to bind to port");
-    loop {
-        let (stream, _) = listener
-            .accept()
-            .await
-            .expect("Unable to accept incoming connection");
-        let io = TokioIo::new(stream);
-        spawn(async move {
-            http1::Builder::new()
-                .serve_connection(io, service_fn(f))
-                .await
-                .expect("Failed to serve endpoint");
-        });
-    }
-}
-
 async fn daft_http_application(req: Req) -> anyhow::Result<Res> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/") => {
@@ -90,15 +73,53 @@ async fn dashboard_http_application(req: Req) -> anyhow::Result<Res> {
     }
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
-async fn main() {
+async fn run() {
+    async fn run_http_application<F>(f: fn(Req) -> F, addr: Ipv4Addr, port: u16)
+    where
+        F: 'static + Send + Future<Output = anyhow::Result<Res>>,
+    {
+        let listener = TcpListener::bind((addr, port))
+            .await
+            .expect("Failed to bind to port");
+        loop {
+            let (stream, _) = listener
+                .accept()
+                .await
+                .expect("Unable to accept incoming connection");
+            let io = TokioIo::new(stream);
+            spawn(async move {
+                http1::Builder::new()
+                    .serve_connection(io, service_fn(f))
+                    .await
+                    .expect("Failed to serve endpoint");
+            });
+        }
+    }
+
     tokio::join!(
-        run_server(daft_http_application, Ipv4Addr::LOCALHOST, DAFT_PORT),
-        run_server(
+        run_http_application(daft_http_application, Ipv4Addr::LOCALHOST, DAFT_PORT),
+        run_http_application(
             dashboard_http_application,
             Ipv4Addr::LOCALHOST,
             DASHBOARD_PORT,
         ),
     );
     unreachable!("The daft and dashboard servers should be infinitely running processes");
+}
+
+#[pyfunction]
+fn launch() {
+    if matches!(fork::daemon(false, false), Ok(fork::Fork::Child)) {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(3)
+            .enable_all()
+            .build()
+            .expect("Failed to launch server")
+            .block_on(run());
+    }
+}
+
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_function(wrap_pyfunction!(launch, parent)?)?;
+    Ok(())
 }
