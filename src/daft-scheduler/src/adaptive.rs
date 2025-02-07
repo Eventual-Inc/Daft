@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
+use common_error::DaftResult;
 use common_partitioning::PartitionCacheEntry;
 use daft_core::prelude::Schema;
 use daft_logical_plan::{InMemoryInfo, LogicalPlan};
-use daft_physical_plan::{AdaptivePlanner, MaterializedResults};
+use daft_physical_plan::{logical_to_physical, AdaptivePlanner, MaterializedResults};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig, daft_logical_plan::PyLogicalPlanBuilder,
@@ -20,10 +21,11 @@ pub struct AdaptivePhysicalPlanScheduler {
 
 impl AdaptivePhysicalPlanScheduler {
     #[must_use]
-    pub fn new(logical_plan: Arc<LogicalPlan>, cfg: Arc<DaftExecutionConfig>) -> Self {
-        Self {
-            planner: AdaptivePlanner::new(logical_plan, cfg),
-        }
+    pub fn new(logical_plan: Arc<LogicalPlan>, cfg: Arc<DaftExecutionConfig>) -> DaftResult<Self> {
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
+        Ok(Self {
+            planner: AdaptivePlanner::new(physical_plan),
+        })
     }
 }
 
@@ -38,7 +40,7 @@ impl AdaptivePhysicalPlanScheduler {
     ) -> PyResult<Self> {
         py.allow_threads(|| {
             let logical_plan = logical_plan_builder.builder.build();
-            Ok(Self::new(logical_plan, cfg.config.clone()))
+            Ok(Self::new(logical_plan, cfg.config.clone())?)
         })
     }
     pub fn next(&mut self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {

@@ -19,6 +19,7 @@ pub enum PhysicalPlan {
     InMemoryScan(InMemoryScan),
     TabularScan(TabularScan),
     EmptyScan(EmptyScan),
+    PlaceholderScan(PlaceholderScan),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
     Filter(Filter),
@@ -56,6 +57,9 @@ impl PhysicalPlan {
         // TODO: add cache or something to avoid excessive recalculation
         match self {
             Self::InMemoryScan(InMemoryScan {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
+            Self::PlaceholderScan(PlaceholderScan {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
             Self::TabularScan(TabularScan {
@@ -186,6 +190,11 @@ impl PhysicalPlan {
 
     pub fn approximate_stats(&self) -> ApproxStats {
         match self {
+            Self::PlaceholderScan(PlaceholderScan { .. }) => ApproxStats {
+                num_rows: 0,
+                size_bytes: 0,
+                acc_selectivity: 1.0,
+            },
             Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => ApproxStats {
                 num_rows: in_memory_info.num_rows,
                 size_bytes: in_memory_info.size_bytes,
@@ -365,6 +374,7 @@ impl PhysicalPlan {
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::InMemoryScan(..) => vec![],
+            Self::PlaceholderScan(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
@@ -407,6 +417,7 @@ impl PhysicalPlan {
         match children {
             [input] => match self {
                 Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
+                Self::PlaceholderScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::TabularScan(..)
                 | Self::EmptyScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::Project(Project { projection, clustering_spec, .. }) =>
@@ -462,6 +473,7 @@ impl PhysicalPlan {
     pub fn name(&self) -> String {
         let name = match self {
             Self::InMemoryScan(..) => "InMemoryScan",
+            Self::PlaceholderScan(..) => "PlaceholderScan",
             Self::TabularScan(..) => "TabularScan",
             Self::EmptyScan(..) => "EmptyScan",
             Self::Project(..) => "Project",
@@ -497,6 +509,7 @@ impl PhysicalPlan {
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::InMemoryScan(in_memory_scan) => in_memory_scan.multiline_display(),
+            Self::PlaceholderScan(placeholder_scan) => placeholder_scan.multiline_display(),
             Self::TabularScan(tabular_scan) => tabular_scan.multiline_display(),
             Self::EmptyScan(empty_scan) => empty_scan.multiline_display(),
             Self::Project(project) => project.multiline_display(),
