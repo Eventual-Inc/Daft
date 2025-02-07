@@ -332,7 +332,7 @@ impl Table {
         Ok(column_sizes?.iter().sum())
     }
 
-    const FILTER_THRESHOLD: f64 = 0.5;
+    const FILTER_REMATERIALIZATION_THRESHOLD: f64 = 0.8;
 
     pub fn filter(&self, predicate: &[ExprRef]) -> DaftResult<Self> {
         if predicate.is_empty() {
@@ -350,7 +350,7 @@ impl Table {
                     // let elapsed1 = now.elapsed();
                     // println!("mask num filtered lhs: {:?} / {} ({})", self.mask_num_filtered(&mask)?, self.len(), left);
                     if self.mask_num_filtered(&mask)?
-                        > (self.len() as f64 * Self::FILTER_THRESHOLD) as usize
+                        > (self.len() as f64 * Self::FILTER_REMATERIALIZATION_THRESHOLD) as usize
                     {
                         // println!("prefiltering with lhs");
                         let new_self = self.mask_filter(&mask)?;
@@ -386,11 +386,11 @@ impl Table {
                 let next = predicate.get(i).unwrap();
                 let rhs = self.eval_expression(&next.clone())?;
                 // println!("mask num filtered {}: {:?} / {} ({})", i + 1, self.mask_num_filtered(&rhs)?, self.len(), next);
-                // if self.mask_num_filtered(&mask)? < (self.len() as f64 * Self::FILTER_THRESHOLD) as usize {
-                //     self.mask_filter(&mask)?;
-                //     mask = rhs;
-                //     continue;
-                // }
+                if self.mask_num_filtered(&mask)? > (self.len() as f64 * Self::FILTER_REMATERIALIZATION_THRESHOLD) as usize {
+                    self.mask_filter(&mask)?;
+                    mask = rhs;
+                    continue;
+                }
 
                 mask = mask.and(&rhs)?;
             }
