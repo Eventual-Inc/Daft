@@ -107,7 +107,7 @@ The data that we collect is:
 
 Please see our `documentation <https://www.getdaft.io/projects/docs/en/stable/resources/telemetry/>`_ for more details.
 
-.. image:: https://static.scarf.sh/a.png?x-pxid=cd444261-469e-473b-b9ba-f66ac3dc73ee
+.. image:: https://static.scarf.sh/a.png?x-pxid=31f8d5ba-7e09-4d75-8895-5252bbf06cf6
 
 Related Projects
 ----------------
