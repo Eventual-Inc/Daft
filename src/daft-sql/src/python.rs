@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use common_daft_config::PyDaftPlanningConfig;
-use daft_catalog::DaftCatalog;
+use daft_catalog::{session::Session, DaftCatalog};
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::prelude::*;
@@ -31,13 +33,16 @@ impl SQLFunctionStub {
     }
 }
 
+// TODO replace with session.exec to invert responsibilities
 #[pyfunction]
 pub fn sql(
     sql: &str,
     catalog: PyCatalog,
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
-    let mut planner = SQLPlanner::new(catalog.catalog);
+    // just use a one-off session for now..
+    let session = Arc::new(Session::new("py", catalog.catalog));
+    let mut planner = SQLPlanner::new(session);
     let plan = planner.plan_sql(sql)?;
     Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config)).into())
 }

@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{ConnectResult, Context},
-    session::Session,
+    session::ConnectSession,
 };
 
 /// A utility for constructing responses to send back to the client,
@@ -24,7 +24,7 @@ pub struct ResponseBuilder<T> {
     pub(crate) phantom: std::marker::PhantomData<T>,
 }
 impl<T> ResponseBuilder<T> {
-    pub fn new(session: &Session, operation_id: String) -> Self {
+    pub fn new(session: &ConnectSession, operation_id: String) -> Self {
         Self::new_with_op_id(
             session.client_side_session_id(),
             session.server_side_session_id(),

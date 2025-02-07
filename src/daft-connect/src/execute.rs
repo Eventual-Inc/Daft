@@ -2,6 +2,7 @@ use std::{future::ready, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
+use daft_catalog::session::Session;
 use daft_context::get_context;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
@@ -25,13 +26,13 @@ use crate::{
     error::{ConnectError, ConnectResult, Context},
     not_yet_implemented,
     response_builder::ResponseBuilder,
-    session::Session,
+    session::ConnectSession,
     spark_analyzer::SparkAnalyzer,
     util::FromOptionalField,
     ExecuteStream,
 };
 
-impl Session {
+impl ConnectSession {
     pub async fn run_query(
         &self,
         lp: LogicalPlanBuilder,
@@ -282,9 +283,11 @@ impl Session {
             not_yet_implemented!("Input");
         }
 
+        // TODO: converge Session and ConnectSession
         let catalog = self.catalog().clone();
+        let session = Arc::new(Session::new("spark_connect", catalog));
 
-        let mut planner = daft_sql::SQLPlanner::new(catalog);
+        let mut planner = daft_sql::SQLPlanner::new(session);
 
         let plan = planner.plan_sql(&sql).wrap_err("Error planning SQL")?;
 

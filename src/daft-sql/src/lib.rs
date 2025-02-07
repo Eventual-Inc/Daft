@@ -28,7 +28,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use daft_catalog::DaftCatalog;
+    use daft_catalog::session::Session;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
@@ -113,13 +113,13 @@ mod tests {
 
     #[fixture]
     fn planner() -> SQLPlanner<'static> {
-        let mut catalog = DaftCatalog::default();
+        let mut session = Session::default();
 
-        catalog.register_table("tbl1", tbl_1());
-        catalog.register_table("tbl2", tbl_2());
-        catalog.register_table("tbl3", tbl_3());
+        session.create_table("tbl1", tbl_1());
+        session.create_table("tbl2", tbl_2());
+        session.create_table("tbl3", tbl_3());
 
-        SQLPlanner::new(catalog)
+        SQLPlanner::new(Arc::new(session))
     }
 
     #[rstest]

@@ -2,6 +2,7 @@ mod data_catalog;
 mod data_catalog_table;
 pub mod errors;
 pub mod identifier;
+pub mod session;
 
 // Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
