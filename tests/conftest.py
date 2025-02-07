@@ -87,7 +87,15 @@ def join_strategy(request):
         with daft.execution_config_ctx(sort_merge_join_sort_with_aligned_boundaries=True):
             yield "sort_merge"
 
-
+@pytest.fixture(scope="function")
+def make_spark_df(spark_session):
+    def _make_spark_df(data: dict[str, Any]):
+        fields = [name for name in data]
+        rows = list(zip(*[data[name] for name in fields]))
+        return spark_session.createDataFrame(rows, fields)
+    
+    yield _make_spark_df
+    
 @pytest.fixture(scope="function")
 def make_df(data_source, tmp_path) -> daft.Dataframe:
     """Makes a dataframe when provided with data."""
