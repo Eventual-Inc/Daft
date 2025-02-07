@@ -21,7 +21,7 @@ use daft_core::{
 };
 use daft_dsl::{
     col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
-    LiteralValue, SketchType,
+    LiteralValue, Operator, SketchType,
 };
 use daft_logical_plan::FileInfos;
 use num_traits::ToPrimitive;
@@ -332,28 +332,73 @@ impl Table {
         Ok(column_sizes?.iter().sum())
     }
 
+    const FILTER_THRESHOLD: f64 = 0.5;
+
     pub fn filter(&self, predicate: &[ExprRef]) -> DaftResult<Self> {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
-            let mask = self.eval_expression(predicate.first().unwrap().as_ref())?;
-            self.mask_filter(&mask)
+            match predicate.first().unwrap().as_ref() {
+                Expr::BinaryOp {
+                    op: Operator::And,
+                    left,
+                    right,
+                } => {
+                    let mask = self.eval_expression(left)?;
+                    // let now = std::time::Instant::now();
+                    // let _rhs = self.eval_expression(right)?;
+                    // let elapsed1 = now.elapsed();
+                    // println!("mask num filtered lhs: {:?} / {} ({})", self.mask_num_filtered(&mask)?, self.len(), left);
+                    if self.mask_num_filtered(&mask)?
+                        > (self.len() as f64 * Self::FILTER_THRESHOLD) as usize
+                    {
+                        // println!("prefiltering with lhs");
+                        let new_self = self.mask_filter(&mask)?;
+                        // println!("old self len: {}, new_self len: {}", self.len(), new_self.len());
+                        // let now = std::time::Instant::now();
+                        let mask2 = new_self.eval_expression(right)?;
+                        // let elapsed2 = now.elapsed();
+                        // println!("eval_expression filtered rhs took {:?} vs {:?}", elapsed2, elapsed1);
+                        new_self.mask_filter(&mask2)
+                    } else {
+                        let mask2 = self.eval_expression(right)?;
+                        self.mask_filter(&mask.and(&mask2)?)
+                    }
+                    // println!("mask num filtered lhs: {:?} / {} ({})", self.mask_num_filtered(&mask)?, self.len(), left);
+                    // println!("mask num filtered rhs: {:?} / {} ({})", self.mask_num_filtered(&mask2)?, new_self.len(), right);
+                    // //let mask = mask.and(&mask2)?;
+                    // new_self.mask_filter(&mask)
+                }
+                _ => {
+                    let mask = self.eval_expression(predicate.first().unwrap().as_ref())?;
+                    self.mask_filter(&mask)
+                }
+            }
         } else {
-            let mut expr = predicate
+            let expr = predicate
                 .first()
                 .unwrap()
                 .clone()
                 .and(predicate.get(1).unwrap().clone());
+            let mut mask = self.eval_expression(&expr)?;
+            // println!("mask num filtered 0: {:?} / {} ({})", self.mask_num_filtered(&mask)?, self.len(), expr);
             for i in 2..predicate.len() {
                 let next = predicate.get(i).unwrap();
-                expr = expr.and(next.clone());
+                let rhs = self.eval_expression(&next.clone())?;
+                // println!("mask num filtered {}: {:?} / {} ({})", i + 1, self.mask_num_filtered(&rhs)?, self.len(), next);
+                // if self.mask_num_filtered(&mask)? < (self.len() as f64 * Self::FILTER_THRESHOLD) as usize {
+                //     self.mask_filter(&mask)?;
+                //     mask = rhs;
+                //     continue;
+                // }
+
+                mask = mask.and(&rhs)?;
             }
-            let mask = self.eval_expression(&expr)?;
             self.mask_filter(&mask)
         }
     }
 
-    pub fn mask_filter(&self, mask: &Series) -> DaftResult<Self> {
+    fn mask_num_filtered(&self, mask: &Series) -> DaftResult<usize> {
         if *mask.data_type() != DataType::Boolean {
             return Err(DaftError::ValueError(format!(
                 "We can only mask a Table with a Boolean Series, but we got {}",
@@ -362,24 +407,27 @@ impl Table {
         }
 
         let mask = mask.downcast::<BooleanArray>().unwrap();
-        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.filter(mask)).collect();
-
-        // The number of rows post-filter should be the number of 'true' values in the mask
-        let num_rows = if mask.len() == 1 {
+        let num_filtered = if mask.len() == 1 {
             // account for broadcasting of mask
             if mask.get(0).is_some_and(|b| b) {
-                self.len()
-            } else {
                 0
+            } else {
+                self.len()
             }
         } else {
             // num_filtered is the number of 'false' or null values in the mask
-            let num_filtered = mask
-                .validity()
+            mask.validity()
                 .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())
-                .unwrap_or_else(|| mask.as_bitmap().unset_bits());
-            mask.len() - num_filtered
+                .unwrap_or_else(|| mask.as_bitmap().unset_bits())
         };
+        Ok(num_filtered)
+    }
+
+    pub fn mask_filter(&self, mask: &Series) -> DaftResult<Self> {
+        // The number of rows post-filter should be the number of 'true' values in the mask
+        let num_rows = self.len() - self.mask_num_filtered(mask)?;
+        let mask = mask.downcast::<BooleanArray>().unwrap();
+        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.filter(mask)).collect();
 
         Self::new_with_size(self.schema.clone(), new_series?, num_rows)
     }
