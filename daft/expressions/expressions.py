@@ -1012,6 +1012,68 @@ class Expression:
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
+    def bool_and(self) -> Expression:
+        """Calculates the boolean AND of all values in a list.
+
+        For each list:
+        - Returns True if all non-null values are True
+        - Returns False if any non-null value is False
+        - Returns null if the list is empty or contains only null values
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [[True, True], [True, False], [None, None], []]})
+            >>> df.with_column("result", df["values"].list.bool_and()).collect()
+            ╭───────────────┬─────────╮
+            │ values        ┆ result  │
+            │ ---           ┆ ---     │
+            │ List[Boolean] ┆ Boolean │
+            ╞═══════════════╪═════════╡
+            │ [true, true]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [true, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]  ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []            ┆ None    │
+            ╰───────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        expr = self._expr.bool_and()
+        return Expression._from_pyexpr(expr)
+
+    def bool_or(self) -> Expression:
+        """Calculates the boolean OR of all values in a list.
+
+        For each list:
+        - Returns True if any non-null value is True
+        - Returns False if all non-null values are False
+        - Returns null if the list is empty or contains only null values
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
+            >>> df.with_column("result", df["values"].list.bool_or()).collect()
+            ╭────────────────┬─────────╮
+            │ values         ┆ result  │
+            │ ---            ┆ ---     │
+            │ List[Boolean]  ┆ Boolean │
+            ╞════════════════╪═════════╡
+            │ [true, false]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [false, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]   ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []             ┆ None    │
+            ╰────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        expr = self._expr.bool_or()
+        return Expression._from_pyexpr(expr)
+
     def any_value(self, ignore_nulls=False) -> Expression:
         """Returns any value in the expression.
 
@@ -3239,6 +3301,66 @@ class ExpressionListNamespace(ExpressionNamespace):
             Expression: a Float64 expression with the type of the list values
         """
         return Expression._from_pyexpr(native.list_max(self._expr))
+
+    def bool_and(self) -> Expression:
+        """Calculates the boolean AND of all values in a list.
+
+        For each list:
+        - Returns True if all non-null values are True
+        - Returns False if any non-null value is False
+        - Returns null if the list is empty or contains only null values
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [[True, True], [True, False], [None, None], []]})
+            >>> df.with_column("result", df["values"].list.bool_and()).collect()
+            ╭───────────────┬─────────╮
+            │ values        ┆ result  │
+            │ ---           ┆ ---     │
+            │ List[Boolean] ┆ Boolean │
+            ╞═══════════════╪═════════╡
+            │ [true, true]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [true, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]  ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []            ┆ None    │
+            ╰───────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        return Expression._from_pyexpr(native.list_bool_and(self._expr))
+
+    def bool_or(self) -> Expression:
+        """Calculates the boolean OR of all values in a list.
+
+        For each list:
+        - Returns True if any non-null value is True
+        - Returns False if all non-null values are False
+        - Returns null if the list is empty or contains only null values
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
+            >>> df.with_column("result", df["values"].list.bool_or()).collect()
+            ╭────────────────┬─────────╮
+            │ values         ┆ result  │
+            │ ---            ┆ ---     │
+            │ List[Boolean]  ┆ Boolean │
+            ╞════════════════╪═════════╡
+            │ [true, false]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [false, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]   ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []             ┆ None    │
+            ╰────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        return Expression._from_pyexpr(native.list_bool_or(self._expr))
 
     def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.

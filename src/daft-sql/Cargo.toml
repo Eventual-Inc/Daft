@@ -23,11 +23,16 @@ rstest = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
+  "common-daft-config/python",
   "common-error/python",
+  "common-io-config/python",
+  "daft-catalog/python",
+  "daft-core/python",
+  "daft-dsl/python",
   "daft-functions/python",
   "daft-functions-json/python",
-  "daft-scan/python",
-  "daft-catalog/python"
+  "daft-logical-plan/python",
+  "daft-scan/python"
 ]
 
 [lints]

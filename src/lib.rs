@@ -120,6 +120,7 @@ pub mod pylib {
         daft_functions::register_modules(m)?;
         daft_functions_json::register_modules(m)?;
         daft_connect::register_modules(m)?;
+        daft_context::register_modules(m)?;
         daft_dashboard_server::register_modules(m)?;
 
         // Register catalog module

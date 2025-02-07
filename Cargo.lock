@@ -1927,6 +1927,7 @@ dependencies = [
  "daft-catalog-python-catalog",
  "daft-compression",
  "daft-connect",
+ "daft-context",
  "daft-core",
  "daft-csv",
  "daft-dashboard-server",
@@ -1944,7 +1945,7 @@ dependencies = [
  "daft-minhash",
  "daft-parquet",
  "daft-physical-plan",
- "daft-ray-execution",
+ "daft-py-runners",
  "daft-scan",
  "daft-scheduler",
  "daft-sql",
@@ -2015,12 +2016,11 @@ dependencies = [
  "common-file-formats",
  "common-runtime",
  "daft-catalog",
+ "daft-context",
  "daft-core",
  "daft-dsl",
- "daft-local-execution",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-ray-execution",
  "daft-scan",
  "daft-schema",
  "daft-sql",
@@ -2037,6 +2037,18 @@ dependencies = [
  "tonic",
  "tracing",
  "uuid 1.11.0",
+]
+
+[[package]]
+name = "daft-context"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-daft-config",
+ "common-error",
+ "daft-py-runners",
+ "log",
+ "once_cell",
+ "pyo3",
 ]
 
 [[package]]
@@ -2505,7 +2517,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-ray-execution"
+name = "daft-py-runners"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
