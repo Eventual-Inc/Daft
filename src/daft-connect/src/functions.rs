@@ -10,11 +10,13 @@ use spark_connect::Expression;
 use crate::{error::ConnectResult, invalid_argument_err, spark_analyzer::SparkAnalyzer};
 mod core;
 mod math;
+mod string;
 
 pub(crate) static CONNECT_FUNCTIONS: Lazy<SparkFunctions> = Lazy::new(|| {
     let mut functions = SparkFunctions::new();
     functions.register::<core::CoreFunctions>();
     functions.register::<math::MathFunctions>();
+    functions.register::<string::StringFunctions>();
     functions
 });
 
@@ -92,5 +94,16 @@ impl SparkFunction for UnaryFunction {
             }
             _ => invalid_argument_err!("requires exactly one argument"),
         }
+    }
+}
+
+struct Todo;
+impl SparkFunction for Todo {
+    fn to_expr(
+        &self,
+        _args: &[Expression],
+        _analyzer: &SparkAnalyzer,
+    ) -> ConnectResult<daft_dsl::ExprRef> {
+        invalid_argument_err!("Function not implemented")
     }
 }

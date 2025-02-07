@@ -15,7 +15,7 @@ use daft_functions::numeric::{
 };
 use spark_connect::Expression;
 
-use super::{FunctionModule, SparkFunction};
+use super::{FunctionModule, SparkFunction, Todo};
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
@@ -36,60 +36,60 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("atan", ArcTan);
         parent.add_fn("atanh", ArcTanh);
         parent.add_fn("atan2", Atan2 {});
-        // parent.add_fn("bin", todo!());
+        parent.add_fn("bin", Todo);
         parent.add_fn("cbrt", Cbrt {});
         parent.add_fn("ceil", Ceil {});
         parent.add_fn("ceiling", Ceil {});
-        // parent.add_fn("conv", todo!());
+        parent.add_fn("conv", Todo);
         parent.add_fn("cos", Cos {});
-        // parent.add_fn("cosh", Cosh{});
+        parent.add_fn("cosh", Todo);
         parent.add_fn("cot", Cot {});
-        // parent.add_fn("csc", Csc{});
-        // parent.add_fn("e", E{});
+        parent.add_fn("csc", Todo);
+        parent.add_fn("e", Todo);
         parent.add_fn("exp", Exp {});
-        // parent.add_fn("expm1", Expm1{});
-        // parent.add_fn("factorial", Factorial{});
+        parent.add_fn("expm1", Todo);
+        parent.add_fn("factorial", Todo);
         parent.add_fn("floor", Floor {});
-        // parent.add_fn("hex", Hex{});
-        // parent.add_fn("unhex", UnHex{});
-        // parent.add_fn("hypot", Hypot{});
+        parent.add_fn("hex", Todo);
+        parent.add_fn("unhex", Todo);
+        parent.add_fn("hypot", Todo);
         parent.add_fn("ln", Ln {});
         parent.add_fn("log", LogFunction);
         parent.add_fn("log10", Log10 {});
-        // parent.add_fn("log1p", Log{});
+        parent.add_fn("log1p", Todo);
         parent.add_fn("log2", Log2 {});
-        // parent.add_fn("negate", Negate{})
-        // parent.add_fn("negative", Negative{})
-        // parent.add_fn("pi", Pi{})
-        // parent.add_fn("pmod", Pmod{})
-        // parent.add_fn("positive", Positive{})
-        // parent.add_fn("pow", Pow{})
-        // parent.add_fn("power", Pow{})
-        // parent.add_fn("rint", Rint{})
+        parent.add_fn("negate", Todo);
+        parent.add_fn("negative", Todo);
+        parent.add_fn("pi", Todo);
+        parent.add_fn("pmod", Todo);
+        parent.add_fn("positive", Todo);
+        parent.add_fn("pow", Todo);
+        parent.add_fn("power", Todo);
+        parent.add_fn("rint", Todo);
         parent.add_fn("round", RoundFunction);
-        // parent.add_fn("bround", BRound{})
-        // parent.add_fn("sec", Sec{})
-        // parent.add_fn("shiftleft", ShiftLeft{})
-        // parent.add_fn("shiftright", ShiftRight{})
-        // parent.add_fn("sign", Sign{})
-        // parent.add_fn("signum", Signum{})
+        parent.add_fn("bround", Todo);
+        parent.add_fn("sec", Todo);
+        parent.add_fn("shiftleft", Todo);
+        parent.add_fn("shiftright", Todo);
+        parent.add_fn("sign", Todo);
+        parent.add_fn("signum", Todo);
         parent.add_fn("sin", Sin {});
-        // parent.add_fn("sinh", Sinh{})
+        parent.add_fn("sinh", Todo);
         parent.add_fn("tan", Tan {});
-        // parent.add_fn("tanh", Tanh{})
-        // parent.add_fn("toDegrees", ToDegrees{})
-        // parent.add_fn("try_add", TryAdd{})
-        // parent.add_fn("try_avg", TryAvg{})
-        // parent.add_fn("try_divide", TryDivide{})
-        // parent.add_fn("try_multiply", TryMultiply{})
-        // parent.add_fn("try_subtract", TrySubtract{})
-        // parent.add_fn("try_sum", TrySum{})
-        // parent.add_fn("try_to_binary", TryToBinary{})
-        // parent.add_fn("try_to_number", TryToNumber{})
+        parent.add_fn("tanh", Todo);
+        parent.add_fn("toDegrees", Todo);
+        parent.add_fn("try_add", Todo);
+        parent.add_fn("try_avg", Todo);
+        parent.add_fn("try_divide", Todo);
+        parent.add_fn("try_multiply", Todo);
+        parent.add_fn("try_subtract", Todo);
+        parent.add_fn("try_sum", Todo);
+        parent.add_fn("try_to_binary", Todo);
+        parent.add_fn("try_to_number", Todo);
         parent.add_fn("degrees", Degrees {});
-        // parent.add_fn("toRadians", ToRadians{})
+        parent.add_fn("toRadians", Todo);
         parent.add_fn("radians", Radians {});
-        // parent.add_fn("width_bucket", WidthBucket{})
+        parent.add_fn("width_bucket", Todo);
         //
     }
 }
