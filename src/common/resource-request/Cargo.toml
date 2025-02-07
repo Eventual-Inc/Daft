@@ -6,7 +6,7 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-py-serde/python"]
+python = ["dep:pyo3", "common-py-serde/python", "common-error/python"]
 
 [lints]
 workspace = true

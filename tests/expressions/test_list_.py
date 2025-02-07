@@ -68,7 +68,7 @@ def test_list_constructor_heterogeneous():
 def test_list_constructor_heterogeneous_with_cast():
     df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
     df = df.select(list_(col("x").cast(dt.string()), col("y").cast(dt.string())).alias("strs"))
-    assert df.to_pydict() == {"strs": [["1", "1"], ["2", "1"], ["3", "0"]]}
+    assert df.to_pydict() == {"strs": [["1", "true"], ["2", "true"], ["3", "false"]]}
 
 
 def test_list_constructor_mixed_null_first():

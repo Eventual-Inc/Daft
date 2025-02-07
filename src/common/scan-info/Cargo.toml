@@ -11,7 +11,15 @@ serde = {workspace = true}
 typetag = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-daft-config/python", "common-display/python", "common-error/python", "common-file-formats/python", "daft-dsl/python", "daft-schema/python"]
+python = [
+  "dep:pyo3",
+  "common-daft-config/python",
+  "common-display/python",
+  "common-error/python",
+  "common-file-formats/python",
+  "daft-dsl/python",
+  "daft-schema/python"
+]
 
 [lints]
 workspace = true
