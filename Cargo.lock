@@ -2018,6 +2018,7 @@ dependencies = [
  "daft-context",
  "daft-core",
  "daft-dsl",
+ "daft-functions",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-scan",

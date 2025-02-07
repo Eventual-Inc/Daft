@@ -1,9 +1,9 @@
 use daft_core::count_mode::CountMode;
-use daft_dsl::{binary_op, col, ExprRef, Operator};
+use daft_dsl::{binary_op, col, Operator};
 use daft_schema::dtype::DataType;
 use spark_connect::Expression;
 
-use super::{FunctionModule, SparkFunction};
+use super::{FunctionModule, SparkFunction, UnaryFunction};
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
@@ -45,7 +45,7 @@ impl FunctionModule for CoreFunctions {
 }
 
 pub struct BinaryOpFunction(Operator);
-pub struct UnaryFunction(fn(ExprRef) -> ExprRef);
+
 pub struct CountFunction;
 
 impl SparkFunction for BinaryOpFunction {
@@ -67,22 +67,6 @@ impl SparkFunction for BinaryOpFunction {
         })?;
 
         Ok(binary_op(self.0, lhs, rhs))
-    }
-}
-
-impl SparkFunction for UnaryFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
-        match args {
-            [arg] => {
-                let arg = analyzer.to_daft_expr(arg)?;
-                Ok(self.0(arg))
-            }
-            _ => invalid_argument_err!("requires exactly one argument"),
-        }
     }
 }
 

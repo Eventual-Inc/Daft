@@ -202,6 +202,8 @@ common-runtime = {path = "src/common/runtime", default-features = false}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
+daft-functions = {path = "src/daft-functions"}
+daft-functions-json = {path = "src/daft-functions-json"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
