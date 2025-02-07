@@ -8,12 +8,14 @@ use once_cell::sync::Lazy;
 use spark_connect::Expression;
 
 use crate::{error::ConnectResult, invalid_argument_err, spark_analyzer::SparkAnalyzer};
+mod aggregate;
 mod core;
 mod math;
 mod string;
 
 pub(crate) static CONNECT_FUNCTIONS: Lazy<SparkFunctions> = Lazy::new(|| {
     let mut functions = SparkFunctions::new();
+    functions.register::<aggregate::AggregateFunctions>();
     functions.register::<core::CoreFunctions>();
     functions.register::<math::MathFunctions>();
     functions.register::<string::StringFunctions>();
@@ -81,6 +83,7 @@ where
         Ok(sf.into())
     }
 }
+
 impl SparkFunction for UnaryFunction {
     fn to_expr(
         &self,
