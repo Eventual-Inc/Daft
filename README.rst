@@ -47,7 +47,7 @@ For more advanced installations (e.g. installing from source or with extra depen
 Quickstart
 ^^^^^^^^^^
 
-  Check out our ` quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_!
+  Check out our `quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_!
 
 In this example, we load images from an AWS S3 bucket's URLs and resize each image in the dataframe:
 
