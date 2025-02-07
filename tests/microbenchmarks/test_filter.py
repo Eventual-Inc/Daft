@@ -4,7 +4,7 @@ import pytest
 
 import daft
 from daft import DataFrame
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 NUM_ROWS = 1_000_000
 

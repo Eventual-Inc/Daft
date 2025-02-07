@@ -43,12 +43,12 @@ def unify_timestamp(table):
     )
 
 
-def assert_tables_equal(daft_table, pa_table):
+def assert_tables_equal(daft_recordbatch, pa_table):
     sorted_pa_table = pa_table.sort_by([("id", "ascending")]).select(SCHEMA.names)
     sorted_pa_table = unify_timestamp(sorted_pa_table)
-    sorted_daft_table = daft_table.sort_by([("id", "ascending")]).select(SCHEMA.names)
-    sorted_daft_table = unify_timestamp(sorted_daft_table)
-    assert sorted_pa_table == sorted_daft_table
+    sorted_daft_recordbatch = daft_recordbatch.sort_by([("id", "ascending")]).select(SCHEMA.names)
+    sorted_daft_recordbatch = unify_timestamp(sorted_daft_recordbatch)
+    assert sorted_pa_table == sorted_daft_recordbatch
 
 
 @pytest.mark.parametrize(

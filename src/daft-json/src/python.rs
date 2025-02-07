@@ -3,7 +3,7 @@ pub mod pylib {
 
     use daft_core::python::PySchema;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
-    use daft_table::python::PyTable;
+    use daft_recordbatch::python::PyRecordBatch;
     use pyo3::{pyfunction, PyResult, Python};
 
     use crate::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
@@ -27,7 +27,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         max_chunks_in_flight: Option<usize>,
-    ) -> PyResult<PyTable> {
+    ) -> PyResult<PyRecordBatch> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_json: for uri {uri}"));
 

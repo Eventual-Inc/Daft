@@ -6,7 +6,7 @@ from daft.daft import (
     NativeExecutor as _NativeExecutor,
 )
 from daft.dataframe.display import MermaidOptions
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
     from daft.daft import PyDaftExecutionConfig

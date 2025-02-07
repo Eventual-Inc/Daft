@@ -7,7 +7,7 @@ from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
-    from daft.table import MicroPartition
+    from daft.recordbatch import MicroPartition
 
 
 class MapPartitionOp:
