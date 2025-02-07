@@ -15,6 +15,7 @@ daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-catalog-python-catalog = {path = "src/daft-catalog/python-catalog", optional = true}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-connect = {path = "src/daft-connect", optional = true}
+daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
@@ -31,7 +32,7 @@ daft-micropartition = {path = "src/daft-micropartition", default-features = fals
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
 daft-physical-plan = {path = "src/daft-physical-plan", default-features = false}
-daft-ray-execution = {path = "src/daft-ray-execution", default-features = false}
+daft-py-runners = {path = "src/daft-py-runners", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
 daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
@@ -77,8 +78,10 @@ python = [
   "daft-stats/python",
   "daft-table/python",
   "daft-writers/python",
+  "daft-context/python",
   "dep:daft-catalog-python-catalog",
   "dep:daft-connect",
+  "daft-connect/python",
   "dep:pyo3",
   "dep:pyo3-log"
 ]
@@ -173,7 +176,8 @@ members = [
   # "src/spark-connect-script",
   "src/generated/spark-connect",
   "src/common/partitioning",
-  "src/daft-ray-execution"
+  "src/daft-py-runners",
+  "src/daft-context"
 ]
 
 [workspace.dependencies]
@@ -195,13 +199,14 @@ common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
 common-runtime = {path = "src/common/runtime", default-features = false}
+daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-micropartition = {path = "src/daft-micropartition"}
-daft-ray-execution = {path = "src/daft-ray-execution"}
+daft-py-runners = {path = "src/daft-py-runners"}
 daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
 daft-sql = {path = "src/daft-sql"}

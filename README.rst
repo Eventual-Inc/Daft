@@ -2,7 +2,7 @@
 
 |CI| |PyPI| |Latest Tag| |Coverage| |Slack|
 
-`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/projects/docs/>`_ • `Installation`_ • `10-minute tour of Daft <https://www.getdaft.io/projects/docs/en/latest/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
+`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/projects/docs/>`_ • `Installation`_ • `Daft Quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
 Daft: Unified Engine for Data Analytics, Engineering & ML/AI
 ============================================================
@@ -42,12 +42,12 @@ Installation
 
 Install Daft with ``pip install getdaft``.
 
-For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://www.getdaft.io/projects/docs/en/latest/install.html>`_
+For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://www.getdaft.io/projects/docs/en/stable/install/>`_
 
 Quickstart
 ^^^^^^^^^^
 
-  Check out our `10-minute quickstart <https://www.getdaft.io/projects/docs/en/latest/learn/10-min.html>`_!
+  Check out our `quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_!
 
 In this example, we load images from an AWS S3 bucket's URLs and resize each image in the dataframe:
 
@@ -75,15 +75,15 @@ Benchmarks
 ----------
 |Benchmark Image|
 
-To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://www.getdaft.io/projects/docs/en/latest/faq/benchmarks.html>`_
+To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://www.getdaft.io/projects/docs/en/stable/resources/benchmarks/tpch/>`_
 
 
 More Resources
 ^^^^^^^^^^^^^^
 
-* `10-minute tour of Daft <https://www.getdaft.io/projects/docs/en/latest/learn/10-min.html>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
-* `User Guide <https://www.getdaft.io/projects/docs/en/latest/user_guide/index.html>`_ - take a deep-dive into each topic within Daft
-* `API Reference <https://www.getdaft.io/projects/docs/en/latest/api_docs/index.html>`_ - API reference for public classes/functions of Daft
+* `Daft Quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
+* `User Guide <https://www.getdaft.io/projects/docs/>`_ - take a deep-dive into each topic within Daft
+* `API Reference <https://www.getdaft.io/projects/docs/en/stable/api_docs/>`_ - API reference for public classes/functions of Daft
 
 Contributing
 ------------
@@ -107,7 +107,7 @@ The data that we collect is:
 2. **Metadata-only:** We do not collect any of our users’ proprietary code or data
 3. **For development only:** We do not buy or sell any user data
 
-Please see our `documentation <https://www.getdaft.io/projects/docs/en/latest/faq/telemetry.html>`_ for more details.
+Please see our `documentation <https://www.getdaft.io/projects/docs/en/stable/resources/telemetry/>`_ for more details.
 
 .. image:: https://static.scarf.sh/a.png?x-pxid=31f8d5ba-7e09-4d75-8895-5252bbf06cf6
 
@@ -130,7 +130,7 @@ Related Projects
 | `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 
-Check out our `dataframe comparison page <https://www.getdaft.io/projects/docs/en/latest/faq/dataframe_comparison.html>`_ for more details!
+Check out our `dataframe comparison page <https://www.getdaft.io/projects/docs/en/stable/resources/dataframe_comparison/>`_ for more details!
 
 License
 -------
