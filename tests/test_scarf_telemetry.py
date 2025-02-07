@@ -3,13 +3,12 @@ from __future__ import annotations
 import os
 import socket
 import urllib
-import pytest
 from unittest.mock import MagicMock, patch
 
-import daft
 from daft.scarf_telemetry import scarf_analytics
 
 PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS = 0.1
+
 
 @patch("urllib.request.urlopen")
 def test_scarf_analytics_no_request_when_disabled(mock_urlopen: MagicMock):
@@ -24,6 +23,7 @@ def test_scarf_analytics_no_request_when_disabled(mock_urlopen: MagicMock):
     scarf_analytics()
     mock_urlopen.assert_not_called()  # Verify no request was made
 
+
 @patch("urllib.request.urlopen")
 def test_scarf_analytics_makes_request(mock_urlopen: MagicMock):
     # Test when both environment variables are not set to "true"
@@ -32,6 +32,7 @@ def test_scarf_analytics_makes_request(mock_urlopen: MagicMock):
 
     scarf_analytics()  # Should make a request
     mock_urlopen.assert_called_once()  # Verify that a request was made
+
 
 @patch("urllib.request.urlopen")
 def test_scarf_analytics_timeout(mock_urlopen: MagicMock):
@@ -43,6 +44,7 @@ def test_scarf_analytics_timeout(mock_urlopen: MagicMock):
     scarf_analytics()
     mock_urlopen.assert_called_once()  # Verify that a request was made
 
+
 @patch("urllib.request.urlopen")
 def test_scarf_analytics_disabled(mock_urlopen: MagicMock):
     os.environ["SCARF_NO_ANALYTICS"] = "false"
@@ -52,6 +54,7 @@ def test_scarf_analytics_disabled(mock_urlopen: MagicMock):
     os.environ["SCARF_NO_ANALYTICS"] = "true"
     scarf_analytics()
     mock_urlopen.assert_not_called()  # Verify no request was made
+
 
 # class TestTelemetry(unittest.TestCase):
 #     @patch("urllib.request.urlopen")  # Mock requests.get
