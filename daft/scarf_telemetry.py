@@ -24,7 +24,7 @@ def scarf_analytics():
             query_string = urllib.parse.urlencode(params)
 
             # Make the GET request
-            url = f"https://daft.gateway.scarf.sh/getdaft?{query_string}"
+            url = f"https://daft.gateway.scarf.sh/daft-import?{query_string}"
             with urllib.request.urlopen(url) as response:
                 print(f"Response status: {response.status}")
 
@@ -52,7 +52,7 @@ def scarf_analytics():
 #             query_string = urllib.parse.urlencode(params)
 
 #             # Make the GET request using urllib
-#             url = f"https://daft.gateway.scarf.sh/getdaft?{query_string}"
+#             url = f"https://daft.gateway.scarf.sh/daft-import?{query_string}"
 #             print(f"Sending analytics to: {url}")  # Print message for verification
 #             with urllib.request.urlopen(url) as response:
 #                 print(f"Response status: {response.status}")
