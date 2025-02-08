@@ -2,13 +2,6 @@ use snafu::Snafu;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-#[macro_export]
-macro_rules! unsupported {
-    ($($arg:tt)*) => {
-        return Err($crate::errors::Error::unsupported(format!($($arg)*)))
-    };
-}
-
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display(

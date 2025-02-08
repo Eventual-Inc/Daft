@@ -1,6 +1,9 @@
+mod error;
+
+use daft_catalog::{identifier::Identifier, DaftCatalog};
 use daft_logical_plan::LogicalPlanBuilder;
 
-use crate::{errors::Result, identifier::Identifier, DaftCatalog};
+use crate::error::Result;
 
 /// Temporary rename while refactoring.
 type Metastore = DaftCatalog;

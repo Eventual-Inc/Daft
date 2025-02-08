@@ -28,13 +28,13 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use daft_catalog::session::Session;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
         logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
         LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
+    use daft_session::Session;
     use error::SQLPlannerResult;
     use rstest::{fixture, rstest};
 

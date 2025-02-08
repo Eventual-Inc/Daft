@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use common_daft_config::PyDaftPlanningConfig;
-use daft_catalog::{session::Session, DaftCatalog};
+use daft_catalog::DaftCatalog;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+use daft_session::Session;
 use pyo3::prelude::*;
 
 use crate::{functions::SQL_FUNCTIONS, planner::SQLPlanner};

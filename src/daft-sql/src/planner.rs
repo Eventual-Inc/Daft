@@ -8,7 +8,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_algebra::boolean::combine_conjunction;
-use daft_catalog::{identifier::Identifier, session::Session};
+use daft_catalog::identifier::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
@@ -21,6 +21,7 @@ use daft_functions::{
     utf8::{ilike, like, to_date, to_datetime},
 };
 use daft_logical_plan::{JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
+use daft_session::Session;
 use sqlparser::{
     ast::{
         self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,

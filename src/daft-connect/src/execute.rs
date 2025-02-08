@@ -2,12 +2,12 @@ use std::{future::ready, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
-use daft_catalog::session::Session;
 use daft_context::get_context;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+use daft_session::Session;
 use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,

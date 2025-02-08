@@ -1,8 +1,7 @@
 mod data_catalog;
 mod data_catalog_table;
-pub mod errors;
+pub mod error;
 pub mod identifier;
-pub mod session;
 
 // Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
@@ -14,7 +13,7 @@ pub use data_catalog_table::DataCatalogTable;
 #[cfg(feature = "python")]
 pub mod python;
 
-use errors::{Error, Result};
+use error::{Error, Result};
 
 pub mod global_catalog {
     use std::sync::{Arc, RwLock};
@@ -127,7 +126,7 @@ impl DaftCatalog {
     /// 2. If the [`DaftMetaCatalog`] has a default catalog, we will attempt to resolve the `table_identifier` against the default catalog
     /// 3. If the `table_identifier` is hierarchical (delimited by "."), use the first component as the Data Catalog name and resolve the rest of the components against
     ///     the selected Data Catalog
-    pub fn read_table(&self, table_identifier: &str) -> errors::Result<LogicalPlanBuilder> {
+    pub fn read_table(&self, table_identifier: &str) -> error::Result<LogicalPlanBuilder> {
         // If the name is an exact match with a registered view, return it.
         if let Some(view) = self.named_tables.get(table_identifier) {
             return Ok(view.clone());

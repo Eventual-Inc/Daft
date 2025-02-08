@@ -6,7 +6,6 @@ mod literal;
 use std::{io::Cursor, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
-use daft_catalog::session::Session;
 use daft_core::series::Series;
 use daft_dsl::col;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
@@ -14,6 +13,7 @@ use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
+use daft_session::Session;
 use daft_sql::SQLPlanner;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
