@@ -113,14 +113,14 @@ struct PlannerContext {
     /// Session provides access to metadata and the path for name resolution.
     /// TODO move into SQLPlanner once state is flipped.
     /// TODO consider decoupling session from planner via a resolver trait.
-    session: Arc<Session>,
+    session: Rc<Session>,
     /// Bindings for common table expressions (cte).
     bound_ctes: Bindings<Relation>,
 }
 
 impl PlannerContext {
     /// Creates a new context from the session
-    fn new(session: Arc<Session>) -> Self {
+    fn new(session: Rc<Session>) -> Self {
         Self {
             session,
             bound_ctes: Bindings::default(),
@@ -154,7 +154,7 @@ pub struct SQLPlanner<'a> {
 
 impl<'a> SQLPlanner<'a> {
     /// Create a new query planner for the session.
-    pub fn new(session: Arc<Session>) -> Self {
+    pub fn new(session: Rc<Session>) -> Self {
         let context = PlannerContext::new(session);
         let context = Rc::new(RefCell::new(context));
         Self {
@@ -205,7 +205,7 @@ impl<'a> SQLPlanner<'a> {
     }
 
     /// Borrow the planning session
-    fn session(&self) -> Ref<'_, Arc<Session>> {
+    fn session(&self) -> Ref<'_, Rc<Session>> {
         Ref::map(self.context.borrow(), |i| &i.session)
     }
 

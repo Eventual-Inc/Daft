@@ -1,4 +1,4 @@
-use std::{future::ready, sync::Arc};
+use std::{future::ready, rc::Rc, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
@@ -285,7 +285,7 @@ impl ConnectSession {
 
         // TODO: converge Session and ConnectSession
         let catalog = self.catalog().clone();
-        let session = Arc::new(Session::new("spark_connect", catalog));
+        let session = Rc::new(Session::new("spark_connect", catalog));
 
         let mut planner = daft_sql::SQLPlanner::new(session);
 

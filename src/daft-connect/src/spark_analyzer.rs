@@ -3,7 +3,7 @@
 mod datatype;
 mod literal;
 
-use std::{io::Cursor, sync::Arc};
+use std::{io::Cursor, rc::Rc, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::series::Series;
@@ -662,7 +662,7 @@ impl SparkAnalyzer<'_> {
 
         // TODO: converge Session and ConnectSession
         let catalog = self.session.catalog().clone();
-        let session = Arc::new(Session::new("connect", catalog));
+        let session = Rc::new(Session::new("connect", catalog));
 
         let mut planner = SQLPlanner::new(session);
         let plan = planner.plan_sql(&query)?;

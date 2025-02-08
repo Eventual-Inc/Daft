@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_daft_config::PyDaftPlanningConfig;
 use daft_catalog::DaftCatalog;
 use daft_dsl::python::PyExpr;
@@ -42,8 +40,8 @@ pub fn sql(
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
     // just use a one-off session for now..
-    let session = Arc::new(Session::new("py", catalog.catalog));
-    let mut planner = SQLPlanner::new(session);
+    let session = Session::new("py", catalog.catalog);
+    let mut planner = SQLPlanner::new(session.into());
     let plan = planner.plan_sql(sql)?;
     Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config)).into())
 }

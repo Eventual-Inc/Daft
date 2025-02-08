@@ -113,13 +113,13 @@ mod tests {
 
     #[fixture]
     fn planner() -> SQLPlanner<'static> {
-        let mut session = Session::default();
+        let session = Session::default();
 
-        session.create_table("tbl1", tbl_1());
-        session.create_table("tbl2", tbl_2());
-        session.create_table("tbl3", tbl_3());
+        _ = session.create_table("tbl1", tbl_1());
+        _ = session.create_table("tbl2", tbl_2());
+        _ = session.create_table("tbl3", tbl_3());
 
-        SQLPlanner::new(Arc::new(session))
+        SQLPlanner::new(session.into())
     }
 
     #[rstest]
