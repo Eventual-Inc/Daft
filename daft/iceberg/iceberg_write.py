@@ -7,8 +7,8 @@ from daft import Expression, col, lit
 from daft.datatype import DataType
 from daft.expressions.expressions import ExpressionsProjection
 from daft.io.common import _get_schema_from_dict
-from daft.table import MicroPartition
-from daft.table.partitioning import PartitionedTable, partition_strings_to_path
+from daft.recordbatch import MicroPartition
+from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to_path
 
 if TYPE_CHECKING:
     import pyarrow as pa

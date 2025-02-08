@@ -15,7 +15,7 @@ import daft
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col
 from daft.logical.schema import Schema
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 from ..integration.io.conftest import minio_create_bucket
 

@@ -2,7 +2,7 @@ use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
 
@@ -12,21 +12,24 @@ struct TargetFileSizeWriter {
     current_in_memory_size_estimate: usize,
     current_in_memory_bytes_written: usize,
     total_physical_bytes_written: usize,
-    current_writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
+    current_writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    writer_factory:
+        Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
-    results: Vec<Table>,
-    partition_values: Option<Table>,
+    results: Vec<RecordBatch>,
+    partition_values: Option<RecordBatch>,
     is_closed: bool,
 }
 
 impl TargetFileSizeWriter {
     fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-        partition_values: Option<Table>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+        >,
+        partition_values: Option<RecordBatch>,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> DaftResult<Self> {
-        let writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>> =
+        let writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>> =
             writer_factory.create_writer(0, partition_values.as_ref())?;
         let estimate = size_calculator.calculate_target_in_memory_size_bytes();
         Ok(Self {
@@ -87,7 +90,7 @@ impl TargetFileSizeWriter {
 
 impl FileWriter for TargetFileSizeWriter {
     type Input = Arc<MicroPartition>;
-    type Result = Vec<Table>;
+    type Result = Vec<RecordBatch>;
 
     fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
         assert!(
@@ -152,13 +155,16 @@ impl FileWriter for TargetFileSizeWriter {
 }
 
 pub(crate) struct TargetFileSizeWriterFactory {
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
+    writer_factory:
+        Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
 }
 
 impl TargetFileSizeWriterFactory {
     pub(crate) fn new(
-        writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
+        writer_factory: Arc<
+            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+        >,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> Self {
         Self {
@@ -170,12 +176,12 @@ impl TargetFileSizeWriterFactory {
 
 impl WriterFactory for TargetFileSizeWriterFactory {
     type Input = Arc<MicroPartition>;
-    type Result = Vec<Table>;
+    type Result = Vec<RecordBatch>;
 
     fn create_writer(
         &self,
         _file_idx: usize,
-        partition_values: Option<&Table>,
+        partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(TargetFileSizeWriter::new(
             self.writer_factory.clone(),

@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::Expr;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
 use rayon::{prelude::*, ThreadPoolBuilder};
@@ -28,7 +28,7 @@ pub fn read_json_local(
     parse_options: Option<JsonParseOptions>,
     read_options: Option<JsonReadOptions>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
     // SAFETY: mmapping is inherently unsafe.
@@ -111,7 +111,7 @@ impl<'a> JsonReader<'a> {
         })
     }
 
-    pub fn finish(&self) -> DaftResult<Table> {
+    pub fn finish(&self) -> DaftResult<RecordBatch> {
         let mut bytes = self.bytes;
         let mut n_threads = self.n_threads;
         let mut total_rows = 128;
@@ -148,7 +148,7 @@ impl<'a> JsonReader<'a> {
                     let chunk = &bytes[start..stop];
                     self.parse_json_chunk(chunk, chunk_size)
                 })
-                .collect::<DaftResult<Vec<Table>>>()
+                .collect::<DaftResult<Vec<RecordBatch>>>()
         })?;
 
         let tbl = tables_concat(tbls)?;
@@ -162,7 +162,7 @@ impl<'a> JsonReader<'a> {
         Ok(tbl)
     }
 
-    fn parse_json_chunk(&self, bytes: &[u8], chunk_size: usize) -> DaftResult<Table> {
+    fn parse_json_chunk(&self, bytes: &[u8], chunk_size: usize) -> DaftResult<RecordBatch> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
 
@@ -229,7 +229,7 @@ impl<'a> JsonReader<'a> {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let tbl = Table::new_unchecked(self.schema.clone(), columns, num_rows);
+        let tbl = RecordBatch::new_unchecked(self.schema.clone(), columns, num_rows);
 
         if let Some(pred) = &self.predicate {
             tbl.filter(&[pred.clone()])

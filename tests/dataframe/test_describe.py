@@ -1,5 +1,5 @@
 import daft
-import daft.table
+import daft.recordbatch
 from daft import DataFrame, Schema
 from daft import DataType as dt
 from daft.logical.schema import Field
@@ -36,7 +36,7 @@ def test_describe():
         Field.create("c_sparse_tensor", dt.sparse_tensor(dt.float32())),
     ]
     # create an empty table with known schema
-    mp = daft.table.MicroPartition.empty(Schema._from_fields(fields))
+    mp = daft.recordbatch.MicroPartition.empty(Schema._from_fields(fields))
     df = DataFrame._from_tables(mp)
     # describe..
     df = df.describe().collect()

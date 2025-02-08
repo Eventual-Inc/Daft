@@ -2,23 +2,23 @@
 
 from typing import TYPE_CHECKING, Callable, Iterator, List
 
-from daft.daft import Pushdowns, PyTable, ScanOperatorHandle, ScanTask
+from daft.daft import Pushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
-    from daft.table.table import Table
+    from daft.recordbatch.recordbatch import RecordBatch
 
 
-def _generator_factory_function(func: Callable[[], Iterator["Table"]]) -> Iterator["PyTable"]:
+def _generator_factory_function(func: Callable[[], Iterator["RecordBatch"]]) -> Iterator["PyRecordBatch"]:
     for table in func():
         yield table._table
 
 
 def read_generator(
-    generators: Iterator[Callable[[], Iterator["Table"]]],
+    generators: Iterator[Callable[[], Iterator["RecordBatch"]]],
     schema: Schema,
 ) -> DataFrame:
     """Create a DataFrame from a generator function.
@@ -26,7 +26,7 @@ def read_generator(
     Example:
         >>> import daft
         >>> from daft.io._generator import read_generator
-        >>> from daft.table.table import Table
+        >>> from daft.recordbatch.recordbatch import RecordBatch
         >>> from functools import partial
         >>>
         >>> # Set runner to Ray for distributed processing
@@ -35,7 +35,7 @@ def read_generator(
         >>> # Helper function to generate data for each partition
         >>> def generate(num_rows: int):
         ...     data = {"ints": [i for i in range(num_rows)]}
-        ...     yield Table.from_pydict(data)
+        ...     yield RecordBatch.from_pydict(data)
         >>>
         >>> # Generator function that yields partial functions for each partition
         >>> def generator(num_partitions: int):
@@ -53,7 +53,7 @@ def read_generator(
         ... )
 
     Args:
-        generator (Callable[[int, Any], Iterator[Table]]): a generator function that generates data
+        generator (Callable[[int, Any], Iterator[RecordBatch]]): a generator function that generates data
         num_partitions (int): the number of partitions to generate
         schema (Schema): the schema of the generated data
         generator_args (Any): additional arguments to pass to the generator
@@ -73,7 +73,7 @@ def read_generator(
 class GeneratorScanOperator(ScanOperator):
     def __init__(
         self,
-        generators: Iterator[Callable[[], Iterator["Table"]]],
+        generators: Iterator[Callable[[], Iterator["RecordBatch"]]],
         schema: Schema,
     ):
         self._generators = generators
