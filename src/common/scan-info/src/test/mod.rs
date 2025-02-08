@@ -52,6 +52,10 @@ impl ScanTaskLike for DummyScanTask {
         self.schema.clone()
     }
 
+    fn update_num_rows(&mut self, num_rows: usize) {
+        self.num_rows = Some(num_rows);
+    }
+
     fn num_rows(&self) -> Option<usize> {
         self.num_rows
     }

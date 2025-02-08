@@ -21,6 +21,8 @@ pub trait ScanTaskLike: Debug + DisplayAs + Send + Sync {
     fn dyn_hash(&self, state: &mut dyn Hasher);
     #[must_use]
     fn materialized_schema(&self) -> SchemaRef;
+    // Avoid the builder pattern for update_num_rows so that ScanTaskLike can be a trait object.
+    fn update_num_rows(&mut self, num_rows: usize);
     #[must_use]
     fn num_rows(&self) -> Option<usize>;
     #[must_use]
