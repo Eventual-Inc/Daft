@@ -2616,7 +2616,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "daft-catalog",
  "daft-logical-plan",
+<<<<<<< HEAD
  "pyo3",
+=======
+>>>>>>> b4c3b054 (feat(catalog): Defines a session for connection state (#3782))
  "uuid 1.11.0",
 ]
 
