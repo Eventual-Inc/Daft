@@ -31,6 +31,7 @@ __version__ = get_version()
 #     except Exception:
 #         pass
 
+
 # For Py, Ray, or Native runner
 def scarf_analytics():
     try:
@@ -68,6 +69,6 @@ def scarf_analytics():
                 return f"Response status: {response.status}", daft_runner
 
     except Exception as e:
-        return f"Analytics error: {str(e)}", None
+        return f"Analytics error: {e!s}", None
 
     return None, None
