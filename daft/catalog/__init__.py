@@ -164,8 +164,8 @@ class Identifier(Sequence):
     """A reference (path) to a catalog object.
 
     Example:
-    >>> id1 = Identifier("a", "b")
-    >>> id2 = Identifier.parse("a.b")
+    >>> id = Identifier("a", "b")
+    >>> assert len(id) == 2
     """
 
     _identifier: native_catalog.PyIdentifier
@@ -174,8 +174,8 @@ class Identifier(Sequence):
         """Creates an Identifier from its parts.
 
         Example:
-        >>> id = Identifier("schema", "table")
-        >>> id  # Identifier('schema.table')
+        >>> Identifier("schema", "table")
+        >>> #
 
         Returns:
             Identifier: A new identifier.
@@ -185,18 +185,19 @@ class Identifier(Sequence):
         self._identifier = native_catalog.PyIdentifier(parts[:-1], parts[-1])
 
     @staticmethod
-    def parse(input: str) -> Identifier:
-        """Parses an Identifier from an SQL string.
+    def from_sql(input: str, normalize: bool = False) -> Identifier:
+        """Parses an Identifier from an SQL string, normalizing to lowercase if specified.
 
         Example:
-        >>> id = Identifier.parse("schema.table")
-        >>> assert len(id) == 2
+        >>> Identifier.from_sql("schema.table") == Identifier("schema", "table")
+        >>> Identifier.from_sql('"a.b"') == Identifier('"a.b."')
+        >>> Identifier.from_sql('ABC."xYz"', normalize=True) == Identifier("abc", "xYz")
 
         Returns:
             Identifier: A new identifier.
         """
         i = Identifier.__new__(Identifier)
-        i._identifier = native_catalog.PyIdentifier.parse(input)
+        i._identifier = native_catalog.PyIdentifier.from_sql(input, normalize)
         return i
 
     def __eq__(self, other: object) -> bool:
