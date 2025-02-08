@@ -26,9 +26,8 @@ import { toHumanReadableDate, delta } from '@/lib/utils';
 import { useRouter } from "next/navigation";
 
 const NAME: string = "id";
-const START_TIME: string = "plan-time-start";
-const END_TIME: string = "plan-time-end";
-const TIME_DELTA: string = "time-delta";
+const START_TIME: string = "plan_time_start";
+const TIME_DELTA: string = "time_delta";
 
 const columns = (queryInfoMap: QueryInfoMap) => [
     {
@@ -47,7 +46,7 @@ const columns = (queryInfoMap: QueryInfoMap) => [
         cell: ({ row }: any) => {
             return delta(
                 row.getValue(START_TIME),
-                queryInfoMap[row.getValue(NAME)][END_TIME as keyof QueryInfo]
+                queryInfoMap[row.getValue(NAME)].plan_time_end
             );
         },
     },
@@ -69,9 +68,10 @@ export default function DataTableDemo() {
             } catch (error) { }
         })();
     }, []);
+    const cols = columns(queryInfo);
     const table = useReactTable({
         data: Object.values(queryInfo),
-        columns: columns(queryInfo),
+        columns: cols,
         getCoreRowModel: getCoreRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -99,7 +99,7 @@ export default function DataTableDemo() {
                         {table.getHeaderGroups().map((headerGroup) => (
                             <TableRow key={headerGroup.id}>
                                 {headerGroup.headers.map((header) =>
-                                    <TableHead key={header.id} className="px-[20px] text-xs">
+                                    <TableHead key={header.id} className={`px-[20px] text-xs ${(header.column.columnDef as { accessorKey: String }).accessorKey === NAME ? "w-[75%]" : undefined}`}>
                                         {flexRender(
                                             header.column.columnDef.header,
                                             header.getContext()
@@ -132,7 +132,7 @@ export default function DataTableDemo() {
                         ) : (
                             <TableRow>
                                 <TableCell
-                                    colSpan={columns.length}
+                                    colSpan={cols.length}
                                     className="h-24 text-center"
                                 >
                                     No results

@@ -2,9 +2,9 @@ import { atom } from 'jotai';
 
 export type QueryInfo = {
     id: string
-    'mermaid-plan': string
-    'plan-time-start': string
-    'plan-time-end': string
+    mermaid_plan: string
+    plan_time_start: string
+    plan_time_end: string
 };
 
 export type QueryInfoMap = {
