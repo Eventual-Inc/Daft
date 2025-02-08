@@ -22,11 +22,27 @@ use tokio::{net::TcpListener, spawn};
 
 type Req<T = Incoming> = Request<T>;
 type Res = Response<BoxBody<Bytes, std::convert::Infallible>>;
+type ServerResult<T> = Result<T, (StatusCode, anyhow::Error)>;
 
 const DAFT_PORT: u16 = 3238;
 const DASHBOARD_PORT: u16 = DAFT_PORT + 1;
 
 static QUERY_METADATAS: OnceLock<RwLock<Vec<QueryMetadata>>> = OnceLock::new();
+
+trait ResultExt<T, E: Into<anyhow::Error>>: Sized {
+    fn with_status_code(self, status_code: StatusCode) -> ServerResult<T>;
+    fn with_internal_error(self) -> ServerResult<T>;
+}
+
+impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
+    fn with_status_code(self, status_code: StatusCode) -> ServerResult<T> {
+        self.map_err(|err| (status_code, err.into()))
+    }
+
+    fn with_internal_error(self) -> ServerResult<T> {
+        self.with_status_code(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+}
 
 fn query_metadatas() -> &'static RwLock<Vec<QueryMetadata>> {
     QUERY_METADATAS.get_or_init(RwLock::default)
@@ -41,15 +57,15 @@ struct QueryMetadata {
     plan_time_end: DateTime<Utc>,
 }
 
-async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> anyhow::Result<Req<T>> {
+async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req<T>> {
     let (parts, body) = req.into_parts();
-    let bytes = body.collect().await?.to_bytes();
-    let data = simdutf8::basic::from_utf8(&bytes)?;
-    let body = serde_json::from_str(data)?;
+    let bytes = body.collect().await.with_internal_error()?.to_bytes();
+    let data = simdutf8::basic::from_utf8(&bytes).with_status_code(StatusCode::BAD_REQUEST)?;
+    let body = serde_json::from_str(data).with_status_code(StatusCode::BAD_REQUEST)?;
     Ok(Request::from_parts(parts, body))
 }
 
-async fn daft_http_application(req: Req) -> anyhow::Result<Res> {
+async fn daft_http_application(req: Req) -> ServerResult<Res> {
     Ok(match (req.method(), req.uri().path()) {
         (&Method::POST, "/") => {
             let req = deserialize::<QueryMetadata>(req).await?;
@@ -61,7 +77,7 @@ async fn daft_http_application(req: Req) -> anyhow::Result<Res> {
     })
 }
 
-async fn dashboard_http_application(req: Req) -> anyhow::Result<Res> {
+async fn dashboard_http_application(req: Req) -> ServerResult<Res> {
     Ok(match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
             let query_metadatas = query_metadatas().read();
@@ -72,10 +88,10 @@ async fn dashboard_http_application(req: Req) -> anyhow::Result<Res> {
     })
 }
 
-async fn run() {
-    async fn run_http_application<F>(f: fn(Req) -> F, addr: Ipv4Addr, port: u16)
+pub async fn run() {
+    async fn run_http_application<F>(server: fn(Req) -> F, addr: Ipv4Addr, port: u16)
     where
-        F: 'static + Send + Future<Output = anyhow::Result<Res>>,
+        F: 'static + Send + Future<Output = ServerResult<Res>>,
     {
         let listener = TcpListener::bind((addr, port))
             .await
@@ -88,7 +104,17 @@ async fn run() {
             let io = TokioIo::new(stream);
             spawn(async move {
                 http1::Builder::new()
-                    .serve_connection(io, service_fn(f))
+                    .serve_connection(
+                        io,
+                        service_fn(|request| async {
+                            Ok::<_, std::convert::Infallible>(match server(request).await {
+                                Ok(response) => response,
+                                Err((status_code, error)) => {
+                                    response::with_body(status_code, error.to_string())
+                                }
+                            })
+                        }),
+                    )
                     .await
                     .expect("Failed to serve endpoint");
             });
