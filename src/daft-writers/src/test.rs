@@ -6,7 +6,7 @@ use daft_core::{
     series::IntoSeries,
 };
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::{FileWriter, WriterFactory};
 
@@ -14,12 +14,12 @@ pub(crate) struct DummyWriterFactory;
 
 impl WriterFactory for DummyWriterFactory {
     type Input = Arc<MicroPartition>;
-    type Result = Option<Table>;
+    type Result = Option<RecordBatch>;
 
     fn create_writer(
         &self,
         file_idx: usize,
-        partition_values: Option<&Table>,
+        partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(DummyWriter {
             file_idx: file_idx.to_string(),
@@ -35,14 +35,14 @@ impl WriterFactory for DummyWriterFactory {
 
 pub(crate) struct DummyWriter {
     file_idx: String,
-    partition_values: Option<Table>,
+    partition_values: Option<RecordBatch>,
     write_count: usize,
     byte_count: usize,
 }
 
 impl FileWriter for DummyWriter {
     type Input = Arc<MicroPartition>;
-    type Result = Option<Table>;
+    type Result = Option<RecordBatch>;
 
     fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
         self.write_count += 1;
@@ -61,7 +61,7 @@ impl FileWriter for DummyWriter {
         let write_count_series =
             UInt64Array::from_values("write_count", std::iter::once(self.write_count as u64))
                 .into_series();
-        let path_table = Table::new_unchecked(
+        let path_table = RecordBatch::new_unchecked(
             Schema::new(vec![
                 path_series.field().clone(),
                 write_count_series.field().clone(),
@@ -83,7 +83,7 @@ pub(crate) fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
     let series =
         UInt8Array::from_values("ints", std::iter::repeat(42).take(size_bytes)).into_series();
     let schema = Arc::new(Schema::new(vec![series.field().clone()]).unwrap());
-    let table = Table::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
+    let table = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
     Arc::new(MicroPartition::new_loaded(
         schema.into(),
         vec![table].into(),

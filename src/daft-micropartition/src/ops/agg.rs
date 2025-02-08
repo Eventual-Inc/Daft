@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::micropartition::MicroPartition;
 
@@ -13,7 +13,7 @@ impl MicroPartition {
 
         match tables.as_slice() {
             [] => {
-                let empty_table = Table::empty(Some(self.schema.clone()))?;
+                let empty_table = RecordBatch::empty(Some(self.schema.clone()))?;
                 let agged = empty_table.agg(to_agg, group_by)?;
                 Ok(Self::new_loaded(
                     agged.schema.clone(),

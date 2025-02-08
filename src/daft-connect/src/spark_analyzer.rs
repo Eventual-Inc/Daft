@@ -10,10 +10,10 @@ use daft_core::series::Series;
 use daft_dsl::col;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
+use daft_recordbatch::RecordBatch;
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
-use daft_table::Table;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
 use itertools::zip_eq;
@@ -56,7 +56,7 @@ impl SparkAnalyzer<'_> {
 
     /// Creates a logical source (scan) operator from a vec of tables.
     ///
-    /// Consider moving into LogicalBuilder, but this would re-introduce the daft-table dependency.
+    /// Consider moving into LogicalBuilder, but this would re-introduce the daft-recordbatch dependency.
     ///
     /// TODOs
     ///   * https://github.com/Eventual-Inc/Daft/pull/3250
@@ -66,18 +66,17 @@ impl SparkAnalyzer<'_> {
         &self,
         _plan_id: usize,
         schema: Arc<Schema>,
-        tables: Vec<Table>,
+        tables: Vec<RecordBatch>,
     ) -> ConnectResult<LogicalPlanBuilder> {
         let mp = MicroPartition::new_loaded(schema, Arc::new(tables), None);
         Python::with_gil(|py| {
             // Convert MicroPartition to a logical plan using Python interop.
             let py_micropartition = py
-                .import(intern!(py, "daft.table"))?
+                .import(intern!(py, "daft.recordbatch"))?
                 .getattr(intern!(py, "MicroPartition"))?
                 .getattr(intern!(py, "_from_pymicropartition"))?
                 .call1((PyMicroPartition::from(mp),))?;
 
-            // ERROR:   2: AttributeError: 'daft.daft.PySchema' object has no attribute '_schema'
             let py_plan_builder = py
                 .import(intern!(py, "daft.dataframe.dataframe"))?
                 .getattr(intern!(py, "to_logical_plan_builder"))?
@@ -465,7 +464,7 @@ impl SparkAnalyzer<'_> {
                 })
                 .collect::<ConnectResult<Vec<_>>>()?;
 
-            let batch = Table::from_nonempty_columns(columns)?;
+            let batch = RecordBatch::from_nonempty_columns(columns)?;
 
             Ok(batch)
          }).collect::<ConnectResult<Vec<_>>>()?;
