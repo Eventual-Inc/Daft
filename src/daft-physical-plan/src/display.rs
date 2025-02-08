@@ -8,6 +8,7 @@ impl TreeDisplay for PhysicalPlan {
     fn display_as(&self, level: DisplayLevel) -> String {
         match self {
             Self::InMemoryScan(scan) => scan.display_as(level),
+            Self::PlaceholderScan(scan) => scan.display_as(level),
             Self::TabularScan(scan) => scan.display_as(level),
             Self::EmptyScan(scan) => scan.display_as(level),
             Self::Project(p) => p.display_as(level),
