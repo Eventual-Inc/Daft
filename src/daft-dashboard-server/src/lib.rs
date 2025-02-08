@@ -33,7 +33,7 @@ fn query_metadatas() -> &'static RwLock<Vec<QueryMetadata>> {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 struct QueryMetadata {
     id: String,
     mermaid_plan: String,
