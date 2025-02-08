@@ -36,6 +36,12 @@ impl ScalarUDF for Round {
 }
 
 #[must_use]
-pub fn round(input: ExprRef, decimal: i32) -> ExprRef {
-    ScalarFunction::new(Round { decimal }, vec![input]).into()
+pub fn round(input: ExprRef, decimal: Option<i32>) -> ExprRef {
+    ScalarFunction::new(
+        Round {
+            decimal: decimal.unwrap_or_default(),
+        },
+        vec![input],
+    )
+    .into()
 }

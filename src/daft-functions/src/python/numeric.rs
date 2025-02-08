@@ -34,5 +34,5 @@ pub fn round(expr: PyExpr, decimal: i32) -> PyResult<PyExpr> {
             "decimal can not be negative: {decimal}"
         )));
     }
-    Ok(crate::numeric::round::round(expr.into(), decimal).into())
+    Ok(crate::numeric::round::round(expr.into(), Some(decimal)).into())
 }
