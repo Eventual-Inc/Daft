@@ -13,7 +13,7 @@ use daft_schema::{
     field::Field,
     schema::{Schema, SchemaRef},
 };
-use daft_stats::PartitionSpec;
+use daft_stats::{PartitionSpec, TableMetadata};
 use daft_table::Table;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::Snafu;
@@ -33,6 +33,7 @@ pub struct GlobScanOperator {
     hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
     generated_fields: SchemaRef,
+    first_metadata: Option<TableMetadata>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -197,9 +198,9 @@ impl GlobScanOperator {
             (partitioning_keys, generated_fields)
         };
 
-        let schema = match infer_schema {
+        let (schema, first_metadata) = match infer_schema {
             true => {
-                let inferred_schema = match file_format_config.as_ref() {
+                let (inferred_schema, first_metadata) = match file_format_config.as_ref() {
                     &FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
                         ref field_id_mapping,
@@ -209,19 +210,22 @@ impl GlobScanOperator {
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
                         ));
 
-                        let (schema, _metadata) = daft_parquet::read::read_parquet_schema(
-                            first_filepath.as_str(),
-                            io_client,
-                            Some(io_stats),
-                            ParquetSchemaInferenceOptions {
-                                coerce_int96_timestamp_unit,
-                                ..Default::default()
-                            },
-                            field_id_mapping.clone(),
-                        )
-                        .await?;
-
-                        schema
+                        let (schema, metadata) =
+                            daft_parquet::read::read_parquet_schema_and_metadata(
+                                first_filepath.as_str(),
+                                io_client,
+                                Some(io_stats),
+                                ParquetSchemaInferenceOptions {
+                                    coerce_int96_timestamp_unit,
+                                    ..Default::default()
+                                },
+                                field_id_mapping.clone(),
+                            )
+                            .await?;
+                        let metadata = Some(TableMetadata {
+                            length: metadata.num_rows,
+                        });
+                        (schema, metadata)
                     }
                     FileFormatConfig::Csv(CsvSourceConfig {
                         delimiter,
@@ -249,17 +253,18 @@ impl GlobScanOperator {
                             Some(io_stats),
                         )
                         .await?;
-                        schema
+                        (schema, None)
                     }
                     FileFormatConfig::Json(_) => {
-                        daft_json::schema::read_json_schema(
+                        let schema = daft_json::schema::read_json_schema(
                             first_filepath.as_str(),
                             None,
                             None,
                             io_client,
                             Some(io_stats),
                         )
-                        .await?
+                        .await?;
+                        (schema, None)
                     }
                     #[cfg(feature = "python")]
                     FileFormatConfig::Database(_) => {
@@ -275,13 +280,17 @@ impl GlobScanOperator {
                     }
                 };
                 match user_provided_schema {
-                    Some(hint) => Arc::new(inferred_schema.apply_hints(&hint)?),
-                    None => Arc::new(inferred_schema),
+                    Some(hint) => (
+                        Arc::new(inferred_schema.apply_hints(&hint)?),
+                        first_metadata,
+                    ),
+                    None => (Arc::new(inferred_schema), first_metadata),
                 }
             }
-            false => {
-                user_provided_schema.expect("Schema must be provided if infer_schema is false")
-            }
+            false => (
+                user_provided_schema.expect("Schema must be provided if infer_schema is false"),
+                None,
+            ),
         };
         Ok(Self {
             glob_paths,
@@ -292,6 +301,7 @@ impl GlobScanOperator {
             hive_partitioning,
             partitioning_keys,
             generated_fields: Arc::new(generated_fields),
+            first_metadata,
         })
     }
 }
@@ -395,7 +405,7 @@ impl ScanOperator for GlobScanOperator {
             .collect();
         let partition_schema = Schema::new(partition_fields)?;
         // Create one ScanTask per file.
-        files
+        let mut scan_tasks = files
             .enumerate()
             .filter_map(|(idx, f)| {
                 let scan_task_result = (|| {
@@ -468,6 +478,17 @@ impl ScanOperator for GlobScanOperator {
                     Err(e) => Some(Err(e)),
                 }
             })
-            .collect()
+            .collect::<DaftResult<Vec<ScanTaskLikeRef>>>()?;
+        // If we collected file metadata and there is a single scan task, we can use this metadata
+        // to get the true cardinality of the scan task.
+        if let Some(first_metadata) = &self.first_metadata
+            && scan_tasks.len() == 1
+        {
+            let task = Arc::get_mut(&mut scan_tasks[0]).expect(
+                "We should have exclusive access to the scan task during scan task materialization",
+            );
+            task.update_num_rows(first_metadata.length);
+        }
+        Ok(scan_tasks)
     }
 }

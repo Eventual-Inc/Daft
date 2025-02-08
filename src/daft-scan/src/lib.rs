@@ -459,6 +459,10 @@ impl ScanTaskLike for ScanTask {
         self.materialized_schema()
     }
 
+    fn update_num_rows(&mut self, num_rows: usize) {
+        self.metadata = Some(TableMetadata { length: num_rows });
+    }
+
     fn num_rows(&self) -> Option<usize> {
         self.num_rows()
     }
@@ -875,7 +879,7 @@ mod test {
         )
     }
 
-    async fn make_glob_scan_operator(num_sources: usize) -> GlobScanOperator {
+    async fn make_glob_scan_operator(num_sources: usize, infer_schema: bool) -> GlobScanOperator {
         let file_format_config: FileFormatConfig = FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit: TimeUnit::Seconds,
             field_id_mapping: None,
@@ -893,7 +897,7 @@ mod test {
             sources,
             Arc::new(file_format_config),
             Arc::new(StorageConfig::new_internal(false, None)),
-            false,
+            infer_schema,
             Some(Arc::new(Schema::empty())),
             None,
             false,
@@ -906,9 +910,27 @@ mod test {
 
     #[tokio::test]
     async fn test_glob_display_condenses() -> DaftResult<()> {
-        let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8).await;
+        let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8, false).await;
         let condensed_glob_paths: Vec<String> = glob_scan_operator.multiline_display();
         assert_eq!(condensed_glob_paths[1], "Glob paths = [../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ..., ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet]");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_glob_scan_single_file_num_rows() -> DaftResult<()> {
+        let glob_scan_operator = make_glob_scan_operator(1, true).await;
+        let scan_tasks = tokio::task::spawn_blocking(move || {
+            glob_scan_operator.to_scan_tasks(Pushdowns::default())
+        })
+        .await
+        .unwrap()?;
+
+        assert_eq!(scan_tasks.len(), 1, "Expected exactly one scan task");
+        assert_eq!(
+            scan_tasks[0].num_rows(),
+            Some(100),
+            "Expected 100 rows in the scan task"
+        );
         Ok(())
     }
 
