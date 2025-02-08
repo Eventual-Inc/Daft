@@ -1,0 +1,17 @@
+[dependencies]
+daft-catalog = {path = "../daft-catalog"}
+daft-logical-plan = {path = "../daft-logical-plan"}
+
+[features]
+python = [
+  "daft-catalog/python",
+  "daft-logical-plan/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-session"
+edition.workspace = true
+version.workspace = true

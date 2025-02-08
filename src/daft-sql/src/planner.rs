@@ -8,7 +8,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_algebra::boolean::combine_conjunction;
-use daft_catalog::DaftCatalog;
+use daft_catalog::identifier::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
@@ -21,6 +21,7 @@ use daft_functions::{
     utf8::{ilike, like, to_date, to_datetime},
 };
 use daft_logical_plan::{JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
+use daft_session::Session;
 use sqlparser::{
     ast::{
         self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
@@ -37,6 +38,35 @@ use sqlparser::{
 use crate::{
     column_not_found_err, error::*, invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
+
+/// Bindings are used to lookup in-scope tables, views, and columns (targets T).
+/// This is an incremental step towards proper name resolution.
+struct Bindings<T>(HashMap<String, T>);
+
+impl<T> Bindings<T> {
+    /// Gets a binding by identiifer
+    pub fn get(&self, ident: &str) -> Option<&T> {
+        // TODO use identifiers and handle case-normalization
+        self.0.get(ident)
+    }
+
+    /// Inserts a new binding by name
+    pub fn insert(&mut self, name: String, target: T) -> Option<T> {
+        // TODO use names and handle case-normalization
+        self.0.insert(name, target)
+    }
+
+    /// Clears all bound targets
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+impl<T> Default for Bindings<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
 
 /// A named logical plan
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query
@@ -55,49 +85,78 @@ impl Relation {
             alias: None,
         }
     }
+
     pub fn with_alias(self, alias: TableAlias) -> Self {
         Self {
             alias: Some(alias),
             ..self
         }
     }
+
     pub fn get_name(&self) -> String {
         self.alias
             .as_ref()
             .map(|alias| ident_to_str(&alias.name))
             .unwrap_or_else(|| self.name.clone())
     }
+
     pub(crate) fn schema(&self) -> SchemaRef {
         self.inner.schema()
     }
 }
 
-/// Context that is shared across a query and its subqueries
+/// Context for the planning the statement.
+/// TODO consolidate SQLPlanner state to the single context.
+/// TODO move bound_ctes into per-planner scope since these are a scoped concept.
 #[derive(Default)]
 struct PlannerContext {
-    catalog: DaftCatalog,
-    cte_map: HashMap<String, Relation>,
+    /// Session provides access to metadata and the path for name resolution.
+    /// TODO move into SQLPlanner once state is flipped.
+    /// TODO consider decoupling session from planner via a resolver trait.
+    session: Rc<Session>,
+    /// Bindings for common table expressions (cte).
+    bound_ctes: Bindings<Relation>,
 }
 
+impl PlannerContext {
+    /// Creates a new context from the session
+    fn new(session: Rc<Session>) -> Self {
+        Self {
+            session,
+            bound_ctes: Bindings::default(),
+        }
+    }
+
+    /// Clears the entire statement context
+    fn clear(&mut self) {
+        self.bound_ctes.clear();
+    }
+}
+
+/// An SQLPlanner is created for each scope to bind names and translate to logical plans.
+/// TODO flip SQLPlanner to pass scoped state objects rather than being stateful itself.
+/// This gives us control on state management without coupling our scopes to the call stack.
+/// It also eliminates extra references on the shared context and we can remove interior mutability.
 #[derive(Default)]
 pub struct SQLPlanner<'a> {
+    /// Shared context for all planners
+    context: Rc<RefCell<PlannerContext>>,
+    /// Planner for the outer scope
+    parent: Option<&'a SQLPlanner<'a>>,
+    /// Cache of known, in-scope tables
+    bound_tables: Bindings<Relation>,
+    /// In-scope bindings introduced by the current relation's schema
     current_relation: Option<Relation>,
-    table_map: HashMap<String, Relation>,
     /// Aliases from selection that can be used in other clauses
     /// but may not yet be in the schema of `current_relation`.
-    alias_map: HashMap<String, ExprRef>,
-    /// outer query in a subquery
-    parent: Option<&'a SQLPlanner<'a>>,
-    context: Rc<RefCell<PlannerContext>>,
+    bound_columns: Bindings<ExprRef>,
 }
 
 impl<'a> SQLPlanner<'a> {
-    pub fn new(catalog: DaftCatalog) -> Self {
-        let context = Rc::new(RefCell::new(PlannerContext {
-            catalog,
-            ..Default::default()
-        }));
-
+    /// Create a new query planner for the session.
+    pub fn new(session: Rc<Session>) -> Self {
+        let context = PlannerContext::new(session);
+        let context = Rc::new(RefCell::new(context));
         Self {
             context,
             ..Default::default()
@@ -134,19 +193,27 @@ impl<'a> SQLPlanner<'a> {
         self.context.as_ref().borrow_mut()
     }
 
-    fn cte_map(&self) -> Ref<'_, HashMap<String, Relation>> {
-        Ref::map(self.context.borrow(), |i| &i.cte_map)
+    fn bound_ctes(&self) -> Ref<'_, Bindings<Relation>> {
+        Ref::map(self.context.borrow(), |i| &i.bound_ctes)
     }
 
-    fn catalog(&self) -> Ref<'_, DaftCatalog> {
-        Ref::map(self.context.borrow(), |i| &i.catalog)
+    fn get_table(&self, ident: &Identifier) -> Option<Relation> {
+        self.session()
+            .get_table(ident)
+            .ok()
+            .map(|table| Relation::new(table, ident.name.clone()))
+    }
+
+    /// Borrow the planning session
+    fn session(&self) -> Ref<'_, Rc<Session>> {
+        Ref::map(self.context.borrow(), |i| &i.session)
     }
 
     /// Clears the current context used for planning a SQL query
     fn clear_context(&mut self) {
         self.current_relation = None;
-        self.table_map.clear();
-        self.context_mut().cte_map.clear();
+        self.bound_tables.clear();
+        self.context_mut().clear();
     }
 
     fn register_cte(&self, mut rel: Relation, column_aliases: &[Ident]) -> SQLPlannerResult<()> {
@@ -169,7 +236,7 @@ impl<'a> SQLPlanner<'a> {
 
             rel.inner = rel.inner.select(projection)?;
         }
-        self.context_mut().cte_map.insert(rel.get_name(), rel);
+        self.context_mut().bound_ctes.insert(rel.get_name(), rel);
         Ok(())
     }
 
@@ -755,10 +822,10 @@ impl<'a> SQLPlanner<'a> {
 
             let first = from_iter.next().unwrap();
             let mut rel = self.plan_relation(&first.relation)?;
-            self.table_map.insert(rel.get_name(), rel.clone());
+            self.bound_tables.insert(rel.get_name(), rel.clone());
             for tbl in from_iter {
                 let right = self.plan_relation(&tbl.relation)?;
-                self.table_map.insert(right.get_name(), right.clone());
+                self.bound_tables.insert(right.get_name(), right.clone());
                 let right_join_prefix = format!("{}.", right.get_name());
 
                 rel.inner = rel.inner.cross_join(
@@ -887,7 +954,7 @@ impl<'a> SQLPlanner<'a> {
         let relation = from.relation.clone();
         let left_rel = self.plan_relation(&relation)?;
         self.current_relation = Some(left_rel.clone());
-        self.table_map.insert(left_rel.get_name(), left_rel);
+        self.bound_tables.insert(left_rel.get_name(), left_rel);
 
         for join in &from.joins {
             use sqlparser::ast::{
@@ -902,7 +969,7 @@ impl<'a> SQLPlanner<'a> {
             let mut right_planner = self.new_with_context();
             right_planner.current_relation = Some(right_rel.clone());
             right_planner
-                .table_map
+                .bound_tables
                 .insert(right_rel.get_name(), right_rel.clone());
 
             let (join_type, constraint) = match &join.join_operator {
@@ -972,7 +1039,7 @@ impl<'a> SQLPlanner<'a> {
                     .prefix(right_join_prefix)
                     .merge_matching_join_keys(merge_matching_join_keys),
             )?;
-            self.table_map.insert(right_rel_name, right_rel);
+            self.bound_tables.insert(right_rel_name, right_rel);
         }
 
         Ok(())
@@ -1070,27 +1137,21 @@ impl<'a> SQLPlanner<'a> {
 
     /// Plan a `FROM <table>` table factor.
     pub(crate) fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
-        // Consider parsing again via Identifier::parse, but it's unnecessary at the moment.
-        let ident = &name.0;
-        if ident.len() > 1 {
+        // Convert the sqlparse ObjectName to a daft Identifier
+        let ident = ident_from_obj_name(name);
+        if ident.has_namespace() {
             unsupported_sql_err!("qualified identifier {}", name.to_string())
         }
         // Because the catalog does not support qualified identifiers, we can just use name.
-        let table_name = &ident.last().unwrap().value;
         // TODO case-normalization of regular identifiers in name position (rvalue) https://github.com/Eventual-Inc/Daft/issues/3765
         let Some(rel) = self
-            .table_map
-            .get(table_name)
+            .bound_tables
+            .get(&ident.name)
             .cloned()
-            .or_else(|| self.cte_map().get(table_name).cloned())
-            .or_else(|| {
-                self.catalog()
-                    .read_table(table_name)
-                    .ok()
-                    .map(|table| Relation::new(table, table_name.clone()))
-            })
+            .or_else(|| self.bound_ctes().get(&ident.name).cloned())
+            .or_else(|| self.get_table(&ident))
         else {
-            table_not_found_err!(table_name)
+            table_not_found_err!(ident.to_string())
         };
         Ok(rel)
     }
@@ -1142,7 +1203,7 @@ impl<'a> SQLPlanner<'a> {
             }
             // The identifier could also be in the alias map but not the schema
             // for expressions in WHERE, GROUP BY, and HAVING, which are done before project
-            if let Some(expr) = planner.alias_map.get(&full_str) {
+            if let Some(expr) = planner.bound_columns.get(&full_str) {
                 // transform expression alias map by incrementing thee depths of every column by `depth`
                 let transformed_expr = expr
                     .clone()
@@ -1164,7 +1225,7 @@ impl<'a> SQLPlanner<'a> {
 
             // If compound identifier, try to find in tables at current depth
             if !rest.is_empty()
-                && let Some(relation) = planner.table_map.get(&root_str)
+                && let Some(relation) = planner.bound_tables.get(&root_str)
             {
                 let relation_schema = relation.schema();
 
@@ -1212,7 +1273,7 @@ impl<'a> SQLPlanner<'a> {
             SelectItem::ExprWithAlias { expr, alias } => {
                 let expr = self.plan_expr(expr)?;
                 let alias = alias.value.to_string();
-                self.alias_map.insert(alias.clone(), expr.clone());
+                self.bound_columns.insert(alias.clone(), expr.clone());
                 Ok(vec![expr.alias(alias)])
             }
             SelectItem::UnnamedExpr(expr) => self.plan_expr(expr).map(|e| vec![e]),
@@ -1255,7 +1316,7 @@ impl<'a> SQLPlanner<'a> {
                 let Some(rel) = self.relation_opt() else {
                     table_not_found_err!(table_name);
                 };
-                let Some(table_rel) = self.table_map.get(&table_name) else {
+                let Some(table_rel) = self.bound_tables.get(&table_name) else {
                     table_not_found_err!(table_name);
                 };
                 let right_schema = table_rel.inner.schema();
@@ -2313,6 +2374,8 @@ pub fn sql_datatype<S: AsRef<str>>(s: S) -> SQLPlannerResult<DataType> {
 // Helper functions
 // ----------------
 
+/// TODO replace with daft identifiers in subsequent PR.
+/// TODO proper handling of other quote styles like backticks
 /// # Examples
 /// ```
 /// // Quoted identifier "MyCol" -> "MyCol"
@@ -2326,12 +2389,22 @@ fn ident_to_str(ident: &Ident) -> String {
     }
 }
 
+/// TODO replace with daft identifiers in subsequent PR.
 fn idents_to_str(idents: &[Ident]) -> String {
     idents
         .iter()
         .map(ident_to_str)
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// Returns a daft identifier from an sqlparser ObjectName
+fn ident_from_obj_name(name: &ObjectName) -> Identifier {
+    // TODO distinguish identifier parts for proper resolution (or normalization).
+    let mut parts: Vec<String> = name.0.iter().map(|i| i.value.clone()).collect();
+    let name = parts.pop().expect("object name had 0 parts");
+    let namespace = parts;
+    Identifier::new(namespace, name)
 }
 
 /// Returns true iff the ObjectName is a string literal (single-quoted identifier e.g. 'path/to/file.extension').

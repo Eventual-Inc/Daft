@@ -3,7 +3,7 @@
 mod datatype;
 mod literal;
 
-use std::{io::Cursor, sync::Arc};
+use std::{io::Cursor, rc::Rc, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::series::Series;
@@ -13,6 +13,7 @@ use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
+use daft_session::Session;
 use daft_sql::SQLPlanner;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
@@ -40,17 +41,17 @@ use crate::{
     error::{ConnectError, ConnectResult, Context},
     functions::CONNECT_FUNCTIONS,
     internal_err, invalid_argument_err, not_yet_implemented,
-    session::Session,
+    session::ConnectSession,
     util::FromOptionalField,
 };
 
 #[derive(Clone)]
 pub struct SparkAnalyzer<'a> {
-    pub session: &'a Session,
+    pub session: &'a ConnectSession,
 }
 
 impl SparkAnalyzer<'_> {
-    pub fn new(session: &Session) -> SparkAnalyzer<'_> {
+    pub fn new(session: &ConnectSession) -> SparkAnalyzer<'_> {
         SparkAnalyzer { session }
     }
 
@@ -659,9 +660,11 @@ impl SparkAnalyzer<'_> {
             not_yet_implemented!("pos_arguments");
         }
 
+        // TODO: converge Session and ConnectSession
         let catalog = self.session.catalog().clone();
+        let session = Rc::new(Session::new("connect", catalog));
 
-        let mut planner = SQLPlanner::new(catalog);
+        let mut planner = SQLPlanner::new(session);
         let plan = planner.plan_sql(&query)?;
         Ok(plan.into())
     }
