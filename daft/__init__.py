@@ -41,9 +41,6 @@ def refresh_logger() -> None:
     _refresh_logger()
 
 
-__version__ = get_version()
-
-
 ###
 # Initialize analytics
 ###
@@ -60,8 +57,19 @@ analytics_client.track_import()
 
 from daft.scarf_telemetry import scarf_analytics
 
+scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
+
+
+# what happens if user sets runner manually after import? call function again after setting variable
+def get_runner() -> str:
+    runner = os.getenv("DAFT_RUNNER", "native").lower()
+    if runner not in ("py", "ray", "native"):
+        return "native"
+    return runner
+
+
 try:
-    scarf_analytics()
+    scarf_analytics(scarf_opt_out, get_build_type(), get_version(), get_runner())
 except Exception:
     pass
 

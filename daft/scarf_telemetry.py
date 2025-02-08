@@ -3,70 +3,42 @@ import platform
 import urllib.parse
 import urllib.request
 
-from daft import get_version
 
-__version__ = get_version()
+def scarf_analytics(scarf_opt_out: bool, build_type: str, version: str, runner: str) -> tuple[str | None, str | None]:
+    """Track analytics for Daft usage via Scarf.
 
-# General Scarf call
-# def scarf_analytics():
-#     try:
-#         if os.getenv("SCARF_NO_ANALYTICS") != "true" and os.getenv("DO_NOT_TRACK") != "true":
-#             python_version = ".".join(platform.python_version().split(".")[:2])
+    Args:
+        user_opted_out (bool): Whether the user has opted out of analytics
+        build_type (str): The build type from get_build_type()
+        version (str): The version from get_version()
+        runner (str): The runner being used (py, ray, or native)
 
-#             params = {
-#                 "version": __version__,
-#                 "platform": platform.system(),
-#                 "python": python_version,
-#                 "arch": platform.machine(),
-#             }
-
-#             # Prepare the query string
-#             query_string = urllib.parse.urlencode(params)
-
-#             # Make the GET request
-#             url = f"https://daft.gateway.scarf.sh/daft-import?{query_string}"
-#             with urllib.request.urlopen(url) as response:
-#                 print(f"Response status: {response.status}")
-
-#     except Exception:
-#         pass
-
-
-# For Py, Ray, or Native runner
-def scarf_analytics():
+    Returns:
+        tuple[str | None, str | None]: Response status and runner type, or (None, None) if analytics disabled/failed
+    """
     try:
+        # Skip analytics for dev builds or if user opted out
+        if build_type == "dev" or scarf_opt_out:
+            return None, None
+
         if os.getenv("SCARF_NO_ANALYTICS") != "true" and os.getenv("DO_NOT_TRACK") != "true":
             python_version = ".".join(platform.python_version().split(".")[:2])
 
             params = {
-                "version": __version__,
+                "version": version,
                 "platform": platform.system(),
                 "python": python_version,
                 "arch": platform.machine(),
+                "runner": runner,
             }
 
             # Prepare the query string
             query_string = urllib.parse.urlencode(params)
 
-            # Define URLs for different runners
-            runner_urls = {
-                "py": f"https://daft.gateway.scarf.sh/daft-runner-py?{query_string}",
-                "ray": f"https://daft.gateway.scarf.sh/daft-runner-ray?{query_string}",
-                "native": f"https://daft.gateway.scarf.sh/daft-runner-native?{query_string}",
-            }
-
-            # Get the DAFT_RUNNER environment variable
-            daft_runner = os.getenv("DAFT_RUNNER", "py").lower()  # Default to "py" if not set
-
-            # Select the appropriate URL based on the runner
-            if daft_runner in runner_urls:
-                url = runner_urls[daft_runner]
-            else:
-                raise ValueError(f"Unknown DAFT_RUNNER: {daft_runner}. Please set it to 'py', 'ray', or 'native'.")
-
             # Make the GET request
+            url = f"https://daft.gateway.scarf.sh/daft-runner?{query_string}"
             with urllib.request.urlopen(url) as response:
-                return f"Response status: {response.status}", daft_runner
+                return f"Response status: {response.status}", runner
 
     except Exception as e:
         return f"Analytics error: {e!s}", None
