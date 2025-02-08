@@ -2,16 +2,12 @@ import os
 import platform
 import urllib.parse
 import urllib.request
-
 from typing import Union
 
 
 def scarf_analytics(
-        scarf_opt_out: bool,
-        build_type: str,
-        version: str,
-        runner: str
-        ) -> tuple[Union[str, None], Union[str, None]]:
+    scarf_opt_out: bool, build_type: str, version: str, runner: str
+) -> tuple[Union[str, None], Union[str, None]]:
     """Track analytics for Daft usage via Scarf.
 
     Args:
