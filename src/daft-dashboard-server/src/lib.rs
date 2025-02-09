@@ -127,15 +127,16 @@ However, if this is another process, then kill that other server (by running `ki
         }
     }
 
-    tokio::join!(
-        run_http_application(daft_http_application, Ipv4Addr::LOCALHOST, DAFT_PORT),
-        run_http_application(
+    env_logger::try_init().ok().unwrap_or_default();
+
+    tokio::select! {
+        () = run_http_application(daft_http_application, Ipv4Addr::LOCALHOST, DAFT_PORT) => (),
+        () = run_http_application(
             dashboard_http_application,
             Ipv4Addr::LOCALHOST,
             DASHBOARD_PORT,
-        ),
-    );
-    unreachable!("The daft and dashboard http applications should be infinitely running processes");
+        ) => (),
+    };
 }
 
 #[pyfunction]
