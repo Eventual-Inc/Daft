@@ -1,6 +1,6 @@
 mod response;
 
-use std::{future::Future, net::Ipv4Addr, sync::OnceLock};
+use std::{future::Future, net::Ipv4Addr, process::exit, sync::OnceLock};
 
 use chrono::{DateTime, Utc};
 use http_body_util::{combinators::BoxBody, BodyExt};
@@ -141,13 +141,17 @@ However, if this is another process, then kill that other server (by running `ki
 
 #[pyfunction]
 fn launch() {
-    if matches!(fork::fork(), Ok(fork::Fork::Child)) {
+    if matches!(
+        fork::daemon(false, true).expect("Failed to fork server process"),
+        fork::Fork::Child,
+    ) {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(3)
             .enable_all()
             .build()
             .expect("Failed to launch server")
             .block_on(run());
+        exit(0);
     }
 }
 
