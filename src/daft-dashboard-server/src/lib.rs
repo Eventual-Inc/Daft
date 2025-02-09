@@ -141,7 +141,7 @@ However, if this is another process, then kill that other server (by running `ki
 
 #[pyfunction]
 fn launch() {
-    if matches!(fork::daemon(false, false), Ok(fork::Fork::Child)) {
+    if matches!(fork::fork(), Ok(fork::Fork::Child)) {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(3)
             .enable_all()
