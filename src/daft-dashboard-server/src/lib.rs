@@ -93,9 +93,15 @@ pub async fn run() {
     where
         F: 'static + Send + Future<Output = ServerResult<Res>>,
     {
-        let listener = TcpListener::bind((addr, port))
-            .await
-            .expect("Failed to bind to port");
+        let Ok(listener) = TcpListener::bind((addr, port)).await else {
+            log::warn!(
+                r#"Looks like there's another process already bound to {addr}:{port}.
+If this is the `daft-dashboard-client` (i.e., if you've already ran `daft.dashboard.launch()` inside of a python script), then you don't have to do anything else.
+
+However, if this is another process, then kill that other server (by running `kill -9 $(lsof -t -i :3238)` inside of your shell) and then rerun `daft.dashboard.launch()`."#
+            );
+            return;
+        };
         loop {
             let (stream, _) = listener
                 .accept()
