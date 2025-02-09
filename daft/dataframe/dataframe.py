@@ -187,9 +187,9 @@ class DataFrame:
         data = json.dumps(
             {
                 "id": str(uuid4()),
-                "mermaid-plan": mermaid_plan,
-                "plan-time-start": str(plan_time_start),
-                "plan-time-end": str(plan_time_end),
+                "mermaid_plan": mermaid_plan,
+                "plan_time_start": str(plan_time_start),
+                "plan_time_end": str(plan_time_end),
             }
         ).encode("utf-8")
         req = request.Request(DAFT_DASHBOARD_ADDR, headers=headers, data=data)
