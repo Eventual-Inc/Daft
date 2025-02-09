@@ -142,7 +142,7 @@ However, if this is another process, then kill that other server (by running `ki
 #[pyfunction]
 fn launch() {
     if matches!(
-        fork::daemon(false, true).expect("Failed to fork server process"),
+        fork::fork().expect("Failed to fork server process"),
         fork::Fork::Child,
     ) {
         tokio::runtime::Builder::new_multi_thread()
