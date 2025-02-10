@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
@@ -13,13 +13,13 @@ use super::intermediate_op::{
 use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 struct CrossJoinState {
-    bridge: BroadcastStateBridgeRef<Vec<Table>>,
+    bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
     stream_idx: usize,
     collect_idx: usize,
 }
 
 impl CrossJoinState {
-    fn new(bridge: BroadcastStateBridgeRef<Vec<Table>>) -> Self {
+    fn new(bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>) -> Self {
         Self {
             bridge,
             stream_idx: 0,
@@ -37,14 +37,14 @@ impl IntermediateOpState for CrossJoinState {
 pub struct CrossJoinOperator {
     output_schema: SchemaRef,
     stream_side: JoinSide,
-    state_bridge: BroadcastStateBridgeRef<Vec<Table>>,
+    state_bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
 }
 
 impl CrossJoinOperator {
     pub(crate) fn new(
         output_schema: SchemaRef,
         stream_side: JoinSide,
-        state_bridge: BroadcastStateBridgeRef<Vec<Table>>,
+        state_bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
     ) -> Self {
         Self {
             output_schema,

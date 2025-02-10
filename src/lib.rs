@@ -107,7 +107,7 @@ pub mod pylib {
         daft_core::python::register_modules(m)?;
         daft_local_execution::register_modules(m)?;
         daft_dsl::register_modules(m)?;
-        daft_table::register_modules(m)?;
+        daft_recordbatch::register_modules(m)?;
         daft_io::register_modules(m)?;
         daft_parquet::register_modules(m)?;
         daft_csv::register_modules(m)?;
@@ -120,6 +120,7 @@ pub mod pylib {
         daft_functions::register_modules(m)?;
         daft_functions_json::register_modules(m)?;
         daft_connect::register_modules(m)?;
+        daft_context::register_modules(m)?;
 
         // Register catalog module
         let catalog_module = daft_catalog::python::register_modules(m)?;

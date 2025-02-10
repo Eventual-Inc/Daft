@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_core::series::Series;
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::micropartition::MicroPartition;
 
@@ -43,7 +43,7 @@ impl MicroPartition {
         let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
             [] => {
-                let empty_table = Table::empty(Some(self.schema.clone()))?;
+                let empty_table = RecordBatch::empty(Some(self.schema.clone()))?;
                 empty_table.argsort(sort_keys, descending, nulls_first)
             }
             [single] => single.argsort(sort_keys, descending, nulls_first),

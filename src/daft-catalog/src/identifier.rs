@@ -1,6 +1,6 @@
 use std::{fmt::Display, iter::once, vec::IntoIter};
 
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 
 /// An object's namespace (location).
 pub type Namespace = Vec<String>;
