@@ -1,5 +1,7 @@
 use snafu::Snafu;
 
+pub type Result<T, E = Error> = std::result::Result<T, E>;
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display(
@@ -29,7 +31,12 @@ pub enum Error {
     },
 }
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+impl Error {
+    #[inline]
+    pub fn unsupported(message: String) -> Error {
+        Error::Unsupported { message }
+    }
+}
 
 impl From<Error> for common_error::DaftError {
     fn from(err: Error) -> Self {

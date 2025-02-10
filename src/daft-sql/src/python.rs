@@ -2,6 +2,7 @@ use common_daft_config::PyDaftPlanningConfig;
 use daft_catalog::DaftCatalog;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+use daft_session::Session;
 use pyo3::prelude::*;
 
 use crate::{functions::SQL_FUNCTIONS, planner::SQLPlanner};
@@ -31,13 +32,16 @@ impl SQLFunctionStub {
     }
 }
 
+// TODO replace with session.exec to invert responsibilities
 #[pyfunction]
 pub fn sql(
     sql: &str,
     catalog: PyCatalog,
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
-    let mut planner = SQLPlanner::new(catalog.catalog);
+    // just use a one-off session for now..
+    let session = Session::new("py", catalog.catalog);
+    let mut planner = SQLPlanner::new(session.into());
     let plan = planner.plan_sql(sql)?;
     Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config)).into())
 }

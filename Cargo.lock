@@ -1948,6 +1948,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-scan",
  "daft-scheduler",
+ "daft-session",
  "daft-sql",
  "daft-stats",
  "daft-writers",
@@ -2023,6 +2024,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
+ "daft-session",
  "daft-sql",
  "dashmap",
  "futures",
@@ -2606,6 +2608,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-session"
+version = "0.3.0-dev0"
+dependencies = [
+ "daft-catalog",
+ "daft-logical-plan",
+]
+
+[[package]]
 name = "daft-sketch"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2633,6 +2643,7 @@ dependencies = [
  "daft-functions-json",
  "daft-logical-plan",
  "daft-scan",
+ "daft-session",
  "once_cell",
  "pyo3",
  "regex",

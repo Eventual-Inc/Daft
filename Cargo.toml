@@ -36,6 +36,7 @@ daft-py-runners = {path = "src/daft-py-runners", default-features = false}
 daft-recordbatch = {path = "src/daft-recordbatch", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
 daft-scheduler = {path = "src/daft-scheduler", default-features = false}
+daft-session = {path = "src/daft-session", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
@@ -58,6 +59,7 @@ python = [
   "common-system-info/python",
   "daft-catalog-python-catalog/python",
   "daft-catalog/python",
+  "daft-context/python",
   "daft-core/python",
   "daft-csv/python",
   "daft-dsl/python",
@@ -75,10 +77,10 @@ python = [
   "daft-scan/python",
   "daft-scheduler/python",
   "daft-sql/python",
+  "daft-session/python",
   "daft-stats/python",
   "daft-recordbatch/python",
   "daft-writers/python",
-  "daft-context/python",
   "dep:daft-catalog-python-catalog",
   "dep:daft-connect",
   "daft-connect/python",
@@ -144,11 +146,14 @@ members = [
   "src/common/display",
   "src/common/error",
   "src/common/io-config",
+  "src/common/partitioning",
   "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
   "src/daft-algebra",
   "src/daft-catalog",
+  "src/daft-connect",
+  "src/daft-context",
   "src/daft-core",
   "src/daft-csv",
   "src/daft-dsl",
@@ -164,20 +169,18 @@ members = [
   "src/daft-micropartition",
   "src/daft-parquet",
   "src/daft-physical-plan",
+  "src/daft-py-runners",
   "src/daft-scan",
   "src/daft-scheduler",
+  "src/daft-session",
   "src/daft-sketch",
   "src/daft-sql",
   "src/daft-recordbatch",
   "src/daft-writers",
   "src/hyperloglog",
-  "src/daft-connect",
   "src/parquet2",
   # "src/spark-connect-script",
-  "src/generated/spark-connect",
-  "src/common/partitioning",
-  "src/daft-py-runners",
-  "src/daft-context"
+  "src/generated/spark-connect"
 ]
 
 [workspace.dependencies]
@@ -210,6 +213,7 @@ daft-py-runners = {path = "src/daft-py-runners"}
 daft-recordbatch = {path = "src/daft-recordbatch"}
 daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
+daft-session = {path = "src/daft-session"}
 daft-sql = {path = "src/daft-sql"}
 derivative = "2.2.0"
 derive_builder = "0.20.2"

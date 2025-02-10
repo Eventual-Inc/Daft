@@ -17,6 +17,7 @@ daft-micropartition = {workspace = true, optional = true, features = [
 daft-recordbatch = {workspace = true, optional = true, features = ["python"]}
 daft-scan = {workspace = true, optional = true, features = ["python"]}
 daft-schema = {workspace = true, optional = true, features = ["python"]}
+daft-session = {path = "../daft-session", optional = true, features = ["python"]}
 daft-sql = {workspace = true, optional = true, features = ["python"]}
 dashmap = "6.1.0"
 futures = "0.3.31"
@@ -42,6 +43,7 @@ python = [
   "dep:daft-micropartition",
   "dep:daft-scan",
   "dep:daft-schema",
+  "dep:daft-session",
   "dep:daft-sql",
   "dep:daft-recordbatch",
   "dep:daft-context",
