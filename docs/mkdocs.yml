@@ -166,3 +166,4 @@ plugins:
 - mkdocs-simple-hooks:
     hooks:
       on_pre_build: "docs.hooks:make_api_docs"
+- social
