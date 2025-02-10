@@ -2130,6 +2130,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "anyhow",
  "chrono",
+ "clap 4.5.28",
  "env_logger 0.11.6",
  "fork",
  "futures",

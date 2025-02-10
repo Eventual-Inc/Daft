@@ -24,8 +24,9 @@ type Req<T = Incoming> = Request<T>;
 type Res = Response<BoxBody<Bytes, std::convert::Infallible>>;
 type ServerResult<T> = Result<T, (StatusCode, anyhow::Error)>;
 
-const DAFT_PORT: u16 = 3238;
-const DASHBOARD_PORT: u16 = DAFT_PORT + 1;
+const DAFT_BROADCAST_PORT: u16 = 3238;
+const DASHBOARD_API_PORT: u16 = DAFT_BROADCAST_PORT + 1;
+const DASHBOARD_HTML_PORT: u16 = 3000;
 
 static QUERY_METADATAS: OnceLock<RwLock<Vec<QueryMetadata>>> = OnceLock::new();
 
@@ -65,7 +66,7 @@ async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req
     Ok(Request::from_parts(parts, body))
 }
 
-async fn daft_http_application(req: Req) -> ServerResult<Res> {
+async fn daft_broadcast_listener(req: Req) -> ServerResult<Res> {
     Ok(match (req.method(), req.uri().path()) {
         (&Method::POST, "/") => {
             let req = deserialize::<QueryMetadata>(req).await?;
@@ -77,7 +78,7 @@ async fn daft_http_application(req: Req) -> ServerResult<Res> {
     })
 }
 
-async fn dashboard_http_application(req: Req) -> ServerResult<Res> {
+async fn dashboard_api_server(req: Req) -> ServerResult<Res> {
     Ok(match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
             let query_metadatas = query_metadatas().read();
@@ -88,7 +89,11 @@ async fn dashboard_http_application(req: Req) -> ServerResult<Res> {
     })
 }
 
-pub async fn run() {
+async fn dashboard_html_server(_: Req) -> ServerResult<Res> {
+    Ok(response::empty(StatusCode::NOT_IMPLEMENTED))
+}
+
+pub async fn run(run_html_server: bool) {
     async fn run_http_application<F>(server: fn(Req) -> F, addr: Ipv4Addr, port: u16)
     where
         F: 'static + Send + Future<Output = ServerResult<Res>>,
@@ -129,14 +134,30 @@ However, if this is another process, then kill that other server (by running `ki
 
     env_logger::try_init().ok().unwrap_or_default();
 
-    tokio::select! {
-        () = run_http_application(daft_http_application, Ipv4Addr::LOCALHOST, DAFT_PORT) => (),
-        () = run_http_application(
-            dashboard_http_application,
-            Ipv4Addr::LOCALHOST,
-            DASHBOARD_PORT,
-        ) => (),
-    };
+    if run_html_server {
+        tokio::select! {
+            () = run_http_application(daft_broadcast_listener, Ipv4Addr::LOCALHOST, DAFT_BROADCAST_PORT) => (),
+            () = run_http_application(
+                dashboard_api_server,
+                Ipv4Addr::LOCALHOST,
+                DASHBOARD_API_PORT,
+            ) => (),
+            () = run_http_application(
+                dashboard_html_server,
+                Ipv4Addr::LOCALHOST,
+                DASHBOARD_HTML_PORT,
+            ) => (),
+        }
+    } else {
+        tokio::select! {
+            () = run_http_application(daft_broadcast_listener, Ipv4Addr::LOCALHOST, DAFT_BROADCAST_PORT) => (),
+            () = run_http_application(
+                dashboard_api_server,
+                Ipv4Addr::LOCALHOST,
+                DASHBOARD_API_PORT,
+            ) => (),
+        }
+    }
 }
 
 #[pyfunction]
@@ -150,7 +171,7 @@ fn launch() {
             .enable_all()
             .build()
             .expect("Failed to launch server")
-            .block_on(run());
+            .block_on(run(true));
         exit(0);
     }
 }
