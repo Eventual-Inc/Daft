@@ -1,4 +1,4 @@
-use crate::{data_catalog_table::DataCatalogTable, errors::Result};
+use crate::{data_catalog_table::DataCatalogTable, error::Result};
 
 /// DataCatalog is a catalog of data sources
 ///

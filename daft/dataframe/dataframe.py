@@ -42,8 +42,8 @@ from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.filesystem import overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
+from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
-from daft.table import MicroPartition
 from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
-    """Creates a Daft DataFrame from a single Table.
+    """Creates a Daft DataFrame from a single RecordBatch.
 
     Args:
         parts: The Tables that we wish to convert into a Daft DataFrame.
@@ -429,7 +429,7 @@ class DataFrame:
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
-        Each partition will be returned as a daft.Table object (if using Python runner backend)
+        Each partition will be returned as a daft.recordbatch object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
 
         .. NOTE::
@@ -580,7 +580,7 @@ class DataFrame:
 
     @classmethod
     def _from_tables(cls, *parts: MicroPartition) -> "DataFrame":
-        """Creates a Daft DataFrame from a single Table.
+        """Creates a Daft DataFrame from a single RecordBatch.
 
         Args:
             parts: The Tables that we wish to convert into a Daft DataFrame.
@@ -700,7 +700,7 @@ class DataFrame:
             return result_df
         else:
             from daft import from_pydict
-            from daft.table.table_io import write_empty_tabular
+            from daft.recordbatch.recordbatch_io import write_empty_tabular
 
             file_path = write_empty_tabular(
                 root_dir, FileFormat.Parquet, self.schema(), compression=compression, io_config=io_config
@@ -773,7 +773,7 @@ class DataFrame:
             return result_df
         else:
             from daft import from_pydict
-            from daft.table.table_io import write_empty_tabular
+            from daft.recordbatch.recordbatch_io import write_empty_tabular
 
             file_path = write_empty_tabular(root_dir, FileFormat.Csv, self.schema(), io_config=io_config)
 

@@ -1251,9 +1251,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.12"
+version = "1.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "755717a7de9ec452bf7f3f1a3099085deabd7f2962b861dae91ecd7a365903d2"
+checksum = "c7777341816418c02e033934a09f20dc0ccaf65a5201ef8a450ae0105a573fda"
 dependencies = [
  "jobserver",
  "libc",
@@ -1401,9 +1401,9 @@ checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
 
 [[package]]
 name = "cmake"
-version = "0.1.53"
+version = "0.1.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e24a03c8b52922d68a1589ad61032f2c1aa5a8158d2aa0d93c6e9534944bbad6"
+checksum = "e7caa3f9de89ddbe2c607f4101924c5abec803763ae9534e4f4d7d8f84aa81f0"
 dependencies = [
  "cc",
 ]
@@ -1442,13 +1442,12 @@ dependencies = [
 
 [[package]]
 name = "comfy-table"
-version = "7.1.3"
+version = "7.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24f165e7b643266ea80cb858aed492ad9280e3e05ce24d4a99d7d7b889b6a4d9"
+checksum = "4a65ebfec4fb190b6f90e944a817d60499ee0744e582530e2c9900a22e591d9a"
 dependencies = [
  "crossterm",
- "strum 0.26.3",
- "strum_macros 0.26.4",
+ "unicode-segmentation",
  "unicode-width 0.2.0",
 ]
 
@@ -1475,7 +1474,7 @@ dependencies = [
 name = "common-display"
 version = "0.3.0-dev0"
 dependencies = [
- "comfy-table 7.1.3",
+ "comfy-table 7.1.4",
  "indexmap 2.7.1",
  "pyo3",
  "terminal_size",
@@ -1947,11 +1946,12 @@ dependencies = [
  "daft-parquet",
  "daft-physical-plan",
  "daft-py-runners",
+ "daft-recordbatch",
  "daft-scan",
  "daft-scheduler",
+ "daft-session",
  "daft-sql",
  "daft-stats",
- "daft-table",
  "daft-writers",
  "lazy_static",
  "libc",
@@ -2022,10 +2022,11 @@ dependencies = [
  "daft-dsl",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-recordbatch",
  "daft-scan",
  "daft-schema",
+ "daft-session",
  "daft-sql",
- "daft-table",
  "dashmap",
  "futures",
  "itertools 0.11.0",
@@ -2061,7 +2062,7 @@ dependencies = [
  "bincode",
  "chrono",
  "chrono-tz",
- "comfy-table 7.1.3",
+ "comfy-table 7.1.4",
  "common-arrow-ffi",
  "common-display",
  "common-error",
@@ -2109,7 +2110,7 @@ dependencies = [
  "daft-decoding",
  "daft-dsl",
  "daft-io",
- "daft-table",
+ "daft-recordbatch",
  "futures",
  "memchr",
  "parking_lot 0.12.3",
@@ -2311,7 +2312,7 @@ dependencies = [
  "daft-decoding",
  "daft-dsl",
  "daft-io",
- "daft-table",
+ "daft-recordbatch",
  "futures",
  "indexmap 2.7.1",
  "memchr",
@@ -2353,8 +2354,8 @@ dependencies = [
  "daft-micropartition",
  "daft-parquet",
  "daft-physical-plan",
+ "daft-recordbatch",
  "daft-scan",
- "daft-table",
  "daft-writers",
  "futures",
  "indexmap 2.7.1",
@@ -2439,9 +2440,9 @@ dependencies = [
  "daft-io",
  "daft-json",
  "daft-parquet",
+ "daft-recordbatch",
  "daft-scan",
  "daft-stats",
- "daft-table",
  "dashmap",
  "futures",
  "parquet2",
@@ -2480,8 +2481,8 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "daft-recordbatch",
  "daft-stats",
- "daft-table",
  "futures",
  "indexmap 2.7.1",
  "itertools 0.11.0",
@@ -2530,6 +2531,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-recordbatch"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "comfy-table 7.1.4",
+ "common-arrow-ffi",
+ "common-display",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-image",
+ "daft-logical-plan",
+ "html-escape",
+ "indexmap 2.7.1",
+ "num-traits",
+ "pyo3",
+ "rand 0.8.5",
+ "serde",
+]
+
+[[package]]
 name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2550,9 +2572,9 @@ dependencies = [
  "daft-json",
  "daft-logical-plan",
  "daft-parquet",
+ "daft-recordbatch",
  "daft-schema",
  "daft-stats",
- "daft-table",
  "futures",
  "indexmap 2.7.1",
  "itertools 0.11.0",
@@ -2608,6 +2630,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-session"
+version = "0.3.0-dev0"
+dependencies = [
+ "daft-catalog",
+ "daft-logical-plan",
+]
+
+[[package]]
 name = "daft-sketch"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2635,6 +2665,7 @@ dependencies = [
  "daft-functions-json",
  "daft-logical-plan",
  "daft-scan",
+ "daft-session",
  "once_cell",
  "pyo3",
  "regex",
@@ -2650,31 +2681,10 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
- "daft-table",
+ "daft-recordbatch",
  "indexmap 2.7.1",
  "serde",
  "snafu",
-]
-
-[[package]]
-name = "daft-table"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow2",
- "comfy-table 7.1.3",
- "common-arrow-ffi",
- "common-display",
- "common-error",
- "daft-core",
- "daft-dsl",
- "daft-image",
- "daft-logical-plan",
- "html-escape",
- "indexmap 2.7.1",
- "num-traits",
- "pyo3",
- "rand 0.8.5",
- "serde",
 ]
 
 [[package]]
@@ -2689,7 +2699,7 @@ dependencies = [
  "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-table",
+ "daft-recordbatch",
  "pyo3",
 ]
 

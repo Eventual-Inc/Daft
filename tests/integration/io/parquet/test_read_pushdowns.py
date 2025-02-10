@@ -5,7 +5,7 @@ from itertools import product
 import pytest
 
 import daft
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 PRED_PUSHDOWN_FILES = [
     "s3://daft-public-data/test_fixtures/parquet-dev/sampled-tpch-with-stats.parquet",

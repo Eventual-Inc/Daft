@@ -8,7 +8,7 @@ use daft_catalog::DaftCatalog;
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct Session {
+pub struct ConnectSession {
     /// so order is preserved, and so we can efficiently do a prefix search
     ///
     /// Also, <https://users.rust-lang.org/t/hashmap-vs-btreemap/13804/4>
@@ -20,7 +20,7 @@ pub struct Session {
     pub catalog: Arc<RwLock<DaftCatalog>>,
 }
 
-impl Session {
+impl ConnectSession {
     pub fn config_values(&self) -> &BTreeMap<String, String> {
         &self.config_values
     }

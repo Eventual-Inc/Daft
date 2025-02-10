@@ -10,8 +10,8 @@ import pytz
 
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
+from daft.recordbatch import MicroPartition
 from daft.series import Series
-from daft.table import MicroPartition
 
 ALL_DTYPES = [
     (DataType.int8(), pa.array([1, 2, None], type=pa.int8())),

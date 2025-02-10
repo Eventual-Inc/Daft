@@ -12,7 +12,7 @@ use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::IOStatsRef;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
 use rayon::{
@@ -65,7 +65,7 @@ fn arrow_chunk_to_table(
     predicate: Option<ExprRef>,
     original_columns: Option<&[String]>,
     original_num_rows: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let all_series = arrow_chunk
         .into_iter()
         .zip(schema_ref.fields.iter())
@@ -96,7 +96,7 @@ fn arrow_chunk_to_table(
         .into());
     }
 
-    let mut table = Table::new_with_size(
+    let mut table = RecordBatch::new_with_size(
         Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
         all_series,
         len,
@@ -148,7 +148,7 @@ pub fn spawn_column_iters_to_table_task(
     original_columns: Option<Vec<String>>,
     original_num_rows: Option<usize>,
     delete_rows: Option<Vec<i64>>,
-    output_sender: tokio::sync::mpsc::Sender<DaftResult<Table>>,
+    output_sender: tokio::sync::mpsc::Sender<DaftResult<RecordBatch>>,
     permit: tokio::sync::OwnedSemaphorePermit,
     channel_size: usize,
 ) -> RuntimeTask<DaftResult<()>> {
@@ -177,7 +177,7 @@ pub fn spawn_column_iters_to_table_task(
 
     compute_runtime.spawn(async move {
         if deserializer_handles.is_empty() {
-            let empty = Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
+            let empty = RecordBatch::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
             let _ = output_sender.send(empty).await;
             return Ok(());
         }
@@ -534,7 +534,7 @@ pub async fn local_parquet_read_async(
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
     chunk_size: Option<usize>,
-) -> DaftResult<(Arc<parquet2::metadata::FileMetaData>, Table)> {
+) -> DaftResult<(Arc<parquet2::metadata::FileMetaData>, RecordBatch)> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();
     rayon::spawn(move || {
@@ -572,7 +572,7 @@ pub async fn local_parquet_read_async(
                 .collect::<Result<Vec<_>, _>>()?;
             Ok((
                 metadata,
-                Table::new_with_size(
+                RecordBatch::new_with_size(
                     Schema::new(converted_arrays.iter().map(|s| s.field().clone()).collect())?,
                     converted_arrays,
                     num_rows_read,
@@ -602,7 +602,7 @@ pub async fn local_parquet_stream(
     chunk_size: Option<usize>,
 ) -> DaftResult<(
     Arc<parquet2::metadata::FileMetaData>,
-    BoxStream<'static, DaftResult<Table>>,
+    BoxStream<'static, DaftResult<RecordBatch>>,
 )> {
     let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
