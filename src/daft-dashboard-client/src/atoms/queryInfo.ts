@@ -1,4 +1,4 @@
-import { atom } from 'jotai';
+import { atomWithStorage } from "jotai/utils";
 
 export type QueryInfo = {
     id: string
@@ -13,4 +13,4 @@ export type QueryInfoMap = {
 
 export type Keys = keyof QueryInfo;
 
-export const queryInfoAtom = atom<QueryInfoMap>({});
+export const queryInfoAtom = atomWithStorage<QueryInfoMap>('queryInfo', {});

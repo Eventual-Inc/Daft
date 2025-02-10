@@ -7,6 +7,7 @@ import {
     BreadcrumbList,
     BreadcrumbPage,
     BreadcrumbSeparator,
+    BreadcrumbLink,
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -42,7 +43,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                                                 :
                                                 <div key={index} className="flex flex-row items-center gap-3">
                                                     <BreadcrumbItem>
-                                                        <BreadcrumbPage className="capitalize text-gray-500">{pathSegment}</BreadcrumbPage>
+                                                        <BreadcrumbLink
+                                                            className="capitalize text-gray-500"
+                                                            href={`/${pathSegments.slice(0, index - 1).join('/')}`}
+                                                        >
+                                                            {pathSegment}
+                                                        </BreadcrumbLink>
                                                     </BreadcrumbItem>
                                                     <BreadcrumbSeparator className="hidden md:block" />
                                                 </div>
@@ -51,7 +57,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                                 </BreadcrumbList>
                             </Breadcrumb>
                         </header>
-                        {children}
+                        <div className="p-[20px]">
+                            {children}
+                        </div>
                     </SidebarInset>
                 </SidebarProvider>
             </body>

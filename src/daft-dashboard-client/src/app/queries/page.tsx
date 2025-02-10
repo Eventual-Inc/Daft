@@ -20,9 +20,9 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { useAtom } from 'jotai';
-import { queryInfoAtom, QueryInfo, QueryInfoMap } from '@/atoms/query_info';
-import { toHumanReadableDate, delta } from '@/lib/utils';
+import { useAtom } from "jotai";
+import { queryInfoAtom, QueryInfo, QueryInfoMap } from "@/atoms/queryInfo";
+import { toHumanReadableDate, delta } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
 const NAME: string = "id";
@@ -46,30 +46,29 @@ const columns = (queryInfoMap: QueryInfoMap) => [
         cell: ({ row }: any) => {
             return delta(
                 row.getValue(START_TIME),
-                queryInfoMap[row.getValue(NAME)].plan_time_end
+                queryInfoMap[row.getValue(NAME)].plan_time_end,
             );
         },
     },
 ];
 
-export default function DataTableDemo() {
+export default function QueryList() {
     const [queryInfo, setQueryInfo] = useAtom(queryInfoAtom);
     React.useEffect(() => {
         (async () => {
             try {
-                const response = await fetch('http://localhost:3239');
+                const response = await fetch("http://localhost:3239");
                 const json: QueryInfo[] = await response.json();
-                console.log(json);
                 const queryInfoMap: QueryInfoMap = {};
                 for (const queryInfo of json) {
                     queryInfoMap[queryInfo.id] = queryInfo;
                 }
                 setQueryInfo(queryInfoMap);
-            } catch (error) { }
+            } catch { }
         })();
     }, []);
     const cols = columns(queryInfo);
-    const table = useReactTable({
+    const table = useReactTable(React.useMemo(() => ({
         data: Object.values(queryInfo),
         columns: cols,
         getCoreRowModel: getCoreRowModel(),
@@ -77,13 +76,14 @@ export default function DataTableDemo() {
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
         enableSorting: true,
-    });
-
+    }), [queryInfo]));
     const router = useRouter();
 
+    const spacing = (obj: { column: { columnDef: { accessorKey: string } } }) => `px-[20px] ${obj.column.columnDef.accessorKey === NAME ? "w-[70%]" : undefined}`;
+
     return (
-        <div className="mx-[20px]">
-            <div className="flex items-center py-4">
+        <div className="gap-4 space-y-4">
+            <div className="flex items-center">
                 <Input
                     placeholder="Filter queries..."
                     value={(table.getColumn(NAME)?.getFilterValue() as string) ?? ""}
@@ -97,9 +97,9 @@ export default function DataTableDemo() {
                 <Table>
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (
-                            <TableRow key={headerGroup.id}>
+                            <TableRow key={headerGroup.id} className="">
                                 {headerGroup.headers.map((header) =>
-                                    <TableHead key={header.id} className={`px-[20px] text-xs ${(header.column.columnDef as { accessorKey: String }).accessorKey === NAME ? "w-[75%]" : undefined}`}>
+                                    <TableHead key={header.id} className={`text-xs ${spacing(header as any)}`}>
                                         {flexRender(
                                             header.column.columnDef.header,
                                             header.getContext()
@@ -116,8 +116,8 @@ export default function DataTableDemo() {
                                     {row.getAllCells().map(cell => (
                                         <TableCell
                                             key={cell.id}
-                                            className={`px-[20px] py-[15px] ${(cell.column.columnDef as { accessorKey: string }).accessorKey === NAME ? "w-[75%]" : undefined}`}
-                                            onClick={() => router.push(`/queries/${row.id}`)}
+                                            className={`py-[15px] ${spacing(cell as any)}`}
+                                            onClick={() => router.push(`/queries/${cell.row.original.id}`)}
                                         >
                                             <div className="truncate">
                                                 {flexRender(
@@ -142,7 +142,7 @@ export default function DataTableDemo() {
                     </TableBody>
                 </Table>
             </div>
-            <div className="flex items-center justify-end space-x-2 py-4">
+            <div className="flex items-center justify-end space-x-2">
                 <div className="space-x-2">
                     <Button
                         variant="outline"

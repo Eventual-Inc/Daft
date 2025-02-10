@@ -26,7 +26,7 @@ export function delta(start: string, end: string): string {
     const endTime = endDate.getTime();
 
     /// Ideally, this case should never arise.
-    if (startTime > endTime) return 'n/a';
+    if (startTime > endTime) return "n/a";
 
     let deltaMilliseconds = endTime - startTime;
 
