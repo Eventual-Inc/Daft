@@ -11,7 +11,7 @@ use daft_dsl::col;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
-use daft_scan::builder::{CsvScanBuilder, JsonScanBuilder, ParquetScanBuilder};
+use daft_scan::builder::{delta_scan, CsvScanBuilder, JsonScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_session::Session;
 use daft_sql::SQLPlanner;
@@ -363,6 +363,16 @@ impl SparkAnalyzer<'_> {
                 builder.finish().await?
             }
             "json" => JsonScanBuilder::new(paths).finish().await?,
+            "delta" => {
+                if paths.len() != 1 {
+                    invalid_argument_err!(
+                        "Delta format only supports a single path; got {paths:?}"
+                    );
+                }
+                let path = paths.first().unwrap();
+
+                delta_scan(path, None, true)?
+            }
 
             other => invalid_argument_err!("Unsupported format: {other};"),
         })
