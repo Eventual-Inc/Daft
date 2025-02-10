@@ -17,7 +17,15 @@ const eslintConfig = [
             'react/display-name': 'off',
             'indent': ['error', 4], // Sets indentation to 4 spaces
             'semi': ['error', 'always'],
-            'quotes': ['error', 'double']
+            'quotes': ['error', 'double'],
+            "@typescript-eslint/no-unused-vars": [
+                "warn",
+                {
+                    "varsIgnorePattern": "^_",
+                    // "argsIgnorePattern": "^_",
+                    // "caughtErrorsIgnorePattern": "^_"
+                }
+            ],
         },
     },
 ];
