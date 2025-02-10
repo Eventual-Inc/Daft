@@ -20,6 +20,7 @@ impl FunctionModule for AggregateFunctions {
 }
 
 struct CountFunction;
+
 impl SparkFunction for CountFunction {
     fn to_expr(
         &self,

@@ -5,12 +5,14 @@ use daft_dsl::{
     ExprRef,
 };
 use once_cell::sync::Lazy;
+use partition_transform::PartitionTransformFunctions;
 use spark_connect::Expression;
 
 use crate::{error::ConnectResult, invalid_argument_err, spark_analyzer::SparkAnalyzer};
 mod aggregate;
 mod core;
 mod math;
+mod partition_transform;
 mod string;
 
 pub(crate) static CONNECT_FUNCTIONS: Lazy<SparkFunctions> = Lazy::new(|| {
@@ -18,6 +20,7 @@ pub(crate) static CONNECT_FUNCTIONS: Lazy<SparkFunctions> = Lazy::new(|| {
     functions.register::<aggregate::AggregateFunctions>();
     functions.register::<core::CoreFunctions>();
     functions.register::<math::MathFunctions>();
+    functions.register::<PartitionTransformFunctions>();
     functions.register::<string::StringFunctions>();
     functions
 });
@@ -64,7 +67,8 @@ pub trait FunctionModule {
     fn register(_parent: &mut SparkFunctions);
 }
 
-pub struct UnaryFunction(fn(ExprRef) -> ExprRef);
+struct UnaryFunction(fn(ExprRef) -> ExprRef);
+
 impl<T> SparkFunction for T
 where
     T: ScalarUDF + 'static + Clone,
