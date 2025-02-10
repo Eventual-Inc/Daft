@@ -13,4 +13,4 @@ export type QueryInfoMap = {
 
 export type Keys = keyof QueryInfo;
 
-export const queryInfoAtom = atomWithStorage<QueryInfoMap>('queryInfo', {});
+export const queryInfoAtom = atomWithStorage<QueryInfoMap>("queryInfo", {});

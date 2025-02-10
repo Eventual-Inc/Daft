@@ -11,7 +11,7 @@ import {
     CardHeader,
     CardTitle,
     CardDescription,
-} from "@/components/ui/card"
+} from "@/components/ui/card";
 import { delta, toHumanReadableDate } from "@/lib/utils";
 
 mermaid.initialize({
@@ -38,7 +38,7 @@ export default function QueryPage() {
         return (<></>);
     }
 
-    const diagram = queryInfo[id].mermaid_plan.replace('```mermaid', '').replace('```', '');
+    const diagram = queryInfo[id].mermaid_plan.replace("```mermaid", "").replace("```", "");
 
     return (
         <div className="space-y-4">
@@ -76,5 +76,5 @@ export default function QueryPage() {
                 </CardContent>
             </Card>
         </div>
-    )
+    );
 };

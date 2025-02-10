@@ -45,7 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                                                     <BreadcrumbItem>
                                                         <BreadcrumbLink
                                                             className="capitalize text-gray-500"
-                                                            href={`/${pathSegments.slice(0, index - 1).join('/')}`}
+                                                            href={`/${pathSegments.slice(0, index - 1).join("/")}`}
                                                         >
                                                             {pathSegment}
                                                         </BreadcrumbLink>
