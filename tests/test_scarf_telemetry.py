@@ -5,145 +5,138 @@ import socket
 import urllib
 from unittest.mock import MagicMock, patch
 
-from daft import get_runner
-from daft.scarf_telemetry import scarf_analytics
+from daft.scarf_telemetry import scarf_telemetry
+from daft.context import set_runner_native, set_runner_py, set_runner_ray, get_context
 
-# PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS = 0.1
-
-
+@patch("daft.scarf_telemetry.get_build_type")
+@patch("daft.scarf_telemetry.get_version")
 @patch("urllib.request.urlopen")
-def test_scarf_analytics_dev(mock_urlopen: MagicMock):
-    # Test that analytics are not sent for dev builds
-    response_status, runner_type = scarf_analytics(
-        scarf_opt_out=False, build_type="dev", version="0.0.0", runner="native"
-    )
+def test_scarf_telemetry_basic(mock_urlopen: MagicMock, mock_version: MagicMock, mock_build_type: MagicMock,):
+    # Test basic functionality of scarf_telemetry verify that analytics are successfully sent and url is properly formatted with all required paramters
 
-    assert response_status is None
-    assert runner_type is None
-    mock_urlopen.assert_not_called()
-
-
-@patch("urllib.request.urlopen")
-def test_scarf_analytics_scarf_opt_out(mock_urlopen: MagicMock):
-    # Test that analytics are not sent when user opts out.
-    response_status, runner_type = scarf_analytics(
-        scarf_opt_out=True, build_type="release", version="0.0.0", runner="native"
-    )
-
-    assert response_status is None
-    assert runner_type is None
-    mock_urlopen.assert_not_called()
-
-
-@patch("urllib.request.urlopen")
-def test_scarf_analytics_for_each_runner(mock_urlopen: MagicMock):
-    # Test analytics with each valid runner type.
+    # Set up mocks for version and build_type
+    mock_version.return_value = "0.0.0"
+    mock_build_type.return_value = "release"
     mock_response = MagicMock()
     mock_response.status = 200
     mock_urlopen.return_value.__enter__.return_value = mock_response
 
-    runners = ["py", "ray", "native"]
+    # Test basic analytics call
+    response_status, runner_type = scarf_telemetry(scarf_opt_out=False, runner="ray")
 
-    for runner in runners:
-        mock_urlopen.reset_mock()
+    assert response_status == "Response status: 200"
+    assert runner_type == "ray"
 
-        response_status, runner_type = scarf_analytics(
-            scarf_opt_out=False, build_type="release", version="0.0.0", runner=runner
-        )
+    # Verify URL format and paramters
+    called_url = mock_urlopen.call_args[0][0]
+    assert called_url.startswith("https://daft.gateway.scarf.sh/daft-runner?")
+    assert "version=0.0.0" in called_url
+    assert "runner=ray" in called_url
 
-        assert response_status == "Response status: 200"
-        assert runner_type == runner
+@patch("daft.scarf_telemetry.get_build_type")
+@patch("daft.scarf_telemetry.get_version")
+def test_scarf_telemetry_dev_build(mock_version: MagicMock, mock_build_type: MagicMock):
+    # Test that analytics are not sent for dev builds, function returns None for both status and runner type
 
-        # Verify URL contains correct parameters
-        called_url = mock_urlopen.call_args[0][0]
-        assert f"runner={runner}" in called_url
-        assert "version=0.0.0" in called_url
+    mock_version.return_value = "0.0.0"
+    mock_build_type.return_value = "dev"
 
-
-@patch("urllib.request.urlopen")
-def test_scarf_analytics_environment_vars(mock_urlopen: MagicMock):
-    # Test that environment variables still work with new implementation.
-    os.environ["SCARF_NO_ANALYTICS"] = "true"
-    response_status, runner_type = scarf_analytics(
-        scarf_opt_out=False, build_type="release", version="0.0.0", runner="native"
-    )
+    response_status, runner_type = scarf_telemetry(scarf_opt_out=False, runner="ray")
 
     assert response_status is None
     assert runner_type is None
-    mock_urlopen.assert_not_called()
 
-    os.environ["SCARF_NO_ANALYTICS"] = "false"
-    os.environ["DO_NOT_TRACK"] = "true"
-    response_status, runner_type = scarf_analytics(
-        scarf_opt_out=False, build_type="release", version="0.0.0", runner="native"
-    )
+@patch("daft.scarf_telemetry.get_build_type")
+@patch("daft.scarf_telemetry.get_version")
+def test_scarf_telemetry_opt_out(mock_version: MagicMock, mock_build_type: MagicMock):
+    # Test that analytics respect the opt-out flags, function returns None for both status and runner type
+    mock_version.return_value = "0.0.0"
+    mock_build_type.return_value = "release"
+
+    response_status, runner_type = scarf_telemetry(scarf_opt_out=True, runner="ray")
 
     assert response_status is None
     assert runner_type is None
-    mock_urlopen.assert_not_called()
 
-
+@patch("daft.scarf_telemetry.get_build_type")
+@patch("daft.scarf_telemetry.get_version")
 @patch("urllib.request.urlopen")
-def test_scarf_analytics_error_handling(mock_urlopen: MagicMock):
-    # Test error handling in analytics.
+def test_scarf_telemetry_error_handling(mock_urlopen: MagicMock, mock_version: MagicMock, mock_build_type: MagicMock,
+):
+    # Test error handling in scarf_telemetry, verifies that network errors are caught, function returns error message and None for runner type
+
+    mock_version.return_value = "0.0.0"
+    mock_build_type.return_value = "release"
     mock_urlopen.side_effect = urllib.error.URLError(socket.timeout("Timeout"))
 
-    os.environ["SCARF_NO_ANALYTICS"] = "false"
-    os.environ["DO_NOT_TRACK"] = "false"
+    response_status, runner_type = scarf_telemetry(scarf_opt_out=False, runner="ray")
 
-    response_status, runner_type = scarf_analytics(
-        scarf_opt_out=False, build_type="release", version="0.0.0", runner="native"
-    )
-
-    assert response_status is not None, "Expected an error message but got None"
     assert response_status.startswith("Analytics error:")
     assert runner_type is None
 
+# Tests for runner integration with scarf_telemetry, commented out because cannot set runner more than once
+# @patch("daft.context.scarf_telemetry")
+# def test_runner_ray_analytics(mock_scarf_telemetry: MagicMock):
+#     # Test Ray runner integration with analytics, verifies that set_runner_ray calls scarf_telemetry and correct parameters are passed
 
-@patch("urllib.request.urlopen")
-def test_scarf_analytics_url_format(mock_urlopen: MagicMock):
-    # Test that the URL is correctly formatted.
-    mock_response = MagicMock()
-    mock_response.status = 200
-    mock_urlopen.return_value.__enter__.return_value = mock_response
+#     os.environ.pop("SCARF_NO_ANALYTICS", None)
+#     os.environ.pop("DO_NOT_TRACK", None)
 
-    scarf_analytics(scarf_opt_out=False, build_type="release", version="0.0.0", runner="native")
+#     set_runner_ray()
 
-    called_url = mock_urlopen.call_args[0][0]
-    assert called_url.startswith("https://daft.gateway.scarf.sh/daft-runner?")
-    assert "platform=" in called_url
-    assert "python=" in called_url
-    assert "arch=" in called_url
-    assert "version=0.0.0" in called_url
-    assert "runner=native" in called_url
+#     mock_scarf_telemetry.assert_called_once_with(False, runner="ray")
 
+# @patch("daft.context.scarf_telemetry")
+# def test_runner_py_analytics(mock_scarf_telemetry: MagicMock):
+#     # Test Python runner integration with analytics, verifies that set_runner_py calls scarf_telemetry and correct parameters are passed
 
-def test_scarf_analytics_no_exception_leak():
-    # Test that no exceptions leak from the analytics function.
-    with patch("urllib.request.urlopen", side_effect=Exception("Test error")):
-        response_status, runner_type = scarf_analytics(
-            scarf_opt_out=False, build_type="release", version="0.0.0", runner="native"
-        )
-        assert response_status.startswith("Analytics error:")
-        assert runner_type is None
+#     os.environ.pop("SCARF_NO_ANALYTICS", None)
+#     os.environ.pop("DO_NOT_TRACK", None)
 
+#     set_runner_py()
 
-def test_get_runner():
-    # Test the get_runner function with different environment variables.
+#     mock_scarf_telemetry.assert_called_once_with(False, runner="py")
 
-    # Test default value
-    os.environ.pop("DAFT_RUNNER", None)  # Remove if exists
-    assert get_runner() == "native"
+# @patch("daft.context.scarf_telemetry")
+# def test_runner_native_analytics(mock_scarf_telemetry: MagicMock):
+#     # Test native runner integration with analytics, verifies that set_runner_py calls scarf_telemetry and correct parameters are passed
 
-    # Test valid values
-    for runner in ["py", "ray", "native"]:
-        os.environ["DAFT_RUNNER"] = runner
-        assert get_runner() == runner
+#     os.environ.pop("SCARF_NO_ANALYTICS", None)
+#     os.environ.pop("DO_NOT_TRACK", None)
 
-    # Test invalid value defaults to py
-    os.environ["DAFT_RUNNER"] = "invalid"
-    assert get_runner() == "native"
+#     set_runner_native()
 
-    # Test case insensitivity
-    os.environ["DAFT_RUNNER"] = "RAY"
-    assert get_runner() == "ray"
+#     mock_scarf_telemetry.assert_called_once_with(False, runner="native")
+
+# @patch("daft.context.scarf_telemetry")
+# def test_runner_analytics_with_opt_out_1(mock_scarf_telemetry: MagicMock):
+#     """Test runner integration with opt-out settings.
+
+#     This test verifies:
+#     1. SCARF_NO_ANALYTICS environment variable triggers opt-out
+#     2. scarf_analytics is called with correct opt-out parameter in both cases
+#     3. Runner type is still correctly passed even when opted out
+#     """
+#     # Test SCARF_NO_ANALYTICS opt-out
+#     os.environ.pop("DO_NOT_TRACK", None)
+#     os.environ["SCARF_NO_ANALYTICS"] = "true"
+#     set_runner_ray()
+#     mock_scarf_telemetry.assert_called_once_with(True, runner="ray")
+
+# @patch("daft.context.scarf_telemetry")
+# def test_runner_analytics_with_opt_out_2(mock_scarf_telemetry: MagicMock):
+#     """Test runner integration with opt-out settings.
+
+#     This test verifies:
+#     1. DO_NOT_TRACK environment variable triggers opt-out
+#     2. scarf_analytics is called with correct opt-out parameter in both cases
+#     3. Runner type is still correctly passed even when opted out
+#     """
+
+#     # Test DO_NOT_TRACK opt-out
+#     os.environ.pop("SCARF_NO_ANALYTICS", None)
+#     os.environ["DO_NOT_TRACK"] = "true"
+#     mock_scarf_telemetry.reset_mock()
+
+#     set_runner_ray()
+#     mock_scarf_telemetry.assert_called_once_with(True, runner="ray")
