@@ -1,9 +1,9 @@
 "use client";
 
+import { useRouter } from 'next/navigation';
 import React, { useEffect } from "react";
 import { queryInfoAtom } from "@/atoms/queryInfo";
 import { useAtom } from "jotai";
-import { useParams } from "next/navigation";
 import mermaid from "mermaid";
 import {
     Card,
@@ -30,8 +30,7 @@ function Mermaid({ chart }: { chart: string }) {
     );
 }
 
-export default function QueryPage() {
-    const { id } = useParams<{ id: string }>();
+export default function QueryPage({ searchParams: { id } }: { searchParams: { id: string } }) {
     const [queryInfo, _] = useAtom(queryInfoAtom);
 
     if (!queryInfo || !queryInfo[id]) {

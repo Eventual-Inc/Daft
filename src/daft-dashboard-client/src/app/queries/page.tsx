@@ -57,7 +57,7 @@ export default function QueryList() {
     React.useEffect(() => {
         (async () => {
             try {
-                const response = await fetch("http://localhost:3239");
+                const response = await fetch("http://localhost:3238/api");
                 const json: QueryInfo[] = await response.json();
                 const queryInfoMap: QueryInfoMap = {};
                 for (const queryInfo of json) {
@@ -117,7 +117,7 @@ export default function QueryList() {
                                         <TableCell
                                             key={cell.id}
                                             className={`py-[15px] ${spacing(cell as any)}`}
-                                            onClick={() => router.push(`/queries/${cell.row.original.id}`)}
+                                            onClick={() => router.push(`/queries/query?id=${cell.row.original.id}`)}
                                         >
                                             <div className="truncate">
                                                 {flexRender(
