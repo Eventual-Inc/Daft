@@ -281,6 +281,21 @@ def test_sort_desc_nulls_first(make_df):
 
 
 @pytest.mark.parametrize(
+    "cast_to",
+    [
+        DataType.float32(),
+        DataType.float64(),
+        DataType.int8(),
+        DataType.int16(),
+        DataType.int32(),
+        DataType.int64(),
+        DataType.uint8(),
+        DataType.uint16(),
+        DataType.uint32(),
+        DataType.uint64(),
+    ],
+)
+@pytest.mark.parametrize(
     "nulls_first,desc,expected",
     [
         (
@@ -358,13 +373,18 @@ def test_sort_desc_nulls_first(make_df):
         ),
     ],
 )
-def test_multi_column_sort_nulls_first(make_df, nulls_first, desc, expected):
+def test_multi_column_sort_nulls_first(make_df, cast_to, nulls_first, desc, expected):
     df = make_df(
         {
             "id1": [2, None, 2, None, 1, 1],
             "id2": [2, None, 1, 1, None, 2],
             "values": ["a1", "b1", "c1", "d1", "e1", "f1"],
         },
+    )
+    df = df.select(
+        df["id1"].cast(cast_to).alias("id1"),
+        df["id2"].cast(cast_to).alias("id2"),
+        df["values"],
     )
 
     result = df.sort(["id1", "id2"], desc=desc, nulls_first=nulls_first).to_pydict()
