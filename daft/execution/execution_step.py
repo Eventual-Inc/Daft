@@ -935,12 +935,15 @@ class ReduceMergeAndSort(ReduceInstruction):
     sort_by: ExpressionsProjection
     descending: list[bool]
     bounds: MicroPartition
+    nulls_first: list[bool] | None = None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._reduce_merge_and_sort(inputs)
 
     def _reduce_merge_and_sort(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        partition = MicroPartition.concat(inputs).sort(self.sort_by, descending=self.descending)
+        partition = MicroPartition.concat(inputs).sort(
+            self.sort_by, descending=self.descending, nulls_first=self.nulls_first
+        )
         return [partition]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
@@ -969,7 +972,6 @@ class ReduceToQuantiles(ReduceInstruction):
         merged = MicroPartition.concat(inputs)
 
         nulls_first = self.nulls_first if self.nulls_first is not None else self.descending
-
         # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
         merged_sorted = merged.sort(
             self.sort_by.to_column_expressions(), descending=self.descending, nulls_first=nulls_first
