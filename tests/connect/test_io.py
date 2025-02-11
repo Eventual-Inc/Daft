@@ -4,11 +4,19 @@ import os
 
 import pytest
 
+import daft
 
-def test_write_csv_basic(make_spark_df, spark_session, tmp_path):
+
+def test_csv_basic_roundtrip(make_spark_df, assert_spark_equals, spark_session, tmp_path):
     df = make_spark_df({"id": [1, 2, 3]})
     csv_dir = os.path.join(tmp_path, "csv")
     df.write.csv(csv_dir)
+
+    spark_df_read = spark_session.read.option("header", True).csv(csv_dir)
+    print(spark_df_read.collect())
+    df_read = daft.read_csv(csv_dir)
+    print(df_read.collect())
+    assert_spark_equals(df_read, spark_df_read)
 
 
 @pytest.mark.skip(reason="https://github.com/Eventual-Inc/Daft/issues/3775")

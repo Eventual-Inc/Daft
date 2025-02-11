@@ -282,7 +282,6 @@ impl SparkAnalyzer<'_> {
             paths,
             predicates: _,
         } = data_source;
-
         let format = format.required("format")?;
 
         ensure!(!paths.is_empty(), "Paths are required");
@@ -322,14 +321,14 @@ impl SparkAnalyzer<'_> {
                 // spark sets this to false by default, so we'll do the same
                 let header = options
                     .get("header")
-                    .and_then(|v| v.parse().ok())
+                    .and_then(|v| v.to_lowercase().parse().ok())
                     .unwrap_or(false);
 
                 builder = builder.has_headers(header);
 
                 let infer_schema = options
                     .get("inferSchema")
-                    .and_then(|v| v.parse().ok())
+                    .and_then(|v| v.to_lowercase().parse().ok())
                     .unwrap_or(true);
 
                 builder = builder.infer_schema(infer_schema);
