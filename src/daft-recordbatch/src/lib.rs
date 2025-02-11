@@ -525,6 +525,7 @@ impl RecordBatch {
                 self.eval_expression(expr)?.any_value(groups, ignore_nulls)
             }
             AggExpr::List(expr) => self.eval_expression(expr)?.agg_list(groups),
+            AggExpr::Set(expr) => self.eval_expression(expr)?.agg_set(groups),
             AggExpr::Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
