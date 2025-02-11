@@ -94,9 +94,18 @@ async fn dashboard_server(req: Req, resolver: Option<Resolver>) -> ServerResult<
                 return Ok(response::empty(StatusCode::NOT_FOUND));
             };
 
-            let result = resolver.resolve_request(&req).await.with_internal_error()?;
-            let result = if matches!(result, ResolveResult::NotFound) {
-                let request_path = format!("{}.html", req.uri().path());
+            let request_path = req.uri().path();
+            let result = resolver
+                .resolve_path(request_path, AcceptEncoding::all())
+                .await
+                .with_internal_error()?;
+
+            let result = if matches!(
+                result,
+                ResolveResult::NotFound | ResolveResult::IsDirectory { .. }
+            ) {
+                let request_path = request_path.strip_suffix('/').unwrap_or(request_path);
+                let request_path = format!("{}.html", request_path);
                 resolver
                     .resolve_path(&request_path, AcceptEncoding::all())
                     .await
@@ -104,6 +113,7 @@ async fn dashboard_server(req: Req, resolver: Option<Resolver>) -> ServerResult<
             } else {
                 result
             };
+
             ResponseBuilder::new()
                 .request(&req)
                 .build(result)
