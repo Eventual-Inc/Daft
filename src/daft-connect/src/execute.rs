@@ -1,4 +1,4 @@
-use std::{future::ready, sync::Arc};
+use std::{future::ready, rc::Rc, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
@@ -6,7 +6,8 @@ use daft_context::get_context;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
+use daft_session::Session;
 use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
@@ -25,13 +26,13 @@ use crate::{
     error::{ConnectError, ConnectResult, Context},
     not_yet_implemented,
     response_builder::ResponseBuilder,
-    session::Session,
+    session::ConnectSession,
     spark_analyzer::SparkAnalyzer,
     util::FromOptionalField,
     ExecuteStream,
 };
 
-impl Session {
+impl ConnectSession {
     pub async fn run_query(
         &self,
         lp: LogicalPlanBuilder,
@@ -282,9 +283,11 @@ impl Session {
             not_yet_implemented!("Input");
         }
 
+        // TODO: converge Session and ConnectSession
         let catalog = self.catalog().clone();
+        let session = Rc::new(Session::new("spark_connect", catalog));
 
-        let mut planner = daft_sql::SQLPlanner::new(catalog);
+        let mut planner = daft_sql::SQLPlanner::new(session);
 
         let plan = planner.plan_sql(&sql).wrap_err("Error planning SQL")?;
 
@@ -357,14 +360,14 @@ impl Session {
             .ok_or_else(|| ConnectError::internal("no results"))?;
 
         let tbls = single_batch.get_tables()?;
-        let tbl = Table::concat(&tbls)?;
+        let tbl = RecordBatch::concat(&tbls)?;
         let output = tbl.to_comfy_table(None).to_string();
 
         let s = LiteralValue::Utf8(output)
             .into_single_value_series()?
             .rename("show_string");
 
-        let tbl = Table::from_nonempty_columns(vec![s])?;
+        let tbl = RecordBatch::from_nonempty_columns(vec![s])?;
         response_builder.arrow_batch_response(&tbl)
     }
 }

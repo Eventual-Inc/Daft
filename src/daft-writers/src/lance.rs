@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_logical_plan::LanceCatalogInfo;
 use daft_micropartition::{python::PyMicroPartition, MicroPartition};
-use daft_table::{python::PyTable, Table};
+use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
 use pyo3::{types::PyAnyMethods, Python};
 
 use crate::{FileWriter, WriterFactory};
@@ -11,7 +11,7 @@ use crate::{FileWriter, WriterFactory};
 pub struct LanceWriter {
     is_closed: bool,
     lance_info: LanceCatalogInfo,
-    results: Vec<Table>,
+    results: Vec<RecordBatch>,
     bytes_written: usize,
 }
 
@@ -28,7 +28,7 @@ impl LanceWriter {
 
 impl FileWriter for LanceWriter {
     type Input = Arc<MicroPartition>;
-    type Result = Vec<Table>;
+    type Result = Vec<RecordBatch>;
 
     fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         assert!(!self.is_closed, "Cannot write to a closed LanceWriter");
@@ -37,12 +37,12 @@ impl FileWriter for LanceWriter {
             .expect("MicroPartition should have size_bytes for LanceWriter");
         Python::with_gil(|py| {
             let py_micropartition = py
-                .import(pyo3::intern!(py, "daft.table"))?
+                .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "MicroPartition"))?
                 .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
                 .call1((PyMicroPartition::from(data),))?;
-            let written_fragments: PyTable = py
-                .import(pyo3::intern!(py, "daft.table.table_io"))?
+            let written_fragments: PyRecordBatch = py
+                .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
                 .getattr(pyo3::intern!(py, "write_lance"))?
                 .call1((
                     py_micropartition,
@@ -77,7 +77,7 @@ impl FileWriter for LanceWriter {
 
 pub fn make_lance_writer_factory(
     lance_info: LanceCatalogInfo,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>> {
+) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
     Arc::new(LanceWriterFactory { lance_info })
 }
 
@@ -88,12 +88,12 @@ pub struct LanceWriterFactory {
 impl WriterFactory for LanceWriterFactory {
     type Input = Arc<MicroPartition>;
 
-    type Result = Vec<Table>;
+    type Result = Vec<RecordBatch>;
 
     fn create_writer(
         &self,
         _file_idx: usize,
-        _partition_values: Option<&Table>,
+        _partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
         let writer = LanceWriter::new(self.lance_info.clone());
         Ok(Box::new(writer))

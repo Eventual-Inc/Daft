@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use daft_table::{GrowableTable, ProbeState};
+use daft_recordbatch::{GrowableRecordBatch, ProbeState};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
@@ -105,7 +105,7 @@ impl InnerHashJoinProbeOperator {
 
         let _growables = info_span!("InnerHashJoinOperator::build_growables").entered();
 
-        let mut build_side_growable = GrowableTable::new(
+        let mut build_side_growable = GrowableRecordBatch::new(
             &tables.iter().collect::<Vec<_>>(),
             false,
             Self::DEFAULT_GROWABLE_SIZE,
@@ -113,7 +113,7 @@ impl InnerHashJoinProbeOperator {
 
         let input_tables = input.get_tables()?;
 
-        let mut probe_side_growable = GrowableTable::new(
+        let mut probe_side_growable = GrowableRecordBatch::new(
             &input_tables.iter().collect::<Vec<_>>(),
             false,
             Self::DEFAULT_GROWABLE_SIZE,

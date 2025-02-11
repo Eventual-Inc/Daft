@@ -8,9 +8,9 @@ from daft import DataType, ResourceRequest
 from daft.context import get_context
 from daft.execution.execution_step import ActorPoolProject
 from daft.expressions import ExpressionsProjection
+from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import PartialPartitionMetadata
 from daft.runners.pyrunner import AcquiredResources, PyActorPool, PyRunner
-from daft.table import MicroPartition
 from tests.conftest import get_tests_daft_runner_name
 
 
