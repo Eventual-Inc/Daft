@@ -10,7 +10,22 @@ use crate::Res;
 /// If you are running the web application from another port than [`super::SERVER_PORT`], you will need to change
 /// the below port. If you do not, you will get a CORS policy error.
 fn cors() -> String {
-    format!("http://localhost:{}", super::SERVER_PORT)
+    #[cfg(debug_assertions)]
+    {
+        /// During development of the dashboard, the dev server attaches to port 3000 instead.
+        /// Thus, we enable CORS for that port as well.
+        ///
+        /// # Note
+        /// We only do this for debug builds.
+        const BUN_DEV_PORT: u16 = 3000;
+
+        format!("http://localhost:{}", BUN_DEV_PORT)
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        format!("http://localhost:{}", super::SERVER_PORT)
+    }
 }
 
 fn response_builder(status: StatusCode, body: Option<impl Serialize>) -> Res {
