@@ -129,7 +129,7 @@ However, if this is another process, then kill that other server (by running `ki
     };
 
     let resolver = if run_html_server {
-        Some(Resolver::new("./out"))
+        Some(Resolver::new("html"))
     } else {
         None
     };
