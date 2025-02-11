@@ -74,7 +74,7 @@ where
     let mut start_idx: usize = 0;
     let mut end_idx: usize = length;
 
-    if let Some(validity) = dbg!(validity) {
+    if let Some(validity) = validity {
         let mut indices = vec![I::default(); length];
         if descending {
             let mut nulls = 0;
@@ -88,30 +88,22 @@ where
                     match (is_not_null, nulls_first) {
                         // value && nulls first
                         (true, true) => {
-                            println!("setting {valids} to {index}");
-                            indices[valids] = index;
-                            println!("indices: {indices:?}");
+                            indices[validity.unset_bits() + valids] = index;
                             valids += 1;
                         }
                         // value && nulls last
                         (true, false) => {
-                            println!("setting {} to {index}", validity.unset_bits() + valids);
-                            indices[validity.unset_bits() + valids] = index;
-                            println!("indices: {indices:?}");
+                            indices[valids] = index;
                             valids += 1;
                         }
                         // null && nulls first
                         (false, true) => {
-                            println!("setting {} to {index}", last_valid_index + nulls);
-                            indices[last_valid_index + nulls] = index;
-                            println!("indices: {indices:?}");
+                            indices[nulls] = index;
                             nulls += 1;
                         }
                         // null && nulls last
                         (false, false) => {
-                            println!("setting {} to {index}", nulls);
-                            indices[nulls] = index;
-                            println!("indices: {indices:?}");
+                            indices[last_valid_index + nulls] = index;
                             nulls += 1;
                         }
                     }

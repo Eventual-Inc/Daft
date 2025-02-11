@@ -260,3 +260,112 @@ def test_sort_with_all_null_type_column(make_df):
 
     with pytest.raises((ExpressionTypeError, ValueError)):
         daft_df = daft_df.sort(daft_df["id"])
+
+
+def test_sort_nulls_first(make_df):
+    df = make_df({"A": [1, None, 3, None, 2]})
+
+    result_nulls_first = df.sort("A", nulls_first=True).to_pydict()
+    assert result_nulls_first["A"] == [None, None, 1, 2, 3]
+
+    result_nulls_last = df.sort("A", nulls_first=False).to_pydict()
+    assert result_nulls_last["A"] == [1, 2, 3, None, None]
+
+
+def test_sort_desc_nulls_first(make_df):
+    df = make_df({"A": [1, None, 3, None, 2]})
+
+    result = df.sort("A", desc=True, nulls_first=True).to_pydict()
+    assert result["A"] == [None, None, 3, 2, 1]
+
+
+@pytest.mark.parametrize(
+    "nulls_first,desc,expected",
+    [
+        (
+            [False, False],
+            [False, False],
+            {
+                "id1": [1, 1, 2, 2, None, None],
+                "id2": [2, None, 1, 2, 1, None],
+                "values": ["f1", "e1", "c1", "a1", "d1", "b1"],
+            },
+        ),
+        (
+            [True, False],
+            [False, False],
+            {
+                "id1": [None, None, 1, 1, 2, 2],
+                "id2": [1, None, 2, None, 1, 2],
+                "values": ["d1", "b1", "f1", "e1", "c1", "a1"],
+            },
+        ),
+        (
+            [False, True],
+            [False, False],
+            {
+                "id1": [1, 1, 2, 2, None, None],
+                "id2": [2, None, 1, 2, 1, None],
+                "values": ["f1", "e1", "c1", "a1", "d1", "b1"],
+            },
+        ),
+        (
+            [True, True],
+            [False, False],
+            {
+                "id1": [None, None, 1, 1, 2, 2],
+                "id2": [1, None, 2, None, 1, 2],
+                "values": ["d1", "b1", "f1", "e1", "c1", "a1"],
+            },
+        ),
+        # Descending
+        (
+            [False, False],
+            [True, True],
+            {
+                "id1": [2, 2, 1, 1, None, None],
+                "id2": [2, 1, None, 2, None, 1],
+                "values": ["a1", "c1", "e1", "f1", "b1", "d1"],
+            },
+        ),
+        (
+            [True, False],
+            [True, True],
+            {
+                "id1": [None, None, 2, 2, 1, 1],
+                "id2": [None, 1, 2, 1, None, 2],
+                "values": ["b1", "d1", "a1", "c1", "e1", "f1"],
+            },
+        ),
+        (
+            [False, True],
+            [True, True],
+            {
+                "id1": [2, 2, 1, 1, None, None],
+                "id2": [2, 1, None, 2, None, 1],
+                "values": ["a1", "c1", "e1", "f1", "b1", "d1"],
+            },
+        ),
+        (
+            [True, True],
+            [True, True],
+            {
+                "id1": [None, None, 2, 2, 1, 1],
+                "id2": [None, 1, 2, 1, None, 2],
+                "values": ["b1", "d1", "a1", "c1", "e1", "f1"],
+            },
+        ),
+    ],
+)
+def test_multi_column_sort_nulls_first(make_df, nulls_first, desc, expected):
+    df = make_df(
+        {
+            "id1": [2, None, 2, None, 1, 1],
+            "id2": [2, None, 1, 1, None, 2],
+            "values": ["a1", "b1", "c1", "d1", "e1", "f1"],
+        },
+    )
+
+    result = df.sort(["id1", "id2"], desc=desc, nulls_first=nulls_first).to_pydict()
+
+    assert result == expected
