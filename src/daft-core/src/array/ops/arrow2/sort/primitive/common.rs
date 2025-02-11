@@ -9,13 +9,14 @@ pub fn idx_sort<I, F>(
     cmp: F,
     length: usize,
     descending: bool,
+    nulls_first: bool,
 ) -> PrimitiveArray<I>
 where
     I: Index,
     F: Fn(&I, &I) -> std::cmp::Ordering,
 {
     let (mut indices, start_idx, end_idx) =
-        generate_initial_indices::<I>(validity, length, descending);
+        generate_initial_indices::<I>(validity, length, descending, nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     if !descending {
@@ -33,13 +34,18 @@ pub fn multi_column_idx_sort<I, F>(
     others_cmp: &DynComparator,
     length: usize,
     first_col_desc: bool,
+    first_col_nulls_first: bool,
 ) -> PrimitiveArray<I>
 where
     I: Index,
     F: Fn(&I, &I) -> std::cmp::Ordering,
 {
-    let (mut indices, start_idx, end_idx) =
-        generate_initial_indices::<I>(first_col_validity, length, first_col_desc);
+    let (mut indices, start_idx, end_idx) = generate_initial_indices::<I>(
+        first_col_validity,
+        length,
+        first_col_desc,
+        first_col_nulls_first,
+    );
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     indices_slice.sort_unstable_by(|a, b| overall_cmp(a, b));
@@ -60,6 +66,7 @@ fn generate_initial_indices<I>(
     validity: Option<&Bitmap>,
     length: usize,
     descending: bool,
+    nulls_first: bool,
 ) -> (Vec<I>, usize, usize)
 where
     I: Index,
@@ -67,21 +74,46 @@ where
     let mut start_idx: usize = 0;
     let mut end_idx: usize = length;
 
-    if let Some(validity) = validity {
+    if let Some(validity) = dbg!(validity) {
         let mut indices = vec![I::default(); length];
         if descending {
             let mut nulls = 0;
             let mut valids = 0;
+            let last_valid_index = length.saturating_sub(validity.unset_bits());
+
             validity
                 .iter()
                 .zip(I::range(0, length).unwrap())
-                .for_each(|(is_valid, index)| {
-                    if is_valid {
-                        indices[validity.unset_bits() + valids] = index;
-                        valids += 1;
-                    } else {
-                        indices[nulls] = index;
-                        nulls += 1;
+                .for_each(|(is_not_null, index)| {
+                    match (is_not_null, nulls_first) {
+                        // value && nulls first
+                        (true, true) => {
+                            println!("setting {valids} to {index}");
+                            indices[valids] = index;
+                            println!("indices: {indices:?}");
+                            valids += 1;
+                        }
+                        // value && nulls last
+                        (true, false) => {
+                            println!("setting {} to {index}", validity.unset_bits() + valids);
+                            indices[validity.unset_bits() + valids] = index;
+                            println!("indices: {indices:?}");
+                            valids += 1;
+                        }
+                        // null && nulls first
+                        (false, true) => {
+                            println!("setting {} to {index}", last_valid_index + nulls);
+                            indices[last_valid_index + nulls] = index;
+                            println!("indices: {indices:?}");
+                            nulls += 1;
+                        }
+                        // null && nulls last
+                        (false, false) => {
+                            println!("setting {} to {index}", nulls);
+                            indices[nulls] = index;
+                            println!("indices: {indices:?}");
+                            nulls += 1;
+                        }
                     }
                 });
             start_idx = validity.unset_bits();
@@ -92,16 +124,35 @@ where
             validity
                 .iter()
                 .zip(I::range(0, length).unwrap())
-                .for_each(|(x, index)| {
-                    if x {
-                        indices[valids] = index;
-                        valids += 1;
-                    } else {
-                        indices[last_valid_index + nulls] = index;
-                        nulls += 1;
+                .for_each(|(is_not_null, index)| {
+                    match (is_not_null, nulls_first) {
+                        // value && nulls_first
+                        (true, true) => {
+                            indices[validity.unset_bits() + valids] = index;
+                            valids += 1;
+                        }
+                        // value && nulls last
+                        (true, false) => {
+                            indices[valids] = index;
+                            valids += 1;
+                        }
+                        // null && nulls first
+                        (false, true) => {
+                            indices[nulls] = index;
+                            nulls += 1;
+                        }
+                        // null && nulls last
+                        (false, false) => {
+                            indices[last_valid_index + nulls] = index;
+                            nulls += 1;
+                        }
                     }
                 });
-            end_idx = last_valid_index;
+            if nulls_first {
+                start_idx = validity.unset_bits();
+            } else {
+                end_idx = last_valid_index;
+            }
         }
         (indices, start_idx, end_idx)
     } else {

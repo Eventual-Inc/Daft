@@ -1709,6 +1709,7 @@ class DataFrame:
         self,
         by: Union[ColumnInputType, List[ColumnInputType]],
         desc: Union[bool, List[bool]] = False,
+        nulls_first: Union[bool, List[bool]] = False,
     ) -> "DataFrame":
         """Sorts DataFrame globally.
 
