@@ -15,7 +15,7 @@ def test_scarf_telemetry_basic(
     mock_version: MagicMock,
     mock_build_type: MagicMock,
 ):
-    # Test basic functionality of scarf_telemetry verify that analytics are successfully sent and url is properly formatted with all required paramters
+    # Test basic functionality of scarf_telemetry verify that analytics are successfully sent and url is properly formatted with all required parameters
 
     # Set up mocks for version and build_type
     mock_version.return_value = "0.0.0"
@@ -30,7 +30,7 @@ def test_scarf_telemetry_basic(
     assert response_status == "Response status: 200"
     assert runner_type == "ray"
 
-    # Verify URL format and paramters
+    # Verify URL format and parameters
     called_url = mock_urlopen.call_args[0][0]
     assert called_url.startswith("https://daft.gateway.scarf.sh/daft-runner?")
     assert "version=0.0.0" in called_url
