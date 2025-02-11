@@ -30,7 +30,7 @@ function Mermaid({ chart }: { chart: string }) {
     );
 }
 
-export default function QueryPage() {
+function SuspendedQueryPage() {
     const searchParams = useSearchParams();
     const id: string = searchParams.get("id")!;
     const [queryInfo, _] = useAtom(queryInfoAtom);
@@ -79,3 +79,11 @@ export default function QueryPage() {
         </div>
     );
 };
+
+export default function QueryPage() {
+    return (
+        <React.Suspense fallback={<></>}>
+            <SuspendedQueryPage />
+        </React.Suspense>
+    );
+}
