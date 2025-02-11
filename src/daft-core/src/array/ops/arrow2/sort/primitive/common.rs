@@ -75,12 +75,14 @@ where
     let mut end_idx: usize = length;
 
     if let Some(validity) = validity {
+        // number of null values
+        let n_nulls = validity.unset_bits();
+        // number of non null values
+        let n_valid = length.saturating_sub(n_nulls);
         let mut indices = vec![I::default(); length];
+        let mut nulls = 0;
+        let mut valids = 0;
         if descending {
-            let mut nulls = 0;
-            let mut valids = 0;
-            let last_valid_index = length.saturating_sub(validity.unset_bits());
-
             validity
                 .iter()
                 .zip(I::range(0, length).unwrap())
@@ -88,7 +90,7 @@ where
                     match (is_not_null, nulls_first) {
                         // value && nulls first
                         (true, true) => {
-                            indices[validity.unset_bits() + valids] = index;
+                            indices[n_nulls + valids] = index;
                             valids += 1;
                         }
                         // value && nulls last
@@ -103,16 +105,13 @@ where
                         }
                         // null && nulls last
                         (false, false) => {
-                            indices[last_valid_index + nulls] = index;
+                            indices[n_valid + nulls] = index;
                             nulls += 1;
                         }
                     }
                 });
-            start_idx = validity.unset_bits();
+            start_idx = n_nulls;
         } else {
-            let last_valid_index = length.saturating_sub(validity.unset_bits());
-            let mut nulls = 0;
-            let mut valids = 0;
             validity
                 .iter()
                 .zip(I::range(0, length).unwrap())
@@ -120,7 +119,7 @@ where
                     match (is_not_null, nulls_first) {
                         // value && nulls_first
                         (true, true) => {
-                            indices[validity.unset_bits() + valids] = index;
+                            indices[n_nulls + valids] = index;
                             valids += 1;
                         }
                         // value && nulls last
@@ -135,15 +134,15 @@ where
                         }
                         // null && nulls last
                         (false, false) => {
-                            indices[last_valid_index + nulls] = index;
+                            indices[n_valid + nulls] = index;
                             nulls += 1;
                         }
                     }
                 });
             if nulls_first {
-                start_idx = validity.unset_bits();
+                start_idx = n_nulls;
             } else {
-                end_idx = last_valid_index;
+                end_idx = n_valid;
             }
         }
         (indices, start_idx, end_idx)
