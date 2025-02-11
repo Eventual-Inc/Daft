@@ -8,7 +8,7 @@ use crate::{
     array::{growable::make_growable, ListArray},
     datatypes::{DataType, UInt64Array, Utf8Array},
     prelude::{CountMode, Int64Array},
-    series::{IntoSeries, Series},
+    series::{array_impl::IntoSeries, Series},
 };
 
 impl Series {
@@ -298,9 +298,8 @@ impl Series {
             let start_offset = list_offsets.get(i).unwrap();
             if let Some(sub_series) = sub_series {
                 let probe_table = sub_series.build_probe_table_without_nulls()?;
-                let mut indices: Vec<_> = probe_table.keys().map(|k| k.idx).collect();
+                let indices: Vec<_> = probe_table.keys().map(|k| k.idx).collect();
                 let unique_count = indices.len();
-                indices.sort_unstable();
                 for idx in indices {
                     growable.extend(0, *start_offset as usize + idx as usize, 1);
                 }

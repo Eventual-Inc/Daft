@@ -12,14 +12,13 @@ use crate::{
     },
     count_mode::CountMode,
     datatypes::*,
-    series::{IntoSeries, Series},
+    series::{array_impl::IntoSeries, Series},
     with_match_physical_daft_types,
 };
 
 fn deduplicate_indices(series: &Series) -> DaftResult<Vec<u64>> {
     let probe_table = series.build_probe_table_without_nulls()?;
-    let mut unique_indices: Vec<u64> = probe_table.keys().map(|k| k.idx).collect();
-    unique_indices.sort_unstable();
+    let unique_indices: Vec<u64> = probe_table.keys().map(|k| k.idx).collect();
     Ok(unique_indices)
 }
 
