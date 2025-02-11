@@ -167,10 +167,10 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-                use crate::array::ops::DaftSetAggable;
+                use crate::array::{ops::DaftSetAggable, ListArray};
                 let data_array = match groups {
-                    Some(groups) => self.0.physical.grouped_set(groups)?,
-                    None => self.0.physical.set()?,
+                    Some(groups) => self.0.physical.clone().into_series().grouped_set(groups)?,
+                    None => self.0.physical.clone().into_series().set()?,
                 };
                 let new_field = self.field().to_list_field()?;
                 Ok(ListArray::new(
