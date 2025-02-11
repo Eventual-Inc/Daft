@@ -1,14 +1,18 @@
-
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
 use daft_catalog::{catalog::Catalogs, DataCatalog, Identifier, Name};
 use daft_logical_plan::LogicalPlanBuilder;
-// use options::Options;
 
-use crate::{error::Result, obj_already_exists_err, obj_not_found_err, options::Options, unsupported_err};
+// use options::Options;
+use crate::{
+    error::Result, obj_already_exists_err, obj_not_found_err, options::Options, unsupported_err,
+};
 
 /// Session holds all state for query planning and execution (e.g. connection).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Session {
     /// Session state for interior mutability
     state: Arc<RwLock<SessionState>>,
@@ -24,6 +28,8 @@ struct SessionState {
     /// References to the available catalogs.
     catalogs: Catalogs,
     // TODO execution context
+    // TODO temporary! tables come from a catalog, not here!!
+    tables: HashMap<String, LogicalPlanBuilder>,
 }
 
 impl Session {
@@ -33,6 +39,7 @@ impl Session {
             _id: id.to_string(),
             _options: Options::default(),
             catalogs: Catalogs::empty(),
+            tables: HashMap::new(),
         };
         let state = RwLock::new(state);
         let state = Arc::new(state);
@@ -50,10 +57,9 @@ impl Session {
     }
 
     /// Attaches a catalog to this session, err if already exists.
-    pub fn attach<N : Into<Name>>(&self, name: N, catalog: Arc<dyn DataCatalog>) -> Result<()> {
-        let name = name.into();
+    pub fn attach(&self, name: Name, catalog: Arc<dyn DataCatalog>) -> Result<()> {
         if name.has_namespace() {
-           unsupported_err!("attach catalog with namespace") 
+            unsupported_err!("Attach catalog with namespace name")
         }
         if self.state().catalogs.exists(&name.name) {
             obj_already_exists_err!("Catalog", name)
@@ -62,11 +68,10 @@ impl Session {
         Ok(())
     }
 
-    /// Dettaches a catalog from this session, err if does not exist.
-    pub fn detach<I : AsRef<Identifier>>(&self, ident: &I) -> Result<()> {
-        let ident = ident.as_ref();
+    /// Detaches a catalog from this session, err if does not exist.
+    pub fn detach(&self, ident: &Identifier) -> Result<()> {
         if ident.has_qualifier() {
-            unsupported_err!("detach catalog with qualifier")
+            unsupported_err!("Detach catalog with a qualified identifier")
         }
         if self.state().catalogs.exists(&ident.name) {
             obj_not_found_err!("Catalog", ident)
@@ -77,20 +82,33 @@ impl Session {
 
     /// Creates a table backed by the view
     /// TODO support other table sources.
-    pub fn create_table<N : Into<Name>>(&self, name: N, view: impl Into<LogicalPlanBuilder>) -> Result<()> {
-        todo!()
-        // self.state_mut().metastore.register_table(name, view)
+    pub fn create_table<N: Into<Name>>(
+        &self,
+        name: N,
+        view: impl Into<LogicalPlanBuilder>,
+    ) -> Result<()> {
+        let name = name.into();
+        if name.has_namespace() {
+            unsupported_err!("Creating a table with a namespace is not yet supported, Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name);
+        }
+        self.state_mut().tables.insert(name.name, view.into());
+        Ok(())
     }
 
     /// Gets a table by identifier
     pub fn get_table(&self, ident: &Identifier) -> Result<LogicalPlanBuilder> {
-        // TODO current read_table accepts an unparsed string
-        let table_identifier = ident.to_string();
-        // if ident.has_namespace() {
-        //     unsupported!("qualified table names")
-        // }
-        todo!()
-        // self.state().metastore.read_table(&table_identifier)
+        if ident.has_qualifier() {
+            unsupported_err!("Qualified identifiers are not yet supported")
+        }
+        if let Some(view) = self.state().tables.get(&ident.name) {
+            return Ok(view.clone());
+        }
+        obj_not_found_err!("Table", ident)
+    }
+
+    /// Returns true iff the session has for the given identifier
+    pub fn has_table(&self, ident: &Identifier) -> bool {
+        return self.state().tables.contains_key(&ident.name);
     }
 }
 

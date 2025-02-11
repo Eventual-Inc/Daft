@@ -7,7 +7,6 @@ use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_session::Session;
 use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
@@ -235,16 +234,14 @@ impl ConnectSession {
             })?;
 
         {
-            let catalog = self.catalog();
-
-            if !replace && catalog.contains_table(&name) {
+            // TODO session should handle the pre-existence error
+            if !replace && self.session().has_table(&name.clone().into()) {
                 return Err(Status::internal("Dataframe view already exists"));
             }
         }
 
-        let mut catalog = self.catalog_mut();
-
-        catalog.register_table(&name, input).map_err(|e| {
+        let session = self.session_mut();
+        session.create_table(name, input).map_err(|e| {
             Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
         })?;
 
@@ -284,8 +281,8 @@ impl ConnectSession {
         }
 
         // TODO: converge Session and ConnectSession
-        let catalog = self.catalog().clone();
-        let session = Rc::new(Session::new("spark_connect", catalog));
+        let session = self.session().clone();
+        let session = Rc::new(session);
 
         let mut planner = daft_sql::SQLPlanner::new(session);
 

@@ -18,7 +18,7 @@ impl Identifier {
         Self { qualifier, name }
     }
 
-    /// Returns true if this is a qualified identifier e.g. has a qualifier.
+    /// Returns true if this is a qualified identifier.
     pub fn has_qualifier(&self) -> bool {
         !self.qualifier.is_empty()
     }
@@ -59,6 +59,26 @@ impl Display for Identifier {
             let prefix = self.qualifier.join(".");
             let string = format!("{}.{}", prefix, self.name);
             f.write_str(&string)
+        }
+    }
+}
+
+impl From<String> for Identifier {
+    // TODO input validation
+    fn from(name: String) -> Self {
+        Self {
+            qualifier: vec![],
+            name,
+        }
+    }
+}
+
+impl From<&str> for Identifier {
+    // TODO input validation
+    fn from(name: &str) -> Self {
+        Self {
+            qualifier: vec![],
+            name: name.to_string(),
         }
     }
 }

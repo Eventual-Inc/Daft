@@ -197,6 +197,7 @@ impl<'a> SQLPlanner<'a> {
         Ref::map(self.context.borrow(), |i| &i.bound_ctes)
     }
 
+    /// Lookup a table by identifier in the current session
     fn get_table(&self, ident: &Identifier) -> Option<Relation> {
         self.session()
             .get_table(ident)
