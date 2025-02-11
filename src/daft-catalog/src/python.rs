@@ -1,10 +1,7 @@
 use daft_logical_plan::PyLogicalPlanBuilder;
 use pyo3::{exceptions::PyIndexError, prelude::*};
 
-use crate::{
-    global_catalog,
-    identifier::{Identifier, Qualifier},
-};
+use crate::{global_catalog, identifier::Identifier, Name};
 
 /// Read a table from the specified `DaftMetaCatalog`.
 ///
@@ -99,8 +96,11 @@ pub struct PyIdentifier(Identifier);
 #[pymethods]
 impl PyIdentifier {
     #[new]
-    pub fn new(qualifier: Qualifier, name: String) -> PyIdentifier {
-        Identifier::new(qualifier, name).into()
+    pub fn new(namespace: Vec<String>, name: String) -> PyIdentifier {
+        // TODO add names to python layer
+        let namespace = namespace.into_iter().map(Name::delimited).collect();
+        let name = Name::delimited(name);
+        Identifier::new(namespace, name).into()
     }
 
     #[staticmethod]
@@ -112,6 +112,7 @@ impl PyIdentifier {
         Ok(self.0.eq(&other.0))
     }
 
+    // TODO getitem should return the name
     pub fn getitem(&self, index: isize) -> PyResult<String> {
         let mut i = index;
         let len = self.__len__()?;
@@ -125,13 +126,13 @@ impl PyIdentifier {
         }
         if i as usize == len - 1 {
             // last is name
-            return Ok(self.0.name.to_string());
+            return Ok(self.0.name.text.clone());
         }
-        Ok(self.0.qualifier[i as usize].to_string())
+        Ok(self.0.namespace[i as usize].text.clone())
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
-        Ok(self.0.qualifier.len() + 1)
+        Ok(self.0.namespace.len() + 1)
     }
 
     pub fn __repr__(&self) -> PyResult<String> {

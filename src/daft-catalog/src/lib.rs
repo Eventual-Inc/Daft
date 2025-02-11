@@ -3,8 +3,6 @@ mod data_catalog;
 mod data_catalog_table;
 pub mod error;
 mod identifier;
-mod name;
-
 // Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
 
@@ -17,7 +15,6 @@ pub mod python;
 
 use error::{Error, Result};
 pub use identifier::*;
-pub use name::*;
 
 pub mod global_catalog {
     use std::sync::{Arc, RwLock};
@@ -107,12 +104,14 @@ impl DaftCatalog {
         view: impl Into<LogicalPlanBuilder>,
     ) -> Result<()> {
         let identifier = Identifier::parse(name)?;
-        if identifier.has_qualifier() {
+        if identifier.has_namespace() {
             return Err(Error::Unsupported {
                 message: format!("Qualified identifiers are not yet supported. Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name),
             });
         }
-        self.named_tables.insert(identifier.name, view.into());
+        // pull out the inner text for now..
+        let name = identifier.name.text.clone();
+        self.named_tables.insert(name, view.into());
         Ok(())
     }
 
@@ -162,6 +161,7 @@ impl DaftCatalog {
             table_id: searched_table_name.to_string(),
         })
     }
+
     /// Copy from another catalog, using tables from other in case of conflict
     pub fn copy_from(&mut self, other: &Self) {
         for (name, plan) in &other.named_tables {

@@ -8,7 +8,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_algebra::boolean::combine_conjunction;
-use daft_catalog::Identifier;
+use daft_catalog::{Identifier, Name};
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
@@ -202,7 +202,7 @@ impl<'a> SQLPlanner<'a> {
         self.session()
             .get_table(ident)
             .ok()
-            .map(|table| Relation::new(table, ident.name.clone()))
+            .map(|table| Relation::new(table, ident.name.text.clone()))
     }
 
     /// Borrow the planning session
@@ -1140,16 +1140,17 @@ impl<'a> SQLPlanner<'a> {
     pub(crate) fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
         // Convert the sqlparse ObjectName to a daft Identifier
         let ident = ident_from_obj_name(name);
-        if ident.has_qualifier() {
+        if ident.has_namespace() {
             unsupported_sql_err!("qualified identifier {}", name.to_string())
         }
         // Because the catalog does not support qualified identifiers, we can just use name.
         // TODO case-normalization of regular identifiers in name position (rvalue) https://github.com/Eventual-Inc/Daft/issues/3765
+        let name = &ident.name.text;
         let Some(rel) = self
             .bound_tables
-            .get(&ident.name)
+            .get(name)
             .cloned()
-            .or_else(|| self.bound_ctes().get(&ident.name).cloned())
+            .or_else(|| self.bound_ctes().get(name).cloned())
             .or_else(|| self.get_table(&ident))
         else {
             table_not_found_err!(ident.to_string())
@@ -2401,10 +2402,13 @@ fn idents_to_str(idents: &[Ident]) -> String {
 
 /// Returns a daft identifier from an sqlparser ObjectName
 fn ident_from_obj_name(name: &ObjectName) -> Identifier {
-    // TODO distinguish identifier parts for proper resolution (or normalization).
-    let mut parts: Vec<String> = name.0.iter().map(|i| i.value.clone()).collect();
-    let name = parts.pop().expect("object name had 0 parts");
-    let namespace = parts;
+    let mut names = name
+        .0
+        .iter()
+        .map(|i| i.clone().into())
+        .collect::<Vec<Name>>();
+    let name = names.pop().unwrap();
+    let namespace = names;
     Identifier::new(namespace, name)
 }
 

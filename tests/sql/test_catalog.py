@@ -4,6 +4,16 @@ import daft
 from daft.sql import SQLCatalog
 
 
+def test_sql_catalog_sanity():
+    df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
+    catalog = {'"a.b"': df1}
+    try:
+        actual = daft.sql('select * from "a.b"', catalog=SQLCatalog(catalog)).to_pydict()
+        assert actual == df1.to_pydict()
+    except Exception as e:
+        assert False, f"Unexpected exception: {e}"
+
+
 @pytest.mark.parametrize(
     "table_name",
     ["a", "a_b", '"a.b"', '"a.b.c"', "a_", "a_1", '"a-b"', '"a."'],

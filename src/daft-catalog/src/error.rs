@@ -1,6 +1,6 @@
 use snafu::Snafu;
 
-use crate::{Identifier, Name};
+use crate::Identifier;
 
 /// Catalog Result
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -19,11 +19,11 @@ pub enum Error {
         table_id: String,
     },
 
-    #[snafu(display("{typ_} with name \"{name}\" already exists!"))]
-    ObjectAlreadyExists { typ_: String, name: String },
+    #[snafu(display("{type_} with name {ident} already exists!"))]
+    ObjectAlreadyExists { type_: String, ident: String },
 
-    #[snafu(display("{typ_} with name \"{name}\" not found!"))]
-    ObjectNotFound { typ_: String, name: String },
+    #[snafu(display("{type_} with name {ident} not found!"))]
+    ObjectNotFound { type_: String, ident: String },
 
     #[snafu(display("Invalid identifier {input}!"))]
     InvalidIdentifier { input: String },
@@ -48,10 +48,10 @@ impl Error {
     }
 
     #[inline]
-    pub fn obj_already_exists<S: Into<String>>(typ_: S, name: Name) -> Error {
+    pub fn obj_already_exists<S: Into<String>>(type_: S, ident: &Identifier) -> Error {
         Error::ObjectAlreadyExists {
-            typ_: typ_.into(),
-            name: name.to_string(),
+            type_: type_.into(),
+            ident: ident.to_string(),
         }
     }
 
@@ -59,8 +59,8 @@ impl Error {
     #[inline]
     pub fn obj_not_found<S: Into<String>>(typ_: S, ident: &Identifier) -> Error {
         Error::ObjectNotFound {
-            typ_: typ_.into(),
-            name: ident.to_string(),
+            type_: typ_.into(),
+            ident: ident.to_string(),
         }
     }
 }

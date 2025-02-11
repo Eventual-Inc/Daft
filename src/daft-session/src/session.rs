@@ -58,57 +58,57 @@ impl Session {
 
     /// Attaches a catalog to this session, err if already exists.
     pub fn attach(&self, name: Name, catalog: Arc<dyn DataCatalog>) -> Result<()> {
-        if name.has_namespace() {
-            unsupported_err!("Attach catalog with namespace name")
+        if self.state().catalogs.exists(&name.text) {
+            obj_already_exists_err!("Catalog", &name.into())
         }
-        if self.state().catalogs.exists(&name.name) {
-            obj_already_exists_err!("Catalog", name)
-        }
-        self.state_mut().catalogs.attach(name.name, catalog);
+        self.state_mut().catalogs.attach(name.text, catalog);
         Ok(())
     }
 
     /// Detaches a catalog from this session, err if does not exist.
-    pub fn detach(&self, ident: &Identifier) -> Result<()> {
-        if ident.has_qualifier() {
-            unsupported_err!("Detach catalog with a qualified identifier")
+    pub fn detach(&self, name: &Name) -> Result<()> {
+        if self.state().catalogs.exists(&name.text) {
+            obj_not_found_err!("Catalog", &name.clone().into())
         }
-        if self.state().catalogs.exists(&ident.name) {
-            obj_not_found_err!("Catalog", ident)
-        }
-        self.state_mut().catalogs.detach(&ident.name);
+        // TODO use case-normalizer
+        self.state_mut().catalogs.detach(&name.text);
         Ok(())
     }
 
     /// Creates a table backed by the view
     /// TODO support other table sources.
-    pub fn create_table<N: Into<Name>>(
+    pub fn create_table(
         &self,
-        name: N,
+        name: Identifier,
         view: impl Into<LogicalPlanBuilder>,
     ) -> Result<()> {
-        let name = name.into();
         if name.has_namespace() {
             unsupported_err!("Creating a table with a namespace is not yet supported, Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name);
         }
-        self.state_mut().tables.insert(name.name, view.into());
+        // TODO use case-normalizer
+        let name = name.name.text;
+        self.state_mut().tables.insert(name, view.into());
         Ok(())
     }
 
     /// Gets a table by identifier
-    pub fn get_table(&self, ident: &Identifier) -> Result<LogicalPlanBuilder> {
-        if ident.has_qualifier() {
+    pub fn get_table(&self, name: &Identifier) -> Result<LogicalPlanBuilder> {
+        if name.has_namespace() {
             unsupported_err!("Qualified identifiers are not yet supported")
         }
-        if let Some(view) = self.state().tables.get(&ident.name) {
+        // TODO case-insensitive lookups
+        if let Some(view) = self.state().tables.get(&name.name.text) {
             return Ok(view.clone());
         }
-        obj_not_found_err!("Table", ident)
+        obj_not_found_err!("Table", name)
     }
 
     /// Returns true iff the session has for the given identifier
-    pub fn has_table(&self, ident: &Identifier) -> bool {
-        return self.state().tables.contains_key(&ident.name);
+    pub fn has_table(&self, name: &Identifier) -> bool {
+        if name.has_namespace() {
+            return false;
+        }
+        return self.state().tables.contains_key(&name.name.text);
     }
 }
 
