@@ -51,7 +51,7 @@ def read_parquet(
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
