@@ -2,25 +2,25 @@ use std::{fmt::Display, iter::once, vec::IntoIter};
 
 use crate::error::{Error, Result};
 
-/// An object's namespace (location).
-pub type Namespace = Vec<String>;
+/// A reference qualifier to a catalog object.
+pub type Qualifier = Vec<String>;
 
-/// A reference (path) to some catalog object.
+/// A reference to a catalog object (rvalue).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
-    pub namespace: Namespace,
+    pub qualifier: Qualifier,
     pub name: String,
 }
 
 impl Identifier {
-    /// Creates an identifier from its namespace and name.
-    pub fn new(namespace: Namespace, name: String) -> Self {
-        Self { namespace, name }
+    /// Creates an identifier from its qualifier and name.
+    pub fn new(qualifier: Qualifier, name: String) -> Self {
+        Self { qualifier, name }
     }
 
-    /// Returns true if this is a qualified identifier e.g. has a namespace.
-    pub fn has_namespace(&self) -> bool {
-        !self.namespace.is_empty()
+    /// Returns true if this is a qualified identifier e.g. has a qualifier.
+    pub fn has_qualifier(&self) -> bool {
+        !self.qualifier.is_empty()
     }
 
     /// Parses an identifier using sqlparser to validate the input.
@@ -45,18 +45,18 @@ impl Identifier {
             .map(|part| part.value.to_string())
             .collect::<Vec<String>>();
         let name = parts.pop().unwrap();
-        let namespace = parts;
-        Ok(Identifier::new(namespace, name))
+        let qualifier = parts;
+        Ok(Identifier::new(qualifier, name))
     }
 }
 
 impl Display for Identifier {
     /// Joins the identifier to a dot-delimited path.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.namespace.is_empty() {
+        if self.qualifier.is_empty() {
             f.write_str(&self.name)
         } else {
-            let prefix = self.namespace.join(".");
+            let prefix = self.qualifier.join(".");
             let string = format!("{}.{}", prefix, self.name);
             f.write_str(&string)
         }
@@ -68,7 +68,7 @@ impl IntoIterator for Identifier {
     type IntoIter = IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.namespace
+        self.qualifier
             .into_iter()
             .chain(once(self.name))
             .collect::<Vec<String>>()
@@ -81,7 +81,7 @@ impl<'a> IntoIterator for &'a Identifier {
     type IntoIter = IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.namespace
+        self.qualifier
             .iter()
             .chain(once(&self.name))
             .collect::<Vec<&String>>()

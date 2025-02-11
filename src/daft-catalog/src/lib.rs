@@ -1,7 +1,9 @@
+pub mod catalog;
 mod data_catalog;
 mod data_catalog_table;
 pub mod error;
-pub mod identifier;
+mod identifier;
+mod name;
 
 // Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
@@ -14,6 +16,8 @@ pub use data_catalog_table::DataCatalogTable;
 pub mod python;
 
 use error::{Error, Result};
+pub use identifier::*;
+pub use name::*;
 
 pub mod global_catalog {
     use std::sync::{Arc, RwLock};
@@ -43,7 +47,6 @@ pub mod global_catalog {
             .unregister_catalog(name)
     }
 }
-use identifier::Identifier;
 
 /// Name of the default catalog
 static DEFAULT_CATALOG_NAME: &str = "default";
@@ -104,7 +107,7 @@ impl DaftCatalog {
         view: impl Into<LogicalPlanBuilder>,
     ) -> Result<()> {
         let identifier = Identifier::parse(name)?;
-        if identifier.has_namespace() {
+        if identifier.has_qualifier() {
             return Err(Error::Unsupported {
                 message: format!("Qualified identifiers are not yet supported. Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name),
             });
@@ -167,6 +170,13 @@ impl DaftCatalog {
         for (name, catalog) in &other.data_catalogs {
             self.data_catalogs.insert(name.clone(), catalog.clone());
         }
+    }
+
+    /// TODO remove py register and read methods are moved to session
+    /// I cannot remove DaftMetaCatalog until I invert the dependency
+    /// so that the current register_ methods use the session rather than the catalog.
+    pub fn into_catalog_map(self) -> HashMap<String, Arc<dyn DataCatalog>> {
+        self.data_catalogs
     }
 }
 

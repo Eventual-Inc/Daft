@@ -3,7 +3,7 @@ use pyo3::{exceptions::PyIndexError, prelude::*};
 
 use crate::{
     global_catalog,
-    identifier::{Identifier, Namespace},
+    identifier::{Identifier, Qualifier},
 };
 
 /// Read a table from the specified `DaftMetaCatalog`.
@@ -99,8 +99,8 @@ pub struct PyIdentifier(Identifier);
 #[pymethods]
 impl PyIdentifier {
     #[new]
-    pub fn new(namespace: Namespace, name: String) -> PyIdentifier {
-        Identifier::new(namespace, name).into()
+    pub fn new(qualifier: Qualifier, name: String) -> PyIdentifier {
+        Identifier::new(qualifier, name).into()
     }
 
     #[staticmethod]
@@ -127,11 +127,11 @@ impl PyIdentifier {
             // last is name
             return Ok(self.0.name.to_string());
         }
-        Ok(self.0.namespace[i as usize].to_string())
+        Ok(self.0.qualifier[i as usize].to_string())
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
-        Ok(self.0.namespace.len() + 1)
+        Ok(self.0.qualifier.len() + 1)
     }
 
     pub fn __repr__(&self) -> PyResult<String> {

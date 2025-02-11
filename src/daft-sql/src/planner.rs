@@ -8,7 +8,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_algebra::boolean::combine_conjunction;
-use daft_catalog::identifier::Identifier;
+use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
@@ -1139,7 +1139,7 @@ impl<'a> SQLPlanner<'a> {
     pub(crate) fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
         // Convert the sqlparse ObjectName to a daft Identifier
         let ident = ident_from_obj_name(name);
-        if ident.has_namespace() {
+        if ident.has_qualifier() {
             unsupported_sql_err!("qualified identifier {}", name.to_string())
         }
         // Because the catalog does not support qualified identifiers, we can just use name.

@@ -40,7 +40,11 @@ pub fn sql(
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
     // just use a one-off session for now..
-    let session = Session::new("py", catalog.catalog);
+    let session = Session::new("py");
+    // attach everything from PyCatalog to the session (bypass DaftCatalog).
+    for (name, cat) in catalog.catalog.into_catalog_map() {
+        session.attach(name, cat.clone())?;
+    }
     let mut planner = SQLPlanner::new(session.into());
     let plan = planner.plan_sql(sql)?;
     Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config)).into())
