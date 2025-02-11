@@ -913,19 +913,23 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_glob_scan_single_file_num_rows() -> DaftResult<()> {
-        let glob_scan_operator = make_glob_scan_operator(1, true).await;
+    async fn test_glob_scan_task_stats() -> DaftResult<()> {
+        let glob_scan_operator = make_glob_scan_operator(8, true).await;
         let scan_tasks = tokio::task::spawn_blocking(move || {
             glob_scan_operator.to_scan_tasks(Pushdowns::default())
         })
         .await
         .unwrap()?;
 
-        assert_eq!(scan_tasks.len(), 1, "Expected exactly one scan task");
         assert_eq!(
             scan_tasks[0].num_rows(),
             Some(100),
-            "Expected 100 rows in the scan task"
+            "Expected 100 rows in the first scan task"
+        );
+        assert_eq!(
+            scan_tasks[1].num_rows(),
+            None,
+            "We should not be able to get the number of rows for the second scan task"
         );
         Ok(())
     }
