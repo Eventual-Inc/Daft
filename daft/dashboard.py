@@ -3,7 +3,7 @@ import os
 import daft.daft as native
 
 DAFT_DASHBOARD_ENV_NAME = "DAFT_DASHBOARD"
-DAFT_DASHBOARD_ADDR = "http://localhost:3238"
+DAFT_DASHBOARD_ADDR = "http://localhost:3238/broadcast"
 
 
 def launch():
