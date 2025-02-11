@@ -459,10 +459,6 @@ impl ScanTaskLike for ScanTask {
         self.materialized_schema()
     }
 
-    fn update_num_rows(&mut self, num_rows: usize) {
-        self.metadata = Some(TableMetadata { length: num_rows });
-    }
-
     fn num_rows(&self) -> Option<usize> {
         self.num_rows()
     }

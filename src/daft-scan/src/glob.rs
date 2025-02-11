@@ -33,7 +33,9 @@ pub struct GlobScanOperator {
     hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
     generated_fields: SchemaRef,
-    first_metadata: Option<TableMetadata>,
+    // When creating the glob scan operator, we might collect file metadata for the first file during schema inference.
+    // Cache this metadata (along with the first filepath) so we can use it to populate the stats for the first scan task.
+    first_metadata: Option<(String, TableMetadata)>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -222,9 +224,12 @@ impl GlobScanOperator {
                                 field_id_mapping.clone(),
                             )
                             .await?;
-                        let metadata = Some(TableMetadata {
-                            length: metadata.num_rows,
-                        });
+                        let metadata = Some((
+                            first_filepath,
+                            TableMetadata {
+                                length: metadata.num_rows,
+                            },
+                        ));
                         (schema, metadata)
                     }
                     FileFormatConfig::Csv(CsvSourceConfig {
@@ -404,8 +409,15 @@ impl ScanOperator for GlobScanOperator {
             .map(|partition_spec| partition_spec.clone_field())
             .collect();
         let partition_schema = Schema::new(partition_fields)?;
+        let (first_filepath, first_metadata) =
+            if let Some((first_filepath, first_metadata)) = &self.first_metadata {
+                (Some(first_filepath), Some(first_metadata))
+            } else {
+                (None, None)
+            };
+        let mut populate_stats_first_scan_task = first_filepath.is_some();
         // Create one ScanTask per file.
-        let mut scan_tasks = files
+        files
             .enumerate()
             .filter_map(|(idx, f)| {
                 let scan_task_result = (|| {
@@ -414,6 +426,11 @@ impl ScanOperator for GlobScanOperator {
                         size: size_bytes,
                         ..
                     } = f?;
+                    debug_assert!(
+                        !populate_stats_first_scan_task
+                            || path == *first_filepath.expect("If we populate stats for the first scan task, then the first filepath should be populated"),
+                        "Currently the parallel globber should process files in the same order as during schema inference. If this assertion fails, then the ordering guarantees have changed and we should update how we populate stats for the first scan task."
+                    );
                     // Create partition values from hive partitions, if any.
                     let mut partition_values = if hive_partitioning {
                         let hive_partitions = parse_hive_partitioning(&path)?;
@@ -460,7 +477,12 @@ impl ScanOperator for GlobScanOperator {
                             chunk_spec,
                             size_bytes,
                             iceberg_delete_files: None,
-                            metadata: None,
+                            metadata: if populate_stats_first_scan_task {
+                                populate_stats_first_scan_task = false;
+                                first_metadata.cloned()
+                            } else {
+                                None
+                            },
                             partition_spec,
                             statistics: None,
                             parquet_metadata: None,
@@ -478,17 +500,6 @@ impl ScanOperator for GlobScanOperator {
                     Err(e) => Some(Err(e)),
                 }
             })
-            .collect::<DaftResult<Vec<ScanTaskLikeRef>>>()?;
-        // If we collected file metadata and there is a single scan task, we can use this metadata
-        // to get the true cardinality of the scan task.
-        if let Some(first_metadata) = &self.first_metadata
-            && scan_tasks.len() == 1
-        {
-            let task = Arc::get_mut(&mut scan_tasks[0]).expect(
-                "We should have exclusive access to the scan task during scan task materialization",
-            );
-            task.update_num_rows(first_metadata.length);
-        }
-        Ok(scan_tasks)
+            .collect()
     }
 }
