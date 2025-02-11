@@ -5,6 +5,7 @@ import math
 import pyarrow as pa
 import pytest
 
+import daft
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 
@@ -368,4 +369,15 @@ def test_multi_column_sort_nulls_first(make_df, nulls_first, desc, expected):
 
     result = df.sort(["id1", "id2"], desc=desc, nulls_first=nulls_first).to_pydict()
 
+    assert result == expected
+
+    # test sql also
+    id1_ordering = "desc" if desc[0] else "asc"
+    id1_nulls = "nulls first" if nulls_first[0] else "nulls last"
+    id2_ordering = "desc" if desc[1] else "asc"
+    id2_nulls = "nulls first" if nulls_first[1] else "nulls last"
+
+    result = daft.sql(f"""
+    select * from df order by id1 {id1_ordering} {id1_nulls}, id2 {id2_ordering} {id2_nulls}
+    """).to_pydict()
     assert result == expected
