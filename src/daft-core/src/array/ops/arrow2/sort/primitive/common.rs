@@ -82,69 +82,40 @@ where
         let mut indices = vec![I::default(); length];
         let mut nulls = 0;
         let mut valids = 0;
-        if descending {
-            validity
-                .iter()
-                .zip(I::range(0, length).unwrap())
-                .for_each(|(is_not_null, index)| {
-                    match (is_not_null, nulls_first) {
-                        // value && nulls first
-                        (true, true) => {
-                            indices[n_nulls + valids] = index;
-                            valids += 1;
-                        }
-                        // value && nulls last
-                        (true, false) => {
-                            indices[valids] = index;
-                            valids += 1;
-                        }
-                        // null && nulls first
-                        (false, true) => {
-                            indices[nulls] = index;
-                            nulls += 1;
-                        }
-                        // null && nulls last
-                        (false, false) => {
-                            indices[n_valid + nulls] = index;
-                            nulls += 1;
-                        }
+        validity
+            .iter()
+            .zip(I::range(0, length).unwrap())
+            .for_each(|(is_not_null, index)| {
+                match (is_not_null, nulls_first) {
+                    // value && nulls first
+                    (true, true) => {
+                        indices[n_nulls + valids] = index;
+                        valids += 1;
                     }
-                });
+                    // value && nulls last
+                    (true, false) => {
+                        indices[valids] = index;
+                        valids += 1;
+                    }
+                    // null && nulls first
+                    (false, true) => {
+                        indices[nulls] = index;
+                        nulls += 1;
+                    }
+                    // null && nulls last
+                    (false, false) => {
+                        indices[n_valid + nulls] = index;
+                        nulls += 1;
+                    }
+                }
+            });
+
+        if descending || nulls_first {
             start_idx = n_nulls;
         } else {
-            validity
-                .iter()
-                .zip(I::range(0, length).unwrap())
-                .for_each(|(is_not_null, index)| {
-                    match (is_not_null, nulls_first) {
-                        // value && nulls_first
-                        (true, true) => {
-                            indices[n_nulls + valids] = index;
-                            valids += 1;
-                        }
-                        // value && nulls last
-                        (true, false) => {
-                            indices[valids] = index;
-                            valids += 1;
-                        }
-                        // null && nulls first
-                        (false, true) => {
-                            indices[nulls] = index;
-                            nulls += 1;
-                        }
-                        // null && nulls last
-                        (false, false) => {
-                            indices[n_valid + nulls] = index;
-                            nulls += 1;
-                        }
-                    }
-                });
-            if nulls_first {
-                start_idx = n_nulls;
-            } else {
-                end_idx = n_valid;
-            }
+            end_idx = n_valid;
         }
+
         (indices, start_idx, end_idx)
     } else {
         (
