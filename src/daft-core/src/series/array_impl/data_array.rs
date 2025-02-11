@@ -162,8 +162,8 @@ macro_rules! impl_series_like_for_data_array {
 
             fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
                 match groups {
-                    Some(groups) => Ok(self.0.grouped_distinct(groups)?.into_series()),
-                    None => Ok(self.0.distinct()?.into_series()),
+                    Some(groups) => Ok(self.0.grouped_set(groups)?.into_series()),
+                    None => Ok(self.0.set()?.into_series()),
                 }
             }
         }

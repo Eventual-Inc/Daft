@@ -351,7 +351,7 @@ impl Series {
 impl DaftSetAggable for Series {
     type Output = DaftResult<ListArray>;
 
-    fn distinct(&self) -> Self::Output {
+    fn set(&self) -> Self::Output {
         let child_series = self.clone();
         let (deduped_series, _) = deduplicate_series(&child_series)?;
 
@@ -360,7 +360,7 @@ impl DaftSetAggable for Series {
         Ok(ListArray::new(list_field, deduped_series, offsets, None))
     }
 
-    fn grouped_distinct(&self, groups: &GroupIndices) -> Self::Output {
+    fn grouped_set(&self, groups: &GroupIndices) -> Self::Output {
         let series = self.clone();
 
         let mut offsets = Vec::with_capacity(groups.len() + 1);

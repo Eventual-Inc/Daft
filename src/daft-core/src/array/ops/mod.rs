@@ -245,8 +245,8 @@ pub trait DaftHllMergeAggable {
 
 pub trait DaftSetAggable {
     type Output;
-    fn distinct(&self) -> Self::Output;
-    fn grouped_distinct(&self, groups: &GroupIndices) -> Self::Output;
+    fn set(&self) -> Self::Output;
+    fn grouped_set(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftBoolAggable {

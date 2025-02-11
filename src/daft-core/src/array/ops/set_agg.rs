@@ -11,12 +11,12 @@ macro_rules! impl_daft_set_agg {
     () => {
         type Output = DaftResult<ListArray>;
 
-        fn distinct(&self) -> Self::Output {
-            self.clone().into_series().distinct()
+        fn set(&self) -> Self::Output {
+            self.clone().into_series().set()
         }
 
-        fn grouped_distinct(&self, groups: &GroupIndices) -> Self::Output {
-            self.clone().into_series().grouped_distinct(groups)
+        fn grouped_set(&self, groups: &GroupIndices) -> Self::Output {
+            self.clone().into_series().grouped_set(groups)
         }
     };
 }
@@ -45,13 +45,13 @@ impl DaftSetAggable for StructArray {
 impl DaftSetAggable for crate::datatypes::PythonArray {
     type Output = DaftResult<Self>;
 
-    fn distinct(&self) -> Self::Output {
+    fn set(&self) -> Self::Output {
         Err(DaftError::ValueError(
             "Cannot perform set aggregation on elements that are not hashable".to_string(),
         ))
     }
 
-    fn grouped_distinct(&self, _: &GroupIndices) -> Self::Output {
+    fn grouped_set(&self, _: &GroupIndices) -> Self::Output {
         Err(DaftError::ValueError(
             "Cannot perform set aggregation on elements that are not hashable".to_string(),
         ))
