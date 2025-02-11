@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams } from "next/navigation";
 import React, { useEffect } from "react";
 import { queryInfoAtom } from "@/atoms/queryInfo";
 import { useAtom } from "jotai";
@@ -32,7 +32,7 @@ function Mermaid({ chart }: { chart: string }) {
 
 export default function QueryPage() {
     const searchParams = useSearchParams();
-    const id: string = searchParams.get('id')!;
+    const id: string = searchParams.get("id")!;
     const [queryInfo, _] = useAtom(queryInfoAtom);
 
     if (!queryInfo || !queryInfo[id]) {
