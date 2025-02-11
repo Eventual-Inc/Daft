@@ -242,6 +242,12 @@ pub trait DaftHllMergeAggable {
     fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output;
 }
 
+pub trait DaftSetAggable {
+    type Output;
+    fn set(&self) -> Self::Output;
+    fn grouped_set(&self, groups: &GroupIndices) -> Self::Output;
+}
+
 pub trait DaftBoolAggable {
     type Output;
     fn bool_and(&self) -> Self::Output;

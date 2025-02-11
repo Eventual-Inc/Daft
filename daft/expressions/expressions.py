@@ -25,6 +25,7 @@ from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
+from daft.daft import list_distinct as _list_distinct
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
@@ -1086,6 +1087,43 @@ class Expression:
     def agg_list(self) -> Expression:
         """Aggregates the values in the expression into a list."""
         expr = self._expr.agg_list()
+        return Expression._from_pyexpr(expr)
+
+    def agg_set(self) -> Expression:
+        """Aggregates the values in the expression into a set (ignoring nulls).
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [1, 1, None, 2, 2, None]})
+            >>> df.agg(df["values"].agg_set().alias("unique_values")).show()
+            ╭───────────────╮
+            │ unique_values │
+            │ ---           │
+            │ List[Int64]   │
+            ╞═══════════════╡
+            │ [1, 2]        │
+            ╰───────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+            Note that null values are ignored by default:
+
+            >>> df = daft.from_pydict({"values": [None, None, None]})
+            >>> df.agg(df["values"].agg_set().alias("unique_values")).show()
+            ╭───────────────╮
+            │ unique_values │
+            │ ---           │
+            │ List[Null]    │
+            ╞═══════════════╡
+            │ []            │
+            ╰───────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Returns:
+            Expression: A List expression containing the unique values from the input
+        """
+        expr = self._expr.agg_set()
         return Expression._from_pyexpr(expr)
 
     def agg_concat(self) -> Expression:
@@ -3396,6 +3434,52 @@ class ExpressionListNamespace(ExpressionNamespace):
         elif isinstance(nulls_first, bool):
             nulls_first = Expression._to_expression(nulls_first)
         return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
+
+    def distinct(self) -> Expression:
+        """Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1], [None, 1, None, 1]]})
+            >>> df.select(df["a"].list.distinct()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ [1, 2, 3]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [4, 6, 2]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [6, 7, 1]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+
+            Note that null values are ignored:
+
+            >>> df = daft.from_pydict({"a": [[None, None], [1, None, 1], [None]]})
+            >>> df.select(df["a"].list.distinct()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ []          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ []          │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Returns:
+            Expression: An expression with lists containing only unique elements
+        """
+        return Expression._from_pyexpr(_list_distinct(self._expr))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):

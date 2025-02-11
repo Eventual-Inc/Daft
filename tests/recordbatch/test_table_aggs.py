@@ -11,6 +11,7 @@ from daft import DataType, col, from_pydict, utils
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 from daft.series import Series
+from tests.dataframe.test_aggregations import _assert_all_hashable
 from tests.recordbatch import (
     daft_comparable_types,
     daft_floating_types,
@@ -327,15 +328,39 @@ def test_table_any_value(case, expected_nulls, expected_no_nulls):
 test_table_agg_global_cases = [
     (
         [],
-        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[]]},
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+            "list": [[]],
+            "set": [[]],
+        },
     ),
     (
         [None],
-        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[None]]},
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+            "list": [[None]],
+            "set": [[]],
+        },
     ),
     (
         [None, None, None],
-        {"count": [0], "sum": [None], "mean": [None], "min": [None], "max": [None], "list": [[None, None, None]]},
+        {
+            "count": [0],
+            "sum": [None],
+            "mean": [None],
+            "min": [None],
+            "max": [None],
+            "list": [[None, None, None]],
+            "set": [[]],
+        },
     ),
     (
         [None, 3, None, None, 1, 2, 0, None],
@@ -346,6 +371,7 @@ test_table_agg_global_cases = [
             "min": [0],
             "max": [3],
             "list": [[None, 3, None, None, 1, 2, 0, None]],
+            "set": [[0, 1, 2, 3]],
         },
     ),
 ]
@@ -364,12 +390,34 @@ def test_table_agg_global(case) -> None:
             col("input").cast(DataType.int32()).alias("min").min(),
             col("input").cast(DataType.int32()).alias("max").max(),
             col("input").cast(DataType.int32()).alias("list").agg_list(),
+            col("input").cast(DataType.int32()).alias("set").agg_set(),
         ]
     )
 
     result = daft_recordbatch.to_pydict()
+
+    # Handle list and set results separately
+    res_list = result.pop("list")
+    exp_list = expected.pop("list")
+    res_set = result.pop("set")
+    exp_set = expected.pop("set")
+
+    # Check regular aggregations
     for key, value in expected.items():
         assert result[key] == value
+
+    # Check list result
+    assert len(res_list) == 1
+    assert res_list[0] == exp_list[0]
+
+    # Check set without nulls
+    assert len(res_set) == 1
+    _assert_all_hashable(res_set[0], "test_table_agg_global")
+    assert len(res_set[0]) == len(set(x for x in res_set[0] if x is not None)), "Result should contain no duplicates"
+    assert set(x for x in res_set[0] if x is not None) == set(
+        x for x in exp_set[0] if x is not None
+    ), "Sets should contain same non-null elements"
+    assert None not in res_set[0], "Result should not contain nulls"
 
 
 @pytest.mark.parametrize(
@@ -399,12 +447,14 @@ test_table_agg_groupby_cases = [
             col("cookies").alias("sum").sum(),
             col("name").alias("count").count(),
             col("cookies").alias("list").agg_list(),
+            col("cookies").alias("set").agg_set(),
         ],
         "expected": {
             "name": ["Alice", "Bob", None],
             "sum": [None, 10, 7],
             "count": [4, 4, 0],
             "list": [[None] * 4, [None, None, 5, 5], [None, 5, None, 2]],
+            "set": [set(), {5}, {2, 5}],
         },
     },
     {
@@ -450,13 +500,24 @@ def test_table_agg_groupby(case) -> None:
             "cookies": [_[1] for _ in values],
         }
     )
+    # Sort by grouping columns after aggregation
     daft_recordbatch = daft_recordbatch.agg(
         [aggexpr for aggexpr in case["aggs"]],
         [col(group) for group in case["groups"]],
     )
-    assert set(utils.freeze(utils.pydict_to_rows(daft_recordbatch.to_pydict()))) == set(
-        utils.freeze(utils.pydict_to_rows(case["expected"]))
-    )
+    result = daft_recordbatch.sort([col(group) for group in case["groups"]]).to_pydict()
+    expected = case["expected"]
+
+    # Compare non-set columns normally
+    for key in result:
+        if key == "set":
+            # Compare set columns by converting to sets
+            assert len(result[key]) == len(expected[key]), f"Length mismatch in column {key}"
+            for res, exp in zip(result[key], expected[key]):
+                _assert_all_hashable(res, "test_table_agg_groupby")
+                assert set(res) == exp, f"Set mismatch in column {key}"
+        else:
+            assert result[key] == expected[key], f"Mismatch in column {key}"
 
 
 @pytest.mark.parametrize("dtype", daft_comparable_types, ids=[f"{_}" for _ in daft_comparable_types])
@@ -1011,6 +1072,194 @@ def test_agg_concat_on_string_groupby_null_list() -> None:
     expected = [None, None]
     assert res["a"] == expected
     assert len(res["a"]) == len(expected)
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_global_set_aggs(dtype) -> None:
+    input = [None, 0, 1, 2, None, 4, 2, 1, None]
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+    elif dtype == DataType.bool():
+        input = [bool(x) if x is not None else None for x in input]
+    elif dtype == DataType.string():
+        input = [str(x) if x is not None else None for x in input]
+    elif dtype == DataType.binary():
+        input = [bytes(x) if x is not None else None for x in input]
+    elif dtype == DataType.null():
+        input = [None for _ in input]
+    daft_table = MicroPartition.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
+
+    # Test without nulls
+    result = daft_table.eval_expression_list([col("input").alias("set").agg_set()])
+    assert result.get_column("set").datatype() == DataType.list(dtype)
+    expected = [x for x in set(input) if x is not None]
+    result_set = result.to_pydict()["set"][0]
+    _assert_all_hashable(result_set, "test_global_set_aggs")
+    # Check length
+    assert len(result_set) == len(expected)
+    # Convert both to sets to ignore order
+    assert set(result_set) == set(expected)
+
+
+def test_global_pyobj_set_aggs() -> None:
+    pytest.skip(reason="Skipping because Python objects are not supported for set aggregation")
+    obj1, obj2, obj3 = object(), object(), object()
+    input = [obj1, obj2, None, obj3, obj1, None, obj2]
+    table = MicroPartition.from_pydict({"input": input})
+
+    # Should panic because Python objects are not implemented
+    with pytest.raises(Exception, match="Python not implemented"):
+        table.eval_expression_list([col("input").alias("set").agg_set()])
+
+
+@pytest.mark.parametrize(
+    "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
+)
+def test_grouped_set_aggs(dtype) -> None:
+    groups = [1, 2, 3, 1, 2, 3, 1, 2, 3, 1]
+    input = [None, 0, 1, 2, 0, 2, None, 1, None, 3]
+
+    if dtype == DataType.date():
+        input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
+    elif dtype == DataType.bool():
+        input = [bool(x) if x is not None else None for x in input]
+    elif dtype == DataType.string():
+        input = [str(x) if x is not None else None for x in input]
+    elif dtype == DataType.binary():
+        input = [bytes(x) if x is not None else None for x in input]
+    elif dtype == DataType.null():
+        input = [None for _ in input]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+
+    result = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("set").datatype() == DataType.list(dtype)
+
+    result_dict = result.to_pydict()
+    assert sorted(result_dict["groups"]) == [1, 2, 3]
+
+    for i, group_set in enumerate(result_dict["set"]):
+        _assert_all_hashable(group_set, f"test_grouped_set_aggs (group {result_dict['groups'][i]})")
+
+    group1_set = set(result_dict["set"][0])
+    group2_set = set(result_dict["set"][1])
+    group3_set = set(result_dict["set"][2])
+
+    group1_expected = {input_as_dtype[i] for i in [3, 9]}
+    group2_expected = {input_as_dtype[i] for i in [1, 4, 7]}
+    group3_expected = {input_as_dtype[i] for i in [2, 5]}
+
+    if dtype == DataType.null():
+        group1_expected = set()
+        group2_expected = set()
+        group3_expected = set()
+
+    assert group1_set == group1_expected, f"Group 1 set incorrect. Expected {group1_expected}, got {group1_set}"
+    assert group2_set == group2_expected, f"Group 2 set incorrect. Expected {group2_expected}, got {group2_set}"
+    assert group3_set == group3_expected, f"Group 3 set incorrect. Expected {group3_expected}, got {group3_set}"
+    assert None not in group1_set and None not in group2_set and None not in group3_set
+
+
+def test_grouped_pyobj_set_aggs() -> None:
+    pytest.skip(reason="Skipping because Python objects are not supported for set aggregation")
+    obj1, obj2, obj3 = object(), object(), object()
+    groups = [1, 2, 1, 2, 1, 2]
+    input = [obj1, obj2, None, obj3, obj1, None]
+
+    table = MicroPartition.from_pydict({"groups": groups, "input": input})
+
+    # Should error because Python objects are not hashable
+    with pytest.raises(ValueError, match="Cannot perform set aggregation on elements that are not hashable"):
+        table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")])
+
+
+def test_grouped_list_set_aggs() -> None:
+    pytest.skip(reason="Skipping because list set aggregation is not yet implemented")
+    groups = [None, 1, None, 1, 2, 2, 1]
+    input = [[1], [2, 3, 4], [5, None], None, [], [8, 9], [2, 3, 4]]  # Added duplicate list
+    expected_idx = [[1, 3, 6], [4, 5], [0, 2]]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
+
+    # Test without nulls
+    result = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("set").datatype() == DataType.list(DataType.list(DataType.int64()))
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+
+    # Convert lists to tuples for hashing
+    def to_hashable(lst):
+        return tuple(lst) if lst is not None else None
+
+    expected_groups_no_nulls = []
+    for group in expected_idx:
+        group_values = [input_as_dtype[i] for i in group if input_as_dtype[i] is not None]
+        # First collect unique values
+        unique_values = set(to_hashable(x) for x in group_values)
+        # Sort non-None values only
+        sorted_values = sorted(v for v in unique_values if v is not None)
+        # Convert back to lists for comparison
+        expected_groups_no_nulls.append([list(x) for x in sorted_values])
+
+    assert result.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
+
+
+def test_grouped_struct_set_aggs() -> None:
+    pytest.skip(reason="Skipping because struct set aggregation is not yet implemented")
+    groups = [None, 1, None, 1, 2, 2, 1]
+    input = [
+        {"x": 1, "y": 2},
+        {"x": 3, "y": 4},
+        {"x": 5, "y": None},
+        None,
+        {"x": 6, "y": 7},
+        {"x": 8, "y": 9},
+        {"x": 3, "y": 4},  # Added duplicate struct
+    ]
+    expected_idx = [[1, 3, 6], [4, 5], [0, 2]]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
+
+    # Test without nulls
+    result = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("set").datatype() == DataType.list(
+        DataType.struct({"x": DataType.int64(), "y": DataType.int64()})
+    )
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+
+    # Convert dicts to tuples for hashing
+    def to_hashable(d):
+        return tuple(sorted(d.items())) if d is not None else None
+
+    expected_groups_no_nulls = []
+    for group in expected_idx:
+        group_values = [input_as_dtype[i] for i in group if input_as_dtype[i] is not None]
+        # First collect unique values
+        unique_values = set(to_hashable(x) for x in group_values)
+        # Sort non-None values only
+        sorted_values = sorted(v for v in unique_values if v is not None)
+        # Convert back to dicts for comparison
+        expected_groups_no_nulls.append([dict(x) for x in sorted_values])
+
+    assert result.to_pydict() == {"groups": [1, 2, None], "set": expected_groups_no_nulls}
+
+
+def test_set_aggs_empty() -> None:
+    daft_table = MicroPartition.from_pydict({"col_A": [], "col_B": []})
+
+    # Test without nulls
+    result = daft_table.agg(
+        [col("col_A").cast(DataType.int32()).alias("set").agg_set()],
+        group_by=[col("col_B")],
+    )
+    assert result.get_column("set").datatype() == DataType.list(DataType.int32())
+    assert result.to_pydict() == {"col_B": [], "set": []}
 
 
 test_table_bool_agg_cases = [
