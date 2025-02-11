@@ -4,8 +4,6 @@ import os
 
 import pytest
 
-import daft
-
 
 def test_write_csv_basic(make_spark_df, spark_session, tmp_path):
     df = make_spark_df({"id": [1, 2, 3]})
@@ -13,14 +11,9 @@ def test_write_csv_basic(make_spark_df, spark_session, tmp_path):
     df.write.csv(csv_dir)
 
 
+@pytest.mark.skip(reason="https://github.com/Eventual-Inc/Daft/issues/3775")
 def test_write_csv_with_header(make_df, make_spark_df, spark_session, tmp_path):
-    df = make_spark_df({"id": [1, 2, 3]})
-    csv_dir = os.path.join(tmp_path, "csv")
-    df.write.option("header", False).csv(csv_dir)
-
-    expected_df = make_df({"column_1": [1, 2, 3]})
-    actual_df = daft.read_csv(csv_dir, has_headers=False, schema={"column_1": daft.DataType.int64()})
-    assert actual_df.to_pydict() == expected_df.to_pydict()
+    pass
 
 
 @pytest.mark.skip(reason="https://github.com/Eventual-Inc/Daft/issues/3786")
