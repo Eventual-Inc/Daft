@@ -1,9 +1,9 @@
-use daft_core::count_mode::CountMode;
-use daft_dsl::{binary_op, col, ExprRef, Operator};
-use daft_schema::dtype::DataType;
+use daft_dsl::{binary_op, Operator};
+use daft_functions::{coalesce::Coalesce, float::IsNan};
+use daft_sql::sql_expr;
 use spark_connect::Expression;
 
-use super::{FunctionModule, SparkFunction};
+use super::{FunctionModule, SparkFunction, Todo, UnaryFunction};
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
@@ -32,21 +32,37 @@ impl FunctionModule for CoreFunctions {
         parent.add_fn("^", BinaryOpFunction(Operator::Xor));
         parent.add_fn("<<", BinaryOpFunction(Operator::ShiftLeft));
         parent.add_fn(">>", BinaryOpFunction(Operator::ShiftRight));
+
+        // Normal Functions
+        // https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#normal-functions
+
+        parent.add_fn("coalesce", Coalesce {});
+        parent.add_fn("input_file_name", Todo);
+        parent.add_fn("isnan", IsNan {});
+        parent.add_fn("isnull", UnaryFunction(|arg| arg.is_null()));
+
+        parent.add_fn("monotically_increasing_id", Todo);
+        parent.add_fn("named_struct", Todo);
+        parent.add_fn("nanvl", Todo);
+        parent.add_fn("rand", Todo);
+        parent.add_fn("randn", Todo);
+        parent.add_fn("spark_partition_id", Todo);
+        parent.add_fn("when", Todo);
+        parent.add_fn("bitwise_not", Todo);
+        parent.add_fn("bitwiseNOT", Todo);
+        parent.add_fn("expr", SqlExpr);
+        parent.add_fn("greatest", Todo);
+        parent.add_fn("least", Todo);
+
+        // parent.add_fn("isnan", UnaryFunction(|arg| arg.is_nan()));
+
         parent.add_fn("isnotnull", UnaryFunction(|arg| arg.not_null()));
         parent.add_fn("isnull", UnaryFunction(|arg| arg.is_null()));
         parent.add_fn("not", UnaryFunction(|arg| arg.not()));
-        parent.add_fn("sum", UnaryFunction(|arg| arg.sum()));
-        parent.add_fn("mean", UnaryFunction(|arg| arg.mean()));
-        parent.add_fn("stddev", UnaryFunction(|arg| arg.stddev()));
-        parent.add_fn("min", UnaryFunction(|arg| arg.min()));
-        parent.add_fn("max", UnaryFunction(|arg| arg.max()));
-        parent.add_fn("count", CountFunction);
     }
 }
 
 pub struct BinaryOpFunction(Operator);
-pub struct UnaryFunction(fn(ExprRef) -> ExprRef);
-pub struct CountFunction;
 
 impl SparkFunction for BinaryOpFunction {
     fn to_expr(
@@ -70,43 +86,27 @@ impl SparkFunction for BinaryOpFunction {
     }
 }
 
-impl SparkFunction for UnaryFunction {
+struct SqlExpr;
+impl SparkFunction for SqlExpr {
     fn to_expr(
         &self,
         args: &[Expression],
         analyzer: &SparkAnalyzer,
     ) -> ConnectResult<daft_dsl::ExprRef> {
-        match args {
-            [arg] => {
-                let arg = analyzer.to_daft_expr(arg)?;
-                Ok(self.0(arg))
-            }
-            _ => invalid_argument_err!("requires exactly one argument"),
-        }
-    }
-}
+        let args = args
+            .iter()
+            .map(|arg| analyzer.to_daft_expr(arg))
+            .collect::<ConnectResult<Vec<_>>>()?;
 
-impl SparkFunction for CountFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
-        match args {
-            [arg] => {
-                let arg = analyzer.to_daft_expr(arg)?;
+        let [sql] = args.as_slice() else {
+            invalid_argument_err!("expr requires exactly 1 argument");
+        };
 
-                let arg = if arg.as_literal().and_then(|lit| lit.as_i32()) == Some(1i32) {
-                    col("*")
-                } else {
-                    arg
-                };
-
-                let count = arg.count(CountMode::All).cast(&DataType::Int64);
-
-                Ok(count)
-            }
-            _ => invalid_argument_err!("requires exactly one argument"),
-        }
+        let sql = sql
+            .as_ref()
+            .as_literal()
+            .and_then(|lit| lit.as_str())
+            .ok_or_else(|| ConnectError::invalid_argument("expr argument must be a string"))?;
+        Ok(sql_expr(sql)?)
     }
 }
