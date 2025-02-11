@@ -23,13 +23,6 @@ fn deduplicate_indices(series: &Series) -> DaftResult<Vec<u64>> {
     Ok(unique_indices)
 }
 
-fn deduplicate_series(series: &Series) -> DaftResult<(Series, Vec<u64>)> {
-    let unique_indices = deduplicate_indices(series)?;
-    let indices_array = UInt64Array::from(("", unique_indices.clone())).into_series();
-    let result = series.take(&indices_array)?;
-    Ok((result, unique_indices))
-}
-
 impl Series {
     pub fn count(&self, groups: Option<&GroupIndices>, mode: CountMode) -> DaftResult<Self> {
         let s = self.as_physical()?;
@@ -353,7 +346,9 @@ impl DaftSetAggable for Series {
 
     fn set(&self) -> Self::Output {
         let child_series = self.clone();
-        let (deduped_series, _) = deduplicate_series(&child_series)?;
+        let unique_indices = deduplicate_indices(&child_series)?;
+        let indices_array = UInt64Array::from(("", unique_indices)).into_series();
+        let deduped_series = child_series.take(&indices_array)?;
 
         let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
         let list_field = self.field().to_list_field()?;
