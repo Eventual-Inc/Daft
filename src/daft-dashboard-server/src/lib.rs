@@ -1,6 +1,11 @@
 mod response;
 
-use std::{net::Ipv4Addr, process::exit, sync::OnceLock};
+use std::{
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+    process::exit,
+    sync::OnceLock,
+};
 
 use chrono::{DateTime, Utc};
 use http_body_util::{combinators::BoxBody, BodyExt};
@@ -125,7 +130,7 @@ async fn dashboard_server(req: Req, resolver: Option<Resolver>) -> ServerResult<
     })
 }
 
-pub async fn run(run_html_server: bool) {
+pub async fn run(static_assets_path: Option<&Path>) {
     env_logger::try_init().ok().unwrap_or_default();
 
     let Ok(listener) = TcpListener::bind((SERVER_ADDR, SERVER_PORT)).await else {
@@ -138,11 +143,7 @@ However, if this is another process, then kill that other server (by running `ki
         return;
     };
 
-    let resolver = if run_html_server {
-        Some(Resolver::new("html"))
-    } else {
-        None
-    };
+    let resolver = static_assets_path.map(Resolver::new);
 
     loop {
         let stream = match listener.accept().await {
@@ -180,8 +181,10 @@ However, if this is another process, then kill that other server (by running `ki
     }
 }
 
-#[pyfunction]
-fn launch() {
+#[pyfunction(signature = (static_assets_path))]
+fn launch(static_assets_path: String) {
+    let static_assets_path = PathBuf::from(static_assets_path);
+
     if matches!(
         fork::fork().expect("Failed to fork server process"),
         fork::Fork::Child,
@@ -191,7 +194,7 @@ fn launch() {
             .enable_all()
             .build()
             .expect("Failed to launch server")
-            .block_on(run(true));
+            .block_on(run(Some(&static_assets_path)));
         exit(0);
     }
 }
