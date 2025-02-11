@@ -2134,7 +2134,6 @@ dependencies = [
  "clap 4.5.28",
  "env_logger 0.11.6",
  "fork",
- "futures",
  "http-body-util",
  "hyper 1.6.0",
  "hyper-staticfile",
