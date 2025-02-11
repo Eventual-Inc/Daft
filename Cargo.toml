@@ -253,6 +253,7 @@ test-log = "0.2.16"
 thiserror = "1.0.63"
 tiktoken-rs = "0.5.9"
 tokio = {version = "1.37.0", features = [
+  "fs",
   "net",
   "time",
   "bytes",

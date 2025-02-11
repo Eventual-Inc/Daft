@@ -2136,6 +2136,7 @@ dependencies = [
  "futures",
  "http-body-util",
  "hyper 1.6.0",
+ "hyper-staticfile",
  "hyper-util",
  "log",
  "parking_lot 0.12.3",
@@ -3624,6 +3625,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-range"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21dec9db110f5f872ed9699c3ecf50cf16f423502706ba5c72462e28d3157573"
+
+[[package]]
 name = "http-types"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3713,6 +3720,25 @@ dependencies = [
  "smallvec",
  "tokio",
  "want",
+]
+
+[[package]]
+name = "hyper-staticfile"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc4bce64c32578957926e75f832032f81ebb30bcee74f86c5848b13a69e547eb"
+dependencies = [
+ "futures-util",
+ "http 1.2.0",
+ "http-range",
+ "httpdate",
+ "hyper 1.6.0",
+ "mime_guess",
+ "percent-encoding",
+ "rand 0.8.5",
+ "tokio",
+ "url",
+ "winapi",
 ]
 
 [[package]]

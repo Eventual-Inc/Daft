@@ -1,6 +1,6 @@
 mod response;
 
-use std::{future::Future, net::Ipv4Addr, process::exit, sync::OnceLock};
+use std::{net::Ipv4Addr, process::exit, sync::OnceLock};
 
 use chrono::{DateTime, Utc};
 use http_body_util::{combinators::BoxBody, BodyExt};
@@ -10,6 +10,7 @@ use hyper::{
     service::service_fn,
     Method, Request, Response, StatusCode,
 };
+use hyper_staticfile::{AcceptEncoding, ResolveResult, Resolver, ResponseBuilder};
 use hyper_util::rt::TokioIo;
 use parking_lot::RwLock;
 use pyo3::{
@@ -21,12 +22,12 @@ use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, spawn};
 
 type Req<T = Incoming> = Request<T>;
-type Res = Response<BoxBody<Bytes, std::convert::Infallible>>;
+type Res = Response<BoxBody<Bytes, std::io::Error>>;
 type ServerResult<T> = Result<T, (StatusCode, anyhow::Error)>;
 
-const DAFT_BROADCAST_PORT: u16 = 3238;
-const DASHBOARD_API_PORT: u16 = DAFT_BROADCAST_PORT + 1;
-const DASHBOARD_HTML_PORT: u16 = 3000;
+const NUMBER_OF_WORKER_THREADS: usize = 3;
+const SERVER_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
+const SERVER_PORT: u16 = 3238;
 
 static QUERY_METADATAS: OnceLock<RwLock<Vec<QueryMetadata>>> = OnceLock::new();
 
@@ -66,97 +67,106 @@ async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req
     Ok(Request::from_parts(parts, body))
 }
 
-async fn daft_broadcast_listener(req: Req) -> ServerResult<Res> {
-    Ok(match (req.method(), req.uri().path()) {
-        (&Method::POST, "/") => {
+async fn dashboard_server(req: Req, resolver: Option<Resolver>) -> ServerResult<Res> {
+    let request_path = req.uri().path();
+    let paths = request_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+
+    Ok(match (req.method(), paths.as_slice()) {
+        // The daft broadcast server
+        (&Method::POST, ["broadcast"]) => {
             let req = deserialize::<QueryMetadata>(req).await?;
             query_metadatas().write().push(req.into_body());
             response::empty(StatusCode::OK)
         }
-        (&Method::GET, "/health") => response::empty(StatusCode::OK),
-        _ => response::empty(StatusCode::NOT_FOUND),
-    })
-}
 
-async fn dashboard_api_server(req: Req) -> ServerResult<Res> {
-    Ok(match (req.method(), req.uri().path()) {
-        (&Method::GET, "/") => {
+        // The dashboard API server
+        (&Method::GET, ["api"]) => {
             let query_metadatas = query_metadatas().read();
             response::with_body(StatusCode::OK, query_metadatas.as_slice())
         }
-        (&Method::GET, "/health") => response::empty(StatusCode::OK),
+
+        // The dashboard static HTML file server
+        (&Method::GET, _) => {
+            let Some(resolver) = resolver else {
+                return Ok(response::empty(StatusCode::NOT_FOUND));
+            };
+
+            let result = resolver.resolve_request(&req).await.with_internal_error()?;
+            let result = if matches!(result, ResolveResult::NotFound) {
+                let request_path = format!("{}.html", req.uri().path());
+                resolver
+                    .resolve_path(&request_path, AcceptEncoding::all())
+                    .await
+                    .with_internal_error()?
+            } else {
+                result
+            };
+            ResponseBuilder::new()
+                .request(&req)
+                .build(result)
+                .with_internal_error()?
+                .map(|body| body.boxed())
+        }
+
         _ => response::empty(StatusCode::NOT_FOUND),
     })
 }
 
-async fn dashboard_html_server(_: Req) -> ServerResult<Res> {
-    Ok(response::empty(StatusCode::NOT_IMPLEMENTED))
-}
-
 pub async fn run(run_html_server: bool) {
-    async fn run_http_application<F>(server: fn(Req) -> F, addr: Ipv4Addr, port: u16)
-    where
-        F: 'static + Send + Future<Output = ServerResult<Res>>,
-    {
-        let Ok(listener) = TcpListener::bind((addr, port)).await else {
-            log::warn!(
-                r#"Looks like there's another process already bound to {addr}:{port}.
+    env_logger::try_init().ok().unwrap_or_default();
+
+    let Ok(listener) = TcpListener::bind((SERVER_ADDR, SERVER_PORT)).await else {
+        log::warn!(
+            r#"Looks like there's another process already bound to {SERVER_ADDR}:{SERVER_PORT}.
 If this is the `daft-dashboard-client` (i.e., if you've already ran `daft.dashboard.launch()` inside of a python script), then you don't have to do anything else.
 
 However, if this is another process, then kill that other server (by running `kill -9 $(lsof -t -i :3238)` inside of your shell) and then rerun `daft.dashboard.launch()`."#
-            );
-            return;
+        );
+        return;
+    };
+
+    let resolver = if run_html_server {
+        Some(Resolver::new("./out"))
+    } else {
+        None
+    };
+
+    loop {
+        let stream = match listener.accept().await {
+            Ok((stream, _)) => stream,
+            Err(error) => {
+                log::warn!("Unable to accept incoming connection: {error}");
+                continue;
+            }
         };
-        loop {
-            let (stream, _) = listener
-                .accept()
-                .await
-                .expect("Unable to accept incoming connection");
-            let io = TokioIo::new(stream);
-            spawn(async move {
+        let io = TokioIo::new(stream);
+        spawn({
+            let resolver = resolver.clone();
+            async move {
                 http1::Builder::new()
                     .serve_connection(
                         io,
-                        service_fn(|request| async {
-                            Ok::<_, std::convert::Infallible>(match server(request).await {
-                                Ok(response) => response,
-                                Err((status_code, error)) => {
-                                    response::with_body(status_code, error.to_string())
-                                }
-                            })
+                        service_fn(|request| {
+                            let resolver = resolver.clone();
+                            async move {
+                                Ok::<_, std::convert::Infallible>(
+                                    match dashboard_server(request, resolver).await {
+                                        Ok(response) => response,
+                                        Err((status_code, error)) => {
+                                            response::with_body(status_code, error.to_string())
+                                        }
+                                    },
+                                )
+                            }
                         }),
                     )
                     .await
-                    .expect("Failed to serve endpoint");
-            });
-        }
-    }
-
-    env_logger::try_init().ok().unwrap_or_default();
-
-    if run_html_server {
-        tokio::select! {
-            () = run_http_application(daft_broadcast_listener, Ipv4Addr::LOCALHOST, DAFT_BROADCAST_PORT) => (),
-            () = run_http_application(
-                dashboard_api_server,
-                Ipv4Addr::LOCALHOST,
-                DASHBOARD_API_PORT,
-            ) => (),
-            () = run_http_application(
-                dashboard_html_server,
-                Ipv4Addr::LOCALHOST,
-                DASHBOARD_HTML_PORT,
-            ) => (),
-        }
-    } else {
-        tokio::select! {
-            () = run_http_application(daft_broadcast_listener, Ipv4Addr::LOCALHOST, DAFT_BROADCAST_PORT) => (),
-            () = run_http_application(
-                dashboard_api_server,
-                Ipv4Addr::LOCALHOST,
-                DASHBOARD_API_PORT,
-            ) => (),
-        }
+                    .expect("Endpoint should always be able to be served");
+            }
+        });
     }
 }
 
@@ -167,7 +177,7 @@ fn launch() {
         fork::Fork::Child,
     ) {
         tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(3)
+            .worker_threads(NUMBER_OF_WORKER_THREADS)
             .enable_all()
             .build()
             .expect("Failed to launch server")
