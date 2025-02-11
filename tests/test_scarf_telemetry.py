@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-import os
 import socket
 import urllib
 from unittest.mock import MagicMock, patch
 
 from daft.scarf_telemetry import scarf_telemetry
-from daft.context import set_runner_native, set_runner_py, set_runner_ray, get_context
+
 
 @patch("daft.scarf_telemetry.get_build_type")
 @patch("daft.scarf_telemetry.get_version")
 @patch("urllib.request.urlopen")
-def test_scarf_telemetry_basic(mock_urlopen: MagicMock, mock_version: MagicMock, mock_build_type: MagicMock,):
+def test_scarf_telemetry_basic(
+    mock_urlopen: MagicMock,
+    mock_version: MagicMock,
+    mock_build_type: MagicMock,
+):
     # Test basic functionality of scarf_telemetry verify that analytics are successfully sent and url is properly formatted with all required paramters
 
     # Set up mocks for version and build_type
@@ -33,6 +36,7 @@ def test_scarf_telemetry_basic(mock_urlopen: MagicMock, mock_version: MagicMock,
     assert "version=0.0.0" in called_url
     assert "runner=ray" in called_url
 
+
 @patch("daft.scarf_telemetry.get_build_type")
 @patch("daft.scarf_telemetry.get_version")
 def test_scarf_telemetry_dev_build(mock_version: MagicMock, mock_build_type: MagicMock):
@@ -46,6 +50,7 @@ def test_scarf_telemetry_dev_build(mock_version: MagicMock, mock_build_type: Mag
     assert response_status is None
     assert runner_type is None
 
+
 @patch("daft.scarf_telemetry.get_build_type")
 @patch("daft.scarf_telemetry.get_version")
 def test_scarf_telemetry_opt_out(mock_version: MagicMock, mock_build_type: MagicMock):
@@ -58,10 +63,14 @@ def test_scarf_telemetry_opt_out(mock_version: MagicMock, mock_build_type: Magic
     assert response_status is None
     assert runner_type is None
 
+
 @patch("daft.scarf_telemetry.get_build_type")
 @patch("daft.scarf_telemetry.get_version")
 @patch("urllib.request.urlopen")
-def test_scarf_telemetry_error_handling(mock_urlopen: MagicMock, mock_version: MagicMock, mock_build_type: MagicMock,
+def test_scarf_telemetry_error_handling(
+    mock_urlopen: MagicMock,
+    mock_version: MagicMock,
+    mock_build_type: MagicMock,
 ):
     # Test error handling in scarf_telemetry, verifies that network errors are caught, function returns error message and None for runner type
 
@@ -73,6 +82,7 @@ def test_scarf_telemetry_error_handling(mock_urlopen: MagicMock, mock_version: M
 
     assert response_status.startswith("Analytics error:")
     assert runner_type is None
+
 
 # Tests for runner integration with scarf_telemetry, commented out because cannot set runner more than once
 # @patch("daft.context.scarf_telemetry")

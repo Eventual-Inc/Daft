@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
+import os
 from typing import TYPE_CHECKING, ClassVar
 
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -10,8 +11,6 @@ from daft.daft import get_context as _get_context
 from daft.daft import set_runner_native as _set_runner_native
 from daft.daft import set_runner_py as _set_runner_py
 from daft.daft import set_runner_ray as _set_runner_ray
-
-import os
 from daft.scarf_telemetry import scarf_telemetry
 
 if TYPE_CHECKING:
@@ -63,13 +62,13 @@ class DaftContext:
 def get_context() -> DaftContext:
     return DaftContext(_get_context())
 
+
 def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> DaftContext:
-
     # Scarf Analytics
     scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
     scarf_telemetry(scarf_opt_out, runner="ray")
@@ -92,7 +91,6 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the Py runner
     """
-
     # Scarf Analytics
     scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
     scarf_telemetry(scarf_opt_out, runner="py")
@@ -112,7 +110,6 @@ def set_runner_native() -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the native runner
     """
-
     # Scarf Analytics
     scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
     scarf_telemetry(scarf_opt_out, runner="native")
