@@ -415,7 +415,7 @@ impl ScanOperator for GlobScanOperator {
             } else {
                 (None, None)
             };
-        let mut populate_stats_first_scan_task = first_filepath.is_some();
+        let mut populate_first_scan_task_stats = first_filepath.is_some();
         // Create one ScanTask per file.
         files
             .enumerate()
@@ -427,7 +427,7 @@ impl ScanOperator for GlobScanOperator {
                         ..
                     } = f?;
                     debug_assert!(
-                        !populate_stats_first_scan_task
+                        !populate_first_scan_task_stats
                             || path == *first_filepath.expect("If we populate stats for the first scan task, then the first filepath should be populated"),
                         "Currently the parallel globber should process files in the same order as during schema inference. If this assertion fails, then the ordering guarantees have changed and we should update how we populate stats for the first scan task."
                     );
@@ -477,8 +477,8 @@ impl ScanOperator for GlobScanOperator {
                             chunk_spec,
                             size_bytes,
                             iceberg_delete_files: None,
-                            metadata: if populate_stats_first_scan_task {
-                                populate_stats_first_scan_task = false;
+                            metadata: if populate_first_scan_task_stats {
+                                populate_first_scan_task_stats = false;
                                 first_metadata.cloned()
                             } else {
                                 None
