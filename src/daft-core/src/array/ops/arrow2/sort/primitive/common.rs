@@ -71,9 +71,6 @@ fn generate_initial_indices<I>(
 where
     I: Index,
 {
-    let mut start_idx: usize = 0;
-    let mut end_idx: usize = length;
-
     if let Some(validity) = validity {
         // number of null values
         let n_nulls = validity.unset_bits();
@@ -110,18 +107,17 @@ where
                 }
             });
 
-        if descending || nulls_first {
-            start_idx = n_nulls;
+        // either `descending` or `nulls_first` means that nulls come first
+        let (start_idx, end_idx) = if descending || nulls_first {
+            // since nulls come first, our valid values start at the end of the nulls
+            (n_nulls, length)
         } else {
-            end_idx = n_valid;
-        }
+            // since nulls come last, our valid values start at the beginning of the array
+            (0, n_valid)
+        };
 
         (indices, start_idx, end_idx)
     } else {
-        (
-            I::range(0, length).unwrap().collect::<Vec<_>>(),
-            start_idx,
-            end_idx,
-        )
+        (I::range(0, length).unwrap().collect::<Vec<_>>(), 0, length)
     }
 }
