@@ -309,17 +309,6 @@ impl Series {
             offsets.push(current_offset);
         }
 
-        if current_offset == 0 {
-            let empty_array = arrow2::array::new_empty_array(child_data_type.to_arrow()?);
-            let list_array = ListArray::new(
-                Arc::new(Field::new(input.name(), input.data_type().clone())),
-                Self::from_arrow(field, empty_array)?,
-                OffsetsBuffer::try_from(offsets)?,
-                input.validity().cloned(),
-            );
-            return Ok(list_array.into_series());
-        }
-
         let list_array = ListArray::new(
             Arc::new(Field::new(input.name(), input.data_type().clone())),
             growable.build()?,
