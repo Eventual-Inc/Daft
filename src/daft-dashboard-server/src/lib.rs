@@ -2,7 +2,7 @@ mod response;
 
 #[cfg(not(feature = "python"))]
 use std::path::Path;
-use std::{net::Ipv4Addr, sync::OnceLock};
+use std::{net::Ipv4Addr, pin::pin, sync::OnceLock};
 
 use chrono::{DateTime, Utc};
 use http_body_util::{combinators::BoxBody, BodyExt};
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{
     net::{TcpListener, TcpStream},
     spawn,
+    sync::mpsc::{self, Receiver, Sender},
 };
 #[cfg(feature = "python")]
 use {
@@ -28,7 +29,7 @@ use {
         types::{PyModule, PyModuleMethods},
         wrap_pyfunction, Bound, PyResult,
     },
-    std::{pin::pin, time::Duration},
+    std::time::Duration,
     tokio::time::sleep,
 };
 
@@ -79,7 +80,11 @@ async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req
     Ok(Request::from_parts(parts, body))
 }
 
-async fn dashboard_server(req: Req, resolver: Option<Resolver>) -> ServerResult<Res> {
+async fn http_server_application(
+    req: Req,
+    resolver: Option<Resolver>,
+    shutdown_signal: Sender<()>,
+) -> ServerResult<Res> {
     let request_path = req.uri().path();
     let paths = request_path
         .split('/')
@@ -87,21 +92,25 @@ async fn dashboard_server(req: Req, resolver: Option<Resolver>) -> ServerResult<
         .collect::<Vec<_>>();
 
     Ok(match (req.method(), paths.as_slice()) {
-        // The daft broadcast server
-        (&Method::POST, ["broadcast"]) => {
+        (&Method::POST, ["api", "queries"]) => {
             let req = deserialize::<QueryMetadata>(req).await?;
             query_metadatas().write().push(req.into_body());
             response::empty(StatusCode::OK)
         }
-
-        // The dashboard API server
-        (&Method::GET, ["api"]) => {
+        (&Method::GET, ["api", "queries"]) => {
             let query_metadatas = query_metadatas().read();
             response::with_body(StatusCode::OK, query_metadatas.as_slice())
         }
+        (&Method::POST, ["api", "shutdown"]) => {
+            shutdown_signal
+                .send(())
+                .await
+                .expect("Sending signal should always succeed");
+            response::empty(StatusCode::OK)
+        }
 
-        // The dashboard static HTML file server
-        (&Method::GET, _) => {
+        // All other paths (that don't start with "api") will be treated as web-server requests.
+        (&Method::GET, &[first, ..]) if first != "api" => {
             let Some(resolver) = resolver else {
                 return Ok(response::empty(StatusCode::NOT_FOUND));
             };
@@ -137,7 +146,7 @@ async fn dashboard_server(req: Req, resolver: Option<Resolver>) -> ServerResult<
     })
 }
 
-fn handle_stream(stream: TcpStream, resolver: Option<Resolver>) {
+fn handle_stream(stream: TcpStream, resolver: Option<Resolver>, shutdown_signal: Sender<()>) {
     let io = TokioIo::new(stream);
     spawn(async move {
         http1::Builder::new()
@@ -145,9 +154,11 @@ fn handle_stream(stream: TcpStream, resolver: Option<Resolver>) {
                 io,
                 service_fn(move |request| {
                     let resolver = resolver.clone();
+                    let shutdown_signal = shutdown_signal.clone();
                     async move {
                         Ok::<_, std::convert::Infallible>(
-                            match dashboard_server(request, resolver).await {
+                            match http_server_application(request, resolver, shutdown_signal).await
+                            {
                                 Ok(response) => response,
                                 Err((status_code, error)) => {
                                     response::with_body(status_code, error.to_string())
@@ -162,6 +173,12 @@ fn handle_stream(stream: TcpStream, resolver: Option<Resolver>) {
     });
 }
 
+async fn handle_receiver(mut recv: Receiver<()>) {
+    recv.recv()
+        .await
+        .expect("Receiving a message should always succeed");
+}
+
 #[cfg(not(feature = "python"))]
 pub async fn launch(static_assets_path: Option<&Path>) {
     let listener = TcpListener::bind((SERVER_ADDR, SERVER_PORT))
@@ -169,13 +186,19 @@ pub async fn launch(static_assets_path: Option<&Path>) {
         .unwrap_or_else(|error| panic!("Failed to bind to `{SERVER_ADDR}:{SERVER_PORT}`, another process is already bound to it; consider running `kill -9 $(lsof -t -i :3238)` in order to kill it; {error}"));
 
     let resolver = static_assets_path.map(Resolver::new);
+    let (send, recv) = mpsc::channel::<()>(1);
+    let mut api_signal = pin!(handle_receiver(recv));
 
     loop {
-        let (stream, _) = listener
-            .accept()
-            .await
-            .unwrap_or_else(|error| panic!("Unable to accept incoming connection: {error}"));
-        handle_stream(stream, resolver.clone());
+        tokio::select! {
+            (stream, _) = async {
+                listener
+                    .accept()
+                    .await
+                    .unwrap_or_else(|error| panic!("Unable to accept incoming connection: {error}"))
+            } => handle_stream(stream, resolver.clone(), send.clone()),
+            () = &mut api_signal => break,
+        }
     }
 }
 
@@ -200,14 +223,17 @@ fn launch(static_assets_path: String, block: Option<bool>) {
         };
 
         let mut python_signal = pin!(interrupt_handler());
+        let (send, recv) = mpsc::channel::<()>(1);
+        let mut api_signal = pin!(handle_receiver(recv));
 
         loop {
             tokio::select! {
                 stream = listener.accept() => match stream {
-                    Ok((stream, _)) => handle_stream(stream, Some(resolver.clone())),
+                    Ok((stream, _)) => handle_stream(stream, Some(resolver.clone()), send.clone()),
                     Err(error) => log::warn!("Unable to accept incoming connection: {error}"),
                 },
                 () = &mut python_signal => break BreakReason::PythonSignalInterrupt,
+                () = &mut api_signal => break BreakReason::ApiShutdownSignal,
             }
         }
     }
@@ -215,6 +241,7 @@ fn launch(static_assets_path: String, block: Option<bool>) {
     enum BreakReason {
         PortAlreadyBound,
         PythonSignalInterrupt,
+        ApiShutdownSignal,
     }
 
     env_logger::try_init().ok().unwrap_or_default();
