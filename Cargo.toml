@@ -180,6 +180,7 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
+  "src/generated/spark-connect",
   "src/daft-dashboard-server"
 ]
 
@@ -258,8 +259,7 @@ tokio = {version = "1.37.0", features = [
   "signal",
   "macros",
   "rt",
-  "rt-multi-thread",
-  "sync"
+  "rt-multi-thread"
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
