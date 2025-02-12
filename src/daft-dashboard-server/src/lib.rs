@@ -134,8 +134,8 @@ pub async fn run(static_assets_path: Option<&Path>) {
     env_logger::try_init().ok().unwrap_or_default();
 
     let Ok(listener) = TcpListener::bind((SERVER_ADDR, SERVER_PORT)).await else {
-        log::warn!(
-            r#"Looks like there's another process already bound to {SERVER_ADDR}:{SERVER_PORT}.
+        log::info!(
+            r#"There's another process already bound to {SERVER_ADDR}:{SERVER_PORT}.
 If this is the `daft-dashboard-client` (i.e., if you've already ran `daft.dashboard.launch()` inside of a python script), then you don't have to do anything else.
 
 However, if this is another process, then kill that other server (by running `kill -9 $(lsof -t -i :3238)` inside of your shell) and then rerun `daft.dashboard.launch()`."#
@@ -181,20 +181,32 @@ However, if this is another process, then kill that other server (by running `ki
     }
 }
 
-#[pyfunction(signature = (static_assets_path))]
-fn launch(static_assets_path: String) {
-    let static_assets_path = PathBuf::from(static_assets_path);
-
-    if matches!(
-        fork::fork().expect("Failed to fork server process"),
-        fork::Fork::Child,
-    ) {
+#[pyfunction(signature = (static_assets_path, block = false))]
+fn launch(static_assets_path: String, block: Option<bool>) {
+    fn launch_on_tokio_runtime(static_assets_path: &Path) {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(NUMBER_OF_WORKER_THREADS)
             .enable_all()
             .build()
             .expect("Failed to launch server")
-            .block_on(run(Some(&static_assets_path)));
+            .block_on(run(Some(static_assets_path)));
+    }
+
+    let block = block.unwrap_or(false);
+    let static_assets_path = PathBuf::from(static_assets_path);
+
+    if block {
+        launch_on_tokio_runtime(&static_assets_path);
+        panic!(
+            r#"Failed to bind to port {SERVER_ADDR}:{SERVER_PORT}; maybe another process is running on it?
+
+You can find what processes are attached to that port by running the following command in your shell: `lsof -t -i :3238`."#
+        );
+    } else if matches!(
+        fork::fork().expect("Failed to fork server process"),
+        fork::Fork::Child,
+    ) {
+        launch_on_tokio_runtime(&static_assets_path);
         exit(0);
     }
 }

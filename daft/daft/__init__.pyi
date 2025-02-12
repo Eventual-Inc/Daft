@@ -1224,7 +1224,7 @@ def binary_slice(expr: PyExpr, start: PyExpr, length: PyExpr | None = None) -> P
 # ---
 # dashboard namespace
 # ---
-def launch(static_assets_path: str): ...
+def launch(static_assets_path: str, block: bool = False): ...
 
 class PyCatalog:
     @staticmethod
