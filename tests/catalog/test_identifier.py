@@ -9,49 +9,43 @@ def assert_eq(parsed_id, expect_id):
 
 def test_identifier_regular_single():
     input_sql = "a"
-    parsed_id = Identifier.parse(input_sql)
+    parsed_id = Identifier.from_sql(input_sql)
     expect_id = Identifier("a")
-    # TODO equality
     assert_eq(parsed_id, expect_id)
 
 
 def test_identifier_regular_multi():
     input_sql = "a.b"
-    parsed_id = Identifier.parse(input_sql)
+    parsed_id = Identifier.from_sql(input_sql)
     expect_id = Identifier("a", "b")
-    # TODO equality
     assert_eq(parsed_id, expect_id)
 
 
 def test_identifier_delimited_single():
     input_sql = """ "a" """
-    parsed_id = Identifier.parse(input_sql)
+    parsed_id = Identifier.from_sql(input_sql)
     expect_id = Identifier("a")
-    # TODO equality
     assert_eq(parsed_id, expect_id)
 
 
 def test_identifier_delimited_multi():
     input_sql = """ "a"."b" """
-    parsed_id = Identifier.parse(input_sql)
+    parsed_id = Identifier.from_sql(input_sql)
     expect_id = Identifier("a", "b")
-    # TODO equality
     assert_eq(parsed_id, expect_id)
 
 
 def test_identifier_mixed():
     input_sql = """ "a".b."c" """
-    parsed_id = Identifier.parse(input_sql)
+    parsed_id = Identifier.from_sql(input_sql)
     expect_id = Identifier("a", "b", "c")
-    # TODO equality
     assert_eq(parsed_id, expect_id)
 
 
 def test_identifier_special():
     input_sql = """ "a.b"."-^-" """
-    parsed_id = Identifier.parse(input_sql)
+    parsed_id = Identifier.from_sql(input_sql)
     expect_id = Identifier("a.b", "-^-")
-    # TODO equality
     assert_eq(parsed_id, expect_id)
 
 
@@ -82,10 +76,10 @@ def test_identifier_sequence():
 )
 def test_invalid_identifier(input):
     with pytest.raises(Exception, match="Invalid identifier"):
-        Identifier.parse(input)
+        Identifier.from_sql(input)
 
 
 # ensure we can support the customer ask: https://github.com/Eventual-Inc/Daft/issues/3758
 def test_identifier_with_periods():
-    assert 3 == len(Identifier.parse("a.b.c"))
-    assert 1 == len(Identifier.parse('"a.b.c"'))
+    assert 3 == len(Identifier.from_sql("a.b.c"))
+    assert 1 == len(Identifier.from_sql('"a.b.c"'))
