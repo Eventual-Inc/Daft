@@ -10,7 +10,6 @@ from daft.daft import get_context as _get_context
 from daft.daft import set_runner_native as _set_runner_native
 from daft.daft import set_runner_py as _set_runner_py
 from daft.daft import set_runner_ray as _set_runner_ray
-from daft.scarf_telemetry import scarf_telemetry
 
 if TYPE_CHECKING:
     from daft.runners.runner import Runner
@@ -68,8 +67,6 @@ def set_runner_ray(
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> DaftContext:
-    # Scarf Analytics
-    scarf_telemetry(runner="ray")
 
     py_ctx = _set_runner_ray(
         address=address,
@@ -89,8 +86,6 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the Py runner
     """
-    # Scarf Analytics
-    scarf_telemetry(runner="py")
 
     py_ctx = _set_runner_py(
         use_thread_pool=use_thread_pool,
@@ -107,8 +102,6 @@ def set_runner_native() -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the native runner
     """
-    # Scarf Analytics
-    scarf_telemetry(runner="native")
 
     py_ctx = _set_runner_native()
 

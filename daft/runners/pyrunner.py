@@ -10,6 +10,9 @@ from concurrent import futures
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Iterator
 
+from daft.scarf_telemetry import scarf_telemetry
+
+
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution.native_executor import NativeExecutor
@@ -344,6 +347,9 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             "Please switch to the NativeRunner now via `daft.context.set_runner_native()` or by setting the env variable `DAFT_RUNNER=native`. "
             "Please report any issues at github.com/Eventual-Inc/Daft/issues",
         )
+
+        scarf_telemetry(self.name)
+
         # NOTE: Freeze and use this same execution config for the entire execution
         daft_execution_config = get_context().daft_execution_config
         execution_id = str(uuid.uuid4())
