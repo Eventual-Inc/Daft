@@ -396,18 +396,18 @@ def hash_join(
 
     join_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
     right_partition_counter = 0
-    next_join_task_to_emit = 0
+    next_join_partition_to_emit = 0
     while True:
         # Check if we have any join tasks that are ready to be emitted
-        while len(join_tasks) > 0 and join_tasks[next_join_task_to_emit].done():
-            to_emit = join_tasks.pop(next_join_task_to_emit)
+        while next_join_partition_to_emit in join_tasks and join_tasks[next_join_partition_to_emit].done():
+            to_emit = join_tasks.pop(next_join_partition_to_emit)
             size_bytes = to_emit.partition_metadata().size_bytes
             yield PartitionTaskBuilder[PartitionT](
                 inputs=[to_emit.partition()],
                 partial_metadatas=[to_emit.partition_metadata()],
                 resource_request=ResourceRequest(memory_bytes=size_bytes),
             )
-            next_join_task_to_emit += 1
+            next_join_partition_to_emit += 1
 
         # Find all partitions that are ready to be joined
         ready_partitions = [
@@ -447,16 +447,16 @@ def hash_join(
 
     # Emit the remaining join tasks in order of partition number
     while len(join_tasks) > 0:
-        while not join_tasks[next_join_task_to_emit].done():
+        while not join_tasks[next_join_partition_to_emit].done():
             yield None
-        to_emit = join_tasks.pop(next_join_task_to_emit)
+        to_emit = join_tasks.pop(next_join_partition_to_emit)
         size_bytes = to_emit.partition_metadata().size_bytes
         yield PartitionTaskBuilder[PartitionT](
             inputs=[to_emit.partition()],
             partial_metadatas=[to_emit.partition_metadata()],
             resource_request=ResourceRequest(memory_bytes=size_bytes),
         )
-        next_join_task_to_emit += 1
+        next_join_partition_to_emit += 1
 
 
 def _create_broadcast_join_step(
