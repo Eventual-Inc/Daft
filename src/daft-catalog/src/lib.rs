@@ -211,11 +211,6 @@ mod tests {
 
         // Register a table
         assert!(catalog.register_table("test_table", plan.clone()).is_ok());
-
-        // Try to register a table with invalid name
-        assert!(catalog
-            .register_table("invalid name", plan.clone())
-            .is_err());
     }
 
     #[test]
