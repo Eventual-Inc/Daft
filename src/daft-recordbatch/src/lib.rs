@@ -548,6 +548,9 @@ impl RecordBatch {
                 self.eval_expression(child)?.fill_null(&fill_value)
             }
             Expr::IsIn(child, items) => {
+                if items.is_empty() {
+                    return BooleanArray::from_iter(child.name(), std::iter::once(Some(false))).into_series().broadcast(self.len());
+                }
                 let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
 
                 let items = items.iter().collect::<Vec<&Series>>();
