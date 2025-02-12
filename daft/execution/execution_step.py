@@ -15,6 +15,7 @@ from daft.runners.partitioning import (
     PartitionT,
 )
 from daft.table import MicroPartition, table_io
+from daft.table.table import Table
 
 if TYPE_CHECKING:
     import pathlib
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
     from daft.logical.map_partition_ops import MapPartitionOp
     from daft.logical.schema import Schema
+    from daft.runners.ray_runner import DaftActor
 
 
 ID_GEN = itertools.count()
@@ -59,6 +61,9 @@ class PartitionTask(Generic[PartitionT]):
 
     # Desired node_id to schedule this task on
     node_id: str | None = None
+
+    # Desired actor to schedule this task on
+    actor: DaftActor | None = None
 
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
@@ -121,6 +126,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         resource_request: ResourceRequest = ResourceRequest(),
         actor_pool_id: str | None = None,
         node_id: str | None = None,
+        actor: DaftActor | None = None,
     ) -> None:
         self.inputs = inputs
         if partial_metadatas is not None:
@@ -132,6 +138,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.num_results = len(inputs)
         self.actor_pool_id = actor_pool_id
         self.node_id = node_id
+        self.actor = actor
 
     def add_instruction(
         self,
@@ -174,6 +181,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             actor_pool_id=self.actor_pool_id,
             node_id=self.node_id,
             cache_metadata_on_done=cache_metadata_on_done,
+            actor=self.actor,
         )
 
     def finalize_partition_task_multi_output(
@@ -199,6 +207,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             actor_pool_id=self.actor_pool_id,
             node_id=self.node_id,
             cache_metadata_on_done=cache_metadata_on_done,
+            actor=self.actor,
         )
 
     def __str__(self) -> str:
@@ -917,7 +926,7 @@ class ReduceMerge(ReduceInstruction):
         return self._reduce_merge(inputs)
 
     def _reduce_merge(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return [MicroPartition.concat(inputs)]
+        return [MicroPartition._from_tables([Table.concat([i.to_table() for i in inputs])])]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         input_rows = [_.num_rows for _ in input_metadatas]

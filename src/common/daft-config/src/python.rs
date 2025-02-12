@@ -204,10 +204,10 @@ impl PyDaftExecutionConfig {
         if let Some(shuffle_algorithm) = shuffle_algorithm {
             if !matches!(
                 shuffle_algorithm,
-                "map_reduce" | "pre_shuffle_merge" | "auto"
+                "map_reduce" | "pre_shuffle_merge" | "auto" | "actor"
             ) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "shuffle_algorithm must be 'auto', 'map_reduce' or 'pre_shuffle_merge'",
+                    "shuffle_algorithm must be 'auto', 'map_reduce', 'pre_shuffle_merge' or 'actor'",
                 ));
             }
             config.shuffle_algorithm = shuffle_algorithm.to_string();

@@ -14,14 +14,15 @@ from daft.execution.physical_plan import InProgressPhysicalPlan, stage_id_counte
 from daft.runners.partitioning import (
     PartitionT,
 )
+from daft.runners.ray_runner import RayPartition
 
 logger = logging.getLogger(__name__)
 
 
 def pre_shuffle_merge(
-    map_plan: InProgressPhysicalPlan[PartitionT],
+    map_plan: InProgressPhysicalPlan[RayPartition],
     pre_shuffle_merge_threshold: int,
-) -> InProgressPhysicalPlan[PartitionT]:
+) -> InProgressPhysicalPlan[RayPartition]:
     """Merges intermediate partitions from the map_plan based on memory constraints.
 
     The function processes incoming map tasks and merges their outputs when:
@@ -37,7 +38,7 @@ def pre_shuffle_merge(
     NUM_MAPS_THRESHOLD = 4
 
     stage_id = next(stage_id_counter)
-    in_flight_maps: Dict[str, SingleOutputPartitionTask[PartitionT]] = {}
+    in_flight_maps: Dict[str, SingleOutputPartitionTask[RayPartition]] = {}
     no_more_input = False
 
     while True:
@@ -60,7 +61,7 @@ def pre_shuffle_merge(
 
         if enough_maps or done_with_input:
             # Get location information for all materialized partitions
-            partitions = [m[0].result().partition() for m in materialized_maps]
+            partitions = [m[0].result().partition().get_data_ref() for m in materialized_maps]
             location_map = ray.experimental.get_object_locations(partitions)
 
             # Group partitions by node

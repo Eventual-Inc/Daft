@@ -139,6 +139,13 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
+                PhysicalPlan::ShuffleExchange(ShuffleExchange{input, strategy: ShuffleExchangeStrategy::ActorShuffle { .. }}) => {
+                    let new_plan = PhysicalPlan::ShuffleExchange(ShuffleExchange {
+                        input: input.clone(),
+                        strategy: ShuffleExchangeStrategy::ActorShuffle { target_spec: new_spec.into() }
+                    });
+                    Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
+                }
 
                 // these depend solely on their input
                 PhysicalPlan::Filter(..) |

@@ -31,6 +31,7 @@ impl ShuffleExchange {
             ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
                 target_spec.clone()
             }
+            ShuffleExchangeStrategy::ActorShuffle { target_spec } => target_spec.clone(),
         }
     }
 }
@@ -45,6 +46,10 @@ pub enum ShuffleExchangeStrategy {
 
     MapReduceWithPreShuffleMerge {
         pre_shuffle_merge_threshold: usize,
+        target_spec: Arc<ClusteringSpec>,
+    },
+
+    ActorShuffle {
         target_spec: Arc<ClusteringSpec>,
     },
 }
@@ -95,6 +100,10 @@ impl ShuffleExchange {
                     pre_shuffle_merge_threshold
                 ));
             }
+            ShuffleExchangeStrategy::ActorShuffle { target_spec } => {
+                res.push("Strategy: ActorShuffle".to_string());
+                res.push(format!("Target Spec: {:?}", target_spec));
+            }
         }
         res
     }
@@ -133,6 +142,11 @@ impl ShuffleExchangeFactory {
         cfg: Option<&DaftExecutionConfig>,
     ) -> ShuffleExchangeStrategy {
         match cfg {
+            Some(cfg) if cfg.shuffle_algorithm == "actor" => {
+                ShuffleExchangeStrategy::ActorShuffle {
+                    target_spec: clustering_spec,
+                }
+            }
             Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
                 ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                     target_spec: clustering_spec,

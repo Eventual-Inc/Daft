@@ -8,7 +8,7 @@ import time
 import uuid
 from datetime import datetime
 from queue import Full, Queue
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
+from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator, Tuple
 
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
@@ -261,15 +261,14 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
-        all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
+        all_partitions = ray.get([part.partition().get_data_ref() for id, part in ids_and_partitions])
         return MicroPartition.concat(all_partitions)
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
         preview_parts = []
         for _, mat_result in ids_and_partitions:
-            ref: ray.ObjectRef = mat_result.partition()
-            part: MicroPartition = ray.get(ref)
+            part: MicroPartition = mat_result.micropartition()
             part_len = len(part)
             if part_len >= num_rows:  # if this part has enough rows, take what we need and break
                 preview_parts.append(part.slice(0, num_rows))
@@ -340,7 +339,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return len(self._results)
 
     def wait(self) -> None:
-        deduped_object_refs = {r.partition() for r in self._results.values()}
+        deduped_object_refs = {r.partition().get_data_ref() for r in self._results.values()}
         ray.wait(list(deduped_object_refs), fetch_local=False, num_returns=len(deduped_object_refs))
 
 
@@ -404,7 +403,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         pset = RayPartitionSet()
 
         for i, obj in enumerate(daft_micropartitions):
-            pset.set_partition(i, RayMaterializedResult(obj))
+            pset.set_partition(i, RayMaterializedResult(RayPartition.from_object(obj)))
         return (
             pset,
             daft_schema,
@@ -436,7 +435,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         pset = RayPartitionSet()
 
         for i, obj in enumerate(daft_micropartitions):
-            pset.set_partition(i, RayMaterializedResult(obj))
+            pset.set_partition(i, RayMaterializedResult(RayPartition.from_object(obj)))
         return (
             pset,
             schemas[0],
@@ -840,7 +839,7 @@ class Scheduler(ActorPoolManager):
         # Get executable tasks from plan scheduler.
         results_buffer_size = self.results_buffer_size_by_df[result_uuid]
 
-        inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
+        inflight_tasks: dict[str, PartitionTask[RayPartition]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
         pbar = ProgressBar(use_ray_tqdm=self.use_ray_tqdm)
         num_cpus_provider = _ray_num_cpus_provider()
@@ -949,7 +948,7 @@ class Scheduler(ActorPoolManager):
                                     del inflight_ref_to_task[ready]
                                 elif isinstance(task, MultiOutputPartitionTask):
                                     for partition in task.partitions():
-                                        del inflight_ref_to_task[partition]
+                                        del inflight_ref_to_task[partition.get_task_ref()]
 
                                 pbar.mark_task_done(task)
                                 del inflight_tasks[task_id]
@@ -984,6 +983,118 @@ class Scheduler(ActorPoolManager):
             self.teardown_actor_pool(name)
 
 
+class ActorPartitionCache:
+    def __init__(self):
+        self.partition_cache = {}
+        self._next_partition_id = 0
+        self._lock = threading.Lock()
+
+    def store_partition(self, partition: MicroPartition) -> int:
+        with self._lock:
+            partition_id = self._next_partition_id
+            self._next_partition_id += 1
+            self.partition_cache[partition_id] = partition
+            return partition_id
+    
+    def get_partition(self, partition_id: int) -> MicroPartition:
+        with self._lock:
+            partition = self.partition_cache[partition_id]
+            return partition
+        
+    def pop_partition(self, partition_id: int) -> MicroPartition:
+        with self._lock:
+            partition = self.partition_cache.pop(partition_id)
+            return partition
+
+@ray.remote
+class DaftActor:
+    def __init__(self):
+        self.partition_cache = ActorPartitionCache()
+
+
+    def single_partition_pipeline(
+        self,
+        task_context: PartitionTaskContext,
+        daft_execution_config: PyDaftExecutionConfig,
+        instruction_stack: list[Instruction],
+        partial_metadatas: list[PartitionMetadata],
+        *inputs: MicroPartition | int
+    ) -> list[list[PartitionMetadata] | int]:
+        with execution_config_ctx(
+            config=daft_execution_config,
+        ), ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ):
+            inputs = [self.partition_cache.get_partition(i) if isinstance(i, int) else i for i in inputs]
+            result = build_partitions(instruction_stack, partial_metadatas, *inputs)
+            # Cache partitions and return metadata + partition IDs
+            metadatas = result[0]
+            partition_ids = [self.partition_cache.store_partition(p) for p in result[1:]]
+            return [metadatas] + partition_ids
+
+
+    def fanout_pipeline(
+        self,
+        task_context: PartitionTaskContext,
+        daft_execution_config: PyDaftExecutionConfig,
+        instruction_stack: list[Instruction],
+        partial_metadatas: list[PartitionMetadata],
+        *inputs: MicroPartition | int
+    ) -> list[list[PartitionMetadata] | MicroPartition]:
+        with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ):
+            inputs = [self.partition_cache.get_partition(i) if isinstance(i, int) else i for i in inputs]
+            return build_partitions(instruction_stack, partial_metadatas, *inputs)
+
+
+    def reduce_pipeline(
+        self,
+        task_context: PartitionTaskContext,
+        daft_execution_config: PyDaftExecutionConfig,
+        instruction_stack: list[Instruction],
+        partial_metadatas: list[PartitionMetadata],
+        inputs: list,
+    ) -> list[list[PartitionMetadata] | int]:
+        import ray
+
+        with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ):
+            inputs = ray.get(inputs)
+            inputs = [self.partition_cache.get_partition(i) if isinstance(i, int) else i for i in inputs]
+            result = build_partitions(instruction_stack, partial_metadatas, *inputs)
+            # Cache partitions and return metadata + partition IDs
+            metadatas = result[0]
+            partition_ids = [self.partition_cache.store_partition(p) for p in result[1:]]
+            return [metadatas] + partition_ids
+
+
+    def reduce_and_fanout(
+        self,
+        task_context: PartitionTaskContext,
+        daft_execution_config: PyDaftExecutionConfig,
+        instruction_stack: list[Instruction],
+        partial_metadatas: list[PartitionMetadata],
+        inputs: list,
+    ) -> list[list[PartitionMetadata] | MicroPartition]:
+        import ray
+
+        with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ):
+            inputs = ray.get(inputs)
+            inputs = [self.partition_cache.get_partition(i) if isinstance(i, int) else i for i in inputs]
+            return build_partitions(instruction_stack, partial_metadatas, *inputs)
+
+        
+    def pop_partition(self, partition_id: int) -> MicroPartition:
+        return self.partition_cache.pop_partition(partition_id)
+
+    def get_metadata(self, *partition_ids: int) -> list[PartitionMetadata]:
+        return [PartitionMetadata.from_table(self.partition_cache.get_partition(partition_id)) for partition_id in partition_ids]
+
+
 SCHEDULER_ACTOR_NAME = "scheduler"
 SCHEDULER_ACTOR_NAMESPACE = "daft"
 
@@ -998,11 +1109,82 @@ class SchedulerActor(Scheduler):
 def _build_partitions(
     job_id: str,
     daft_execution_config_objref: ray.ObjectRef,
-    task: PartitionTask[ray.ObjectRef],
+    task: PartitionTask[RayPartition],
     runner_tracer: RunnerTracer,
 ) -> list[ray.ObjectRef]:
     """Run a PartitionTask and return the resulting list of partitions."""
     ray_options: dict[str, Any] = {"num_returns": task.num_results + 1, "name": task.name()}
+
+    def try_get_actor(task: PartitionTask[RayPartition]) -> DaftActor | None:
+        if task.actor is not None:
+            return task.actor
+        # make a set of all possible actors
+        possible_actors = {i.get_actor() for i in task.inputs}
+        if len(possible_actors) == 1:
+            return possible_actors.pop()
+        return None
+    
+
+    actor = try_get_actor(task)
+
+    if actor is not None:
+        input_data_refs = [i.get_data_ref() for i in task.inputs]
+        if isinstance(task.instructions[-1], FanoutInstruction):
+            result_is_cached = False
+            # Last instruction is a fanout, actor will return micropartitions directly
+
+            if isinstance(task.instructions[0], ReduceInstruction):
+                # Reduce and fanout, actor accepts the list directly
+                [metadatas_ref, *partitions] = actor.reduce_and_fanout.options(**ray_options).remote(
+                    PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
+                    daft_execution_config_objref,
+                    task.instructions,
+                    task.partial_metadatas,
+                    input_data_refs,
+                )
+            else:
+                # Fanout pipeline, actor accepts top level partitions directly
+                [metadatas_ref, *partitions] = actor.fanout_pipeline.options(**ray_options).remote(
+                    PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
+                    daft_execution_config_objref,
+                    task.instructions,
+                    task.partial_metadatas,
+                    *input_data_refs,
+                )
+        else:
+            result_is_cached = True
+            # Last instruction is not a fanout, actor will cache the partitions
+            if isinstance(task.instructions[0], ReduceInstruction):
+                # Reduce pipeline, actor accepts the list directly
+                [metadatas_ref, *partitions] = actor.reduce_pipeline.options(**ray_options).remote(
+                    PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
+                    daft_execution_config_objref,
+                    task.instructions,
+                    task.partial_metadatas,
+                    input_data_refs,
+                )
+            else:
+                # Single partition pipeline, actor accepts top level partitions directly
+                [metadatas_ref, *partitions] = actor.single_partition_pipeline.options(**ray_options).remote(
+                    PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
+                    daft_execution_config_objref,
+                    task.instructions,
+                    task.partial_metadatas,
+                    *input_data_refs,
+                )
+
+        metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
+        task.set_result(
+            [
+                RayMaterializedResult(
+                    partition=RayPartition.from_actor(partition, actor) if result_is_cached else RayPartition.from_object(partition),
+                    metadatas=metadatas_accessor,
+                    metadata_idx=i,
+                )
+                for i, partition in enumerate(partitions)
+            ]
+        )
+        return partitions
 
     if task.resource_request is not None:
         ray_options = {**ray_options, **_get_ray_task_options(task.resource_request)}
@@ -1020,12 +1202,13 @@ def _build_partitions(
         else:
             ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
+        input_data_refs = [i.get_data_ref() for i in task.inputs]
         [metadatas_ref, *partitions] = build_remote.remote(
             PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
             daft_execution_config_objref,
             task.instructions,
             task.partial_metadatas,
-            task.inputs,
+            input_data_refs,
         )
 
     else:
@@ -1037,19 +1220,20 @@ def _build_partitions(
         if task.instructions and isinstance(task.instructions[0], ScanWithTask):
             ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
+        input_data_refs = [i.get_data_ref() for i in task.inputs]
         [metadatas_ref, *partitions] = build_remote.remote(
             PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
             daft_execution_config_objref,
             task.instructions,
             task.partial_metadatas,
-            *task.inputs,
+            *input_data_refs,
         )
 
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result(
         [
             RayMaterializedResult(
-                partition=partition,
+                partition=RayPartition.from_object(partition),
                 metadatas=metadatas_accessor,
                 metadata_idx=i,
             )
@@ -1061,19 +1245,20 @@ def _build_partitions(
 
 
 def _build_partitions_on_actor_pool(
-    task: PartitionTask[ray.ObjectRef],
+    task: PartitionTask[RayPartition],
     actor_pool: RayRoundRobinActorPool,
 ) -> list[ray.ObjectRef]:
     """Run a PartitionTask on an actor pool and return the resulting list of partitions."""
     assert len(task.instructions) == 1, "Actor pool can only handle single ActorPoolProject instructions"
     assert isinstance(task.instructions[0], ActorPoolProject)
 
-    [metadatas_ref, *partitions] = actor_pool.submit(task.partial_metadatas, task.inputs)
+    inputs = [i.get_data_ref() for i in task.inputs]
+    [metadatas_ref, *partitions] = actor_pool.submit(task.partial_metadatas, inputs)
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result(
         [
             RayMaterializedResult(
-                partition=partition,
+                partition=RayPartition.from_object(partition),
                 metadatas=metadatas_accessor,
                 metadata_idx=i,
             )
@@ -1277,7 +1462,10 @@ class RayRunner(Runner[ray.ObjectRef]):
         if daft_execution_config.enable_aqe:
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
+                start_time = time.time()
                 source_id, plan_scheduler = adaptive_planner.next()
+                print(f"Starting plan {source_id}")
+                print(plan_scheduler)
                 # don't store partition sets in variable to avoid reference
                 result_uuid = self._start_plan(
                     plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
@@ -1291,6 +1479,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                     cache_entry = self._collect_into_cache(results_iter)
                     adaptive_planner.update(source_id, cache_entry)
                     del cache_entry
+                print(f"Finished plan in {time.time() - start_time:.2f} seconds")
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.
@@ -1306,7 +1495,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
-            yield ray.get(result.partition())
+            yield result.micropartition()
 
     def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
         result_pset = RayPartitionSet()
@@ -1328,7 +1517,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             metadata_accessor = PartitionMetadataAccessor.from_metadata_list([v.metadata() for v in pset.values()])
             for i, (pid, py_mat_result) in enumerate(pset.items()):
                 new_pset.set_partition(
-                    pid, RayMaterializedResult(ray.put(py_mat_result.partition()), metadata_accessor, i)
+                    pid, RayMaterializedResult(RayPartition.from_object(ray.put(py_mat_result.partition())), metadata_accessor, i)
                 )
             pset = new_pset
         return self._part_set_cache.put_partition_set(pset=pset)
@@ -1336,35 +1525,102 @@ class RayRunner(Runner[ray.ObjectRef]):
     def runner_io(self) -> RayRunnerIO:
         return RayRunnerIO()
 
-
-class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
+class RayPartition:
     def __init__(
         self,
-        partition: ray.ObjectRef,
+        partition: ray.ObjectRef | tuple[ray.ObjectRef, DaftActor],
+    ) -> None:
+        """Initialize a RayPartition.
+
+        Args:
+            partition: Either a direct object ref to data, or a tuple of (partition_idx, actor_handle)
+        """
+        self._partition = partition
+        self._task_ref = partition if isinstance(partition, ray.ObjectRef) else partition[0]
+
+    @classmethod
+    def from_object(cls, obj_ref: ray.ObjectRef) -> "RayPartition":
+        """Create a RayPartition from a Ray object reference.
+
+        Args:
+            obj_ref: Ray object reference to the partition data
+        """
+        return cls(obj_ref)
+
+    @classmethod
+    def from_actor(cls, partition_idx: ray.ObjectRef, actor: DaftActor) -> "RayPartition":
+        """Create a RayPartition from an actor and partition index.
+
+        Args:
+            partition_idx: Index of partition in actor
+            actor: Actor handle containing the partition
+        """
+        return cls((partition_idx, actor))
+    
+    def get_actor(self) -> DaftActor | None:
+        """Get the actor handle for the partition."""
+        if isinstance(self._partition, tuple):
+            return self._partition[1]
+        return None
+
+    def get_data(self) -> MicroPartition:
+        """Get the partition data as a MicroPartition."""
+        if isinstance(self._partition, tuple):
+            idx, actor = self._partition
+            ref = actor.pop_partition.remote(idx)
+            self._partition = ref
+            return ray.get(ref)
+        return ray.get(self._partition)
+    
+    def get_data_ref(self) -> ray.ObjectRef:
+        """Get the partition data as a Ray object reference."""
+        if isinstance(self._partition, tuple):
+            idx, actor = self._partition
+            ref = actor.pop_partition.remote(idx)
+            self._partition = ref
+            return ref
+        return self._partition
+
+    def get_metadata_ref(self) -> ray.ObjectRef:
+        """Get the partition metadata as a Ray object reference."""
+        if isinstance(self._partition, tuple):
+            idx, actor = self._partition
+            return actor.get_metadata.remote(idx)
+        return get_metas.remote(self._partition)
+
+    def get_task_ref(self) -> ray.ObjectRef:
+        """Get the reference to the task that produced this partition."""
+        return self._task_ref
+
+
+class RayMaterializedResult(MaterializedResult[RayPartition]):
+    def __init__(
+        self,
+        partition: RayPartition,
         metadatas: PartitionMetadataAccessor | None = None,
         metadata_idx: int | None = None,
     ):
         self._partition = partition
         if metadatas is None:
             assert metadata_idx is None
-            metadatas = PartitionMetadataAccessor(get_metas.remote(self._partition))
+            metadatas = PartitionMetadataAccessor(self._partition.get_metadata_ref())
             metadata_idx = 0
         self._metadatas = metadatas
         self._metadata_idx = metadata_idx
 
-    def partition(self) -> ray.ObjectRef:
+    def partition(self) -> RayPartition:
         return self._partition
 
     def micropartition(self) -> MicroPartition:
-        return ray.get(self._partition)
+        return self._partition.get_data()
 
     def metadata(self) -> PartitionMetadata:
         return self._metadatas.get_index(self._metadata_idx)
 
     def cancel(self) -> None:
-        return ray.cancel(self._partition)
+        return ray.cancel(self._partition.get_task_ref())
 
-    def _noop(self, _: ray.ObjectRef) -> None:
+    def _noop(self, _: RayPartition) -> None:
         return None
 
 

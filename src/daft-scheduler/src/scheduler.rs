@@ -47,8 +47,8 @@ pub struct PhysicalPlanScheduler {
 impl PhysicalPlanScheduler {
     fn plan(&self) -> PhysicalPlanRef {
         match self.query_stage.as_ref() {
-            QueryStageOutput::Partial { physical_plan, .. } => physical_plan.clone(),
-            QueryStageOutput::Final { physical_plan } => physical_plan.clone(),
+            QueryStageOutput::Shuffle { physical_plan, .. } => physical_plan.clone(),
+            QueryStageOutput::Map { physical_plan } => physical_plan.clone(),
         }
     }
 }
@@ -66,7 +66,7 @@ impl PhysicalPlanScheduler {
             let logical_plan = logical_plan_builder.builder.build();
             let physical_plan: PhysicalPlanRef =
                 logical_to_physical(logical_plan, cfg.config.clone())?;
-            Ok(QueryStageOutput::Final { physical_plan }.into())
+            Ok(QueryStageOutput::Map { physical_plan }.into())
         })
     }
 
@@ -87,6 +87,11 @@ impl PhysicalPlanScheduler {
         serde_json::to_string(&self.plan())
             .map_err(|e| pyo3::PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
     }
+
+    pub fn is_shuffle(&self) -> bool {
+        matches!(self.query_stage.as_ref(), QueryStageOutput::Shuffle { .. })
+    }
+
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(
         &self,
@@ -525,6 +530,39 @@ fn physical_plan_to_partition_tasks(
                     let reduced = py
                         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                         .getattr(pyo3::intern!(py, "reduce_merge"))?
+                        .call1((mapped,))?;
+                    Ok(reduced.into())
+                }
+                ShuffleExchangeStrategy::ActorShuffle { target_spec } => {
+                    let mapped = match target_spec.as_ref() {
+                        daft_logical_plan::ClusteringSpec::Hash(hash_clustering_config) => {
+                            let partition_by_pyexprs: Vec<PyExpr> = hash_clustering_config
+                                .by
+                                .iter()
+                                .map(|expr| PyExpr::from(expr.clone()))
+                                .collect();
+                            py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                                .getattr(pyo3::intern!(py, "fanout_by_hash"))?
+                                .call1((
+                                    upstream_iter,
+                                    hash_clustering_config.num_partitions,
+                                    partition_by_pyexprs,
+                                ))?
+                        }
+                        daft_logical_plan::ClusteringSpec::Random(random_clustering_config) => py
+                            .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                            .getattr(pyo3::intern!(py, "fanout_random"))?
+                            .call1((upstream_iter, random_clustering_config.num_partitions()))?,
+                        daft_logical_plan::ClusteringSpec::Range(_) => {
+                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                        }
+                        daft_logical_plan::ClusteringSpec::Unknown(_) => {
+                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                        }
+                    };
+                    let reduced = py
+                        .import(pyo3::intern!(py, "daft.execution.shuffles.actor_shuffle"))?
+                        .getattr(pyo3::intern!(py, "actor_shuffle"))?
                         .call1((mapped,))?;
                     Ok(reduced.into())
                 }

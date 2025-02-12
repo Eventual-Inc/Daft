@@ -52,6 +52,9 @@ class PhysicalPlanScheduler:
     def to_json_string(self) -> str:
         return self._scheduler.to_json_string()
 
+    def is_shuffle(self) -> bool:
+        return self._scheduler.is_shuffle()
+
     def to_partition_tasks(
         self,
         psets: dict[str, list[PartitionT]],

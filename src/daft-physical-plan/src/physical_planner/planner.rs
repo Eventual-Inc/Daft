@@ -111,11 +111,11 @@ impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum QueryStageOutput {
-    Partial {
+    Shuffle {
         physical_plan: PhysicalPlanRef,
-        source_id: usize,
+        source_id: Option<usize>,
     },
-    Final {
+    Map {
         physical_plan: PhysicalPlanRef,
     },
 }
@@ -123,18 +123,18 @@ pub enum QueryStageOutput {
 impl QueryStageOutput {
     pub fn unwrap(self) -> (Option<usize>, PhysicalPlanRef) {
         match self {
-            Self::Partial {
+            Self::Shuffle {
                 physical_plan,
                 source_id,
-            } => (Some(source_id), physical_plan),
-            Self::Final { physical_plan } => (None, physical_plan),
+            } => (source_id, physical_plan),
+            Self::Map { physical_plan } => (None, physical_plan),
         }
     }
 
     pub fn source_id(&self) -> Option<usize> {
         match self {
-            Self::Partial { source_id, .. } => Some(*source_id),
-            Self::Final { .. } => None,
+            Self::Shuffle { source_id, .. } => source_id.clone(),
+            Self::Map { .. } => None,
         }
     }
 }
@@ -190,15 +190,22 @@ impl AdaptivePlanner {
                 "Physical plan remaining:\n {}",
                 self.physical_plan.repr_ascii(true)
             );
-            Ok(QueryStageOutput::Partial {
+            Ok(QueryStageOutput::Shuffle {
                 physical_plan,
-                source_id,
+                source_id: Some(source_id),
             })
         } else {
             log::info!("Emitting final plan:\n {}", physical_plan.repr_ascii(true));
 
             self.status = AdaptivePlannerStatus::Done;
-            Ok(QueryStageOutput::Final { physical_plan })
+            if matches!(physical_plan.as_ref(), PhysicalPlan::ShuffleExchange(..)) {
+                Ok(QueryStageOutput::Shuffle {
+                    physical_plan,
+                    source_id: None,
+                })
+            } else {
+                Ok(QueryStageOutput::Map { physical_plan })
+            }
         }
     }
 
