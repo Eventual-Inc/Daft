@@ -913,24 +913,33 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_glob_scan_task_stats() -> DaftResult<()> {
+    async fn test_glob_single_file_stats() -> DaftResult<()> {
+        let glob_scan_operator = make_glob_scan_operator(1, true).await;
+        let scan_tasks = tokio::task::spawn_blocking(move || {
+            glob_scan_operator.to_scan_tasks(Pushdowns::default())
+        })
+        .await
+        .unwrap()?;
+        assert_eq!(scan_tasks.len(), 1, "Expected 1 scan task");
+        assert_eq!(
+            scan_tasks[0].num_rows(),
+            Some(100),
+            "Expected 100 rows in the first scan task"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_glob_multiple_files_stats() -> DaftResult<()> {
         let glob_scan_operator = make_glob_scan_operator(8, true).await;
         let scan_tasks = tokio::task::spawn_blocking(move || {
             glob_scan_operator.to_scan_tasks(Pushdowns::default())
         })
         .await
         .unwrap()?;
-
-        assert_eq!(
-            scan_tasks[0].num_rows(),
-            Some(100),
-            "Expected 100 rows in the first scan task"
-        );
-        assert_eq!(
-            scan_tasks[1].num_rows(),
-            None,
-            "We should not be able to get the number of rows for the second scan task"
-        );
+        assert!(scan_tasks.len() > 1, "Expected more than 1 scan tasks");
+        assert_eq!(scan_tasks[0].num_rows(), Some(100), "We should be able to populate stats from inference when the scan task's file matches the file used during inference");
+        assert_eq!(scan_tasks[1].num_rows(), Some(100), "We should be able to populate stats from inference when the scan task's file matches the file used during inference");
         Ok(())
     }
 

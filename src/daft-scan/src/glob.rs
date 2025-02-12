@@ -415,7 +415,6 @@ impl ScanOperator for GlobScanOperator {
             } else {
                 (None, None)
             };
-        let mut populate_first_scan_task_stats = first_filepath.is_some();
         // Create one ScanTask per file.
         files
             .enumerate()
@@ -426,11 +425,6 @@ impl ScanOperator for GlobScanOperator {
                         size: size_bytes,
                         ..
                     } = f?;
-                    debug_assert!(
-                        !populate_first_scan_task_stats
-                            || path == *first_filepath.expect("If we populate stats for the first scan task, then the first filepath should be populated"),
-                        "Currently the parallel globber should process files in the same order as during schema inference. If this assertion fails, then the ordering guarantees have changed and we should update how we populate stats for the first scan task."
-                    );
                     // Create partition values from hive partitions, if any.
                     let mut partition_values = if hive_partitioning {
                         let hive_partitions = parse_hive_partitioning(&path)?;
@@ -473,16 +467,17 @@ impl ScanOperator for GlobScanOperator {
                     let chunk_spec = row_group.map(ChunkSpec::Parquet);
                     Ok(Some(ScanTask::new(
                         vec![DataSource::File {
-                            path,
-                            chunk_spec,
-                            size_bytes,
-                            iceberg_delete_files: None,
-                            metadata: if populate_first_scan_task_stats {
-                                populate_first_scan_task_stats = false;
+                            metadata: if let Some(first_filepath) = first_filepath
+                                && path == *first_filepath
+                            {
                                 first_metadata.cloned()
                             } else {
                                 None
                             },
+                            path,
+                            chunk_spec,
+                            size_bytes,
+                            iceberg_delete_files: None,
                             partition_spec,
                             statistics: None,
                             parquet_metadata: None,
