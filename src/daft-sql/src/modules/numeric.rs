@@ -187,7 +187,7 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
                 Some(LiteralValue::UInt64(u)) => *u as i32,
                 _ => invalid_operation_err!("round precision must be an integer"),
             };
-            Ok(round(args[0].clone(), precision))
+            Ok(round(args[0].clone(), Some(precision)))
         }
         SQLNumericExpr::Clip => {
             ensure!(args.len() == 3, "clip takes exactly three arguments");
