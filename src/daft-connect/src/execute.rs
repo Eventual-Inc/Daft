@@ -8,7 +8,6 @@ use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_session::Session;
 use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
