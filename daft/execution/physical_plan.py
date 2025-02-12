@@ -396,7 +396,19 @@ def hash_join(
 
     join_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
     right_partition_counter = 0
+    next_join_task_to_emit = 0
     while True:
+        # Check if we have any join tasks that are ready to be emitted
+        while len(join_tasks) > 0 and join_tasks[next_join_task_to_emit].done():
+            to_emit = join_tasks.pop(next_join_task_to_emit)
+            size_bytes = to_emit.partition_metadata().size_bytes
+            yield PartitionTaskBuilder[PartitionT](
+                inputs=[to_emit.partition()],
+                partial_metadatas=[to_emit.partition_metadata()],
+                resource_request=ResourceRequest(memory_bytes=size_bytes),
+            )
+            next_join_task_to_emit += 1
+
         # Find all partitions that are ready to be joined
         ready_partitions = [
             partition_num
@@ -433,19 +445,18 @@ def hash_join(
                 else:
                     break
 
-    # yield results of join tasks in order of partition number
-    for partition in range(len(join_tasks)):
-        while not join_tasks[partition].done():
-            logger.debug("join blocked on completion of join task %s", join_tasks[partition])
+    # Emit the remaining join tasks in order of partition number
+    while len(join_tasks) > 0:
+        while not join_tasks[next_join_task_to_emit].done():
             yield None
-
-        finished_join_task = join_tasks.pop(partition)
-        size_bytes = finished_join_task.partition_metadata().size_bytes
+        to_emit = join_tasks.pop(next_join_task_to_emit)
+        size_bytes = to_emit.partition_metadata().size_bytes
         yield PartitionTaskBuilder[PartitionT](
-            inputs=[finished_join_task.partition()],
-            partial_metadatas=[finished_join_task.partition_metadata()],
+            inputs=[to_emit.partition()],
+            partial_metadatas=[to_emit.partition_metadata()],
             resource_request=ResourceRequest(memory_bytes=size_bytes),
         )
+        next_join_task_to_emit += 1
 
 
 def _create_broadcast_join_step(
