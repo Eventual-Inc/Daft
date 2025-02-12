@@ -18,7 +18,7 @@ daft-connect = {path = "src/daft-connect", optional = true}
 daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
-daft-dashboard-server = {path = "src/daft-dashboard-server"}
+daft-dashboard-server = {path = "src/daft-dashboard-server", features = ["python"]}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}

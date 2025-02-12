@@ -1,3 +1,8 @@
+[[bin]]
+features = []
+name = "main"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0"
 chrono = {workspace = true, features = ["serde"]}
@@ -15,6 +20,9 @@ log.workspace = true
 pyo3.workspace = true
 serde.workspace = true
 tokio.workspace = true
+
+[features]
+python = []
 
 [lints]
 workspace = true

@@ -1,11 +1,8 @@
 mod response;
 
-use std::{
-    net::Ipv4Addr,
-    path::{Path, PathBuf},
-    process::exit,
-    sync::OnceLock,
-};
+#[cfg(not(feature = "python"))]
+use std::path::Path;
+use std::{net::Ipv4Addr, sync::OnceLock};
 
 use chrono::{DateTime, Utc};
 use http_body_util::{combinators::BoxBody, BodyExt};
@@ -18,18 +15,28 @@ use hyper::{
 use hyper_staticfile::{AcceptEncoding, ResolveResult, Resolver, ResponseBuilder};
 use hyper_util::rt::TokioIo;
 use parking_lot::RwLock;
-use pyo3::{
-    pyfunction,
-    types::{PyModule, PyModuleMethods},
-    wrap_pyfunction, Bound, PyResult,
-};
 use serde::{Deserialize, Serialize};
-use tokio::{net::TcpListener, spawn};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    spawn,
+};
+#[cfg(feature = "python")]
+use {
+    pyo3::{
+        ffi::PyErr_CheckSignals,
+        pyfunction,
+        types::{PyModule, PyModuleMethods},
+        wrap_pyfunction, Bound, PyResult,
+    },
+    std::{pin::pin, time::Duration},
+    tokio::time::sleep,
+};
 
 type Req<T = Incoming> = Request<T>;
 type Res = Response<BoxBody<Bytes, std::io::Error>>;
 type ServerResult<T> = Result<T, (StatusCode, anyhow::Error)>;
 
+#[cfg(feature = "python")]
 const NUMBER_OF_WORKER_THREADS: usize = 3;
 const SERVER_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const SERVER_PORT: u16 = 3238;
@@ -130,88 +137,121 @@ async fn dashboard_server(req: Req, resolver: Option<Resolver>) -> ServerResult<
     })
 }
 
-pub async fn run(static_assets_path: Option<&Path>) {
-    env_logger::try_init().ok().unwrap_or_default();
+fn handle_stream(stream: TcpStream, resolver: Option<Resolver>) {
+    let io = TokioIo::new(stream);
+    spawn(async move {
+        http1::Builder::new()
+            .serve_connection(
+                io,
+                service_fn(move |request| {
+                    let resolver = resolver.clone();
+                    async move {
+                        Ok::<_, std::convert::Infallible>(
+                            match dashboard_server(request, resolver).await {
+                                Ok(response) => response,
+                                Err((status_code, error)) => {
+                                    response::with_body(status_code, error.to_string())
+                                }
+                            },
+                        )
+                    }
+                }),
+            )
+            .await
+            .expect("Endpoint should always be able to be served");
+    });
+}
 
-    let Ok(listener) = TcpListener::bind((SERVER_ADDR, SERVER_PORT)).await else {
-        log::info!(
-            r#"There's another process already bound to {SERVER_ADDR}:{SERVER_PORT}.
-If this is the `daft-dashboard-client` (i.e., if you've already ran `daft.dashboard.launch()` inside of a python script), then you don't have to do anything else.
-
-However, if this is another process, then kill that other server (by running `kill -9 $(lsof -t -i :3238)` inside of your shell) and then rerun `daft.dashboard.launch()`."#
-        );
-        return;
-    };
+#[cfg(not(feature = "python"))]
+pub async fn launch(static_assets_path: Option<&Path>) {
+    let listener = TcpListener::bind((SERVER_ADDR, SERVER_PORT))
+        .await
+        .unwrap_or_else(|error| panic!("Failed to bind to `{SERVER_ADDR}:{SERVER_PORT}`, another process is already bound to it; consider running `kill -9 $(lsof -t -i :3238)` in order to kill it; {error}"));
 
     let resolver = static_assets_path.map(Resolver::new);
 
     loop {
-        let stream = match listener.accept().await {
-            Ok((stream, _)) => stream,
-            Err(error) => {
-                log::warn!("Unable to accept incoming connection: {error}");
-                continue;
-            }
-        };
-        let io = TokioIo::new(stream);
-        spawn({
-            let resolver = resolver.clone();
-            async move {
-                http1::Builder::new()
-                    .serve_connection(
-                        io,
-                        service_fn(|request| {
-                            let resolver = resolver.clone();
-                            async move {
-                                Ok::<_, std::convert::Infallible>(
-                                    match dashboard_server(request, resolver).await {
-                                        Ok(response) => response,
-                                        Err((status_code, error)) => {
-                                            response::with_body(status_code, error.to_string())
-                                        }
-                                    },
-                                )
-                            }
-                        }),
-                    )
-                    .await
-                    .expect("Endpoint should always be able to be served");
-            }
-        });
+        let (stream, _) = listener
+            .accept()
+            .await
+            .unwrap_or_else(|error| panic!("Unable to accept incoming connection: {error}"));
+        handle_stream(stream, resolver.clone());
     }
 }
 
+#[cfg(feature = "python")]
 #[pyfunction(signature = (static_assets_path, block = false))]
-fn launch_dashboard(static_assets_path: String, block: Option<bool>) {
-    fn launch_on_tokio_runtime(static_assets_path: &Path) {
+#[pyo3(name = "launch_dashboard")]
+fn launch(static_assets_path: String, block: Option<bool>) {
+    async fn interrupt_handler() {
+        loop {
+            unsafe {
+                if PyErr_CheckSignals() != 0 {
+                    break;
+                }
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    async fn launch_async(resolver: Resolver) -> BreakReason {
+        let Ok(listener) = TcpListener::bind((SERVER_ADDR, SERVER_PORT)).await else {
+            return BreakReason::PortAlreadyBound;
+        };
+
+        let mut python_signal = pin!(interrupt_handler());
+
+        loop {
+            tokio::select! {
+                stream = listener.accept() => match stream {
+                    Ok((stream, _)) => handle_stream(stream, Some(resolver.clone())),
+                    Err(error) => log::warn!("Unable to accept incoming connection: {error}"),
+                },
+                () = &mut python_signal => break BreakReason::PythonSignalInterrupt,
+            }
+        }
+    }
+
+    enum BreakReason {
+        PortAlreadyBound,
+        PythonSignalInterrupt,
+    }
+
+    env_logger::try_init().ok().unwrap_or_default();
+    let resolver = Resolver::new(static_assets_path);
+    let block = block.unwrap_or(false);
+
+    let launch_on_tokio_runtime = move || {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(NUMBER_OF_WORKER_THREADS)
             .enable_all()
             .build()
-            .expect("Failed to launch server")
-            .block_on(run(Some(static_assets_path)));
-    }
-
-    let block = block.unwrap_or(false);
-    let static_assets_path = PathBuf::from(static_assets_path);
+            .expect("Tokio runtime should always be able to be built")
+            .block_on(launch_async(resolver))
+    };
 
     if block {
-        launch_on_tokio_runtime(&static_assets_path);
-        panic!(
-            r#"Failed to bind to port {SERVER_ADDR}:{SERVER_PORT}; maybe another process is running on it?
+        if matches!(launch_on_tokio_runtime(), BreakReason::PortAlreadyBound) {
+            panic!(
+                r#"There's another process already bound to {SERVER_ADDR}:{SERVER_PORT}.
+If this is the `daft-dashboard-client` (i.e., if you already ran `daft.dashboard.launch(block=False)` inside of a python script previously), then you don't have to do anything else.
 
-You can find what processes are attached to that port by running the following command in your shell: `lsof -t -i :3238`."#
-        );
+However, if this is another process, then kill that other server (by running `kill -9 $(lsof -t -i :3238)` inside of your shell) and then rerun `daft.dashboard.launch()`."#
+            );
+        };
     } else if matches!(
-        fork::fork().expect("Failed to fork server process"),
-        fork::Fork::Child,
+        fork::fork().expect("Failed to fork child process"),
+        fork::Fork::Child
+    ) && matches!(
+        launch_on_tokio_runtime(),
+        BreakReason::PythonSignalInterrupt
     ) {
-        launch_on_tokio_runtime(&static_assets_path);
-        exit(0);
+        unreachable!("Can't receive a python signal interrupt in an orphaned process");
     }
 }
 
+#[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction!(launch_dashboard, parent)?)?;
+    parent.add_function(wrap_pyfunction!(launch, parent)?)?;
     Ok(())
 }

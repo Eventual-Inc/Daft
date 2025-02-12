@@ -15,4 +15,4 @@ def launch(block: bool = False):
     """
     path = Path(str(resources.files("daft"))) / "static_dashboard_assets"
     os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
-    native.launch(static_assets_path=str(path), block=block)
+    native.launch_dashboard(static_assets_path=str(path), block=block)
