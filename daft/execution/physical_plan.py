@@ -1646,6 +1646,7 @@ def sort(
             execution_step.ReduceMergeAndSort(
                 sort_by=sort_by,
                 descending=descending,
+                nulls_first=nulls_first,
                 bounds=per_part_boundaries,
             )
             for per_part_boundaries in per_partition_bounds
