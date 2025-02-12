@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{col, optimization::requires_computation, Expr};
+use daft_dsl::{optimization::requires_computation, resolved_col, Expr};
 use indexmap::IndexSet;
 
 use super::OptimizerRule;
@@ -59,7 +59,7 @@ impl OptimizerRule for LiftProjectFromAgg {
                             if matches!(e.as_ref(), Expr::Agg(_)) {
                                 let id = e.semantic_id(schema.as_ref()).id;
                                 agg_exprs.insert(e.alias(id.clone()));
-                                Ok(Transformed::yes(col(id)))
+                                Ok(Transformed::yes(resolved_col(id)))
                             } else {
                                 Ok(Transformed::no(e))
                             }
@@ -82,7 +82,7 @@ impl OptimizerRule for LiftProjectFromAgg {
                 let project_exprs = aggregate
                     .groupby
                     .iter()
-                    .map(|e| col(e.name()))
+                    .map(|e| resolved_col(e.name()))
                     .chain(lifted_exprs)
                     .collect::<Vec<_>>();
 
@@ -110,7 +110,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_dsl::col;
+    use daft_dsl::unbound_col;
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::LiftProjectFromAgg;
@@ -147,10 +147,13 @@ mod tests {
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
                 vec![
-                    col("a").sum(),
-                    col("a").sum().add(col("b").sum()).alias("a_plus_b"),
-                    col("b").mean(),
-                    col("b").mean().alias("c"),
+                    unbound_col("a").sum(),
+                    unbound_col("a")
+                        .sum()
+                        .add(unbound_col("b").sum())
+                        .alias("a_plus_b"),
+                    unbound_col("b").mean(),
+                    unbound_col("b").mean().alias("c"),
                 ],
                 vec![],
             )?
@@ -158,24 +161,26 @@ mod tests {
 
         let schema = dummy_scan_node(scan_op.clone()).schema();
 
-        let a_sum_id = col("a").sum().semantic_id(schema.as_ref()).id;
-        let b_sum_id = col("b").sum().semantic_id(schema.as_ref()).id;
-        let b_mean_id = col("b").mean().semantic_id(schema.as_ref()).id;
+        let a_sum_id = unbound_col("a").sum().semantic_id(schema.as_ref()).id;
+        let b_sum_id = unbound_col("b").sum().semantic_id(schema.as_ref()).id;
+        let b_mean_id = unbound_col("b").mean().semantic_id(schema.as_ref()).id;
 
         let expected = dummy_scan_node(scan_op)
             .aggregate(
                 vec![
-                    col("a").sum().alias(a_sum_id.clone()),
-                    col("b").sum().alias(b_sum_id.clone()),
-                    col("b").mean().alias(b_mean_id.clone()),
+                    unbound_col("a").sum().alias(a_sum_id.clone()),
+                    unbound_col("b").sum().alias(b_sum_id.clone()),
+                    unbound_col("b").mean().alias(b_mean_id.clone()),
                 ],
                 vec![],
             )?
             .select(vec![
-                col(a_sum_id.clone()).alias("a"),
-                col(a_sum_id).add(col(b_sum_id)).alias("a_plus_b"),
-                col(b_mean_id.clone()).alias("b"),
-                col(b_mean_id).alias("c"),
+                unbound_col(a_sum_id.clone()).alias("a"),
+                unbound_col(a_sum_id)
+                    .add(unbound_col(b_sum_id))
+                    .alias("a_plus_b"),
+                unbound_col(b_mean_id.clone()).alias("b"),
+                unbound_col(b_mean_id).alias("c"),
             ])?
             .build();
 
@@ -194,36 +199,41 @@ mod tests {
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
                 vec![
-                    col("a").sum(),
-                    col("a").sum().add(col("b").sum()).alias("a_plus_b"),
-                    col("b").mean(),
-                    col("b").mean().alias("c"),
+                    unbound_col("a").sum(),
+                    unbound_col("a")
+                        .sum()
+                        .add(unbound_col("b").sum())
+                        .alias("a_plus_b"),
+                    unbound_col("b").mean(),
+                    unbound_col("b").mean().alias("c"),
                 ],
-                vec![col("groupby_key")],
+                vec![unbound_col("groupby_key")],
             )?
             .build();
 
         let schema = dummy_scan_node(scan_op.clone()).schema();
 
-        let a_sum_id = col("a").sum().semantic_id(schema.as_ref()).id;
-        let b_sum_id = col("b").sum().semantic_id(schema.as_ref()).id;
-        let b_mean_id = col("b").mean().semantic_id(schema.as_ref()).id;
+        let a_sum_id = unbound_col("a").sum().semantic_id(schema.as_ref()).id;
+        let b_sum_id = unbound_col("b").sum().semantic_id(schema.as_ref()).id;
+        let b_mean_id = unbound_col("b").mean().semantic_id(schema.as_ref()).id;
 
         let expected = dummy_scan_node(scan_op)
             .aggregate(
                 vec![
-                    col("a").sum().alias(a_sum_id.clone()),
-                    col("b").sum().alias(b_sum_id.clone()),
-                    col("b").mean().alias(b_mean_id.clone()),
+                    unbound_col("a").sum().alias(a_sum_id.clone()),
+                    unbound_col("b").sum().alias(b_sum_id.clone()),
+                    unbound_col("b").mean().alias(b_mean_id.clone()),
                 ],
-                vec![col("groupby_key")],
+                vec![unbound_col("groupby_key")],
             )?
             .select(vec![
-                col("groupby_key"),
-                col(a_sum_id.clone()).alias("a"),
-                col(a_sum_id).add(col(b_sum_id)).alias("a_plus_b"),
-                col(b_mean_id.clone()).alias("b"),
-                col(b_mean_id).alias("c"),
+                unbound_col("groupby_key"),
+                unbound_col(a_sum_id.clone()).alias("a"),
+                unbound_col(a_sum_id)
+                    .add(unbound_col(b_sum_id))
+                    .alias("a_plus_b"),
+                unbound_col(b_mean_id.clone()).alias("b"),
+                unbound_col(b_mean_id).alias("c"),
             ])?
             .build();
 
@@ -241,10 +251,13 @@ mod tests {
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
                 vec![
-                    col("a").sum(),
-                    col("a").add(col("b")).sum().alias("a_plus_b"),
-                    col("b").mean(),
-                    col("b").mean().alias("c"),
+                    unbound_col("a").sum(),
+                    unbound_col("a")
+                        .add(unbound_col("b"))
+                        .sum()
+                        .alias("a_plus_b"),
+                    unbound_col("b").mean(),
+                    unbound_col("b").mean().alias("c"),
                 ],
                 vec![],
             )?
@@ -267,12 +280,15 @@ mod tests {
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
                 vec![
-                    col("a").sum(),
-                    col("a").add(col("b")).sum().alias("a_plus_b"),
-                    col("b").mean(),
-                    col("b").mean().alias("c"),
+                    unbound_col("a").sum(),
+                    unbound_col("a")
+                        .add(unbound_col("b"))
+                        .sum()
+                        .alias("a_plus_b"),
+                    unbound_col("b").mean(),
+                    unbound_col("b").mean().alias("c"),
                 ],
-                vec![col("groupby_key")],
+                vec![unbound_col("groupby_key")],
             )?
             .build();
 

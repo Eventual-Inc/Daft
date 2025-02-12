@@ -73,7 +73,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit, ExprRef};
+    use daft_dsl::{lit, resolved_col, unbound_col, ExprRef};
     use daft_logical_plan::partitioning::{
         ClusteringSpec, HashClusteringConfig, UnknownClusteringConfig,
     };
@@ -90,23 +90,25 @@ mod tests {
     fn test_clustering_spec_preserving() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
         let expressions = vec![
-            (col("a").rem(lit(2))), // this is now "a"
-            col("b"),
-            col("a").alias("aa"),
+            (unbound_col("a").rem(lit(2))), // this is now "a"
+            unbound_col("b"),
+            unbound_col("a").alias("aa"),
         ];
         let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(Some(3), vec![col("a"), col("b")])?
+        .hash_repartition(Some(3), vec![unbound_col("a"), unbound_col("b")])?
         .select(expressions)?
         .build();
 
         let physical_plan = logical_to_physical(logical_plan, cfg)?;
 
-        let expected_clustering_spec =
-            ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("aa"), col("b")]));
+        let expected_clustering_spec = ClusteringSpec::Hash(HashClusteringConfig::new(
+            3,
+            vec![resolved_col("aa"), resolved_col("b")],
+        ));
 
         assert_eq!(
             expected_clustering_spec,
@@ -121,10 +123,10 @@ mod tests {
     #[rstest]
     fn test_clustering_spec_destroying(
         #[values(
-            vec![col("a"), col("c").alias("b")], // original "b" is gone even though "b" is present
-            vec![col("b")],                      // original "a" dropped
-            vec![col("a").rem(lit(2)), col("b")],   // original "a" gone
-            vec![col("c")],                      // everything gone
+            vec![unbound_col("a"), unbound_col("c").alias("b")], // original "b" is gone even though "b" is present
+            vec![unbound_col("b")],                      // original "a" dropped
+            vec![unbound_col("a").rem(lit(2)), unbound_col("b")],   // original "a" gone
+            vec![unbound_col("c")],                      // everything gone
         )]
         projection: Vec<ExprRef>,
     ) -> DaftResult<()> {
@@ -136,7 +138,7 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(Some(3), vec![col("a"), col("b")])?
+        .hash_repartition(Some(3), vec![unbound_col("a"), unbound_col("b")])?
         .select(projection)?
         .build();
 
@@ -156,21 +158,28 @@ mod tests {
     #[test]
     fn test_clustering_spec_prefer_existing_names() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
-        let expressions = vec![col("a").alias("y"), col("a"), col("a").alias("z"), col("b")];
+        let expressions = vec![
+            unbound_col("a").alias("y"),
+            unbound_col("a"),
+            unbound_col("a").alias("z"),
+            unbound_col("b"),
+        ];
 
         let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(Some(3), vec![col("a"), col("b")])?
+        .hash_repartition(Some(3), vec![unbound_col("a"), unbound_col("b")])?
         .select(expressions)?
         .build();
 
         let physical_plan = logical_to_physical(logical_plan, cfg)?;
 
-        let expected_clustering_spec =
-            ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("a"), col("b")]));
+        let expected_clustering_spec = ClusteringSpec::Hash(HashClusteringConfig::new(
+            3,
+            vec![resolved_col("a"), resolved_col("b")],
+        ));
 
         assert_eq!(
             expected_clustering_spec,

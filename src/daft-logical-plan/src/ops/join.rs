@@ -6,7 +6,8 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::{
-    col, join::infer_join_schema, optimization::replace_columns_with_expressions, Expr, ExprRef,
+    join::infer_join_schema, optimization::replace_columns_with_expressions, resolved_col, Expr,
+    ExprRef,
 };
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -120,7 +121,9 @@ impl Join {
                     .iter()
                     .zip(right_on.iter())
                     .filter_map(|(l, r)| match (l.as_ref(), r.as_ref()) {
-                        (Expr::Column(l_name), Expr::Column(r_name)) if l_name == r_name => {
+                        (Expr::ResolvedColumn(l_name), Expr::ResolvedColumn(r_name))
+                            if l_name == r_name =>
+                        {
                             Some(l_name.to_string())
                         }
                         _ => None,
@@ -176,9 +179,9 @@ impl Join {
                     .iter()
                     .map(|name| {
                         if let Some(new_name) = right_rename_mapping.get(name) {
-                            Expr::Alias(col(name.clone()), new_name.clone().into()).into()
+                            Expr::Alias(resolved_col(name.clone()), new_name.clone().into()).into()
                         } else {
-                            col(name.clone())
+                            resolved_col(name.clone())
                         }
                     })
                     .collect();
@@ -187,7 +190,7 @@ impl Join {
 
                 let right_on_replace_map = right_rename_mapping
                     .iter()
-                    .map(|(old_name, new_name)| (old_name.clone(), col(new_name.clone())))
+                    .map(|(old_name, new_name)| (old_name.clone(), resolved_col(new_name.clone())))
                     .collect::<HashMap<_, _>>();
 
                 // change any column references in the right_on expressions to the new column names

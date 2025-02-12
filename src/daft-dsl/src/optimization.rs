@@ -7,7 +7,7 @@ use crate::{Expr, ExprRef};
 pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
     let mut cols = vec![];
     e.apply(&mut |expr: &ExprRef| {
-        if let Expr::Column(ref name) = &**expr {
+        if let Expr::ResolvedColumn(ref name) = &**expr {
             cols.push(name.to_string());
         }
         Ok(TreeNodeRecursion::Continue)
@@ -20,7 +20,11 @@ pub fn requires_computation(e: &Expr) -> bool {
     // Returns whether or not this expression runs any computation on the underlying data
     match e {
         Expr::Alias(child, _) => requires_computation(child),
-        Expr::Column(..) | Expr::Literal(_) | Expr::OuterReferenceColumn { .. } => false,
+        Expr::ResolvedColumn(..)
+        | Expr::Literal(_)
+        | Expr::UnresolvedColumn(..)
+        | Expr::JoinSideColumn(..)
+        | Expr::OuterReferenceColumn(..) => false,
         Expr::Agg(..)
         | Expr::BinaryOp { .. }
         | Expr::Cast(..)
@@ -46,7 +50,7 @@ pub fn replace_columns_with_expressions(
 ) -> ExprRef {
     let transformed = expr
         .transform(&|e: ExprRef| {
-            if let Expr::Column(ref name) = e.as_ref()
+            if let Expr::ResolvedColumn(ref name) = e.as_ref()
                 && let Some(tgt) = replace_map.get(name.as_ref())
             {
                 Ok(Transformed::yes(tgt.clone()))

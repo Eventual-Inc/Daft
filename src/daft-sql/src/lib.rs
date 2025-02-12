@@ -29,7 +29,7 @@ mod tests {
     use std::sync::Arc;
 
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
+    use daft_dsl::{lit, unbound_col, Expr, Subquery};
     use daft_logical_plan::{
         logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
         LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
@@ -205,7 +205,8 @@ mod tests {
         let plan = planner.plan_sql(sql).unwrap();
 
         let expected = LogicalPlanBuilder::from(tbl_1)
-            .select(vec![col("test").alias("a")])
+            .alias("tbl1")
+            .select(vec![unbound_col("test").alias("a")])
             .unwrap()
             .build();
         assert_eq!(plan, expected);
@@ -217,8 +218,9 @@ mod tests {
         let plan = planner.plan_sql(sql)?;
 
         let expected = LogicalPlanBuilder::from(tbl_1)
-            .filter(col("test").eq(lit("a")))?
-            .select(vec![col("test").alias("a")])?
+            .alias("tbl1")
+            .filter(unbound_col("test").eq(lit("a")))?
+            .select(vec![unbound_col("test").alias("a")])?
             .build();
 
         assert_eq!(plan, expected);
@@ -230,7 +232,8 @@ mod tests {
         let plan = planner.plan_sql(sql)?;
 
         let expected = LogicalPlanBuilder::from(tbl_1)
-            .select(vec![col("test").alias("a")])?
+            .alias("tbl1")
+            .select(vec![unbound_col("test").alias("a")])?
             .limit(10, true)?
             .build();
 
@@ -244,8 +247,9 @@ mod tests {
         let plan = planner.plan_sql(sql)?;
 
         let expected = LogicalPlanBuilder::from(tbl_1)
-            .select(vec![col("utf8")])?
-            .sort(vec![col("utf8")], vec![true], vec![true])?
+            .alias("tbl1")
+            .select(vec![unbound_col("utf8")])?
+            .sort(vec![unbound_col("utf8")], vec![true], vec![true])?
             .build();
 
         assert_eq!(plan, expected);
@@ -267,16 +271,17 @@ mod tests {
         );
         let plan = planner.plan_sql(&sql)?;
         let expected = LogicalPlanBuilder::from(tbl_2)
+            .alias("tbl2")
             .join_with_null_safe_equal(
-                tbl_3,
-                vec![col("id")],
-                vec![col("id")],
+                LogicalPlanBuilder::from(tbl_3).alias("tbl3"),
+                vec![unbound_col("id")],
+                vec![unbound_col("id")],
                 Some(vec![null_equals_null]),
                 JoinType::Inner,
                 None,
                 JoinOptions::default().prefix("tbl3."),
             )?
-            .select(vec![col("*")])?
+            .select(vec![unbound_col("*")])?
             .build();
         assert_eq!(plan, expected);
         Ok(())
@@ -292,17 +297,18 @@ mod tests {
         let plan = planner.plan_sql(sql)?;
 
         let expected = LogicalPlanBuilder::from(tbl_2)
-            .filter(col("val").gt(lit(0_i64)))?
+            .alias("tbl2")
+            .filter(unbound_col("val").gt(lit(0_i64)))?
             .join_with_null_safe_equal(
-                tbl_3,
-                vec![col("id")],
-                vec![col("id")],
+                LogicalPlanBuilder::from(tbl_3).alias("tbl3"),
+                vec![unbound_col("id")],
+                vec![unbound_col("id")],
                 Some(vec![false]),
                 JoinType::Inner,
                 None,
                 JoinOptions::default().prefix("tbl3."),
             )?
-            .select(vec![col("*")])?
+            .select(vec![unbound_col("*")])?
             .build();
         assert_eq!(plan, expected);
         Ok(())
@@ -372,8 +378,9 @@ mod tests {
         let plan = planner.plan_sql(sql)?;
 
         let expected = LogicalPlanBuilder::from(tbl_1)
-            .aggregate(vec![col("i32").max()], vec![])?
-            .select(vec![col("i32")])?
+            .alias("tbl1")
+            .aggregate(vec![unbound_col("i32").max()], vec![])?
+            .select(vec![unbound_col("i32")])?
             .build();
 
         assert_eq!(plan, expected);
@@ -442,21 +449,23 @@ mod tests {
     ) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query)?;
 
-        let outer_col = Arc::new(Expr::OuterReferenceColumn(OuterReferenceColumn {
-            field: Field::new("i32", DataType::Int32),
-            depth: 1,
-        }));
+        let outer_col = Arc::new(Expr::OuterReferenceColumn(Field::new(
+            "i32",
+            DataType::Int32,
+        )));
         let subquery = LogicalPlanBuilder::from(tbl_2)
-            .filter(col("id").eq(outer_col))?
-            .aggregate(vec![col("id").max()], vec![])?
-            .select(vec![col("id")])?
+            .alias("tbl2")
+            .filter(unbound_col("id").eq(outer_col))?
+            .aggregate(vec![unbound_col("id").max()], vec![])?
+            .select(vec![unbound_col("id")])?
             .build();
 
         let subquery = Arc::new(Expr::Subquery(Subquery { plan: subquery }));
 
         let expected = LogicalPlanBuilder::from(tbl_1)
-            .filter(col("i64").gt(subquery))?
-            .select(vec![col("utf8")])?
+            .alias("tbl1")
+            .filter(unbound_col("i64").gt(subquery))?
+            .select(vec![unbound_col("utf8")])?
             .build();
 
         assert_eq!(plan, expected);

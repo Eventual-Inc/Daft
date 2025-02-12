@@ -131,7 +131,7 @@ mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::col;
+    use daft_dsl::unbound_col;
     #[cfg(feature = "python")]
     use pyo3::Python;
     use rstest::rstest;
@@ -294,7 +294,7 @@ mod tests {
     fn limit_commutes_with_repartition() -> DaftResult<()> {
         let limit = 5;
         let num_partitions = 1;
-        let partition_by = vec![col("a")];
+        let partition_by = vec![unbound_col("a")];
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn limit_commutes_with_projection() -> DaftResult<()> {
         let limit = 5;
-        let proj = vec![col("a")];
+        let proj = vec![unbound_col("a")];
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),

@@ -32,7 +32,7 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, check_column_name_validity
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -1273,7 +1273,8 @@ class DataFrame:
             return result
         elif isinstance(item, str):
             schema = self._builder.schema()
-            check_column_name_validity(item, schema._schema)
+            if item not in schema.column_names() and item != "*":
+                raise ValueError(f"{item} does not exist in schema {schema}")
 
             return col(item)
         elif isinstance(item, Iterable):

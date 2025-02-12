@@ -20,8 +20,8 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
-    col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
-    LiteralValue, SketchType,
+    functions::FunctionEvaluator, null_lit, resolved_col, AggExpr, ApproxPercentileParams, Expr,
+    ExprRef, LiteralValue, SketchType, UnresolvedColumn,
 };
 use daft_logical_plan::FileInfos;
 use num_traits::ToPrimitive;
@@ -539,7 +539,8 @@ impl RecordBatch {
             Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
             Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
-            Expr::Column(name) => self.get_column(name).cloned(),
+            // TODO: remove ability to evaluate on unresolved col once we fix all tests
+            Expr::ResolvedColumn(name) | Expr::UnresolvedColumn(UnresolvedColumn { name, plan_id: None, plan_schema: None }) => self.get_column(name).cloned(),
             Expr::Not(child) => !(self.eval_expression(child)?),
             Expr::IsNull(child) => self.eval_expression(child)?.is_null(),
             Expr::NotNull(child) => self.eval_expression(child)?.not_null(),
@@ -645,6 +646,12 @@ impl RecordBatch {
             Expr::OuterReferenceColumn { .. } => Err(DaftError::ComputeError(
                 "Outer reference columns should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
+            Expr::JoinSideColumn(..) => Err(DaftError::ComputeError(
+                "Join side columns cannot be evaluated directly. This indicates a bug in the executor.".to_string(),
+            )),
+            Expr::UnresolvedColumn(..) => Err(DaftError::ComputeError(
+                "Unresolved columns should be resolved before evaluation.".to_string(),
+            )),
         }?;
 
         if expected_field.name != series.field().name {
@@ -739,7 +746,7 @@ impl RecordBatch {
             .map(|(name, field)| {
                 if current_col_names.contains(name) {
                     // For any fields already in the table, perform a cast
-                    col(name.clone()).cast(&field.dtype)
+                    resolved_col(name.clone()).cast(&field.dtype)
                 } else {
                     // For any fields in schema that are not in self.schema, use fill map to fill with an expression.
                     // If no entry for column name, fall back to null literal (i.e. create a null array for that column).
@@ -955,7 +962,7 @@ impl<'a> IntoIterator for &'a RecordBatch {
 mod test {
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::col;
+    use daft_dsl::resolved_col;
 
     use crate::RecordBatch;
 
@@ -968,12 +975,14 @@ mod test {
             b.field().clone().rename("b"),
         ])?;
         let table = RecordBatch::from_nonempty_columns(vec![a, b])?;
-        let e1 = col("a").add(col("b"));
+        let e1 = resolved_col("a").add(resolved_col("b"));
         let result = table.eval_expression(&e1)?;
         assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 
-        let e2 = col("a").add(col("b")).cast(&DataType::Int64);
+        let e2 = resolved_col("a")
+            .add(resolved_col("b"))
+            .cast(&DataType::Int64);
         let result = table.eval_expression(&e2)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
