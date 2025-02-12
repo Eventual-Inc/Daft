@@ -3,22 +3,11 @@ from __future__ import annotations
 import os
 import socket
 import urllib
-from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 from daft.context import get_context, set_runner_native, set_runner_py, set_runner_ray
 from daft.scarf_telemetry import scarf_telemetry
-
-
-@contextmanager
-def reset_runner():
-    """Reset the runner to allow setting it multiple times in tests."""
-    try:
-        original_runner = get_context()._runner
-        get_context()._runner = None
-        yield
-    finally:
-        get_context()._runner = original_runner
+from tests.actor_pool.test_actor_cuda_devices import reset_runner_with_gpus
 
 
 @patch("daft.scarf_telemetry.get_build_type")
@@ -129,31 +118,31 @@ def test_scarf_telemetry_error_handling(
     assert runner_type is None
 
 
-# Tests for runner integration with scarf_telemetry, commented out because cannot set runner more than once
+# Tests for runner integration with scarf_telemetry
 @patch("daft.context.scarf_telemetry")
-def test_runner_ray_analytics(mock_scarf_telemetry: MagicMock):
-    with reset_runner():
+def test_runner_ray_analytics(mock_scarf_telemetry: MagicMock, monkeypatch):
+    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
         set_runner_ray()
         mock_scarf_telemetry.assert_called_once_with(runner="ray")
 
 
 @patch("daft.context.scarf_telemetry")
-def test_runner_py_analytics(mock_scarf_telemetry: MagicMock):
-    with reset_runner():
+def test_runner_py_analytics(mock_scarf_telemetry: MagicMock, monkeypatch):
+    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
         set_runner_py()
         mock_scarf_telemetry.assert_called_once_with(runner="py")
 
 
 @patch("daft.context.scarf_telemetry")
-def test_runner_native_analytics(mock_scarf_telemetry: MagicMock):
-    with reset_runner():
+def test_runner_native_analytics(mock_scarf_telemetry: MagicMock, monkeypatch):
+    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
         set_runner_native()
         mock_scarf_telemetry.assert_called_once_with(runner="native")
 
 
 @patch("daft.context.scarf_telemetry")
-def test_runner_analytics_with_scarf_opt_out(mock_scarf_telemetry: MagicMock):
-    with reset_runner():
+def test_runner_analytics_with_scarf_opt_out(mock_scarf_telemetry: MagicMock, monkeypatch):
+    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
         os.environ["SCARF_NO_ANALYTICS"] = "true"
         try:
             set_runner_ray()
@@ -163,8 +152,8 @@ def test_runner_analytics_with_scarf_opt_out(mock_scarf_telemetry: MagicMock):
 
 
 @patch("daft.context.scarf_telemetry")
-def test_runner_analytics_with_do_not_track(mock_scarf_telemetry: MagicMock):
-    with reset_runner():
+def test_runner_analytics_with_do_not_track(mock_scarf_telemetry: MagicMock, monkeypatch):
+    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
         os.environ["DO_NOT_TRACK"] = "true"
         try:
             set_runner_ray()
