@@ -43,7 +43,7 @@ def read_json(
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
 
-    Returns:
+    returns:
         DataFrame: parsed DataFrame
     """
     if isinstance(path, list) and len(path) == 0:
