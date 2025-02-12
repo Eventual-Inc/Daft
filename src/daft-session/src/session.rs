@@ -3,8 +3,9 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use daft_catalog::{catalog::Catalogs, DataCatalog, Identifier, Name};
+use daft_catalog::{catalog::Catalogs, DataCatalog, Identifier};
 use daft_logical_plan::LogicalPlanBuilder;
+use uuid::Uuid;
 
 // use options::Options;
 use crate::{
@@ -30,13 +31,14 @@ struct SessionState {
     // TODO execution context
     // TODO temporary! tables come from a catalog, not here!!
     tables: HashMap<String, LogicalPlanBuilder>,
+    // TODO identifier matcher for case-insensitive matching
 }
 
 impl Session {
     /// Creates a new empty session
-    pub fn new(id: &str) -> Self {
+    pub fn empty() -> Self {
         let state = SessionState {
-            _id: id.to_string(),
+            _id: Uuid::new_v4().to_string(),
             _options: Options::default(),
             catalogs: Catalogs::empty(),
             tables: HashMap::new(),
@@ -57,21 +59,20 @@ impl Session {
     }
 
     /// Attaches a catalog to this session, err if already exists.
-    pub fn attach(&self, name: Name, catalog: Arc<dyn DataCatalog>) -> Result<()> {
-        if self.state().catalogs.exists(&name.text) {
+    pub fn attach(&self, name: String, catalog: Arc<dyn DataCatalog>) -> Result<()> {
+        if self.state().catalogs.exists(&name) {
             obj_already_exists_err!("Catalog", &name.into())
         }
-        self.state_mut().catalogs.attach(name.text, catalog);
+        self.state_mut().catalogs.attach(name, catalog);
         Ok(())
     }
 
     /// Detaches a catalog from this session, err if does not exist.
-    pub fn detach(&self, name: &Name) -> Result<()> {
-        if self.state().catalogs.exists(&name.text) {
-            obj_not_found_err!("Catalog", &name.clone().into())
+    pub fn detach(&self, name: &str) -> Result<()> {
+        if self.state().catalogs.exists(name) {
+            obj_not_found_err!("Catalog", &name.into())
         }
-        // TODO use case-normalizer
-        self.state_mut().catalogs.detach(&name.text);
+        self.state_mut().catalogs.detach(name);
         Ok(())
     }
 
@@ -85,9 +86,7 @@ impl Session {
         if name.has_namespace() {
             unsupported_err!("Creating a table with a namespace is not yet supported, Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name);
         }
-        // TODO use case-normalizer
-        let name = name.name.text;
-        self.state_mut().tables.insert(name, view.into());
+        self.state_mut().tables.insert(name.name, view.into());
         Ok(())
     }
 
@@ -96,8 +95,7 @@ impl Session {
         if name.has_namespace() {
             unsupported_err!("Qualified identifiers are not yet supported")
         }
-        // TODO case-insensitive lookups
-        if let Some(view) = self.state().tables.get(&name.name.text) {
+        if let Some(view) = self.state().tables.get(&name.name) {
             return Ok(view.clone());
         }
         obj_not_found_err!("Table", name)
@@ -108,12 +106,12 @@ impl Session {
         if name.has_namespace() {
             return false;
         }
-        return self.state().tables.contains_key(&name.name.text);
+        return self.state().tables.contains_key(&name.name);
     }
 }
 
 impl Default for Session {
     fn default() -> Self {
-        Self::new("default")
+        Self::empty()
     }
 }

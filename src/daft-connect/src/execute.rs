@@ -242,10 +242,13 @@ impl ConnectSession {
         }
 
         let session = self.session_mut();
-        let table_name = Identifier::delimited(name);
-        session.create_table(table_name, input).map_err(|e| {
-            Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
-        })?;
+        session
+            .create_table(Identifier::simple(name), input)
+            .map_err(|e| {
+                Status::internal(
+                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
+                )
+            })?;
 
         let response = rb.result_complete_response();
         let stream = stream::once(ready(Ok(response)));

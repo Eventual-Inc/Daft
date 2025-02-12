@@ -116,9 +116,9 @@ mod tests {
     fn planner() -> SQLPlanner<'static> {
         let session = Session::default();
 
-        _ = session.create_table(Identifier::regular("tbl1"), tbl_1());
-        _ = session.create_table(Identifier::regular("tbl2"), tbl_2());
-        _ = session.create_table(Identifier::regular("tbl3"), tbl_3());
+        _ = session.create_table(Identifier::simple("tbl1"), tbl_1());
+        _ = session.create_table(Identifier::simple("tbl2"), tbl_2());
+        _ = session.create_table(Identifier::simple("tbl3"), tbl_3());
 
         SQLPlanner::new(session.into())
     }

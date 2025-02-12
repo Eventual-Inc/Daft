@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftPlanningConfig;
-use daft_catalog::Identifier;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_session::Session;
@@ -42,7 +41,7 @@ pub fn sql(
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
     // TODO remove once using session.sql / session.exec
-    let session = Session::new("py");
+    let session = Session::empty();
     // TODO remove once session replaces PyCatalog; create all the views in this session
     for (name, table) in catalog.tables {
         session.create_table(name.into(), table)?;
@@ -99,9 +98,9 @@ impl PyCatalog {
         name: &str,
         dataframe: &mut PyLogicalPlanBuilder,
     ) -> PyResult<()> {
-        let name = Identifier::parse(name)?;
+        // TODO this is being removed, but do not parse python strings as SQL strings.
         let plan = dataframe.builder.build();
-        self.tables.insert(name.name.text, plan);
+        self.tables.insert(name.to_string(), plan);
         Ok(())
     }
 

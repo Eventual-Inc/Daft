@@ -103,15 +103,8 @@ impl DaftCatalog {
         name: &str,
         view: impl Into<LogicalPlanBuilder>,
     ) -> Result<()> {
-        let identifier = Identifier::parse(name)?;
-        if identifier.has_namespace() {
-            return Err(Error::Unsupported {
-                message: format!("Qualified identifiers are not yet supported. Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name),
-            });
-        }
-        // pull out the inner text for now..
-        let name = identifier.name.text.clone();
-        self.named_tables.insert(name, view.into());
+        // TODO this API is being removed, for now preserve the exact name as if it were delimited.
+        self.named_tables.insert(name.into(), view.into());
         Ok(())
     }
 

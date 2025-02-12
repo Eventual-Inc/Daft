@@ -1,6 +1,7 @@
 [dependencies]
 daft-catalog = {path = "../daft-catalog"}
 daft-logical-plan = {path = "../daft-logical-plan"}
+uuid = {version = "1.10.0", features = ["v4"]}
 
 [features]
 python = [
