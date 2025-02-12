@@ -8,6 +8,7 @@ use crate::{
     spark_analyzer::SparkAnalyzer,
 };
 
+// https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#partition-transformation-functions
 pub struct PartitionTransformFunctions;
 
 impl FunctionModule for PartitionTransformFunctions {
