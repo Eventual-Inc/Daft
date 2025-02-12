@@ -3,7 +3,7 @@ use daft_functions::{coalesce::Coalesce, float::IsNan};
 use daft_sql::sql_expr;
 use spark_connect::Expression;
 
-use super::{FunctionModule, SparkFunction, Todo, UnaryFunction};
+use super::{FunctionModule, SparkFunction, UnaryFunction, TODO_FUNCTION};
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
@@ -32,27 +32,26 @@ impl FunctionModule for CoreFunctions {
         parent.add_fn("^", BinaryOpFunction(Operator::Xor));
         parent.add_fn("<<", BinaryOpFunction(Operator::ShiftLeft));
         parent.add_fn(">>", BinaryOpFunction(Operator::ShiftRight));
-
         // Normal Functions
         // https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#normal-functions
 
         parent.add_fn("coalesce", Coalesce {});
-        parent.add_fn("input_file_name", Todo);
+        parent.add_fn("input_file_name", TODO_FUNCTION);
         parent.add_fn("isnan", IsNan {});
         parent.add_fn("isnull", UnaryFunction(|arg| arg.is_null()));
 
-        parent.add_fn("monotically_increasing_id", Todo);
-        parent.add_fn("named_struct", Todo);
-        parent.add_fn("nanvl", Todo);
-        parent.add_fn("rand", Todo);
-        parent.add_fn("randn", Todo);
-        parent.add_fn("spark_partition_id", Todo);
-        parent.add_fn("when", Todo);
-        parent.add_fn("bitwise_not", Todo);
-        parent.add_fn("bitwiseNOT", Todo);
+        parent.add_fn("monotically_increasing_id", TODO_FUNCTION);
+        parent.add_fn("named_struct", TODO_FUNCTION);
+        parent.add_fn("nanvl", TODO_FUNCTION);
+        parent.add_fn("rand", TODO_FUNCTION);
+        parent.add_fn("randn", TODO_FUNCTION);
+        parent.add_fn("spark_partition_id", TODO_FUNCTION);
+        parent.add_fn("when", TODO_FUNCTION);
+        parent.add_fn("bitwise_not", TODO_FUNCTION);
+        parent.add_fn("bitwiseNOT", TODO_FUNCTION);
         parent.add_fn("expr", SqlExpr);
-        parent.add_fn("greatest", Todo);
-        parent.add_fn("least", Todo);
+        parent.add_fn("greatest", TODO_FUNCTION);
+        parent.add_fn("least", TODO_FUNCTION);
 
         // parent.add_fn("isnan", UnaryFunction(|arg| arg.is_nan()));
 

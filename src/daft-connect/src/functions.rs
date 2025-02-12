@@ -5,12 +5,13 @@ use daft_dsl::{
     ExprRef,
 };
 use once_cell::sync::Lazy;
-use partition_transform::PartitionTransformFunctions;
 use spark_connect::Expression;
 
 use crate::{error::ConnectResult, invalid_argument_err, spark_analyzer::SparkAnalyzer};
 mod aggregate;
 mod core;
+mod datetime;
+
 mod math;
 mod partition_transform;
 mod string;
@@ -19,8 +20,9 @@ pub(crate) static CONNECT_FUNCTIONS: Lazy<SparkFunctions> = Lazy::new(|| {
     let mut functions = SparkFunctions::new();
     functions.register::<aggregate::AggregateFunctions>();
     functions.register::<core::CoreFunctions>();
+    functions.register::<datetime::DatetimeFunctions>();
     functions.register::<math::MathFunctions>();
-    functions.register::<PartitionTransformFunctions>();
+    functions.register::<partition_transform::PartitionTransformFunctions>();
     functions.register::<string::StringFunctions>();
     functions
 });
@@ -104,8 +106,10 @@ impl SparkFunction for UnaryFunction {
     }
 }
 
-struct Todo;
-impl SparkFunction for Todo {
+#[allow(non_camel_case_types)]
+struct TODO_FUNCTION;
+
+impl SparkFunction for TODO_FUNCTION {
     fn to_expr(
         &self,
         _args: &[Expression],
