@@ -180,10 +180,6 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
-  "src/generated/spark-connect",
-  "src/common/partitioning",
-  "src/daft-py-runners",
-  "src/daft-context",
   "src/daft-dashboard-server"
 ]
 
@@ -255,7 +251,6 @@ test-log = "0.2.16"
 thiserror = "1.0.63"
 tiktoken-rs = "0.5.9"
 tokio = {version = "1.37.0", features = [
-  "fs",
   "net",
   "time",
   "bytes",
