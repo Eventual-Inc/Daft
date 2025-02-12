@@ -5,7 +5,7 @@ import socket
 import urllib
 from unittest.mock import MagicMock, patch
 
-from daft.context import get_context, set_runner_native, set_runner_py, set_runner_ray
+from daft.context import set_runner_native, set_runner_py, set_runner_ray
 from daft.scarf_telemetry import scarf_telemetry
 from tests.actor_pool.test_actor_cuda_devices import reset_runner_with_gpus
 
