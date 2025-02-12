@@ -182,7 +182,7 @@ However, if this is another process, then kill that other server (by running `ki
 }
 
 #[pyfunction(signature = (static_assets_path, block = false))]
-fn launch(static_assets_path: String, block: Option<bool>) {
+fn launch_dashboard(static_assets_path: String, block: Option<bool>) {
     fn launch_on_tokio_runtime(static_assets_path: &Path) {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(NUMBER_OF_WORKER_THREADS)
@@ -212,6 +212,6 @@ You can find what processes are attached to that port by running the following c
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction!(launch, parent)?)?;
+    parent.add_function(wrap_pyfunction!(launch_dashboard, parent)?)?;
     Ok(())
 }
