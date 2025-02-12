@@ -3,11 +3,22 @@ from __future__ import annotations
 import os
 import socket
 import urllib
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+from daft.context import get_context, set_runner_native, set_runner_py, set_runner_ray
 from daft.scarf_telemetry import scarf_telemetry
 
-# from daft.context import set_runner_ray, set_runner_py, set_runner_native
+
+@contextmanager
+def reset_runner():
+    """Reset the runner to allow setting it multiple times in tests."""
+    try:
+        original_runner = get_context()._runner
+        get_context()._runner = None
+        yield
+    finally:
+        get_context()._runner = original_runner
 
 
 @patch("daft.scarf_telemetry.get_build_type")
@@ -119,29 +130,44 @@ def test_scarf_telemetry_error_handling(
 
 
 # Tests for runner integration with scarf_telemetry, commented out because cannot set runner more than once
-# @patch("daft.context.scarf_telemetry")
-# def test_runner_ray_analytics(mock_scarf_telemetry: MagicMock):
-#     set_runner_ray()
-#     mock_scarf_telemetry.assert_called_once_with(runner="ray")
+@patch("daft.context.scarf_telemetry")
+def test_runner_ray_analytics(mock_scarf_telemetry: MagicMock):
+    with reset_runner():
+        set_runner_ray()
+        mock_scarf_telemetry.assert_called_once_with(runner="ray")
 
-# @patch("daft.context.scarf_telemetry")
-# def test_runner_py_analytics(mock_scarf_telemetry: MagicMock):
-#     set_runner_py()
-#     mock_scarf_telemetry.assert_called_once_with(runner="py")
 
-# @patch("daft.context.scarf_telemetry")
-# def test_runner_native_analytics(mock_scarf_telemetry: MagicMock):
-#     set_runner_native()
-#     mock_scarf_telemetry.assert_called_once_with(runner="native")
+@patch("daft.context.scarf_telemetry")
+def test_runner_py_analytics(mock_scarf_telemetry: MagicMock):
+    with reset_runner():
+        set_runner_py()
+        mock_scarf_telemetry.assert_called_once_with(runner="py")
 
-# @patch("daft.context.scarf_telemetry")
-# def test_runner_analytics_with_scarf_opt_out(mock_scarf_telemetry: MagicMock):
-#     os.environ["SCARF_NO_ANALYTICS"] = "true"
-#     set_runner_ray()
-#     mock_scarf_telemetry.assert_called_once_with(runner="ray")
 
-# @patch("daft.context.scarf_telemetry")
-# def test_runner_analytics_with_do_not_track(mock_scarf_telemetry: MagicMock):
-#     os.environ["DO_NOT_TRACK"] = "true"
-#     set_runner_ray()
-#     mock_scarf_telemetry.assert_called_once_with(runner="ray")
+@patch("daft.context.scarf_telemetry")
+def test_runner_native_analytics(mock_scarf_telemetry: MagicMock):
+    with reset_runner():
+        set_runner_native()
+        mock_scarf_telemetry.assert_called_once_with(runner="native")
+
+
+@patch("daft.context.scarf_telemetry")
+def test_runner_analytics_with_scarf_opt_out(mock_scarf_telemetry: MagicMock):
+    with reset_runner():
+        os.environ["SCARF_NO_ANALYTICS"] = "true"
+        try:
+            set_runner_ray()
+            mock_scarf_telemetry.assert_called_once_with(runner="ray")
+        finally:
+            del os.environ["SCARF_NO_ANALYTICS"]
+
+
+@patch("daft.context.scarf_telemetry")
+def test_runner_analytics_with_do_not_track(mock_scarf_telemetry: MagicMock):
+    with reset_runner():
+        os.environ["DO_NOT_TRACK"] = "true"
+        try:
+            set_runner_ray()
+            mock_scarf_telemetry.assert_called_once_with(runner="ray")
+        finally:
+            del os.environ["DO_NOT_TRACK"]
