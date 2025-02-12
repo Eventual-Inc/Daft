@@ -37,7 +37,7 @@ Daft is a unified data engine for **data engineering, analytics, and ML/AI**. It
 Daft boasts strong integrations with technologies common across these workloads:
 
 * **Cloud Object Storage:** Record-setting I/O performance for integrations with S3 cloud storage, [battle-tested at exabyte-scale at Amazon](https://aws.amazon.com/blogs/opensource/amazons-exabyte-scale-migration-from-apache-spark-to-ray-on-amazon-ec2/)
-* **ML/AI Python Ecosystem:** First-class integrations with [PyTorch](https://pytorch.org/>) and [NumPy](https://numpy.org/) for efficient interoperability with your ML/AI stack
+* **ML/AI Python Ecosystem:** First-class integrations with [PyTorch](https://pytorch.org/) and [NumPy](https://numpy.org/) for efficient interoperability with your ML/AI stack
 * **Data Catalogs/Table Formats:** Capabilities to effectively query table formats such as [Apache Iceberg](https://iceberg.apache.org/), [Delta Lake](https://delta.io/) and [Apache Hudi](https://hudi.apache.org/)
 * **Seamless Data Interchange:** Zero-copy integration with [Apache Arrow](https://arrow.apache.org/docs/index.html)
 * **Multimodal/ML Data:** Native functionality for data modalities such as tensors, images, URLs, long-form text and embeddings
