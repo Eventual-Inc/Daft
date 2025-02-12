@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
-import os
 from typing import TYPE_CHECKING, ClassVar
 
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -70,8 +69,7 @@ def set_runner_ray(
     force_client_mode: bool = False,
 ) -> DaftContext:
     # Scarf Analytics
-    scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
-    scarf_telemetry(scarf_opt_out, runner="ray")
+    scarf_telemetry(runner="ray")
 
     py_ctx = _set_runner_ray(
         address=address,
@@ -92,8 +90,7 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
         DaftContext: Daft context after setting the Py runner
     """
     # Scarf Analytics
-    scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
-    scarf_telemetry(scarf_opt_out, runner="py")
+    scarf_telemetry(runner="py")
 
     py_ctx = _set_runner_py(
         use_thread_pool=use_thread_pool,
@@ -111,8 +108,7 @@ def set_runner_native() -> DaftContext:
         DaftContext: Daft context after setting the native runner
     """
     # Scarf Analytics
-    scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
-    scarf_telemetry(scarf_opt_out, runner="native")
+    scarf_telemetry(runner="native")
 
     py_ctx = _set_runner_native()
 

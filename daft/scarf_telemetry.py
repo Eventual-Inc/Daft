@@ -1,12 +1,12 @@
+import os
 import platform
 import urllib.parse
 import urllib.request
-from typing import Union
 
 from daft import get_build_type, get_version
 
 
-def scarf_telemetry(scarf_opt_out: bool, runner: str) -> tuple[Union[str, None], Union[str, None]]:
+def scarf_telemetry(runner: str):
     """Track analytics for Daft usage via Scarf.
 
     Args:
@@ -18,12 +18,13 @@ def scarf_telemetry(scarf_opt_out: bool, runner: str) -> tuple[Union[str, None],
     """
     version = get_version()
     build_type = get_build_type()
+    scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
+
+    # Skip analytics for dev builds or if user opted out
+    if build_type == "dev" or scarf_opt_out:
+        return None, None
 
     try:
-        # Skip analytics for dev builds or if user opted out
-        if build_type == "dev" or scarf_opt_out:
-            return None, None
-
         python_version = ".".join(platform.python_version().split(".")[:2])
 
         params = {
@@ -44,8 +45,6 @@ def scarf_telemetry(scarf_opt_out: bool, runner: str) -> tuple[Union[str, None],
 
     except Exception as e:
         return f"Analytics error: {e!s}", None
-
-    return None, None
 
 
 # def scarf_analytics(
