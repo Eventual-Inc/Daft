@@ -4,7 +4,7 @@ import pytest
 
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.expressions.testing import expr_structurally_equal
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 
 def test_expressions_projection_error_dup_name():

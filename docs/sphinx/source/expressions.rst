@@ -16,6 +16,8 @@ Constructors
 
     col
     lit
+    list_
+    struct
 
 Generic
 #######
@@ -24,7 +26,6 @@ Generic
    :nosignatures:
    :toctree: doc_gen/expression_methods
 
-   to_struct
    Expression.alias
    Expression.cast
    Expression.if_else
@@ -112,7 +113,10 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
 .. autosummary::
    :toctree: doc_gen/expression_methods
 
+   Expression.bool_and
+   Expression.bool_or
    Expression.count
+   Expression.count_distinct
    Expression.sum
    Expression.mean
    Expression.stddev
@@ -120,6 +124,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.max
    Expression.any_value
    Expression.agg_list
+   Expression.agg_set
    Expression.agg_concat
    Expression.approx_percentiles
    Expression.approx_count_distinct
@@ -232,6 +237,8 @@ List
    :toctree: doc_gen/expression_methods
    :template: autosummary/accessor_method.rst
 
+   Expression.list.bool_and
+   Expression.list.bool_or
    Expression.list.chunk
    Expression.list.count
    Expression.list.get
@@ -243,6 +250,7 @@ List
    Expression.list.slice
    Expression.list.sort
    Expression.list.sum
+   Expression.list.distinct
    Expression.list.value_counts
 
 Struct

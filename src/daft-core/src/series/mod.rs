@@ -4,16 +4,13 @@ mod ops;
 mod serdes;
 mod series_like;
 mod utils;
-use std::{
-    collections::{hash_map::RawEntryMut, HashMap},
-    ops::Sub,
-    sync::Arc,
-};
+use std::{ops::Sub, sync::Arc};
 
 pub use array_impl::IntoSeries;
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::DaftResult;
 use derive_more::Display;
+use indexmap::{map::RawEntryApiV1, IndexMap};
 pub use ops::cast_series_to_supertype;
 
 pub(crate) use self::series_like::SeriesLike;
@@ -52,18 +49,18 @@ impl Series {
     /// Its length can also be used to determine the *exact* number of unique elements in this [`Series`].
     ///
     /// # Note
-    /// 1. This function returns a `HashMap<X, ()>` rather than a `HashSet<X>`. These two types are functionally equivalent.
+    /// 1. This function returns an `IndexMap<X, ()>` rather than a `HashSet<X>`. These two types are functionally equivalent.
     ///
     /// 2. `NULL`s are *not* inserted into the returned hashset. They won't be counted towards the final number of unique elements.
     pub fn build_probe_table_without_nulls(
         &self,
-    ) -> DaftResult<HashMap<IndexHash, (), IdentityBuildHasher>> {
+    ) -> DaftResult<IndexMap<IndexHash, (), IdentityBuildHasher>> {
         // Building a comparator function over a series of type `NULL` will result in a failure.
         // (I.e., `let comparator = build_is_equal(..)` will fail).
         //
         // Therefore, exit early with an empty hashmap.
         if matches!(self.data_type(), DataType::Null) {
-            return Ok(HashMap::default());
+            return Ok(IndexMap::default());
         };
 
         const DEFAULT_SIZE: usize = 20;
@@ -72,7 +69,7 @@ impl Series {
         let comparator = build_is_equal(&*array, &*array, true, false)?;
 
         let mut probe_table =
-            HashMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
+            IndexMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
                 DEFAULT_SIZE,
                 Default::default(),
             );
@@ -82,19 +79,18 @@ impl Series {
                 Some(&hash) => hash,
                 None => continue,
             };
-            let entry = probe_table.raw_entry_mut().from_hash(hash, |other| {
+            let entry = probe_table.raw_entry_v1().from_hash(hash, |other| {
                 (hash == other.hash) && comparator(idx, other.idx as _)
             });
-            if let RawEntryMut::Vacant(entry) = entry {
-                entry.insert_hashed_nocheck(
-                    hash,
+            if entry.is_none() {
+                probe_table.insert(
                     IndexHash {
                         idx: idx as u64,
                         hash,
                     },
                     (),
                 );
-            };
+            }
         }
 
         Ok(probe_table)

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
@@ -11,7 +11,7 @@ use super::blocking_sink::{
 };
 use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
-struct CrossJoinCollectState(Option<Vec<Table>>);
+struct CrossJoinCollectState(Option<Vec<RecordBatch>>);
 
 impl BlockingSinkState for CrossJoinCollectState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -20,11 +20,11 @@ impl BlockingSinkState for CrossJoinCollectState {
 }
 
 pub struct CrossJoinCollectSink {
-    state_bridge: BroadcastStateBridgeRef<Vec<Table>>,
+    state_bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
 }
 
 impl CrossJoinCollectSink {
-    pub(crate) fn new(state_bridge: BroadcastStateBridgeRef<Vec<Table>>) -> Self {
+    pub(crate) fn new(state_bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>) -> Self {
         Self { state_bridge }
     }
 }

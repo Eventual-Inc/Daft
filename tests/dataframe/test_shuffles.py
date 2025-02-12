@@ -8,7 +8,7 @@ import pytest
 
 import daft
 from daft.io._generator import read_generator
-from daft.table.table import Table
+from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -17,7 +17,7 @@ def generate(num_rows: int, bytes_per_row: int):
         "ints": np.random.randint(0, num_rows, num_rows, dtype=np.uint64),
         "bytes": [os.urandom(bytes_per_row) for _ in range(num_rows)],
     }
-    yield Table.from_pydict(data)
+    yield RecordBatch.from_pydict(data)
 
 
 def generator(

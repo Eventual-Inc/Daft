@@ -8,7 +8,7 @@ import pytest
 from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection, col
 from daft.logical.schema import Schema
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 DATA = {
     "int": ([1, 2, None], DataType.int64()),

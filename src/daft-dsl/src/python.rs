@@ -182,6 +182,11 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     }
 }
 
+#[pyfunction]
+pub fn list_(items: Vec<PyExpr>) -> PyExpr {
+    Expr::List(items.into_iter().map(|item| item.into()).collect()).into()
+}
+
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature = (
     name,
@@ -339,12 +344,24 @@ impl PyExpr {
         Ok(self.expr.clone().max().into())
     }
 
+    pub fn bool_and(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().bool_and().into())
+    }
+
+    pub fn bool_or(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().bool_or().into())
+    }
+
     pub fn any_value(&self, ignore_nulls: bool) -> PyResult<Self> {
         Ok(self.expr.clone().any_value(ignore_nulls).into())
     }
 
     pub fn agg_list(&self) -> PyResult<Self> {
         Ok(self.expr.clone().agg_list().into())
+    }
+
+    pub fn agg_set(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().agg_set().into())
     }
 
     pub fn agg_concat(&self) -> PyResult<Self> {

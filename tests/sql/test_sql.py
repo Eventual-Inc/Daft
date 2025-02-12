@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import daft
-from daft import col
+from daft import DataType, Series, col
 from daft.exceptions import DaftCoreException
 from daft.sql.sql import SQLCatalog
 from tests.assets import TPCH_QUERIES
@@ -309,3 +309,18 @@ def test_sql_multiple_ctes():
     expected = df1.join(df2.select(col("x").alias("a"), "y", "z"), on="a").collect().to_pydict()
 
     assert actual == expected
+
+
+def test_cast_image():
+    channels = 3
+
+    data = [
+        np.arange(4 * channels, dtype=np.uint8).reshape((2, 2, channels)),
+        np.arange(4 * channels, 13 * channels, dtype=np.uint8).reshape((3, 3, channels)),
+        None,
+    ]
+
+    s = Series.from_pylist(data, pyobj="force")
+    df = daft.from_pydict({"img": s})
+    actual = daft.sql("select cast(img as image(RGB)) from df", catalog=SQLCatalog({"df": df})).collect()
+    assert actual.schema()["img"].dtype == DataType.image("RGB")

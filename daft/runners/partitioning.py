@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from uuid import uuid4
 
 from daft.datatype import TimeUnit
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
     import pandas as pd

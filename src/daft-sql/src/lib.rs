@@ -28,13 +28,13 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use daft_catalog::DaftCatalog;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
         logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
         LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
+    use daft_session::Session;
     use error::SQLPlannerResult;
     use rstest::{fixture, rstest};
 
@@ -113,13 +113,13 @@ mod tests {
 
     #[fixture]
     fn planner() -> SQLPlanner<'static> {
-        let mut catalog = DaftCatalog::default();
+        let session = Session::default();
 
-        catalog.register_table("tbl1", tbl_1());
-        catalog.register_table("tbl2", tbl_2());
-        catalog.register_table("tbl3", tbl_3());
+        _ = session.create_table("tbl1", tbl_1());
+        _ = session.create_table("tbl2", tbl_2());
+        _ = session.create_table("tbl3", tbl_3());
 
-        SQLPlanner::new(catalog)
+        SQLPlanner::new(session.into())
     }
 
     #[rstest]
@@ -249,38 +249,6 @@ mod tests {
             .build();
 
         assert_eq!(plan, expected);
-        Ok(())
-    }
-
-    #[rstest]
-    fn test_cast(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
-        let builder = LogicalPlanBuilder::from(tbl_1);
-        let cases = vec![
-            (
-                "select bool::text from tbl1",
-                vec![col("bool").cast(&DataType::Utf8)],
-            ),
-            (
-                "select utf8::bytes from tbl1",
-                vec![col("utf8").cast(&DataType::Binary)],
-            ),
-            (
-                r#"select CAST("bool" as text) from tbl1"#,
-                vec![col("bool").cast(&DataType::Utf8)],
-            ),
-        ];
-        for (sql, expected) in cases {
-            let actual = planner.plan_sql(sql)?;
-            let expected = builder.clone().select(expected)?.build();
-            assert_eq!(
-                actual,
-                expected,
-                "query: {}\n expected:{}",
-                sql,
-                expected.repr_ascii(false)
-            );
-        }
-
         Ok(())
     }
 

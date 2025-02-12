@@ -19,8 +19,8 @@ daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
-daft-table = {path = "../daft-table", default-features = false}
 daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
@@ -41,9 +41,12 @@ tracing = {workspace = true}
 python = [
   "dep:pyo3",
   "common-daft-config/python",
-  "common-file-formats/python",
+  "common-display/python",
   "common-error/python",
+  "common-file-formats/python",
   "common-scan-info/python",
+  "daft-core/python",
+  "daft-functions/python",
   "daft-dsl/python",
   "daft-io/python",
   "daft-local-plan/python",
@@ -51,8 +54,7 @@ python = [
   "daft-micropartition/python",
   "daft-physical-plan/python",
   "daft-scan/python",
-  "daft-writers/python",
-  "common-display/python"
+  "daft-writers/python"
 ]
 
 [lints]

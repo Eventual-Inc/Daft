@@ -1927,6 +1927,7 @@ dependencies = [
  "daft-catalog-python-catalog",
  "daft-compression",
  "daft-connect",
+ "daft-context",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1943,12 +1944,13 @@ dependencies = [
  "daft-minhash",
  "daft-parquet",
  "daft-physical-plan",
- "daft-ray-execution",
+ "daft-py-runners",
+ "daft-recordbatch",
  "daft-scan",
  "daft-scheduler",
+ "daft-session",
  "daft-sql",
  "daft-stats",
- "daft-table",
  "daft-writers",
  "lazy_static",
  "libc",
@@ -1968,6 +1970,7 @@ dependencies = [
  "common-treenode",
  "daft-dsl",
  "daft-schema",
+ "indexmap 2.7.0",
  "rstest",
 ]
 
@@ -1981,6 +1984,7 @@ dependencies = [
  "lazy_static",
  "pyo3",
  "snafu",
+ "sqlparser",
 ]
 
 [[package]]
@@ -2012,16 +2016,17 @@ dependencies = [
  "common-file-formats",
  "common-runtime",
  "daft-catalog",
+ "daft-context",
  "daft-core",
  "daft-dsl",
- "daft-local-execution",
+ "daft-functions",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-ray-execution",
+ "daft-recordbatch",
  "daft-scan",
  "daft-schema",
+ "daft-session",
  "daft-sql",
- "daft-table",
  "dashmap",
  "futures",
  "itertools 0.11.0",
@@ -2034,6 +2039,18 @@ dependencies = [
  "tonic",
  "tracing",
  "uuid 1.11.0",
+]
+
+[[package]]
+name = "daft-context"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-daft-config",
+ "common-error",
+ "daft-py-runners",
+ "log",
+ "once_cell",
+ "pyo3",
 ]
 
 [[package]]
@@ -2093,7 +2110,7 @@ dependencies = [
  "daft-decoding",
  "daft-dsl",
  "daft-io",
- "daft-table",
+ "daft-recordbatch",
  "futures",
  "memchr",
  "parking_lot 0.12.3",
@@ -2274,7 +2291,7 @@ dependencies = [
  "daft-decoding",
  "daft-dsl",
  "daft-io",
- "daft-table",
+ "daft-recordbatch",
  "futures",
  "indexmap 2.7.0",
  "memchr",
@@ -2316,8 +2333,8 @@ dependencies = [
  "daft-micropartition",
  "daft-parquet",
  "daft-physical-plan",
+ "daft-recordbatch",
  "daft-scan",
- "daft-table",
  "daft-writers",
  "futures",
  "indexmap 2.7.0",
@@ -2402,9 +2419,9 @@ dependencies = [
  "daft-io",
  "daft-json",
  "daft-parquet",
+ "daft-recordbatch",
  "daft-scan",
  "daft-stats",
- "daft-table",
  "dashmap",
  "futures",
  "parquet2",
@@ -2443,8 +2460,8 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "daft-recordbatch",
  "daft-stats",
- "daft-table",
  "futures",
  "indexmap 2.7.0",
  "itertools 0.11.0",
@@ -2483,13 +2500,36 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-ray-execution"
+name = "daft-py-runners"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "daft-logical-plan",
  "daft-micropartition",
  "pyo3",
+]
+
+[[package]]
+name = "daft-recordbatch"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "comfy-table 7.1.3",
+ "common-arrow-ffi",
+ "common-display",
+ "common-error",
+ "common-runtime",
+ "daft-core",
+ "daft-dsl",
+ "daft-image",
+ "daft-logical-plan",
+ "futures",
+ "html-escape",
+ "indexmap 2.7.0",
+ "num-traits",
+ "pyo3",
+ "rand 0.8.5",
+ "serde",
 ]
 
 [[package]]
@@ -2513,9 +2553,9 @@ dependencies = [
  "daft-json",
  "daft-logical-plan",
  "daft-parquet",
+ "daft-recordbatch",
  "daft-schema",
  "daft-stats",
- "daft-table",
  "futures",
  "indexmap 2.7.0",
  "itertools 0.11.0",
@@ -2571,6 +2611,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-session"
+version = "0.3.0-dev0"
+dependencies = [
+ "daft-catalog",
+ "daft-logical-plan",
+]
+
+[[package]]
 name = "daft-sketch"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2598,6 +2646,7 @@ dependencies = [
  "daft-functions-json",
  "daft-logical-plan",
  "daft-scan",
+ "daft-session",
  "once_cell",
  "pyo3",
  "regex",
@@ -2613,33 +2662,10 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
- "daft-table",
+ "daft-recordbatch",
  "indexmap 2.7.0",
  "serde",
  "snafu",
-]
-
-[[package]]
-name = "daft-table"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow2",
- "comfy-table 7.1.3",
- "common-arrow-ffi",
- "common-display",
- "common-error",
- "common-runtime",
- "daft-core",
- "daft-dsl",
- "daft-image",
- "daft-logical-plan",
- "futures",
- "html-escape",
- "indexmap 2.7.0",
- "num-traits",
- "pyo3",
- "rand 0.8.5",
- "serde",
 ]
 
 [[package]]
@@ -2654,7 +2680,7 @@ dependencies = [
  "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-table",
+ "daft-recordbatch",
  "pyo3",
 ]
 

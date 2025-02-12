@@ -1,5 +1,5 @@
 use arrow2::io::ipc::write::StreamWriter;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use spark_connect::{
     analyze_plan_response,
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{ConnectResult, Context},
-    session::Session,
+    session::ConnectSession,
 };
 
 /// A utility for constructing responses to send back to the client,
@@ -24,7 +24,7 @@ pub struct ResponseBuilder<T> {
     pub(crate) phantom: std::marker::PhantomData<T>,
 }
 impl<T> ResponseBuilder<T> {
-    pub fn new(session: &Session, operation_id: String) -> Self {
+    pub fn new(session: &ConnectSession, operation_id: String) -> Self {
         Self::new_with_op_id(
             session.client_side_session_id(),
             session.server_side_session_id(),
@@ -65,7 +65,7 @@ impl ResponseBuilder<ExecutePlanResponse> {
     }
 
     /// Send an arrow batch response to the client
-    pub fn arrow_batch_response(&self, table: &Table) -> ConnectResult<ExecutePlanResponse> {
+    pub fn arrow_batch_response(&self, table: &RecordBatch) -> ConnectResult<ExecutePlanResponse> {
         let mut data = Vec::new();
 
         let mut writer = StreamWriter::new(
@@ -126,6 +126,15 @@ impl ResponseBuilder<AnalyzePlanResponse> {
             server_side_session_id: self.server_side_session_id.clone(),
             result: Some(analyze_plan_response::Result::TreeString(
                 analyze_plan_response::TreeString { tree_string },
+            )),
+        }
+    }
+    pub fn explain_response(&self, explain_string: String) -> AnalyzePlanResponse {
+        AnalyzePlanResponse {
+            session_id: self.session.clone(),
+            server_side_session_id: self.server_side_session_id.clone(),
+            result: Some(analyze_plan_response::Result::Explain(
+                analyze_plan_response::Explain { explain_string },
             )),
         }
     }

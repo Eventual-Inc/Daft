@@ -25,12 +25,13 @@ from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
+from daft.daft import list_distinct as _list_distinct
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
+from daft.daft import struct as _struct
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
-from daft.daft import to_struct as _to_struct
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
@@ -162,6 +163,83 @@ def col(name: str) -> Expression:
         Expression: Expression representing the selected column
     """
     return Expression._from_pyexpr(_col(name))
+
+
+def list_(*items: Expression | str):
+    """Constructs a list from the item expressions.
+
+    Example:
+        >>> import daft
+        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        >>> df = df.select(daft.list_("x", "y").alias("fwd"), daft.list_("y", "x").alias("rev"))
+        >>> df.show()
+        ╭─────────────┬─────────────╮
+        │ fwd         ┆ rev         │
+        │ ---         ┆ ---         │
+        │ List[Int64] ┆ List[Int64] │
+        ╞═════════════╪═════════════╡
+        │ [1, 4]      ┆ [4, 1]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [2, 5]      ┆ [5, 2]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [3, 6]      ┆ [6, 3]      │
+        ╰─────────────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    Args:
+        *items (Union[Expression, str]): item expressions to construct the list
+
+    Returns:
+        Expression: Expression representing the constructed list
+    """
+    assert len(items) > 0, "List constructor requires at least one item"
+    return Expression._from_pyexpr(native.list_([col(i)._expr if isinstance(i, str) else i._expr for i in items]))
+
+
+def struct(*fields: Expression | str) -> Expression:
+    """Constructs a struct from the input field expressions.
+
+    Example:
+        >>> import daft
+        >>> from daft import col
+        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+        >>> df.select(daft.struct(col("a") * 2, col("b"))).show()
+        ╭───────────────────────────╮
+        │ struct                    │
+        │ ---                       │
+        │ Struct[a: Int64, b: Utf8] │
+        ╞═══════════════════════════╡
+        │ {a: 2,                    │
+        │ b: a,                     │
+        │ }                         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {a: 4,                    │
+        │ b: b,                     │
+        │ }                         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {a: 6,                    │
+        │ b: c,                     │
+        │ }                         │
+        ╰───────────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    Args:
+        inputs: Expressions to be converted into struct fields.
+
+    Returns:
+        An expression for a struct column with the input columns as its fields.
+    """
+    pyinputs = []
+    for field in fields:
+        if isinstance(field, Expression):
+            pyinputs.append(field._expr)
+        elif isinstance(field, str):
+            pyinputs.append(col(field)._expr)
+        else:
+            raise TypeError("expected Expression or str as input for struct()")
+    return Expression._from_pyexpr(_struct(pyinputs))
 
 
 def interval(
@@ -322,49 +400,16 @@ class Expression:
         )
 
     @staticmethod
-    def to_struct(*inputs: Expression | builtins.str) -> Expression:
-        """Converts multiple input expressions or column names into a struct.
+    def to_struct(*fields: Expression | builtins.str) -> Expression:
+        """Constructs a struct from the input field expressions.
 
-        Example:
-            >>> import daft
-            >>> from daft import col
-            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
-            >>> df.select(daft.to_struct(col("a") * 2, col("b"))).show()
-            ╭───────────────────────────╮
-            │ struct                    │
-            │ ---                       │
-            │ Struct[a: Int64, b: Utf8] │
-            ╞═══════════════════════════╡
-            │ {a: 2,                    │
-            │ b: a,                     │
-            │ }                         │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ {a: 4,                    │
-            │ b: b,                     │
-            │ }                         │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ {a: 6,                    │
-            │ b: c,                     │
-            │ }                         │
-            ╰───────────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        Args:
-            inputs: Expressions to be converted into struct fields.
-
-        Returns:
-            An expression for a struct column with the input columns as its fields.
+        Renamed to 'struct' in https://github.com/Eventual-Inc/Daft/pull/3755.
         """
-        pyinputs = []
-        for x in inputs:
-            if isinstance(x, Expression):
-                pyinputs.append(x._expr)
-            elif isinstance(x, str):
-                pyinputs.append(col(x)._expr)
-            else:
-                raise TypeError("expected Expression or str as input for to_struct")
-        return Expression._from_pyexpr(_to_struct(pyinputs))
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.4.4!  Instead, please use 'struct'",
+            category=DeprecationWarning,
+        )
+        return struct(*fields)
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -968,6 +1013,68 @@ class Expression:
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
+    def bool_and(self) -> Expression:
+        """Calculates the boolean AND of all values in a list.
+
+        For each list:
+        - Returns True if all non-null values are True
+        - Returns False if any non-null value is False
+        - Returns null if the list is empty or contains only null values
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [[True, True], [True, False], [None, None], []]})
+            >>> df.with_column("result", df["values"].list.bool_and()).collect()
+            ╭───────────────┬─────────╮
+            │ values        ┆ result  │
+            │ ---           ┆ ---     │
+            │ List[Boolean] ┆ Boolean │
+            ╞═══════════════╪═════════╡
+            │ [true, true]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [true, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]  ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []            ┆ None    │
+            ╰───────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        expr = self._expr.bool_and()
+        return Expression._from_pyexpr(expr)
+
+    def bool_or(self) -> Expression:
+        """Calculates the boolean OR of all values in a list.
+
+        For each list:
+        - Returns True if any non-null value is True
+        - Returns False if all non-null values are False
+        - Returns null if the list is empty or contains only null values
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
+            >>> df.with_column("result", df["values"].list.bool_or()).collect()
+            ╭────────────────┬─────────╮
+            │ values         ┆ result  │
+            │ ---            ┆ ---     │
+            │ List[Boolean]  ┆ Boolean │
+            ╞════════════════╪═════════╡
+            │ [true, false]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [false, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]   ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []             ┆ None    │
+            ╰────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        expr = self._expr.bool_or()
+        return Expression._from_pyexpr(expr)
+
     def any_value(self, ignore_nulls=False) -> Expression:
         """Returns any value in the expression.
 
@@ -980,6 +1087,43 @@ class Expression:
     def agg_list(self) -> Expression:
         """Aggregates the values in the expression into a list."""
         expr = self._expr.agg_list()
+        return Expression._from_pyexpr(expr)
+
+    def agg_set(self) -> Expression:
+        """Aggregates the values in the expression into a set (ignoring nulls).
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [1, 1, None, 2, 2, None]})
+            >>> df.agg(df["values"].agg_set().alias("unique_values")).show()
+            ╭───────────────╮
+            │ unique_values │
+            │ ---           │
+            │ List[Int64]   │
+            ╞═══════════════╡
+            │ [1, 2]        │
+            ╰───────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+            Note that null values are ignored by default:
+
+            >>> df = daft.from_pydict({"values": [None, None, None]})
+            >>> df.agg(df["values"].agg_set().alias("unique_values")).show()
+            ╭───────────────╮
+            │ unique_values │
+            │ ---           │
+            │ List[Null]    │
+            ╞═══════════════╡
+            │ []            │
+            ╰───────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Returns:
+            Expression: A List expression containing the unique values from the input
+        """
+        expr = self._expr.agg_set()
         return Expression._from_pyexpr(expr)
 
     def agg_concat(self) -> Expression:
@@ -3196,6 +3340,66 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_max(self._expr))
 
+    def bool_and(self) -> Expression:
+        """Calculates the boolean AND of all values in a list.
+
+        For each list:
+        - Returns True if all non-null values are True
+        - Returns False if any non-null value is False
+        - Returns null if the list is empty or contains only null values
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [[True, True], [True, False], [None, None], []]})
+            >>> df.with_column("result", df["values"].list.bool_and()).collect()
+            ╭───────────────┬─────────╮
+            │ values        ┆ result  │
+            │ ---           ┆ ---     │
+            │ List[Boolean] ┆ Boolean │
+            ╞═══════════════╪═════════╡
+            │ [true, true]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [true, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]  ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []            ┆ None    │
+            ╰───────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        return Expression._from_pyexpr(native.list_bool_and(self._expr))
+
+    def bool_or(self) -> Expression:
+        """Calculates the boolean OR of all values in a list.
+
+        For each list:
+        - Returns True if any non-null value is True
+        - Returns False if all non-null values are False
+        - Returns null if the list is empty or contains only null values
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
+            >>> df.with_column("result", df["values"].list.bool_or()).collect()
+            ╭────────────────┬─────────╮
+            │ values         ┆ result  │
+            │ ---            ┆ ---     │
+            │ List[Boolean]  ┆ Boolean │
+            ╞════════════════╪═════════╡
+            │ [true, false]  ┆ true    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [false, false] ┆ false   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [None, None]   ┆ None    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ []             ┆ None    │
+            ╰────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        return Expression._from_pyexpr(native.list_bool_or(self._expr))
+
     def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.
 
@@ -3230,6 +3434,52 @@ class ExpressionListNamespace(ExpressionNamespace):
         elif isinstance(nulls_first, bool):
             nulls_first = Expression._to_expression(nulls_first)
         return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
+
+    def distinct(self) -> Expression:
+        """Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1], [None, 1, None, 1]]})
+            >>> df.select(df["a"].list.distinct()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ [1, 2, 3]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [4, 6, 2]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [6, 7, 1]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+
+            Note that null values are ignored:
+
+            >>> df = daft.from_pydict({"a": [[None, None], [1, None, 1], [None]]})
+            >>> df.select(df["a"].list.distinct()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ []          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ []          │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Returns:
+            Expression: An expression with lists containing only unique elements
+        """
+        return Expression._from_pyexpr(_list_distinct(self._expr))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):

@@ -62,6 +62,7 @@ impl Source {
             }) => ApproxStats {
                 num_rows: *num_rows,
                 size_bytes: *size_bytes,
+                acc_selectivity: 1.0,
             },
             SourceInfo::Physical(physical_scan_info) => match &physical_scan_info.scan_state {
                 ScanState::Operator(_) => {
@@ -78,6 +79,9 @@ impl Source {
                         approx_stats.size_bytes +=
                             st.estimate_in_memory_size_bytes(None).unwrap_or(0);
                     }
+                    approx_stats.acc_selectivity = physical_scan_info
+                        .pushdowns
+                        .estimated_selectivity(self.output_schema.as_ref());
                     approx_stats
                 }
             },

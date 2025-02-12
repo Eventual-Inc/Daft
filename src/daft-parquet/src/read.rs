@@ -17,7 +17,7 @@ use daft_core::prelude::*;
 use daft_core::python::PyTimeUnit;
 use daft_dsl::{optimization::get_required_columns, ExprRef};
 use daft_io::{parse_url, IOClient, IOStatsRef, SourceType};
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 use futures::{
     future::{join_all, try_join_all},
     stream::BoxStream,
@@ -158,7 +158,7 @@ async fn read_parquet_single(
     metadata: Option<Arc<FileMetaData>>,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let mut columns_to_read = columns.clone();
     let columns_to_return = columns;
@@ -375,7 +375,8 @@ async fn stream_parquet_single(
     metadata: Option<Arc<FileMetaData>>,
     delete_rows: Option<Vec<i64>>,
     maintain_order: bool,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
+    chunk_size: Option<usize>,
+) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let columns_to_return = columns.map(|s| s.iter().map(|s| (*s).to_string()).collect_vec());
     let num_rows_to_return = num_rows;
@@ -417,6 +418,7 @@ async fn stream_parquet_single(
             metadata,
             maintain_order,
             io_stats,
+            chunk_size,
         )
         .await
     } else {
@@ -427,6 +429,9 @@ async fn stream_parquet_single(
             field_id_mapping,
         )
         .await?;
+
+        let builder = builder.set_chunk_size(chunk_size);
+
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
         let builder = if let Some(columns) = &columns_to_read {
@@ -675,7 +680,7 @@ pub fn read_parquet(
     multithreaded_io: bool,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<FileMetaData>>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let runtime_handle = get_io_runtime(multithreaded_io);
 
     runtime_handle.block_on_current_thread(async {
@@ -761,7 +766,7 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
     metadata: Option<Vec<Arc<FileMetaData>>>,
     delete_map: Option<HashMap<String, Vec<i64>>>,
     chunk_size: Option<usize>,
-) -> DaftResult<Vec<Table>> {
+) -> DaftResult<Vec<RecordBatch>> {
     let runtime_handle = get_io_runtime(multithreaded_io);
 
     let columns = columns.map(|s| s.iter().map(|v| v.as_ref().to_string()).collect::<Vec<_>>());
@@ -810,7 +815,7 @@ pub async fn read_parquet_bulk_async(
     metadata: Option<Vec<Arc<FileMetaData>>>,
     delete_map: Option<HashMap<String, Vec<i64>>>,
     chunk_size: Option<usize>,
-) -> DaftResult<Vec<DaftResult<Table>>> {
+) -> DaftResult<Vec<DaftResult<RecordBatch>>> {
     let task_stream = futures::stream::iter(uris.into_iter().enumerate().map(|(i, uri)| {
         let owned_columns = columns.clone();
         let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
@@ -873,7 +878,8 @@ pub async fn stream_parquet(
     metadata: Option<Arc<FileMetaData>>,
     maintain_order: bool,
     delete_rows: Option<Vec<i64>>,
-) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
+    chunk_size: Option<usize>,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let stream = stream_parquet_single(
         uri.to_string(),
         columns,
@@ -887,6 +893,7 @@ pub async fn stream_parquet(
         metadata,
         delete_rows,
         maintain_order,
+        chunk_size,
     )
     .await?;
     Ok(Box::pin(stream))
@@ -1014,7 +1021,7 @@ pub fn read_parquet_statistics(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let runtime_handle = get_io_runtime(true);
 
     if uris.data_type() != &DataType::Utf8 {
@@ -1086,7 +1093,7 @@ pub fn read_parquet_statistics(
         )),
     ));
 
-    Table::from_nonempty_columns(vec![
+    RecordBatch::from_nonempty_columns(vec![
         uris.clone(),
         row_count_series.into_series(),
         row_group_series.into_series(),
@@ -1168,6 +1175,7 @@ mod tests {
                 None,
                 None,
                 false,
+                None,
                 None,
             )
             .await?

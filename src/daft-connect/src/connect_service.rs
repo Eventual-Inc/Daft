@@ -1,11 +1,12 @@
 use dashmap::DashMap;
 use spark_connect::{
-    command::CommandType, plan::OpType, spark_connect_service_server::SparkConnectService,
-    AddArtifactsRequest, AddArtifactsResponse, AnalyzePlanRequest, AnalyzePlanResponse,
-    ArtifactStatusesRequest, ArtifactStatusesResponse, ConfigRequest, ConfigResponse,
-    ExecutePlanRequest, ExecutePlanResponse, FetchErrorDetailsRequest, FetchErrorDetailsResponse,
-    InterruptRequest, InterruptResponse, Plan, ReattachExecuteRequest, ReleaseExecuteRequest,
-    ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
+    analyze_plan_request::explain::ExplainMode, command::CommandType, plan::OpType,
+    spark_connect_service_server::SparkConnectService, AddArtifactsRequest, AddArtifactsResponse,
+    AnalyzePlanRequest, AnalyzePlanResponse, ArtifactStatusesRequest, ArtifactStatusesResponse,
+    ConfigRequest, ConfigResponse, ExecutePlanRequest, ExecutePlanResponse,
+    FetchErrorDetailsRequest, FetchErrorDetailsResponse, InterruptRequest, InterruptResponse, Plan,
+    ReattachExecuteRequest, ReleaseExecuteRequest, ReleaseExecuteResponse, ReleaseSessionRequest,
+    ReleaseSessionResponse,
 };
 use tonic::{Request, Response, Status};
 use tracing::debug;
@@ -13,23 +14,27 @@ use uuid::Uuid;
 
 use crate::{
     display::SparkDisplay,
+    error::Context,
     invalid_argument_err, not_yet_implemented,
     response_builder::ResponseBuilder,
-    session::Session,
+    session::ConnectSession,
     spark_analyzer::{to_spark_datatype, SparkAnalyzer},
     util::FromOptionalField,
 };
 
 #[derive(Default)]
 pub struct DaftSparkConnectService {
-    client_to_session: DashMap<Uuid, Session>, // To track session data
+    client_to_session: DashMap<Uuid, ConnectSession>, // To track session data
 }
+type ExecutePlanStream = std::pin::Pin<
+    Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
+>;
 
 impl DaftSparkConnectService {
     fn get_session(
         &self,
         session_id: &str,
-    ) -> Result<dashmap::mapref::one::RefMut<Uuid, Session>, Status> {
+    ) -> Result<dashmap::mapref::one::RefMut<Uuid, ConnectSession>, Status> {
         let Ok(uuid) = Uuid::parse_str(session_id) else {
             return Err(Status::invalid_argument(
                 "Invalid session_id format, must be a UUID",
@@ -39,26 +44,15 @@ impl DaftSparkConnectService {
         let res = self
             .client_to_session
             .entry(uuid)
-            .or_insert_with(|| Session::new(session_id.to_string()));
+            .or_insert_with(|| ConnectSession::new(session_id.to_string()));
 
         Ok(res)
     }
-}
 
-#[tonic::async_trait]
-impl SparkConnectService for DaftSparkConnectService {
-    type ExecutePlanStream = std::pin::Pin<
-        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
-    >;
-    type ReattachExecuteStream = std::pin::Pin<
-        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
-    >;
-
-    #[tracing::instrument(skip_all)]
-    async fn execute_plan(
+    async fn execute_plan_impl(
         &self,
         request: Request<ExecutePlanRequest>,
-    ) -> Result<Response<Self::ExecutePlanStream>, Status> {
+    ) -> Result<Response<ExecutePlanStream>, Status> {
         let request = request.into_inner();
 
         let session = self.get_session(&request.session_id)?;
@@ -102,8 +96,7 @@ impl SparkConnectService for DaftSparkConnectService {
         }
     }
 
-    #[tracing::instrument(skip_all)]
-    async fn config(
+    async fn config_impl(
         &self,
         request: Request<ConfigRequest>,
     ) -> Result<Response<ConfigResponse>, Status> {
@@ -131,16 +124,7 @@ impl SparkConnectService for DaftSparkConnectService {
         Ok(Response::new(response))
     }
 
-    #[tracing::instrument(skip_all)]
-    async fn add_artifacts(
-        &self,
-        _request: Request<tonic::Streaming<AddArtifactsRequest>>,
-    ) -> Result<Response<AddArtifactsResponse>, Status> {
-        not_yet_implemented!("add_artifacts operation")
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn analyze_plan(
+    async fn analyze_plan_impl(
         &self,
         request: Request<AnalyzePlanRequest>,
     ) -> Result<Response<AnalyzePlanResponse>, Status> {
@@ -215,8 +199,76 @@ impl SparkConnectService for DaftSparkConnectService {
                 let tree_string = schema.repr_spark_string();
                 Ok(Response::new(rb.treestring_response(tree_string)))
             }
+            Analyze::Explain(Explain { plan, explain_mode }) => {
+                let plan = plan.required("plan")?;
+
+                let explain_mode = ExplainMode::try_from(explain_mode).wrap_err("explain_mode")?;
+                match explain_mode {
+                    ExplainMode::Unspecified | ExplainMode::Simple => {}
+                    ExplainMode::Extended => {}
+                    _ => not_yet_implemented!("ExplainMode '{explain_mode:?}'"),
+                };
+
+                let OpType::Root(input) = plan.op_type.required("op_type")? else {
+                    invalid_argument_err!("op_type must be Root");
+                };
+
+                let translator = SparkAnalyzer::new(&session);
+                let plan = Box::pin(translator.to_logical_plan(input))
+                    .await
+                    .unwrap()
+                    .build();
+
+                let explain = plan.repr_ascii(false);
+
+                Ok(Response::new(rb.explain_response(explain)))
+            }
             other => not_yet_implemented!("Analyze '{other:?}'"),
         }
+    }
+}
+
+// note, the #[tonic::async_trait] messes up autocomplete and other IDE features.
+// so I moved the impls out of the macro to make it easier to work with.
+#[tonic::async_trait]
+impl SparkConnectService for DaftSparkConnectService {
+    type ExecutePlanStream = std::pin::Pin<
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
+    >;
+    type ReattachExecuteStream = std::pin::Pin<
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
+    >;
+
+    #[tracing::instrument(skip_all)]
+    async fn execute_plan(
+        &self,
+        request: Request<ExecutePlanRequest>,
+    ) -> Result<Response<Self::ExecutePlanStream>, Status> {
+        self.execute_plan_impl(request).await
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn config(
+        &self,
+        request: Request<ConfigRequest>,
+    ) -> Result<Response<ConfigResponse>, Status> {
+        self.config_impl(request).await
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn add_artifacts(
+        &self,
+        _request: Request<tonic::Streaming<AddArtifactsRequest>>,
+    ) -> Result<Response<AddArtifactsResponse>, Status> {
+        not_yet_implemented!("add_artifacts operation")
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn analyze_plan(
+        &self,
+        request: Request<AnalyzePlanRequest>,
+    ) -> Result<Response<AnalyzePlanResponse>, Status> {
+        self.analyze_plan_impl(request).await
     }
 
     #[tracing::instrument(skip_all)]

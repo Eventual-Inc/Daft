@@ -54,10 +54,16 @@ impl Aggregate {
         let input_stats = self.input.materialized_stats();
         let est_bytes_per_row =
             input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
+        let acc_selectivity = if input_stats.approx_stats.num_rows == 0 {
+            0.0
+        } else {
+            input_stats.approx_stats.acc_selectivity / input_stats.approx_stats.num_rows as f64
+        };
         let approx_stats = if self.groupby.is_empty() {
             ApproxStats {
                 num_rows: 1,
                 size_bytes: est_bytes_per_row,
+                acc_selectivity,
             }
         } else {
             // Assume high cardinality for group by columns, and 80% of rows are unique.
@@ -65,6 +71,8 @@ impl Aggregate {
             ApproxStats {
                 num_rows: est_num_groups,
                 size_bytes: est_bytes_per_row * est_num_groups,
+                acc_selectivity: input_stats.approx_stats.acc_selectivity * est_num_groups as f64
+                    / input_stats.approx_stats.num_rows as f64,
             }
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());

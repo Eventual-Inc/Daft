@@ -43,11 +43,11 @@ from daft.execution.execution_step import (
     calculate_cross_join_stats,
 )
 from daft.expressions import ExpressionsProjection
+from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
     MaterializedResult,
     PartitionT,
 )
-from daft.table.micropartition import MicroPartition
 
 logger = logging.getLogger(__name__)
 
@@ -1646,6 +1646,7 @@ def sort(
             execution_step.ReduceMergeAndSort(
                 sort_by=sort_by,
                 descending=descending,
+                nulls_first=nulls_first,
                 bounds=per_part_boundaries,
             )
             for per_part_boundaries in per_partition_bounds

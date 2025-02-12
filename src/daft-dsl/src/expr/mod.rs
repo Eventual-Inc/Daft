@@ -1,3 +1,4 @@
+mod display;
 #[cfg(test)]
 mod tests;
 
@@ -27,8 +28,7 @@ use serde::{Deserialize, Serialize};
 use super::functions::FunctionExpr;
 use crate::{
     functions::{
-        binary_op_display_without_formatter, function_display_without_formatter,
-        function_semantic_id, is_in_display_without_formatter,
+        function_display_without_formatter, function_semantic_id,
         python::PythonUDF,
         scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
@@ -112,7 +112,7 @@ pub enum Expr {
     #[display("{_0}")]
     Agg(AggExpr),
 
-    #[display("{}", binary_op_display_without_formatter(op, left, right)?)]
+    #[display("{}", display::expr_binary_op_display_without_formatter(op, left, right)?)]
     BinaryOp {
         op: Operator,
         left: ExprRef,
@@ -143,11 +143,14 @@ pub enum Expr {
     #[display("fill_null({_0}, {_1})")]
     FillNull(ExprRef, ExprRef),
 
-    #[display("{}", is_in_display_without_formatter(_0, _1)?)]
+    #[display("{}", display::expr_is_in_display_without_formatter(_0, _1)?)]
     IsIn(ExprRef, Vec<ExprRef>),
 
     #[display("{_0} in [{_1},{_2}]")]
     Between(ExprRef, ExprRef, ExprRef),
+
+    #[display("{}", display::expr_list_display_without_formatter(_0)?)]
+    List(Vec<ExprRef>),
 
     #[display("lit({_0})")]
     Literal(lit::LiteralValue),
@@ -164,8 +167,10 @@ pub enum Expr {
 
     #[display("subquery {_0}")]
     Subquery(Subquery),
+
     #[display("{_0} in {_1}")]
     InSubquery(ExprRef, Subquery),
+
     #[display("exists {_0}")]
     Exists(Subquery),
 
@@ -229,11 +234,20 @@ pub enum AggExpr {
     #[display("max({_0})")]
     Max(ExprRef),
 
+    #[display("bool_and({_0})")]
+    BoolAnd(ExprRef),
+
+    #[display("bool_or({_0})")]
+    BoolOr(ExprRef),
+
     #[display("any_value({_0}, ignore_nulls={_1})")]
     AnyValue(ExprRef, bool),
 
     #[display("list({_0})")]
     List(ExprRef),
+
+    #[display("set({_0})")]
+    Set(ExprRef),
 
     #[display("list({_0})")]
     Concat(ExprRef),
@@ -273,8 +287,11 @@ impl AggExpr {
             | Self::Stddev(expr)
             | Self::Min(expr)
             | Self::Max(expr)
+            | Self::BoolAnd(expr)
+            | Self::BoolOr(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr)
             | Self::Concat(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
@@ -337,6 +354,14 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_max()"))
             }
+            Self::BoolAnd(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_bool_and()"))
+            }
+            Self::BoolOr(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_bool_or()"))
+            }
             Self::AnyValue(expr, ignore_nulls) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!(
@@ -346,6 +371,10 @@ impl AggExpr {
             Self::List(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_list()"))
+            }
+            Self::Set(_expr) => {
+                let child_id = _expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_set()"))
             }
             Self::Concat(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -368,8 +397,11 @@ impl AggExpr {
             | Self::Stddev(expr)
             | Self::Min(expr)
             | Self::Max(expr)
+            | Self::BoolAnd(expr)
+            | Self::BoolOr(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr)
             | Self::Concat(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
@@ -390,8 +422,11 @@ impl AggExpr {
             Self::Stddev(_) => Self::Stddev(first_child()),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
+            Self::BoolAnd(_) => Self::BoolAnd(first_child()),
+            Self::BoolOr(_) => Self::BoolOr(first_child()),
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
             Self::List(_) => Self::List(first_child()),
+            Self::Set(_expr) => Self::Set(first_child()),
             Self::Concat(_) => Self::Concat(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
@@ -505,7 +540,14 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
-            Self::List(expr) => expr.to_field(schema)?.to_list_field(),
+
+            Self::List(expr) | Self::Set(expr) => expr.to_field(schema)?.to_list_field(),
+
+            Self::BoolAnd(expr) | Self::BoolOr(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_str(), DataType::Boolean))
+            }
+
             Self::Concat(expr) => {
                 let field = expr.to_field(schema)?;
                 match field.dtype {
@@ -618,12 +660,24 @@ impl Expr {
         Self::Agg(AggExpr::Max(self)).into()
     }
 
+    pub fn bool_and(self: ExprRef) -> ExprRef {
+        Arc::new(Self::Agg(AggExpr::BoolAnd(self)))
+    }
+
+    pub fn bool_or(self: ExprRef) -> ExprRef {
+        Arc::new(Self::Agg(AggExpr::BoolOr(self)))
+    }
+
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
         Self::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
     }
 
     pub fn agg_list(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::List(self)).into()
+    }
+
+    pub fn agg_set(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Set(self)).into()
     }
 
     pub fn agg_concat(self: ExprRef) -> ExprRef {
@@ -729,6 +783,12 @@ impl Expr {
 
                 FieldID::new(format!("{child_id}.is_in({items_id})"))
             }
+            Self::List(items) => {
+                let items_id = items.iter().fold(String::new(), |acc, item| {
+                    format!("{},{}", acc, item.semantic_id(schema))
+                });
+                FieldID::new(format!("List({items_id})"))
+            }
             Self::Between(expr, lower, upper) => {
                 let child_id = expr.semantic_id(schema);
                 let lower_id = lower.semantic_id(schema);
@@ -805,6 +865,7 @@ impl Expr {
             Self::IsIn(expr, items) => std::iter::once(expr.clone())
                 .chain(items.iter().cloned())
                 .collect::<Vec<_>>(),
+            Self::List(items) => items.clone(),
             Self::Between(expr, lower, upper) => vec![expr.clone(), lower.clone(), upper.clone()],
             Self::IfElse {
                 if_true,
@@ -866,6 +927,15 @@ impl Expr {
                 let items = children_iter.collect();
 
                 Self::IsIn(expr, items)
+            }
+            Self::List(children_old) => {
+                let c_len = children.len();
+                let c_len_old = children_old.len();
+                assert_eq!(
+                    c_len, c_len_old,
+                    "Should have same number of children ({c_len_old}), found ({c_len})"
+                );
+                Self::List(children)
             }
             Self::Between(..) => Self::Between(
                 children.first().expect("Should have 1 child").clone(),
@@ -938,31 +1008,22 @@ impl Expr {
                     )))
                 }
             }
-            Self::IsIn(left, right) => {
-                let left_field = left.to_field(schema)?;
-
-                let first_right_field = right
-                    .first()
-                    .expect("Should have at least 1 child")
-                    .to_field(schema)?;
-                let all_same_type = right.iter().all(|expr| {
-                    let field = expr.to_field(schema).unwrap();
-                    // allow nulls to be compared with anything
-                    if field.dtype == DataType::Null || first_right_field.dtype == DataType::Null {
-                        return true;
-                    }
-                    field.dtype == first_right_field.dtype
-                });
-                if !all_same_type {
-                    return Err(DaftError::TypeError(format!(
-                        "Expected all arguments to be of the same type, but received {first_right_field} and others",
-                    )));
-                }
-
-                let (result_type, _intermediate, _comp_type) =
-                    InferDataType::from(&left_field.dtype)
-                        .membership_op(&InferDataType::from(&first_right_field.dtype))?;
-                Ok(Field::new(left_field.name.as_str(), result_type))
+            Self::IsIn(expr, items) => {
+                // Use the expr's field name, and infer membership op type.
+                let list_dtype = try_compute_is_in_type(items, schema)?.unwrap_or(DataType::Null);
+                let expr_field = expr.to_field(schema)?;
+                let expr_type = &expr_field.dtype;
+                let field_name = &expr_field.name;
+                let field_type = InferDataType::from(expr_type)
+                    .membership_op(&(&list_dtype).into())?
+                    .0;
+                Ok(Field::new(field_name, field_type))
+            }
+            Self::List(items) => {
+                // Use "list" as the field name, and infer list type from items.
+                let field_name = "list";
+                let field_type = try_compute_collection_supertype(items, schema)?;
+                Ok(Field::new(field_name, DataType::new_list(field_type)))
             }
             Self::Between(value, lower, upper) => {
                 let value_field = value.to_field(schema)?;
@@ -1107,12 +1168,13 @@ impl Expr {
             Self::IsIn(expr, ..) => expr.name(),
             Self::Between(expr, ..) => expr.name(),
             Self::Literal(..) => "literal",
+            Self::List(..) => "list",
             Self::Function { func, inputs } => match func {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
                 _ => inputs.first().unwrap().name(),
             },
             Self::ScalarFunction(func) => match func.name() {
-                "to_struct" => "struct", // FIXME: make .name() use output name from schema
+                "struct" => "struct", // FIXME: make struct its own expr variant
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {
@@ -1195,6 +1257,7 @@ impl Expr {
                 | Expr::Agg(..)
                 | Expr::Cast(..)
                 | Expr::IsIn(..)
+                | Expr::List(..)
                 | Expr::Between(..)
                 | Expr::Function { .. }
                 | Expr::FillNull(..)
@@ -1248,6 +1311,7 @@ impl Expr {
                 predicate,
             } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
             Self::InSubquery(expr, _) => expr.has_compute(),
+            Self::List(..) => true,
         }
     }
 
@@ -1391,7 +1455,7 @@ pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
 }
 
 pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
-    match expr {
+    let estimate = match expr {
         // Boolean operations that filter rows
         Expr::BinaryOp { op, left, right } => {
             let left_selectivity = estimated_selectivity(left, schema);
@@ -1447,6 +1511,9 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
             _ => 1.0,
         },
 
+        // String contains
+        Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "contains" => 0.1,
+
         // Everything else that could be boolean gets 0.2, non-boolean gets 1.0
         Expr::ScalarFunction(_)
         | Expr::Function { .. }
@@ -1461,7 +1528,11 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         // Everything else doesn't filter
         Expr::Subquery(_) => 1.0,
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
-    }
+        Expr::List(_) => 1.0,
+    };
+
+    // Lower bound to 1% to prevent overly selective estimate
+    estimate.max(0.01)
 }
 
 pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult<SchemaRef> {
@@ -1498,4 +1569,38 @@ pub fn deduplicate_expr_names(exprs: &[ExprRef]) -> Vec<ExprRef> {
             }
         })
         .collect()
+}
+
+/// Asserts an expr slice is homogeneous and returns the type, or None if empty or all nulls.
+/// None allows for context-dependent handling such as erroring or defaulting to Null.
+fn try_compute_is_in_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Option<DataType>> {
+    let mut dtype: Option<DataType> = None;
+    for expr in exprs {
+        let other_dtype = expr.get_type(schema)?;
+        // other is null, continue
+        if other_dtype == DataType::Null {
+            continue;
+        }
+        // other != null and dtype is unset -> set dtype
+        if dtype.is_none() {
+            dtype = Some(other_dtype);
+            continue;
+        }
+        // other != null and dtype is set -> compare or err!
+        if dtype.as_ref() != Some(&other_dtype) {
+            return Err(DaftError::TypeError(format!("Expected all arguments to be of the same type {}, but found element with type {other_dtype}", dtype.unwrap())));
+        }
+    }
+    Ok(dtype)
+}
+
+/// Tries to get the supertype of all exprs in the collection.
+fn try_compute_collection_supertype(exprs: &[ExprRef], schema: &Schema) -> DaftResult<DataType> {
+    let mut dtype = DataType::Null;
+    for expr in exprs {
+        let other_dtype = expr.get_type(schema)?;
+        let super_dtype = try_get_supertype(&dtype, &other_dtype)?;
+        dtype = super_dtype;
+    }
+    Ok(dtype)
 }

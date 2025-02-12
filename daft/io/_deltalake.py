@@ -70,9 +70,9 @@ def read_deltalake(
         table_uri = table.table_uri
 
         # Override the storage_config with the one provided by Unity catalog
-        table_io_config = table.io_config
-        if table_io_config is not None:
-            storage_config = StorageConfig(multithreaded_io, table_io_config)
+        recordbatch_io_config = table.io_config
+        if recordbatch_io_config is not None:
+            storage_config = StorageConfig(multithreaded_io, recordbatch_io_config)
     else:
         raise ValueError(
             f"table argument must be a table URI string, DataCatalogTable or UnityCatalogTable instance, but got: {type(table)}, {table}"
