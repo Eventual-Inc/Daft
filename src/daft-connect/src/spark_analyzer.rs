@@ -11,7 +11,7 @@ use daft_dsl::col;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
-use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
+use daft_scan::builder::{delta_scan, CsvScanBuilder, JsonScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_session::Session;
 use daft_sql::SQLPlanner;
@@ -280,9 +280,8 @@ impl SparkAnalyzer<'_> {
             schema,
             options,
             paths,
-            predicates,
+            predicates: _,
         } = data_source;
-
         let format = format.required("format")?;
 
         ensure!(!paths.is_empty(), "Paths are required");
@@ -295,22 +294,86 @@ impl SparkAnalyzer<'_> {
             debug!("Ignoring options: {options:?}; not yet implemented");
         }
 
-        if !predicates.is_empty() {
-            debug!("Ignoring predicates: {predicates:?}; not yet implemented");
-        }
-
         Ok(match &*format {
-            "parquet" => ParquetScanBuilder::new(paths).finish().await?,
-            "csv" => CsvScanBuilder::new(paths).finish().await?,
-            "json" => {
-                // todo(completeness): implement json reading
-                not_yet_implemented!("read json")
+            "parquet" => {
+                let chunk_size = options.get("chunk_size").and_then(|v| v.parse().ok());
+                let hive_partitioning = options
+                    .get("hive_partitioning")
+                    .and_then(|v| v.parse().ok());
+                let mut builder = ParquetScanBuilder::new(paths);
+                builder.chunk_size = chunk_size;
+
+                if let Some(hive_partitioning) = hive_partitioning {
+                    builder.hive_partitioning = hive_partitioning;
+                }
+
+                builder.finish().await?
             }
-            other => {
-                invalid_argument_err!(
-                    "Unsupported format: {other}; only parquet and csv are supported"
-                );
+            "csv" => {
+                // reference for csv options:
+                // https://spark.apache.org/docs/latest/sql-data-sources-csv.html
+                let mut builder = CsvScanBuilder::new(paths);
+
+                if let Some(sep) = options.get("sep").and_then(|s| s.chars().next()) {
+                    builder = builder.delimiter(sep);
+                }
+
+                // spark sets this to false by default, so we'll do the same
+                let header = options
+                    .get("header")
+                    .and_then(|v| v.to_lowercase().parse().ok())
+                    .unwrap_or(false);
+
+                builder = builder.has_headers(header);
+
+                let infer_schema = options
+                    .get("inferSchema")
+                    .and_then(|v| v.to_lowercase().parse().ok())
+                    .unwrap_or(true);
+
+                builder = builder.infer_schema(infer_schema);
+
+                if let Some(quote) = options.get("quote").and_then(|s| s.chars().next()) {
+                    builder = builder.quote(quote);
+                }
+
+                if let Some(comment) = options.get("comment").and_then(|s| s.chars().next()) {
+                    builder = builder.comment(comment);
+                }
+
+                if let Some(escape_char) = options.get("escape").and_then(|s| s.chars().next()) {
+                    builder = builder.escape_char(escape_char);
+                }
+
+                if let Some(hive_partitioning) = options
+                    .get("hive_partitioning")
+                    .and_then(|v| v.parse().ok())
+                {
+                    builder = builder.hive_partitioning(hive_partitioning);
+                }
+                if let Some(chunk_size) = options.get("chunk_size").and_then(|v| v.parse().ok()) {
+                    builder = builder.chunk_size(chunk_size);
+                }
+
+                if let Some(buffer_size) = options.get("buffer_size").and_then(|v| v.parse().ok()) {
+                    builder = builder.buffer_size(buffer_size);
+                }
+
+                builder.finish().await?
             }
+            "json" => JsonScanBuilder::new(paths).finish().await?,
+            "delta" => {
+                if paths.len() != 1 {
+                    invalid_argument_err!(
+                        "Delta format only supports a single path; got {paths:?}"
+                    );
+                }
+                let path = paths.first().unwrap();
+
+                delta_scan(path, None, true)?
+            }
+
+            other => invalid_argument_err!("Unsupported format: {other};"),
         })
     }
 
