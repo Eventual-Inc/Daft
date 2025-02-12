@@ -6,7 +6,7 @@ from daft.sql import SQLCatalog
 
 def test_sql_catalog_sanity():
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
-    catalog = {'"a.b"': df1}
+    catalog = {"a.b": df1}
     try:
         actual = daft.sql('select * from "a.b"', catalog=SQLCatalog(catalog)).to_pydict()
         assert actual == df1.to_pydict()
@@ -16,13 +16,13 @@ def test_sql_catalog_sanity():
 
 @pytest.mark.parametrize(
     "table_name",
-    ["a", "a_b", '"a.b"', '"a.b.c"', "a_", "a_1", '"a-b"', '"a."'],
+    ["a", "a_b", "a.b", "a.b.c", "a_", "a_1", "a-b", "a."],
 )
 def test_sql_catalog_table_names(table_name):
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
     catalog = {table_name: df1}
     try:
-        actual = daft.sql(f"select * from {table_name}", catalog=SQLCatalog(catalog)).to_pydict()
+        actual = daft.sql(f'select * from "{table_name}"', catalog=SQLCatalog(catalog)).to_pydict()
         assert actual == df1.to_pydict()
     except Exception as e:
         assert False, f"Unexpected exception: {e}"
@@ -39,9 +39,12 @@ def test_sql_catalog_table_names(table_name):
 )
 def test_sql_catalog_table_names_invalid(table_name):
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
-    catalog = {table_name: df1}
+    catalog = SQLCatalog({table_name: df1})
+    # ok when delimited
+    _ = daft.sql(f'select * from "{table_name}"', catalog).to_pydict()
+    # err when not delimited
     with pytest.raises(Exception):
-        SQLCatalog(catalog)
+        _ = daft.sql(f"select * from {table_name}", catalog).to_pydict()
 
 
 def test_sql_register_globals():
