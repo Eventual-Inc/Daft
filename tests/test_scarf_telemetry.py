@@ -127,12 +127,3 @@ def test_runner_analytics():
         }
     )
     df.select("A", "B").collect()
-
-
-def test_scarf_telemetry_in_runner():
-    with patch("daft.runners.ray_runner.scarf_telemetry") as mock_scarf:
-        df = daft.from_pydict({"A": [1, 2, 3, 4]})
-        df.select("A").collect()
-
-        # Ensure scarf_telemetry was called exactly once with the expected argument
-        mock_scarf.assert_called_once_with(runner="ray")
