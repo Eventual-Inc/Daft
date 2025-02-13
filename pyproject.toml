@@ -105,3 +105,6 @@ testpaths = [
 
 [tool.setuptools.package-data]
 "daft" = ["html"]
+
+[tool.uv.workspace]
+members = ["dashboard"]
