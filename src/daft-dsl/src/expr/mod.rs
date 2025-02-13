@@ -1374,6 +1374,35 @@ impl Expr {
         }
     }
 
+    pub fn has_compute(&self) -> bool {
+        match self {
+            Self::Column(..) => false,
+            Self::Literal(..) => false,
+            Self::Subquery(..) => false,
+            Self::Exists(..) => false,
+            Self::OuterReferenceColumn(..) => false,
+            Self::Function { .. } => true,
+            Self::ScalarFunction(..) => true,
+            Self::Agg(_) => true,
+            Self::IsIn(..) => true,
+            Self::Between(..) => true,
+            Self::BinaryOp { .. } => true,
+            Self::Alias(expr, ..) => expr.has_compute(),
+            Self::Cast(expr, ..) => expr.has_compute(),
+            Self::Not(expr) => expr.has_compute(),
+            Self::IsNull(expr) => expr.has_compute(),
+            Self::NotNull(expr) => expr.has_compute(),
+            Self::FillNull(expr, fill_value) => expr.has_compute() || fill_value.has_compute(),
+            Self::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
+            Self::InSubquery(expr, _) => expr.has_compute(),
+            Self::List(..) => true,
+        }
+    }
+
     pub fn eq_null_safe(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::EqNullSafe, self, other)
     }
