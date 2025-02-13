@@ -1,8 +1,3 @@
-[[bin]]
-features = []
-name = "main"
-path = "src/main.rs"
-
 [dependencies]
 anyhow = "1.0"
 chrono = {workspace = true, features = ["serde"]}

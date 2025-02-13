@@ -108,9 +108,10 @@ async fn http_server_application(
                 .expect("Sending signal should always succeed");
             response::empty(StatusCode::OK)
         }
+        (_, ["api", ..]) => response::empty(StatusCode::NOT_FOUND),
 
         // All other paths (that don't start with "api") will be treated as web-server requests.
-        (&Method::GET, &[first, ..]) if first != "api" => {
+        (&Method::GET, _) => {
             let Some(resolver) = resolver else {
                 return Ok(response::empty(StatusCode::NOT_FOUND));
             };
