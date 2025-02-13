@@ -12,14 +12,14 @@ impl PySession {
 
     #[staticmethod]
     pub fn empty() -> Self {
-        todo!()
+        Self(Session::empty())
     }
 
     pub fn exec(&self, input: &str) -> PyResult<()> {
         todo!()
     }
 
-    pub fn current_catalog(&self) -> PyResult<PyCatalog> {
+    pub fn current_catalog(&self) -> PyResult<()> {
         todo!()
     }
 

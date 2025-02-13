@@ -1814,6 +1814,7 @@ class PyDaftPlanningConfig:
 class PyDaftContext:
     def __init__(self) -> None: ...
     _runner: Runner
+    _session: Session
     def get_or_create_runner(self) -> Runner: ...
     _daft_execution_config: PyDaftExecutionConfig
     _daft_planning_config: PyDaftPlanningConfig

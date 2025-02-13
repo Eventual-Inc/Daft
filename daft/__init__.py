@@ -58,12 +58,7 @@ analytics_client.track_import()
 # Daft top-level imports
 ###
 
-from daft.catalog import (
-    Identifier,
-    read_table,
-    register_table,
-)
-from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
+from daft.catalog import Catalog, Identifier
 from daft.convert import (
     from_arrow,
     from_dask_dataframe,
@@ -91,7 +86,11 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
-from daft.session import Session, current_session, set_session
+from daft.session import (
+    Session,
+    current_session,
+    set_session,
+)
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
@@ -99,8 +98,11 @@ from daft.viz import register_viz_hook
 to_struct = Expression.to_struct
 
 __all__ = [
+    "Catalog",
+    # !! – move to daft-table
     "DataCatalogTable",
     "DataCatalogType",
+    # !! --------------------
     "DataFrame",
     "DataType",
     "Expression",
@@ -135,9 +137,7 @@ __all__ = [
     "read_lance",
     "read_parquet",
     "read_sql",
-    "read_table",
     "refresh_logger",
-    "register_table",
     "register_viz_hook",
     "set_execution_config",
     "set_planning_config",
