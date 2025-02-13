@@ -29,7 +29,6 @@ from typing import (
     Union,
 )
 
-from daft import dashboard
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
@@ -2836,6 +2835,8 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with materialized results.
         """
+        from daft import dashboard
+
         self._materialize_results()
         dashboard._broadcast_query_plan(self)
 
@@ -2908,6 +2909,8 @@ class DataFrame:
         Args:
             n: number of rows to show. Defaults to 8.
         """
+        from daft import dashboard
+
         dataframe_display = self._construct_show_display(n)
         dashboard._broadcast_query_plan(self)
 
