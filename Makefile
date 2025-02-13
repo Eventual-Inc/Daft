@@ -80,10 +80,10 @@ sphinx-docs: .venv ## Build Sphinx API documentation
 
 .PHONY: dashboard
 dashboard: .venv
+	cd dashboard && bun run build
 	if [ -d daft/static_dashboard_assets ]; then \
 		rm -rf daft/static_dashboard_assets; \
 	fi
-	cd dashboard && bun run build
 	mv dashboard/out daft/static_dashboard_assets
 
 .PHONY: clean
