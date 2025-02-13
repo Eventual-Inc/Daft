@@ -346,7 +346,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             "Please report any issues at github.com/Eventual-Inc/Daft/issues",
         )
 
-        scarf_telemetry(self.name)
+        scarf_telemetry(runner=self.name)
 
         # NOTE: Freeze and use this same execution config for the entire execution
         daft_execution_config = get_context().daft_execution_config

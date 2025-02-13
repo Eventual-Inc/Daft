@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import daft
 from daft.scarf_telemetry import scarf_telemetry
-from tests.conftest import get_tests_daft_runner_name
 
 
 @patch("daft.scarf_telemetry.get_build_type")
@@ -118,11 +117,7 @@ def test_scarf_telemetry_error_handling(
     assert runner_type is None
 
 
-DATA = {"id": [i for i in range(100)]}
-
-
-@patch("daft.scarf_telemetry.scarf_telemetry")
-def test_runner_analytics(mock_scarf_telemetry: MagicMock):
+def test_runner_analytics():
     df = daft.from_pydict(
         {
             "A": [1, 2, 3, 4],
@@ -133,4 +128,11 @@ def test_runner_analytics(mock_scarf_telemetry: MagicMock):
     )
     df.select("A", "B").collect()
 
-    mock_scarf_telemetry.assert_called_once_with(runner=get_tests_daft_runner_name())
+
+def test_scarf_telemetry_in_runner():
+    with patch("daft.runners.ray_runner.scarf_telemetry") as mock_scarf:
+        df = daft.from_pydict({"A": [1, 2, 3, 4]})
+        df.select("A").collect()
+
+        # Ensure scarf_telemetry was called exactly once with the expected argument
+        mock_scarf.assert_called_once_with(runner="ray")

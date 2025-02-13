@@ -71,7 +71,7 @@ class NativeRunner(Runner[MicroPartition]):
         builder: LogicalPlanBuilder,
         results_buffer_size: int | None = None,
     ) -> Iterator[LocalMaterializedResult]:
-        scarf_telemetry(self.name)
+        scarf_telemetry(runner=self.name)
 
         # NOTE: Freeze and use this same execution config for the entire execution
         daft_execution_config = get_context().daft_execution_config

@@ -1269,7 +1269,7 @@ class RayRunner(Runner[ray.ObjectRef]):
     def run_iter(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[RayMaterializedResult]:
-        scarf_telemetry(self.name)
+        scarf_telemetry(runner=self.name)
 
         # Grab and freeze the current DaftExecutionConfig
         daft_execution_config = get_context().daft_execution_config
