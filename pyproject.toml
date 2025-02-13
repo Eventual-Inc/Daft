@@ -25,6 +25,7 @@ requires-python = ">=3.9"
 all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
 aws = ["boto3"]
 azure = []
+dashboard = []
 deltalake = ["deltalake"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
@@ -104,7 +105,5 @@ testpaths = [
 ]
 
 [tool.setuptools.package-data]
-"daft" = ["html"]
-
-[tool.uv.workspace]
-members = ["dashboard"]
+"daft" = []
+"daft.dashboard" = ["static_dashboard_assets"]

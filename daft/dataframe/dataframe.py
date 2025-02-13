@@ -11,7 +11,6 @@ import pathlib
 import typing
 import warnings
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from functools import partial, reduce
 from typing import (
     TYPE_CHECKING,
@@ -29,8 +28,8 @@ from typing import (
     TypeVar,
     Union,
 )
-from uuid import uuid4
 
+from daft import dashboard
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
@@ -159,49 +158,6 @@ class DataFrame:
             return None
         else:
             return self._result_cache.value
-
-    def _explain_broadcast(self):
-        import json
-        from urllib import request
-        from urllib.error import URLError
-
-        from daft import dashboard
-        from daft.dataframe.display import MermaidFormatter
-
-        dashboard_addr = os.environ.get(dashboard.DAFT_DASHBOARD_ENV_NAME)
-        if not dashboard_addr:
-            return
-        elif not int(dashboard_addr):
-            return
-
-        # try launching
-        # if dashboard is already launched, this will do nothing
-        dashboard.launch()
-
-        is_cached = self._result_cache is not None
-        plan_time_start = datetime.now(timezone.utc)
-        mermaid_plan = MermaidFormatter(
-            builder=self.__builder, show_all=True, simple=False, is_cached=is_cached
-        )._repr_markdown_()
-        plan_time_end = datetime.now(timezone.utc)
-
-        headers = {
-            "Content-Type": "application/json",
-        }
-        data = json.dumps(
-            {
-                "id": str(uuid4()),
-                "mermaid_plan": mermaid_plan,
-                "plan_time_start": str(plan_time_start),
-                "plan_time_end": str(plan_time_end),
-            }
-        ).encode("utf-8")
-        req = request.Request(dashboard.DAFT_DASHBOARD_URL, headers=headers, data=data)
-
-        try:
-            request.urlopen(req, timeout=1)
-        except URLError as e:
-            warnings.warn(f"Failed to broadcast metrics over {dashboard.DAFT_DASHBOARD_URL}: {e}")
 
     @DataframePublicAPI
     def explain(
@@ -2881,7 +2837,7 @@ class DataFrame:
             DataFrame: DataFrame with materialized results.
         """
         self._materialize_results()
-        self._explain_broadcast()
+        dashboard._broadcast_query_plan(self)
 
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -2953,7 +2909,7 @@ class DataFrame:
             n: number of rows to show. Defaults to 8.
         """
         dataframe_display = self._construct_show_display(n)
-        self._explain_broadcast()
+        dashboard._broadcast_query_plan(self)
 
         try:
             from IPython.display import display
