@@ -29,6 +29,7 @@ use {
         types::{PyModule, PyModuleMethods},
         wrap_pyfunction, Bound, PyResult,
     },
+    std::process::exit,
     std::time::Duration,
     tokio::time::sleep,
 };
@@ -270,11 +271,14 @@ However, if this is another process, then kill that other server (by running `ki
     } else if matches!(
         fork::fork().expect("Failed to fork child process"),
         fork::Fork::Child
-    ) && matches!(
-        launch_on_tokio_runtime(),
-        BreakReason::PythonSignalInterrupt
     ) {
-        unreachable!("Can't receive a python signal interrupt in an orphaned process");
+        if matches!(
+            launch_on_tokio_runtime(),
+            BreakReason::PythonSignalInterrupt
+        ) {
+            unreachable!("Can't receive a python signal interrupt in an orphaned process");
+        }
+        exit(0);
     }
 }
 
