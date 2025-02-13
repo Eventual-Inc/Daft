@@ -1,4 +1,5 @@
 mod drop_repartition;
+mod eliminate_alias;
 mod eliminate_cross_join;
 mod enrich_with_stats;
 mod filter_null_join_key;
@@ -14,6 +15,7 @@ mod split_actor_pool_projects;
 mod unnest_subquery;
 
 pub use drop_repartition::DropRepartition;
+pub use eliminate_alias::EliminateAliasRule;
 pub use eliminate_cross_join::EliminateCrossJoin;
 pub use enrich_with_stats::EnrichWithStats;
 pub use filter_null_join_key::FilterNullJoinKey;

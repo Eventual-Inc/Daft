@@ -6,13 +6,13 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_algebra::boolean::combine_conjunction;
 use daft_catalog::identifier::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
-    bound_col, has_agg, lit, literals_to_series, null_lit, unbound_col, AggExpr, Expr, ExprRef,
-    LiteralValue, Operator, Subquery,
+    bound_col, has_agg, lit, literals_to_series, null_lit, resolved_col, unbound_col, Expr,
+    ExprRef, LiteralValue, Operator, Subquery,
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
@@ -20,6 +20,7 @@ use daft_functions::{
 };
 use daft_logical_plan::{JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
 use daft_session::Session;
+use itertools::Itertools;
 use sqlparser::{
     ast::{
         self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
@@ -64,6 +65,12 @@ impl<T> Default for Bindings<T> {
     fn default() -> Self {
         Self(Default::default())
     }
+}
+
+struct OrderByExprs {
+    exprs: Vec<ExprRef>,
+    descending: Vec<bool>,
+    nulls_first: Vec<bool>,
 }
 
 /// Context for the planning the statement.
@@ -291,26 +298,14 @@ impl<'a> SQLPlanner<'a> {
         // FROM/JOIN
         let from = selection.clone().from;
         self.plan_from(&from)?;
-        let schema = self.current_plan_ref().schema();
 
         // SELECT
-        let mut projections = Vec::with_capacity(selection.projection.len());
-        let mut projection_fields = Vec::with_capacity(selection.projection.len());
-        for expr in &selection.projection {
-            let exprs = self.select_item_to_expr(expr)?;
-
-            let fields = exprs
-                .iter()
-                .map(|expr| expr.to_field(&schema).map_err(PlannerError::from))
-                .collect::<SQLPlannerResult<Vec<_>>>()?;
-
-            projections.extend(exprs);
-
-            projection_fields.extend(fields);
-        }
-
-        let projection_schema = Schema::new(projection_fields)?;
-        let has_orderby = query.order_by.is_some();
+        let projections = selection
+            .projection
+            .iter()
+            .map(|p| self.select_item_to_expr(p))
+            .flatten_ok()
+            .collect::<Result<Vec<_>, _>>()?;
 
         // WHERE
         if let Some(selection) = &selection.selection {
@@ -335,6 +330,19 @@ impl<'a> SQLPlanner<'a> {
             }
         }
 
+        // ORDER BY
+        let order_by = query
+            .order_by
+            .as_ref()
+            .map(|order_by| {
+                if order_by.interpolate.is_some() {
+                    unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+                }
+
+                self.plan_order_by_exprs(&order_by.exprs)
+            })
+            .transpose()?;
+
         let has_aggs = projections.iter().any(has_agg) || !groupby_exprs.is_empty();
 
         if has_aggs {
@@ -344,17 +352,9 @@ impl<'a> SQLPlanner<'a> {
                 .map(|h| self.plan_expr(h))
                 .transpose()?;
 
-            self.plan_aggregate_query(
-                &projections,
-                &schema,
-                has_orderby,
-                groupby_exprs,
-                query,
-                &projection_schema,
-                having,
-            )?;
+            self.plan_aggregate_query(projections, order_by, groupby_exprs, having)?;
         } else {
-            self.plan_non_agg_query(projections, schema, has_orderby, query, projection_schema)?;
+            self.plan_non_agg_query(projections, order_by)?;
         }
 
         match &selection.distinct {
@@ -382,76 +382,18 @@ impl<'a> SQLPlanner<'a> {
     fn plan_non_agg_query(
         &mut self,
         projections: Vec<Arc<Expr>>,
-        schema: Arc<Schema>,
-        has_orderby: bool,
-        query: &Query,
-        projection_schema: Schema,
+        order_by: Option<OrderByExprs>,
     ) -> Result<(), PlannerError> {
-        // Final/selected cols
-        // if there is an orderby, and it references a column that is not part of the final projection (such as an alias)
-        // then we need to keep the original column in the projection, and remove it at the end
-        // ex: `SELECT a as b, c FROM t ORDER BY a`
-        // we need to keep a, and c in the first projection
-        // but only c in the final projection
-        // We only will apply 2 projections if there is an order by and the order by references a column that is not in the final projection
-        let mut final_projection = Vec::with_capacity(projections.len());
-        let mut orderby_projection = Vec::with_capacity(projections.len());
-        for p in &projections {
-            let fld = p.to_field(&schema);
-
-            let fld = fld?;
-            let name = fld.name.clone();
-
-            // if there is an orderby, then the final projection will only contain the columns that are in the orderby
-            final_projection.push(if has_orderby {
-                unbound_col(name.as_ref())
-            } else {
-                // otherwise we just do a normal projection
-                p.clone()
-            });
+        if let Some(OrderByExprs {
+            exprs,
+            descending,
+            nulls_first,
+        }) = order_by
+        {
+            self.update_plan(|plan| plan.sort(exprs, descending, nulls_first))?;
         }
 
-        if has_orderby {
-            let order_by = query.order_by.as_ref().unwrap();
-
-            if order_by.interpolate.is_some() {
-                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-            };
-
-            let (orderby_exprs, orderby_desc, orderby_nulls_first) =
-                self.plan_order_by_exprs(order_by.exprs.as_slice())?;
-
-            for expr in &orderby_exprs {
-                if let Err(DaftError::FieldNotFound(_)) = expr.to_field(&projection_schema) {
-                    // this is likely an alias
-                    orderby_projection.push(expr.clone());
-                }
-            }
-            // if the orderby references a column that is not in the final projection
-            // then we need an additional projection
-            let needs_projection = !orderby_projection.is_empty();
-
-            if needs_projection {
-                let pre_orderby_projections = projections
-                    .iter()
-                    .cloned()
-                    .chain(orderby_projection)
-                    .collect::<HashSet<_>>() // dedup
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                self.update_plan(|plan| plan.select(pre_orderby_projections))?;
-            } else {
-                self.update_plan(|plan| plan.select(projections))?;
-            }
-
-            self.update_plan(|plan| plan.sort(orderby_exprs, orderby_desc, orderby_nulls_first))?;
-
-            if needs_projection {
-                self.update_plan(|plan| plan.select(final_projection))?;
-            }
-        } else {
-            self.update_plan(|plan| plan.select(projections))?;
-        }
+        self.update_plan(|plan| plan.select(projections))?;
 
         Ok(())
     }
@@ -459,224 +401,88 @@ impl<'a> SQLPlanner<'a> {
     #[allow(clippy::too_many_arguments)]
     fn plan_aggregate_query(
         &mut self,
-        projections: &Vec<Arc<Expr>>,
-        schema: &Arc<Schema>,
-        has_orderby: bool,
+        projections: Vec<Arc<Expr>>,
+        order_by: Option<OrderByExprs>,
         groupby_exprs: Vec<Arc<Expr>>,
-        query: &Query,
-        projection_schema: &Schema,
         having: Option<Arc<Expr>>,
     ) -> Result<(), PlannerError> {
-        let mut final_projection = Vec::with_capacity(projections.len());
-        let mut aggs = Vec::with_capacity(projections.len());
+        let mut aggs = HashSet::new();
 
-        // these are orderbys that are part of the final projection
-        let mut orderbys_after_projection = Vec::new();
-        let mut orderbys_after_projection_desc = Vec::new();
-        let mut orderbys_after_projection_nulls_first = Vec::new();
+        let schema = self.current_plan_ref().schema();
 
-        // these are orderbys that are not part of the final projection
-        let mut orderbys_before_projection = Vec::new();
-        let mut orderbys_before_projection_desc = Vec::new();
-        let mut orderbys_before_projection_nulls_first = Vec::new();
-
-        for p in projections {
-            let fld = p.to_field(schema)?;
-
-            let name = fld.name.clone();
-            if has_agg(p) {
-                // this is an aggregate, so it is resolved during `.agg`. So we just push the column name
-                final_projection.push(unbound_col(name.as_ref()));
-                // add it to the aggs list
-                aggs.push(p.clone());
-            } else {
-                // otherwise we just do a normal projection
-                final_projection.push(p.clone());
-            }
-        }
-
-        if let Some(having) = &having {
-            if has_agg(having) {
-                let having = having.alias(having.semantic_id(schema).id);
-
-                aggs.push(having);
-            }
-        }
-
-        let groupby_exprs = groupby_exprs
+        let projections = projections
             .into_iter()
-            .map(|e| {
-                // instead of trying to do an additional projection for the groupby column, we just map it back to the original (unaliased) column
-                // ex: SELECT a as b FROM t GROUP BY b
-                // in this case, we need to resolve b to a
-                if let Err(DaftError::FieldNotFound(_)) = e.to_field(schema) {
-                    // this is likely an alias
-                    unresolve_alias(e, &final_projection)
+            .map(|expr| {
+                if has_agg(&expr) {
+                    aggs.insert(expr.clone());
+
+                    resolved_col(expr.name())
                 } else {
-                    Ok(e)
+                    expr
                 }
             })
-            .collect::<SQLPlannerResult<Vec<_>>>()?;
+            .collect();
 
-        if has_orderby {
-            let order_by = query.order_by.as_ref().unwrap();
+        let having = having.map(|expr| {
+            // ensure that all aggs required for having filter are present
+            if has_agg(&expr) {
+                let id = expr.semantic_id(&schema).id;
 
-            if order_by.interpolate.is_some() {
-                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-            };
+                aggs.insert(expr.alias(id.clone()));
 
-            let (exprs, desc, nulls_first) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
-
-            for (i, expr) in exprs.iter().enumerate() {
-                // the orderby is ordered by a column of the projection
-                // ex: SELECT a as b FROM t ORDER BY b
-                // so we don't need an additional projection
-
-                if let Ok(fld) = expr.to_field(projection_schema) {
-                    // check if it's an aggregate
-                    // ex: SELECT sum(a) FROM t ORDER BY sum(a)
-
-                    // special handling for count(*)
-                    // TODO: this is a hack, we should handle this better
-                    //
-                    // Since count(*) will always be `Ok` for `to_field(schema)`
-                    // we need to manually check if it's in the final schema or not
-                    if let Expr::Alias(e, alias) = expr.as_ref() {
-                        if alias.as_ref() == "count"
-                            && matches!(e.as_ref(), Expr::Agg(AggExpr::Count(_, CountMode::All)))
-                        {
-                            if let Some(alias) = aggs.iter().find_map(|agg| {
-                                if let Expr::Alias(e, alias) = agg.as_ref() {
-                                    if e == expr {
-                                        Some(alias)
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
-                            }) {
-                                // its a count(*) that is already in the final projection
-                                // ex: SELECT count(*) as c FROM t ORDER BY count(*)
-                                orderbys_after_projection.push(unbound_col(alias.as_ref()));
-                                orderbys_after_projection_desc.push(desc[i]);
-                                orderbys_after_projection_nulls_first.push(nulls_first[i]);
-                            } else {
-                                // its a count(*) that is not in the final projection
-                                // ex: SELECT sum(n) FROM t ORDER BY count(*);
-                                aggs.push(expr.clone());
-                                orderbys_before_projection.push(unbound_col(fld.name.as_ref()));
-                                orderbys_before_projection_desc.push(desc[i]);
-                                orderbys_before_projection_nulls_first.push(nulls_first[i]);
-                            }
-                        }
-                    } else if has_agg(expr) {
-                        // aggregates part of the final projection are already resolved
-                        // so we just need to push the column name
-                        orderbys_after_projection.push(unbound_col(fld.name.as_ref()));
-                        orderbys_after_projection_desc.push(desc[i]);
-                        orderbys_after_projection_nulls_first.push(nulls_first[i]);
-                    } else {
-                        orderbys_after_projection.push(expr.clone());
-                        orderbys_after_projection_desc.push(desc[i]);
-                        orderbys_after_projection_nulls_first.push(nulls_first[i]);
-                    }
-
-                // the orderby is ordered by an expr from the original schema
-                // ex: SELECT sum(b) FROM t ORDER BY sum(a)
-                } else if let Ok(fld) = expr.to_field(schema) {
-                    // check if it's an aggregate
-                    if has_agg(expr) {
-                        // check if it's an alias of something in the aggs
-                        // if so, we can just use that column
-                        // This way we avoid computing the aggregate twice
-                        //
-                        // ex: SELECT sum(a) as b FROM t ORDER BY sum(a);
-                        if let Some(alias) = aggs.iter().find_map(|p| {
-                            if let Expr::Alias(e, alias) = p.as_ref() {
-                                if e == expr {
-                                    Some(alias)
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        }) {
-                            orderbys_after_projection.push(unbound_col(alias.as_ref()));
-                            orderbys_after_projection_desc.push(desc[i]);
-                            orderbys_after_projection_nulls_first.push(nulls_first[i]);
-                        } else {
-                            // its an aggregate that is not part of the final projection
-                            // ex: SELECT sum(a) FROM t ORDER BY sum(b)
-                            // so we need need to add it to the aggs list
-                            aggs.push(expr.clone());
-
-                            // then add it to the orderbys that are not part of the final projection
-                            orderbys_before_projection.push(unbound_col(fld.name.as_ref()));
-                            orderbys_before_projection_desc.push(desc[i]);
-                            orderbys_before_projection_nulls_first.push(nulls_first[i]);
-                        }
-                    } else {
-                        // we know it's a column of the original schema
-                        // and its nt part of the final projection
-                        // so we need an additional projection
-                        // ex: SELECT sum(a) FROM t ORDER BY b
-
-                        orderbys_before_projection.push(unbound_col(fld.name.as_ref()));
-                        orderbys_before_projection_desc.push(desc[i]);
-                        orderbys_before_projection_nulls_first.push(nulls_first[i]);
-                    }
-                } else {
-                    panic!("unexpected order by expr");
-                }
+                resolved_col(id)
+            } else {
+                expr
             }
-        }
+        });
 
-        self.update_plan(|plan| plan.aggregate(aggs.clone(), groupby_exprs))?;
+        let order_by = order_by.map(
+            |OrderByExprs {
+                 exprs,
+                 descending,
+                 nulls_first,
+             }| {
+                // for order by expressions with aggregations,
+                // ensure aggregations are present and update expression to point to agg
+                let updated_exprs = exprs
+                    .into_iter()
+                    .map(|e| {
+                        if has_agg(&e) {
+                            let id = e.semantic_id(&schema).id;
 
-        let has_orderby_before_projection = !orderbys_before_projection.is_empty();
-        let has_orderby_after_projection = !orderbys_after_projection.is_empty();
+                            aggs.insert(e.alias(id.clone()));
 
-        // ----------------
-        // PERF(cory): if there are order bys from both parts, can we combine them into a single sort instead of two?
-        // or can we optimize them into a single sort?
-        // ----------------
+                            resolved_col(id)
+                        } else {
+                            e
+                        }
+                    })
+                    .collect();
 
-        // order bys that are not in the final projection
-        if has_orderby_before_projection {
-            self.update_plan(|plan| {
-                plan.sort(
-                    orderbys_before_projection,
-                    orderbys_before_projection_desc,
-                    orderbys_before_projection_nulls_first,
-                )
-            })?;
-        }
+                OrderByExprs {
+                    exprs: updated_exprs,
+                    descending,
+                    nulls_first,
+                }
+            },
+        );
+
+        self.update_plan(|plan| plan.aggregate(aggs.into_iter().collect(), groupby_exprs))?;
 
         if let Some(having) = having {
-            // if it's an agg, it's already resolved during .agg, so we just reference the column name
-            let having = if has_agg(&having) {
-                unbound_col(having.semantic_id(schema).id)
-            } else {
-                having
-            };
             self.update_plan(|plan| plan.filter(having))?;
         }
 
-        // apply the final projection
-        self.update_plan(|plan| plan.select(final_projection))?;
-
-        // order bys that are in the final projection
-        if has_orderby_after_projection {
-            self.update_plan(|plan| {
-                plan.sort(
-                    orderbys_after_projection,
-                    orderbys_after_projection_desc,
-                    orderbys_after_projection_nulls_first,
-                )
-            })?;
+        if let Some(OrderByExprs {
+            exprs,
+            descending,
+            nulls_first,
+        }) = order_by
+        {
+            self.update_plan(|plan| plan.sort(exprs, descending, nulls_first))?;
         }
+
+        self.update_plan(|plan| plan.select(projections))?;
 
         Ok(())
     }
@@ -684,12 +490,12 @@ impl<'a> SQLPlanner<'a> {
     fn plan_order_by_exprs(
         &self,
         expr: &[sqlparser::ast::OrderByExpr],
-    ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<bool>, Vec<bool>)> {
+    ) -> SQLPlannerResult<OrderByExprs> {
         if expr.is_empty() {
             unsupported_sql_err!("ORDER BY []");
         }
         let mut exprs = Vec::with_capacity(expr.len());
-        let mut desc = Vec::with_capacity(expr.len());
+        let mut descending = Vec::with_capacity(expr.len());
         let mut nulls_first = Vec::with_capacity(expr.len());
         for order_by_expr in expr {
             match (order_by_expr.asc, order_by_expr.nulls_first) {
@@ -705,7 +511,7 @@ impl<'a> SQLPlanner<'a> {
                 // ORDER BY expr ASC NULLS LAST
                 (Some(true), Some(false)) => {
                    nulls_first.push(false);
-                   desc.push(false);
+                   descending.push(false);
                },
                 // ---------------------------
 
@@ -716,7 +522,7 @@ impl<'a> SQLPlanner<'a> {
                 // ORDER BY expr ASC NULLS FIRST
                 (Some(true), Some(true)) => {
                     nulls_first.push(true);
-                    desc.push(false);
+                    descending.push(false);
                 }
                 // ---------------------------
 
@@ -725,12 +531,12 @@ impl<'a> SQLPlanner<'a> {
                 // ORDER BY expr DESC NULLS FIRST
                 (Some(false), Some(true)) => {
                     nulls_first.push(true);
-                    desc.push(true);
+                    descending.push(true);
                 },
                 // ORDER BY expr DESC NULLS LAST
                 (Some(false), Some(false)) => {
                     nulls_first.push(false);
-                    desc.push(true);
+                    descending.push(true);
                 }
 
             };
@@ -741,7 +547,12 @@ impl<'a> SQLPlanner<'a> {
 
             exprs.push(expr);
         }
-        Ok((exprs, desc, nulls_first))
+
+        Ok(OrderByExprs {
+            exprs,
+            descending,
+            nulls_first,
+        })
     }
 
     /// Plans the FROM clause of a query and populates self.current_relation and self.table_map
@@ -1214,29 +1025,39 @@ impl<'a> SQLPlanner<'a> {
                 let Some(current_plan) = self.current_plan.as_ref() else {
                     table_not_found_err!(ident_name);
                 };
-                let Some(schema) = current_plan.plan.clone().get_schema_for_id(&ident_name)? else {
+                let Some(subquery_schema) =
+                    current_plan.plan.clone().get_schema_for_id(&ident_name)?
+                else {
                     table_not_found_err!(ident_name);
                 };
 
-                let plan_id: Option<Arc<str>> = Some(ident_name.into());
-
-                if let Some(exclude) = &wildcard_opts.opt_exclude {
-                    wildcard_exclude(schema.clone(), exclude)
-                        .map(|excluded| {
-                            excluded
-                                .names()
-                                .iter()
-                                .map(|n| bound_col(n.clone(), plan_id.clone(), schema.clone()))
-                                .collect::<Vec<_>>()
-                        })
-                        .map_err(std::convert::Into::into)
+                let columns = if let Some(exclude) = &wildcard_opts.opt_exclude {
+                    Arc::new(wildcard_exclude(subquery_schema.clone(), exclude)?)
                 } else {
-                    Ok(schema
-                        .names()
-                        .iter()
-                        .map(|n| bound_col(n.clone(), plan_id.clone(), schema.clone()))
-                        .collect())
-                }
+                    // I believe clippy is wrong here. It does not compile without this clone - kevin
+                    #[allow(clippy::redundant_clone)]
+                    subquery_schema.clone()
+                };
+
+                let plan_schema = current_plan.plan.schema();
+
+                Ok(columns
+                    .names()
+                    .iter()
+                    .map(|n| {
+                        let full_name = format!("{ident_name}.{n}");
+                        if plan_schema.has_field(&full_name) {
+                            // TODO: remove this once we do not do join column renaming
+                            unbound_col(full_name).alias(n.clone())
+                        } else {
+                            bound_col(
+                                n.clone(),
+                                Some(ident_name.clone().into()),
+                                subquery_schema.clone(),
+                            )
+                        }
+                    })
+                    .collect())
             }
         }
     }
@@ -2297,43 +2118,6 @@ fn is_table_path(name: &ObjectName) -> bool {
         return false;
     }
     matches!(name.0[0].quote_style, Some('\''))
-}
-
-/// unresolves an alias in a projection
-/// Example:
-/// ```sql
-/// SELECT a as b, c FROM t group by b
-/// ```
-/// in this case if you tried to unresolve the expr `b` using the projections [`a as b`, `c`] you would get `a`
-///
-/// Since sql allows you to use the alias in the group by or the order by clause, we need to unresolve the alias to the original expression
-/// ex:
-/// All of the following are valid sql queries
-/// `select a as b, c from t group by b`
-/// `select a as b, c from t group by a`
-/// `select a as b, c from t group by a order by a`
-/// `select a as b, c from t group by a order by b`
-/// `select a as b, c from t group by b order by a`
-/// `select a as b, c from t group by b order by b`
-///
-/// In all of the above cases, the group by and order by clauses are resolved to the original expression `a`
-///
-/// This is needed for resolving group by and order by clauses
-fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
-    projection
-        .iter()
-        .find_map(|p| {
-            if let Expr::Alias(e, alias) = &p.as_ref() {
-                if expr.name() == alias.as_ref() {
-                    Some(e.clone())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| PlannerError::column_not_found(expr.name(), "projection"))
 }
 
 /// Add the relevant projection and alias plan nodes to reflect the TableAlias

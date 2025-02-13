@@ -486,7 +486,8 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Repartition(..)
         | LogicalPlan::Union(..)
         | LogicalPlan::Intersect(..)
-        | LogicalPlan::Sort(..) => Ok((plan.clone(), subquery_on, outer_on)),
+        | LogicalPlan::Sort(..)
+        | LogicalPlan::Alias(..) => Ok((plan.clone(), subquery_on, outer_on)),
 
         // ops that cannot pull up correlated columns
         LogicalPlan::ActorPoolProject(..)
@@ -508,7 +509,6 @@ fn pull_up_correlated_cols(
                 )))
             }
         }
-        LogicalPlan::Alias(_) => unreachable!("Alias should have been optimized away"),
     }
 }
 

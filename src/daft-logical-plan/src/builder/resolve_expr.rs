@@ -180,15 +180,16 @@ impl<'a> ExprResolver<'a> {
             )));
         }
 
-        let validated_expr = if self.in_agg_context {
-            self.validate_expr_in_agg(expr)
-        } else {
-            self.validate_expr(expr)
-        }?;
-
-        expand_wildcard(validated_expr, plan.clone())?
+        expand_wildcard(expr, plan.clone())?
             .into_iter()
             .map(|e| resolve_unresolved_columns(e, plan.clone()))
+            .map(|e| {
+                if self.in_agg_context {
+                    self.validate_expr_in_agg(e?)
+                } else {
+                    self.validate_expr(e?)
+                }
+            })
             .collect()
     }
 
