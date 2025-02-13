@@ -5,9 +5,9 @@ import socket
 import urllib
 from unittest.mock import MagicMock, patch
 
-from daft.context import set_runner_native, set_runner_py, set_runner_ray
+import daft
 from daft.scarf_telemetry import scarf_telemetry
-from tests.actor_pool.test_actor_cuda_devices import reset_runner_with_gpus
+from tests.conftest import get_tests_daft_runner_name
 
 
 @patch("daft.scarf_telemetry.get_build_type")
@@ -118,45 +118,19 @@ def test_scarf_telemetry_error_handling(
     assert runner_type is None
 
 
-# Tests for runner integration with scarf_telemetry
-@patch("daft.context.scarf_telemetry")
-def test_runner_ray_analytics(mock_scarf_telemetry: MagicMock, monkeypatch):
-    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
-        set_runner_ray()
-        mock_scarf_telemetry.assert_called_once_with(runner="ray")
+DATA = {"id": [i for i in range(100)]}
 
 
-@patch("daft.context.scarf_telemetry")
-def test_runner_py_analytics(mock_scarf_telemetry: MagicMock, monkeypatch):
-    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
-        set_runner_py()
-        mock_scarf_telemetry.assert_called_once_with(runner="py")
+@patch("daft.scarf_telemetry.scarf_telemetry")
+def test_runner_analytics(mock_scarf_telemetry: MagicMock):
+    df = daft.from_pydict(
+        {
+            "A": [1, 2, 3, 4],
+            "B": [1.5, 2.5, 3.5, 4.5],
+            "C": [True, True, False, False],
+            "D": [None, None, None, None],
+        }
+    )
+    df.select("A", "B").collect()
 
-
-@patch("daft.context.scarf_telemetry")
-def test_runner_native_analytics(mock_scarf_telemetry: MagicMock, monkeypatch):
-    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
-        set_runner_native()
-        mock_scarf_telemetry.assert_called_once_with(runner="native")
-
-
-@patch("daft.context.scarf_telemetry")
-def test_runner_analytics_with_scarf_opt_out(mock_scarf_telemetry: MagicMock, monkeypatch):
-    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
-        os.environ["SCARF_NO_ANALYTICS"] = "true"
-        try:
-            set_runner_ray()
-            mock_scarf_telemetry.assert_called_once_with(runner="ray")
-        finally:
-            del os.environ["SCARF_NO_ANALYTICS"]
-
-
-@patch("daft.context.scarf_telemetry")
-def test_runner_analytics_with_do_not_track(mock_scarf_telemetry: MagicMock, monkeypatch):
-    with reset_runner_with_gpus(num_gpus=0, monkeypatch=monkeypatch):
-        os.environ["DO_NOT_TRACK"] = "true"
-        try:
-            set_runner_ray()
-            mock_scarf_telemetry.assert_called_once_with(runner="ray")
-        finally:
-            del os.environ["DO_NOT_TRACK"]
+    mock_scarf_telemetry.assert_called_once_with(get_tests_daft_runner_name())

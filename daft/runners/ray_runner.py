@@ -10,8 +10,6 @@ from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
-from daft.scarf_telemetry import scarf_telemetry
-
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
 # serializable before importing pa from daft.dependencies.
@@ -25,6 +23,7 @@ from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
 from daft.runners.progress_bar import ProgressBar
+from daft.scarf_telemetry import scarf_telemetry
 from daft.series import Series, item_to_series
 
 logger = logging.getLogger(__name__)
@@ -1270,7 +1269,6 @@ class RayRunner(Runner[ray.ObjectRef]):
     def run_iter(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[RayMaterializedResult]:
-
         scarf_telemetry(self.name)
 
         # Grab and freeze the current DaftExecutionConfig

@@ -10,9 +10,6 @@ from concurrent import futures
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Iterator
 
-from daft.scarf_telemetry import scarf_telemetry
-
-
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution.native_executor import NativeExecutor
@@ -34,6 +31,7 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
 from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
+from daft.scarf_telemetry import scarf_telemetry
 
 if TYPE_CHECKING:
     from daft.execution import physical_plan

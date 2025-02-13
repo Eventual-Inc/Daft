@@ -67,7 +67,6 @@ def set_runner_ray(
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> DaftContext:
-
     py_ctx = _set_runner_ray(
         address=address,
         noop_if_initialized=noop_if_initialized,
@@ -86,7 +85,6 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the Py runner
     """
-
     py_ctx = _set_runner_py(
         use_thread_pool=use_thread_pool,
     )
@@ -102,7 +100,6 @@ def set_runner_native() -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the native runner
     """
-
     py_ctx = _set_runner_native()
 
     return DaftContext._from_native(py_ctx)
