@@ -29,13 +29,11 @@ impl PySession {
     }
 
     pub fn attach(&self, catalog: PyObject, alias: String) -> PyResult<()> {
-        self.0.attach(Arc::new(PyCatalogImpl::from(catalog)), alias)?;
-        Ok(())
+        Ok(self.0.attach(Arc::new(PyCatalogImpl::from(catalog)), alias)?)
     }
 
     pub fn detach(&self, catalog: &str) -> PyResult<()> {
-        self.0.detach(catalog)?;
-        Ok(())
+        Ok(self.0.detach(catalog)?)
     }
 
     pub fn create_catalog(&self, name: &str) -> PyResult<PyCatalog> {
@@ -56,7 +54,6 @@ impl PySession {
             let catalog = catalog.to_py(py);
             Ok(catalog)
         })
-
     }
 
     pub fn get_namespace(&self, name: &str) -> Namespace {
@@ -67,27 +64,28 @@ impl PySession {
         todo!()
     }
 
+    #[pyo3(signature = (pattern=None))]
     pub fn list_catalogs(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
-        let catalogs = self.0.list_catalogs(pattern)?;
-        Ok(catalogs)
+        Ok(self.0.list_catalogs(pattern)?)
     }
 
+    #[pyo3(signature = (pattern=None))]
     pub fn list_namespaces(&self, pattern: Option<&str>) -> PyResult<()> {
         todo!()
     }
 
+    #[pyo3(signature = (pattern=None))]
     pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<()> {
         todo!()
     }
 
-    pub fn set_catalog(&self, name: &str) {
-        todo!()
+    pub fn set_catalog(&self, name: &str) -> PyResult<()> {
+        Ok(self.0.set_catalog(name)?)
     }
 
-    pub fn set_namespace(&self, name: &str) {
+    pub fn set_namespace(&self, name: String) {
         todo!()
     }
-
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

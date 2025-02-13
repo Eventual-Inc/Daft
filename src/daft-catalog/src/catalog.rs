@@ -50,6 +50,11 @@ impl Catalogs {
             .map(|k| k.to_string())
             .collect()
     }
+
+    /// Returns true iff there are no catalogs in this collection.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 /// A catalog provides object metadata such as namespaces, tables, and functions.

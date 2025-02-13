@@ -92,7 +92,7 @@ impl Session {
 
     /// Returns the session's current catalog.
     pub fn current_catalog(&self) -> Result<Arc<dyn Catalog>> {
-        todo!()
+        self.get_catalog(&self.state().options.curr_catalog)
     }
 
     /// Returns the session's current schema.
@@ -120,7 +120,12 @@ impl Session {
         obj_not_found_err!("Table", name)
     }
 
-    /// Returns true iff the session has for the given identifier
+    /// Returns true iff the session has access to a matching catalog.
+    pub fn has_catalog(&self, name: &str) -> bool {
+        self.state().catalogs.exists(name)
+    }
+
+    /// Returns true iff the session has access to a matching table.
     pub fn has_table(&self, name: &Identifier) -> bool {
         if name.has_namespace() {
             return false;
@@ -128,10 +133,21 @@ impl Session {
         return self.state().tables.contains_key(&name.name);
     }
 
+    /// Lists all catalogs matching the pattern.
     pub fn list_catalogs(&self, pattern: Option<&str>) -> Result<Vec<String>> {
         Ok(self.state().catalogs.list(pattern))
     }
+
+    /// Sets the current_catalog
+    pub fn set_catalog(&self, name: &str) -> Result<()> {
+        if !self.has_catalog(name) {
+            obj_not_found_err!("Catalog", &name.into())
+        }
+        self.state_mut().options.curr_catalog = name.to_string();
+        Ok(())
+    }
 }
+
 
 impl Default for Session {
     fn default() -> Self {
