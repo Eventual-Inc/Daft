@@ -14,7 +14,7 @@ use daft_schema::{
     field::Field,
     schema::{Schema, SchemaRef},
 };
-use daft_stats::PartitionSpec;
+use daft_stats::{PartitionSpec, TableMetadata};
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
@@ -33,6 +33,9 @@ pub struct GlobScanOperator {
     hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
     generated_fields: SchemaRef,
+    // When creating the glob scan operator, we might collect file metadata for the first file during schema inference.
+    // Cache this metadata (along with the first filepath) so we can use it to populate the stats for the first scan task.
+    first_metadata: Option<(String, TableMetadata)>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -197,9 +200,9 @@ impl GlobScanOperator {
             (partitioning_keys, generated_fields)
         };
 
-        let schema = match infer_schema {
+        let (schema, first_metadata) = match infer_schema {
             true => {
-                let inferred_schema = match file_format_config.as_ref() {
+                let (inferred_schema, first_metadata) = match file_format_config.as_ref() {
                     &FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
                         ref field_id_mapping,
@@ -209,19 +212,25 @@ impl GlobScanOperator {
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
                         ));
 
-                        let (schema, _metadata) = daft_parquet::read::read_parquet_schema(
-                            first_filepath.as_str(),
-                            io_client,
-                            Some(io_stats),
-                            ParquetSchemaInferenceOptions {
-                                coerce_int96_timestamp_unit,
-                                ..Default::default()
+                        let (schema, metadata) =
+                            daft_parquet::read::read_parquet_schema_and_metadata(
+                                first_filepath.as_str(),
+                                io_client,
+                                Some(io_stats),
+                                ParquetSchemaInferenceOptions {
+                                    coerce_int96_timestamp_unit,
+                                    ..Default::default()
+                                },
+                                field_id_mapping.clone(),
+                            )
+                            .await?;
+                        let metadata = Some((
+                            first_filepath,
+                            TableMetadata {
+                                length: metadata.num_rows,
                             },
-                            field_id_mapping.clone(),
-                        )
-                        .await?;
-
-                        schema
+                        ));
+                        (schema, metadata)
                     }
                     FileFormatConfig::Csv(CsvSourceConfig {
                         delimiter,
@@ -249,17 +258,18 @@ impl GlobScanOperator {
                             Some(io_stats),
                         )
                         .await?;
-                        schema
+                        (schema, None)
                     }
                     FileFormatConfig::Json(_) => {
-                        daft_json::schema::read_json_schema(
+                        let schema = daft_json::schema::read_json_schema(
                             first_filepath.as_str(),
                             None,
                             None,
                             io_client,
                             Some(io_stats),
                         )
-                        .await?
+                        .await?;
+                        (schema, None)
                     }
                     #[cfg(feature = "python")]
                     FileFormatConfig::Database(_) => {
@@ -275,13 +285,17 @@ impl GlobScanOperator {
                     }
                 };
                 match user_provided_schema {
-                    Some(hint) => Arc::new(inferred_schema.apply_hints(&hint)?),
-                    None => Arc::new(inferred_schema),
+                    Some(hint) => (
+                        Arc::new(inferred_schema.apply_hints(&hint)?),
+                        first_metadata,
+                    ),
+                    None => (Arc::new(inferred_schema), first_metadata),
                 }
             }
-            false => {
-                user_provided_schema.expect("Schema must be provided if infer_schema is false")
-            }
+            false => (
+                user_provided_schema.expect("Schema must be provided if infer_schema is false"),
+                None,
+            ),
         };
         Ok(Self {
             glob_paths,
@@ -292,6 +306,7 @@ impl GlobScanOperator {
             hive_partitioning,
             partitioning_keys,
             generated_fields: Arc::new(generated_fields),
+            first_metadata,
         })
     }
 }
@@ -394,6 +409,12 @@ impl ScanOperator for GlobScanOperator {
             .map(|partition_spec| partition_spec.clone_field())
             .collect();
         let partition_schema = Schema::new(partition_fields)?;
+        let (first_filepath, first_metadata) =
+            if let Some((first_filepath, first_metadata)) = &self.first_metadata {
+                (Some(first_filepath), Some(first_metadata))
+            } else {
+                (None, None)
+            };
         // Create one ScanTask per file.
         files
             .enumerate()
@@ -446,11 +467,17 @@ impl ScanOperator for GlobScanOperator {
                     let chunk_spec = row_group.map(ChunkSpec::Parquet);
                     Ok(Some(ScanTask::new(
                         vec![DataSource::File {
+                            metadata: if let Some(first_filepath) = first_filepath
+                                && path == *first_filepath
+                            {
+                                first_metadata.cloned()
+                            } else {
+                                None
+                            },
                             path,
                             chunk_spec,
                             size_bytes,
                             iceberg_delete_files: None,
-                            metadata: None,
                             partition_spec,
                             statistics: None,
                             parquet_metadata: None,
