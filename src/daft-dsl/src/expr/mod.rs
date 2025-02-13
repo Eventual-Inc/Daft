@@ -1376,11 +1376,13 @@ impl Expr {
 
     pub fn has_compute(&self) -> bool {
         match self {
-            Self::Column(..) => false,
+            Self::UnresolvedColumn(..) => false,
+            Self::ResolvedColumn(..) => false,
+            Self::JoinSideColumn(..) => false,
+            Self::OuterReferenceColumn(..) => false,
             Self::Literal(..) => false,
             Self::Subquery(..) => false,
             Self::Exists(..) => false,
-            Self::OuterReferenceColumn(..) => false,
             Self::Function { .. } => true,
             Self::ScalarFunction(..) => true,
             Self::Agg(_) => true,
