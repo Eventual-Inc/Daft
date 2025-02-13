@@ -962,7 +962,7 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
     Ok(collected.into_iter().map(|(_, v)| v).collect())
 }
 
-pub async fn read_parquet_schema(
+pub async fn read_parquet_schema_and_metadata(
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
