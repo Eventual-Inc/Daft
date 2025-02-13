@@ -58,7 +58,7 @@ analytics_client.track_import()
 # Daft top-level imports
 ###
 
-from daft.catalog import Catalog, Identifier
+from daft.catalog import Catalog, Identifier, load_catalog
 from daft.convert import (
     from_arrow,
     from_dask_dataframe,
@@ -128,6 +128,7 @@ __all__ = [
     "interval",
     "list_",
     "lit",
+    "load_catalog",
     "planning_config_ctx",
     "read_csv",
     "read_deltalake",

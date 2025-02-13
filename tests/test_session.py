@@ -12,22 +12,6 @@ SESSION TESTS
 def test_current_session_exists():
     assert daft.current_session() is not None
 
-def test_set_session():
-    sess1 = Session.empty()
-    daft.set_session(sess1)
-    assert daft.current_session() == sess1
-
-
-@pytest.mark.skip
-def test_session_from_args():
-    sess = daft.create_session("daft", **{
-        "user": "pytest",
-        "default_catalog": "default",
-        "default_schema": "default",
-    })
-    assert 1 == len(sess.list_catalogs())
-
-
 """
 CATALOG TESTS
 """
@@ -45,34 +29,15 @@ def test_catalog_actions():
     # assert 2 == len(sess.list_catalogs("cat"))
     # assert 0 == len(sess.list_catalogs("xxx"))
     #
-    # use_catalog (ok)
+    # set_catalog (ok)
     sess.set_catalog("cat1")
     assert "cat1" == sess.current_catalog().name()
     sess.set_catalog("cat2")
     assert "cat2" == sess.current_catalog().name()
     #
-    # use_catalog (err)
+    # set_catalog (err)
     with pytest.raises(Exception, match="does not exist"):
         sess.set_schema("cat3")
-
-
-@pytest.mark.skip
-def test_catalog_actions_global():
-    sess = denv
-    #
-    # list_catalogs (should have a default)
-    assert 1 == len(sess.list_catalogs())
-    #
-    # create_catalog
-    sess.create_catalog("cat1")
-    #
-    # use_catalog (ok)
-    default = sess.current_catalog()
-    sess.set_catalog("cat1")
-    assert "cat1" == sess.current_catalog().name()
-    sess.set_catalog(default.name())
-    assert default == sess.current_catalog()
-
 
 """
 SCHEMA TESTS
@@ -168,6 +133,25 @@ def test_sess_path():
 """
 ATTACH & DETACH TESTS
 """
+
+def test_attach():
+    sess = Session.empty()
+    #
+    # create some 'existing' catalogs
+    cat1 = daft.load_catalog("cat1")
+    cat2 = daft.load_catalog("cat2")
+    #
+    # attach them..
+    sess.attach(cat1)
+    sess.attach(cat2)
+    #
+    # list_catalogs
+    assert 2 == len(sess.list_catalogs())
+    #
+    # get_catalog
+    assert sess.get_catalog("cat1") == cat1
+    assert sess.get_catalog("cat2") == cat2
+
 
 # test attach
 # test attach existing

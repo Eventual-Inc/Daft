@@ -38,13 +38,16 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, name: str, catalog: Catalog):
+    def attach(self, catalog: Catalog, alias: str | None = None) -> Catalog:
         """Attaches the catalog to this session."""
-        return self._session.attach(name, catalog)
+        # once more catalogs are supported, then require explicit aliases
+        if alias is None:
+            alias = catalog.name()
+        return self._session.attach(catalog, alias)
 
-    def detach(self, name: str):
+    def detach(self, catalog: str):
         """Detaches the catalog from this session."""
-        return self._session.detach(name)
+        return self._session.detach(catalog)
 
     ###
     # create_*
@@ -79,15 +82,15 @@ class Session:
     ###
 
     def get_catalog(self, name: str) -> Catalog:
-        """Returns the catalog from the global session, err if not exists."""
+        """Returns the catalog or raises an exception if it does not exist."""
         return self._session.get_catalog(name)
 
     def get_namespace(self, name: str) -> Namespace:
-        """Returns the namespace from the global session, err if not exists."""
+        """Returns the namespace or raises an exception if it does not exist."""
         return self._session.get_namespace(name)
 
     def get_table(self, name: str) -> Table:
-        """Returns the table from the global session, err if not exists."""
+        """Returns the table ."""
         return self._session.get_table(name)
 
     ###
@@ -97,14 +100,6 @@ class Session:
     def list_catalogs(self, pattern: None | str = None) -> list[Catalog]:
         """Returns a list of available catalogs."""
         return self._session.list_catalogs(pattern)
-
-    def list_namespaces(self, pattern: None | str = None) -> list[Namespace]:
-        """Returns a list of available namespaces."""
-        return self._session.list_namespaces(pattern)
-
-    def list_tables(self, pattern: None | str = None) -> list[Table]:
-        """Returns a list of tables matching the pattern."""
-        return self._session.list_tables(pattern)
 
     ###
     # set_*
@@ -117,6 +112,10 @@ class Session:
     def set_namespace(self, name: str):
         """Set the given namespace as current_namespace or err if not exists."""
         self._session.set_namespace(name)
+
+###
+# global active session
+###
 
 _SESSION: Session | None = None
 
@@ -137,15 +136,27 @@ def _session() -> Session:
 ###
 
 def current_session() -> Session:
-    """Returns the current session for the global context."""
+    """Returns the global context's current session."""
     return _session()
+
+def current_catalog() -> Catalog:
+    """Returns the global session's current catalog."""
+    return _session().current_catalog()
+
+###
+# create_*
+##
+
+def create_catalog(name: str) -> Catalog:
+    """Creates a catalog scoped to the global session."""
+    return _session().create_catalog(name)
 
 ###
 # set_.* (session management)
 ###
 
 def set_session(session: Session):
-    """Sets the current session for the glboal context."""
+    """Sets the global context's current session."""
     # Consider registering into the global context.
     # ```
     # ctx = get_context()
@@ -154,3 +165,7 @@ def set_session(session: Session):
     # ```
     global _SESSION
     _SESSION = session
+
+def set_catalog(name: str):
+    """Sets the global session's current catalog."""
+    _session().set_catalog(name)
