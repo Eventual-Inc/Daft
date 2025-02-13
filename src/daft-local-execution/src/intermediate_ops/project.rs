@@ -70,9 +70,8 @@ impl ProjectOperator {
 
         // Calculate optimal concurrency using ceiling division
         // Example: For 128 CPUs and 60 parallel expressions:
-        // max_concurrency = (128 + 60 - 1) / 60 = 3 concurrent tasks
-        // This ensures we never exceed max_parallel_exprs per task
-        let max_concurrency = (available_cpus + max_parallel_exprs - 1) / max_parallel_exprs;
+        // max_concurrency = 128.div_ceil(60) = 3 concurrent tasks
+        let max_concurrency = available_cpus.div_ceil(max_parallel_exprs);
 
         // Calculate actual parallel expressions per task using floor division
         // Example: For 128 CPUs and 3 concurrent tasks:

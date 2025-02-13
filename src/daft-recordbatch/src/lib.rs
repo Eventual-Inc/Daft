@@ -685,25 +685,25 @@ impl RecordBatch {
         exprs: &[ExprRef],
         num_parallel_tasks: usize,
     ) -> DaftResult<Self> {
-        // Evaluate non-compute expressions
-        let non_compute_results = exprs
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| !e.has_compute())
-            .map(|(i, e)| (i, self.eval_expression(e)))
-            .collect::<Vec<_>>();
-
-        let compute_runtime = get_compute_runtime();
-        // Then spawn tasks with the owned expressions.
-        let compute_futures = exprs
+        // Partition the expressions into compute and non-compute
+        let (compute_exprs, non_compute_exprs): (Vec<_>, Vec<_>) = exprs
             .iter()
             .cloned()
             .enumerate()
-            .filter_map(|(i, e)| if e.has_compute() { Some((i, e)) } else { None })
-            .map(|(i, e)| {
-                let table = self.clone();
-                compute_runtime.spawn(async move { (i, table.eval_expression(&e)) })
-            });
+            .partition(|(_, e)| e.has_compute());
+
+        // Evaluate non-compute expressions
+        let non_compute_results = non_compute_exprs
+            .into_iter()
+            .map(|(i, e)| (i, self.eval_expression(&e)))
+            .collect::<Vec<_>>();
+
+        // Spawn tasks for the compute expressions
+        let compute_runtime = get_compute_runtime();
+        let compute_futures = compute_exprs.into_iter().map(|(i, e)| {
+            let table = self.clone();
+            compute_runtime.spawn(async move { (i, table.eval_expression(&e)) })
+        });
 
         // Collect the results of the compute expressions
         let compute_results = futures::stream::iter(compute_futures)
