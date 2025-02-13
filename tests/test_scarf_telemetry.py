@@ -133,4 +133,4 @@ def test_runner_analytics(mock_scarf_telemetry: MagicMock):
     )
     df.select("A", "B").collect()
 
-    mock_scarf_telemetry.assert_called_once_with(get_tests_daft_runner_name())
+    mock_scarf_telemetry.assert_called_once_with(runner=get_tests_daft_runner_name())
