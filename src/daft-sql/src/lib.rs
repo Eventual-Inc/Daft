@@ -248,8 +248,8 @@ mod tests {
 
         let expected = LogicalPlanBuilder::from(tbl_1)
             .alias("tbl1")
-            .select(vec![unbound_col("utf8")])?
             .sort(vec![unbound_col("utf8")], vec![true], vec![true])?
+            .select(vec![unbound_col("utf8")])?
             .build();
 
         assert_eq!(plan, expected);
