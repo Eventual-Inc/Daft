@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::DataCatalog;
+use crate::{error::Result, Identifier, Table};
 
 /// Catalogs is a collection of referenceable catalogs (glorified map).
 ///
@@ -11,7 +11,7 @@ use crate::DataCatalog;
 ///  - Callers are responsible for case-normalization hence String, &str.
 ///  - Intentionally using String and &str rather than Into and AsRef.
 #[derive(Debug)]
-pub struct Catalogs(HashMap<String, Arc<dyn DataCatalog>>);
+pub struct Catalogs(HashMap<String, Arc<dyn Catalog>>);
 
 impl Catalogs {
     /// Creates an empty catalogs collection
@@ -20,7 +20,7 @@ impl Catalogs {
     }
 
     /// Attaches a catalog to this catalog collection.
-    pub fn attach(&mut self, name: String, catalog: Arc<dyn DataCatalog>) {
+    pub fn attach(&mut self, name: String, catalog: Arc<dyn Catalog>) {
         self.0.insert(name, catalog);
     }
 
@@ -30,7 +30,7 @@ impl Catalogs {
     }
 
     /// Get the catalog by name.
-    pub fn get(&self, name: &str) -> Option<Arc<dyn DataCatalog>> {
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Catalog>> {
         self.0.get(name).map(Arc::clone)
     }
 
@@ -40,4 +40,12 @@ impl Catalogs {
     }
 }
 
-// TODO Catalog trait for implementations.
+/// A catalog provides object metadata such as namespaces, tables, and functions.
+pub trait Catalog: Sync + Send + std::fmt::Debug {
+
+    /// Returns the catalog name.
+    fn name(&self) -> String;
+
+    /// Returns the given table if it exists.
+    fn get_table(&self, name: &Identifier) -> Result<Option<Box<dyn Table>>>;
+}
