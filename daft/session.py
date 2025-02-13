@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from daft import DataFrame
+from daft.context import DaftContext, get_context
+from daft.dataframe import DataFrame
 from daft.catalog import Catalog, Namespace
 from daft.daft import PySession
 from daft.table import Source, Table
@@ -116,3 +117,40 @@ class Session:
     def set_namespace(self, name: str):
         """Set the given namespace as current_namespace or err if not exists."""
         self._session.set_namespace(name)
+
+_SESSION: Session | None = None
+
+def _session() -> Session:
+    # Consider registering into the global context
+    # ```
+    # ctx = get_context()
+    # if not ctx._session
+    #     set_session(Session.from_env())
+    # return ctx._session
+    # ```
+    if not _SESSION:
+        set_session(Session.empty())
+    return _SESSION
+
+###
+# session state
+###
+
+def current_session() -> Session:
+    """Returns the current session for the global context."""
+    return _session()
+
+###
+# set_.* (session management)
+###
+
+def set_session(session: Session):
+    """Sets the current session for the glboal context."""
+    # Consider registering into the global context.
+    # ```
+    # ctx = get_context()
+    # with ctx._lock:
+    #     ctx._session = session
+    # ```
+    global _SESSION
+    _SESSION = session

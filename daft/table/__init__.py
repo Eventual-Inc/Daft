@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from daft import DataFrame, Expression, Schema
-from daft.table import MicroPartition
+from daft.dataframe import DataFrame
+from daft.expressions import Expression
+from daft.logical.schema import Schema
+from daft.recordbatch import MicroPartition
 
 # for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
 # pandas/arrow/arrow_record_batches/pydict

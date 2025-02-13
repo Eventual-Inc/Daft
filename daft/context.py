@@ -130,7 +130,9 @@ def set_planning_config(
     # Replace values in the DaftPlanningConfig with user-specified overrides
     ctx = get_context()
     with ctx._lock:
-        old_daft_planning_config = ctx._ctx._daft_planning_config if config is None else config
+        old_daft_planning_config = (
+            ctx._ctx._daft_planning_config if config is None else config
+        )
         new_daft_planning_config = old_daft_planning_config.with_config_values(
             default_io_config=default_io_config,
         )
@@ -226,7 +228,9 @@ def set_execution_config(
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
     with ctx._lock:
-        old_daft_execution_config = ctx._ctx._daft_execution_config if config is None else config
+        old_daft_execution_config = (
+            ctx._ctx._daft_execution_config if config is None else config
+        )
 
         new_daft_execution_config = old_daft_execution_config.with_config_values(
             scan_tasks_min_size_bytes=scan_tasks_min_size_bytes,
