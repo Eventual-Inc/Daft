@@ -1,9 +1,10 @@
-use daft_catalog::{python::PyCatalog, Namespace};
+use std::sync::Arc;
+
+use daft_catalog::{python::{PyCatalog, PyCatalogImpl}, Namespace};
 use pyo3::prelude::*;
 
 use crate::Session;
 
-/// Bridge from session.py to session.rs
 #[pyclass]
 pub struct PySession(Session);
 
@@ -27,13 +28,14 @@ impl PySession {
         todo!()
     }
 
-
-    pub fn attach(&self, name: String, catalog: PyObject) -> PyResult<()> {
-        todo!()
+    pub fn attach(&self, catalog: PyObject, alias: String) -> PyResult<()> {
+        self.0.attach(Arc::new(PyCatalogImpl::from(catalog)), alias)?;
+        Ok(())
     }
 
-    pub fn detach(&self, name: &str) {
-        todo!()
+    pub fn detach(&self, catalog: &str) -> PyResult<()> {
+        self.0.detach(catalog)?;
+        Ok(())
     }
 
     pub fn create_catalog(&self, name: &str) -> PyResult<PyCatalog> {
@@ -48,8 +50,13 @@ impl PySession {
         todo!()
     }
 
-    pub fn get_catalog(&self, name: &str) -> PyResult<PyCatalog> {
-        todo!()
+    pub fn get_catalog(&self, name: &str) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let catalog = self.0.get_catalog(name)?;
+            let catalog = catalog.to_py(py);
+            Ok(catalog)
+        })
+
     }
 
     pub fn get_namespace(&self, name: &str) -> Namespace {
@@ -60,8 +67,9 @@ impl PySession {
         todo!()
     }
 
-    pub fn list_catalogs(&self, pattern: Option<&str>) -> PyResult<()> {
-        todo!()
+    pub fn list_catalogs(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
+        let catalogs = self.0.list_catalogs(pattern)?;
+        Ok(catalogs)
     }
 
     pub fn list_namespaces(&self, pattern: Option<&str>) -> PyResult<()> {

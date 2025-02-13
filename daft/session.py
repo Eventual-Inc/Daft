@@ -132,7 +132,6 @@ class Session:
         """Set the given namespace as current_namespace or err if not exists."""
         self._session.set_namespace(name)
 
-
 ###
 # global active session
 ###

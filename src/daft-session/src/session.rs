@@ -59,20 +59,20 @@ impl Session {
     }
 
     /// Attaches a catalog to this session, err if already exists.
-    pub fn attach(&self, name: String, catalog: Arc<dyn Catalog>) -> Result<()> {
-        if self.state().catalogs.exists(&name) {
-            obj_already_exists_err!("Catalog", &name.into())
+    pub fn attach(&self, catalog: Arc<dyn Catalog>, alias: String) -> Result<()> {
+        if self.state().catalogs.exists(&alias) {
+            obj_already_exists_err!("Catalog", &alias.into())
         }
-        self.state_mut().catalogs.attach(name, catalog);
+        self.state_mut().catalogs.attach(alias, catalog);
         Ok(())
     }
 
     /// Detaches a catalog from this session, err if does not exist.
-    pub fn detach(&self, name: &str) -> Result<()> {
-        if self.state().catalogs.exists(name) {
-            obj_not_found_err!("Catalog", &name.into())
+    pub fn detach(&self, catalog: &str) -> Result<()> {
+        if !self.state().catalogs.exists(catalog) {
+            obj_not_found_err!("Catalog", &catalog.into())
         }
-        self.state_mut().catalogs.detach(name);
+        self.state_mut().catalogs.detach(catalog);
         Ok(())
     }
 
@@ -100,6 +100,15 @@ impl Session {
         todo!()
     }
 
+    /// Returns the catalog or returns an object not found error.
+    pub fn get_catalog(&self, name: &str) -> Result<Arc<dyn Catalog>> {
+        if let Some(catalog) = self.state().catalogs.get(name) {
+            Ok(catalog)
+        } else {
+            obj_not_found_err!("Catalog", &name.into())
+        }
+    }
+
     /// Gets a table by identifier
     pub fn get_table(&self, name: &Identifier) -> Result<LogicalPlanBuilder> {
         if name.has_namespace() {
@@ -117,6 +126,10 @@ impl Session {
             return false;
         }
         return self.state().tables.contains_key(&name.name);
+    }
+
+    pub fn list_catalogs(&self, pattern: Option<&str>) -> Result<Vec<String>> {
+        Ok(self.state().catalogs.list(pattern))
     }
 }
 

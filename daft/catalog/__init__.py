@@ -8,10 +8,26 @@ from collections.abc import Sequence
 from daft.daft import PyCatalog, PyIdentifier
 from daft.table import Source, Table
 
+def load_catalog(name: str, options: object | None = None) -> Catalog:
+    """Loads a new catalog from the configuration options or creates an in-memory catalog if none given."""
+    if options is None:
+        return Catalog._from_none(name)
+    else:
+        return Catalog._from_some(name, options)
+
 class Catalog(ABC):
 
     def __repr__(self) -> str:
         return f"Catalog('{self.name()}')"
+
+    @staticmethod
+    def _from_none(name: str):
+        from daft.catalog.__memory import MemoryCatalog
+        return MemoryCatalog(name)
+
+    @staticmethod
+    def _from_some(name: str, options: object) -> Catalog:
+        return NotImplementedError("catalog from options")
 
     @abstractmethod
     def name(self) -> str:
@@ -131,4 +147,7 @@ __all__ = [
     "Catalog",
     "Identifier",
     "Namespace",
+    "Source",
+    "Table",
+    "load_catalog",
 ]

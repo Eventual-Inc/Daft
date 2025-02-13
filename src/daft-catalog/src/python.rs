@@ -8,21 +8,30 @@ use crate::{Catalog, Identifier};
 #[pyclass]
 pub struct PyCatalog(Arc<dyn Catalog>);
 
+impl From<Arc<dyn Catalog>> for PyCatalog {
+    fn from(catalog: Arc<dyn Catalog>) -> Self {
+        Self(catalog)
+    }
+}
+
 #[pymethods]
 impl PyCatalog {
-
     fn name(&self) -> String {
         self.0.name()
     }
-
 }
 
 /// PyCatalogImpl implements the Catalog trait for some Catalog ABC impl (py->rust).
 #[derive(Debug)]
 pub struct PyCatalogImpl(PyObject);
 
-impl Catalog for PyCatalogImpl {
+impl From<PyObject> for PyCatalogImpl {
+    fn from(obj: PyObject) -> Self {
+        Self(obj)
+    }
+}
 
+impl Catalog for PyCatalogImpl {
     fn name(&self) -> String {
         todo!()
     }
@@ -30,7 +39,10 @@ impl Catalog for PyCatalogImpl {
     fn get_table(&self, _name: &Identifier) -> crate::error::Result<Option<Box<dyn crate::Table>>> {
         todo!()
     }
-
+    
+    fn to_py(&self, py: Python<'_>) -> PyObject {
+        self.0.extract(py).expect("failed to extract PyObject")
+    }
 }
 
 /// PyIdentifier maps identifier.py to identifier.rs
