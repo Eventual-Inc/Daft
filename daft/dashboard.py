@@ -5,7 +5,7 @@ from pathlib import Path
 import daft.daft as native
 
 DAFT_DASHBOARD_ENV_NAME = "DAFT_DASHBOARD"
-DAFT_DASHBOARD_ADDR = "http://localhost:3238/broadcast"
+DAFT_DASHBOARD_URL = "http://localhost:3238/api/queries"
 
 
 def launch(block: bool = False):

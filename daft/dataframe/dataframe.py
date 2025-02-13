@@ -196,12 +196,12 @@ class DataFrame:
                 "plan_time_end": str(plan_time_end),
             }
         ).encode("utf-8")
-        req = request.Request(dashboard.DAFT_DASHBOARD_ADDR, headers=headers, data=data)
+        req = request.Request(dashboard.DAFT_DASHBOARD_URL, headers=headers, data=data)
 
         try:
             request.urlopen(req, timeout=1)
         except URLError as e:
-            warnings.warn(f"Failed to broadcast metrics over {dashboard.DAFT_DASHBOARD_ADDR}: {e}")
+            warnings.warn(f"Failed to broadcast metrics over {dashboard.DAFT_DASHBOARD_URL}: {e}")
 
     @DataframePublicAPI
     def explain(

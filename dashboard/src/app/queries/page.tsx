@@ -57,7 +57,7 @@ export default function QueryList() {
     React.useEffect(() => {
         (async () => {
             try {
-                const response = await fetch("http://localhost:3238/api");
+                const response = await fetch("http://localhost:3238/api/queries");
                 const json: QueryInfo[] = await response.json();
                 const queryInfoMap: QueryInfoMap = {};
                 for (const queryInfo of json) {
