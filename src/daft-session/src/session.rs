@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use daft_catalog::{catalog::Catalogs, DataCatalog, Identifier};
+use daft_catalog::{Catalogs, Catalog, Identifier};
 use daft_logical_plan::LogicalPlanBuilder;
 use uuid::Uuid;
 
@@ -25,7 +25,7 @@ struct SessionState {
     /// Session identifier
     _id: String,
     /// Session options i.e. curr_catalog and curr_schema.
-    _options: Options,
+    options: Options,
     /// References to the available catalogs.
     catalogs: Catalogs,
     // TODO execution context
@@ -39,7 +39,7 @@ impl Session {
     pub fn empty() -> Self {
         let state = SessionState {
             _id: Uuid::new_v4().to_string(),
-            _options: Options::default(),
+            options: Options::default(),
             catalogs: Catalogs::empty(),
             tables: HashMap::new(),
         };
@@ -59,7 +59,7 @@ impl Session {
     }
 
     /// Attaches a catalog to this session, err if already exists.
-    pub fn attach(&self, name: String, catalog: Arc<dyn DataCatalog>) -> Result<()> {
+    pub fn attach(&self, name: String, catalog: Arc<dyn Catalog>) -> Result<()> {
         if self.state().catalogs.exists(&name) {
             obj_already_exists_err!("Catalog", &name.into())
         }
@@ -88,6 +88,16 @@ impl Session {
         }
         self.state_mut().tables.insert(name.name, view.into());
         Ok(())
+    }
+
+    /// Returns the session's current catalog.
+    pub fn current_catalog(&self) -> Result<Arc<dyn Catalog>> {
+        todo!()
+    }
+
+    /// Returns the session's current schema.
+    pub fn current_namespace(&self) -> Result<()> {
+        todo!()
     }
 
     /// Gets a table by identifier
