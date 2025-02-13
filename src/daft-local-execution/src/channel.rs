@@ -1,29 +1,25 @@
 #[derive(Clone)]
-pub(crate) struct Sender<T>(loole::Sender<T>);
+pub(crate) struct Sender<T>(kanal::AsyncSender<T>);
 impl<T> Sender<T> {
-    pub(crate) async fn send(&self, val: T) -> Result<(), loole::SendError<T>> {
-        self.0.send_async(val).await
+    pub(crate) async fn send(&self, val: T) -> Result<(), kanal::SendError> {
+        self.0.send(val).await
     }
 }
 
 #[derive(Clone)]
-pub(crate) struct Receiver<T>(loole::Receiver<T>);
+pub(crate) struct Receiver<T>(kanal::AsyncReceiver<T>);
 impl<T> Receiver<T> {
     pub(crate) async fn recv(&self) -> Option<T> {
-        self.0.recv_async().await.ok()
+        self.0.recv().await.ok()
     }
 
-    pub(crate) fn blocking_recv(&self) -> Option<T> {
-        self.0.recv().ok()
-    }
-
-    pub(crate) fn into_inner(self) -> loole::Receiver<T> {
+    pub(crate) fn into_inner(self) -> kanal::AsyncReceiver<T> {
         self.0
     }
 }
 
 pub(crate) fn create_channel<T: Clone>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
-    let (tx, rx) = loole::bounded(buffer_size);
+    let (tx, rx) = kanal::bounded_async::<T>(buffer_size);
     (Sender(tx), Receiver(rx))
 }
 
@@ -36,7 +32,7 @@ pub(crate) fn create_ordering_aware_receiver_channel<T: Clone>(
 ) -> (Vec<Sender<T>>, OrderingAwareReceiver<T>) {
     match ordered {
         true => {
-            let (senders, receiver) = (0..buffer_size).map(|_| create_channel::<T>(1)).unzip();
+            let (senders, receiver) = (0..buffer_size).map(|_| create_channel::<T>(0)).unzip();
             (
                 senders,
                 OrderingAwareReceiver::InOrder(RoundRobinReceiver::new(receiver)),
