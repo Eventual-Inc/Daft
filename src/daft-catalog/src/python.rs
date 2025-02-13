@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use pyo3::{exceptions::PyIndexError, prelude::*};
 
-use crate::{Catalog, Identifier};
+use crate::{Catalog, Identifier, Table};
+use crate::error::{Error,Result};
 
 /// PyCatalog implements the Catalog ABC for some Catalog trait impl (rust->py).
 #[pyclass]
@@ -36,7 +37,7 @@ impl Catalog for PyCatalogImpl {
         todo!()
     }
 
-    fn get_table(&self, _name: &Identifier) -> crate::error::Result<Option<Box<dyn crate::Table>>> {
+    fn get_table(&self, _name: &Identifier) -> Result<Option<Box<dyn Table>>> {
         todo!()
     }
     
