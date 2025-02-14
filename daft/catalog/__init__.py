@@ -1,12 +1,15 @@
-"""Add catalog documentation..
-"""
+"""The daft-catalog moduel documentation..."""
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Sequence
 from collections.abc import Sequence
 from daft.daft import PyCatalog, PyIdentifier
-from daft.table import Source, Table
+from daft.dataframe import DataFrame
+from daft.expressions import Expression
+from daft.logical.schema import Schema
+from daft.recordbatch import MicroPartition
+
 
 def load_catalog(name: str, options: object | None = None) -> Catalog:
     """Loads a new catalog from the configuration options or creates an in-memory catalog if none given."""
@@ -15,15 +18,18 @@ def load_catalog(name: str, options: object | None = None) -> Catalog:
     else:
         return Catalog._from_some(name, options)
 
+
 class Catalog(ABC):
+    """Catalog documentation..."""
 
     def __repr__(self) -> str:
         return f"Catalog('{self.name()}')"
 
     @staticmethod
     def _from_none(name: str):
-        from daft.catalog.__memory import MemoryCatalog
-        return MemoryCatalog(name)
+        from daft.catalog.__temp import TempCatalog
+
+        return TempCatalog(name)
 
     @staticmethod
     def _from_some(name: str, options: object) -> Catalog:
@@ -140,14 +146,57 @@ class Identifier(Sequence):
     def __repr__(self) -> str:
         return f"Identifier('{self._identifier.__repr__()}')"
 
+
 # TODO make a sequence
 Namespace = tuple[str]
+
+
+# TODO for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
+# pandas/arrow/arrow_record_batches/pydict
+TableSource = Schema | DataFrame | str | None
+
+
+class Table(ABC):
+    """Table documentation..."""
+
+    def __repr__(self) -> str:
+        return f"Table('{self._name}')"
+
+    @abstractmethod
+    def name(self) -> str:
+        """Returns the table name."""
+
+    @abstractmethod
+    def schema(self) -> Schema:
+        """Returns the table schema."""
+
+    ###
+    # Creation Methods
+    ###
+
+    @staticmethod
+    def _from_source(name: str, source: TableSource = None) -> Table:
+        from daft.catalog.__temp import TempTable
+        return TempTable._from_source(name, source)
+
+    ###
+    # DataFrame Methods
+    ###
+
+    @abstractmethod
+    def read(self) -> DataFrame:
+        """Returns a DataFrame from this table."""
+
+    @abstractmethod
+    def show(self, n: int = 8) -> None:
+        """Shows the first n rows from this table."""
+
 
 __all__ = [
     "Catalog",
     "Identifier",
     "Namespace",
-    "Source",
     "Table",
+    "TableSource",
     "load_catalog",
 ]

@@ -2,7 +2,7 @@ use std::{future::ready, rc::Rc, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
-use daft_catalog::Identifier;
+use daft_catalog::{Identifier, TempTable};
 use daft_context::get_context;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
@@ -243,7 +243,7 @@ impl ConnectSession {
 
         let session = self.session_mut();
         session
-            .create_table(Identifier::simple(name), input)
+            .create_temp_table(&name, TempTable::source(input.into()))
             .map_err(|e| {
                 Status::internal(
                     textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),

@@ -1,18 +1,29 @@
 from __future__ import annotations
 
-from daft.dataframe import DataFrame
-from daft.expressions import Expression
+from daft.catalog import Catalog, Table, TableSource
+from daft.dataframe.dataframe import DataFrame
 from daft.logical.schema import Schema
-from daft.recordbatch import MicroPartition
+from daft.recordbatch.micropartition import MicroPartition
 
-# for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
-# pandas/arrow/arrow_record_batches/pydict
-Source = Schema | DataFrame | str | None
 
-class Table:
+class TempCatalog(Catalog):
+    """A temporary catalog scoped to a given session."""
+
+    def __init__(self, name: str):
+        self._name: str = name
+
+    def __repr__(self) -> str:
+        return f"TempCatalog('{self._name}')"
+
+    def name(self) -> str:
+        return self._name
+
+
+class TempTable(Table):
+    """A temp table holds a reference to an existing dataframe."""
 
     def __init__(self) -> Table:
-        raise NotImplementedError("Creating a Table via __init__ is not supported")
+        raise NotImplementedError("Creating a TempTable via __init__ is not supported")
 
     def name(self) -> str:
         return self._name
@@ -23,12 +34,8 @@ class Table:
     def __repr__(self) -> str:
         return f"table('{self._name}')"
 
-    ###
-    # Creation Methods
-    ###
-
     @staticmethod
-    def _from_source(name: str, source: Source = None) -> Table:
+    def _from_source(name: str, source: TableSource = None) -> Table:
         if source is None:
             return Table._from_none(name)
         elif isinstance(source, DataFrame):
@@ -74,8 +81,3 @@ class Table:
 
     def show(self, n: int = 8) -> None:
         return self._inner.show(n)
-
-
-__all__ = [
-    "Table",
-]

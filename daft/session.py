@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from daft.context import DaftContext, get_context
 from daft.dataframe import DataFrame
-from daft.catalog import Catalog, Namespace
+from daft.catalog import Catalog, Identifier, Namespace, Table, TableSource
 from daft.daft import PySession
-from daft.table import Source, Table
 
 class Session:
 
@@ -57,13 +56,19 @@ class Session:
         """Create a new catalog scoped to this session."""
         return self._session.create_catalog(name)
 
-    # def create_namespace(self, name: str) -> Namespace:
-    #     """Create a new namespace scope to this session's current catalog."""
-    #     return self._session.create_namespace(name)
+    def create_namespace(self, name: str) -> Namespace:
+        """Create a new namespace scope to this session's current catalog."""
+        return self._session.create_namespace(name)
 
-    def create_table(self, name: str, source: Source = None) -> Table:
+    def create_table(self, name: str, source: TableSource = None) -> Table:
         """Creates a new table scoped to this session's current catalog and namespace."""
         return self._session.create_table(name, source)
+
+    def create_temp_table(self, name: str, source: TableSource = None) -> Table:
+        """Creates a temp table scoped to this session's lifetime."""
+        # TODO implement TableSource on the rust side.
+        source = Table._from_source(name, source)
+        return self._session.create_temp_table(name, source)
 
     ###
     # session state
@@ -73,9 +78,9 @@ class Session:
         """Returns the session's current catalog."""
         return self._session.current_catalog()
 
-    # def current_namespace(self) -> Namespace:
-    #     """Returns the session's current namespace."""
-    #     return self._session.current_namespace()
+    def current_namespace(self) -> Namespace:
+        """Returns the session's current namespace."""
+        return self._session.current_namespace()
 
     ###
     # get_*
@@ -89,8 +94,10 @@ class Session:
         """Returns the namespace or raises an exception if it does not exist."""
         return self._session.get_namespace(name)
 
-    def get_table(self, name: str) -> Table:
-        """Returns the table ."""
+    def get_table(self, name: str | Identifier) -> Table:
+        """Returns the table or raises an exception if it does not exist."""
+        if isinstance(name, str):
+            name = Identifier(*name.split("."))
         return self._session.get_table(name)
 
     ###

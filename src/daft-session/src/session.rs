@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use daft_catalog::{Catalogs, Catalog, Identifier};
+use daft_catalog::{Bindings, Catalog, CatalogProvider, CatalogRef, Identifier, Table, TableProvider, TableRef, TableSource};
 use daft_logical_plan::LogicalPlanBuilder;
 use uuid::Uuid;
 
@@ -26,11 +26,11 @@ struct SessionState {
     _id: String,
     /// Session options i.e. curr_catalog and curr_schema.
     options: Options,
-    /// References to the available catalogs.
-    catalogs: Catalogs,
+    /// Bindings for the attached catalogs.
+    catalogs: Bindings<CatalogRef>,
+    /// Bindings for the temporary tables.
+    tables: Bindings<TableRef>,
     // TODO execution context
-    // TODO temporary! tables come from a catalog, not here!!
-    tables: HashMap<String, LogicalPlanBuilder>,
     // TODO identifier matcher for case-insensitive matching
 }
 
@@ -40,8 +40,8 @@ impl Session {
         let state = SessionState {
             _id: Uuid::new_v4().to_string(),
             options: Options::default(),
-            catalogs: Catalogs::empty(),
-            tables: HashMap::new(),
+            catalogs: Bindings::empty(),
+            tables: Bindings::empty(),
         };
         let state = RwLock::new(state);
         let state = Arc::new(state);
@@ -59,11 +59,11 @@ impl Session {
     }
 
     /// Attaches a catalog to this session, err if already exists.
-    pub fn attach(&self, catalog: Arc<dyn Catalog>, alias: String) -> Result<()> {
+    pub fn attach(&self, catalog: CatalogRef, alias: String) -> Result<()> {
         if self.state().catalogs.exists(&alias) {
             obj_already_exists_err!("Catalog", &alias.into())
         }
-        self.state_mut().catalogs.attach(alias, catalog);
+        self.state_mut().catalogs.insert(alias, catalog);
         Ok(())
     }
 
@@ -72,26 +72,27 @@ impl Session {
         if !self.state().catalogs.exists(catalog) {
             obj_not_found_err!("Catalog", &catalog.into())
         }
-        self.state_mut().catalogs.detach(catalog);
+        self.state_mut().catalogs.remove(catalog);
         Ok(())
     }
 
-    /// Creates a table backed by the view
-    /// TODO support other table sources.
-    pub fn create_table(
-        &self,
-        name: Identifier,
-        view: impl Into<LogicalPlanBuilder>,
-    ) -> Result<()> {
-        if name.has_namespace() {
-            unsupported_err!("Creating a table with a namespace is not yet supported, Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name);
+    /// Creates a table in the current namespace with the given source.
+    pub fn create_table(&self, name: Identifier, source: TableSource) -> Result<()> {
+        unsupported_err!("Creating a table is not implemented, try create_temp_table.")
+    }
+
+    /// Creates a temp table scoped to this session from an existing view.
+    pub fn create_temp_table(&self, name: &str, source: TableSource) -> Result<TableRef> {
+        if self.state().tables.exists(name) {
+            obj_already_exists_err!("Temporary table", &name.into())
         }
-        self.state_mut().tables.insert(name.name, view.into());
-        Ok(())
+        // TODO update the source!! pulling double duty since we just return the original table..
+        self.state_mut().tables.insert(name.to_string(), source.clone());
+        Ok(source)
     }
 
     /// Returns the session's current catalog.
-    pub fn current_catalog(&self) -> Result<Arc<dyn Catalog>> {
+    pub fn current_catalog(&self) -> Result<CatalogRef> {
         self.get_catalog(&self.state().options.curr_catalog)
     }
 
@@ -100,17 +101,17 @@ impl Session {
         todo!()
     }
 
-    /// Returns the catalog or returns an object not found error.
-    pub fn get_catalog(&self, name: &str) -> Result<Arc<dyn Catalog>> {
+    /// Returns the catalog or an object not found error.
+    pub fn get_catalog(&self, name: &str) -> Result<CatalogRef> {
         if let Some(catalog) = self.state().catalogs.get(name) {
-            Ok(catalog)
+            Ok(catalog.clone())
         } else {
             obj_not_found_err!("Catalog", &name.into())
         }
     }
 
-    /// Gets a table by identifier
-    pub fn get_table(&self, name: &Identifier) -> Result<LogicalPlanBuilder> {
+    /// Returns the table or an object not found error.
+    pub fn get_table(&self, name: &Identifier) -> Result<TableRef> {
         if name.has_namespace() {
             unsupported_err!("Qualified identifiers are not yet supported")
         }
@@ -130,12 +131,17 @@ impl Session {
         if name.has_namespace() {
             return false;
         }
-        return self.state().tables.contains_key(&name.name);
+        return self.state().tables.exists(&name.name);
     }
 
     /// Lists all catalogs matching the pattern.
     pub fn list_catalogs(&self, pattern: Option<&str>) -> Result<Vec<String>> {
         Ok(self.state().catalogs.list(pattern))
+    }
+
+    /// Lists all tables matching the pattern.
+    pub fn list_tables(&self, pattern: Option<&str>) -> Result<Vec<String>> {
+        Ok(self.state().tables.list(pattern))
     }
 
     /// Sets the current_catalog

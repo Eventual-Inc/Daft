@@ -1,8 +1,10 @@
+mod bindings;
 mod catalog;
 pub mod error;
 mod identifier;
 mod table;
 
+pub use bindings::*;
 pub use catalog::*;
 pub use identifier::*;
 pub use table::*;
