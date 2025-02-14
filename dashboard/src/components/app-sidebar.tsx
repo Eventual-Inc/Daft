@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { SearchForm } from '@/components/search-form';
-import { Home, TableProperties } from 'lucide-react';
-import { usePathname } from 'next/navigation';
+import React from "react";
+import { SearchForm } from "@/components/search-form";
+import { Home, TableProperties } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 import {
     Sidebar,
@@ -15,17 +15,19 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
-} from '@/components/ui/sidebar';
+    SidebarFooter,
+} from "@/components/ui/sidebar";
+import { Button } from "./ui/button";
 
 const items = [
     {
-        title: 'Home',
-        url: 'home',
+        title: "Home",
+        url: "home",
         icon: Home,
     },
     {
-        title: 'Queries',
-        url: 'queries',
+        title: "Queries",
+        url: "queries",
         icon: TableProperties,
     },
 ];
@@ -35,7 +37,7 @@ export function AppSidebar() {
 
     return (
         <Sidebar>
-            <SidebarHeader>
+            <SidebarHeader className="py-4">
                 <SearchForm />
             </SidebarHeader>
             <SidebarContent>
@@ -43,15 +45,15 @@ export function AppSidebar() {
                     <SidebarGroupLabel>Application</SidebarGroupLabel>
                     <SidebarGroupContent>
                         <SidebarMenu>
-                            {items.map((item) => (
-                                <SidebarMenuItem key={item.title}>
+                            {items.map(({ title, url, icon: Icon }) => (
+                                <SidebarMenuItem key={title}>
                                     <SidebarMenuButton
                                         asChild
-                                        isActive={pathName === `/${item.url}`}
+                                        isActive={pathName.startsWith(`/${url}`)}
                                     >
-                                        <a href={item.url}>
-                                            <item.icon />
-                                            <span>{item.title}</span>
+                                        <a href={`/${url}`}>
+                                            <Icon strokeWidth={1.5} />
+                                            <span className="font-normal">{title}</span>
                                         </a>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>
@@ -60,6 +62,13 @@ export function AppSidebar() {
                     </SidebarGroupContent>
                 </SidebarGroup>
             </SidebarContent>
+            <SidebarFooter className="px-4 py-4">
+                <Button variant="destructive" onClick={async () => {
+                    await fetch("http://localhost:3238/api/shutdown", { method: "POST" });
+                }}>
+                    Shutdown
+                </Button>
+            </SidebarFooter>
         </Sidebar>
     );
 }

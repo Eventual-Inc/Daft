@@ -102,3 +102,6 @@ minversion = "6.0"
 testpaths = [
   "tests"
 ]
+
+[tool.setuptools.package-data]
+"daft" = ["html"]

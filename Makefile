@@ -78,6 +78,14 @@ docs: .venv sphinx-docs ## Build both MkDocs and Sphinx documentation
 sphinx-docs: .venv ## Build Sphinx API documentation
 	uv run --with-requirements requirements-docs.txt sphinx-build -b html "docs/sphinx/source" "docs/sphinx/_build"
 
+.PHONY: dashboard
+dashboard: .venv
+	cd dashboard && bun run build
+	if [ -d daft/static_dashboard_assets ]; then \
+		rm -rf daft/static_dashboard_assets; \
+	fi
+	mv dashboard/out daft/static_dashboard_assets
+
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
