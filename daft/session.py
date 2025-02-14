@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from daft.daft import PySession
 from daft.dataframe import DataFrame
 from daft.catalog import Catalog, Identifier, Namespace, Table, TableSource
 from daft.daft import PySession
-
 
 class Session:
     """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs."""
@@ -68,9 +66,9 @@ class Session:
         """Create a new catalog scoped to this session."""
         return self._session.create_catalog(name)
 
-    # def create_namespace(self, name: str) -> Namespace:
-    #     """Create a new namespace scope to this session's current catalog."""
-    #     return self._session.create_namespace(name)
+    def create_namespace(self, name: str) -> Namespace:
+        """Create a new namespace scope to this session's current catalog."""
+        return self._session.create_namespace(name)
 
     def create_table(self, name: str, source: TableSource = None) -> Table:
         """Creates a new table scoped to this session's current catalog and namespace."""
@@ -90,9 +88,9 @@ class Session:
         """Returns the session's current catalog."""
         return self._session.current_catalog()
 
-    # def current_namespace(self) -> Namespace:
-    #     """Returns the session's current namespace."""
-    #     return self._session.current_namespace()
+    def current_namespace(self) -> Namespace:
+        """Returns the session's current namespace."""
+        return self._session.current_namespace()
 
     ###
     # get_*

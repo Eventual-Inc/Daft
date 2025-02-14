@@ -58,7 +58,12 @@ analytics_client.track_import()
 # Daft top-level imports
 ###
 
-from daft.catalog import Catalog, Identifier, load_catalog
+from daft.catalog import (
+    Catalog,
+    Identifier,
+    Table,
+    load_catalog,
+)
 from daft.convert import (
     from_arrow,
     from_dask_dataframe,
@@ -113,6 +118,7 @@ __all__ = [
     "Schema",
     "Series",
     "Session",
+    "Table",
     "TimeUnit",
     "coalesce",
     "col",

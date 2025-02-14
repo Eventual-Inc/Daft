@@ -1,19 +1,12 @@
-use std::sync::Arc;
-
+use daft_logical_plan::LogicalPlanBuilder;
 use pyo3::{exceptions::PyIndexError, prelude::*};
 
-use crate::{Catalog, Identifier, Table};
-use crate::error::{Error,Result};
+use crate::{Catalog, CatalogRef, Identifier, Table, TableRef, TableSource};
+use crate::error::Result;
 
 /// PyCatalog implements the Catalog ABC for some Catalog trait impl (rust->py).
 #[pyclass]
-pub struct PyCatalog(Arc<dyn Catalog>);
-
-impl From<Arc<dyn Catalog>> for PyCatalog {
-    fn from(catalog: Arc<dyn Catalog>) -> Self {
-        Self(catalog)
-    }
-}
+pub struct PyCatalog(CatalogRef);
 
 #[pymethods]
 impl PyCatalog {
@@ -25,12 +18,6 @@ impl PyCatalog {
 /// PyCatalogImpl implements the Catalog trait for some Catalog ABC impl (py->rust).
 #[derive(Debug)]
 pub struct PyCatalogImpl(PyObject);
-
-impl From<PyObject> for PyCatalogImpl {
-    fn from(obj: PyObject) -> Self {
-        Self(obj)
-    }
-}
 
 impl Catalog for PyCatalogImpl {
     fn name(&self) -> String {
@@ -94,14 +81,64 @@ impl PyIdentifier {
     }
 }
 
+/// PyTableSource wraps either a schema or dataframe.
+#[pyclass]
+pub struct PyTableSource(TableSource);
+
+/// PyTable implements the Table ABC for some Table trait impl (rust->py).
+#[pyclass]
+pub struct PyTable(TableRef);
+
+#[pymethods]
+impl PyTable {}
+
+/// PyTableImpl implements the Table trait for some Table ABC impl (py->rust).
+#[derive(Debug)]
+pub struct PyTableImpl(PyObject);
+
+impl Table for PyTableImpl {
+    fn get_logical_plan(&self) -> Result<LogicalPlanBuilder> {
+        todo!()
+    }
+    
+    fn to_py(&self, py: Python<'_>) -> PyObject {
+        self.0.extract(py).expect("failed to extract PyObject")
+    }
+}
+
+impl From<CatalogRef> for PyCatalog {
+    fn from(catalog: CatalogRef) -> Self {
+        Self(catalog)
+    }
+}
+
+impl From<PyObject> for PyCatalogImpl {
+    fn from(obj: PyObject) -> Self {
+        Self(obj)
+    }
+}
+
 impl From<Identifier> for PyIdentifier {
     fn from(value: Identifier) -> Self {
         Self(value)
     }
 }
 
+impl AsRef<Identifier> for PyIdentifier {
+    fn as_ref(&self) -> &Identifier {
+        &self.0
+    }
+}
+
+impl AsRef<TableSource> for PyTableSource {
+    fn as_ref(&self) -> &TableSource {
+        &self.0
+    }
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyCatalog>()?;
     parent.add_class::<PyIdentifier>()?;
+    parent.add_class::<PyTable>()?;
     Ok(())
 }

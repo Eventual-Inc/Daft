@@ -3,6 +3,11 @@ from daft.session import Session
 
 import pytest
 
+import daft
+from daft import DataType as dt
+from daft.logical.schema import Schema, Field
+from daft import Session
+
 """
 SESSION SETUP
 """
@@ -76,3 +81,20 @@ def test_catalog_actions():
     # set_catalog and current_catalog
     sess.set_catalog("cat2")
     assert cat2 == sess.current_catalog()
+
+"""
+TABLE ACTIONS
+"""
+
+def schema(**columns):
+    fields = [Field.create(name, dtype) for name, dtype in columns.items()]
+    return Schema._from_fields(fields)
+
+def test_create_temp_table():
+    sess = Session.empty()
+    t1 = sess.create_temp_table("t1")
+    t2 = sess.create_temp_table("t2", schema(a=dt.int32(), b=dt.int32()))
+    t3 = sess.create_temp_table("t3", daft.from_pydict({}))
+    assert t1 is not None
+    assert t2 is not None
+    assert t3 is not None

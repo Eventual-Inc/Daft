@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_catalog::{python::{PyCatalog, PyCatalogImpl}, Namespace};
+use daft_catalog::{python::{PyCatalog, PyCatalogImpl, PyIdentifier, PyTable, PyTableSource}, Namespace};
 use pyo3::prelude::*;
 
 use crate::Session;
@@ -44,8 +44,16 @@ impl PySession {
         todo!()
     }
 
-    pub fn create_table(&self, name: &str, source: Option<PyObject>) -> PyResult<()> {
+    pub fn create_table(&self, name: &str, source: Option<&PyTableSource>) -> PyResult<()> {
         todo!()
+    }
+
+    pub fn create_temp_table(&self, name: &str, source: &PyTableSource) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let table = self.0.create_temp_table(name, source.as_ref().clone())?;
+            let table = table.to_py(py);
+            Ok(table)
+        })
     }
 
     pub fn get_catalog(&self, name: &str) -> PyResult<PyObject> {
@@ -60,8 +68,12 @@ impl PySession {
         todo!()
     }
 
-    pub fn get_table(&self, name: &str) -> PyResult<()> {
-        todo!()
+    pub fn get_table(&self, name: &PyIdentifier) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let table = self.0.get_table(name.as_ref())?;
+            let table = table.to_py(py);
+            Ok(table)
+        })
     }
 
     #[pyo3(signature = (pattern=None))]
@@ -75,8 +87,8 @@ impl PySession {
     }
 
     #[pyo3(signature = (pattern=None))]
-    pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<()> {
-        todo!()
+    pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
+        Ok(self.0.list_tables(pattern)?)
     }
 
     pub fn set_catalog(&self, name: &str) -> PyResult<()> {
