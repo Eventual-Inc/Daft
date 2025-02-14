@@ -34,8 +34,8 @@ To set up your development environment:
 ### Developing
 
 1. `make build`: recompile your code after modifying any Rust code in `src/`
-2. `make test`: run tests
-3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests (DAFT_RUNNER defaults to `py`)
+2. `DAFT_RUNNER=py make test`: run tests
+3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests
 4. `make docs`: build and serve docs
 
 ### Developing with Ray
