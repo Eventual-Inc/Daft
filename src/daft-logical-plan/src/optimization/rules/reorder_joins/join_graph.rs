@@ -114,9 +114,6 @@ impl Display for JoinNode {
 pub(super) struct JoinCondition {
     pub left_on: String,
     pub right_on: String,
-    // Estimated total domain of this edge, i.e. the number of distinct values in a join.
-    // For a pk-fk join, this would be the number of primary keys.
-    pub total_domain: usize,
 }
 
 pub(super) struct JoinAdjList {
@@ -124,6 +121,10 @@ pub(super) struct JoinAdjList {
     plan_to_id: HashMap<*const LogicalPlan, usize>,
     pub id_to_plan: HashMap<usize, LogicalPlanRef>,
     pub edges: HashMap<usize, HashMap<usize, Vec<JoinCondition>>>,
+    // Estimated total domains for each equivalence set of join columns, i.e. the number of distinct values in the columns.
+    // For pk-fk joins, this would be the number of primary keys. If multiple joins involve the same columns, we take the minimum
+    // cardinality of all relations involved as the total domain.
+    total_domains: HashMap<(usize, String), usize>,
 }
 
 impl std::fmt::Display for JoinAdjList {
@@ -155,6 +156,7 @@ impl JoinAdjList {
             plan_to_id: HashMap::new(),
             id_to_plan: HashMap::new(),
             edges: HashMap::new(),
+            total_domains: HashMap::new(),
         }
     }
 
@@ -177,24 +179,84 @@ impl JoinAdjList {
         right_id: usize,
         join_condition: JoinCondition,
     ) {
+        let left_on = join_condition.left_on.clone();
+        let right_on = join_condition.right_on.clone();
         if let Some(neighbors) = self.edges.get_mut(&left_id) {
             if let Some(join_conditions) = neighbors.get_mut(&right_id) {
+                // Check if the condition already exists.
+                if join_conditions
+                    .iter()
+                    .any(|cond| cond.right_on == join_condition.right_on && cond.left_on == left_on)
+                {
+                    return;
+                }
+                // Add a new condition to the existing edge.
                 join_conditions.push(join_condition);
             } else {
+                // Add a new edge.
                 neighbors.insert(right_id, vec![join_condition]);
             }
         } else {
+            // Add a new node then add a new edge.
             let mut neighbors = HashMap::new();
             neighbors.insert(right_id, vec![join_condition]);
             self.edges.insert(left_id, neighbors);
         }
+        // Infer transitive edges.
+        // E.g. if we have (A.x join B.x) and (B.x join C.x), then we infer (A.x join C.x).
+        let mut new_edges = vec![];
+        if let Some(right_neighbours) = self.edges.get(&right_id) {
+            for (&right_neighbour_id, right_neighbour_join_conds) in right_neighbours {
+                if right_neighbour_id == left_id {
+                    continue;
+                }
+                for right_neighbour_join_cond in right_neighbour_join_conds {
+                    if right_neighbour_join_cond.left_on == right_on {
+                        let plan1 = self.id_to_plan.get(&left_id).unwrap();
+                        let plan2 = self.id_to_plan.get(&right_neighbour_id).unwrap();
+                        let node1 = JoinNode::new(left_on.to_string(), plan1.clone());
+                        let node2 = JoinNode::new(
+                            right_neighbour_join_cond.right_on.to_string(),
+                            plan2.clone(),
+                        );
+                        new_edges.push((node1, node2));
+                    }
+                }
+            }
+        }
+        for (node1, node2) in new_edges {
+            self.add_bidirectional_edge(node1, node2);
+        }
     }
 
     pub(super) fn add_bidirectional_edge(&mut self, node1: JoinNode, node2: JoinNode) {
-        let node1_rows = node1.plan.materialized_stats().approx_stats.num_rows;
-        let node2_rows = node2.plan.materialized_stats().approx_stats.num_rows;
-        let total_domain = node1_rows.min(node2_rows);
-        self.add_bidirectional_edge_with_total_domain(node1, node2, total_domain);
+        let node1_id = self.get_or_create_plan_id(&node1.plan);
+        let node2_id = self.get_or_create_plan_id(&node2.plan);
+        // Find the minimal total domain for the join columns, either from the current nodes or from the existing total domains.
+        let mut td = {
+            let node1_stats = node1.plan.materialized_stats();
+            let node2_stats = node2.plan.materialized_stats();
+            // We multiple the number of rows by the reciprocal of the selectivity to get the original total domain.
+            let node1_rows = node1_stats.approx_stats.num_rows as f64
+                / node1_stats.approx_stats.acc_selectivity.max(0.01);
+            let node2_rows = node2_stats.approx_stats.num_rows as f64
+                / node2_stats.approx_stats.acc_selectivity.max(0.01);
+            node1_rows.min(node2_rows).max(1.0) as usize
+        };
+        if let Some(existing_td) = self
+            .total_domains
+            .get(&(node1_id, node1.relation_name.clone()))
+        {
+            td = td.min(*existing_td);
+        }
+        if let Some(existing_td) = self
+            .total_domains
+            .get(&(node2_id, node2.relation_name.clone()))
+        {
+            td = td.min(*existing_td);
+        }
+
+        self.add_bidirectional_edge_with_total_domain(node1, node2, td);
     }
 
     pub(super) fn add_bidirectional_edge_with_total_domain(
@@ -216,31 +278,48 @@ impl JoinAdjList {
         let join_condition = JoinCondition {
             left_on: left.relation_name.clone(),
             right_on: right.relation_name.clone(),
-            // Assuming a pk-fk join, the total domain would be the number of distinct values of the
-            // primary key. We assume the smaller side is the primary key side.
-            total_domain: td,
         };
         let left_id = self.get_or_create_plan_id(&left.plan);
         let right_id = self.get_or_create_plan_id(&right.plan);
+        // Update the total domains for the join columns.
+        self.total_domains
+            .insert((left_id, left.relation_name.clone()), td);
+        self.total_domains
+            .insert((right_id, right.relation_name.clone()), td);
         self.add_join_condition(left_id, right_id, join_condition);
     }
 
+    // Returns the join conditions that connect the left and right trees, and the maximum total domain for the join columns.
     pub(super) fn get_connections(
         &self,
         left: &JoinOrderTree,
         right: &JoinOrderTree,
-    ) -> Vec<JoinCondition> {
+    ) -> (Vec<JoinCondition>, usize) {
         let mut conds = vec![];
+        let mut td = 0;
         for left_node in left.iter() {
             if let Some(neighbors) = self.edges.get(&left_node) {
                 for right_node in right.iter() {
                     if let Some(edges) = neighbors.get(&right_node) {
                         conds.extend(edges.iter().cloned());
+                        // TODO(desmond): This is a hack to get the selectivity of the join from the total domain of the join columns.
+                        // We should expand this to take the minimum spanning tree of edges to connect the relations. For simple graphs
+                        // (e.g. the queries in the TPCH benchmark), taking the max of the total domains is a good proxy.
+                        for edge in edges {
+                            td = td.max(
+                                *self
+                                    .total_domains
+                                    .get(&(left_node, edge.left_on.clone()))
+                                    .expect(
+                                        "Left join condition not found in domain equivalence sets",
+                                    ),
+                            );
+                        }
                     }
                 }
             }
         }
-        conds
+        (conds, td)
     }
 }
 
@@ -752,7 +831,10 @@ mod tests {
 
     use super::JoinGraphBuilder;
     use crate::{
-        optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
+        optimization::rules::{
+            reorder_joins::join_graph::{JoinAdjList, JoinNode},
+            EnrichWithStats, MaterializeScans, OptimizerRule,
+        },
         test::{
             dummy_scan_node_with_pushdowns, dummy_scan_operator, dummy_scan_operator_with_size,
         },
