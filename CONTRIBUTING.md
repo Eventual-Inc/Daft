@@ -25,7 +25,7 @@ When proposing features, please include:
 
 To set up your development environment:
 
-1. Ensure that your system has a suitable Python version installed (>=3.7, <=3.11)
+1. Ensure that your system has a suitable Python version installed (>=3.9, <=3.11)
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
 3. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
 4. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
@@ -34,8 +34,8 @@ To set up your development environment:
 ### Developing
 
 1. `make build`: recompile your code after modifying any Rust code in `src/`
-2. `make test`: run tests
-3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests (DAFT_RUNNER defaults to `py`)
+2. `DAFT_RUNNER=native make test`: run tests
+3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests
 4. `make docs`: build and serve docs
 
 ### Developing with Ray
