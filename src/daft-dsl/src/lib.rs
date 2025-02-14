@@ -16,8 +16,8 @@ pub use common_treenode;
 pub use expr::{
     binary_op, bound_col, count_actor_pool_udfs, deduplicate_expr_names, estimated_selectivity,
     exprs_to_schema, has_agg, is_actor_pool_udf, is_partition_compatible, resolved_col,
-    unbound_col, AggExpr, ApproxPercentileParams, Expr, ExprRef, Operator, SketchType, Subquery,
-    SubqueryPlan, UnresolvedColumn,
+    unbound_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, Operator, SketchType,
+    Subquery, SubqueryPlan,
 };
 pub use lit::{lit, literal_value, literals_to_series, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]

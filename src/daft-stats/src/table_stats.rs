@@ -7,7 +7,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{Column, Expr, ExprRef};
 use daft_recordbatch::RecordBatch;
 use indexmap::{IndexMap, IndexSet};
 
@@ -132,7 +132,7 @@ impl TableStatistics {
     pub fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
-            Expr::ResolvedColumn(col_name) => {
+            Expr::Column(Column::Resolved(col_name)) => {
                 let col = self.columns.get(col_name.as_ref());
                 let Some(col) = col else {
                     return Err(crate::Error::DaftCoreCompute {

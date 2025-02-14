@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction};
 use daft_core::{join::JoinType, prelude::SchemaRef};
-use daft_dsl::{resolved_col, Expr, ExprRef, Operator, Subquery};
+use daft_dsl::{resolved_col, Column, Expr, ExprRef, Operator, Subquery};
 use itertools::multiunzip;
 use uuid::Uuid;
 
@@ -388,12 +388,12 @@ fn pull_up_correlated_cols(
                     {
                         match (left.as_ref(), right.as_ref()) {
                             (
-                                Expr::ResolvedColumn(subquery_col_name),
-                                Expr::OuterReferenceColumn(outer_field),
+                                Expr::Column(Column::Resolved(subquery_col_name)),
+                                Expr::Column(Column::OuterRef(outer_field)),
                             )
                             | (
-                                Expr::OuterReferenceColumn(outer_field),
-                                Expr::ResolvedColumn(subquery_col_name),
+                                Expr::Column(Column::OuterRef(outer_field)),
+                                Expr::Column(Column::Resolved(subquery_col_name)),
                             ) => {
                                 // remove correlated col from filter, use in join instead
                                 subquery_on.push(resolved_col(subquery_col_name.clone()));
@@ -547,7 +547,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::join::JoinType;
-    use daft_dsl::{unbound_col, Expr, Subquery};
+    use daft_dsl::{unbound_col, Column, Expr, Subquery};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::{UnnestPredicateSubquery, UnnestScalarSubquery};
@@ -644,10 +644,10 @@ mod tests {
 
         let subquery = tbl2
             .filter(
-                unbound_col("inner_key").eq(Arc::new(Expr::OuterReferenceColumn(Field::new(
+                unbound_col("inner_key").eq(Arc::new(Expr::Column(Column::OuterRef(Field::new(
                     "inner_key",
                     DataType::Int64,
-                )))),
+                ))))),
             )?
             .aggregate(vec![unbound_col("outer_key").max()], vec![])?;
         let subquery_expr = Arc::new(Expr::Subquery(Subquery {
@@ -739,10 +739,10 @@ mod tests {
 
         let subquery = tbl2
             .filter(
-                unbound_col("key").eq(Arc::new(Expr::OuterReferenceColumn(Field::new(
+                unbound_col("key").eq(Arc::new(Expr::Column(Column::OuterRef(Field::new(
                     "key",
                     DataType::Int64,
-                )))),
+                ))))),
             )?
             .build();
 

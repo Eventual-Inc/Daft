@@ -5,7 +5,7 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter
 use daft_dsl::{
     is_actor_pool_udf,
     optimization::{get_required_columns, requires_computation},
-    Expr, ExprRef,
+    resolved_col, Column, Expr, ExprRef,
 };
 use itertools::Itertools;
 
@@ -174,7 +174,7 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
             // If we encounter a ColumnExpr, we add it to new_children only if it hasn't already been accounted for
-            Expr::ResolvedColumn(name) => {
+            Expr::Column(Column::Resolved(name)) => {
                 if !self
                     .new_children
                     .iter()
@@ -200,7 +200,8 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
 
                         self.new_children
                             .push(e.clone().alias(intermediate_expr_name.as_str()));
-                        Expr::ResolvedColumn(intermediate_expr_name.as_str().into()).arced()
+
+                        resolved_col(intermediate_expr_name)
                     } else {
                         e.clone()
                     }
@@ -232,7 +233,7 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
                 );
             }
             // If we encounter a ColumnExpr, we add it to new_children only if it hasn't already been accounted for
-            Expr::ResolvedColumn(name) => {
+            Expr::Column(Column::Resolved(name)) => {
                 if !self
                     .new_children
                     .iter()
@@ -262,7 +263,8 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
 
                         self.new_children
                             .push(e.clone().alias(intermediate_expr_name.as_str()));
-                        Expr::ResolvedColumn(intermediate_expr_name.as_str().into()).arced()
+
+                        resolved_col(intermediate_expr_name)
                     } else {
                         e.clone()
                     }
@@ -331,7 +333,7 @@ fn split_projection(
                     reason = "we are arcing it later; we might want to use contains separately unless there is a better way"
                 )]
                 if !new_children_seen.contains(&required_col_name) {
-                    let colexpr = Expr::ResolvedColumn(required_col_name.as_str().into()).arced();
+                    let colexpr = resolved_col(required_col_name.clone());
                     new_children_seen.insert(required_col_name);
                     new_children.push(colexpr);
                 }
@@ -412,7 +414,7 @@ fn recursive_optimize_project(
     // Recurse if necessary (if there are any non-noop expressions left to run in `remaining`)
     let new_plan_child = if remaining
         .iter()
-        .all(|e| matches!(e.as_ref(), Expr::ResolvedColumn(_)))
+        .all(|e| matches!(e.as_ref(), Expr::Column(Column::Resolved(_))))
     {
         // Nothing remaining, we're done splitting and should wire the new node up with the child of the Project
         projection.input.clone()
@@ -444,7 +446,7 @@ fn recursive_optimize_project(
                 if stateless_stages_names.contains(name.as_str()) {
                     None
                 } else {
-                    Some(Expr::ResolvedColumn(name.as_str().into()).arced())
+                    Some(resolved_col(name))
                 }
             })
             .collect_vec()
@@ -470,7 +472,7 @@ fn recursive_optimize_project(
                     if name == &expr_name {
                         None
                     } else {
-                        Some(Expr::ResolvedColumn(name.as_str().into()).arced())
+                        Some(resolved_col(name.clone()))
                     }
                 })
                 .chain(iter::once(expr))
@@ -488,7 +490,7 @@ fn recursive_optimize_project(
         projection
             .projection
             .iter()
-            .map(|e| Expr::ResolvedColumn(e.name().into()).arced())
+            .map(|e| resolved_col(e.name()))
             .collect(),
     )?)
     .arced();

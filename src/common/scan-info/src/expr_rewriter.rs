@@ -5,7 +5,7 @@ use daft_algebra::boolean::split_conjunction;
 use daft_dsl::{
     common_treenode::{Transformed, TreeNode, TreeNodeRecursion},
     functions::{partitioning, FunctionExpr},
-    null_lit, resolved_col, Expr, ExprRef, Operator,
+    null_lit, resolved_col, Column, Expr, ExprRef, Operator,
 };
 
 use crate::{PartitionField, PartitionTransform};
@@ -117,7 +117,7 @@ pub fn rewrite_predicate_for_partitioning(
                 Ok(TreeNodeRecursion::Stop)
             }
 
-            Expr::ResolvedColumn(col_name) => {
+            Expr::Column(Column::Resolved(col_name)) => {
                 if let Some(pfield) = pfields_map.get(col_name.as_ref()) {
                     all_data_keys = false;
                     if !matches!(pfield.transform, Some(PartitionTransform::Identity) | None) {
@@ -172,7 +172,7 @@ pub fn rewrite_predicate_for_partitioning(
                 ref left,
                 ref right,
             } => {
-                if let Expr::ResolvedColumn(col_name) = left.as_ref()
+                if let Expr::Column(Column::Resolved(col_name)) = left.as_ref()
                     && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
                 {
                     if let Some(tfm) = pfield.transform
@@ -189,7 +189,7 @@ pub fn rewrite_predicate_for_partitioning(
                         ));
                     }
                     Ok(Transformed::no(expr))
-                } else if let Expr::ResolvedColumn(col_name) = right.as_ref()
+                } else if let Expr::Column(Column::Resolved(col_name)) = right.as_ref()
                     && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
                 {
                     if let Some(tfm) = pfield.transform
@@ -217,7 +217,7 @@ pub fn rewrite_predicate_for_partitioning(
                 ref left,
                 ref right,
             } => {
-                if let Expr::ResolvedColumn(col_name) = left.as_ref()
+                if let Expr::Column(Column::Resolved(col_name)) = left.as_ref()
                     && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
                 {
                     if let Some(tfm) = pfield.transform
@@ -234,7 +234,7 @@ pub fn rewrite_predicate_for_partitioning(
                         ));
                     }
                     Ok(Transformed::no(expr))
-                } else if let Expr::ResolvedColumn(col_name) = right.as_ref()
+                } else if let Expr::Column(Column::Resolved(col_name)) = right.as_ref()
                     && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
                 {
                     if let Some(tfm) = pfield.transform
@@ -268,7 +268,7 @@ pub fn rewrite_predicate_for_partitioning(
                     _ => unreachable!("this branch only supports Lt | LtEq | Gt | GtEq"),
                 };
 
-                if let Expr::ResolvedColumn(col_name) = left.as_ref()
+                if let Expr::Column(Column::Resolved(col_name)) = left.as_ref()
                     && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
                 {
                     if let Some(tfm) = pfield.transform
@@ -285,7 +285,7 @@ pub fn rewrite_predicate_for_partitioning(
                         ));
                     }
                     Ok(Transformed::no(expr))
-                } else if let Expr::ResolvedColumn(col_name) = right.as_ref()
+                } else if let Expr::Column(Column::Resolved(col_name)) = right.as_ref()
                     && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
                 {
                     if let Some(tfm) = pfield.transform
@@ -308,7 +308,7 @@ pub fn rewrite_predicate_for_partitioning(
             }
 
             Expr::IsNull(ref expr)
-                if let Expr::ResolvedColumn(col_name) = expr.as_ref()
+                if let Expr::Column(Column::Resolved(col_name)) = expr.as_ref()
                     && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) =>
             {
                 Ok(Transformed::yes(
@@ -316,7 +316,7 @@ pub fn rewrite_predicate_for_partitioning(
                 ))
             }
             Expr::NotNull(ref expr)
-                if let Expr::ResolvedColumn(col_name) = expr.as_ref()
+                if let Expr::Column(Column::Resolved(col_name)) = expr.as_ref()
                     && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) =>
             {
                 Ok(Transformed::yes(
@@ -335,7 +335,7 @@ pub fn rewrite_predicate_for_partitioning(
     for e in split {
         let mut all_part_keys = true;
         e.apply(&mut |e: &ExprRef| {
-            if let Expr::ResolvedColumn(col_name) = e.as_ref()
+            if let Expr::Column(Column::Resolved(col_name)) = e.as_ref()
                 && !pfields_map.contains_key(col_name.as_ref())
             {
                 all_part_keys = false;

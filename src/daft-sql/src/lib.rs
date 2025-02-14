@@ -447,12 +447,14 @@ mod tests {
         tbl_1: LogicalPlanRef,
         tbl_2: LogicalPlanRef,
     ) -> SQLPlannerResult<()> {
+        use daft_dsl::Column;
+
         let plan = planner.plan_sql(query)?;
 
-        let outer_col = Arc::new(Expr::OuterReferenceColumn(Field::new(
+        let outer_col = Arc::new(Expr::Column(Column::OuterRef(Field::new(
             "i32",
             DataType::Int32,
-        )));
+        ))));
         let subquery = LogicalPlanBuilder::from(tbl_2)
             .alias("tbl2")
             .filter(unbound_col("id").eq(outer_col))?

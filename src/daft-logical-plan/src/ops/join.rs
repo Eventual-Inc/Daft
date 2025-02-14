@@ -6,8 +6,8 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::{
-    join::infer_join_schema, optimization::replace_columns_with_expressions, resolved_col, Expr,
-    ExprRef,
+    join::infer_join_schema, optimization::replace_columns_with_expressions, resolved_col, Column,
+    Expr, ExprRef,
 };
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -121,11 +121,10 @@ impl Join {
                     .iter()
                     .zip(right_on.iter())
                     .filter_map(|(l, r)| match (l.as_ref(), r.as_ref()) {
-                        (Expr::ResolvedColumn(l_name), Expr::ResolvedColumn(r_name))
-                            if l_name == r_name =>
-                        {
-                            Some(l_name.to_string())
-                        }
+                        (
+                            Expr::Column(Column::Resolved(l_name)),
+                            Expr::Column(Column::Resolved(r_name)),
+                        ) if l_name == r_name => Some(l_name.to_string()),
                         _ => None,
                     })
                     .collect()

@@ -6,7 +6,7 @@ use daft_core::prelude::*;
 use daft_dsl::{
     is_actor_pool_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
-    resolved_col, Expr, ExprRef,
+    resolved_col, Column, Expr, ExprRef,
 };
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -44,7 +44,7 @@ impl PushDownProjection {
                     .iter()
                     .zip(upstream_schema.names().iter())
                     .all(|(expr, upstream_col)| match expr.as_ref() {
-                        Expr::ResolvedColumn(colname) => colname.as_ref() == upstream_col,
+                        Expr::Column(Column::Resolved(colname)) => colname.as_ref() == upstream_col,
                         _ => false,
                     })
         };
@@ -88,7 +88,7 @@ impl PushDownProjection {
                         // If it's a reference for a column that requires computation,
                         // record it.
                         if okay_to_merge
-                            && let Expr::ResolvedColumn(name) = expr.as_ref()
+                            && let Expr::Column(Column::Resolved(name)) = expr.as_ref()
                             && upstream_computations.contains(name.as_ref())
                         {
                             okay_to_merge = okay_to_merge
@@ -316,7 +316,7 @@ impl PushDownProjection {
                     let all_projections_are_just_colexprs =
                         pruned_upstream_projections.iter().all(|proj| {
                             !proj.exists(|e| match e.as_ref() {
-                                Expr::ResolvedColumn(_) => false,
+                                Expr::Column(Column::Resolved(..)) => false,
                                 // Check for existence of any non-ColumnExprs
                                 _ => true,
                             })

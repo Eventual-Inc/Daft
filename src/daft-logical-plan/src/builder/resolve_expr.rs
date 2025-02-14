@@ -6,7 +6,7 @@ use daft_core::prelude::*;
 use daft_dsl::{
     bound_col,
     functions::{struct_::StructExpr, FunctionExpr},
-    has_agg, is_actor_pool_udf, resolved_col, AggExpr, Expr, ExprRef, UnresolvedColumn,
+    has_agg, is_actor_pool_udf, resolved_col, AggExpr, Column, Expr, ExprRef,
 };
 use typed_builder::TypedBuilder;
 
@@ -33,7 +33,7 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
 
     expr.apply(|e| {
         match e.as_ref() {
-            Expr::UnresolvedColumn(UnresolvedColumn {
+            Expr::Column(Column::Unresolved {
                 name,
                 plan_id,
                 plan_schema,
@@ -80,7 +80,7 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                 Ok(expr
                     .clone()
                     .transform(|e| match e.as_ref() {
-                        Expr::UnresolvedColumn(UnresolvedColumn {
+                        Expr::Column(Column::Unresolved {
                             name,
                             plan_id,
                             plan_schema,
@@ -107,7 +107,7 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
 
 fn resolve_unresolved_columns(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<ExprRef> {
     Ok(expr.transform(|e| {
-        if let Expr::UnresolvedColumn(UnresolvedColumn { name, plan_id, plan_schema }) = e.as_ref() {
+        if let Expr::Column(Column::Unresolved { name, plan_id, plan_schema }) = e.as_ref() {
             if let Some(plan_id) = plan_id {
                 if let Some(schema) = plan.clone().get_schema_for_id(plan_id)? {
                     // make sure column exists in schema
@@ -115,14 +115,14 @@ fn resolve_unresolved_columns(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult
 
                     Ok(Transformed::yes(resolved_col(name.clone())))
                 } else if let Some(schema) = plan_schema {
-                    Ok(Transformed::yes(Arc::new(Expr::OuterReferenceColumn(schema.get_field(name)?.clone()))))
+                    Ok(Transformed::yes(Arc::new(Expr::Column(Column::OuterRef(schema.get_field(name)?.clone())))))
                 } else {
                     Err(DaftError::FieldNotFound(format!("Column {plan_id}.{name} is an outer column but does not have an associated schema.")))
                 }
             } else if plan.schema().has_field(name) {
                 Ok(Transformed::yes(resolved_col(name.clone())))
             } else if let Some(schema) = plan_schema {
-                Ok(Transformed::yes(Arc::new(Expr::OuterReferenceColumn(schema.get_field(name)?.clone()))))
+                Ok(Transformed::yes(Arc::new(Expr::Column(Column::OuterRef(schema.get_field(name)?.clone())))))
             } else {
                 Err(DaftError::FieldNotFound(format!(
                     "Column {name} is an outer column but does not have an associated schema."
@@ -259,9 +259,7 @@ impl<'a> ExprResolver<'a> {
         self.groupby.contains(expr)
             || match expr.as_ref() {
                 Expr::Agg(agg_expr) => !agg_expr.children().iter().any(has_agg),
-                Expr::ResolvedColumn(_)
-                | Expr::UnresolvedColumn(_)
-                | Expr::OuterReferenceColumn(_) => false,
+                Expr::Column(_) => false,
                 Expr::Literal(_) => true,
                 _ => expr.children().iter().all(|e| self.is_valid_expr_in_agg(e)),
             }

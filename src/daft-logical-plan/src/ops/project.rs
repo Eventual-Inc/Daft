@@ -3,7 +3,9 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_treenode::Transformed;
 use daft_core::prelude::*;
-use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef};
+use daft_dsl::{
+    optimization, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
+};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 
@@ -51,11 +53,7 @@ impl Project {
         input: Arc<LogicalPlan>,
         schema: SchemaRef,
     ) -> logical_plan::Result<Self> {
-        let expr: Vec<ExprRef> = schema
-            .names()
-            .into_iter()
-            .map(|n| Arc::new(Expr::ResolvedColumn(Arc::from(n))))
-            .collect();
+        let expr: Vec<ExprRef> = schema.names().into_iter().map(resolved_col).collect();
         Self::try_new(input, expr)
     }
 
@@ -142,7 +140,7 @@ impl Project {
                         expr.children()
                     } else {
                         let expr_id = expr.semantic_id(schema);
-                        if let Expr::ResolvedColumn(..) = expr.as_ref() {
+                        if let Expr::Column(Column::Resolved(..)) = expr.as_ref() {
                             column_name_substitutions.insert(expr_id.clone(), expr.clone());
                         }
                         // Mark expr as seen
@@ -213,21 +211,17 @@ fn replace_column_with_semantic_id(
 ) -> Transformed<ExprRef> {
     let sem_id = e.semantic_id(schema);
     if subexprs_to_replace.contains(&sem_id) {
-        let new_expr = Expr::ResolvedColumn(sem_id.id);
+        let new_expr = resolved_col(sem_id.id);
         let new_expr = match e.as_ref() {
-            Expr::Alias(_, name) => Expr::Alias(new_expr.into(), name.clone()),
+            Expr::Alias(_, name) => Expr::Alias(new_expr, name.clone()).into(),
             _ => new_expr,
         };
-        Transformed::yes(new_expr.into())
+        Transformed::yes(new_expr)
     } else {
         match e.as_ref() {
-            Expr::ResolvedColumn(_)
-            | Expr::Literal(_)
-            | Expr::Subquery(_)
-            | Expr::Exists(_)
-            | Expr::UnresolvedColumn(..)
-            | Expr::JoinSideColumn(..)
-            | Expr::OuterReferenceColumn(..) => Transformed::no(e),
+            Expr::Column(_) | Expr::Literal(_) | Expr::Subquery(_) | Expr::Exists(_) => {
+                Transformed::no(e)
+            }
             Expr::Agg(agg_expr) => replace_column_with_semantic_id_aggexpr(
                 agg_expr.clone(),
                 subexprs_to_replace,

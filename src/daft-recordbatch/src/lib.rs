@@ -21,8 +21,8 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
-    functions::FunctionEvaluator, null_lit, resolved_col, AggExpr, ApproxPercentileParams, Expr,
-    ExprRef, LiteralValue, SketchType, UnresolvedColumn,
+    functions::FunctionEvaluator, null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column,
+    Expr, ExprRef, LiteralValue, SketchType,
 };
 use daft_logical_plan::FileInfos;
 use futures::{StreamExt, TryStreamExt};
@@ -542,7 +542,7 @@ impl RecordBatch {
             Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
             Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             // TODO: remove ability to evaluate on unresolved col once we fix all tests
-            Expr::ResolvedColumn(name) | Expr::UnresolvedColumn(UnresolvedColumn { name, plan_id: None, plan_schema: None }) => self.get_column(name).cloned(),
+            Expr::Column(Column::Resolved(name)) | Expr::Column(Column::Unresolved { name, plan_id: None, plan_schema: None }) => self.get_column(name).cloned(),
             Expr::Not(child) => !(self.eval_expression(child)?),
             Expr::IsNull(child) => self.eval_expression(child)?.is_null(),
             Expr::NotNull(child) => self.eval_expression(child)?.not_null(),
@@ -645,13 +645,13 @@ impl RecordBatch {
             Expr::Exists(_subquery) => Err(DaftError::ComputeError(
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
-            Expr::OuterReferenceColumn { .. } => Err(DaftError::ComputeError(
-                "Outer reference columns should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            Expr::Column(Column::OuterRef(Field { name, .. })) => Err(DaftError::ComputeError(
+                format!("Outer reference columns should be eliminated before evaluation. This indicates either that column {name} does not exist in the table, or there is a bug in the query optimizer."),
             )),
-            Expr::JoinSideColumn(..) => Err(DaftError::ComputeError(
+            Expr::Column(Column::JoinSide(..)) => Err(DaftError::ComputeError(
                 "Join side columns cannot be evaluated directly. This indicates a bug in the executor.".to_string(),
             )),
-            Expr::UnresolvedColumn(..) => Err(DaftError::ComputeError(
+            Expr::Column(Column::Unresolved { .. }) => Err(DaftError::ComputeError(
                 "Unresolved columns should be resolved before evaluation.".to_string(),
             )),
         }?;
