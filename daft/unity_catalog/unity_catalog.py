@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from typing import Callable
+from typing import Callable, Literal
 from urllib.parse import urlparse
 
 import unitycatalog
@@ -91,14 +91,14 @@ class UnityCatalog:
         return self._paginate_to_completion(_paginated_list_tables)
 
     def load_table(
-        self, table_name: str, new_table_storage_path: str | None = None, intent: str = "READ_WRITE"
+        self, table_name: str, new_table_storage_path: str | None = None, mode: Literal["r"|"rw"] = "rw"
     ) -> UnityCatalogTable:
         """Loads an existing Unity Catalog table. If the table is not found, and information is provided in the method to create a new table, a new table will be attempted to be registered.
 
         Args:
             table_name (str): Name of the table in Unity Catalog in the form of dot-separated, 3-level namespace
             new_table_storage_path (str, optional): Cloud storage path URI to register a new external table using this path. Unity Catalog will validate if the path is valid and authorized for the principal, else will raise an exception.
-            intent (str, optional): The intended use of the table, which impacts authorization. Defaults to "READ_WRITE", else can be "READ".
+            mode (Literal["r", "rw"], optional): The intended use of the table, which impacts authorization. Defaults to "rw".
 
         Returns:
             UnityCatalogTable
@@ -140,7 +140,8 @@ class UnityCatalog:
         table_id = table_info.table_id
         storage_location = table_info.storage_location
         # Grab credentials from Unity catalog and place it into the Table
-        temp_table_credentials = self._client.temporary_table_credentials.create(operation=intent, table_id=table_id)
+        operation = "READ" if mode == "r" else "READ_WRITE"
+        temp_table_credentials = self._client.temporary_table_credentials.create(operation=operation, table_id=table_id)
 
         scheme = urlparse(storage_location).scheme
         if scheme == "s3" or scheme == "s3a":
