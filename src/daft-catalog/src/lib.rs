@@ -1,8 +1,8 @@
+pub mod catalog;
 mod data_catalog;
 mod data_catalog_table;
 pub mod error;
-pub mod identifier;
-
+mod identifier;
 // Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
 
@@ -14,6 +14,7 @@ pub use data_catalog_table::DataCatalogTable;
 pub mod python;
 
 use error::{Error, Result};
+pub use identifier::*;
 
 pub mod global_catalog {
     use std::sync::{Arc, RwLock};
@@ -43,7 +44,6 @@ pub mod global_catalog {
             .unregister_catalog(name)
     }
 }
-use identifier::Identifier;
 
 /// Name of the default catalog
 static DEFAULT_CATALOG_NAME: &str = "default";
@@ -103,17 +103,8 @@ impl DaftCatalog {
         name: &str,
         view: impl Into<LogicalPlanBuilder>,
     ) -> Result<()> {
-        let identifier = Identifier::parse(name)?;
-        if identifier.has_namespace() {
-            return Err(Error::Unsupported {
-                message: format!("Qualified identifiers are not yet supported. Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name),
-            });
-        }
-
-        let table_name: Arc<str> = identifier.name.into();
-
-        self.named_tables
-            .insert(table_name.clone(), view.into().alias(table_name));
+        // TODO this API is being removed, for now preserve the exact name as if it were delimited.
+        self.named_tables.insert(name.into(), view.into());
         Ok(())
     }
 
@@ -169,6 +160,7 @@ impl DaftCatalog {
             table_id: searched_table_name.to_string(),
         })
     }
+
     /// Copy from another catalog, using tables from other in case of conflict
     pub fn copy_from(&mut self, other: &Self) {
         for (name, plan) in &other.named_tables {
@@ -177,6 +169,13 @@ impl DaftCatalog {
         for (name, catalog) in &other.data_catalogs {
             self.data_catalogs.insert(name.clone(), catalog.clone());
         }
+    }
+
+    /// TODO remove py register and read methods are moved to session
+    /// I cannot remove DaftMetaCatalog until I invert the dependency
+    /// so that the current register_ methods use the session rather than the catalog.
+    pub fn into_catalog_map(self) -> HashMap<String, Arc<dyn DataCatalog>> {
+        self.data_catalogs
     }
 }
 
@@ -218,11 +217,6 @@ mod tests {
 
         // Register a table
         assert!(catalog.register_table("test_table", plan.clone()).is_ok());
-
-        // Try to register a table with invalid name
-        assert!(catalog
-            .register_table("invalid name", plan.clone())
-            .is_err());
     }
 
     #[test]

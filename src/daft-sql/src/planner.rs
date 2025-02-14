@@ -8,7 +8,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_algebra::boolean::combine_conjunction;
-use daft_catalog::identifier::Identifier;
+use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
     bound_col, has_agg, lit, literals_to_series, null_lit, resolved_col, unbound_col, Expr,
@@ -876,23 +876,18 @@ impl<'a> SQLPlanner<'a> {
         &self,
         name: &ObjectName,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        // Convert the sqlparse ObjectName to a daft Identifier
-        let ident = ident_from_obj_name(name);
-        if ident.has_namespace() {
-            unsupported_sql_err!("qualified identifier {}", name.to_string())
-        }
-        // Because the catalog does not support qualified identifiers, we can just use name.
-        // TODO case-normalization of regular identifiers in name position (rvalue) https://github.com/Eventual-Inc/Daft/issues/3765
-        if let Some(plan) = self
-            .bound_ctes()
-            .get(&ident.to_string())
-            .cloned()
-            .or_else(|| self.session().get_table(&ident).ok())
-        {
-            Ok(plan)
+        let ident = normalize(name);
+        let table = if ident.has_namespace() {
+            // qualified search of sesison metadata
+            self.session().get_table(&ident).ok()
         } else {
-            table_not_found_err!(ident.to_string())
-        }
+            // search bindings then session metadata
+            self.bound_ctes()
+                .get(&ident.name)
+                .cloned()
+                .or_else(|| self.session().get_table(&ident).ok())
+        };
+        table.ok_or_else(|| PlannerError::table_not_found(ident.to_string()))
     }
 
     fn plan_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<ExprRef> {
@@ -1020,7 +1015,7 @@ impl<'a> SQLPlanner<'a> {
             // TODO: support wildcard struct gets
             SelectItem::QualifiedWildcard(object_name, wildcard_opts) => {
                 check_wildcard_options(wildcard_opts)?;
-                let ident = ident_from_obj_name(object_name);
+                let ident = normalize(object_name);
                 let ident_name = ident.to_string();
                 let Some(current_plan) = self.current_plan.as_ref() else {
                     table_not_found_err!(ident_name);
@@ -2095,12 +2090,12 @@ fn compound_ident_to_str(idents: &[Ident]) -> String {
         .join(".")
 }
 
-/// Returns a daft identifier from an sqlparser ObjectName
-pub(crate) fn ident_from_obj_name(name: &ObjectName) -> Identifier {
-    // TODO distinguish identifier parts for proper resolution (or normalization).
-    let mut parts: Vec<String> = name.0.iter().map(|i| i.value.clone()).collect();
-    let name = parts.pop().expect("object name had 0 parts");
-    let namespace = parts;
+/// Returns a normalized daft identifier from an sqlparser ObjectName
+pub(crate) fn normalize(name: &ObjectName) -> Identifier {
+    // TODO case-normalization of regular identifiers
+    let mut names: Vec<String> = name.0.iter().map(|i| i.value.to_string()).collect();
+    let name = names.pop().unwrap();
+    let namespace = names;
     Identifier::new(namespace, name)
 }
 

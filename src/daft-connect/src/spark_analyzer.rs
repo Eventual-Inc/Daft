@@ -13,7 +13,6 @@ use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
-use daft_session::Session;
 use daft_sql::SQLPlanner;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
@@ -663,8 +662,8 @@ impl SparkAnalyzer<'_> {
         }
 
         // TODO: converge Session and ConnectSession
-        let catalog = self.session.catalog().clone();
-        let session = Rc::new(Session::new("connect", catalog));
+        let session = self.session.session().clone();
+        let session = Rc::new(session);
 
         let mut planner = SQLPlanner::new(session);
         let plan = planner.plan_sql(&query)?;

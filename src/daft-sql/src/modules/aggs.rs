@@ -9,7 +9,7 @@ use crate::{
     ensure,
     error::SQLPlannerResult,
     functions::{SQLFunction, SQLFunctions},
-    ident_from_obj_name,
+    normalize,
     planner::SQLPlanner,
     table_not_found_err, unsupported_sql_err,
 };
@@ -88,7 +88,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
             None => unsupported_sql_err!("Wildcard is not supported in this context"),
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
-            let ident = ident_from_obj_name(name);
+            let ident = normalize(name);
 
             match &planner.current_plan {
                 Some(plan) => {
