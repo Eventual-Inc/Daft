@@ -903,11 +903,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - a <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
-            "Source(a) <-> Source(d)"
+            "Source(a) <-> Source(d)",
+            "Source(a) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Source(d)",  // Inferred edge.
         ]));
     }
 
@@ -974,11 +981,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - b <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
             "Source(b) <-> Source(d)",
+            "Source(a) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Source(d)",  // Inferred edge.
         ]));
     }
 
@@ -1038,10 +1052,13 @@ mod tests {
         // There should be edges between:
         // - a_beta <-> b
         // - a_beta <-> c
-        assert!(join_graph.num_edges() == 2);
+        // Plus 1 inferred edge:
+        // - b <-> c
+        assert!(join_graph.num_edges() == 3);
         assert!(join_graph.contains_edges(vec![
             "Project(a_beta) <-> Source(b)",
             "Project(a_beta) <-> Source(c)",
+            "Source(b) <-> Source(c)", // Inferred edge.
         ]));
     }
 
@@ -1109,11 +1126,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - a <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
-            "Source(a) <-> Source(d)"
+            "Source(a) <-> Source(d)",
+            "Source(a) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Source(d)",  // Inferred edge.
         ]));
     }
 
@@ -1199,11 +1223,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - a <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Filter(c) <-> Source(d)",
             "Source(a) <-> Source(d)",
+            "Source(a) <-> Filter(c)", // Inferred edge.
+            "Source(b) <-> Filter(c)", // Inferred edge.
+            "Source(b) <-> Source(d)", // Inferred edge.
         ]));
         // Check for non-join projections and filters at the end.
         // The join graph should only keep track of projections and filters that sit between joins.
@@ -1287,11 +1318,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - a <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Aggregate(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
-            "Aggregate(a) <-> Source(d)"
+            "Aggregate(a) <-> Source(d)",
+            "Aggregate(a) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Project(c)",    // Inferred edge.
+            "Source(b) <-> Source(d)",     // Inferred edge.
         ]));
         // Projections below the aggregation should not be part of the final projections.
         assert!(!join_graph.contains_projections_and_filters(vec![&a_proj]));
