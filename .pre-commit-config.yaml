@@ -57,7 +57,7 @@ repos:
   - id: codespell
     additional_dependencies:
     - tomli
-    exclude: static_dashboard_assets
+    exclude: static-dashboard-assets
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
       # Ruff version.

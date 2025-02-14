@@ -103,3 +103,6 @@ minversion = "6.0"
 testpaths = [
   "tests"
 ]
+
+[tool.uv.workspace]
+members = ["dashboard"]

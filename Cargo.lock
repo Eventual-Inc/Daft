@@ -1930,7 +1930,6 @@ dependencies = [
  "daft-context",
  "daft-core",
  "daft-csv",
- "daft-dashboard-server",
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
