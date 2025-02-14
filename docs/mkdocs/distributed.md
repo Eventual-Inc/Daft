@@ -71,7 +71,7 @@ You can take the IP address and port and pass it to Daft:
     (Showing first 2 of 2 rows)
     ```
 
-## Daft CLI
+## Daft CLI Overview
 
 Daft CLI is a convenient command-line tool that simplifies running Daft in distributed environments. It provides two modes of operation to suit different needs:
 
@@ -81,37 +81,29 @@ Daft CLI is a convenient command-line tool that simplifies running Daft in distr
 
 ### When to Choose Each Mode
 
-Choose **Provisioned Mode** if you:
-- Want a fully managed solution with minimal setup
-- Are using AWS (GCP and Azure support coming soon)
-- Need quick deployment without existing infrastructure
+| Choose **Provisioned Mode** if you: | Choose **BYOC Mode** if you: |
+| ------------------------------------| -----------------------------|
+| • Want a fully managed solution with minimal setup | • Have existing Kubernetes infrastructure |
+| • Are using AWS (GCP and Azure support coming soon) | • Need multi-cloud support |
+| • Need quick deployment without existing infrastructure | • Have specific security or compliance requirements |
+| | • Want to use local development clusters |
+| | • Want more control over your cluster configuration |
 
-Choose **BYOC Mode** if you:
-- Have existing Kubernetes infrastructure
-- Need multi-cloud support
-- Have specific security or compliance requirements
-- Want to use local development clusters
-- Want more control over your cluster configuration
-
-### Prerequisites
+## Prerequisites
 
 The following should be installed on your machine:
 
-- A python package manager. We recommend using `uv` to manage everything (i.e., dependencies, as well as the python version itself)
+A python package manager. We recommend using `uv` to manage everything (i.e., dependencies, as well as the python version itself)
 
 Additional mode-specific requirements:
 
-**For Provisioned Mode:**
-- The [AWS CLI](https://aws.amazon.com/cli) tool
-- AWS account with appropriate IAM permissions
-- SSH key pair for cluster access
+| **For Provisioned Mode:** | **For BYOC Mode:** |
+| ------------------------- | ------------------ |
+| • The [AWS CLI](https://aws.amazon.com/cli) tool | • Running Kubernetes cluster (local, cloud-managed, or on-premise) |
+| • AWS account with appropriate IAM permissions | • `kubectl` configured with correct context |
+| • SSH key pair for cluster access | • Appropriate namespace permissions |
 
-**For BYOC Mode:**
-- Running Kubernetes cluster (local, cloud-managed, or on-premise)
-- `kubectl` configured with correct context
-- Appropriate namespace permissions
-
-### Installation
+## Installation
 
 Run the following commands in your terminal to initialize your project:
 
@@ -131,9 +123,9 @@ uv pip install "daft-cli"
 
 In your virtual environment, you should have Daft CLI installed — you can verify this by running `daft --version`.
 
-### Mode-Specific Setup
+## Mode-Specific Setup
 
-#### Provisioned Mode Setup
+### Provisioned Mode Setup
 
 1. Configure AWS credentials:
 ```bash
@@ -158,7 +150,7 @@ aws ec2 import-key-pair \
 chmod 600 ~/.ssh/daft-key
 ```
 
-#### BYOC Mode Setup
+### BYOC Mode Setup
 
 Ensure your Kubernetes context is properly configured:
 ```bash
@@ -169,7 +161,7 @@ kubectl cluster-info
 kubectl config use-context my-context
 ```
 
-### Configuration
+## Configuration
 
 Initialize a configuration file based on your chosen mode:
 
@@ -181,7 +173,7 @@ daft config init --provider provisioned
 daft config init --provider byoc
 ```
 
-#### Example Configurations
+### Example Configurations
 
 **Provisioned Mode (.daft.toml)**:
 ```toml
@@ -222,9 +214,9 @@ command = "python my_script.py"
 working-dir = "~/my_project"
 ```
 
-### Cluster Operations
+## Cluster Operations
 
-#### Provisioned Mode
+### Provisioned Mode
 
 ```bash
 # Spin up a cluster
@@ -246,7 +238,7 @@ daft provisioned down
 daft provisioned kill
 ```
 
-#### BYOC Mode
+### BYOC Mode
 
 ```bash
 # Initialize Ray/Daft on your cluster
@@ -259,7 +251,7 @@ daft byoc connect
 daft byoc cleanup
 ```
 
-### Job Management
+## Job Management
 
 Jobs can be submitted and managed similarly in both modes:
 
@@ -274,7 +266,27 @@ daft job status example-job
 daft job logs example-job
 ```
 
-### SQL Query Support
+#### Example Daft Script
+
+```python
+import daft
+
+# Ray context is automatically set by Daft CLI
+df = daft.from_pydict({"nums": [1,2,3]})
+df.agg(daft.col("nums").mean()).show()
+```
+
+#### Example Daft Script
+
+```python
+import daft
+
+# Ray context is automatically set by Daft CLI
+df = daft.from_pydict({"nums": [1,2,3]})
+df.agg(daft.col("nums").mean()).show()
+```
+
+## SQL Query Support
 
 Daft supports running SQL queries against your data using the postgres dialect:
 
@@ -283,7 +295,7 @@ Daft supports running SQL queries against your data using the postgres dialect:
 daft sql -- "\"SELECT * FROM my_table\""
 ```
 
-### Ray Dashboard Access
+## Ray Dashboard Access
 
 The Ray dashboard provides insights into your cluster's performance and job status:
 
@@ -297,18 +309,6 @@ daft byoc connect
 
 !!! note "Note"
     For Provisioned Mode, you'll need your SSH key to access the dashboard. BYOC Mode uses your Kubernetes credentials.
-
-### Example Daft Script
-
-When submitting jobs to your cluster, here's a simple example script:
-
-```python
-import daft
-
-# Ray context is automatically set by Daft CLI
-df = daft.from_pydict({"nums": [1,2,3]})
-df.agg(daft.col("nums").mean()).show()
-```
 
 ### Monitoring Cluster State
 
