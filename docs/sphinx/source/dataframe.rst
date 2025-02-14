@@ -198,7 +198,9 @@ Schema and Lineage
 
 Statistics
 ##########
+
 .. autosummary::
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
+
     DataFrame.summarize
