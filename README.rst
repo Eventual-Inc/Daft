@@ -95,15 +95,17 @@ Here's a list of `good first issues <https://github.com/Eventual-Inc/Daft/issues
 Telemetry
 ---------
 
-To help improve Daft, we collect non-identifiable data.
+To help improve Daft, we collect non-identifiable data via our own analytics as well as Scarf (https://scarf.sh).
 
-To disable this behavior, set the following environment variable: ``DAFT_ANALYTICS_ENABLED=0``
+To disable this behavior, set the following environment variables:
+- ``DAFT_ANALYTICS_ENABLED=0``
+- ``SCARF_NO_ANALYTICS=true`` or ``DO_NOT_TRACK=true``
 
 The data that we collect is:
 
-1. **Non-identifiable:** events are keyed by a session ID which is generated on import of Daft
-2. **Metadata-only:** we do not collect any of our users’ proprietary code or data
-3. **For development only:** we do not buy or sell any user data
+1. **Non-identifiable:** Events are keyed by a session ID which is generated on import of Daft
+2. **Metadata-only:** We do not collect any of our users’ proprietary code or data
+3. **For development only:** We do not buy or sell any user data
 
 Please see our `documentation <https://www.getdaft.io/projects/docs/en/stable/resources/telemetry/>`_ for more details.
 

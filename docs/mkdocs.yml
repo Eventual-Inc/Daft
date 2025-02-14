@@ -3,19 +3,16 @@
 
 # Project Information
 site_name: Daft Documentation
+site_author: Eventual
 site_url: https://www.getdaft.io/projects/docs/en/stable/
-site_description: >-
+site_description: |
   Welcome to Daft Documentation! Daft is a unified data engine for data engineering, analytics, and ML/AI.
+copyright: '&copy; Copyright 2025, Eventual <img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=2293a436-7808-4c74-9bf3-d3e86e4eed91" />'
 
 # Repository
 repo_name: Daft
 repo_url: https://github.com/Eventual-Inc/Daft
 docs_dir: mkdocs
-
-# Scarf pixel for tracking analytics
-# image:
-#   referrerpolicy: "no-referrer-when-downgrade"
-#   src: "https://static.scarf.sh/a.png?x-pxid=c9065f3a-a090-4243-8f69-145d5de7bfca"
 
 # Sitemap
 nav:
@@ -97,15 +94,36 @@ theme:
 
 # Additional Configuration
 extra:
+  analytics:
+    provider: google
+    property: G-YN4QSRPV0K
+    feedback:
+      title: Was this page helpful?
+      ratings:
+      - icon: material/emoticon-happy-outline
+        name: This page was helpful
+        data: 1
+        note: >-
+          Thanks for your feedback!
+      - icon: material/emoticon-sad-outline
+        name: This page could be improved
+        data: 0
+        note: >-
+          Thanks for your feedback! Help us improve this page by
+          <a href="https://github.com/Eventual-Inc/Daft/issues" target="_blank" rel="noopener">submitting an issue</a> on our Daft repo.
   social:
   - icon: fontawesome/brands/github
-    link: https://github.com/squidfunk
+    link: https://github.com/Eventual-Inc/Daft
   - icon: fontawesome/brands/slack
     link: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
   - icon: fontawesome/brands/linkedin
-    link: https://www.linkedin.com/company/eventualcomputing/
+    link: https://www.linkedin.com/showcase/daft-dataframe/
   - icon: fontawesome/brands/x-twitter
     link: https://x.com/daft_dataframe
+  - icon: fontawesome/brands/youtube
+    link: https://www.youtube.com/@daftdf
+  - icon: simple/substack
+    link: https://blog.getdaft.io/
 
   # This is a macro you should use to refer to paths
   # When referring to methods, the syntax is {{ api_path }}/path/to/method
@@ -148,3 +166,4 @@ plugins:
 - mkdocs-simple-hooks:
     hooks:
       on_pre_build: "docs.hooks:make_api_docs"
+- social
