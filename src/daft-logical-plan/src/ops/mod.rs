@@ -15,6 +15,7 @@ mod set_operations;
 mod sink;
 mod sort;
 mod source;
+mod summarize;
 mod unpivot;
 
 pub use actor_pool_project::ActorPoolProject;
@@ -34,4 +35,5 @@ pub use set_operations::{Except, Intersect, Union};
 pub use sink::Sink;
 pub use sort::Sort;
 pub use source::Source;
+pub use summarize::summarize;
 pub use unpivot::Unpivot;

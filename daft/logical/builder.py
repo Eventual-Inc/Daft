@@ -93,6 +93,10 @@ class LogicalPlanBuilder:
         builder = self._builder.describe()
         return LogicalPlanBuilder(builder)
 
+    def summarize(self) -> LogicalPlanBuilder:
+        builder = self._builder.summarize()
+        return LogicalPlanBuilder(builder)
+
     def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
         """Pretty prints the current underlying logical plan."""
         from daft.dataframe.display import MermaidOptions
