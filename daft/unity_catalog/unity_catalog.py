@@ -91,7 +91,10 @@ class UnityCatalog:
         return self._paginate_to_completion(_paginated_list_tables)
 
     def load_table(
-        self, table_name: str, new_table_storage_path: str | None = None, operation: Literal["READ"|"READ_WRITE"] = "READ_WRITE"
+        self,
+        table_name: str,
+        new_table_storage_path: str | None = None,
+        operation: Literal["READ" | "READ_WRITE"] = "READ_WRITE",
     ) -> UnityCatalogTable:
         """Loads an existing Unity Catalog table. If the table is not found, and information is provided in the method to create a new table, a new table will be attempted to be registered.
 
