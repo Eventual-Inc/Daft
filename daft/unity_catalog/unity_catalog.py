@@ -101,7 +101,7 @@ class UnityCatalog:
         Args:
             table_name (str): Name of the table in Unity Catalog in the form of dot-separated, 3-level namespace
             new_table_storage_path (str, optional): Cloud storage path URI to register a new external table using this path. Unity Catalog will validate if the path is valid and authorized for the principal, else will raise an exception.
-            mode ("READ" or "READ_WRITE", optional): The intended use of the table, which impacts authorization. Defaults to "READ_WRITE".
+            operation ("READ" or "READ_WRITE", optional): The intended use of the table, which impacts authorization. Defaults to "READ_WRITE".
 
         Returns:
             UnityCatalogTable
