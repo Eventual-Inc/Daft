@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -109,19 +109,20 @@ impl TreeNodeRewriter for LogicalStageTranslator {
                             let right_num_in_memory_children =
                                 num_in_memory_children(right.as_ref());
 
-                            if left_num_in_memory_children > right_num_in_memory_children {
-                                RunNext::Left
-                            } else if left_num_in_memory_children < right_num_in_memory_children {
-                                RunNext::Right
-                            } else {
-                                // both sides are not in memory, so we should rank which side to run
-                                let left_stats = left.approximate_stats();
-                                let right_stats = right.approximate_stats();
+                            // Bias towards the side that has more materialized children
+                            match left_num_in_memory_children.cmp(&right_num_in_memory_children) {
+                                Ordering::Greater => RunNext::Left,
+                                Ordering::Less => RunNext::Right,
+                                Ordering::Equal => {
+                                    // Both sides are not in memory, so we should rank which side to run
+                                    let left_stats = left.approximate_stats();
+                                    let right_stats = right.approximate_stats();
 
-                                if left_stats.size_bytes <= right_stats.size_bytes {
-                                    RunNext::Left
-                                } else {
-                                    RunNext::Right
+                                    if left_stats.size_bytes <= right_stats.size_bytes {
+                                        RunNext::Left
+                                    } else {
+                                        RunNext::Right
+                                    }
                                 }
                             }
                         }
@@ -263,7 +264,7 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
         ) {
             self.partial_physical_plan = Some(node.clone());
             let placeholder =
-                PhysicalPlan::PlaceholderScan(PlaceholderScan::new(node.clustering_spec().clone()));
+                PhysicalPlan::PlaceholderScan(PlaceholderScan::new(node.clustering_spec()));
             return Ok(Transformed::new(
                 placeholder.arced(),
                 true,
@@ -274,7 +275,7 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
         // Otherwise, emit the child and add a placeholder as the child of the shuffle exchange
         let child = shuffle_exchange.input.clone();
         let placeholder =
-            PhysicalPlan::PlaceholderScan(PlaceholderScan::new(child.clustering_spec().clone()));
+            PhysicalPlan::PlaceholderScan(PlaceholderScan::new(child.clustering_spec()));
         self.partial_physical_plan = Some(child);
         let node_with_placeholder_child = node.with_new_children(&[placeholder.arced()]);
         Ok(Transformed::new(
@@ -302,7 +303,7 @@ impl TreeNodeRewriter for ReplacePhysicalPlaceholderWithMaterializedResults {
                 let mat_results = self.mat_results.take().unwrap();
                 let new_source_node = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mat_results.in_memory_info.source_schema.clone(),
-                    mat_results.in_memory_info.clone(),
+                    mat_results.in_memory_info,
                     ph_scan.clustering_spec().clone(),
                 ));
                 Ok(Transformed::new(
@@ -363,11 +364,11 @@ impl AdaptivePlanner {
             assert!(physical_stage_translator.partial_physical_plan.is_some());
             self.remaining_physical_plan = Some(result.data);
             let physical_plan = physical_stage_translator.partial_physical_plan.unwrap();
-            return Ok(physical_plan);
+            Ok(physical_plan)
         } else {
             assert!(physical_stage_translator.partial_physical_plan.is_none());
             let physical_plan = result.data;
-            return Ok(physical_plan);
+            Ok(physical_plan)
         }
     }
 
@@ -422,9 +423,9 @@ impl AdaptivePlanner {
                 "Emitting partial plan:\n {}",
                 transformed_physical_plan.repr_ascii(true)
             );
-            return Ok(QueryStageOutput::Partial {
+            Ok(QueryStageOutput::Partial {
                 physical_plan: transformed_physical_plan,
-            });
+            })
         } else {
             log::info!("Logical plan translation complete");
             if self.remaining_physical_plan.is_some() {
@@ -433,18 +434,18 @@ impl AdaptivePlanner {
                     transformed_physical_plan.repr_ascii(true)
                 );
                 self.status = AdaptivePlannerStatus::WaitingForStats;
-                return Ok(QueryStageOutput::Partial {
+                Ok(QueryStageOutput::Partial {
                     physical_plan: transformed_physical_plan,
-                });
+                })
             } else {
                 log::info!(
                     "Emitting final plan:\n {}",
                     transformed_physical_plan.repr_ascii(true)
                 );
                 self.status = AdaptivePlannerStatus::Done;
-                return Ok(QueryStageOutput::Final {
+                Ok(QueryStageOutput::Final {
                     physical_plan: transformed_physical_plan,
-                });
+                })
             }
         }
     }

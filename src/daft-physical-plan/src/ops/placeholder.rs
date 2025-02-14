@@ -15,9 +15,10 @@ impl PlaceholderScan {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push("PlaceholderScan:".to_string());
-        res
+        // let mut res = vec![];
+        // res.push("PlaceholderScan:".to_string());
+        // res
+        vec!["PlaceholderScan".to_string()]
     }
 
     pub fn clustering_spec(&self) -> &Arc<ClusteringSpec> {
