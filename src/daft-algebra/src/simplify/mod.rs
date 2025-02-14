@@ -10,6 +10,8 @@ use daft_schema::schema::SchemaRef;
 use null::simplify_expr_with_null;
 use numeric::simplify_numeric_expr;
 
+use crate::boolean::combine_disjunction;
+
 /// Recursively simplify expression.
 pub fn simplify_expr(expr: ExprRef, schema: &SchemaRef) -> DaftResult<Transformed<ExprRef>> {
     let simplify_fns = [
@@ -73,7 +75,7 @@ fn simplify_is_in_expr(expr: ExprRef, _schema: &SchemaRef) -> DaftResult<Transfo
             let chain_of_eqs = list
                 .iter()
                 .map(|item| e.clone().eq(item.clone()));
-            Transformed::yes(chain_of_eqs.reduce(|a, b| a.or(b)).unwrap())
+            Transformed::yes(combine_disjunction(chain_of_eqs).unwrap())
         }
         _ => Transformed::no(expr),
     })
