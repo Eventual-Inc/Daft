@@ -1581,12 +1581,11 @@ class AdaptivePhysicalPlanScheduler:
         logical_plan_builder: LogicalPlanBuilder,
         cfg: PyDaftExecutionConfig,
     ) -> AdaptivePhysicalPlanScheduler: ...
-    def next(self) -> tuple[int | None, PhysicalPlanScheduler]: ...
+    def next(self) -> tuple[bool, PhysicalPlanScheduler]: ...
     def is_done(self) -> bool: ...
     # Todo use in memory info here instead
     def update(
         self,
-        source_id: int,
         partition_key: str,
         cache_entry: PartitionCacheEntry,
         num_partitions: int,
