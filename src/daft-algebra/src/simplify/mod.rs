@@ -65,7 +65,7 @@ mod test {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_dsl::{col, lit, null_lit, ExprRef};
+    use daft_dsl::{lit, null_lit, resolved_col, ExprRef};
     use daft_schema::{
         dtype::DataType,
         field::Field,
@@ -91,31 +91,31 @@ mod test {
 
     #[rstest]
     // true = A  --> A
-    #[case(col("bool").eq(lit(true)), col("bool"))]
+    #[case(resolved_col("bool").eq(lit(true)), resolved_col("bool"))]
     // false = A --> !A
-    #[case(col("bool").eq(lit(false)), col("bool").not())]
+    #[case(resolved_col("bool").eq(lit(false)), resolved_col("bool").not())]
     // A == true ---> A
-    #[case(col("bool").eq(lit(true)), col("bool"))]
+    #[case(resolved_col("bool").eq(lit(true)), resolved_col("bool"))]
     // null = A --> null
-    #[case(null_lit().eq(col("bool")), null_lit().cast(&DataType::Boolean))]
+    #[case(null_lit().eq(resolved_col("bool")), null_lit().cast(&DataType::Boolean))]
     // A == false ---> !A
-    #[case(col("bool").eq(lit(false)), col("bool").not())]
+    #[case(resolved_col("bool").eq(lit(false)), resolved_col("bool").not())]
     // true != A  --> !A
-    #[case(lit(true).not_eq(col("bool")), col("bool").not())]
+    #[case(lit(true).not_eq(resolved_col("bool")), resolved_col("bool").not())]
     // false != A --> A
-    #[case(lit(false).not_eq(col("bool")), col("bool"))]
+    #[case(lit(false).not_eq(resolved_col("bool")), resolved_col("bool"))]
     // true OR A  --> true
-    #[case(lit(true).or(col("bool")), lit(true))]
+    #[case(lit(true).or(resolved_col("bool")), lit(true))]
     // false OR A  --> A
-    #[case(lit(false).or(col("bool")), col("bool"))]
+    #[case(lit(false).or(resolved_col("bool")), resolved_col("bool"))]
     // A OR true  --> true
-    #[case(col("bool").or(lit(true)), lit(true))]
+    #[case(resolved_col("bool").or(lit(true)), lit(true))]
     // A OR false --> A
-    #[case(col("bool").or(lit(false)), col("bool"))]
+    #[case(resolved_col("bool").or(lit(false)), resolved_col("bool"))]
     // (A OR B) AND (A OR C) -> A OR (B AND C)
-    #[case((col("a").or(col("b"))).and(col("a").or(col("c"))), col("a").or(col("b").and(col("c"))))]
+    #[case((resolved_col("a").or(resolved_col("b"))).and(resolved_col("a").or(resolved_col("c"))), resolved_col("a").or(resolved_col("b").and(resolved_col("c"))))]
     // (A AND B) OR (A AND C) -> A AND (B OR C)
-    #[case((col("a").and(col("b"))).or(col("a").and(col("c"))), col("a").and(col("b").or(col("c"))))]
+    #[case((resolved_col("a").and(resolved_col("b"))).or(resolved_col("a").and(resolved_col("c"))), resolved_col("a").and(resolved_col("b").or(resolved_col("c"))))]
     fn test_simplify_bool_exprs(
         #[case] input: ExprRef,
         #[case] expected: ExprRef,
@@ -130,15 +130,15 @@ mod test {
 
     #[rstest]
     // A * 1 --> A
-    #[case(col("int").mul(lit(1)), col("int"))]
+    #[case(resolved_col("int").mul(lit(1)), resolved_col("int"))]
     // 1 * A --> A
-    #[case(lit(1).mul(col("int")), col("int"))]
+    #[case(lit(1).mul(resolved_col("int")), resolved_col("int"))]
     // A / 1 --> A
-    #[case(col("int").div(lit(1)), col("int").cast(&DataType::Float64))]
+    #[case(resolved_col("int").div(lit(1)), resolved_col("int").cast(&DataType::Float64))]
     // A + 0 --> A
-    #[case(col("int").add(lit(0)), col("int"))]
+    #[case(resolved_col("int").add(lit(0)), resolved_col("int"))]
     // A - 0 --> A
-    #[case(col("int").sub(lit(0)), col("int"))]
+    #[case(resolved_col("int").sub(lit(0)), resolved_col("int"))]
     fn test_math_exprs(
         #[case] input: ExprRef,
         #[case] expected: ExprRef,
@@ -153,8 +153,10 @@ mod test {
 
     #[rstest]
     fn test_between(schema: SchemaRef) -> DaftResult<()> {
-        let input = col("int").between(lit(1), lit(10));
-        let expected = col("int").lt_eq(lit(10)).and(col("int").gt_eq(lit(1)));
+        let input = resolved_col("int").between(lit(1), lit(10));
+        let expected = resolved_col("int")
+            .lt_eq(lit(10))
+            .and(resolved_col("int").gt_eq(lit(1)));
 
         let optimized = simplify_expr(input, &schema)?;
 

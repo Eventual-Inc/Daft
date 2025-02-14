@@ -19,9 +19,17 @@ from typing import (
 
 import daft.daft as native
 from daft import context
-from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, initialize_udfs
+from daft.daft import (
+    CountMode,
+    ImageFormat,
+    ImageMode,
+    ResourceRequest,
+    bound_col,
+    initialize_udfs,
+    resolved_col,
+    unbound_col,
+)
 from daft.daft import PyExpr as _PyExpr
-from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
@@ -162,7 +170,19 @@ def col(name: str) -> Expression:
     Returns:
         Expression: Expression representing the selected column
     """
-    return Expression._from_pyexpr(_col(name))
+    return Expression._from_pyexpr(unbound_col(name))
+
+
+def _bound_col(name: str, plan_id: str | None, plan_schema: Schema | None) -> Expression:
+    """Creates an unresolved column with a bound plan id and/or schema."""
+    return Expression._from_pyexpr(
+        bound_col(name, plan_id=plan_id, plan_schema=plan_schema._schema if plan_schema is not None else None)
+    )
+
+
+def _resolved_col(name: str) -> Expression:
+    """Creates a resolved column."""
+    return Expression._from_pyexpr(resolved_col(name))
 
 
 def list_(*items: Expression | str):
