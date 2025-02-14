@@ -32,7 +32,7 @@ def _broadcast_query_plan(df: DataFrame):
 
     # try launching the dashboard
     # if dashboard is already launched, this will do nothing
-    launch()
+    launch(block=False)
 
     is_cached = df._result_cache is not None
     plan_time_start = datetime.now(timezone.utc)

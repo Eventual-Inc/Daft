@@ -103,7 +103,3 @@ minversion = "6.0"
 testpaths = [
   "tests"
 ]
-
-[tool.setuptools.package-data]
-"daft" = []
-"daft.dashboard" = ["static_dashboard_assets"]
