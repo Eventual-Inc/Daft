@@ -91,6 +91,7 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
+from daft.session import Session, current_session, set_session
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
@@ -109,9 +110,11 @@ __all__ = [
     "ResourceRequest",
     "Schema",
     "Series",
+    "Session",
     "TimeUnit",
     "coalesce",
     "col",
+    "current_session",
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
@@ -138,6 +141,7 @@ __all__ = [
     "register_viz_hook",
     "set_execution_config",
     "set_planning_config",
+    "set_session",
     "sql",
     "sql_expr",
     "struct",
