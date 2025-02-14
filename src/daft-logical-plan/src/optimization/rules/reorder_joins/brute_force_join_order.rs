@@ -36,7 +36,7 @@ impl BruteForceJoinOrderer {
                 && let Some((right_cost, right_join_order_tree)) =
                     Self::find_min_cost_order(graph, right)
             {
-                let connections = graph
+                let (connections, total_domain) = graph
                     .adj_list
                     .get_connections(&left_join_order_tree, &right_join_order_tree);
                 if !connections.is_empty() {
@@ -45,18 +45,9 @@ impl BruteForceJoinOrderer {
                     // divided by the selectivity of the join.
                     // Assuming that join keys are uniformly distributed and independent, the selectivity is computed as the reciprocal
                     // of the product of the largest total domains that form a minimum spanning tree of the relations.
-
-                    // TODO(desmond): This is a hack to get the selectivity of the join. We should expand this to take the minimum spanning tree
-                    // of edges to connect the relations. For simple graphs (e.g. the queries in the TPCH benchmark), taking the max of the total
-                    // domains is a good proxy.
-                    let denominator = connections
-                        .iter()
-                        .map(|conn| conn.total_domain)
-                        .max()
-                        .expect("There should be at least one total domain");
                     let cardinality = left_join_order_tree.get_cardinality()
                         * right_join_order_tree.get_cardinality()
-                        / denominator;
+                        / total_domain;
                     // The cost of the join is the sum of the cardinalities of the left and right subgraphs, plus the cardinality of the joined graph.
                     let cur_cost = cardinality + left_cost + right_cost;
                     // Take the join with the lowest summed cardinality.
@@ -214,14 +205,14 @@ mod tests {
     }
 
     fn create_join_graph_with_edges(
-        nodes: Vec<JoinNode>,
-        edges: Vec<(usize, usize, usize)>,
+        plans: Vec<LogicalPlanRef>,
+        edges: Vec<(usize, String, usize, String, usize)>,
     ) -> JoinGraph {
         let mut adj_list = JoinAdjList::empty();
-        for (from, to, td) in edges {
+        for (from, from_rel_name, to, to_rel_name, td) in edges {
             adj_list.add_bidirectional_edge_with_total_domain(
-                nodes[from].clone(),
-                nodes[to].clone(),
+                JoinNode::new(from_rel_name, plans[from].clone()),
+                JoinNode::new(to_rel_name, plans[to].clone()),
                 td,
             );
         }
@@ -230,14 +221,11 @@ mod tests {
 
     macro_rules! create_and_test_join_order {
         ($nodes:expr, $edges:expr, $orderer:expr, $optimal_order:expr) => {
-            let nodes: Vec<JoinNode> = $nodes
+            let plans: Vec<LogicalPlanRef> = $nodes
                 .iter()
-                .map(|(name, size)| {
-                    let scan_node = create_scan_node(name, Some(*size));
-                    JoinNode::new(name.to_string(), scan_node)
-                })
+                .map(|(name, size)| create_scan_node(name, Some(*size)))
                 .collect();
-            let graph = create_join_graph_with_edges(nodes.clone(), $edges);
+            let graph = create_join_graph_with_edges(plans.clone(), $edges);
             let order = $orderer.order(&graph);
             assert!(JoinOrderTree::order_eq(&order, &$optimal_order));
         };
@@ -256,9 +244,27 @@ mod tests {
         let nodes = vec![("medium", 1_000), ("large", 50_000), ("small", 500)];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (name_to_id["medium"], name_to_id["large"], 1_000),
-            (name_to_id["large"], name_to_id["small"], 500),
-            (name_to_id["medium"], name_to_id["small"], 500),
+            (
+                name_to_id["medium"],
+                "m_medium".to_string(),
+                name_to_id["large"],
+                "l_medium".to_string(),
+                1_000,
+            ),
+            (
+                name_to_id["large"],
+                "l_small".to_string(),
+                name_to_id["small"],
+                "s_small".to_string(),
+                500,
+            ),
+            (
+                name_to_id["medium"],
+                "m_small".to_string(),
+                name_to_id["small"],
+                "s_small".to_string(),
+                500,
+            ),
         ];
         let optimal_order = test_join(
             test_relation(name_to_id["large"]),
@@ -282,12 +288,55 @@ mod tests {
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (name_to_id["region"], name_to_id["nation"], 5),
-            (name_to_id["nation"], name_to_id["customer"], 25),
-            (name_to_id["customer"], name_to_id["orders"], 1_500_000),
-            (name_to_id["orders"], name_to_id["lineitem"], 15_000_000),
-            (name_to_id["lineitem"], name_to_id["supplier"], 100_000),
-            (name_to_id["supplier"], name_to_id["nation"], 25),
+            (
+                name_to_id["region"],
+                "r_regionkey".to_string(),
+                name_to_id["nation"],
+                "n_regionkey".to_string(),
+                10,
+            ),
+            (
+                name_to_id["nation"],
+                "n_nationkey".to_string(),
+                name_to_id["customer"],
+                "c_nationkey".to_string(),
+                25,
+            ),
+            (
+                name_to_id["customer"],
+                "c_custkey".to_string(),
+                name_to_id["orders"],
+                "o_custkey".to_string(),
+                1_500_000,
+            ),
+            (
+                name_to_id["orders"],
+                "o_orderkey".to_string(),
+                name_to_id["lineitem"],
+                "l_orderkey".to_string(),
+                15_000_000,
+            ),
+            (
+                name_to_id["lineitem"],
+                "l_suppkey".to_string(),
+                name_to_id["supplier"],
+                "s_suppkey".to_string(),
+                100_000,
+            ),
+            (
+                name_to_id["supplier"],
+                "s_nationkey".to_string(),
+                name_to_id["nation"],
+                "n_nationkey".to_string(),
+                25,
+            ),
+            (
+                name_to_id["customer"],
+                "c_nationkey".to_string(),
+                name_to_id["supplier"],
+                "s_nationkey".to_string(),
+                25,
+            ),
         ];
         let optimal_order = test_join(
             test_relation(name_to_id["supplier"]),
@@ -318,9 +367,27 @@ mod tests {
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (name_to_id["fact"], name_to_id["dim1"], 10_000), // Pretend there was a large filter on dim1.
-            (name_to_id["fact"], name_to_id["dim2"], 500),
-            (name_to_id["fact"], name_to_id["dim3"], 500), // Pretend there was a small filter on dim3.
+            (
+                name_to_id["fact"],
+                "f_dim1".to_string(),
+                name_to_id["dim1"],
+                "d_dim1".to_string(),
+                10_000,
+            ), // Pretend there was a large filter on dim1.
+            (
+                name_to_id["fact"],
+                "f_dim2".to_string(),
+                name_to_id["dim2"],
+                "d_dim2".to_string(),
+                500,
+            ),
+            (
+                name_to_id["fact"],
+                "f_dim3".to_string(),
+                name_to_id["dim3"],
+                "d_dim3".to_string(),
+                500,
+            ), // Pretend there was a small filter on dim3.
         ];
         let optimal_order = test_join(
             test_join(
@@ -346,10 +413,34 @@ mod tests {
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (name_to_id["fact"], name_to_id["dim1"], 500_000), // Pretend there was a filter on dim1.
-            (name_to_id["fact"], name_to_id["dim2"], 500),
-            (name_to_id["dim2"], name_to_id["dim3"], 500),
-            (name_to_id["dim2"], name_to_id["dim4"], 250), // Pretend there was a filter on dim4.
+            (
+                name_to_id["fact"],
+                "f_dim1".to_string(),
+                name_to_id["dim1"],
+                "d_dim1".to_string(),
+                500_000,
+            ), // Pretend there was a filter on dim1.
+            (
+                name_to_id["fact"],
+                "f_dim2".to_string(),
+                name_to_id["dim2"],
+                "d_dim2".to_string(),
+                500,
+            ),
+            (
+                name_to_id["dim2"],
+                "d_dim3".to_string(),
+                name_to_id["dim3"],
+                "d_dim3".to_string(),
+                500,
+            ),
+            (
+                name_to_id["dim2"],
+                "d_dim4".to_string(),
+                name_to_id["dim4"],
+                "d_dim4".to_string(),
+                250,
+            ), // Pretend there was a filter on dim4.
         ];
         let optimal_order = test_join(
             test_relation(name_to_id["dim1"]),
@@ -377,9 +468,27 @@ mod tests {
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (name_to_id["table1"], name_to_id["table2"], 10),
-            (name_to_id["table2"], name_to_id["table3"], 2),
-            (name_to_id["table3"], name_to_id["table4"], 20),
+            (
+                name_to_id["table1"],
+                "t1_t2".to_string(),
+                name_to_id["table2"],
+                "t2_t2".to_string(),
+                10,
+            ),
+            (
+                name_to_id["table2"],
+                "t2_t3".to_string(),
+                name_to_id["table3"],
+                "t3_t3".to_string(),
+                2,
+            ),
+            (
+                name_to_id["table3"],
+                "t3_t4".to_string(),
+                name_to_id["table4"],
+                "t4_t4".to_string(),
+                20,
+            ),
         ];
         let optimal_order = test_join(
             test_join(

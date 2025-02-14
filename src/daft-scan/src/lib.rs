@@ -688,7 +688,8 @@ impl ScanTask {
                 // Assume that filters filter out about 80% of the data
                 let estimated_selectivity =
                     self.pushdowns.estimated_selectivity(self.schema.as_ref());
-                approx_total_num_rows_before_pushdowns * estimated_selectivity
+                // Set the lower bound approximated number of rows to 1 to avoid underestimation.
+                (approx_total_num_rows_before_pushdowns * estimated_selectivity).max(1.0)
             } else if let Some(limit) = self.pushdowns.limit {
                 (limit as f64).min(approx_total_num_rows_before_pushdowns)
             } else {
