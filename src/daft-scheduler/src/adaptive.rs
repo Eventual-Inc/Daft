@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_partitioning::PartitionCacheEntry;
 use daft_core::prelude::Schema;
 use daft_logical_plan::{InMemoryInfo, LogicalPlan};
-use daft_physical_plan::{AdaptivePlanner, MaterializedResults};
+use daft_physical_plan::{AdaptivePlanner, MaterializedResults, QueryStageOutput};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig, daft_logical_plan::PyLogicalPlanBuilder,
@@ -41,11 +41,11 @@ impl AdaptivePhysicalPlanScheduler {
             Ok(Self::new(logical_plan, cfg.config.clone()))
         })
     }
-    pub fn next(&mut self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {
+    pub fn next(&mut self, py: Python) -> PyResult<(bool, PhysicalPlanScheduler)> {
         py.allow_threads(|| {
             let output = self.planner.next_stage()?;
-            let sid = output.source_id();
-            Ok((sid, output.into()))
+            let is_final = matches!(output, QueryStageOutput::Final { .. });
+            Ok((is_final, output.into()))
         })
     }
 
@@ -55,7 +55,6 @@ impl AdaptivePhysicalPlanScheduler {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
-        source_id: usize,
         partition_key: &str,
         cache_entry: PyObject,
         num_partitions: usize,
@@ -74,10 +73,8 @@ impl AdaptivePhysicalPlanScheduler {
                 None, // TODO(sammy) thread through clustering spec to Python
             );
 
-            self.planner.update(MaterializedResults {
-                source_id,
-                in_memory_info,
-            })?;
+            self.planner
+                .update(MaterializedResults { in_memory_info })?;
             Ok(())
         })
     }
