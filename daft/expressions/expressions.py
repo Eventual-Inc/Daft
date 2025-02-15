@@ -1426,6 +1426,117 @@ class Expression:
         # Implementation will be added in Rust
         return self
 
+    def rank(self) -> Expression:
+        """Compute rank within window partition.
+
+        Ranks are consecutive integers starting from 1, with gaps for ties.
+        For example, if two rows tie for rank 2, the next rank will be 4.
+
+        Returns:
+            Expression: Expression containing rank values
+        """
+        return Expression._from_pyexpr(native.rank(self._expr))
+
+    def dense_rank(self) -> Expression:
+        """Compute dense rank within window partition.
+
+        Dense ranks are consecutive integers starting from 1, without gaps for ties.
+        For example, if two rows tie for rank 2, the next rank will be 3.
+
+        Returns:
+            Expression: Expression containing dense rank values
+        """
+        return Expression._from_pyexpr(native.dense_rank(self._expr))
+
+    def row_number(self) -> Expression:
+        """Compute row number within window partition.
+
+        Row numbers are consecutive integers starting from 1, assigned to each row
+        in the partition based on the window's ordering.
+
+        Returns:
+            Expression: Expression containing row numbers
+        """
+        return Expression._from_pyexpr(native.row_number(self._expr))
+
+    def percent_rank(self) -> Expression:
+        """Compute percent rank within window partition.
+
+        Percent rank is (rank - 1) / (partition_rows - 1), ranging from 0 to 1.
+        Returns NULL if partition has only one row.
+
+        Returns:
+            Expression: Expression containing percent rank values
+        """
+        return Expression._from_pyexpr(native.percent_rank(self._expr))
+
+    def ntile(self, n: int) -> Expression:
+        """Divide rows in partition into n buckets numbered from 1 to n.
+
+        Buckets are assigned as evenly as possible, with remaining rows
+        distributed one per bucket starting from bucket 1.
+
+        Args:
+            n: Number of buckets to divide rows into
+
+        Returns:
+            Expression: Expression containing bucket numbers
+        """
+        return Expression._from_pyexpr(native.ntile(self._expr, n))
+
+    def lag(self, offset: int = 1, default: Any = None) -> Expression:
+        """Access value from previous row in partition.
+
+        Args:
+            offset: Number of rows to look back (default: 1)
+            default: Value to return if no previous row exists (default: None)
+
+        Returns:
+            Expression: Expression containing lagged values
+        """
+        default_expr = Expression._to_expression(default)._expr if default is not None else None
+        return Expression._from_pyexpr(native.lag(self._expr, offset, default_expr))
+
+    def lead(self, offset: int = 1, default: Any = None) -> Expression:
+        """Access value from following row in partition.
+
+        Args:
+            offset: Number of rows to look ahead (default: 1)
+            default: Value to return if no following row exists (default: None)
+
+        Returns:
+            Expression: Expression containing leading values
+        """
+        default_expr = Expression._to_expression(default)._expr if default is not None else None
+        return Expression._from_pyexpr(native.lead(self._expr, offset, default_expr))
+
+    def first_value(self) -> Expression:
+        """Get first value in window frame.
+
+        Returns:
+            Expression: Expression containing first values
+        """
+        return Expression._from_pyexpr(native.first_value(self._expr))
+
+    def last_value(self) -> Expression:
+        """Get last value in window frame.
+
+        Returns:
+            Expression: Expression containing last values
+        """
+        return Expression._from_pyexpr(native.last_value(self._expr))
+
+    def nth_value(self, n: int) -> Expression:
+        """Get nth value in window frame.
+
+        Args:
+            n: Position of value to get (1-based)
+
+        Returns:
+            Expression: Expression containing nth values
+        """
+        return Expression._from_pyexpr(native.nth_value(self._expr, n))
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
