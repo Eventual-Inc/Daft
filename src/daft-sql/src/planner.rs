@@ -203,7 +203,7 @@ impl<'a> SQLPlanner<'a> {
             .get_table(ident)
             .map(|table| table.get_logical_plan().expect("could not create a logical plan from the table"))
             .ok()
-            .map(|view| Relation::new(view, ident.name.to_string()))
+            .map(|view| Relation::new(view.into(), ident.name.to_string()))
     }
 
     /// Borrow the planning session

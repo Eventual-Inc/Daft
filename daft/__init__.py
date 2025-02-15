@@ -93,8 +93,12 @@ from daft.io import (
 from daft.series import Series
 from daft.session import (
     Session,
+    create_catalog,
+    create_temp_table,
+    current_catalog,
     current_session,
     set_session,
+    set_catalog,
 )
 from daft.sql import sql, sql_expr
 from daft.udf import udf
@@ -122,6 +126,9 @@ __all__ = [
     "TimeUnit",
     "coalesce",
     "col",
+    "create_catalog",
+    "create_temp_table",
+    "current_catalog",
     "current_session",
     "execution_config_ctx",
     "from_arrow",
@@ -149,6 +156,7 @@ __all__ = [
     "set_execution_config",
     "set_planning_config",
     "set_session",
+    "set_catalog",
     "sql",
     "sql_expr",
     "struct",

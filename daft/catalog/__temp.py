@@ -22,8 +22,10 @@ class TempCatalog(Catalog):
 class TempTable(Table):
     """A temp table holds a reference to an existing dataframe."""
 
-    def __init__(self) -> Table:
-        raise NotImplementedError("Creating a TempTable via __init__ is not supported")
+    _inner: DataFrame
+
+    def __init__(self, inner: DataFrame) -> Table:
+        self._inner = inner
 
     def name(self) -> str:
         return self._name
@@ -33,44 +35,6 @@ class TempTable(Table):
 
     def __repr__(self) -> str:
         return f"table('{self._name}')"
-
-    @staticmethod
-    def _from_source(name: str, source: TableSource = None) -> Table:
-        if source is None:
-            return Table._from_none(name)
-        elif isinstance(source, DataFrame):
-            return Table._from_df(name, source)
-        elif isinstance(source, str):
-            return Table._from_path(name, source)
-        elif isinstance(source, Schema):
-            return Table._from_schema(name, source)
-        else:
-            raise Exception(f"Unknown table source: {source}")
-
-    @staticmethod
-    def _from_df(name: str, df: DataFrame) -> Table:
-        t = Table.__new__(Table)
-        t._name = name
-        t._inner = df
-        return t
-
-    @staticmethod
-    def _from_none(name: str) -> Table:
-        t = Table.__new__(Table)
-        t._name = name
-        t._inner = DataFrame._from_pylist([])
-        return t
-
-    @staticmethod
-    def _from_path(self, name: str, path: str) -> Table:
-        raise NotImplementedError("Table._from_path")
-
-    @staticmethod
-    def _from_schema(name: str, schema: Schema) -> Table:
-        t = Table.__new__(Table)
-        t._name = name
-        t._inner = DataFrame._from_tables(MicroPartition.empty(schema))
-        return t
 
     ###
     # DataFrame Methods

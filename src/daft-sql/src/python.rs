@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftPlanningConfig;
-use daft_catalog::TempTable;
+use daft_catalog::View;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_session::Session;
@@ -44,8 +44,8 @@ pub fn sql(
     // TODO remove once using session.sql / session.exec
     let session = Session::empty();
     // TODO remove once session replaces PyCatalog; create all the views in this session
-    for (name, plan) in catalog.tables {
-        session.create_temp_table(&name, TempTable::source(plan))?;
+    for (name, view) in catalog.tables {
+        session.create_temp_table(&name, &view.into())?;
     }
     let mut planner = SQLPlanner::new(session.into());
     let plan = planner.plan_sql(sql)?;

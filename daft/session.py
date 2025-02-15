@@ -74,11 +74,9 @@ class Session:
         """Creates a new table scoped to this session's current catalog and namespace."""
         return self._session.create_table(name, source)
 
-    def create_temp_table(self, name: str, source: TableSource = None) -> Table:
+    def create_temp_table(self, name: str, source: object = None) -> Table:
         """Creates a temp table scoped to this session's lifetime."""
-        # TODO implement TableSource on the rust side.
-        source = Table._from_source(name, source)
-        return self._session.create_temp_table(name, source)
+        return self._session.create_temp_table(name, TableSource._from_object(source)._source)
 
     ###
     # session state
@@ -108,7 +106,7 @@ class Session:
         """Returns the table or raises an exception if it does not exist."""
         if isinstance(name, str):
             name = Identifier(*name.split("."))
-        return self._session.get_table(name)
+        return self._session.get_table(name._identifier)
 
     ###
     # list_*
@@ -155,13 +153,13 @@ def _session() -> Session:
 # session state
 ###
 
-def current_session() -> Session:
-    """Returns the global context's current session."""
-    return _session()
-
 def current_catalog() -> Catalog:
     """Returns the global session's current catalog."""
     return _session().current_catalog()
+
+def current_session() -> Session:
+    """Returns the global context's current session."""
+    return _session()
 
 ###
 # create_*
@@ -170,6 +168,10 @@ def current_catalog() -> Catalog:
 def create_catalog(name: str) -> Catalog:
     """Creates a catalog scoped to the global session."""
     return _session().create_catalog(name)
+
+def create_temp_table(name: str, source: object | None = None) -> Catalog:
+    """Creates a temporary table scoped to the global session."""
+    return _session().create_temp_table(name, source)
 
 ###
 # set_.* (session management)

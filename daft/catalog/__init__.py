@@ -4,11 +4,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Sequence
 from collections.abc import Sequence
-from daft.daft import PyCatalog, PyIdentifier
+from daft.daft import PyIdentifier, PyTableSource
 from daft.dataframe import DataFrame
-from daft.expressions import Expression
 from daft.logical.schema import Schema
-from daft.recordbatch import MicroPartition
 
 
 def load_catalog(name: str, options: object | None = None) -> Catalog:
@@ -151,9 +149,55 @@ class Identifier(Sequence):
 Namespace = tuple[str]
 
 
-# TODO for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
-# pandas/arrow/arrow_record_batches/pydict
-TableSource = Schema | DataFrame | str | None
+class TableSource:
+
+    _source: PyTableSource
+
+    def __init__(self) -> None:
+        raise ValueError("We do not support creating a TableSource via __init__")
+
+    @staticmethod
+    def _from_object(source: object = None) -> Table:
+        # TODO for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
+        if source is None:
+            return TableSource._from_none()
+        elif isinstance(source, DataFrame):
+            return TableSource._from_df(source)
+        elif isinstance(source, str):
+            return TableSource._from_path(source)
+        elif isinstance(source, Schema):
+            return TableSource._from_schema(source)
+        else:
+            raise Exception(f"Unknown table source: {source}")
+
+    @staticmethod
+    def _from_none() -> Table:
+        # for creating temp mutable tables, but we don't have those yet
+        # s = TableSource.__new__(TableSource)
+        # s._source = PyTableSource.empty()
+        # return s
+        # todo temp workaround just use an empty schema
+        return TableSource._from_schema(Schema._from_fields([]))
+
+    @staticmethod
+    def _from_schema(schema: Schema) -> Table:
+        # we don't have mutable temp tables, so just make an empty view
+        # s = TableSource.__new__(TableSource)
+        # s._source = PyTableSource.from_schema(schema._schema)
+        # return s
+        # todo temp workaround until create_table is wired
+        return TableSource._from_df(DataFrame._from_pylist({}))
+    
+    @staticmethod
+    def _from_df(df: DataFrame) -> Table:
+        s = TableSource.__new__(TableSource)
+        s._source = PyTableSource.from_view(df._builder._builder)
+        return s
+
+    @staticmethod
+    def _from_path(path: str) -> Table:
+        # for supporting daft.create_table("t", "/path/to/data") <-> CREATE TABLE t AS '/path/to/my.data'
+        raise NotImplementedError("creating a table source from a path is not yet supported.")
 
 
 class Table(ABC):

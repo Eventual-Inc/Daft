@@ -1,8 +1,8 @@
-use daft_logical_plan::LogicalPlanBuilder;
+use daft_core::{prelude::SchemaRef, python::PySchema};
+use daft_logical_plan::{LogicalPlanRef, PyLogicalPlanBuilder};
 use pyo3::{exceptions::PyIndexError, prelude::*};
 
-use crate::{Catalog, CatalogRef, Identifier, Table, TableRef, TableSource};
-use crate::error::Result;
+use crate::{error::Result, Catalog, CatalogRef, Identifier, Table, TableRef, TableSource};
 
 /// PyCatalog implements the Catalog ABC for some Catalog trait impl (rust->py).
 #[pyclass]
@@ -27,7 +27,7 @@ impl Catalog for PyCatalogImpl {
     fn get_table(&self, _name: &Identifier) -> Result<Option<Box<dyn Table>>> {
         todo!()
     }
-    
+
     fn to_py(&self, py: Python<'_>) -> PyObject {
         self.0.extract(py).expect("failed to extract PyObject")
     }
@@ -85,9 +85,41 @@ impl PyIdentifier {
 #[pyclass]
 pub struct PyTableSource(TableSource);
 
+impl From<TableSource> for PyTableSource {
+    fn from(source: TableSource) -> Self {
+        Self(source)
+    }
+}
+
+/// PyTableSource -> TableSource
+impl AsRef<TableSource> for PyTableSource {
+    fn as_ref(&self) -> &TableSource {
+        &self.0
+    }
+}
+
+#[pymethods]
+impl PyTableSource {
+    #[staticmethod]
+    pub fn from_schema(schema: PySchema) -> PyTableSource {
+        Self(TableSource::Schema(schema.schema))
+    }
+
+    #[staticmethod]
+    pub fn from_view(view: &PyLogicalPlanBuilder) -> PyTableSource {
+        Self(TableSource::View(view.builder.build()))
+    }
+}
+
 /// PyTable implements the Table ABC for some Table trait impl (rust->py).
 #[pyclass]
 pub struct PyTable(TableRef);
+
+impl PyTable {
+    pub fn new(table: TableRef) -> Self {
+        Self(table)
+    }
+}
 
 #[pymethods]
 impl PyTable {}
@@ -97,12 +129,16 @@ impl PyTable {}
 pub struct PyTableImpl(PyObject);
 
 impl Table for PyTableImpl {
-    fn get_logical_plan(&self) -> Result<LogicalPlanBuilder> {
+    fn get_schema(&self) -> SchemaRef {
         todo!()
     }
-    
-    fn to_py(&self, py: Python<'_>) -> PyObject {
-        self.0.extract(py).expect("failed to extract PyObject")
+
+    fn get_logical_plan(&self) -> Result<LogicalPlanRef> {
+        todo!()
+    }
+
+    fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.0.extract(py)
     }
 }
 
@@ -130,15 +166,10 @@ impl AsRef<Identifier> for PyIdentifier {
     }
 }
 
-impl AsRef<TableSource> for PyTableSource {
-    fn as_ref(&self) -> &TableSource {
-        &self.0
-    }
-}
-
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyCatalog>()?;
     parent.add_class::<PyIdentifier>()?;
     parent.add_class::<PyTable>()?;
+    parent.add_class::<PyTableSource>()?;
     Ok(())
 }

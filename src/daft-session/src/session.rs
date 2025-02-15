@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use daft_catalog::{Bindings, Catalog, CatalogProvider, CatalogRef, Identifier, Table, TableProvider, TableRef, TableSource};
+use daft_catalog::{Bindings, Catalog, CatalogProvider, CatalogRef, Identifier, Table, TableProvider, TableRef, TableSource, View};
 use daft_logical_plan::LogicalPlanBuilder;
 use uuid::Uuid;
 
@@ -77,18 +77,22 @@ impl Session {
     }
 
     /// Creates a table in the current namespace with the given source.
-    pub fn create_table(&self, name: Identifier, source: TableSource) -> Result<()> {
+    pub fn create_table(&self, name: Identifier, source: &TableSource) -> Result<()> {
         unsupported_err!("Creating a table is not implemented, try create_temp_table.")
     }
 
     /// Creates a temp table scoped to this session from an existing view.
-    pub fn create_temp_table(&self, name: &str, source: TableSource) -> Result<TableRef> {
+    pub fn create_temp_table(&self, name: &str, source: &TableSource) -> Result<TableRef> {
         if self.state().tables.exists(name) {
             obj_already_exists_err!("Temporary table", &name.into())
         }
-        // TODO update the source!! pulling double duty since we just return the original table..
-        self.state_mut().tables.insert(name.to_string(), source.clone());
-        Ok(source)
+        // we don't have mutable temporary tables, only immutable views over dataframes.
+        let table = match source {
+            TableSource::Schema(_) => unsupported_err!("temporary table with schema"),
+            TableSource::View(plan) => View::from(plan.clone()).arced(),
+        };
+        self.state_mut().tables.insert(name.to_string(), table.clone());
+        Ok(table)
     }
 
     /// Returns the session's current catalog.

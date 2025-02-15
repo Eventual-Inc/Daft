@@ -90,11 +90,25 @@ def schema(**columns):
     fields = [Field.create(name, dtype) for name, dtype in columns.items()]
     return Schema._from_fields(fields)
 
-def test_create_temp_table():
+def test_table_actions():
     sess = Session.empty()
+    #
+    # create_temp_table
     t1 = sess.create_temp_table("t1")
-    t2 = sess.create_temp_table("t2", schema(a=dt.int32(), b=dt.int32()))
+    t2 = sess.create_temp_table("t2")
     t3 = sess.create_temp_table("t3", daft.from_pydict({}))
     assert t1 is not None
     assert t2 is not None
     assert t3 is not None
+    #
+    # get_table (todo equality since these are diff objects)
+    assert sess.get_table("t1") is not None
+    assert sess.get_table("t2") is not None
+    #
+    # err on table not found
+    with pytest.raises(Exception, match="not found"):
+        sess.get_table("t4")
+    #
+    # err on qualified identifier
+    with pytest.raises(Exception, match="not yet supported"):
+        sess.get_table("default.t1")

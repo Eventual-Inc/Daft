@@ -44,14 +44,14 @@ impl PySession {
         todo!()
     }
 
-    pub fn create_table(&self, name: &str, source: Option<&PyTableSource>) -> PyResult<()> {
+    pub fn create_table(&self, name: &str, source: &PyTableSource) -> PyResult<()> {
         todo!()
     }
 
     pub fn create_temp_table(&self, name: &str, source: &PyTableSource) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            let table = self.0.create_temp_table(name, source.as_ref().clone())?;
-            let table = table.to_py(py);
+            let table = self.0.create_temp_table(name, source.as_ref())?;
+            let table = table.to_py(py)?;
             Ok(table)
         })
     }
@@ -71,7 +71,7 @@ impl PySession {
     pub fn get_table(&self, name: &PyIdentifier) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             let table = self.0.get_table(name.as_ref())?;
-            let table = table.to_py(py);
+            let table = table.to_py(py)?;
             Ok(table)
         })
     }
@@ -95,7 +95,7 @@ impl PySession {
         Ok(self.0.set_catalog(name)?)
     }
 
-    pub fn set_namespace(&self, name: String) {
+    pub fn set_namespace(&self, name: &PyIdentifier) {
         todo!()
     }
 }
