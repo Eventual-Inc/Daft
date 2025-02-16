@@ -24,8 +24,26 @@ use serde::{Deserialize, Serialize};
 use crate::{Expr, ExprRef, LiteralValue};
 
 #[pyfunction]
-pub fn col(name: &str) -> PyResult<PyExpr> {
-    Ok(PyExpr::from(crate::col(name)))
+pub fn unbound_col(name: &str) -> PyExpr {
+    PyExpr::from(crate::unbound_col(name))
+}
+
+#[pyfunction(signature = (
+    name,
+    plan_id=None,
+    plan_schema=None
+))]
+pub fn bound_col(name: &str, plan_id: Option<String>, plan_schema: Option<PySchema>) -> PyExpr {
+    PyExpr::from(crate::bound_col(
+        name,
+        plan_id.map(|id| id.into()),
+        plan_schema.map(|schema| schema.schema),
+    ))
+}
+
+#[pyfunction]
+pub fn resolved_col(name: &str) -> PyExpr {
+    PyExpr::from(crate::resolved_col(name))
 }
 
 #[pyfunction]

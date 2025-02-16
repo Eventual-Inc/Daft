@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::ExprRef;
+use daft_dsl::{Column, ExprRef};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -231,8 +231,9 @@ fn translate_clustering_spec_expr(
     use daft_dsl::{binary_op, Expr};
 
     match clustering_spec_expr.as_ref() {
-        Expr::Column(name) => match old_colname_to_new_colname.get(name.as_ref()) {
-            Some(newname) => Ok(daft_dsl::col(newname.as_str())),
+        Expr::Column(Column::Resolved(name)) => match old_colname_to_new_colname.get(name.as_ref())
+        {
+            Some(newname) => Ok(daft_dsl::resolved_col(newname.as_str())),
             None => Err(()),
         },
         Expr::Literal(_) => Ok(clustering_spec_expr.clone()),
@@ -327,7 +328,7 @@ fn translate_clustering_spec_expr(
             Ok(expr.in_subquery(subquery.clone()))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.
-        Expr::Agg(_) | Expr::OuterReferenceColumn { .. } => Err(()),
+        Expr::Agg(_) | Expr::Column(..) => Err(()),
     }
 }
 

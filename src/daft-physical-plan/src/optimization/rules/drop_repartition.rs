@@ -50,7 +50,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{col, ExprRef};
+    use daft_dsl::{resolved_col, ExprRef};
     use daft_logical_plan::partitioning::{ClusteringSpec, UnknownClusteringConfig};
 
     use super::DropRepartitionPhysical;
@@ -92,13 +92,13 @@ mod tests {
             ])?),
             1,
         );
-        let plan = add_repartition(base.clone(), 1, vec![col("a"), col("b")]);
-        let plan = add_repartition(plan, 1, vec![col("a"), col("b")]);
+        let plan = add_repartition(base.clone(), 1, vec![resolved_col("a"), resolved_col("b")]);
+        let plan = add_repartition(plan, 1, vec![resolved_col("a"), resolved_col("b")]);
         let rule = DropRepartitionPhysical {};
         let res = rule.rewrite(plan)?;
         assert!(res.transformed);
 
-        let expected_plan = add_repartition(base, 1, vec![col("a"), col("b")]);
+        let expected_plan = add_repartition(base, 1, vec![resolved_col("a"), resolved_col("b")]);
         assert_eq!(res.data, expected_plan);
         Ok(())
     }
@@ -114,10 +114,14 @@ mod tests {
             ])?),
             1,
         );
-        let plan = add_repartition(plan, 1, vec![col("a"), col("b")]);
-        let plan = add_repartition(plan, 1, vec![col("a"), col("c")]);
-        let plan = add_repartition(plan, 1, vec![col("a"), col("c"), col("b")]);
-        let plan = add_repartition(plan, 1, vec![col("a")]);
+        let plan = add_repartition(plan, 1, vec![resolved_col("a"), resolved_col("b")]);
+        let plan = add_repartition(plan, 1, vec![resolved_col("a"), resolved_col("c")]);
+        let plan = add_repartition(
+            plan,
+            1,
+            vec![resolved_col("a"), resolved_col("c"), resolved_col("b")],
+        );
+        let plan = add_repartition(plan, 1, vec![resolved_col("a")]);
         let rule = DropRepartitionPhysical {};
         let res = rule.rewrite(plan.clone())?;
         assert!(!res.transformed);
