@@ -3,7 +3,7 @@
 mod datatype;
 mod literal;
 
-use std::{io::Cursor, rc::Rc, sync::Arc};
+use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::series::Series;
@@ -34,7 +34,7 @@ use spark_connect::{
     set_operation::SetOpType,
     Deduplicate, Expression, Limit, Range, Relation, SetOperation, Sort, Sql,
 };
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::{
     ensure,
@@ -278,7 +278,7 @@ impl SparkAnalyzer<'_> {
         let spark_connect::read::DataSource {
             format,
             schema,
-            options,
+            mut options,
             paths,
             predicates: _,
         } = data_source;
@@ -294,11 +294,28 @@ impl SparkAnalyzer<'_> {
             debug!("Ignoring options: {options:?}; not yet implemented");
         }
 
-        Ok(match &*format {
+        // TODO: allow user to set handling for unused options. either ignore or error.
+        fn check_unused_options(
+            format: &str,
+            options: &HashMap<String, String>,
+        ) -> ConnectResult<()> {
+            let mut unimplemented_options = Vec::new();
+            for (key, value) in options {
+                warn!("Option '{key}' is not yet implemented");
+                unimplemented_options.push(format!(r#""{}"={}"#, key, value));
+            }
+            Err(ConnectError::not_yet_implemented(format!(
+                "found ({unimplemented_options}) options for {format}",
+                unimplemented_options = unimplemented_options.join(", ")
+            )))
+        }
+
+        let format = &*format;
+        Ok(match format {
             "parquet" => {
-                let chunk_size = options.get("chunk_size").and_then(|v| v.parse().ok());
+                let chunk_size = options.remove("chunk_size").and_then(|v| v.parse().ok());
                 let hive_partitioning = options
-                    .get("hive_partitioning")
+                    .remove("hive_partitioning")
                     .and_then(|v| v.parse().ok());
                 let mut builder = ParquetScanBuilder::new(paths);
                 builder.chunk_size = chunk_size;
@@ -306,6 +323,7 @@ impl SparkAnalyzer<'_> {
                 if let Some(hive_partitioning) = hive_partitioning {
                     builder.hive_partitioning = hive_partitioning;
                 }
+                check_unused_options(format, &options)?;
 
                 builder.finish().await?
             }
@@ -314,54 +332,62 @@ impl SparkAnalyzer<'_> {
                 // https://spark.apache.org/docs/latest/sql-data-sources-csv.html
                 let mut builder = CsvScanBuilder::new(paths);
 
-                if let Some(sep) = options.get("sep").and_then(|s| s.chars().next()) {
+                if let Some(sep) = options.remove("sep").and_then(|s| s.chars().next()) {
                     builder = builder.delimiter(sep);
                 }
 
                 // spark sets this to false by default, so we'll do the same
                 let header = options
-                    .get("header")
+                    .remove("header")
                     .and_then(|v| v.to_lowercase().parse().ok())
                     .unwrap_or(false);
 
                 builder = builder.has_headers(header);
 
                 let infer_schema = options
-                    .get("inferSchema")
+                    .remove("inferSchema")
                     .and_then(|v| v.to_lowercase().parse().ok())
                     .unwrap_or(true);
 
                 builder = builder.infer_schema(infer_schema);
 
-                if let Some(quote) = options.get("quote").and_then(|s| s.chars().next()) {
+                if let Some(quote) = options.remove("quote").and_then(|s| s.chars().next()) {
                     builder = builder.quote(quote);
                 }
 
-                if let Some(comment) = options.get("comment").and_then(|s| s.chars().next()) {
+                if let Some(comment) = options.remove("comment").and_then(|s| s.chars().next()) {
                     builder = builder.comment(comment);
                 }
 
-                if let Some(escape_char) = options.get("escape").and_then(|s| s.chars().next()) {
+                if let Some(escape_char) = options.remove("escape").and_then(|s| s.chars().next()) {
                     builder = builder.escape_char(escape_char);
                 }
 
                 if let Some(hive_partitioning) = options
-                    .get("hive_partitioning")
+                    .remove("hive_partitioning")
                     .and_then(|v| v.parse().ok())
                 {
                     builder = builder.hive_partitioning(hive_partitioning);
                 }
-                if let Some(chunk_size) = options.get("chunk_size").and_then(|v| v.parse().ok()) {
+                if let Some(chunk_size) = options.remove("chunk_size").and_then(|v| v.parse().ok())
+                {
                     builder = builder.chunk_size(chunk_size);
                 }
 
-                if let Some(buffer_size) = options.get("buffer_size").and_then(|v| v.parse().ok()) {
+                if let Some(buffer_size) =
+                    options.remove("buffer_size").and_then(|v| v.parse().ok())
+                {
                     builder = builder.buffer_size(buffer_size);
                 }
 
+                check_unused_options(format, &options)?;
+
                 builder.finish().await?
             }
-            "json" => JsonScanBuilder::new(paths).finish().await?,
+            "json" => {
+                check_unused_options(format, &options)?;
+                JsonScanBuilder::new(paths).finish().await?
+            }
             "delta" => {
                 if paths.len() != 1 {
                     invalid_argument_err!(
@@ -369,6 +395,7 @@ impl SparkAnalyzer<'_> {
                     );
                 }
                 let path = paths.first().unwrap();
+                check_unused_options(format, &options)?;
 
                 delta_scan(path, None, true)?
             }
