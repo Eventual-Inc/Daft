@@ -15,7 +15,7 @@ struct Cli {
 #[cfg(not(feature = "python"))]
 async fn main() {
     let cli = Cli::parse();
-    daft_dashboard_server::launch(cli.static_assets_path.as_deref()).await;
+    daft_dashboard::launch(cli.static_assets_path.as_deref()).await;
 }
 
 #[cfg(feature = "python")]

@@ -23,6 +23,8 @@ use tokio::{
 };
 #[cfg(feature = "python")]
 use {
+    pyo3::pymodule,
+    pyo3::Python,
     pyo3::{
         ffi::PyErr_CheckSignals,
         pyfunction,
@@ -283,7 +285,8 @@ However, if this is another process, then kill that other server (by running `ki
 }
 
 #[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction!(launch, parent)?)?;
+#[pymodule]
+fn daft_dashboard(_: Python, m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(launch, m)?)?;
     Ok(())
 }

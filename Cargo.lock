@@ -2125,28 +2125,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-dashboard-server"
-version = "0.3.0-dev0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap 4.5.29",
- "env_logger 0.11.6",
- "fork",
- "http-body-util",
- "hyper 1.6.0",
- "hyper-staticfile",
- "hyper-util",
- "log",
- "parking_lot 0.12.3",
- "pyo3",
- "serde",
- "serde_json",
- "simdutf8",
- "tokio",
-]
-
-[[package]]
 name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2704,6 +2682,28 @@ dependencies = [
  "daft-micropartition",
  "daft-recordbatch",
  "pyo3",
+]
+
+[[package]]
+name = "daft_dashboard"
+version = "0.3.0-dev0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap 4.5.29",
+ "env_logger 0.11.6",
+ "fork",
+ "http-body-util",
+ "hyper 1.6.0",
+ "hyper-staticfile",
+ "hyper-util",
+ "log",
+ "parking_lot 0.12.3",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "simdutf8",
+ "tokio",
 ]
 
 [[package]]

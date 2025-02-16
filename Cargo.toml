@@ -180,7 +180,7 @@ members = [
   "src/hyperloglog",
   "src/parquet2",
   "src/generated/spark-connect",
-  "dashboard/backend"
+  "daft_dashboard"
 ]
 
 [workspace.dependencies]

@@ -19,10 +19,14 @@ tokio.workspace = true
 [features]
 python = []
 
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "daft_dashboard"
+
 [lints]
 workspace = true
 
 [package]
-name = "daft-dashboard-server"
+name = "daft_dashboard"
 edition.workspace = true
 version.workspace = true
