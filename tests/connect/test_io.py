@@ -20,7 +20,7 @@ def test_csv_basic_roundtrip(make_spark_df, assert_spark_equals, spark_session, 
 
 
 @pytest.mark.skip(reason="https://github.com/Eventual-Inc/Daft/issues/3775")
-def test_write_csv_with_header(make_df, make_spark_df, spark_session, tmp_path):
+def test_write_csv_without_header(make_df, make_spark_df, spark_session, tmp_path):
     pass
 
 
