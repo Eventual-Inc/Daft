@@ -2617,7 +2617,7 @@ dependencies = [
  "daft-catalog",
  "daft-logical-plan",
  "pyo3",
- "uuid 1.11.0",
+ "uuid 1.13.1",
 ]
 
 [[package]]
