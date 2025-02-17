@@ -4,41 +4,40 @@ import json
 import os
 import uuid
 import warnings
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from urllib import request
 from urllib.error import URLError
 
 if TYPE_CHECKING:
-    from daft import DataFrame
-from daft.dataframe.display import MermaidFormatter
+    from datetime import datetime
 
 DAFT_DASHBOARD_ENV_NAME = "DAFT_DASHBOARD"
 DAFT_DASHBOARD_URL = "http://localhost:3238/api/queries"
 
 
-def _broadcast_query_plan(df: DataFrame):
+def _should_run() -> bool:
     enable_dashboard_str = os.environ.get(DAFT_DASHBOARD_ENV_NAME)
 
     if not enable_dashboard_str:
-        return
+        return False
     try:
         enable_dashboard = int(enable_dashboard_str)
     except ValueError:
-        return
+        return False
     if not enable_dashboard:
-        return
+        return False
 
+    return True
+
+
+def _broadcast_query_plan(
+    mermaid_plan: str,
+    plan_time_start: datetime,
+    plan_time_end: datetime,
+):
     # try launching the dashboard
     # if dashboard is already launched, this will do nothing
     launch(block=False)
-
-    is_cached = df._result_cache is not None
-    plan_time_start = datetime.now(timezone.utc)
-    mermaid_plan = MermaidFormatter(
-        builder=df._builder, show_all=True, simple=False, is_cached=is_cached
-    )._repr_markdown_()
-    plan_time_end = datetime.now(timezone.utc)
 
     headers = {
         "Content-Type": "application/json",

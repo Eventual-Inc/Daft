@@ -62,12 +62,12 @@ build: check-toolchain .venv  ## Compile and install Daft for development
 build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv
 
-.PHONY: build-dashboard
-build-dashboard: check-toolchain .venv  ## Compile and install Daft for development
+.PHONY: daft-dashboard
+daft-dashboard: check-toolchain .venv  ## Compile and install Daft for development
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python && cd daft_dashboard && ../$(VENV_BIN)/maturin develop --extras=all --uv
 
-.PHONY: build-dashboard-release
-build-dashboard-release: check-toolchain .venv  ## Compile and install Daft for development
+.PHONY: daft-dashboard-release
+daft-dashboard-release: check-toolchain .venv  ## Compile and install Daft for development
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python && cd daft_dashboard && ../$(VENV_BIN)/maturin develop --extras=all --release --uv
 
 .PHONY: test
@@ -86,8 +86,8 @@ docs: .venv sphinx-docs ## Build both MkDocs and Sphinx documentation
 sphinx-docs: .venv ## Build Sphinx API documentation
 	uv run --with-requirements requirements-docs.txt sphinx-build -b html "docs/sphinx/source" "docs/sphinx/_build"
 
-.PHONY: static-dashboard-assets
-static-dashboard-assets: .venv
+.PHONY: daft-dashboard-assets
+daft-dashboard-assets: .venv
 	cd daft_dashboard/frontend && bun run build
 	if [ -d daft_dashboard/daft_dashboard/static-dashboard-assets ]; then \
 		rm -rf daft_dashboard/daft_dashboard/static-dashboard-assets; \
