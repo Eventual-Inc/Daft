@@ -308,7 +308,7 @@ impl SparkAnalyzer<'_> {
                 Ok(())
             } else {
                 Err(ConnectError::not_yet_implemented(format!(
-                    "found ({unimplemented_options}) options for {format}",
+                    "[{unimplemented_options}] options for {format}",
                     unimplemented_options = unimplemented_options.join(", ")
                 )))
             }
