@@ -304,10 +304,14 @@ impl SparkAnalyzer<'_> {
                 warn!("Option '{key}' is not yet implemented");
                 unimplemented_options.push(format!(r#""{}"={}"#, key, value));
             }
-            Err(ConnectError::not_yet_implemented(format!(
-                "found ({unimplemented_options}) options for {format}",
-                unimplemented_options = unimplemented_options.join(", ")
-            )))
+            if unimplemented_options.is_empty() {
+                Ok(())
+            } else {
+                Err(ConnectError::not_yet_implemented(format!(
+                    "found ({unimplemented_options}) options for {format}",
+                    unimplemented_options = unimplemented_options.join(", ")
+                )))
+            }
         }
 
         let format = &*format;
