@@ -47,11 +47,8 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, catalog: Catalog, alias: str | None = None) -> Catalog:
+    def attach(self, catalog: Catalog, alias: str) -> Catalog:
         """Attaches the catalog to this session."""
-        # once more catalogs are supported, then require explicit aliases
-        if alias is None:
-            alias = catalog.name()
         return self._session.attach(catalog, alias)
 
     def detach(self, catalog: str):

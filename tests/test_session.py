@@ -1,12 +1,10 @@
 import daft
-from daft.session import Session
 
 import pytest
 
 import daft
-from daft import DataType as dt
 from daft.logical.schema import Schema, Field
-from daft import Session
+from daft import Catalog, Session
 
 """
 SESSION SETUP
@@ -23,12 +21,12 @@ def test_attach():
     sess = Session.empty()
     #
     # create some 'existing' catalogs
-    cat1 = daft.load_catalog("cat1")
-    cat2 = daft.load_catalog("cat2")
+    cat1 = Catalog.empty()
+    cat2 = Catalog.empty()
     #
     # attach them..
-    sess.attach(cat1)
-    sess.attach(cat2)
+    sess.attach(cat1, alias="cat1")
+    sess.attach(cat2, alias="cat2")
     #
     # list_catalogs
     assert 2 == len(sess.list_catalogs())
@@ -39,16 +37,16 @@ def test_attach():
     #
     # error!
     with pytest.raises(Exception, match="already exists"):
-        sess.attach(cat1)
+        sess.attach(cat1, alias="cat1")
 
 def test_detach():
     sess = Session.empty()
     #
     # setup.
-    cat1 = daft.load_catalog("cat1")
-    cat2 = daft.load_catalog("cat2")
-    sess.attach(cat1)
-    sess.attach(cat2)
+    cat1 = Catalog.empty()
+    cat2 = Catalog.empty()
+    sess.attach(cat1, alias="cat1")
+    sess.attach(cat2, alias="cat2")
     #
     # 
     assert 2 == len(sess.list_catalogs())
@@ -70,10 +68,10 @@ def test_catalog_actions():
     sess = Session.empty()
     #
     # setup.
-    cat1 = daft.load_catalog("cat1")
-    cat2 = daft.load_catalog("cat2")
-    sess.attach(cat1)
-    sess.attach(cat2)
+    cat1 = Catalog.empty()
+    cat2 = Catalog.empty()
+    sess.attach(cat1, alias="cat1")
+    sess.attach(cat2, alias="cat2")
     #
     # current_catalog should default to first in.
     assert cat1 == sess.current_catalog()

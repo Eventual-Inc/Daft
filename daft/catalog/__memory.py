@@ -1,3 +1,5 @@
+"""An in-memory implementation for the daft catalog abstractions."""
+
 from __future__ import annotations
 
 from daft.catalog import Catalog, Table, TableSource
@@ -6,21 +8,23 @@ from daft.logical.schema import Schema
 from daft.recordbatch.micropartition import MicroPartition
 
 
-class TempCatalog(Catalog):
-    """A temporary catalog scoped to a given session."""
+class MemoryCatalog(Catalog):
+    """An in-memory catalog scoped to a given session."""
 
-    def __init__(self, name: str):
-        self._name: str = name
+    _tables: dict[str, Table]
+
+    def __init__(self, tables: dict[str, Table]):
+        self._tables = tables
 
     def __repr__(self) -> str:
-        return f"TempCatalog('{self._name}')"
+        return f"TmpCatalog('{self._name}')"
 
     def name(self) -> str:
         return self._name
 
 
-class TempTable(Table):
-    """A temp table holds a reference to an existing dataframe."""
+class MemoryTable(Table):
+    """An in-memory table holds a reference to an existing dataframe."""
 
     _inner: DataFrame
 

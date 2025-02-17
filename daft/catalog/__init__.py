@@ -9,12 +9,6 @@ from daft.dataframe import DataFrame
 from daft.logical.schema import Schema
 
 
-def load_catalog(name: str, options: object | None = None) -> Catalog:
-    """Loads a new catalog from the configuration options or creates an in-memory catalog if none given."""
-    if options is None:
-        return Catalog._from_none(name)
-    else:
-        return Catalog._from_some(name, options)
 
 
 class Catalog(ABC):
@@ -24,18 +18,24 @@ class Catalog(ABC):
         return f"Catalog('{self.name()}')"
 
     @staticmethod
-    def _from_none(name: str):
-        from daft.catalog.__temp import TempCatalog
-
-        return TempCatalog(name)
+    def empty() -> Catalog: 
+        """Returns a new in-memory catalog implementation."""
+        from daft.catalog.__memory import MemoryCatalog
+        return MemoryCatalog({})
 
     @staticmethod
-    def _from_some(name: str, options: object) -> Catalog:
-        return NotImplementedError("catalog from options")
+    def from_pydict(tables: dict[str,Table]) -> Catalog: 
+        """Returns a new in-memory catalog implementation with temporary tables."""
+        from daft.catalog.__memory import MemoryCatalog
+        return MemoryCatalog(tables)
 
-    @abstractmethod
-    def name(self) -> str:
-        """Returns the catalog name."""
+    # TODO UPDATE
+    # def from_opts(name: str, options: object | None = None) -> Catalog:
+    #     """Loads a new catalog from the configuration options or creates an in-memory catalog if none given."""
+    #     if options is None:
+    #         return Catalog._from_none(name)
+    #     else:
+    #         return Catalog._from_some(name, options)
 
     # @property
     # @abstractmethod
@@ -85,6 +85,13 @@ class Catalog(ABC):
     # @abstractmethod
     # def list_tables(self, pattern: str | None = None) -> list[Table]:
     #     """Lists all tables matching the optional pattern."""
+
+    ###
+    # read_*
+    ###
+
+    # def read_table(self, name: Identifier) -> DataFrame:
+    #     raise NotImplementedError("read_table not implemented")
 
 
 class Identifier(Sequence):
@@ -220,8 +227,8 @@ class Table(ABC):
 
     @staticmethod
     def _from_source(name: str, source: TableSource = None) -> Table:
-        from daft.catalog.__temp import TempTable
-        return TempTable._from_source(name, source)
+        from daft.catalog.__memory import MemoryTable
+        return MemoryTable._from_source(name, source)
 
     ###
     # DataFrame Methods
@@ -242,5 +249,4 @@ __all__ = [
     "Namespace",
     "Table",
     "TableSource",
-    "load_catalog",
 ]

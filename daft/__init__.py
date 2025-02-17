@@ -62,7 +62,6 @@ from daft.catalog import (
     Catalog,
     Identifier,
     Table,
-    load_catalog,
 )
 from daft.convert import (
     from_arrow,
@@ -141,7 +140,6 @@ __all__ = [
     "interval",
     "list_",
     "lit",
-    "load_catalog",
     "planning_config_ctx",
     "read_csv",
     "read_deltalake",
