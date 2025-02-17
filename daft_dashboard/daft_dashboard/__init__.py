@@ -19,7 +19,7 @@ def launch(block: bool = False):
 
     if not path.exists():
         raise ImportError(
-            "Unable to import Daft's dashboard features"
+            "Unable to serve daft-dashboard's static assets because they couldn't be found"
             "Consider re-installing Daft with the 'dashboard' feature installed, e.g.:"
             'pip install "getdaft[dashboard]"'
         )

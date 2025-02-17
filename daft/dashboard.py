@@ -5,13 +5,12 @@ import os
 import uuid
 import warnings
 from datetime import datetime, timezone
-from importlib import resources
-from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib import request
 from urllib.error import URLError
 
-import daft.daft as native
-from daft import DataFrame
+if TYPE_CHECKING:
+    from daft import DataFrame
 from daft.dataframe.display import MermaidFormatter
 
 DAFT_DASHBOARD_ENV_NAME = "DAFT_DASHBOARD"
@@ -65,14 +64,14 @@ def launch(block: bool = False):
 
     The server serves HTML/CSS/JS bundles, so you are able to point your browser towards `http://localhost:3238` and view information regarding your queries.
     """
-    path = Path(str(resources.files("daft"))) / "static_dashboard_assets"
+    try:
+        from daft_dashboard import launch
 
-    if not path.exists():
-        raise ImportError(
+        launch(block=block)
+    except ImportError:
+        warnings.warn(
             "Unable to import Daft's dashboard features"
             "Consider re-installing Daft with the 'dashboard' feature installed, e.g.:"
             'pip install "getdaft[dashboard]"'
         )
-
-    os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
-    native.launch_dashboard(static_assets_path=str(path), block=block)
+        raise
