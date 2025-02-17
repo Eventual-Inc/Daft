@@ -58,15 +58,17 @@ class IcebergCatalog(Catalog):
 class IcebergTable(Table):
     _inner: InnerTable
 
-    def __init__(self, inner: InnerTable):
-        self._inner = inner
+    def __init__(self):
+        raise ValueError("IcebergTable.__init__ is not supported, please use `Table.from_iceberg`.")
 
     @staticmethod
-    def _try_from(obj: object) -> IcebergTable | None:
+    def _from_obj(obj: object) -> IcebergTable | None:
         """Returns an IcebergTable if the given object can be adapted so."""
         if isinstance(obj, InnerTable):
-            return IcebergTable(obj)
-        return None
+            t = IcebergTable.__new__(IcebergTable)
+            t._inner = obj
+            return t
+        raise ValueError(f"Unsupported iceberg table type: {type(obj)}")
 
     @property
     def inner(self) -> InnerTable:

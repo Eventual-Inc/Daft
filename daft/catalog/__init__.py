@@ -264,9 +264,25 @@ class Identifier(Sequence):
 class Table(ABC):
     """Interface for python table implementations."""
 
-    @property
-    def inner(self) -> object | None:
-        """Returns the inner table object if this is an adapter."""
+    @staticmethod
+    def from_iceberg(obj: object) -> Table:
+        """Returns a Daft Table instance from an Iceberg table."""
+        try:
+            from daft.catalog.__iceberg import IcebergTable
+
+            return IcebergTable._from_obj(obj)
+        except ImportError:
+            raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
+
+    @staticmethod
+    def from_unity(obj: object) -> Table:
+        """Returns a Daft Table instance from a Unity table."""
+        try:
+            from daft.catalog.__unity import UnityTable
+
+            return UnityTable._from_obj(obj)
+        except ImportError:
+            raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
 
     # TODO deprecated catalog APIs #3819
     def to_dataframe(self) -> DataFrame:

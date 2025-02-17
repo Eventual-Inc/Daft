@@ -73,15 +73,17 @@ class UnityCatalog(Catalog):
 class UnityTable(Table):
     _inner: InnerTable
 
-    def __init__(self, unity_table: InnerTable):
-        self._inner = unity_table
+    def __init__(self):
+        raise ValueError("UnityTable.__init__ is not supported, please use `Table.from_unity`.")
 
     @staticmethod
-    def _try_from(obj: object) -> UnityTable | None:
-        """Returns an UnityTable if the given object can be adapted so."""
+    def _from_obj(obj: object) -> UnityTable | None:
+        """Returns a UnityTable if the given object can be adapted so."""
         if isinstance(obj, InnerTable):
-            return UnityTable(obj)
-        return None
+            t = UnityTable.__new__(UnityTable)
+            t._inner = obj
+            return t
+        raise ValueError(f"Unsupported unity table type: {type(obj)}")
 
     @property
     def inner(self) -> InnerTable:
