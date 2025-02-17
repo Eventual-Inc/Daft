@@ -1,9 +1,14 @@
+use std::sync::Arc;
+
+use daft_catalog::{
+    python::{PyCatalog, PyCatalogImpl, PyIdentifier, PyTable, PyTableSource},
+    Namespace,
+};
 use pyo3::prelude::*;
 
 use crate::Session;
 
 #[pyclass]
-#[allow(dead_code)]
 pub struct PySession(Session);
 
 #[pymethods]
@@ -11,6 +16,91 @@ impl PySession {
     #[staticmethod]
     pub fn empty() -> Self {
         Self(Session::empty())
+    }
+
+    pub fn exec(&self, input: &str) -> PyResult<()> {
+        todo!()
+    }
+
+    pub fn current_catalog(&self) -> PyResult<()> {
+        todo!()
+    }
+
+    pub fn current_namespace(&self) -> PyResult<Namespace> {
+        todo!()
+    }
+
+    pub fn attach(&self, catalog: PyObject, alias: String) -> PyResult<()> {
+        Ok(self
+            .0
+            .attach(Arc::new(PyCatalogImpl::from(catalog)), alias)?)
+    }
+
+    pub fn detach(&self, catalog: &str) -> PyResult<()> {
+        Ok(self.0.detach(catalog)?)
+    }
+
+    pub fn create_catalog(&self, name: &str) -> PyResult<PyCatalog> {
+        todo!()
+    }
+
+    pub fn create_namespace(&self, name: &str) -> Namespace {
+        todo!()
+    }
+
+    pub fn create_table(&self, name: &str, source: &PyTableSource) -> PyResult<()> {
+        todo!()
+    }
+
+    pub fn create_temp_table(&self, name: &str, source: &PyTableSource) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let table = self.0.create_temp_table(name, source.as_ref())?;
+            let table = table.to_py(py)?;
+            Ok(table)
+        })
+    }
+
+    pub fn get_catalog(&self, name: &str) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let catalog = self.0.get_catalog(name)?;
+            let catalog = catalog.to_py(py);
+            Ok(catalog)
+        })
+    }
+
+    pub fn get_namespace(&self, name: &str) -> Namespace {
+        todo!()
+    }
+
+    pub fn get_table(&self, name: &PyIdentifier) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let table = self.0.get_table(name.as_ref())?;
+            let table = table.to_py(py)?;
+            Ok(table)
+        })
+    }
+
+    #[pyo3(signature = (pattern=None))]
+    pub fn list_catalogs(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
+        Ok(self.0.list_catalogs(pattern)?)
+    }
+
+    #[pyo3(signature = (pattern=None))]
+    pub fn list_namespaces(&self, pattern: Option<&str>) -> PyResult<()> {
+        todo!()
+    }
+
+    #[pyo3(signature = (pattern=None))]
+    pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
+        Ok(self.0.list_tables(pattern)?)
+    }
+
+    pub fn set_catalog(&self, name: &str) -> PyResult<()> {
+        Ok(self.0.set_catalog(name)?)
+    }
+
+    pub fn set_namespace(&self, name: &PyIdentifier) {
+        todo!()
     }
 }
 
