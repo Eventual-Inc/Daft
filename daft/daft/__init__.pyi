@@ -3,7 +3,6 @@ import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
 
-from daft.catalog import Catalog
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io.scan import ScanOperator
@@ -1808,7 +1807,6 @@ class PyDaftPlanningConfig:
 class PyDaftContext:
     def __init__(self) -> None: ...
     _runner: Runner
-    _session: Session
     def get_or_create_runner(self) -> Runner: ...
     _daft_execution_config: PyDaftExecutionConfig
     _daft_planning_config: PyDaftPlanningConfig
@@ -1847,14 +1845,13 @@ class SystemInfo:
     def total_memory(self) -> int: ...
     def cpu_count(self) -> int | None: ...
 
-
 ###
 # daft-catalog
 ###
 
-class PyCatalog(Catalog):
+class PyCatalog:
     def __init__(self): ...
-    def name(self) -> str: ...
+    def create_table(self, name: str, source: PyTableSource | None): ...
 
 class PyIdentifier:
     def __init__(self, namespace: tuple[str, ...], name: str): ...

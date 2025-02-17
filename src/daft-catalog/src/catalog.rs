@@ -19,6 +19,8 @@ pub trait Catalog: Sync + Send + std::fmt::Debug {
     /// Leverage dynamic dispatch to return the inner object for a PyCatalogImpl (generics?)
     #[cfg(feature = "python")]
     fn to_py(&self, _: pyo3::Python<'_>) -> pyo3::PyObject {
-        panic!("missing to_py implementation, consider PyCatalog(self) as the blanket implementation")
+        panic!(
+            "missing to_py implementation, consider PyCatalog(self) as the blanket implementation"
+        )
     }
 }

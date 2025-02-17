@@ -9,24 +9,21 @@ from daft.dataframe import DataFrame
 from daft.logical.schema import Schema
 
 
-
-
 class Catalog(ABC):
     """Catalog documentation..."""
 
-    def __repr__(self) -> str:
-        return f"Catalog('{self.name()}')"
-
     @staticmethod
-    def empty() -> Catalog: 
+    def empty() -> Catalog:
         """Returns a new in-memory catalog implementation."""
         from daft.catalog.__memory import MemoryCatalog
+
         return MemoryCatalog({})
 
     @staticmethod
-    def from_pydict(tables: dict[str,Table]) -> Catalog: 
+    def from_pydict(tables: dict[str, Table]) -> Catalog:
         """Returns a new in-memory catalog implementation with temporary tables."""
         from daft.catalog.__memory import MemoryCatalog
+
         return MemoryCatalog(tables)
 
     # TODO UPDATE
@@ -50,9 +47,9 @@ class Catalog(ABC):
     # def create_namespace(self, name: str) -> Namespace:
     #     """Creates a namespace scoped to this catalog."""
 
-    # @abstractmethod
-    # def create_table(self, name: str, source: Source = None) -> Table:
-    #     """Creates a table scoped to this catalog."""
+    @abstractmethod
+    def create_table(self, name: str, source: TableSource | None = None) -> Table:
+        """Creates a table scoped to this catalog."""
 
     ###
     # has_*
@@ -109,7 +106,6 @@ class Identifier(Sequence):
 
         Example:
         >>> Identifier("namespace", "table")
-        >>> #
 
         Returns:
             Identifier: A new identifier.
@@ -157,14 +153,13 @@ Namespace = tuple[str]
 
 
 class TableSource:
-
     _source: PyTableSource
 
     def __init__(self) -> None:
         raise ValueError("We do not support creating a TableSource via __init__")
 
     @staticmethod
-    def _from_object(source: object = None) -> Table:
+    def _from_object(source: object = None) -> TableSource:
         # TODO for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
         if source is None:
             return TableSource._from_none()
@@ -178,7 +173,7 @@ class TableSource:
             raise Exception(f"Unknown table source: {source}")
 
     @staticmethod
-    def _from_none() -> Table:
+    def _from_none() -> TableSource:
         # for creating temp mutable tables, but we don't have those yet
         # s = TableSource.__new__(TableSource)
         # s._source = PyTableSource.empty()
@@ -187,22 +182,22 @@ class TableSource:
         return TableSource._from_schema(Schema._from_fields([]))
 
     @staticmethod
-    def _from_schema(schema: Schema) -> Table:
+    def _from_schema(schema: Schema) -> TableSource:
         # we don't have mutable temp tables, so just make an empty view
         # s = TableSource.__new__(TableSource)
         # s._source = PyTableSource.from_schema(schema._schema)
         # return s
         # todo temp workaround until create_table is wired
-        return TableSource._from_df(DataFrame._from_pylist({}))
-    
+        return TableSource._from_df(DataFrame._from_pylist([]))
+
     @staticmethod
-    def _from_df(df: DataFrame) -> Table:
+    def _from_df(df: DataFrame) -> TableSource:
         s = TableSource.__new__(TableSource)
         s._source = PyTableSource.from_view(df._builder._builder)
         return s
 
     @staticmethod
-    def _from_path(path: str) -> Table:
+    def _from_path(path: str) -> TableSource:
         # for supporting daft.create_table("t", "/path/to/data") <-> CREATE TABLE t AS '/path/to/my.data'
         raise NotImplementedError("creating a table source from a path is not yet supported.")
 
@@ -211,7 +206,7 @@ class Table(ABC):
     """Table documentation..."""
 
     def __repr__(self) -> str:
-        return f"Table('{self._name}')"
+        return f"Table('{self.name()}')"
 
     @abstractmethod
     def name(self) -> str:
@@ -226,8 +221,9 @@ class Table(ABC):
     ###
 
     @staticmethod
-    def _from_source(name: str, source: TableSource = None) -> Table:
+    def _from_source(name: str, source: TableSource | None = None) -> Table:
         from daft.catalog.__memory import MemoryTable
+
         return MemoryTable._from_source(name, source)
 
     ###

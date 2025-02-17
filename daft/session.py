@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from daft.dataframe import DataFrame
 from daft.catalog import Catalog, Identifier, Namespace, Table, TableSource
 from daft.daft import PySession
+from daft.dataframe import DataFrame
+
 
 class Session:
     """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs."""
@@ -59,14 +60,17 @@ class Session:
     # create_*
     ###
 
+    # TODO rchowell
     def create_catalog(self, name: str) -> Catalog:
         """Create a new catalog scoped to this session."""
         return self._session.create_catalog(name)
 
+    # TODO rchowell
     def create_namespace(self, name: str) -> Namespace:
         """Create a new namespace scope to this session's current catalog."""
         return self._session.create_namespace(name)
 
+    # TODO rchowell
     def create_table(self, name: str, source: TableSource = None) -> Table:
         """Creates a new table scoped to this session's current catalog and namespace."""
         return self._session.create_table(name, source)
@@ -83,6 +87,7 @@ class Session:
         """Returns the session's current catalog."""
         return self._session.current_catalog()
 
+    # TODO rchowell
     def current_namespace(self) -> Namespace:
         """Returns the session's current namespace."""
         return self._session.current_namespace()
@@ -95,6 +100,7 @@ class Session:
         """Returns the catalog or raises an exception if it does not exist."""
         return self._session.get_catalog(name)
 
+    # TODO rchowell
     def get_namespace(self, name: str) -> Namespace:
         """Returns the namespace or raises an exception if it does not exist."""
         return self._session.get_namespace(name)
@@ -106,12 +112,33 @@ class Session:
         return self._session.get_table(name._identifier)
 
     ###
+    # has_*
+    ###
+
+    def has_catalog(self, name: str) -> bool:
+        return self._session.has_catalog(name)
+
+    def has_namespace(self, name: str | Identifier) -> bool:
+        if isinstance(name, str):
+            name = Identifier(*name.split("."))
+        return self._session.has_namespace(name)
+
+    def has_table(self, name: str | Identifier) -> bool:
+        if isinstance(name, str):
+            name = Identifier(*name.split("."))
+        return self._session.has_table(name)
+
+    ###
     # list_*
     ###
 
-    def list_catalogs(self, pattern: None | str = None) -> list[Catalog]:
+    def list_catalogs(self, pattern: None | str = None) -> list[str]:
         """Returns a list of available catalogs."""
         return self._session.list_catalogs(pattern)
+
+    def list_tables(self, pattern: None | str = None) -> list[Identifier]:
+        """Returns a list of available tables."""
+        return self._session.list_tables(pattern)
 
     ###
     # set_*
@@ -124,6 +151,7 @@ class Session:
     def set_namespace(self, name: str):
         """Set the given namespace as current_namespace or err if not exists."""
         self._session.set_namespace(name)
+
 
 ###
 # global active session
@@ -150,29 +178,36 @@ def _session() -> Session:
 # session state
 ###
 
+
 def current_catalog() -> Catalog:
     """Returns the global session's current catalog."""
     return _session().current_catalog()
+
 
 def current_session() -> Session:
     """Returns the global context's current session."""
     return _session()
 
+
 ###
 # create_*
 ##
+
 
 def create_catalog(name: str) -> Catalog:
     """Creates a catalog scoped to the global session."""
     return _session().create_catalog(name)
 
+
 def create_temp_table(name: str, source: object | None = None) -> Catalog:
     """Creates a temporary table scoped to the global session."""
     return _session().create_temp_table(name, source)
 
+
 ###
 # set_.* (session management)
 ###
+
 
 def set_session(session: Session):
     """Sets the global context's current session."""
@@ -184,6 +219,7 @@ def set_session(session: Session):
     # ```
     global _SESSION
     _SESSION = session
+
 
 def set_catalog(name: str):
     """Sets the global session's current catalog."""

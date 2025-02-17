@@ -201,7 +201,11 @@ impl<'a> SQLPlanner<'a> {
     fn get_table(&self, ident: &Identifier) -> Option<Relation> {
         self.session()
             .get_table(ident)
-            .map(|table| table.get_logical_plan().expect("could not create a logical plan from the table"))
+            .map(|table| {
+                table
+                    .get_logical_plan()
+                    .expect("could not create a logical plan from the table")
+            })
             .ok()
             .map(|view| Relation::new(view.into(), ident.name.to_string()))
     }

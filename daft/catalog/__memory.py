@@ -5,7 +5,6 @@ from __future__ import annotations
 from daft.catalog import Catalog, Table, TableSource
 from daft.dataframe.dataframe import DataFrame
 from daft.logical.schema import Schema
-from daft.recordbatch.micropartition import MicroPartition
 
 
 class MemoryCatalog(Catalog):
@@ -17,10 +16,14 @@ class MemoryCatalog(Catalog):
         self._tables = tables
 
     def __repr__(self) -> str:
-        return f"TmpCatalog('{self._name}')"
+        return f"MemoryCatalog('{self._name}')"
 
-    def name(self) -> str:
-        return self._name
+    ###
+    # create_*
+    ###
+
+    def create_table(self, name: str, source: TableSource = None) -> Table:
+        raise NotImplementedError()
 
 
 class MemoryTable(Table):
@@ -38,7 +41,7 @@ class MemoryTable(Table):
         return self._inner.schema()
 
     def __repr__(self) -> str:
-        return f"table('{self._name}')"
+        return f"MemoryTable('{self._name}')"
 
     ###
     # DataFrame Methods

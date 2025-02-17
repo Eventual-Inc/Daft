@@ -9,7 +9,7 @@ use crate::{bindings::Bindings, error::Result};
 pub type TableRef = Arc<dyn Table>;
 
 /// Table sources for now are just references.
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum TableSource {
     /// Table source for CREATE TABLE t (<schema>)
     Schema(SchemaRef),
@@ -85,7 +85,10 @@ impl Table for View {
     #[cfg(feature = "python")]
     fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
         use pyo3::{types::PyAnyMethods, IntoPyObject};
+
         use crate::python::PyTable;
-        PyTable::new(self.clone().arced()).into_pyobject(py)?.extract()
+        PyTable::new(self.clone().arced())
+            .into_pyobject(py)?
+            .extract()
     }
 }

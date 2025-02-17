@@ -3,7 +3,10 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use daft_catalog::{Bindings, Catalog, CatalogProvider, CatalogRef, Identifier, Table, TableProvider, TableRef, TableSource, View};
+use daft_catalog::{
+    Bindings, Catalog, CatalogProvider, CatalogRef, Identifier, Table, TableProvider, TableRef,
+    TableSource, View,
+};
 use daft_logical_plan::LogicalPlanBuilder;
 use uuid::Uuid;
 
@@ -91,7 +94,9 @@ impl Session {
             TableSource::Schema(_) => unsupported_err!("temporary table with schema"),
             TableSource::View(plan) => View::from(plan.clone()).arced(),
         };
-        self.state_mut().tables.insert(name.to_string(), table.clone());
+        self.state_mut()
+            .tables
+            .insert(name.to_string(), table.clone());
         Ok(table)
     }
 
@@ -102,7 +107,7 @@ impl Session {
 
     /// Returns the session's current schema.
     pub fn current_namespace(&self) -> Result<()> {
-        todo!()
+        unsupported_err!("current namespace")
     }
 
     /// Returns the catalog or an object not found error.
@@ -157,7 +162,6 @@ impl Session {
         Ok(())
     }
 }
-
 
 impl Default for Session {
     fn default() -> Self {

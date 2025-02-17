@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use daft_catalog::{python::{PyCatalog, PyCatalogImpl, PyIdentifier, PyTable, PyTableSource}, Namespace};
+use daft_catalog::{
+    python::{PyCatalog, PyCatalogImpl, PyIdentifier, PyTable, PyTableSource},
+    Namespace,
+};
 use pyo3::prelude::*;
 
 use crate::Session;
@@ -10,7 +13,6 @@ pub struct PySession(Session);
 
 #[pymethods]
 impl PySession {
-
     #[staticmethod]
     pub fn empty() -> Self {
         Self(Session::empty())
@@ -29,7 +31,9 @@ impl PySession {
     }
 
     pub fn attach(&self, catalog: PyObject, alias: String) -> PyResult<()> {
-        Ok(self.0.attach(Arc::new(PyCatalogImpl::from(catalog)), alias)?)
+        Ok(self
+            .0
+            .attach(Arc::new(PyCatalogImpl::from(catalog)), alias)?)
     }
 
     pub fn detach(&self, catalog: &str) -> PyResult<()> {
