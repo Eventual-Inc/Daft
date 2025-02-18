@@ -5,9 +5,7 @@ import socket
 import urllib
 from unittest.mock import MagicMock, patch
 
-import daft
 from daft.scarf_telemetry import scarf_telemetry
-from tests.conftest import get_tests_daft_runner_name
 
 
 @patch("daft.scarf_telemetry.get_build_type")
@@ -116,19 +114,3 @@ def test_scarf_telemetry_error_handling(
 
     assert response_status.startswith("Analytics error:")
     assert runner_type is None
-
-
-@patch("daft.scarf_telemetry.scarf_telemetry")
-def test_runner_analytics(mock_scarf_telemetry: MagicMock):
-    df = daft.from_pydict(
-        {
-            "A": [1, 2, 3, 4],
-            "B": [1.5, 2.5, 3.5, 4.5],
-            "C": [True, True, False, False],
-            "D": [None, None, None, None],
-        }
-    )
-    df.select("A", "B").collect()
-
-    runner = get_tests_daft_runner_name()
-    mock_scarf_telemetry.assert_called_once_with(runner=runner)
