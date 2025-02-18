@@ -134,28 +134,44 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
 
     """
-    # try from iceberg
-    try:
-        from daft.catalog.__iceberg import IcebergCatalog, InnerCatalog
-
-        if isinstance(catalog, InnerCatalog):
-            return native_catalog.register_python_catalog(IcebergCatalog(catalog), name)
-    except ImportError:
-        pass
-    # try from unity
-    try:
-        from daft.catalog.__unity import UnityCatalog, InnerCatalog
-
-        if isinstance(catalog, InnerCatalog):
-            return native_catalog.register_python_catalog(UnityCatalog(catalog), name)
-    except ImportError:
-        pass
-    # err! unknown
+    if (c := Catalog._try_from(catalog)) is not None:
+        return native_catalog.register_python_catalog(c, name)
     raise ValueError(f"Unsupported catalog type: {type(catalog)}")
 
 
 class Catalog(ABC):
     """Interface for python catalog implementations."""
+
+    @property
+    def inner(self) -> object | None:
+        """Returns the inner catalog object if this is an adapter."""
+
+    @staticmethod
+    def _try_from(obj: object) -> Catalog | None:
+        for factory in (Catalog._try_from_iceberg, Catalog._try_from_unity):
+            if (c := factory(obj)) is not None:
+                return c
+        return None
+
+    @staticmethod
+    def _try_from_iceberg(obj: object) -> Catalog | None:
+        """Returns a Daft Catalog instance from an Iceberg catalog."""
+        try:
+            from daft.catalog.__iceberg import IcebergCatalog
+
+            return IcebergCatalog._try_from(obj)
+        except ImportError:
+            return None
+
+    @staticmethod
+    def _try_from_unity(obj: object) -> Catalog | None:
+        """Returns a Daft Catalog instance from a Unity catalog."""
+        try:
+            from daft.catalog.__unity import UnityCatalog
+
+            return UnityCatalog._try_from(obj)
+        except ImportError:
+            return None
 
     ###
     # list_*
@@ -236,6 +252,10 @@ class Identifier(Sequence):
 
 class Table(ABC):
     """Interface for python table implementations."""
+
+    @property
+    def inner(self) -> object | None:
+        """Returns the inner table object if this is an adapter."""
 
     # TODO deprecated catalog APIs #3819
     def to_dataframe(self) -> DataFrame:

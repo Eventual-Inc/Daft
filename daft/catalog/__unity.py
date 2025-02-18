@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.catalog import Catalog, Table
+from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
+from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
-    from daft.unity_catalog import UnityCatalog as InnerCatalog
-    from daft.unity_catalog import UnityCatalogTable as InnerTable
 
 
 class UnityCatalog(Catalog):
@@ -18,6 +18,18 @@ class UnityCatalog(Catalog):
     def __init__(self, unity_catalog: InnerCatalog):
         """DEPRECATED: Please use `Catalog.from_unity`."""
         self._inner = unity_catalog
+
+    @staticmethod
+    def _try_from(obj: object) -> UnityCatalog | None:
+        """Returns an UnityCatalog instance if the given object can be adapted so."""
+        if isinstance(obj, InnerCatalog):
+            return UnityCatalog(obj)
+        return None
+
+    @property
+    def inner(self) -> InnerCatalog:
+        """Returns the inner unity catalog."""
+        return self._inner
 
     ###
     # get_*
@@ -56,6 +68,18 @@ class UnityTable(Table):
 
     def __init__(self, unity_table: InnerTable):
         self._inner = unity_table
+
+    @staticmethod
+    def _try_from(obj: object) -> UnityTable | None:
+        """Returns an UnityTable if the given object can be adapted so."""
+        if isinstance(obj, InnerTable):
+            return UnityTable(obj)
+        return None
+
+    @property
+    def inner(self) -> InnerTable:
+        """Returns the inner unity table."""
+        return self._inner
 
     def read(self) -> DataFrame:
         import daft

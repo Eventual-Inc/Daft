@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pyiceberg.catalog import Catalog as InnerCatalog
+from pyiceberg.table import Table as InnerTable
+
 from daft.catalog import Catalog, Table
 
 if TYPE_CHECKING:
-    from pyiceberg.catalog import Catalog as InnerCatalog
-    from pyiceberg.table import Table as InnerTable
-
     from daft.dataframe import DataFrame
 
 
@@ -19,6 +19,18 @@ class IcebergCatalog(Catalog):
     def __init__(self, pyiceberg_catalog: InnerCatalog):
         """DEPRECATED: Please use `Catalog.from_iceberg`."""
         self._inner = pyiceberg_catalog
+
+    @staticmethod
+    def _try_from(obj: object) -> IcebergCatalog | None:
+        """Returns an IcebergCatalog instance if the given object can be adapted so."""
+        if isinstance(obj, InnerCatalog):
+            return IcebergCatalog(obj)
+        return None
+
+    @property
+    def inner(self) -> InnerCatalog:
+        """Returns the inner iceberg catalog."""
+        return self._inner
 
     ###
     # get_*
@@ -41,6 +53,18 @@ class IcebergTable(Table):
 
     def __init__(self, inner: InnerTable):
         self._inner = inner
+
+    @staticmethod
+    def _try_from(obj: object) -> IcebergTable | None:
+        """Returns an IcebergTable if the given object can be adapted so."""
+        if isinstance(obj, InnerTable):
+            return IcebergTable(obj)
+        return None
+
+    @property
+    def inner(self) -> InnerTable:
+        """Returns the inner iceberg table."""
+        return self._inner
 
     def read(self) -> DataFrame:
         import daft
