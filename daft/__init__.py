@@ -43,7 +43,6 @@ def refresh_logger() -> None:
 
 __version__ = get_version()
 
-
 ###
 # Initialize analytics
 ###
