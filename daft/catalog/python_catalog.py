@@ -1,24 +1,9 @@
-from __future__ import annotations
+"""DEPRECATED: Please use `from daft.catalog import Catalog, Table`."""
 
-from abc import abstractmethod
-from typing import TYPE_CHECKING
+from daft.catalog import Catalog, Table
 
-if TYPE_CHECKING:
-    from daft.dataframe import DataFrame
+# TODO deprecated catalog APIs #3819
+PythonCatalog = Catalog
 
-
-class PythonCatalog:
-    """Wrapper class for various Python implementations of Data Catalogs."""
-
-    @abstractmethod
-    def list_tables(self, prefix: str) -> list[str]: ...
-
-    @abstractmethod
-    def load_table(self, name: str) -> PythonCatalogTable: ...
-
-
-class PythonCatalogTable:
-    """Wrapper class for various Python implementations of Data Catalog Tables."""
-
-    @abstractmethod
-    def to_dataframe(self) -> DataFrame: ...
+# TODO deprecated catalog APIs #3819
+PythonCatalogTable = Table
