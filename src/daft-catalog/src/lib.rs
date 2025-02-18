@@ -1,20 +1,32 @@
 pub mod catalog;
-mod data_catalog;
-mod data_catalog_table;
 pub mod error;
 mod identifier;
+
+pub use bindings::*;
+pub use catalog::*;
+pub use identifier::*;
+pub use table::*;
+
+#[cfg(feature = "python")]
+pub mod python;
+
+#[cfg(feature = "python")]
+pub use python::register_modules;
+
+// ----------------------------------
+// TODO deprecated catalog APIs #3819
+// ----------------------------------
+
+mod data_catalog;
+mod data_catalog_table;
+
 // Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
 
 use daft_logical_plan::LogicalPlanBuilder;
 pub use data_catalog::DataCatalog;
 pub use data_catalog_table::DataCatalogTable;
-
-#[cfg(feature = "python")]
-pub mod python;
-
 use error::{Error, Result};
-pub use identifier::*;
 
 pub mod global_catalog {
     use std::sync::{Arc, RwLock};

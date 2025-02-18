@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from pyiceberg.catalog import Catalog as InnerCatalog
 from pyiceberg.table import Table as InnerTable
 
-from daft.catalog import Catalog, Table
+from daft.catalog import Catalog, Identifier, Table
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
@@ -43,7 +43,9 @@ class IcebergCatalog(Catalog):
     # get_*
     ###
 
-    def get_table(self, name: str) -> IcebergTable:
+    def get_table(self, name: str | Identifier) -> IcebergTable:
+        if isinstance(name, Identifier):
+            name = tuple(name)  # type: ignore
         return IcebergTable(self._inner.load_table(name))
 
     ###

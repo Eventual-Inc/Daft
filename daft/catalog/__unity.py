@@ -5,7 +5,7 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Table
+from daft.catalog import Catalog, Identifier, Table
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
@@ -42,7 +42,9 @@ class UnityCatalog(Catalog):
     # get_*
     ###
 
-    def get_table(self, name: str) -> UnityTable:
+    def get_table(self, name: str | Identifier) -> UnityTable:
+        if isinstance(name, Identifier):
+            name = ".".join(name)  # TODO unity qualified identifiers
         return UnityTable(self._inner.load_table(name))
 
     ###
