@@ -75,6 +75,18 @@ class IcebergTable(Table):
         """Returns the inner iceberg table."""
         return self._inner
 
+    @staticmethod
+    def _try_from(obj: object) -> IcebergTable | None:
+        """Returns an IcebergTable if the given object can be adapted so."""
+        if isinstance(obj, InnerTable):
+            return IcebergTable(obj)
+        return None
+
+    @property
+    def inner(self) -> InnerTable:
+        """Returns the inner iceberg table."""
+        return self._inner
+
     def read(self) -> DataFrame:
         import daft
 

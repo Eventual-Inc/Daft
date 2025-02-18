@@ -90,6 +90,18 @@ class UnityTable(Table):
         """Returns the inner unity table."""
         return self._inner
 
+    @staticmethod
+    def _try_from(obj: object) -> UnityTable | None:
+        """Returns an UnityTable if the given object can be adapted so."""
+        if isinstance(obj, InnerTable):
+            return UnityTable(obj)
+        return None
+
+    @property
+    def inner(self) -> InnerTable:
+        """Returns the inner unity table."""
+        return self._inner
+
     def read(self) -> DataFrame:
         import daft
 
