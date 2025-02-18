@@ -1,8 +1,5 @@
 pub mod file_info;
-use std::{
-    hash::{Hash, Hasher},
-    sync::atomic::AtomicUsize,
-};
+use std::hash::{Hash, Hasher};
 
 use common_partitioning::PartitionCacheEntry;
 use common_scan_info::PhysicalScanInfo;
@@ -66,13 +63,10 @@ impl Hash for InMemoryInfo {
     }
 }
 
-static PLACEHOLDER_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PlaceHolderInfo {
     pub source_schema: SchemaRef,
     pub clustering_spec: ClusteringSpecRef,
-    pub source_id: usize,
 }
 
 impl PlaceHolderInfo {
@@ -80,7 +74,6 @@ impl PlaceHolderInfo {
         Self {
             source_schema,
             clustering_spec,
-            source_id: PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         }
     }
 }

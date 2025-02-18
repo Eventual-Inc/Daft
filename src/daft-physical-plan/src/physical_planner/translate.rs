@@ -40,7 +40,8 @@ pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
     physical_children: &mut Vec<PhysicalPlanRef>,
     cfg: &DaftExecutionConfig,
-) -> DaftResult<PhysicalPlanRef> {
+) -> DaftResult<(PhysicalPlanRef, bool)> {
+    let mut is_logical_boundary = false;
     let physical_plan = match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
             SourceInfo::Physical(PhysicalScanInfo {
@@ -100,8 +101,8 @@ pub(super) fn translate_single_logical_node(
                 .arced();
                 Ok(scan)
             }
-            SourceInfo::PlaceHolder(PlaceHolderInfo { source_id, .. }) => {
-                panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
+            SourceInfo::PlaceHolder(PlaceHolderInfo { .. }) => {
+                panic!("Placeholder should not get to translation. This should have been optimized away");
             }
         },
         LogicalPlan::Project(LogicalProject { projection, .. }) => {
@@ -196,40 +197,41 @@ pub(super) fn translate_single_logical_node(
                 // Repartitioning to the same partition spec as the input is always a no-op.
                 || (&clustering_spec == input_clustering_spec.as_ref())
             {
-                return Ok(input_physical);
-            }
-            let repartitioned_plan = match clustering_spec {
-                ClusteringSpec::Unknown(_) => {
-                    match num_partitions.cmp(&input_num_partitions) {
-                        Ordering::Equal => {
-                            // # of output partitions == # of input partitions; this should have already short-circuited with
-                            // a repartition drop above.
-                            unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
+                Ok(input_physical)
+            } else {
+                let repartitioned_plan = match clustering_spec {
+                    ClusteringSpec::Unknown(_) => {
+                        match num_partitions.cmp(&input_num_partitions) {
+                            Ordering::Equal => {
+                                // # of output partitions == # of input partitions; this should have already short-circuited with
+                                // a repartition drop above.
+                                unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
+                            }
+                            _ => PhysicalPlan::ShuffleExchange(
+                                ShuffleExchangeFactory::new(input_physical)
+                                    .get_split_or_coalesce(num_partitions),
+                            ),
                         }
-                        _ => PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(input_physical)
-                                .get_split_or_coalesce(num_partitions),
-                        ),
                     }
-                }
-                ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
-                    ShuffleExchangeFactory::new(input_physical)
-                        .get_random_partitioning(num_partitions, Some(cfg)),
-                ),
-                ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
-                    PhysicalPlan::ShuffleExchange(
-                        ShuffleExchangeFactory::new(input_physical).get_hash_partitioning(
-                            by,
-                            num_partitions,
-                            Some(cfg),
-                        ),
-                    )
-                }
-                ClusteringSpec::Range(_) => {
-                    unreachable!("Repartitioning by range is not supported")
-                }
-            };
-            Ok(repartitioned_plan.arced())
+                    ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
+                        ShuffleExchangeFactory::new(input_physical)
+                            .get_random_partitioning(num_partitions, Some(cfg)),
+                    ),
+                    ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
+                        PhysicalPlan::ShuffleExchange(
+                            ShuffleExchangeFactory::new(input_physical).get_hash_partitioning(
+                                by,
+                                num_partitions,
+                                Some(cfg),
+                            ),
+                        )
+                    }
+                    ClusteringSpec::Range(_) => {
+                        unreachable!("Repartitioning by range is not supported")
+                    }
+                };
+                Ok(repartitioned_plan.arced())
+            }
         }
         LogicalPlan::Distinct(LogicalDistinct { input, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -605,6 +607,7 @@ pub(super) fn translate_single_logical_node(
                         // Note that these merge-join inputs will most likely not have aligned boundaries, which could
                         // result in less efficient merge-joins (~all-to-all broadcast).
                         if !is_left_sort_partitioned {
+                            is_logical_boundary = true;
                             left_physical = PhysicalPlan::Sort(Sort::new(
                                 left_physical,
                                 left_on.clone(),
@@ -615,6 +618,7 @@ pub(super) fn translate_single_logical_node(
                             .arced();
                         }
                         if !is_right_sort_partitioned {
+                            is_logical_boundary = true;
                             right_physical = PhysicalPlan::Sort(Sort::new(
                                 right_physical,
                                 right_on.clone(),
@@ -667,6 +671,7 @@ pub(super) fn translate_single_logical_node(
                     if num_left_partitions != num_partitions
                         || (num_partitions > 1 && !is_left_hash_partitioned)
                     {
+                        is_logical_boundary = true;
                         left_physical = PhysicalPlan::ShuffleExchange(
                             ShuffleExchangeFactory::new(left_physical).get_hash_partitioning(
                                 left_on.clone(),
@@ -679,6 +684,7 @@ pub(super) fn translate_single_logical_node(
                     if num_right_partitions != num_partitions
                         || (num_partitions > 1 && !is_right_hash_partitioned)
                     {
+                        is_logical_boundary = true;
                         right_physical = PhysicalPlan::ShuffleExchange(
                             ShuffleExchangeFactory::new(right_physical).get_hash_partitioning(
                                 right_on.clone(),
@@ -811,7 +817,7 @@ pub(super) fn translate_single_logical_node(
     // different size estimations depending on when the approximation is computed. Once we fix
     // this, we can add back in the assertion here.
     // debug_assert!(logical_plan.get_stats().approx_stats == physical_plan.approximate_stats());
-    Ok(physical_plan)
+    Ok((physical_plan, is_logical_boundary))
 }
 
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {

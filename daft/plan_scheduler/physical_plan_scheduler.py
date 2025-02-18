@@ -76,14 +76,14 @@ class AdaptivePhysicalPlanScheduler:
         scheduler = _AdaptivePhysicalPlanScheduler.from_logical_plan_builder(builder._builder, daft_execution_config)
         return cls(scheduler)
 
-    def next(self) -> tuple[int | None, PhysicalPlanScheduler]:
-        sid, pps = self._scheduler.next()
-        return sid, PhysicalPlanScheduler(pps)
+    def next(self) -> tuple[bool, PhysicalPlanScheduler]:
+        is_final, pps = self._scheduler.next()
+        return is_final, PhysicalPlanScheduler(pps)
 
     def is_done(self) -> bool:
         return self._scheduler.is_done()
 
-    def update(self, source_id: int, cache_entry: PartitionCacheEntry):
+    def update(self, cache_entry: PartitionCacheEntry):
         num_partitions = cache_entry.num_partitions()
         assert num_partitions is not None
         size_bytes = cache_entry.size_bytes()
@@ -92,7 +92,6 @@ class AdaptivePhysicalPlanScheduler:
         assert num_rows is not None
 
         self._scheduler.update(
-            source_id,
             cache_entry.key,
             cache_entry,
             num_partitions=num_partitions,
