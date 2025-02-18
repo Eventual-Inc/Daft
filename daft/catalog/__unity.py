@@ -33,11 +33,6 @@ class UnityCatalog(Catalog):
             return c
         raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
 
-    @property
-    def inner(self) -> InnerCatalog:
-        """Returns the inner unity catalog."""
-        return self._inner
-
     ###
     # get_*
     ###

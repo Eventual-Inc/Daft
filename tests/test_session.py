@@ -26,8 +26,8 @@ def test_attach():
     cat2 = Catalog.from_pydict({})
     #
     # attach them..
-    sess.attach(cat1, alias="cat1")
-    sess.attach(cat2, alias="cat2")
+    sess.attach_catalog(cat1, alias="cat1")
+    sess.attach_catalog(cat2, alias="cat2")
     #
     # list_catalogs
     assert 2 == len(sess.list_catalogs())
@@ -47,16 +47,16 @@ def test_detach():
     # setup.
     cat1 = Catalog.from_pydict({})
     cat2 = Catalog.from_pydict({})
-    sess.attach(cat1, alias="cat1")
-    sess.attach(cat2, alias="cat2")
+    sess.attach_catalog(cat1, alias="cat1")
+    sess.attach_catalog(cat2, alias="cat2")
     #
     #
     assert 2 == len(sess.list_catalogs())
     #
     # detach existing
-    sess.detach("cat1")
+    sess.detach_catalog("cat1")
     assert 1 == len(sess.list_catalogs())
     #
     # error!
     with pytest.raises(Exception, match="not found"):
-        sess.detach("cat1")
+        sess.detach_catalog("cat1")
