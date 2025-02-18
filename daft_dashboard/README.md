@@ -1,5 +1,10 @@
 # Daft Dashboard
 
+Daft dashboard is a locally-hosted web-application that allows users to view some statistics and metrics regarding their previously run queries in their browser.
+
+Daft dashboard was designed specifically to be locally-hosted; the static HTML/CSS/JS files are included in the installed wheel (upon running `uv pip install "getdaft\[dashboard\]"` and are served via a simple local file-server.
+Namely, no internet connection is required to run this feature.
+
 ## Usage
 
 ```py
@@ -30,6 +35,10 @@ daft_dashboard/
 
 ## Building
 
+### Prerequisites
+
+You'll need [`bun`](https://bun.sh/docs/installation) installed prior to running the below builds.
+
 ### Development
 
 1. Run the NextJS development server:
@@ -37,7 +46,6 @@ daft_dashboard/
 cd daft_dashboard/frontend
 bun dev
 ```
-(you will need to have [`bun`](https://bun.sh/docs/installation) installed).
 This will start a server on port `3000`.
 You can verify this by going to your browser and navigating to `http://localhost:3000`.
 
