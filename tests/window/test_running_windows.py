@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from daft import Window, col
-from daft.expressions import mean, sum
+
+# from daft.expressions import mean, sum
 
 
 @pytest.fixture
@@ -40,7 +41,15 @@ def test_cumulative_sum(make_df):
     )
 
     window = Window.partition_by("store").order_by("date").rows_between(Window.unboundedPreceding, Window.currentRow)
-    result = df.select([col("store"), col("date"), col("sales"), sum("sales").over(window).alias("running_total")])
+    result = df.select(
+        [
+            col("store"),
+            col("date"),
+            col("sales"),
+            # sum("sales").over(window).alias("running_total"),
+            col("sales").sum().over(window).alias("running_total"),
+        ]
+    )
 
     # TODO: Add expected output once implementation is ready
     expected = None
@@ -68,9 +77,12 @@ def test_cumulative_multiple_aggs(make_df):
             col("date"),
             col("sales"),
             col("returns"),
-            sum("sales").over(window).alias("running_sales"),
-            sum("returns").over(window).alias("running_returns"),
-            mean("sales").over(window).alias("avg_sales_to_date"),
+            # sum("sales").over(window).alias("running_sales"),
+            # sum("returns").over(window).alias("running_returns"),
+            # mean("sales").over(window).alias("avg_sales_to_date"),
+            col("sales").sum().over(window).alias("running_sales"),
+            col("returns").sum().over(window).alias("running_returns"),
+            col("sales").mean().over(window).alias("avg_sales_to_date"),
         ]
     )
 
@@ -91,8 +103,10 @@ def test_global_cumulative(make_df):
         [
             col("date"),
             col("sales"),
-            sum("sales").over(window).alias("total_sales_to_date"),
-            mean("sales").over(window).alias("avg_sales_to_date"),
+            # sum("sales").over(window).alias("total_sales_to_date"),
+            # mean("sales").over(window).alias("avg_sales_to_date"),
+            col("sales").sum().over(window).alias("total_sales_to_date"),
+            col("sales").mean().over(window).alias("avg_sales_to_date"),
         ]
     )
 
@@ -125,7 +139,15 @@ def test_running_window_fixed_rows(make_df):
 
     # 3-day moving average
     window = Window.partition_by("store").order_by("date").rows_between(-2, 0)  # 2 preceding rows and current row
-    result = df.select([col("store"), col("date"), col("sales"), mean("sales").over(window).alias("moving_avg_3day")])
+    result = df.select(
+        [
+            col("store"),
+            col("date"),
+            col("sales"),
+            # mean("sales").over(window).alias("moving_avg_3day"),
+            col("sales").mean().over(window).alias("moving_avg_3day"),
+        ]
+    )
 
     # TODO: Add expected output once implementation is ready
     expected = None
@@ -157,7 +179,13 @@ def test_running_window_mixed_bounds(make_df):
     # Centered 3-day moving average
     window = Window.partition_by("store").order_by("date").rows_between(-1, 1)  # 1 preceding, current, and 1 following
     result = df.select(
-        [col("store"), col("date"), col("sales"), mean("sales").over(window).alias("centered_moving_avg")]
+        [
+            col("store"),
+            col("date"),
+            col("sales"),
+            # mean("sales").over(window).alias("centered_moving_avg"),
+            col("sales").mean().over(window).alias("centered_moving_avg"),
+        ]
     )
 
     # TODO: Add expected output once implementation is ready

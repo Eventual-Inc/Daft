@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from daft import Window, col
-from daft.expressions import count, mean, sum
+
+# from daft.expressions import count, mean, sum
 
 
 @pytest.fixture
@@ -33,8 +34,10 @@ def test_range_7day_window(make_df):
         [
             col("date"),
             col("value"),
-            mean("value").over(window).alias("7day_avg"),
-            sum("value").over(window).alias("7day_sum"),
+            # mean("value").over(window).alias("7day_avg"),
+            # sum("value").over(window).alias("7day_sum"),
+            col("value").mean().over(window).alias("7day_avg"),
+            col("value").sum().over(window).alias("7day_sum"),
         ]
     )
 
@@ -62,8 +65,10 @@ def test_range_partition_7day_window(make_df):
             col("category"),
             col("date"),
             col("value"),
-            mean("value").over(window).alias("7day_avg"),
-            sum("value").over(window).alias("7day_sum"),
+            # mean("value").over(window).alias("7day_avg"),
+            # sum("value").over(window).alias("7day_sum"),
+            col("value").mean().over(window).alias("7day_avg"),
+            col("value").sum().over(window).alias("7day_sum"),
         ]
     )
 
@@ -84,8 +89,10 @@ def test_range_numeric_window(make_df):
         [
             col("id"),
             col("value"),
-            mean("value").over(window).alias("range_avg"),
-            count("value").over(window).alias("range_count"),
+            # mean("value").over(window).alias("range_avg"),
+            # count("value").over(window).alias("range_count"),
+            col("value").mean().over(window).alias("range_avg"),
+            col("value").count().over(window).alias("range_count"),
         ]
     )
 
@@ -111,8 +118,10 @@ def test_range_mixed_bounds(make_df):
         [
             col("date"),
             col("value"),
-            mean("value").over(window).alias("7day_centered_avg"),
-            sum("value").over(window).alias("7day_centered_sum"),
+            # mean("value").over(window).alias("7day_centered_avg"),
+            # sum("value").over(window).alias("7day_centered_sum"),
+            col("value").mean().over(window).alias("7day_centered_avg"),
+            col("value").sum().over(window).alias("7day_centered_sum"),
         ]
     )
 
@@ -138,8 +147,10 @@ def test_range_unbounded(make_df):
         [
             col("date"),
             col("value"),
-            mean("value").over(window).alias("cumulative_avg"),
-            sum("value").over(window).alias("cumulative_sum"),
+            # mean("value").over(window).alias("cumulative_avg"),
+            # sum("value").over(window).alias("cumulative_sum"),
+            col("value").mean().over(window).alias("cumulative_avg"),
+            col("value").sum().over(window).alias("cumulative_sum"),
         ]
     )
 
@@ -167,8 +178,10 @@ def test_range_distributed(make_df, n_partitions):
         [
             col("date"),
             col("value"),
-            mean("value").over(window).alias("7day_avg"),
-            sum("value").over(window).alias("7day_sum"),
+            # mean("value").over(window).alias("7day_avg"),
+            # sum("value").over(window).alias("7day_sum"),
+            col("value").mean().over(window).alias("7day_avg"),
+            col("value").sum().over(window).alias("7day_sum"),
         ]
     )
 

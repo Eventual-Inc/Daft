@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from daft import Window, col
-from daft.expressions import dense_rank, max, mean, min, rank, row_number, sum
+
+# from daft.expressions import dense_rank, max, mean, min, rank, row_number, sum
 
 
 @pytest.fixture
@@ -36,9 +37,12 @@ def test_global_rank_basic(make_df):
     result = df.select(
         [
             col("value"),
-            rank().over(window).alias("rank"),
-            dense_rank().over(window).alias("dense_rank"),
-            row_number().over(window).alias("row_num"),
+            # rank().over(window).alias("rank"),
+            # dense_rank().over(window).alias("dense_rank"),
+            # row_number().over(window).alias("row_num"),
+            col("value").rank().over(window).alias("rank"),
+            col("value").dense_rank().over(window).alias("dense_rank"),
+            col("value").row_number().over(window).alias("row_num"),
         ]
     )
 
@@ -58,9 +62,12 @@ def test_global_rank_desc(make_df):
     result = df.select(
         [
             col("value"),
-            rank().over(window).alias("rank"),
-            dense_rank().over(window).alias("dense_rank"),
-            row_number().over(window).alias("row_num"),
+            # rank().over(window).alias("rank"),
+            # dense_rank().over(window).alias("dense_rank"),
+            # row_number().over(window).alias("row_num"),
+            col("value").rank().over(window).alias("rank"),
+            col("value").dense_rank().over(window).alias("dense_rank"),
+            col("value").row_number().over(window).alias("row_num"),
         ]
     )
 
@@ -81,8 +88,10 @@ def test_global_running_total(make_df):
         [
             col("date"),
             col("value"),
-            sum("value").over(window).alias("running_total"),
-            mean("value").over(window).alias("running_avg"),
+            # sum("value").over(window).alias("running_total"),
+            # mean("value").over(window).alias("running_avg"),
+            col("value").sum().over(window).alias("running_total"),
+            col("value").mean().over(window).alias("running_avg"),
         ]
     )
 
@@ -103,8 +112,10 @@ def test_global_running_stats(make_df):
         [
             col("date"),
             col("value"),
-            min("value").over(window).alias("running_min"),
-            max("value").over(window).alias("running_max"),
+            # min("value").over(window).alias("running_min"),
+            # max("value").over(window).alias("running_max"),
+            col("value").min().over(window).alias("running_min"),
+            col("value").max().over(window).alias("running_max"),
         ]
     )
 
@@ -125,9 +136,12 @@ def test_global_rank_distributed(make_df, n_partitions):
     result = df.select(
         [
             col("value"),
-            rank().over(window).alias("rank"),
-            dense_rank().over(window).alias("dense_rank"),
-            row_number().over(window).alias("row_num"),
+            # rank().over(window).alias("rank"),
+            # dense_rank().over(window).alias("dense_rank"),
+            # row_number().over(window).alias("row_num"),
+            col("value").rank().over(window).alias("rank"),
+            col("value").dense_rank().over(window).alias("dense_rank"),
+            col("value").row_number().over(window).alias("row_num"),
         ]
     )
 

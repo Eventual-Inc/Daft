@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from daft import Window, col
-from daft.expressions import lag, lead
+
+# from daft.expressions import lag, lead
 
 
 @pytest.fixture
@@ -40,7 +41,15 @@ def test_lag_basic(make_df):
     )
 
     window = Window.partition_by("stock").order_by("date")
-    result = df.select([col("stock"), col("date"), col("price"), lag("price").over(window).alias("prev_price")])
+    result = df.select(
+        [
+            col("stock"),
+            col("date"),
+            col("price"),
+            # lag("price").over(window).alias("prev_price"),
+            col("price").lag().over(window).alias("prev_price"),
+        ]
+    )
 
     # TODO: Add expected output once implementation is ready
     expected = None
@@ -61,7 +70,15 @@ def test_lead_basic(make_df):
     )
 
     window = Window.partition_by("stock").order_by("date")
-    result = df.select([col("stock"), col("date"), col("price"), lead("price").over(window).alias("next_price")])
+    result = df.select(
+        [
+            col("stock"),
+            col("date"),
+            col("price"),
+            # lead("price").over(window).alias("next_price"),
+            col("price").lead().over(window).alias("next_price"),
+        ]
+    )
 
     # TODO: Add expected output once implementation is ready
     expected = None
@@ -96,8 +113,10 @@ def test_lag_lead_custom_offset(make_df):
             col("stock"),
             col("date"),
             col("price"),
-            lag("price", offset=2).over(window).alias("price_2_days_ago"),
-            lead("price", offset=2).over(window).alias("price_2_days_ahead"),
+            # lag("price", offset=2).over(window).alias("price_2_days_ago"),
+            # lead("price", offset=2).over(window).alias("price_2_days_ahead"),
+            col("price").lag(offset=2).over(window).alias("price_2_days_ago"),
+            col("price").lead(offset=2).over(window).alias("price_2_days_ahead"),
         ]
     )
 
@@ -125,8 +144,10 @@ def test_lag_lead_default_value(make_df):
             col("stock"),
             col("date"),
             col("price"),
-            lag("price", default=0.0).over(window).alias("prev_price"),
-            lead("price", default=0.0).over(window).alias("next_price"),
+            # lag("price", default=0.0).over(window).alias("prev_price"),
+            # lead("price", default=0.0).over(window).alias("next_price"),
+            col("price").lag(default=0.0).over(window).alias("prev_price"),
+            col("price").lead(default=0.0).over(window).alias("next_price"),
         ]
     )
 
@@ -156,8 +177,10 @@ def test_lag_lead_multiple_order_cols(make_df):
             col("date"),
             col("time"),
             col("price"),
-            lag("price").over(window).alias("prev_price"),
-            lead("price").over(window).alias("next_price"),
+            # lag("price").over(window).alias("prev_price"),
+            # lead("price").over(window).alias("next_price"),
+            col("price").lag().over(window).alias("prev_price"),
+            col("price").lead().over(window).alias("next_price"),
         ]
     )
 

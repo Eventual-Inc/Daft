@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from daft import Window, col
-from daft.expressions import count, dense_rank, mean, rank, sum
+
+# from daft.expressions import count, dense_rank, mean, rank, sum
 
 
 @pytest.fixture
@@ -32,9 +33,12 @@ def test_partition_only_distributed(make_df, n_partitions):
         [
             col("category"),
             col("value"),
-            sum("value").over(window).alias("sum"),
-            mean("value").over(window).alias("avg"),
-            count("value").over(window).alias("count"),
+            # sum("value").over(window).alias("sum"),
+            # mean("value").over(window).alias("avg"),
+            # count("value").over(window).alias("count"),
+            col("value").sum().over(window).alias("sum"),
+            col("value").mean().over(window).alias("avg"),
+            col("value").count().over(window).alias("count"),
         ]
     )
 
@@ -59,8 +63,10 @@ def test_rank_distributed(make_df, n_partitions):
         [
             col("category"),
             col("value"),
-            rank().over(window).alias("rank"),
-            dense_rank().over(window).alias("dense_rank"),
+            # rank().over(window).alias("rank"),
+            # dense_rank().over(window).alias("dense_rank"),
+            col("value").rank().over(window).alias("rank"),
+            col("value").dense_rank().over(window).alias("dense_rank"),
         ]
     )
 
@@ -85,7 +91,15 @@ def test_running_window_distributed(make_df, n_partitions):
     )
 
     window = Window.partition_by("store").order_by("date").rows_between(Window.unboundedPreceding, Window.currentRow)
-    result = df.select([col("store"), col("date"), col("sales"), sum("sales").over(window).alias("running_total")])
+    result = df.select(
+        [
+            col("store"),
+            col("date"),
+            col("sales"),
+            # sum("sales").over(window).alias("running_total"),
+            col("sales").sum().over(window).alias("running_total"),
+        ]
+    )
 
     # TODO: Add expected output once implementation is ready
     expected = None
@@ -104,9 +118,12 @@ def test_skewed_partition_only(make_df, skewed_data):
         [
             col("category"),
             col("value"),
-            sum("value").over(window).alias("sum"),
-            mean("value").over(window).alias("avg"),
-            count("value").over(window).alias("count"),
+            # sum("value").over(window).alias("sum"),
+            # mean("value").over(window).alias("avg"),
+            # count("value").over(window).alias("count"),
+            col("value").sum().over(window).alias("sum"),
+            col("value").mean().over(window).alias("avg"),
+            col("value").count().over(window).alias("count"),
         ]
     )
 
@@ -127,8 +144,10 @@ def test_skewed_rank(make_df, skewed_data):
         [
             col("category"),
             col("value"),
-            rank().over(window).alias("rank"),
-            dense_rank().over(window).alias("dense_rank"),
+            # rank().over(window).alias("rank"),
+            # dense_rank().over(window).alias("dense_rank"),
+            col("value").rank().over(window).alias("rank"),
+            col("value").dense_rank().over(window).alias("dense_rank"),
         ]
     )
 
@@ -152,7 +171,15 @@ def test_skewed_running_window(make_df):
     )
 
     window = Window.partition_by("store").order_by("date").rows_between(Window.unboundedPreceding, Window.currentRow)
-    result = df.select([col("store"), col("date"), col("sales"), sum("sales").over(window).alias("running_total")])
+    result = df.select(
+        [
+            col("store"),
+            col("date"),
+            col("sales"),
+            # sum("sales").over(window).alias("running_total"),
+            col("sales").sum().over(window).alias("running_total"),
+        ]
+    )
 
     # TODO: Add expected output once implementation is ready
     expected = None

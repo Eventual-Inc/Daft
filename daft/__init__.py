@@ -94,6 +94,7 @@ from daft.series import Series
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
+from daft.window import Window
 
 to_struct = Expression.to_struct
 
@@ -110,6 +111,7 @@ __all__ = [
     "Schema",
     "Series",
     "TimeUnit",
+    "Window",
     "coalesce",
     "col",
     "execution_config_ctx",

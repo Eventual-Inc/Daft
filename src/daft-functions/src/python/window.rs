@@ -15,11 +15,13 @@ simple_python_wrapper!(nth_value, crate::window::nth_value, [expr: PyExpr, n: i6
 
 // Offset functions with optional default value
 #[pyfunction]
+#[pyo3(signature = (expr, offset, default=None))]
 pub fn lag(expr: PyExpr, offset: i64, default: Option<PyExpr>) -> PyResult<PyExpr> {
-    Ok(crate::window::lag(expr.into(), offset, default.map(Into::into)).into())
+    Ok(crate::window::lag(expr, offset, default.map(Into::into)))
 }
 
 #[pyfunction]
+#[pyo3(signature = (expr, offset, default=None))]
 pub fn lead(expr: PyExpr, offset: i64, default: Option<PyExpr>) -> PyResult<PyExpr> {
-    Ok(crate::window::lead(expr.into(), offset, default.map(Into::into)).into())
+    Ok(crate::window::lead(expr, offset, default.map(Into::into)))
 }

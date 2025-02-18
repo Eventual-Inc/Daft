@@ -46,6 +46,30 @@ if TYPE_CHECKING:
     from daft.io import IOConfig
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
+
+    # Type hints for window functions
+    def _window_func(expr: _PyExpr) -> _PyExpr: ...
+
+    native.rank = _window_func
+    native.dense_rank = _window_func
+    native.row_number = _window_func
+    native.percent_rank = _window_func
+    native.first_value = _window_func
+    native.last_value = _window_func
+
+    def _ntile(expr: _PyExpr, n: int) -> _PyExpr: ...
+
+    native.ntile = _ntile
+
+    def _nth_value(expr: _PyExpr, n: int) -> _PyExpr: ...
+
+    native.nth_value = _nth_value
+
+    def _lag_lead(expr: _PyExpr, offset: int, default: _PyExpr | None) -> _PyExpr: ...
+
+    native.lag = _lag_lead
+    native.lead = _lag_lead
+
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
 elif os.getenv("DAFT_SPHINX_BUILD") == "1":

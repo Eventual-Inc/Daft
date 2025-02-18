@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from daft import Window, col
-from daft.expressions import mean, rank, sum
+
+# from daft.expressions import mean, rank, sum
 
 
 @pytest.fixture
@@ -42,9 +43,12 @@ def test_multiple_window_specs_same_col(make_df):
             col("category"),
             col("date"),
             col("value"),
-            mean("value").over(partition_window).alias("category_avg"),
-            rank().over(ordered_window).alias("rank_in_category"),
-            sum("value").over(running_window).alias("running_total"),
+            # mean("value").over(partition_window).alias("category_avg"),
+            # rank().over(ordered_window).alias("rank_in_category"),
+            # sum("value").over(running_window).alias("running_total"),
+            col("value").mean().over(partition_window).alias("category_avg"),
+            col("value").rank().over(ordered_window).alias("rank_in_category"),
+            col("value").sum().over(running_window).alias("running_total"),
         ]
     )
 
@@ -67,8 +71,10 @@ def test_mixed_partition_and_global(make_df):
         [
             col("category"),
             col("value"),
-            mean("value").over(partition_window).alias("category_avg"),
-            rank().over(global_window).alias("global_rank"),
+            # mean("value").over(partition_window).alias("category_avg"),
+            # rank().over(global_window).alias("global_rank"),
+            col("value").mean().over(partition_window).alias("category_avg"),
+            col("value").rank().over(global_window).alias("global_rank"),
         ]
     )
 
@@ -98,8 +104,10 @@ def test_mixed_rows_and_range(make_df):
             col("category"),
             col("date"),
             col("value"),
-            mean("value").over(rows_window).alias("rows_avg"),
-            mean("value").over(range_window).alias("range_avg"),
+            # mean("value").over(rows_window).alias("rows_avg"),
+            # mean("value").over(range_window).alias("range_avg"),
+            col("value").mean().over(rows_window).alias("rows_avg"),
+            col("value").mean().over(range_window).alias("range_avg"),
         ]
     )
 
@@ -138,10 +146,14 @@ def test_complex_window_combination(make_df):
             col("region"),
             col("date"),
             col("value"),
-            mean("value").over(category_window).alias("category_avg"),
-            mean("value").over(region_window).alias("region_avg"),
-            sum("value").over(time_window).alias("running_total"),
-            rank().over(global_window).alias("global_rank"),
+            # mean("value").over(category_window).alias("category_avg"),
+            # mean("value").over(region_window).alias("region_avg"),
+            # sum("value").over(time_window).alias("running_total"),
+            # rank().over(global_window).alias("global_rank"),
+            col("value").mean().over(category_window).alias("category_avg"),
+            col("value").mean().over(region_window).alias("region_avg"),
+            col("value").sum().over(time_window).alias("running_total"),
+            col("value").rank().over(global_window).alias("global_rank"),
         ]
     )
 
@@ -171,7 +183,13 @@ def test_nested_window_functions(make_df):
 
     # First calculate running total
     df_with_running = df.select(
-        [col("category"), col("date"), col("value"), sum("value").over(running_window).alias("running_total")]
+        [
+            col("category"),
+            col("date"),
+            col("value"),
+            # sum("value").over(running_window).alias("running_total"),
+            col("value").sum().over(running_window).alias("running_total"),
+        ]
     )
 
     # Then rank based on running total
@@ -181,7 +199,8 @@ def test_nested_window_functions(make_df):
             col("date"),
             col("value"),
             col("running_total"),
-            rank().over(rank_window).alias("rank_by_running_total"),
+            # rank().over(rank_window).alias("rank_by_running_total"),
+            col("running_total").rank().over(rank_window).alias("rank_by_running_total"),
         ]
     )
 
