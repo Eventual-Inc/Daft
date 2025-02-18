@@ -35,15 +35,13 @@ def test_global_rank_basic(make_df):
 
     window = Window.order_by("value")
     result = df.select(
-        [
-            col("value"),
-            # rank().over(window).alias("rank"),
-            # dense_rank().over(window).alias("dense_rank"),
-            # row_number().over(window).alias("row_num"),
-            col("value").rank().over(window).alias("rank"),
-            col("value").dense_rank().over(window).alias("dense_rank"),
-            col("value").row_number().over(window).alias("row_num"),
-        ]
+        col("value"),
+        # rank().over(window).alias("rank"),
+        # dense_rank().over(window).alias("dense_rank"),
+        # row_number().over(window).alias("row_num"),
+        col("value").rank().over(window).alias("rank"),
+        col("value").dense_rank().over(window).alias("dense_rank"),
+        col("value").row_number().over(window).alias("row_num"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -60,15 +58,13 @@ def test_global_rank_desc(make_df):
 
     window = Window.order_by("value", ascending=False)
     result = df.select(
-        [
-            col("value"),
-            # rank().over(window).alias("rank"),
-            # dense_rank().over(window).alias("dense_rank"),
-            # row_number().over(window).alias("row_num"),
-            col("value").rank().over(window).alias("rank"),
-            col("value").dense_rank().over(window).alias("dense_rank"),
-            col("value").row_number().over(window).alias("row_num"),
-        ]
+        col("value"),
+        # rank().over(window).alias("rank"),
+        # dense_rank().over(window).alias("dense_rank"),
+        # row_number().over(window).alias("row_num"),
+        col("value").rank().over(window).alias("rank"),
+        col("value").dense_rank().over(window).alias("dense_rank"),
+        col("value").row_number().over(window).alias("row_num"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -83,7 +79,7 @@ def test_global_running_total(make_df):
     """
     df = make_df({"date": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"], "value": [100, 150, 120, 180]})
 
-    window = Window.order_by("date").rows_between(Window.unboundedPreceding, Window.currentRow)
+    window = Window.order_by("date").rows_between(Window.unbounded_preceding, Window.current_row)
     result = df.select(
         [
             col("date"),
@@ -107,16 +103,14 @@ def test_global_running_stats(make_df):
     """
     df = make_df({"date": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"], "value": [100, 150, 120, 180]})
 
-    window = Window.order_by("date").rows_between(Window.unboundedPreceding, Window.currentRow)
+    window = Window.order_by("date").rows_between(Window.unbounded_preceding, Window.current_row)
     result = df.select(
-        [
-            col("date"),
-            col("value"),
-            # min("value").over(window).alias("running_min"),
-            # max("value").over(window).alias("running_max"),
-            col("value").min().over(window).alias("running_min"),
-            col("value").max().over(window).alias("running_max"),
-        ]
+        col("date"),
+        col("value"),
+        # min("value").over(window).alias("running_min"),
+        # max("value").over(window).alias("running_max"),
+        col("value").min().over(window).alias("running_min"),
+        col("value").max().over(window).alias("running_max"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -134,15 +128,13 @@ def test_global_rank_distributed(make_df, n_partitions):
 
     window = Window.order_by("value")
     result = df.select(
-        [
-            col("value"),
-            # rank().over(window).alias("rank"),
-            # dense_rank().over(window).alias("dense_rank"),
-            # row_number().over(window).alias("row_num"),
-            col("value").rank().over(window).alias("rank"),
-            col("value").dense_rank().over(window).alias("dense_rank"),
-            col("value").row_number().over(window).alias("row_num"),
-        ]
+        col("value"),
+        # rank().over(window).alias("rank"),
+        # dense_rank().over(window).alias("dense_rank"),
+        # row_number().over(window).alias("row_num"),
+        col("value").rank().over(window).alias("rank"),
+        col("value").dense_rank().over(window).alias("dense_rank"),
+        col("value").row_number().over(window).alias("row_num"),
     )
 
     # TODO: Add expected output once implementation is ready

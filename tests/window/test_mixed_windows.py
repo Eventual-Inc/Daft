@@ -35,21 +35,19 @@ def test_multiple_window_specs_same_col(make_df):
     partition_window = Window.partition_by("category")
     ordered_window = Window.partition_by("category").order_by("date")
     running_window = (
-        Window.partition_by("category").order_by("date").rows_between(Window.unboundedPreceding, Window.currentRow)
+        Window.partition_by("category").order_by("date").rows_between(Window.unbounded_preceding, Window.current_row)
     )
 
     result = df.select(
-        [
-            col("category"),
-            col("date"),
-            col("value"),
-            # mean("value").over(partition_window).alias("category_avg"),
-            # rank().over(ordered_window).alias("rank_in_category"),
-            # sum("value").over(running_window).alias("running_total"),
-            col("value").mean().over(partition_window).alias("category_avg"),
-            col("value").rank().over(ordered_window).alias("rank_in_category"),
-            col("value").sum().over(running_window).alias("running_total"),
-        ]
+        col("category"),
+        col("date"),
+        col("value"),
+        # mean("value").over(partition_window).alias("category_avg"),
+        # rank().over(ordered_window).alias("rank_in_category"),
+        # sum("value").over(running_window).alias("running_total"),
+        col("value").mean().over(partition_window).alias("category_avg"),
+        col("value").rank().over(ordered_window).alias("rank_in_category"),
+        col("value").sum().over(running_window).alias("running_total"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -68,14 +66,12 @@ def test_mixed_partition_and_global(make_df):
     global_window = Window.order_by("value")
 
     result = df.select(
-        [
-            col("category"),
-            col("value"),
-            # mean("value").over(partition_window).alias("category_avg"),
-            # rank().over(global_window).alias("global_rank"),
-            col("value").mean().over(partition_window).alias("category_avg"),
-            col("value").rank().over(global_window).alias("global_rank"),
-        ]
+        col("category"),
+        col("value"),
+        # mean("value").over(partition_window).alias("category_avg"),
+        # rank().over(global_window).alias("global_rank"),
+        col("value").mean().over(partition_window).alias("category_avg"),
+        col("value").rank().over(global_window).alias("global_rank"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -100,15 +96,13 @@ def test_mixed_rows_and_range(make_df):
     range_window = Window.partition_by("category").order_by("date").range_between("1 day preceding", "1 day following")
 
     result = df.select(
-        [
-            col("category"),
-            col("date"),
-            col("value"),
-            # mean("value").over(rows_window).alias("rows_avg"),
-            # mean("value").over(range_window).alias("range_avg"),
-            col("value").mean().over(rows_window).alias("rows_avg"),
-            col("value").mean().over(range_window).alias("range_avg"),
-        ]
+        col("category"),
+        col("date"),
+        col("value"),
+        # mean("value").over(rows_window).alias("rows_avg"),
+        # mean("value").over(range_window).alias("range_avg"),
+        col("value").mean().over(rows_window).alias("rows_avg"),
+        col("value").mean().over(range_window).alias("range_avg"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -136,25 +130,23 @@ def test_complex_window_combination(make_df):
 
     # Ordered windows
     time_window = (
-        Window.partition_by("category").order_by("date").rows_between(Window.unboundedPreceding, Window.currentRow)
+        Window.partition_by("category").order_by("date").rows_between(Window.unbounded_preceding, Window.current_row)
     )
     global_window = Window.order_by("value")
 
     result = df.select(
-        [
-            col("category"),
-            col("region"),
-            col("date"),
-            col("value"),
-            # mean("value").over(category_window).alias("category_avg"),
-            # mean("value").over(region_window).alias("region_avg"),
-            # sum("value").over(time_window).alias("running_total"),
-            # rank().over(global_window).alias("global_rank"),
-            col("value").mean().over(category_window).alias("category_avg"),
-            col("value").mean().over(region_window).alias("region_avg"),
-            col("value").sum().over(time_window).alias("running_total"),
-            col("value").rank().over(global_window).alias("global_rank"),
-        ]
+        col("category"),
+        col("region"),
+        col("date"),
+        col("value"),
+        # mean("value").over(category_window).alias("category_avg"),
+        # mean("value").over(region_window).alias("region_avg"),
+        # sum("value").over(time_window).alias("running_total"),
+        # rank().over(global_window).alias("global_rank"),
+        col("value").mean().over(category_window).alias("category_avg"),
+        col("value").mean().over(region_window).alias("region_avg"),
+        col("value").sum().over(time_window).alias("running_total"),
+        col("value").rank().over(global_window).alias("global_rank"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -177,31 +169,27 @@ def test_nested_window_functions(make_df):
 
     # Calculate running total, then rank based on that
     running_window = (
-        Window.partition_by("category").order_by("date").rows_between(Window.unboundedPreceding, Window.currentRow)
+        Window.partition_by("category").order_by("date").rows_between(Window.unbounded_preceding, Window.current_row)
     )
     rank_window = Window.partition_by("category").order_by("running_total")
 
     # First calculate running total
     df_with_running = df.select(
-        [
-            col("category"),
-            col("date"),
-            col("value"),
-            # sum("value").over(running_window).alias("running_total"),
-            col("value").sum().over(running_window).alias("running_total"),
-        ]
+        col("category"),
+        col("date"),
+        col("value"),
+        # sum("value").over(running_window).alias("running_total"),
+        col("value").sum().over(running_window).alias("running_total"),
     )
 
     # Then rank based on running total
     result = df_with_running.select(
-        [
-            col("category"),
-            col("date"),
-            col("value"),
-            col("running_total"),
-            # rank().over(rank_window).alias("rank_by_running_total"),
-            col("running_total").rank().over(rank_window).alias("rank_by_running_total"),
-        ]
+        col("category"),
+        col("date"),
+        col("value"),
+        col("running_total"),
+        # rank().over(rank_window).alias("rank_by_running_total"),
+        col("running_total").rank().over(rank_window).alias("rank_by_running_total"),
     )
 
     # TODO: Add expected output once implementation is ready

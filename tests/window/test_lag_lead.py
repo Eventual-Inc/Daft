@@ -140,15 +140,13 @@ def test_lag_lead_default_value(make_df):
 
     window = Window.partition_by("stock").order_by("date")
     result = df.select(
-        [
-            col("stock"),
-            col("date"),
-            col("price"),
-            # lag("price", default=0.0).over(window).alias("prev_price"),
-            # lead("price", default=0.0).over(window).alias("next_price"),
-            col("price").lag(default=0.0).over(window).alias("prev_price"),
-            col("price").lead(default=0.0).over(window).alias("next_price"),
-        ]
+        col("stock"),
+        col("date"),
+        col("price"),
+        # lag("price", default=0.0).over(window).alias("prev_price"),
+        # lead("price", default=0.0).over(window).alias("next_price"),
+        col("price").lag(default=0.0).over(window).alias("prev_price"),
+        col("price").lead(default=0.0).over(window).alias("next_price"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -172,16 +170,14 @@ def test_lag_lead_multiple_order_cols(make_df):
 
     window = Window.partition_by("stock").order_by(["date", "time"])
     result = df.select(
-        [
-            col("stock"),
-            col("date"),
-            col("time"),
-            col("price"),
-            # lag("price").over(window).alias("prev_price"),
-            # lead("price").over(window).alias("next_price"),
-            col("price").lag().over(window).alias("prev_price"),
-            col("price").lead().over(window).alias("next_price"),
-        ]
+        col("stock"),
+        col("date"),
+        col("time"),
+        col("price"),
+        # lag("price").over(window).alias("prev_price"),
+        # lead("price").over(window).alias("next_price"),
+        col("price").lag().over(window).alias("prev_price"),
+        col("price").lead().over(window).alias("next_price"),
     )
 
     # TODO: Add expected output once implementation is ready

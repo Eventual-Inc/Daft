@@ -27,12 +27,10 @@ def test_single_partition_sum(make_df):
 
     window = Window.partition_by("category")
     result = df.select(
-        [
-            col("category"),
-            col("value"),
-            # sum("value").over(window).alias("sum"),
-            col("value").sum().over(window).alias("sum"),
-        ]
+        col("category"),
+        col("value"),
+        # sum("value").over(window).alias("sum"),
+        col("value").sum().over(window).alias("sum"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -54,7 +52,11 @@ def test_multiple_partitions_sum(make_df):
     )
 
     window = Window.partition_by(["category", "region"])
-    result = df.select([col("*"), sum("value").over(window).alias("sum")])
+    result = df.select(
+        col("*"),
+        # sum("value").over(window).alias("sum"),
+        col("value").sum().over(window).alias("sum"),
+    )
 
     # TODO: Add expected output once implementation is ready
     expected = None
@@ -70,20 +72,18 @@ def test_partition_all_aggs(make_df):
 
     window = Window.partition_by("category")
     result = df.select(
-        [
-            col("category"),
-            col("value"),
-            # sum("value").over(window).alias("sum"),
-            # mean("value").over(window).alias("avg"),
-            # min("value").over(window).alias("min"),
-            # max("value").over(window).alias("max"),
-            # count("value").over(window).alias("count"),
-            col("value").sum().over(window).alias("sum"),
-            col("value").mean().over(window).alias("avg"),
-            col("value").min().over(window).alias("min"),
-            col("value").max().over(window).alias("max"),
-            col("value").count().over(window).alias("count"),
-        ]
+        col("category"),
+        col("value"),
+        # sum("value").over(window).alias("sum"),
+        # mean("value").over(window).alias("avg"),
+        # min("value").over(window).alias("min"),
+        # max("value").over(window).alias("max"),
+        # count("value").over(window).alias("count"),
+        col("value").sum().over(window).alias("sum"),
+        col("value").mean().over(window).alias("avg"),
+        col("value").min().over(window).alias("min"),
+        col("value").max().over(window).alias("max"),
+        col("value").count().over(window).alias("count"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -100,16 +100,14 @@ def test_partition_null_handling(make_df):
 
     window = Window.partition_by("category")
     result = df.select(
-        [
-            col("category"),
-            col("value"),
-            # sum("value").over(window).alias("sum"),
-            # mean("value").over(window).alias("avg"),
-            # count("value").over(window).alias("count"),
-            col("value").sum().over(window).alias("sum"),
-            col("value").mean().over(window).alias("avg"),
-            col("value").count().over(window).alias("count"),
-        ]
+        col("category"),
+        col("value"),
+        # sum("value").over(window).alias("sum"),
+        # mean("value").over(window).alias("avg"),
+        # count("value").over(window).alias("count"),
+        col("value").sum().over(window).alias("sum"),
+        col("value").mean().over(window).alias("avg"),
+        col("value").count().over(window).alias("count"),
     )
 
     # TODO: Add expected output once implementation is ready

@@ -31,14 +31,12 @@ def test_range_7day_window(make_df):
 
     window = Window.order_by("date").range_between("7 days preceding", "current row")
     result = df.select(
-        [
-            col("date"),
-            col("value"),
-            # mean("value").over(window).alias("7day_avg"),
-            # sum("value").over(window).alias("7day_sum"),
-            col("value").mean().over(window).alias("7day_avg"),
-            col("value").sum().over(window).alias("7day_sum"),
-        ]
+        col("date"),
+        col("value"),
+        # mean("value").over(window).alias("7day_avg"),
+        # sum("value").over(window).alias("7day_sum"),
+        col("value").mean().over(window).alias("7day_avg"),
+        col("value").sum().over(window).alias("7day_sum"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -61,15 +59,13 @@ def test_range_partition_7day_window(make_df):
 
     window = Window.partition_by("category").order_by("date").range_between("7 days preceding", "current row")
     result = df.select(
-        [
-            col("category"),
-            col("date"),
-            col("value"),
-            # mean("value").over(window).alias("7day_avg"),
-            # sum("value").over(window).alias("7day_sum"),
-            col("value").mean().over(window).alias("7day_avg"),
-            col("value").sum().over(window).alias("7day_sum"),
-        ]
+        col("category"),
+        col("date"),
+        col("value"),
+        # mean("value").over(window).alias("7day_avg"),
+        # sum("value").over(window).alias("7day_sum"),
+        col("value").mean().over(window).alias("7day_avg"),
+        col("value").sum().over(window).alias("7day_sum"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -86,14 +82,12 @@ def test_range_numeric_window(make_df):
 
     window = Window.order_by("value").range_between(10, 0)  # Current value and up to 10 less
     result = df.select(
-        [
-            col("id"),
-            col("value"),
-            # mean("value").over(window).alias("range_avg"),
-            # count("value").over(window).alias("range_count"),
-            col("value").mean().over(window).alias("range_avg"),
-            col("value").count().over(window).alias("range_count"),
-        ]
+        col("id"),
+        col("value"),
+        # mean("value").over(window).alias("range_avg"),
+        # count("value").over(window).alias("range_count"),
+        col("value").mean().over(window).alias("range_avg"),
+        col("value").count().over(window).alias("range_count"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -115,14 +109,12 @@ def test_range_mixed_bounds(make_df):
 
     window = Window.order_by("date").range_between("3 days preceding", "3 days following")
     result = df.select(
-        [
-            col("date"),
-            col("value"),
-            # mean("value").over(window).alias("7day_centered_avg"),
-            # sum("value").over(window).alias("7day_centered_sum"),
-            col("value").mean().over(window).alias("7day_centered_avg"),
-            col("value").sum().over(window).alias("7day_centered_sum"),
-        ]
+        col("date"),
+        col("value"),
+        # mean("value").over(window).alias("7day_centered_avg"),
+        # sum("value").over(window).alias("7day_centered_sum"),
+        col("value").mean().over(window).alias("7day_centered_avg"),
+        col("value").sum().over(window).alias("7day_centered_sum"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -142,16 +134,14 @@ def test_range_unbounded(make_df):
         }
     )
 
-    window = Window.order_by("date").range_between(Window.unboundedPreceding, "current row")
+    window = Window.order_by("date").range_between(Window.unbounded_preceding, "current row")
     result = df.select(
-        [
-            col("date"),
-            col("value"),
-            # mean("value").over(window).alias("cumulative_avg"),
-            # sum("value").over(window).alias("cumulative_sum"),
-            col("value").mean().over(window).alias("cumulative_avg"),
-            col("value").sum().over(window).alias("cumulative_sum"),
-        ]
+        col("date"),
+        col("value"),
+        # mean("value").over(window).alias("cumulative_avg"),
+        # sum("value").over(window).alias("cumulative_sum"),
+        col("value").mean().over(window).alias("cumulative_avg"),
+        col("value").sum().over(window).alias("cumulative_sum"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -175,14 +165,12 @@ def test_range_distributed(make_df, n_partitions):
 
     window = Window.order_by("date").range_between("7 days preceding", "current row")
     result = df.select(
-        [
-            col("date"),
-            col("value"),
-            # mean("value").over(window).alias("7day_avg"),
-            # sum("value").over(window).alias("7day_sum"),
-            col("value").mean().over(window).alias("7day_avg"),
-            col("value").sum().over(window).alias("7day_sum"),
-        ]
+        col("date"),
+        col("value"),
+        # mean("value").over(window).alias("7day_avg"),
+        # sum("value").over(window).alias("7day_sum"),
+        col("value").mean().over(window).alias("7day_avg"),
+        col("value").sum().over(window).alias("7day_sum"),
     )
 
     # TODO: Add expected output once implementation is ready

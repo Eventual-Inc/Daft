@@ -35,12 +35,10 @@ def test_row_number_partition_order(make_df):
 
     window = Window.partition_by("category").order_by("value")
     result = df.select(
-        [
-            col("category"),
-            col("value"),
-            # row_number().over(window).alias("row_num"),
-            col("value").row_number().over(window).alias("row_num"),
-        ]
+        col("category"),
+        col("value"),
+        # row_number().over(window).alias("row_num"),
+        col("value").row_number().over(window).alias("row_num"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -57,14 +55,12 @@ def test_rank_with_ties(make_df):
 
     window = Window.partition_by("category").order_by("value")
     result = df.select(
-        [
-            col("category"),
-            col("value"),
-            # rank().over(window).alias("rank"),
-            # dense_rank().over(window).alias("dense_rank"),
-            col("value").rank().over(window).alias("rank"),
-            col("value").dense_rank().over(window).alias("dense_rank"),
-        ]
+        col("category"),
+        col("value"),
+        # rank().over(window).alias("rank"),
+        # dense_rank().over(window).alias("dense_rank"),
+        col("value").rank().over(window).alias("rank"),
+        col("value").dense_rank().over(window).alias("dense_rank"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -81,14 +77,12 @@ def test_rank_desc_order(make_df):
 
     window = Window.partition_by("category").order_by("value", ascending=False)
     result = df.select(
-        [
-            col("category"),
-            col("value"),
-            # rank().over(window).alias("rank"),
-            # dense_rank().over(window).alias("dense_rank"),
-            col("value").rank().over(window).alias("rank"),
-            col("value").dense_rank().over(window).alias("dense_rank"),
-        ]
+        col("category"),
+        col("value"),
+        # rank().over(window).alias("rank"),
+        # dense_rank().over(window).alias("dense_rank"),
+        col("value").rank().over(window).alias("rank"),
+        col("value").dense_rank().over(window).alias("dense_rank"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -120,15 +114,13 @@ def test_rank_multiple_order_cols(make_df):
 
     window = Window.partition_by("category").order_by(["value", "date"])
     result = df.select(
-        [
-            col("category"),
-            col("value"),
-            col("date"),
-            # rank().over(window).alias("rank"),
-            # dense_rank().over(window).alias("dense_rank"),
-            col("value").rank().over(window).alias("rank"),
-            col("value").dense_rank().over(window).alias("dense_rank"),
-        ]
+        col("category"),
+        col("value"),
+        col("date"),
+        # rank().over(window).alias("rank"),
+        # dense_rank().over(window).alias("dense_rank"),
+        col("value").rank().over(window).alias("rank"),
+        col("value").dense_rank().over(window).alias("dense_rank"),
     )
 
     # TODO: Add expected output once implementation is ready
@@ -145,15 +137,13 @@ def test_global_rank(make_df):
 
     window = Window.order_by("value")
     result = df.select(
-        [
-            col("value"),
-            # rank().over(window).alias("rank"),
-            # dense_rank().over(window).alias("dense_rank"),
-            # row_number().over(window).alias("row_num"),
-            col("value").rank().over(window).alias("rank"),
-            col("value").dense_rank().over(window).alias("dense_rank"),
-            col("value").row_number().over(window).alias("row_num"),
-        ]
+        col("value"),
+        # rank().over(window).alias("rank"),
+        # dense_rank().over(window).alias("dense_rank"),
+        # row_number().over(window).alias("row_num"),
+        col("value").rank().over(window).alias("rank"),
+        col("value").dense_rank().over(window).alias("dense_rank"),
+        col("value").row_number().over(window).alias("row_num"),
     )
 
     # TODO: Add expected output once implementation is ready
