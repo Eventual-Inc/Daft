@@ -1,6 +1,24 @@
 # Daft Dashboard
 
-## Structure
+## Usage
+
+```py
+from daft import dashboard
+import daft
+
+dashboard.launch()
+
+df = daft.from_pydict({"nums": [1,2,3]})
+df.agg(daft.col("nums").stddev()).show()
+```
+
+Or, if you already have a dashboard instance running:
+
+```sh
+DAFT_DASHBOARD=1 python my_daft_script.py
+```
+
+## Project structure
 
 ```txt
 daft_dashboard/
@@ -10,9 +28,11 @@ daft_dashboard/
         |- static-dashboard-assets # statically compiled HTML/CSS/JS files to be served to the browser
 ```
 
-## Building for development
+## Building
 
-1. Run the nextjs development server:
+### Development
+
+1. Run the NextJS development server:
 ```sh
 cd daft_dashboard/frontend
 bun dev
@@ -32,14 +52,7 @@ curl http://localhost:3238/api/queries
 # should output `[]`
 ```
 
-Since the `nextjs` and API server are both up, you can start running queries against them:
-
-```py
-import daft
-daft.from_pydict({"nums": [1,2,3]}).collect()
-```
-
-## Building for release
+### Release
 
 ```sh
 # build the static html/css/js assets
@@ -59,3 +72,28 @@ dashboard.launch(block=True)
 
 Note that the first `make` command will create new auto-generated HTML/CSS/JS files with unique names and move them into the appropriate directory.
 This will cause a `git diff` to appear (since at least the file names will be different).
+
+## Design decisions
+
+### Reason for choosing NextJS
+
+NextJS provides some advanced features such as SSR.
+However, since we only want to run a simple file server in production (instead of a dynamic, server-side HTML generating server), we do *not* use the SSR features that NextJS provides.
+Thus, we ensure that the NextJS application is void of all dynamic routes, dynamic props, etc..
+(You can verify if your NextJS application is void of dynamic features by running `bun run build`; if that fails, you have some dynamic features in your source code).
+Since the NextJS application is void of dynamic features, we can compile the application down to simple html/css/js, which can easily be served by a dummy file-server.
+
+### The rust server's responsibilities in different modes
+
+In dev-mode, we start two processes: the frontend NextJS server and the backend rust server.
+The NextJS server provides a whole host of useful functions, the main one being hot-reloading upon save.
+This helps increase development speed.
+
+However, in release-mode, we only run the backend server process.
+In release-mode, the backend server process *also* runs the html/css/js server, since we *don't* run a NextJS server in the background.
+This is to keep the architecture as simple as possible.
+
+### Reason for choosing rust for the backend application
+
+Daft internals are written in rust, so daft-dashboard's internals being written in rust seems appropriate.
+Rust also has some good support for writing http applications and file serving.
