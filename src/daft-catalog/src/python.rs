@@ -1,7 +1,10 @@
-use daft_logical_plan::PyLogicalPlanBuilder;
+use std::sync::Arc;
+
+use daft_core::prelude::SchemaRef;
+use daft_logical_plan::{LogicalPlanRef, PyLogicalPlanBuilder};
 use pyo3::{exceptions::PyIndexError, prelude::*};
 
-use crate::{global_catalog, identifier::Identifier};
+use crate::{error::Result, global_catalog, Catalog, CatalogRef, Identifier, Table, TableRef};
 
 /// Read a table from the specified `DaftMetaCatalog`.
 ///
@@ -121,6 +124,12 @@ impl From<PyObject> for PyCatalogWrapper {
     }
 }
 
+impl PyCatalogWrapper {
+    pub fn wrap(obj: PyObject) -> CatalogRef {
+        Arc::new(Self::from(obj))
+    }
+}
+
 impl Catalog for PyCatalogWrapper {
     fn name(&self) -> String {
         todo!()
@@ -130,8 +139,8 @@ impl Catalog for PyCatalogWrapper {
         todo!()
     }
 
-    fn to_py(&self, py: Python<'_>) -> PyObject {
-        self.0.extract(py).expect("failed to extract PyObject")
+    fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.0.extract(py)
     }
 }
 
@@ -211,6 +220,12 @@ impl PyTable {}
 /// PyTableWrapper wraps a `daft.catalog.Table` implementation (py->rust).
 #[derive(Debug)]
 pub struct PyTableWrapper(PyObject);
+
+impl PyTableWrapper {
+    pub fn wrap(obj: PyObject) -> TableRef {
+        Arc::new(Self::from(obj))
+    }
+}
 
 impl Table for PyTableWrapper {
     fn get_schema(&self) -> SchemaRef {
