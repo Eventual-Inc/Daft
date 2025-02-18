@@ -7,15 +7,15 @@ pub(crate) const DAFT_SESSION_DEFAULT_SCHEMA: &str = "default";
 
 #[derive(Debug)]
 pub(crate) struct Options {
-    _curr_catalog: String,
-    _curr_schema: String,
+    pub curr_catalog: String,
+    pub curr_schema: String,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
-            _curr_catalog: DAFT_SESSION_DEFAULT_CATALOG.to_string(),
-            _curr_schema: DAFT_SESSION_DEFAULT_SCHEMA.to_string(),
+            curr_catalog: DAFT_SESSION_DEFAULT_CATALOG.to_string(),
+            curr_schema: DAFT_SESSION_DEFAULT_SCHEMA.to_string(),
         }
     }
 }

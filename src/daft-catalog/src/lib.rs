@@ -1,6 +1,7 @@
-pub mod catalog;
-pub mod error;
+mod bindings;
+mod catalog;
 mod identifier;
+mod table;
 
 pub use bindings::*;
 pub use catalog::*;
@@ -12,6 +13,9 @@ pub mod python;
 
 #[cfg(feature = "python")]
 pub use python::register_modules;
+
+// TODO audit daft-catalog and daft-session errors.
+pub mod error;
 
 // ----------------------------------
 // TODO deprecated catalog APIs #3819
