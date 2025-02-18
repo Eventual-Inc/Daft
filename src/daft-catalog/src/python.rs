@@ -5,6 +5,8 @@ use crate::{global_catalog, identifier::Identifier};
 
 /// Read a table from the specified `DaftMetaCatalog`.
 ///
+/// TODO deprecated catalog APIs #3819
+///
 /// This function reads a table from a `DaftMetaCatalog` and returns a PyLogicalPlanBuilder
 /// object representing the plan required to read the table.
 ///
@@ -38,6 +40,8 @@ fn py_read_table(table_identifier: &str) -> PyResult<PyLogicalPlanBuilder> {
 
 /// Register a table with the global catalog.
 ///
+/// TODO deprecated catalog APIs #3819
+///
 /// This function registers a table with the global `DaftMetaCatalog` using the provided
 /// table identifier and logical plan.
 ///
@@ -67,6 +71,8 @@ fn py_register_table(
 
 /// Unregisters a catalog from the Daft catalog system
 ///
+/// TODO deprecated catalog APIs #3819
+///
 /// This function removes a previously registered catalog from the Daft catalog system.
 ///
 /// Args:
@@ -88,7 +94,48 @@ pub fn py_unregister_catalog(catalog_name: Option<&str>) -> bool {
     crate::global_catalog::unregister_catalog(catalog_name)
 }
 
-/// Bridge from identifier.py to identifier.rs
+/// PyCatalog implements the Catalog ABC for some Catalog trait impl (rust->py).
+#[pyclass]
+pub struct PyCatalog(CatalogRef);
+
+impl From<CatalogRef> for PyCatalog {
+    fn from(catalog: CatalogRef) -> Self {
+        Self(catalog)
+    }
+}
+
+#[pymethods]
+impl PyCatalog {
+    fn name(&self) -> String {
+        self.0.name()
+    }
+}
+
+/// PyCatalogWrapper wraps a `daft.catalog.Catalog` implementation (py->rust).
+#[derive(Debug)]
+pub struct PyCatalogWrapper(PyObject);
+
+impl From<PyObject> for PyCatalogWrapper {
+    fn from(obj: PyObject) -> Self {
+        Self(obj)
+    }
+}
+
+impl Catalog for PyCatalogWrapper {
+    fn name(&self) -> String {
+        todo!()
+    }
+
+    fn get_table(&self, _name: &Identifier) -> Result<Option<Box<dyn Table>>> {
+        todo!()
+    }
+
+    fn to_py(&self, py: Python<'_>) -> PyObject {
+        self.0.extract(py).expect("failed to extract PyObject")
+    }
+}
+
+/// PyIdentifier maps identifier.py to identifier.rs
 #[pyclass(sequence)]
 #[derive(Debug, Clone)]
 pub struct PyIdentifier(Identifier);
@@ -142,11 +189,48 @@ impl From<Identifier> for PyIdentifier {
     }
 }
 
-/// Defines the python daft.
-pub fn register_modules<'py>(parent: &Bound<'py, PyModule>) -> PyResult<Bound<'py, PyModule>> {
-    // daft.daft.PyIdentifier
-    parent.add_class::<PyIdentifier>()?;
+impl AsRef<Identifier> for PyIdentifier {
+    fn as_ref(&self) -> &Identifier {
+        &self.0
+    }
+}
 
+/// PyTable implements the `daft.catalog.Table`` ABC for some Table trait impl (rust->py).
+#[pyclass]
+pub struct PyTable(TableRef);
+
+impl PyTable {
+    pub fn new(table: TableRef) -> Self {
+        Self(table)
+    }
+}
+
+#[pymethods]
+impl PyTable {}
+
+/// PyTableWrapper wraps a `daft.catalog.Table` implementation (py->rust).
+#[derive(Debug)]
+pub struct PyTableWrapper(PyObject);
+
+impl Table for PyTableWrapper {
+    fn get_schema(&self) -> SchemaRef {
+        todo!()
+    }
+
+    fn get_logical_plan(&self) -> Result<LogicalPlanRef> {
+        todo!()
+    }
+
+    fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.0.extract(py)
+    }
+}
+
+pub fn register_modules<'py>(parent: &Bound<'py, PyModule>) -> PyResult<Bound<'py, PyModule>> {
+    parent.add_class::<PyCatalog>()?;
+    parent.add_class::<PyIdentifier>()?;
+    parent.add_class::<PyTable>()?;
+    // TODO deprecated catalog APIs #3819
     let module = PyModule::new(parent.py(), "catalog")?;
     module.add_wrapped(wrap_pyfunction!(py_read_table))?;
     module.add_wrapped(wrap_pyfunction!(py_register_table))?;

@@ -142,9 +142,10 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
 class Catalog(ABC):
     """Interface for python catalog implementations."""
 
-    @property
-    def inner(self) -> object | None:
-        """Returns the inner catalog object if this is an adapter."""
+    @staticmethod
+    def from_pydict(tables: dict[str, Table]) -> Catalog:
+        """Returns a new in-memory catalog implementation with temporary tables."""
+        raise NotImplementedError("Catalog.from_pydict")
 
     @staticmethod
     def _try_from(obj: object) -> Catalog | None:
@@ -173,6 +174,10 @@ class Catalog(ABC):
         except ImportError:
             return None
 
+    @property
+    def inner(self) -> object | None:
+        """Returns the inner catalog object if this is an adapter."""
+
     ###
     # list_*
     ###
@@ -185,7 +190,7 @@ class Catalog(ABC):
     ###
 
     @abstractmethod
-    def get_table(self, name: str) -> Table: ...
+    def get_table(self, name: str | Identifier) -> Table: ...
 
     # TODO deprecated catalog APIs #3819
     def load_table(self, name: str) -> Table:
@@ -217,6 +222,12 @@ class Identifier(Sequence):
         self._identifier = PyIdentifier(parts[:-1], parts[-1])
 
     @staticmethod
+    def _from_pyidentifier(identifier: PyIdentifier) -> Identifier:
+        i = Identifier.__new__(Identifier)
+        i._identifier = identifier
+        return i
+
+    @staticmethod
     def from_sql(input: str, normalize: bool = False) -> Identifier:
         """Parses an Identifier from an SQL string, normalizing to lowercase if specified.
 
@@ -231,6 +242,11 @@ class Identifier(Sequence):
         i = Identifier.__new__(Identifier)
         i._identifier = PyIdentifier.from_sql(input, normalize)
         return i
+
+    @staticmethod
+    def from_str(input: str) -> Identifier:
+        """Parses an Identifier from a dot-delimited Python string without normalization."""
+        return Identifier(*input.split("."))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Identifier):
