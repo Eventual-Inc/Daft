@@ -30,7 +30,11 @@ def dashboard_module():
 
 
 def _should_run() -> bool:
-    dashboard = dashboard_module()
+    try:
+        dashboard = dashboard_module()
+    except ImportError:
+        return False
+
     enable_dashboard_str = os.environ.get(dashboard.DAFT_DASHBOARD_ENV_NAME)
 
     if not enable_dashboard_str:
