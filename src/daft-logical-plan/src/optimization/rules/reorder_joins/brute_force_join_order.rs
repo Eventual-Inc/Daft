@@ -209,6 +209,10 @@ mod tests {
         edges: Vec<(usize, String, usize, String, usize)>,
     ) -> JoinGraph {
         let mut adj_list = JoinAdjList::empty();
+        // Immediately create plan ids so that they match the ids in the test cases.
+        for plan in &plans {
+            adj_list.get_or_create_plan_id(&plan);
+        }
         for (from, from_rel_name, to, to_rel_name, td) in edges {
             adj_list.add_bidirectional_edge_with_total_domain(
                 JoinNode::new(from_rel_name, plans[from].clone()),
@@ -225,9 +229,12 @@ mod tests {
                 .iter()
                 .map(|(name, size)| create_scan_node(name, Some(*size)))
                 .collect();
+            let num_edges = $edges.len();
             let graph = create_join_graph_with_edges(plans.clone(), $edges);
             let order = $orderer.order(&graph);
             assert!(JoinOrderTree::order_eq(&order, &$optimal_order));
+            // Check that the number of join conditions does not increase due to join edge inference.
+            assert_eq!(JoinOrderTree::num_join_conditions(&order), num_edges);
         };
     }
 
@@ -241,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_brute_force_order_minimal() {
-        let nodes = vec![("medium", 1_000), ("large", 50_000), ("small", 500)];
+        let nodes = vec![("medium", 1_000), ("large", 500_000), ("small", 500)];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
             (
@@ -277,6 +284,45 @@ mod tests {
     }
 
     #[test]
+    fn test_brute_force_order_minimal2() {
+        // Compared to the previous test, this test has a smaller "large" relation. When joined with "medium" using two join conditions,
+        // the result produces a smaller relation than "small". Hence the join order should be ((large x medium) x small).
+        let nodes = vec![("medium", 1_000), ("large", 5_000), ("small", 500)];
+        let name_to_id = node_to_id_map(nodes.clone());
+        let edges = vec![
+            (
+                name_to_id["medium"],
+                "m_medium".to_string(),
+                name_to_id["large"],
+                "l_medium".to_string(),
+                1_000,
+            ),
+            (
+                name_to_id["large"],
+                "l_small".to_string(),
+                name_to_id["small"],
+                "s_small".to_string(),
+                500,
+            ),
+            (
+                name_to_id["medium"],
+                "m_small".to_string(),
+                name_to_id["small"],
+                "s_small".to_string(),
+                500,
+            ),
+        ];
+        let optimal_order = test_join(
+            test_relation(name_to_id["small"]),
+            test_join(
+                test_relation(name_to_id["large"]),
+                test_relation(name_to_id["medium"]),
+            ),
+        );
+        create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
+    }
+
+    #[test]
     fn test_brute_force_order_mock_tpch_q5() {
         let nodes = vec![
             ("region", 1),
@@ -294,13 +340,6 @@ mod tests {
                 name_to_id["nation"],
                 "n_regionkey".to_string(),
                 10,
-            ),
-            (
-                name_to_id["nation"],
-                "n_nationkey".to_string(),
-                name_to_id["customer"],
-                "c_nationkey".to_string(),
-                25,
             ),
             (
                 name_to_id["customer"],

@@ -73,6 +73,18 @@ impl JoinOrderTree {
             _ => false,
         }
     }
+
+    #[cfg(test)]
+    pub(super) fn num_join_conditions(this: &Self) -> usize {
+        match this {
+            JoinOrderTree::Relation(_, _) => 0,
+            JoinOrderTree::Join(left, right, conditions, _) => {
+                Self::num_join_conditions(left)
+                    + Self::num_join_conditions(right)
+                    + conditions.len()
+            }
+        }
+    }
 }
 
 pub(super) trait JoinOrderer {
@@ -121,10 +133,18 @@ pub(super) struct JoinAdjList {
     plan_to_id: HashMap<*const LogicalPlan, usize>,
     pub id_to_plan: HashMap<usize, LogicalPlanRef>,
     pub edges: HashMap<usize, HashMap<usize, Vec<JoinCondition>>>,
-    // Estimated total domains for each equivalence set of join columns, i.e. the number of distinct values in the columns.
-    // For pk-fk joins, this would be the number of primary keys. If multiple joins involve the same columns, we take the minimum
-    // cardinality of all relations involved as the total domain.
-    total_domains: HashMap<(usize, String), usize>,
+    // The maximum equivalence set id. Each equivalence set is a set of columns that are joined together.
+    // For example, if we have a join between A.x and B.x, and B.x and C.x, then the equivalence set is
+    // {A.x, B.x, C.x}. Extending this example, if we have a join between A.y and D.y, then the equivalence sets
+    // are {A.x, B.x, C.x} and {A.y, D.y}.
+    max_equivalence_set_id: usize,
+    // Maps (plan id, column name) -> equivalence set id.
+    pub equivalence_set_map: HashMap<(usize, String), usize>,
+    // Vec of total domains for equivalence sets. Where total_domains[equivalence set id] -> total domain of the equivalence set.
+    // The total domain is the number of distinct values in the columns that are part of the equivalence set. For pk-fk joins,
+    // this would be the number of primary keys. In the absence of ndv statistics, we take the smallest table in the equivalence set,
+    // assume it's the primary key table, and use its cardinality as the total domain.
+    total_domains: Vec<usize>,
 }
 
 impl std::fmt::Display for JoinAdjList {
@@ -156,7 +176,9 @@ impl JoinAdjList {
             plan_to_id: HashMap::new(),
             id_to_plan: HashMap::new(),
             edges: HashMap::new(),
-            total_domains: HashMap::new(),
+            max_equivalence_set_id: 0,
+            equivalence_set_map: HashMap::new(),
+            total_domains: vec![],
         }
     }
 
@@ -243,17 +265,17 @@ impl JoinAdjList {
                 / node2_stats.approx_stats.acc_selectivity.max(0.01);
             node1_rows.min(node2_rows).max(1.0) as usize
         };
-        if let Some(existing_td) = self
-            .total_domains
+        if let Some(equivalence_set_id) = self
+            .equivalence_set_map
             .get(&(node1_id, node1.relation_name.clone()))
         {
-            td = td.min(*existing_td);
+            td = td.min(self.total_domains[*equivalence_set_id]);
         }
-        if let Some(existing_td) = self
-            .total_domains
+        if let Some(equivalence_set_id) = self
+            .equivalence_set_map
             .get(&(node2_id, node2.relation_name.clone()))
         {
-            td = td.min(*existing_td);
+            td = td.min(self.total_domains[*equivalence_set_id]);
         }
 
         self.add_bidirectional_edge_with_total_domain(node1, node2, td);
@@ -265,27 +287,72 @@ impl JoinAdjList {
         node2: JoinNode,
         td: usize,
     ) {
-        self.add_unidirectional_edge_with_total_domain(&node1, &node2, td);
-        self.add_unidirectional_edge_with_total_domain(&node2, &node1, td);
+        // Update the total domains for the join columns.
+        let node1_id = self.get_or_create_plan_id(&node1.plan);
+        let node2_id = self.get_or_create_plan_id(&node2.plan);
+        let node1_equivalence_set_id = self
+            .equivalence_set_map
+            .get(&(node1_id, node1.relation_name.clone()));
+        let node2_equivalence_set_id = self
+            .equivalence_set_map
+            .get(&(node2_id, node2.relation_name.clone()));
+        match (node1_equivalence_set_id, node2_equivalence_set_id) {
+            (Some(&node1_equivalence_set_id), Some(&node2_equivalence_set_id)) => {
+                if node1_equivalence_set_id != node2_equivalence_set_id {
+                    // If we had previously seenA.x = B.x, and C.x = D.x, then we would have incorrectly placed them in difference equivalence
+                    // sets. We need to merge the equivalence sets.
+                    let merged_equivalence_set_id =
+                        node1_equivalence_set_id.min(node2_equivalence_set_id);
+                    for value in self.equivalence_set_map.values_mut() {
+                        if *value == node1_equivalence_set_id || *value == node2_equivalence_set_id
+                        {
+                            *value = merged_equivalence_set_id;
+                        }
+                    }
+                    self.total_domains[merged_equivalence_set_id] = td;
+                } else {
+                    self.total_domains[node1_equivalence_set_id] = td;
+                }
+            }
+            (Some(&node1_equivalence_set_id), None) => {
+                self.total_domains[node1_equivalence_set_id] = td;
+                self.equivalence_set_map.insert(
+                    (node2_id, node2.relation_name.clone()),
+                    node1_equivalence_set_id,
+                );
+            }
+            (None, Some(&node2_equivalence_set_id)) => {
+                self.total_domains[node2_equivalence_set_id] = td;
+                self.equivalence_set_map.insert(
+                    (node1_id, node1.relation_name.clone()),
+                    node2_equivalence_set_id,
+                );
+            }
+            _ => {
+                self.total_domains.push(td);
+                self.equivalence_set_map.insert(
+                    (node1_id, node1.relation_name.clone()),
+                    self.max_equivalence_set_id,
+                );
+                self.equivalence_set_map.insert(
+                    (node2_id, node2.relation_name.clone()),
+                    self.max_equivalence_set_id,
+                );
+                self.max_equivalence_set_id += 1;
+            }
+        }
+        // Add the unidirectional edges.
+        self.add_unidirectional_edge(&node1, &node2);
+        self.add_unidirectional_edge(&node2, &node1);
     }
 
-    fn add_unidirectional_edge_with_total_domain(
-        &mut self,
-        left: &JoinNode,
-        right: &JoinNode,
-        td: usize,
-    ) {
+    fn add_unidirectional_edge(&mut self, left: &JoinNode, right: &JoinNode) {
         let join_condition = JoinCondition {
             left_on: left.relation_name.clone(),
             right_on: right.relation_name.clone(),
         };
         let left_id = self.get_or_create_plan_id(&left.plan);
         let right_id = self.get_or_create_plan_id(&right.plan);
-        // Update the total domains for the join columns.
-        self.total_domains
-            .insert((left_id, left.relation_name.clone()), td);
-        self.total_domains
-            .insert((right_id, right.relation_name.clone()), td);
         self.add_join_condition(left_id, right_id, join_condition);
     }
 
@@ -295,25 +362,24 @@ impl JoinAdjList {
         left: &JoinOrderTree,
         right: &JoinOrderTree,
     ) -> (Vec<JoinCondition>, usize) {
+        // Grab the minimum spanning tree of join conditions that connect the left and right trees, i.e. we take at most one join condition
+        // from each equivalence set of join conditions.
         let mut conds = vec![];
-        let mut td = 0;
+        let mut seen_equivalence_set_ids = HashSet::new();
+        let mut td = 1;
         for left_node in left.iter() {
             if let Some(neighbors) = self.edges.get(&left_node) {
                 for right_node in right.iter() {
                     if let Some(edges) = neighbors.get(&right_node) {
-                        conds.extend(edges.iter().cloned());
-                        // TODO(desmond): This is a hack to get the selectivity of the join from the total domain of the join columns.
-                        // We should expand this to take the minimum spanning tree of edges to connect the relations. For simple graphs
-                        // (e.g. the queries in the TPCH benchmark), taking the max of the total domains is a good proxy.
                         for edge in edges {
-                            td = td.max(
-                                *self
-                                    .total_domains
-                                    .get(&(left_node, edge.left_on.clone()))
-                                    .expect(
-                                        "Left join condition not found in domain equivalence sets",
-                                    ),
-                            );
+                            let equivalence_set_id = self
+                                .equivalence_set_map
+                                .get(&(left_node, edge.left_on.clone()))
+                                .expect("Left join condition should be part of an equivalence set");
+                            if seen_equivalence_set_ids.insert(*equivalence_set_id) {
+                                td *= self.total_domains[*equivalence_set_id];
+                                conds.push(edge.clone());
+                            }
                         }
                     }
                 }
@@ -831,10 +897,7 @@ mod tests {
 
     use super::JoinGraphBuilder;
     use crate::{
-        optimization::rules::{
-            reorder_joins::join_graph::{JoinAdjList, JoinNode},
-            EnrichWithStats, MaterializeScans, OptimizerRule,
-        },
+        optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
         test::{
             dummy_scan_node_with_pushdowns, dummy_scan_operator, dummy_scan_operator_with_size,
         },
