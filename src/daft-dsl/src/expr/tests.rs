@@ -17,7 +17,7 @@ fn check_comparison_type() -> DaftResult<()> {
 
 #[test]
 fn check_alias_type() -> DaftResult<()> {
-    let a = col("a");
+    let a = resolved_col("a");
     let b = a.alias("b");
     match b.as_ref() {
         Expr::Alias(..) => Ok(()),
@@ -55,8 +55,8 @@ fn check_arithmetic_type() -> DaftResult<()> {
 
 #[test]
 fn check_arithmetic_type_with_columns() -> DaftResult<()> {
-    let x = col("x");
-    let y = col("y");
+    let x = resolved_col("x");
+    let y = resolved_col("y");
     let schema = Schema::new(vec![
         Field::new("x", DataType::Float64),
         Field::new("y", DataType::Int64),
@@ -69,8 +69,8 @@ fn check_arithmetic_type_with_columns() -> DaftResult<()> {
     };
     assert_eq!(z.get_type(&schema)?, DataType::Float64);
 
-    let x = col("x");
-    let y = col("y");
+    let x = resolved_col("x");
+    let y = resolved_col("y");
 
     let z = Expr::BinaryOp {
         left: y,

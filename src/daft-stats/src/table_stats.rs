@@ -7,7 +7,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn};
 use daft_recordbatch::RecordBatch;
 use indexmap::{IndexMap, IndexSet};
 
@@ -132,7 +132,7 @@ impl TableStatistics {
     pub fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
-            Expr::Column(col_name) => {
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) => {
                 let col = self.columns.get(col_name.as_ref());
                 let Some(col) = col else {
                     return Err(crate::Error::DaftCoreCompute {
@@ -210,7 +210,7 @@ impl Display for TableStatistics {
 #[cfg(test)]
 mod test {
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit};
+    use daft_dsl::{lit, resolved_col};
     use daft_recordbatch::RecordBatch;
 
     use super::TableStatistics;
@@ -226,12 +226,12 @@ mod test {
         let table_stats = TableStatistics::from_table(&table);
 
         // False case
-        let expr = col("a").eq(lit(0));
+        let expr = resolved_col("a").eq(lit(0));
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::False);
 
         // Maybe case
-        let expr = col("a").eq(lit(3));
+        let expr = resolved_col("a").eq(lit(3));
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::Maybe);
 
@@ -243,7 +243,7 @@ mod test {
             .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
-        let expr = col("a").eq(lit(0));
+        let expr = resolved_col("a").eq(lit(0));
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::True);
 

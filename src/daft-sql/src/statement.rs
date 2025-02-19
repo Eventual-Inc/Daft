@@ -87,6 +87,6 @@ impl<'a> SQLPlanner<'a> {
             unsupported_sql_err!("DESCRIBE TABLE is not supported, did you mean DESCRIBE?")
         }
         // resolve table and .describe()
-        Ok(self.plan_relation_table(table_name)?.inner.describe()?)
+        Ok(self.plan_relation_table(table_name)?.describe()?)
     }
 }

@@ -4,9 +4,9 @@ use common_error::DaftResult;
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_core::prelude::*;
 use daft_dsl::{
-    col, is_actor_pool_udf,
+    is_actor_pool_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
-    Expr, ExprRef,
+    resolved_col, Column, Expr, ExprRef, ResolvedColumn,
 };
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -44,7 +44,9 @@ impl PushDownProjection {
                     .iter()
                     .zip(upstream_schema.names().iter())
                     .all(|(expr, upstream_col)| match expr.as_ref() {
-                        Expr::Column(colname) => colname.as_ref() == upstream_col,
+                        Expr::Column(Column::Resolved(ResolvedColumn::Basic(colname))) => {
+                            colname.as_ref() == upstream_col
+                        }
                         _ => false,
                     })
         };
@@ -88,7 +90,8 @@ impl PushDownProjection {
                         // If it's a reference for a column that requires computation,
                         // record it.
                         if okay_to_merge
-                            && let Expr::Column(name) = expr.as_ref()
+                            && let Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) =
+                                expr.as_ref()
                             && upstream_computations.contains(name.as_ref())
                         {
                             okay_to_merge = okay_to_merge
@@ -316,7 +319,7 @@ impl PushDownProjection {
                     let all_projections_are_just_colexprs =
                         pruned_upstream_projections.iter().all(|proj| {
                             !proj.exists(|e| match e.as_ref() {
-                                Expr::Column(_) => false,
+                                Expr::Column(Column::Resolved(..)) => false,
                                 // Check for existence of any non-ColumnExprs
                                 _ => true,
                             })
@@ -367,7 +370,7 @@ impl PushDownProjection {
                 let new_subprojection: LogicalPlan = {
                     let pushdown_column_exprs = combined_dependencies
                         .into_iter()
-                        .map(col)
+                        .map(resolved_col)
                         .collect::<Vec<_>>();
 
                     Project::try_new(grand_upstream_plan.clone(), pushdown_column_exprs)?.into()
@@ -401,7 +404,7 @@ impl PushDownProjection {
 
                 let can_be_pushed_down = input_columns
                     .intersection(&combined_dependencies)
-                    .map(|e| col(e.as_str()))
+                    .map(|e| resolved_col(e.as_str()))
                     .collect::<Vec<_>>();
 
                 if grand_upstream_columns.len() == can_be_pushed_down.len() {
@@ -437,7 +440,7 @@ impl PushDownProjection {
 
                 let pushdown_column_exprs: Vec<ExprRef> = combined_dependencies
                     .into_iter()
-                    .map(col)
+                    .map(resolved_col)
                     .collect::<Vec<_>>();
                 let new_left_subprojection: LogicalPlan = {
                     Project::try_new(concat.input.clone(), pushdown_column_exprs.clone())?.into()
@@ -487,8 +490,10 @@ impl PushDownProjection {
                         .collect();
 
                     if combined_dependencies.len() < upstream_names.len() {
-                        let pushdown_column_exprs: Vec<ExprRef> =
-                            combined_dependencies.into_iter().map(col).collect();
+                        let pushdown_column_exprs: Vec<ExprRef> = combined_dependencies
+                            .into_iter()
+                            .map(resolved_col)
+                            .collect();
                         let new_project: LogicalPlan =
                             Project::try_new(side.clone(), pushdown_column_exprs)?.into();
                         Ok(Transformed::yes(new_project.into()))
@@ -542,6 +547,7 @@ impl PushDownProjection {
             LogicalPlan::Sink(_) => {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
+            LogicalPlan::SubqueryAlias(_) => unreachable!("Alias should have been optimized away"),
         }
     }
 
@@ -560,7 +566,7 @@ impl PushDownProjection {
             let new_subprojection: LogicalPlan = {
                 let pushdown_column_exprs = actor_pool_project_required_cols
                     .iter()
-                    .map(|s| col(s.as_str()))
+                    .map(|s| resolved_col(s.as_str()))
                     .collect::<Vec<_>>();
 
                 Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
@@ -588,7 +594,7 @@ impl PushDownProjection {
             let new_subprojection: LogicalPlan = {
                 let pushdown_column_exprs = aggregation_required_cols
                     .iter()
-                    .map(|s| col(s.as_str()))
+                    .map(|s| resolved_col(s.as_str()))
                     .collect::<Vec<_>>();
 
                 Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
@@ -621,7 +627,7 @@ impl PushDownProjection {
                 let new_subprojection: LogicalPlan = {
                     let pushdown_column_exprs = right_required_cols
                         .iter()
-                        .map(|s| col(s.as_str()))
+                        .map(|s| resolved_col(s.as_str()))
                         .collect::<Vec<_>>();
 
                     Project::try_new(join.right.clone(), pushdown_column_exprs)?.into()
@@ -657,7 +663,7 @@ impl PushDownProjection {
             let new_subprojection: LogicalPlan = {
                 let pushdown_column_exprs = pivot_required_cols
                     .iter()
-                    .map(|s| col(s.as_str()))
+                    .map(|s| resolved_col(s.as_str()))
                     .collect::<Vec<_>>();
 
                 Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
@@ -708,12 +714,11 @@ mod tests {
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{
-        col,
         functions::{
             python::{MaybeInitializedUDF, PythonUDF, RuntimePyObject},
             FunctionExpr,
         },
-        lit, Expr, ExprRef,
+        lit, resolved_col, unresolved_col, Expr, ExprRef,
     };
 
     use crate::{
@@ -767,7 +772,7 @@ mod tests {
     /// Projection merging: Ensure factored projections do not get merged.
     #[test]
     fn test_merge_does_not_unfactor() -> DaftResult<()> {
-        let a2 = col("a").add(col("a"));
+        let a2 = unresolved_col("a").add(unresolved_col("a"));
         let a4 = a2.clone().add(a2);
         let a8 = a4.clone().add(a4);
         let expressions = vec![a8.alias("x")];
@@ -787,20 +792,24 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
         let proj1 = vec![
-            col("a").add(lit(1)),
-            col("b").add(lit(2)),
-            col("a").alias("c"),
+            unresolved_col("a").add(lit(1)),
+            unresolved_col("b").add(lit(2)),
+            unresolved_col("a").alias("c"),
         ];
-        let proj2 = vec![col("a").add(lit(3)), col("b"), col("c").add(lit(4))];
+        let proj2 = vec![
+            unresolved_col("a").add(lit(3)),
+            unresolved_col("b"),
+            unresolved_col("c").add(lit(4)),
+        ];
         let plan = dummy_scan_node(scan_op.clone())
             .select(proj1)?
             .select(proj2)?
             .build();
 
         let merged_proj = vec![
-            col("a").add(lit(1)).add(lit(3)),
-            col("b").add(lit(2)),
-            col("a").alias("c").add(lit(4)),
+            unresolved_col("a").add(lit(1)).add(lit(3)),
+            unresolved_col("b").add(lit(2)),
+            unresolved_col("a").alias("c").add(lit(4)),
         ];
         let expected = dummy_scan_node(scan_op).select(merged_proj)?.build();
 
@@ -816,7 +825,7 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .select(vec![col("a"), col("b")])?
+            .select(vec![unresolved_col("a"), unresolved_col("b")])?
             .build();
 
         let expected = dummy_scan_node(scan_op).build();
@@ -833,7 +842,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let proj = vec![col("b"), col("a")];
+        let proj = vec![unresolved_col("b"), unresolved_col("a")];
         let plan = dummy_scan_node(scan_op.clone())
             .select(proj.clone())?
             .build();
@@ -852,7 +861,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let proj = vec![col("b").add(lit(3))];
+        let proj = vec![unresolved_col("b").add(lit(3))];
         let plan = dummy_scan_node(scan_op.clone())
             .select(proj.clone())?
             .build();
@@ -877,14 +886,22 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let proj1 = vec![col("b").add(lit(3)), col("a"), col("a").alias("x")];
-        let proj2 = vec![col("a"), col("b"), col("b").alias("c")];
+        let proj1 = vec![
+            unresolved_col("b").add(lit(3)),
+            unresolved_col("a"),
+            unresolved_col("a").alias("x"),
+        ];
+        let proj2 = vec![
+            unresolved_col("a"),
+            unresolved_col("b"),
+            unresolved_col("b").alias("c"),
+        ];
         let plan = dummy_scan_node(scan_op.clone())
             .select(proj1)?
             .select(proj2.clone())?
             .build();
 
-        let new_proj1 = vec![col("b").add(lit(3)), col("a")];
+        let new_proj1 = vec![unresolved_col("b").add(lit(3)), unresolved_col("a")];
         let expected = dummy_scan_node(scan_op)
             .select(new_proj1)?
             .select(proj2)?
@@ -903,16 +920,16 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]);
-        let agg = vec![col("a").mean(), col("b").mean()];
-        let group_by = vec![col("c")];
-        let proj = vec![col("a")];
+        let agg = vec![unresolved_col("a").mean(), unresolved_col("b").mean()];
+        let group_by = vec![unresolved_col("c")];
+        let proj = vec![unresolved_col("a")];
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(agg, group_by.clone())?
             .select(proj.clone())?
             .build();
 
         let proj_pushdown = vec!["a".to_string(), "c".to_string()];
-        let new_agg = vec![col("a").mean()];
+        let new_agg = vec![unresolved_col("a").mean()];
         let expected = dummy_scan_node_with_pushdowns(
             scan_op,
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
@@ -934,8 +951,8 @@ mod tests {
             Field::new("b", DataType::Boolean),
             Field::new("c", DataType::Int64),
         ]);
-        let pred = col("b");
-        let proj = vec![col("a")];
+        let pred = unresolved_col("b");
+        let proj = vec![unresolved_col("a")];
         let plan = dummy_scan_node(scan_op.clone())
             .filter(pred.clone())?
             .select(proj.clone())?
@@ -964,7 +981,7 @@ mod tests {
         ]);
         let plan = dummy_scan_node(scan_op.clone())
             .add_monotonically_increasing_id(Some("id"))?
-            .select(vec![col("id")])?
+            .select(vec![unresolved_col("id")])?
             .build();
         let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
@@ -983,17 +1000,21 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]);
         let scan_node = dummy_scan_node(scan_op.clone());
-        let mock_udf = create_actor_pool_udf(vec![col("c")]);
+        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
 
         // Select the `udf_results` column, so the ActorPoolProject should apply column pruning to the other columns
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node.build(),
-            vec![col("a"), col("b"), mock_udf.alias("udf_results")],
+            vec![
+                resolved_col("a"),
+                resolved_col("b"),
+                mock_udf.alias("udf_results"),
+            ],
         )?)
         .arced();
         let project = LogicalPlan::Project(Project::try_new(
             actor_pool_project,
-            vec![col("udf_results")],
+            vec![resolved_col("udf_results")],
         )?)
         .arced();
 
@@ -1022,21 +1043,25 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]);
         let scan_node = dummy_scan_node(scan_op.clone()).build();
-        let mock_udf = create_actor_pool_udf(vec![col("a")]);
+        let mock_udf = create_actor_pool_udf(vec![resolved_col("a")]);
 
         // Select the `udf_results` column, so the ActorPoolProject should apply column pruning to the other columns
         let plan = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node,
-            vec![col("a"), col("b"), mock_udf.alias("udf_results_0")],
+            vec![
+                resolved_col("a"),
+                resolved_col("b"),
+                mock_udf.alias("udf_results_0"),
+            ],
         )?)
         .arced();
 
         let plan = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             plan,
             vec![
-                col("a"),
-                col("b"),
-                col("udf_results_0"),
+                resolved_col("a"),
+                resolved_col("b"),
+                resolved_col("udf_results_0"),
                 mock_udf.alias("udf_results_1"),
             ],
         )?)
@@ -1045,8 +1070,8 @@ mod tests {
         let plan = LogicalPlan::Project(Project::try_new(
             plan,
             vec![
-                col("udf_results_0").alias("udf_results_0_alias"),
-                col("udf_results_1"),
+                resolved_col("udf_results_0").alias("udf_results_0_alias"),
+                resolved_col("udf_results_1"),
             ],
         )?)
         .arced();
@@ -1058,14 +1083,14 @@ mod tests {
             )
             .build(),
             // col("b") is pruned
-            vec![mock_udf.alias("udf_results_0"), col("a")],
+            vec![mock_udf.alias("udf_results_0"), resolved_col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
                 // Absorbed a non-computational expression (alias) from the Projection
-                col("udf_results_0").alias("udf_results_0_alias"),
+                resolved_col("udf_results_0").alias("udf_results_0_alias"),
                 mock_udf.alias("udf_results_1"),
             ],
         )?)
@@ -1086,16 +1111,23 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]);
         let scan_node = dummy_scan_node(scan_op.clone()).build();
-        let mock_udf = create_actor_pool_udf(vec![col("c")]);
+        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
 
         // Select only col("a"), so the ActorPoolProject node is now redundant and should be removed
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_node,
-            vec![col("a"), col("b"), mock_udf.alias("udf_results")],
+            vec![
+                resolved_col("a"),
+                resolved_col("b"),
+                mock_udf.alias("udf_results"),
+            ],
         )?)
         .arced();
-        let project =
-            LogicalPlan::Project(Project::try_new(actor_pool_project, vec![col("a")])?).arced();
+        let project = LogicalPlan::Project(Project::try_new(
+            actor_pool_project,
+            vec![resolved_col("a")],
+        )?)
+        .arced();
 
         // Optimized plan will push the projection all the way down into the scan
         let expected_scan = dummy_scan_node_with_pushdowns(
@@ -1126,8 +1158,8 @@ mod tests {
         let plan = LogicalPlan::Unpivot(
             Unpivot::try_new(
                 scan_node.clone(),
-                vec![col("year")],
-                vec![col("Jan"), col("Feb")],
+                vec![resolved_col("year")],
+                vec![resolved_col("Jan"), resolved_col("Feb")],
                 "month".to_string(),
                 "inventory".to_string(),
             )
@@ -1135,7 +1167,7 @@ mod tests {
         );
 
         let plan = LogicalPlan::Project(
-            Project::try_new(plan.into(), vec![col("inventory").alias("year2")]).unwrap(),
+            Project::try_new(plan.into(), vec![resolved_col("inventory").alias("year2")]).unwrap(),
         )
         .into();
         let expected_scan = dummy_scan_node_with_pushdowns(
@@ -1156,8 +1188,8 @@ mod tests {
         let expected = LogicalPlan::Unpivot(
             Unpivot::try_new(
                 expected_scan,
-                vec![col("year")],
-                vec![col("Jan"), col("Feb")],
+                vec![resolved_col("year")],
+                vec![resolved_col("Jan"), resolved_col("Feb")],
                 "month".to_string(),
                 "inventory".to_string(),
             )
@@ -1165,7 +1197,11 @@ mod tests {
         );
 
         let expected = LogicalPlan::Project(
-            Project::try_new(expected.into(), vec![col("inventory").alias("year2")]).unwrap(),
+            Project::try_new(
+                expected.into(),
+                vec![resolved_col("inventory").alias("year2")],
+            )
+            .unwrap(),
         )
         .into();
         assert_optimized_plan_eq(plan, expected).unwrap();
