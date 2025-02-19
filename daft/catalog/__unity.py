@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Table
+from daft.catalog import Catalog, Identifier, Table
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
@@ -20,7 +20,7 @@ class UnityCatalog(Catalog):
         self._inner = unity_catalog
 
     @staticmethod
-    def _try_from(obj: object) -> UnityCatalog | None:
+    def _try_from_obj(obj: object) -> UnityCatalog | None:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
         if isinstance(obj, InnerCatalog):
             return UnityCatalog(obj)
@@ -35,7 +35,9 @@ class UnityCatalog(Catalog):
     # get_*
     ###
 
-    def get_table(self, name: str) -> UnityTable:
+    def get_table(self, name: str | Identifier) -> UnityTable:
+        if isinstance(name, Identifier):
+            name = ".".join(name)  # TODO unity qualified identifiers
         return UnityTable(self._inner.load_table(name))
 
     ###

@@ -41,7 +41,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from daft.daft import catalog as native_catalog
-from daft.daft import PyIdentifier
+from daft.daft import PyIdentifier, PyTable
 from daft.logical.builder import LogicalPlanBuilder
 
 from daft.dataframe import DataFrame
@@ -134,7 +134,7 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
 
     """
-    if (c := Catalog._try_from(catalog)) is not None:
+    if (c := Catalog._try_from_obj(catalog)) is not None:
         return native_catalog.register_python_catalog(c, name)
     raise ValueError(f"Unsupported catalog type: {type(catalog)}")
 
@@ -142,12 +142,23 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
 class Catalog(ABC):
     """Interface for python catalog implementations."""
 
-    @property
-    def inner(self) -> object | None:
-        """Returns the inner catalog object if this is an adapter."""
+    @staticmethod
+    def from_pydict(tables: dict[str, Table]) -> Catalog:
+        """Returns an in-memory catalog from the dictionary."""
+        from daft.catalog.__memory import MemoryCatalog
+
+        return MemoryCatalog(tables)
 
     @staticmethod
-    def _try_from(obj: object) -> Catalog | None:
+    def _from_obj(obj: object) -> Catalog:
+        """Returns a Daft Catlog from a supported object type or raises an error."""
+        if c := Catalog._try_from_obj(obj):
+            return c
+        raise ValueError(f"Unsupported catalog type: {type(obj)}")
+
+    @staticmethod
+    def _try_from_obj(obj: object) -> Catalog | None:
+        """Returns a Daft Catalog from a supported object type or None."""
         for factory in (Catalog._try_from_iceberg, Catalog._try_from_unity):
             if (c := factory(obj)) is not None:
                 return c
@@ -159,7 +170,7 @@ class Catalog(ABC):
         try:
             from daft.catalog.__iceberg import IcebergCatalog
 
-            return IcebergCatalog._try_from(obj)
+            return IcebergCatalog._try_from_obj(obj)
         except ImportError:
             return None
 
@@ -169,9 +180,13 @@ class Catalog(ABC):
         try:
             from daft.catalog.__unity import UnityCatalog
 
-            return UnityCatalog._try_from(obj)
+            return UnityCatalog._try_from_obj(obj)
         except ImportError:
             return None
+
+    @property
+    def inner(self) -> object | None:
+        """Returns the inner catalog object if this is an adapter."""
 
     ###
     # list_*
@@ -185,7 +200,7 @@ class Catalog(ABC):
     ###
 
     @abstractmethod
-    def get_table(self, name: str) -> Table: ...
+    def get_table(self, name: str | Identifier) -> Table: ...
 
     # TODO deprecated catalog APIs #3819
     def load_table(self, name: str) -> Table:
@@ -217,6 +232,12 @@ class Identifier(Sequence):
         self._identifier = PyIdentifier(parts[:-1], parts[-1])
 
     @staticmethod
+    def _from_pyidentifier(identifier: PyIdentifier) -> Identifier:
+        i = Identifier.__new__(Identifier)
+        i._identifier = identifier
+        return i
+
+    @staticmethod
     def from_sql(input: str, normalize: bool = False) -> Identifier:
         """Parses an Identifier from an SQL string, normalizing to lowercase if specified.
 
@@ -231,6 +252,11 @@ class Identifier(Sequence):
         i = Identifier.__new__(Identifier)
         i._identifier = PyIdentifier.from_sql(input, normalize)
         return i
+
+    @staticmethod
+    def from_str(input: str) -> Identifier:
+        """Parses an Identifier from a dot-delimited Python string without normalization."""
+        return Identifier(*input.split("."))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Identifier):
@@ -249,9 +275,24 @@ class Identifier(Sequence):
     def __repr__(self) -> str:
         return f"Identifier('{self._identifier.__repr__()}')"
 
+    def __str__(self) -> str:
+        return ".".join(self)
+
 
 class Table(ABC):
     """Interface for python table implementations."""
+
+    @staticmethod
+    def from_df(dataframe: DataFrame) -> Table:
+        """Returns a read-only table backed by the DataFrame."""
+        return PyTable.from_builder(dataframe._builder._builder)
+
+    @staticmethod
+    def _from_obj(obj: object) -> Table:
+        """Returns a Daft Table from a supported object type or raises an error."""
+        if isinstance(obj, DataFrame):
+            return Table.from_df(obj)
+        raise ValueError(f"Unsupported table type: {type(obj)}")
 
     @property
     def inner(self) -> object | None:

@@ -2,7 +2,7 @@ use std::{future::ready, rc::Rc, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
-use daft_catalog::Identifier;
+use daft_catalog::View;
 use daft_context::get_context;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
@@ -242,13 +242,11 @@ impl ConnectSession {
         }
 
         let session = self.session_mut();
-        session
-            .create_table(Identifier::simple(name), input)
-            .map_err(|e| {
-                Status::internal(
-                    textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
-                )
-            })?;
+        let view = View::from(input.build()).arced();
+
+        session.attach_table(view, name).map_err(|e| {
+            Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
+        })?;
 
         let response = rb.result_complete_response();
         let stream = stream::once(ready(Ok(response)));
