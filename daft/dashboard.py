@@ -11,21 +11,27 @@ from urllib.error import URLError
 if TYPE_CHECKING:
     from datetime import datetime
 
-try:
-    # re-export all of the symbols defined inside of `daft_dashboard`
-    # from daft_dashboard import *
-    from daft_dashboard import DAFT_DASHBOARD_ENV_NAME, DAFT_DASHBOARD_QUERIES_URL, cli, launch, shutdown
-except ImportError:
-    warnings.warn(
-        "Unable to import Daft's dashboard features"
-        "Consider re-installing Daft with the 'dashboard' feature installed, e.g.:"
-        'pip install "getdaft[dashboard]"'
-    )
-    raise
+
+def dashboard_module():
+    try:
+        import daft_dashboard
+    except ImportError:
+        warnings.warn(
+            "Unable to import Daft's dashboard features"
+            "Consider re-installing Daft with the 'dashboard' feature installed, e.g.:"
+            'pip install "getdaft[dashboard]"'
+        )
+        raise
+
+    if not daft_dashboard.__file__:
+        raise ImportError
+
+    return daft_dashboard
 
 
 def _should_run() -> bool:
-    enable_dashboard_str = os.environ.get(DAFT_DASHBOARD_ENV_NAME)
+    dashboard = dashboard_module()
+    enable_dashboard_str = os.environ.get(dashboard.DAFT_DASHBOARD_ENV_NAME)
 
     if not enable_dashboard_str:
         return False
@@ -44,9 +50,11 @@ def _broadcast_query_plan(
     plan_time_start: datetime,
     plan_time_end: datetime,
 ):
+    dashboard = dashboard_module()
+
     # try launching the dashboard
     # if dashboard is already launched, this will do nothing
-    launch(detach=True, noop_if_initialized=True)
+    dashboard.launch(detach=True, noop_if_initialized=True)
 
     headers = {
         "Content-Type": "application/json",
@@ -59,16 +67,23 @@ def _broadcast_query_plan(
             "plan_time_end": str(plan_time_end),
         }
     ).encode("utf-8")
-    req = request.Request(DAFT_DASHBOARD_QUERIES_URL, headers=headers, data=data)
+    req = request.Request(dashboard.DAFT_DASHBOARD_QUERIES_URL, headers=headers, data=data)
 
     try:
         request.urlopen(req, timeout=1)
     except URLError as e:
-        warnings.warn(f"Failed to broadcast metrics over {DAFT_DASHBOARD_QUERIES_URL}: {e}")
+        warnings.warn(f"Failed to broadcast metrics over {dashboard.DAFT_DASHBOARD_QUERIES_URL}: {e}")
 
 
-__all__ = [
-    "cli",
-    "launch",
-    "shutdown",
-]
+try:
+    dashboard = dashboard_module()
+    from dashboard import cli, launch, shutdown
+
+    # re-export all of the symbols defined inside of `daft_dashboard`
+    __all__ = [
+        "cli",
+        "launch",
+        "shutdown",
+    ]
+except Exception:
+    ...

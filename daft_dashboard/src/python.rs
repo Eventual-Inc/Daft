@@ -49,7 +49,7 @@ fn shutdown(noop_if_shutdown: bool) -> PyResult<()> {
 
             spawn(async move {
                 if let Err(err) = conn.await {
-                    println!("Connection failed: {:?}", err);
+                    log::error!("Connection failed: {:?}", err);
                 }
             });
 
@@ -137,7 +137,7 @@ fn launch_detached(static_assets_path: &str, noop_if_initialized: bool) -> anyho
             exit(match break_reason {
                 BreakReason::PortAlreadyBound if noop_if_initialized => 0,
                 BreakReason::PortAlreadyBound => {
-                    println!("{}", already_bound_error());
+                    log::error!("{}", already_bound_error());
                     1
                 }
                 BreakReason::PythonSignalInterrupt => {
