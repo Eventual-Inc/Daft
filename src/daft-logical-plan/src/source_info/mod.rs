@@ -1,8 +1,5 @@
 pub mod file_info;
-use std::{
-    hash::{Hash, Hasher},
-    sync::atomic::AtomicUsize,
-};
+use std::hash::{Hash, Hasher};
 
 use common_partitioning::PartitionCacheEntry;
 use common_scan_info::PhysicalScanInfo;
@@ -23,22 +20,24 @@ pub enum SourceInfo {
 pub struct InMemoryInfo {
     pub source_schema: SchemaRef,
     pub cache_key: String,
-    pub cache_entry: PartitionCacheEntry,
+    pub cache_entry: Option<PartitionCacheEntry>,
     pub num_partitions: usize,
     pub size_bytes: usize,
     pub num_rows: usize,
     pub clustering_spec: Option<ClusteringSpecRef>,
+    pub source_id: Option<usize>,
 }
 
 impl InMemoryInfo {
     pub fn new(
         source_schema: SchemaRef,
         cache_key: String,
-        cache_entry: PartitionCacheEntry,
+        cache_entry: Option<PartitionCacheEntry>,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
         clustering_spec: Option<ClusteringSpecRef>,
+        source_id: Option<usize>,
     ) -> Self {
         Self {
             source_schema,
@@ -48,6 +47,7 @@ impl InMemoryInfo {
             size_bytes,
             num_rows,
             clustering_spec,
+            source_id,
         }
     }
 }
@@ -66,8 +66,6 @@ impl Hash for InMemoryInfo {
     }
 }
 
-static PLACEHOLDER_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PlaceHolderInfo {
     pub source_schema: SchemaRef,
@@ -76,11 +74,15 @@ pub struct PlaceHolderInfo {
 }
 
 impl PlaceHolderInfo {
-    pub fn new(source_schema: SchemaRef, clustering_spec: ClusteringSpecRef) -> Self {
+    pub fn new(
+        source_id: usize,
+        source_schema: SchemaRef,
+        clustering_spec: ClusteringSpecRef,
+    ) -> Self {
         Self {
             source_schema,
             clustering_spec,
-            source_id: PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            source_id,
         }
     }
 }

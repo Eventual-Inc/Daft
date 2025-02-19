@@ -99,3 +99,6 @@ class AdaptivePhysicalPlanScheduler:
             size_bytes=size_bytes,
             num_rows=num_rows,
         )
+
+    def explain_analyze(self, explain_analyze_dir: str) -> None:
+        self._scheduler.explain_analyze(explain_analyze_dir)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
+import os
 import threading
 import time
 import uuid
@@ -1291,6 +1292,16 @@ class RayRunner(Runner[ray.ObjectRef]):
                     cache_entry = self._collect_into_cache(results_iter)
                     adaptive_planner.update(source_id, cache_entry)
                     del cache_entry
+            enable_explain_analyze = os.getenv("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE")
+            ray_logs_location = ray_tracing.get_log_location()
+            if (
+                ray_logs_location.exists()
+                and enable_explain_analyze is not None
+                and enable_explain_analyze in ["1", "true"]
+            ):
+                explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
+                explain_analyze_dir.mkdir(exist_ok=True, parents=True)
+                adaptive_planner.explain_analyze(str(explain_analyze_dir))
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.

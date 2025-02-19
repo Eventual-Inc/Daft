@@ -67,11 +67,12 @@ impl AdaptivePhysicalPlanScheduler {
             let in_memory_info = InMemoryInfo::new(
                 Schema::empty().into(), // TODO thread in schema from in memory scan
                 partition_key.into(),
-                PartitionCacheEntry::Python(Arc::new(cache_entry)),
+                Some(PartitionCacheEntry::Python(Arc::new(cache_entry))),
                 num_partitions,
                 size_bytes,
                 num_rows,
                 None, // TODO(sammy) thread through clustering spec to Python
+                Some(source_id),
             );
 
             self.planner.update(MaterializedResults {
@@ -80,5 +81,10 @@ impl AdaptivePhysicalPlanScheduler {
             })?;
             Ok(())
         })
+    }
+
+    pub fn explain_analyze(&self, explain_analyze_dir: &str) -> PyResult<()> {
+        self.planner.explain_analyze(explain_analyze_dir)?;
+        Ok(())
     }
 }
