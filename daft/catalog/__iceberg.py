@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 from pyiceberg.catalog import Catalog as InnerCatalog
@@ -17,7 +18,11 @@ class IcebergCatalog(Catalog):
     _inner: InnerCatalog
 
     def __init__(self, pyiceberg_catalog: InnerCatalog):
-        """DEPRECATED: Please use `Catalog.from_iceberg`."""
+        """DEPRECATED: Please use `Catalog.from_iceberg`; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please use `Catalog.from_iceberg` instead.",
+            category=DeprecationWarning,
+        )
         self._inner = pyiceberg_catalog
 
     @staticmethod
@@ -44,8 +49,8 @@ class IcebergCatalog(Catalog):
     ###
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
-        namespace = pattern if pattern else ""  # pyiceberg lists on namespaces
-        return [".".join(tup) for tup in self._inner.list_tables(namespace)]
+        """List tables under the given namespace (pattern) in the catalog, or all tables if no namespace is provided."""
+        return [".".join(tup) for tup in self._inner.list_tables(pattern)]
 
 
 class IcebergTable(Table):

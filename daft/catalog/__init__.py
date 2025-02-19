@@ -38,6 +38,8 @@ df2 = daft.sql("SELECT * FROM my_table")
 
 from __future__ import annotations
 
+import warnings
+
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from daft.daft import catalog as native_catalog
@@ -189,7 +191,11 @@ class Catalog(ABC):
 
     # TODO deprecated catalog APIs #3819
     def load_table(self, name: str) -> Table:
-        """DEPRECATED: Please use get_table(name: str)."""
+        """DEPRECATED: Please use `get_table` instead; version=0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please use `get_table` instead.",
+            category=DeprecationWarning,
+        )
         return self.get_table(name)
 
 
@@ -259,7 +265,11 @@ class Table(ABC):
 
     # TODO deprecated catalog APIs #3819
     def to_dataframe(self) -> DataFrame:
-        """DEPRECATED: Please use `read()`."""
+        """DEPRECATED: Please use `read` instead; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please use `read` instead.",
+            category=DeprecationWarning,
+        )
         return self.read()
 
     @abstractmethod
@@ -272,4 +282,4 @@ class Table(ABC):
 
     def show(self, n: int = 8) -> None:
         """Shows the first n rows from this table."""
-        self.read().show(n)
+        return self.read().show(n)

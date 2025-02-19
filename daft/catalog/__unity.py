@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 from daft.catalog import Catalog, Table
@@ -16,7 +17,11 @@ class UnityCatalog(Catalog):
     _inner: InnerCatalog
 
     def __init__(self, unity_catalog: InnerCatalog):
-        """DEPRECATED: Please use `Catalog.from_unity`."""
+        """DEPRECATED: Please use `Catalog.from_unity`; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Catalog.from_unity` instead; version 0.5.0!",
+            category=DeprecationWarning,
+        )
         self._inner = unity_catalog
 
     @staticmethod
