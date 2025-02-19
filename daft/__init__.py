@@ -94,6 +94,7 @@ from daft.session import Session, current_session, set_session
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
+from daft.window import Window
 
 to_struct = Expression.to_struct
 
@@ -111,6 +112,7 @@ __all__ = [
     "Series",
     "Session",
     "TimeUnit",
+    "Window",
     "coalesce",
     "col",
     "current_session",
