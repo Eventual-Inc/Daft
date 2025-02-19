@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use daft_core::prelude::SchemaRef;
 use daft_logical_plan::{LogicalPlanRef, PyLogicalPlanBuilder};
-use pyo3::{exceptions::PyIndexError, prelude::*};
+use pyo3::{exceptions::PyIndexError, intern, prelude::*};
 
-use crate::{error::Result, global_catalog, Catalog, CatalogRef, Identifier, Table, TableRef};
+use crate::{
+    error::Result, global_catalog, Catalog, CatalogRef, Identifier, Table, TableRef, View,
+};
 
 /// Read a table from the specified `DaftMetaCatalog`.
 ///
@@ -216,7 +218,34 @@ impl PyTable {
 }
 
 #[pymethods]
-impl PyTable {}
+impl PyTable {
+    /// Create an immutable table backed by the logical plan.
+    #[staticmethod]
+    fn from_builder(builder: &PyLogicalPlanBuilder) -> PyResult<PyTable> {
+        let view = builder.builder.build();
+        let view = View::from(view).arced();
+        Ok(PyTable::new(view))
+    }
+
+    /// Creates a python DataFrame for this table, likely easier with python-side helpers.
+    fn read(&self, py: Python<'_>) -> PyResult<PyObject> {
+        // builder = 'compiled plan'
+        let builder = self.0.get_logical_plan()?;
+        let builder = PyLogicalPlanBuilder::new(builder.into());
+        // builder = LogicalPlanBuilder.__init__(builder)
+        let builder = py
+            .import(intern!(py, "daft.logical.builder"))?
+            .getattr(intern!(py, "LogicalPlanBuilder"))?
+            .call1((builder,))?;
+        // df = DataFrame.__init__(builder)
+        let df = py
+            .import(intern!(py, "daft.dataframe"))?
+            .getattr(intern!(py, "DataFrame"))?
+            .call1((builder,))?;
+        // df as object
+        df.extract()
+    }
+}
 
 /// PyTableWrapper wraps a `daft.catalog.Table` implementation (py->rust).
 #[derive(Debug)]

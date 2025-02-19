@@ -21,7 +21,7 @@ class IcebergCatalog(Catalog):
         self._inner = pyiceberg_catalog
 
     @staticmethod
-    def _try_from(obj: object) -> IcebergCatalog | None:
+    def _try_from_obj(obj: object) -> IcebergCatalog | None:
         """Returns an IcebergCatalog instance if the given object can be adapted so."""
         if isinstance(obj, InnerCatalog):
             return IcebergCatalog(obj)

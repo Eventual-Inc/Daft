@@ -20,7 +20,7 @@ class UnityCatalog(Catalog):
         self._inner = unity_catalog
 
     @staticmethod
-    def _try_from(obj: object) -> UnityCatalog | None:
+    def _try_from_obj(obj: object) -> UnityCatalog | None:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
         if isinstance(obj, InnerCatalog):
             return UnityCatalog(obj)

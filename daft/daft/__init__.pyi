@@ -1866,6 +1866,13 @@ class PyIdentifier:
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
 
+class PyTable(Table):
+    @staticmethod
+    def from_builder(builder: LogicalPlanBuilder):
+        PyTable
+    def read(self):
+        LogicalPlanBuilder
+
 ###
 # daft-session
 ###

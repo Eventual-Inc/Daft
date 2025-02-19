@@ -41,7 +41,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from daft.daft import catalog as native_catalog
-from daft.daft import PyIdentifier
+from daft.daft import PyIdentifier, PyTable
 from daft.logical.builder import LogicalPlanBuilder
 
 from daft.dataframe import DataFrame
@@ -134,7 +134,7 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
 
     """
-    if (c := Catalog._try_from(catalog)) is not None:
+    if (c := Catalog._try_from_obj(catalog)) is not None:
         return native_catalog.register_python_catalog(c, name)
     raise ValueError(f"Unsupported catalog type: {type(catalog)}")
 
@@ -144,11 +144,21 @@ class Catalog(ABC):
 
     @staticmethod
     def from_pydict(tables: dict[str, Table]) -> Catalog:
-        """Returns a new in-memory catalog implementation with temporary tables."""
-        raise NotImplementedError("Catalog.from_pydict")
+        """Returns an in-memory catalog from the dictionary."""
+        from daft.catalog.__memory import MemoryCatalog
+
+        return MemoryCatalog(tables)
 
     @staticmethod
-    def _try_from(obj: object) -> Catalog | None:
+    def _from_obj(obj: object) -> Catalog:
+        """Returns a Daft Catlog from a supported object type or raises an error."""
+        if c := Catalog._try_from_obj(obj):
+            return c
+        raise ValueError(f"Unsupported catalog type: {type(obj)}")
+
+    @staticmethod
+    def _try_from_obj(obj: object) -> Catalog | None:
+        """Returns a Daft Catalog from a supported object type or None."""
         for factory in (Catalog._try_from_iceberg, Catalog._try_from_unity):
             if (c := factory(obj)) is not None:
                 return c
@@ -160,7 +170,7 @@ class Catalog(ABC):
         try:
             from daft.catalog.__iceberg import IcebergCatalog
 
-            return IcebergCatalog._try_from(obj)
+            return IcebergCatalog._try_from_obj(obj)
         except ImportError:
             return None
 
@@ -170,7 +180,7 @@ class Catalog(ABC):
         try:
             from daft.catalog.__unity import UnityCatalog
 
-            return UnityCatalog._try_from(obj)
+            return UnityCatalog._try_from_obj(obj)
         except ImportError:
             return None
 
@@ -265,9 +275,24 @@ class Identifier(Sequence):
     def __repr__(self) -> str:
         return f"Identifier('{self._identifier.__repr__()}')"
 
+    def __str__(self) -> str:
+        return ".".join(self)
+
 
 class Table(ABC):
     """Interface for python table implementations."""
+
+    @staticmethod
+    def from_df(dataframe: DataFrame) -> Table:
+        """Returns a read-only table backed by the DataFrame."""
+        return PyTable.from_builder(dataframe._builder._builder)
+
+    @staticmethod
+    def _from_obj(obj: object) -> Table:
+        """Returns a Daft Table from a supported object type or raises an error."""
+        if isinstance(obj, DataFrame):
+            return Table.from_df(obj)
+        raise ValueError(f"Unsupported table type: {type(obj)}")
 
     @property
     def inner(self) -> object | None:
