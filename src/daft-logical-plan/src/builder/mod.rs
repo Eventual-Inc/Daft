@@ -271,7 +271,7 @@ impl LogicalPlanBuilder {
         self.schema()
             .fields
             .iter()
-            .map(|(name, _)| col(name.clone()))
+            .map(|(name, _)| resolved_col(name.clone()))
             .collect()
     }
 

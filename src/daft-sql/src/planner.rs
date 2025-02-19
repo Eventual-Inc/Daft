@@ -578,7 +578,7 @@ impl<'a> SQLPlanner<'a> {
         }
 
         if from.is_empty() {
-            self.current_relation = Some(singleton_relation()?);
+            self.current_plan = Some(singleton_plan()?);
             return Ok(());
         }
 
@@ -2166,9 +2166,9 @@ fn apply_table_alias(
     Ok(plan)
 }
 
-/// Helper to do create a singleton relation for SELECT without FROM.
+/// Helper to do create a singleton plan for SELECT without FROM.
 #[cfg(feature = "python")]
-fn singleton_relation() -> DaftResult<Relation> {
+fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
     use daft_logical_plan::PyLogicalPlanBuilder;
     use pyo3::{
         intern,
@@ -2190,14 +2190,14 @@ fn singleton_relation() -> DaftResult<Relation> {
             .getattr(intern!(py, "_builder"))?
             .extract()?;
         // done.
-        Ok(Relation::new(builder.builder, "singleton".to_string()))
+        Ok(builder.builder)
     })
 }
 
-/// Helper to do create a singleton relation for SELECT without FROM.
+/// Helper to do create a singleton plan for SELECT without FROM.
 #[cfg(not(feature = "python"))]
-fn singleton_relation() -> DaftResult<Relation> {
-    Err(DaftError::InternalError(
+fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
+    Err(common_error::DaftError::InternalError(
         "SELECT without FROM requires 'python' feature".to_string(),
     ))
 }

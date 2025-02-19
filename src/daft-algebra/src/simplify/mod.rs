@@ -188,10 +188,10 @@ mod test {
     #[rstest]
     // One element list, can transform to eq
     // e IN (1) --> e = 1
-    #[case(col("int").is_in(vec![lit(1)]), col("int").eq(lit(1)))]
+    #[case(resolved_col("int").is_in(vec![lit(1)]), resolved_col("int").eq(lit(1)))]
     // Small list, can transform to ORs
     // e IN (1, 2, 3, 4, 5) --> e = 1 OR e = 2 OR e = 3 OR e = 4 OR e = 5
-    #[case(col("int").is_in(vec![lit(1), lit(2), lit(3), lit(4), lit(5)]), col("int").eq(lit(1)).or(col("int").eq(lit(2))).or(col("int").eq(lit(3))).or(col("int").eq(lit(4))).or(col("int").eq(lit(5))))]
+    #[case(resolved_col("int").is_in(vec![lit(1), lit(2), lit(3), lit(4), lit(5)]), resolved_col("int").eq(lit(1)).or(resolved_col("int").eq(lit(2))).or(resolved_col("int").eq(lit(3))).or(resolved_col("int").eq(lit(4))).or(resolved_col("int").eq(lit(5))))]
     fn test_is_in_exprs_can_chain_or_clauses(
         #[case] input: ExprRef,
         #[case] expected: ExprRef,
@@ -206,7 +206,7 @@ mod test {
 
     #[rstest]
     // e IN (1, 2, 3, 4, 5, 6) --> e IN (1, 2, 3, 4, 5, 6)
-    #[case(col("int").is_in(vec![lit(1), lit(2), lit(3), lit(4), lit(5), lit(6)]), col("int").is_in(vec![lit(1), lit(2), lit(3), lit(4), lit(5), lit(6)]))]
+    #[case(resolved_col("int").is_in(vec![lit(1), lit(2), lit(3), lit(4), lit(5), lit(6)]), resolved_col("int").is_in(vec![lit(1), lit(2), lit(3), lit(4), lit(5), lit(6)]))]
     fn test_is_in_exprs_more_than_max_chain_length(
         #[case] input: ExprRef,
         #[case] expected: ExprRef,
