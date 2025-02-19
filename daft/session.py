@@ -9,6 +9,26 @@ if TYPE_CHECKING:
     from daft.dataframe import DataFrame
 
 
+__all__ = [
+    "Session",
+    "attach_catalog",
+    "attach_table",
+    "current_catalog",
+    "current_session",
+    "detach_catalog",
+    "detach_table",
+    "get_catalog",
+    "get_table",
+    "has_catalog",
+    "has_table",
+    "list_catalogs",
+    "list_tables",
+    "read_table",
+    "set_catalog",
+    "set_session",
+]
+
+
 class Session:
     """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs."""
 
@@ -152,8 +172,38 @@ def _session() -> Session:
 
 
 ###
+# attach & detach
+###
+
+
+def attach_catalog(catalog: object | Catalog, alias: str) -> Catalog:
+    """Attaches an external catalog to the current session."""
+    return _session().attach_catalog(catalog, alias)
+
+
+def attach_table(table: object | Table, alias: str) -> Table:
+    """Attaches an external table to the current session."""
+    return _session().attach_table(table, alias)
+
+
+def detach_catalog(alias: str):
+    """Detaches the catalog from the current session."""
+    return _session().detach_catalog(alias)
+
+
+def detach_table(alias: str):
+    """Detaches the table from the current session."""
+    return _session().detach_table(alias)
+
+
+###
 # session state
 ###
+
+
+def current_catalog() -> Catalog:
+    """Returns the session's current catalog."""
+    return _session().current_catalog()
 
 
 def current_session() -> Session:
@@ -162,8 +212,68 @@ def current_session() -> Session:
 
 
 ###
-# set_.* (session management)
+# get_*
 ###
+
+
+def get_catalog(name: str) -> Catalog:
+    """Returns the catalog from the current session or raises an exception if it does not exist."""
+    return _session().get_catalog(name)
+
+
+def get_table(name: str | Identifier) -> Table:
+    """Returns the table from the current session or raises an exception if it does not exist."""
+    return _session().get_table(name)
+
+
+###
+# has_*
+###
+
+
+def has_catalog(name: str) -> bool:
+    """Returns true if a catalog with the given name exists in the current session."""
+    return _session().has_catalog(name)
+
+
+def has_table(name: str | Identifier) -> bool:
+    """Returns true if a table with the given name exists in the current session."""
+    return _session().has_table(name)
+
+
+###
+# list_*
+###
+
+
+def list_catalogs(pattern: None | str = None) -> list[str]:
+    """Returns a list of available catalogs in the current session."""
+    return _session().list_catalogs(pattern)
+
+
+def list_tables(pattern: None | str = None) -> list[Identifier]:
+    """Returns a list of available tables in the current session."""
+    return _session().list_tables(pattern)
+
+
+###
+# read_*
+###
+
+
+def read_table(name: str | Identifier) -> DataFrame:
+    """Returns the table as a DataFrame or raises an exception if it does not exist."""
+    return _session().get_table(name).read()
+
+
+###
+# set_*
+###
+
+
+def set_catalog(name: str):
+    """Set the given catalog as current_catalog for the current session or err if not exists."""
+    _session().set_catalog(name)
 
 
 def set_session(session: Session):
