@@ -433,7 +433,7 @@ impl EmittedStage {
     pub fn new(
         stage_id: Option<usize>,
         physical_plan: PhysicalPlanRef,
-        input_stages: Vec<EmittedStage>,
+        input_stages: Vec<Self>,
     ) -> DaftResult<Self> {
         let mut strip_cache_entry = StripCacheEntryFromInMemoryScan {};
         let physical_plan = physical_plan.rewrite(&mut strip_cache_entry)?.data;
@@ -530,7 +530,7 @@ impl AdaptivePlanner {
             }
         }
         let mut source_ids = vec![];
-        find_input_source_ids(&plan.physical_plan(), &mut source_ids);
+        find_input_source_ids(plan.physical_plan(), &mut source_ids);
         if source_ids.is_empty() {
             let emitted_stage =
                 EmittedStage::new(plan.source_id(), plan.physical_plan().clone(), vec![])?;
@@ -808,8 +808,8 @@ where
         }
 
         for child in children {
-            self.fmt_node(&child)?;
-            self.add_edge(self.get_node_id(node), self.get_node_id(&child))?;
+            self.fmt_node(child)?;
+            self.add_edge(self.get_node_id(node), self.get_node_id(child))?;
         }
 
         Ok(())

@@ -29,6 +29,7 @@ pub struct InMemoryInfo {
 }
 
 impl InMemoryInfo {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         source_schema: SchemaRef,
         cache_key: String,
