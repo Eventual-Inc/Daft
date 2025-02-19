@@ -16,6 +16,7 @@ from daft.runners.partitioning import (
     PartitionSetCache,
 )
 from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
+from daft.scarf_telemetry import scarf_telemetry
 
 if TYPE_CHECKING:
     from daft.logical.builder import LogicalPlanBuilder
@@ -70,6 +71,8 @@ class NativeRunner(Runner[MicroPartition]):
         builder: LogicalPlanBuilder,
         results_buffer_size: int | None = None,
     ) -> Iterator[LocalMaterializedResult]:
+        scarf_telemetry(runner=self.name)
+
         # NOTE: Freeze and use this same execution config for the entire execution
         daft_execution_config = get_context().daft_execution_config
 
