@@ -53,7 +53,7 @@ pub trait Table: Sync + Send + std::fmt::Debug {
     }
 }
 
-/// View provides an implementation of Table over a DataFrame.
+/// View is an immutable Table backed by a DataFrame.
 #[derive(Debug, Clone)]
 pub struct View(LogicalPlanRef);
 
@@ -81,7 +81,7 @@ impl Table for View {
         Ok(self.0.clone())
     }
 
-    /// This is a little ugly .. it creates a PyObject which implements a python Table
+    /// This is a little ugly .. it creates a PyObject which implements the daft.catalog.Table ABC
     #[cfg(feature = "python")]
     fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
         use pyo3::{types::PyAnyMethods, IntoPyObject};

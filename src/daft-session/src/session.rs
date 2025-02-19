@@ -63,7 +63,8 @@ impl Session {
     }
 
     /// Attaches a table to this session, err if already exists.
-    pub fn attach_table(&self, table: TableRef, alias: String) -> Result<()> {
+    pub fn attach_table(&self, table: TableRef, alias: impl Into<String>) -> Result<()> {
+        let alias = alias.into();
         if self.state().tables.exists(&alias) {
             obj_already_exists_err!("Table", &alias.into())
         }
