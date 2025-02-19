@@ -10,6 +10,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Collection,
     Iterable,
     Iterator,
     Literal,
@@ -1349,11 +1350,15 @@ class Expression:
         Returns:
             Expression: Boolean Expression indicating whether values are in the provided list
         """
-        if not isinstance(other, Expression):
+        if isinstance(other, Collection):
+            other = [Expression._to_expression(item) for item in other]
+        elif not isinstance(other, Expression):
             series = item_to_series("items", other)
-            other = Expression._to_expression(series)
+            other = [Expression._to_expression(series)]
+        else:
+            other = [other]
 
-        expr = self._expr.is_in([other._expr])
+        expr = self._expr.is_in([item._expr for item in other])
         return Expression._from_pyexpr(expr)
 
     def between(self, lower: Any, upper: Any) -> Expression:

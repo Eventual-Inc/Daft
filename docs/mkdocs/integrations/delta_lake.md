@@ -119,7 +119,7 @@ Here are Delta Lake features that are on our roadmap. Please let us know if you 
 
 1. Read support for [deletion vectors](https://docs.delta.io/latest/delta-deletion-vectors.html) ([issue](https://github.com/Eventual-Inc/Daft/issues/1954)).
 
-2. Read support for [column mappings](https://docs.delta.io/latest/delta-column-mapping.html>) ([issue](https://github.com/Eventual-Inc/Daft/issues/1955)).
+2. Read support for [column mappings](https://docs.delta.io/latest/delta-column-mapping.html) ([issue](https://github.com/Eventual-Inc/Daft/issues/1955)).
 
 3. Writing new Delta Lake tables ([issue](https://github.com/Eventual-Inc/Daft/issues/1967)).
 

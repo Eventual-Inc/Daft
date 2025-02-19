@@ -577,7 +577,15 @@ impl<'a> SQLPlanner<'a> {
             return Ok(());
         }
 
-        let from = from.iter().next().unwrap();
+        if from.is_empty() {
+            self.current_relation = Some(singleton_relation()?);
+            return Ok(());
+        }
+
+        let from = from
+            .iter()
+            .next()
+            .expect("expected at least one from source");
 
         macro_rules! return_non_ident_errors {
             ($e:expr) => {
@@ -2156,6 +2164,42 @@ fn apply_table_alias(
     plan = plan.alias(alias.name.value.clone());
 
     Ok(plan)
+}
+
+/// Helper to do create a singleton relation for SELECT without FROM.
+#[cfg(feature = "python")]
+fn singleton_relation() -> DaftResult<Relation> {
+    use daft_logical_plan::PyLogicalPlanBuilder;
+    use pyo3::{
+        intern,
+        prelude::*,
+        types::{IntoPyDict, PyList},
+    };
+    Python::with_gil(|py| {
+        // df = DataFrame._from_pydict({"":[""]})
+        let df = py
+            .import(intern!(py, "daft.dataframe.dataframe"))?
+            .getattr(intern!(py, "DataFrame"))?
+            .getattr(intern!(py, "_from_pydict"))?
+            .call1(([("", PyList::new(py, [""]).unwrap())]
+                .into_py_dict(py)
+                .unwrap(),))?;
+        // builder = df._builder._builder
+        let builder: PyLogicalPlanBuilder = df
+            .getattr(intern!(py, "_builder"))?
+            .getattr(intern!(py, "_builder"))?
+            .extract()?;
+        // done.
+        Ok(Relation::new(builder.builder, "singleton".to_string()))
+    })
+}
+
+/// Helper to do create a singleton relation for SELECT without FROM.
+#[cfg(not(feature = "python"))]
+fn singleton_relation() -> DaftResult<Relation> {
+    Err(DaftError::InternalError(
+        "SELECT without FROM requires 'python' feature".to_string(),
+    ))
 }
 
 #[cfg(test)]
