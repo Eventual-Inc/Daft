@@ -1396,6 +1396,16 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def summarize(self) -> "DataFrame":
+        """Returns column statistics for the DataFrame.
+
+        Returns:
+            DataFrame: new DataFrame with the computed column statistics.
+        """
+        builder = self._builder.summarize()
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def distinct(self) -> "DataFrame":
         """Computes unique rows, dropping duplicates.
 
@@ -1709,6 +1719,7 @@ class DataFrame:
         self,
         by: Union[ColumnInputType, List[ColumnInputType]],
         desc: Union[bool, List[bool]] = False,
+        nulls_first: Optional[Union[bool, List[bool]]] = None,
     ) -> "DataFrame":
         """Sorts DataFrame globally.
 
@@ -1768,9 +1779,12 @@ class DataFrame:
                 by,
             ]
 
+        if nulls_first is None:
+            nulls_first = desc
+
         sort_by = self.__column_input_to_expression(by)
 
-        builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=desc)
+        builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=nulls_first)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2336,6 +2350,8 @@ class DataFrame:
             return expr.any_value()
         elif op == "list":
             return expr.agg_list()
+        elif op == "set":
+            return expr.agg_set()
         elif op == "concat":
             return expr.agg_concat()
 
@@ -2518,6 +2534,18 @@ class DataFrame:
             DataFrame: Globally aggregated list. Should be a single row.
         """
         return self._apply_agg_fn(Expression.agg_list, cols)
+
+    @DataframePublicAPI
+    def agg_set(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global set agg on the DataFrame (ignoring nulls).
+
+        Args:
+            *cols (Union[str, Expression]): columns to form into a set
+
+        Returns:
+            DataFrame: Globally aggregated set. Should be a single row.
+        """
+        return self._apply_agg_fn(Expression.agg_set, cols)
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3340,6 +3368,17 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped list per column.
         """
         return self.df._apply_agg_fn(Expression.agg_list, cols, self.group_by)
+
+    def agg_set(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs grouped set on this GroupedDataFrame (ignoring nulls).
+
+        Args:
+            *cols (Union[str, Expression]): columns to form into a set
+
+        Returns:
+            DataFrame: DataFrame with grouped set per column.
+        """
+        return self.df._apply_agg_fn(Expression.agg_set, cols, self.group_by)
 
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped concat on this GroupedDataFrame.

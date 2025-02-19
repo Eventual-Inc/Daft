@@ -1,10 +1,7 @@
 use daft_logical_plan::PyLogicalPlanBuilder;
 use pyo3::{exceptions::PyIndexError, prelude::*};
 
-use crate::{
-    global_catalog,
-    identifier::{Identifier, Namespace},
-};
+use crate::{global_catalog, identifier::Identifier};
 
 /// Read a table from the specified `DaftMetaCatalog`.
 ///
@@ -99,13 +96,13 @@ pub struct PyIdentifier(Identifier);
 #[pymethods]
 impl PyIdentifier {
     #[new]
-    pub fn new(namespace: Namespace, name: String) -> PyIdentifier {
+    pub fn new(namespace: Vec<String>, name: String) -> PyIdentifier {
         Identifier::new(namespace, name).into()
     }
 
     #[staticmethod]
-    pub fn parse(input: &str) -> PyResult<PyIdentifier> {
-        Ok(Identifier::parse(input)?.into())
+    pub fn from_sql(input: &str, normalize: bool) -> PyResult<PyIdentifier> {
+        Ok(Identifier::from_sql(input, normalize)?.into())
     }
 
     pub fn eq(&self, other: &Self) -> PyResult<bool> {

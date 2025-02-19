@@ -246,6 +246,9 @@ pub enum AggExpr {
     #[display("list({_0})")]
     List(ExprRef),
 
+    #[display("set({_0})")]
+    Set(ExprRef),
+
     #[display("list({_0})")]
     Concat(ExprRef),
 
@@ -288,6 +291,7 @@ impl AggExpr {
             | Self::BoolOr(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr)
             | Self::Concat(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
@@ -368,6 +372,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_list()"))
             }
+            Self::Set(_expr) => {
+                let child_id = _expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_set()"))
+            }
             Self::Concat(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat()"))
@@ -393,6 +401,7 @@ impl AggExpr {
             | Self::BoolOr(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr)
             | Self::Concat(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
@@ -417,6 +426,7 @@ impl AggExpr {
             Self::BoolOr(_) => Self::BoolOr(first_child()),
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
             Self::List(_) => Self::List(first_child()),
+            Self::Set(_expr) => Self::Set(first_child()),
             Self::Concat(_) => Self::Concat(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
@@ -530,11 +540,14 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
+
+            Self::List(expr) | Self::Set(expr) => expr.to_field(schema)?.to_list_field(),
+
             Self::BoolAnd(expr) | Self::BoolOr(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::Boolean))
             }
-            Self::List(expr) => expr.to_field(schema)?.to_list_field(),
+
             Self::Concat(expr) => {
                 let field = expr.to_field(schema)?;
                 match field.dtype {
@@ -661,6 +674,10 @@ impl Expr {
 
     pub fn agg_list(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::List(self)).into()
+    }
+
+    pub fn agg_set(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Set(self)).into()
     }
 
     pub fn agg_concat(self: ExprRef) -> ExprRef {
@@ -1266,6 +1283,35 @@ impl Expr {
         match self {
             Self::Literal(lit) => Some(lit),
             _ => None,
+        }
+    }
+
+    pub fn has_compute(&self) -> bool {
+        match self {
+            Self::Column(..) => false,
+            Self::Literal(..) => false,
+            Self::Subquery(..) => false,
+            Self::Exists(..) => false,
+            Self::OuterReferenceColumn(..) => false,
+            Self::Function { .. } => true,
+            Self::ScalarFunction(..) => true,
+            Self::Agg(_) => true,
+            Self::IsIn(..) => true,
+            Self::Between(..) => true,
+            Self::BinaryOp { .. } => true,
+            Self::Alias(expr, ..) => expr.has_compute(),
+            Self::Cast(expr, ..) => expr.has_compute(),
+            Self::Not(expr) => expr.has_compute(),
+            Self::IsNull(expr) => expr.has_compute(),
+            Self::NotNull(expr) => expr.has_compute(),
+            Self::FillNull(expr, fill_value) => expr.has_compute() || fill_value.has_compute(),
+            Self::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
+            Self::InSubquery(expr, _) => expr.has_compute(),
+            Self::List(..) => true,
         }
     }
 

@@ -1,23 +1,29 @@
-use arrow2::array::PrimitiveArray;
+use arrow2::{array::PrimitiveArray, offset::OffsetsBuffer};
 use common_error::{DaftError, DaftResult};
 
 use crate::{
     array::{
+        growable::make_growable,
         ops::{
-            DaftApproxSketchAggable, DaftHllMergeAggable, DaftMeanAggable, DaftStddevAggable,
-            DaftSumAggable, GroupIndices,
+            DaftApproxSketchAggable, DaftCountAggable, DaftHllMergeAggable, DaftMeanAggable,
+            DaftSetAggable, DaftStddevAggable, DaftSumAggable, GroupIndices,
         },
         ListArray,
     },
     count_mode::CountMode,
     datatypes::*,
-    series::{IntoSeries, Series},
+    series::{array_impl::IntoSeries, Series},
     with_match_physical_daft_types,
 };
 
+fn deduplicate_indices(series: &Series) -> DaftResult<Vec<u64>> {
+    let probe_table = series.build_probe_table_without_nulls()?;
+    let unique_indices: Vec<u64> = probe_table.keys().map(|k| k.idx).collect();
+    Ok(unique_indices)
+}
+
 impl Series {
     pub fn count(&self, groups: Option<&GroupIndices>, mode: CountMode) -> DaftResult<Self> {
-        use crate::array::ops::DaftCountAggable;
         let s = self.as_physical()?;
         with_match_physical_daft_types!(s.data_type(), |$T| {
             match groups {
@@ -28,7 +34,7 @@ impl Series {
     }
 
     pub fn count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        let series = self.agg_list(groups)?.list_unique_count()?;
+        let series = self.agg_list(groups)?.list_count_distinct()?;
         Ok(series)
     }
 
@@ -239,6 +245,10 @@ impl Series {
         self.inner.agg_list(groups)
     }
 
+    pub fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        self.inner.agg_set(groups)
+    }
+
     pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         use crate::array::ops::DaftConcatAggable;
         match self.data_type() {
@@ -327,5 +337,64 @@ impl Series {
                 other
             ))),
         }
+    }
+}
+
+impl DaftSetAggable for Series {
+    type Output = DaftResult<ListArray>;
+
+    fn set(&self) -> Self::Output {
+        let child_series = self.clone();
+        let unique_indices = deduplicate_indices(&child_series)?;
+        let indices_array = UInt64Array::from(("", unique_indices)).into_series();
+        let deduped_series = child_series.take(&indices_array)?;
+
+        let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
+        let list_field = self.field().to_list_field()?;
+        Ok(ListArray::new(list_field, deduped_series, offsets, None))
+    }
+
+    fn grouped_set(&self, groups: &GroupIndices) -> Self::Output {
+        let series = self.clone();
+
+        let mut offsets = Vec::with_capacity(groups.len() + 1);
+        offsets.push(0);
+
+        let mut growable = make_growable(
+            self.name(),
+            self.data_type(),
+            vec![self],
+            self.validity().is_some(),
+            series.len(),
+        );
+
+        for group in groups {
+            if group.is_empty() {
+                offsets.push(*offsets.last().unwrap());
+                continue;
+            }
+
+            let group_indices = UInt64Array::from(("", group.clone())).into_series();
+            let group_series = series.take(&group_indices)?;
+
+            let unique_indices = deduplicate_indices(&group_series)?;
+
+            for &local_idx in &unique_indices {
+                let orig_idx = group[local_idx as usize];
+                growable.extend(0, orig_idx as usize, 1);
+            }
+
+            offsets.push(offsets.last().unwrap() + unique_indices.len() as i64);
+        }
+
+        let list_field = self.field().to_list_field()?;
+        let result = ListArray::new(
+            list_field,
+            growable.build()?,
+            OffsetsBuffer::try_from(offsets)?,
+            None,
+        );
+
+        Ok(result)
     }
 }
