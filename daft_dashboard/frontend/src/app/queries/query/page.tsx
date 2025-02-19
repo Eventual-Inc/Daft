@@ -24,7 +24,7 @@ function Mermaid({ chart }: { chart: string }) {
     }, []);
 
     return (
-        <div className="mermaid">
+        <div className="mermaid w-[70%] flex justify-center">
             {chart}
         </div>
     );
