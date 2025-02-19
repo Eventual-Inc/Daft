@@ -16,6 +16,7 @@ pub use python::register_modules;
 
 // TODO audit daft-catalog and daft-session errors.
 pub mod error;
+<<<<<<< HEAD
 
 // ----------------------------------
 // TODO deprecated catalog APIs #3819
@@ -246,3 +247,5 @@ mod tests {
         assert!(catalog.read_table("non_existent_table").is_err());
     }
 }
+=======
+>>>>>>> af87a4f0 (Ports tests and removes deprecated APIs)

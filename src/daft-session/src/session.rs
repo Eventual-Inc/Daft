@@ -179,3 +179,62 @@ impl Default for Session {
         Self::empty()
     }
 }
+
+/// Migrated from daft-catalog DaftMetaCatalog tests
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_catalog::View;
+    use daft_core::prelude::*;
+    use daft_logical_plan::{
+        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
+        LogicalPlanRef, SourceInfo,
+    };
+
+    use super::*;
+
+    fn mock_plan() -> LogicalPlanRef {
+        let schema = Arc::new(
+            Schema::new(vec![
+                Field::new("text", DataType::Utf8),
+                Field::new("id", DataType::Int32),
+            ])
+            .unwrap(),
+        );
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+                source_schema: schema,
+                clustering_spec: Arc::new(ClusteringSpec::unknown()),
+                source_id: 0,
+            })),
+        ))
+        .arced()
+    }
+
+    #[test]
+    fn test_attach_table() {
+        let sess = Session::empty();
+        let plan = LogicalPlanBuilder::from(mock_plan());
+        let view = View::from(plan).arced();
+
+        // Register a table
+        assert!(sess.attach_table(view, "test_table").is_ok());
+    }
+
+    #[test]
+    fn test_get_table() {
+        let sess = Session::empty();
+        let plan = LogicalPlanBuilder::from(mock_plan());
+        let view = View::from(plan).arced();
+
+        sess.attach_table(view, "test_table")
+            .expect("failed to attach table");
+
+        assert!(sess.get_table(&Identifier::simple("test_table")).is_ok());
+        assert!(sess
+            .get_table(&Identifier::simple("non_existent_table"))
+            .is_err());
+    }
+}

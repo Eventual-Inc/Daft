@@ -63,6 +63,12 @@ impl From<LogicalPlanRef> for View {
     }
 }
 
+impl From<LogicalPlanBuilder> for View {
+    fn from(value: LogicalPlanBuilder) -> Self {
+        Self(value.plan)
+    }
+}
+
 impl View {
     pub fn arced(self) -> Arc<View> {
         Arc::new(self)
