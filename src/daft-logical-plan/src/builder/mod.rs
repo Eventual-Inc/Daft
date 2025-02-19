@@ -264,6 +264,15 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    /// Returns the logical operator's columns as a Vec<ExprRef>
+    pub fn columns(&self) -> Vec<ExprRef> {
+        self.schema()
+            .fields
+            .iter()
+            .map(|(name, _)| col(name.clone()))
+            .collect()
+    }
+
     pub fn exclude(&self, to_exclude: Vec<String>) -> DaftResult<Self> {
         let to_exclude = HashSet::<_>::from_iter(to_exclude.iter());
 
@@ -422,6 +431,11 @@ impl LogicalPlanBuilder {
         Err(DaftError::InternalError(
             ".describe() requires 'python' feature".to_string(),
         ))
+    }
+
+    /// Creates a DataFrame summary by aggregating column stats into lists then exploding.
+    pub fn summarize(&self) -> DaftResult<Self> {
+        Ok(self.with_new_plan(ops::summarize(self)?))
     }
 
     pub fn distinct(&self) -> DaftResult<Self> {
@@ -972,6 +986,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn describe(&self) -> PyResult<Self> {
         Ok(self.builder.describe()?.into())
+    }
+
+    pub fn summarize(&self) -> PyResult<Self> {
+        Ok(self.builder.summarize()?.into())
     }
 
     pub fn distinct(&self) -> PyResult<Self> {
