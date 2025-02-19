@@ -1593,6 +1593,7 @@ class AdaptivePhysicalPlanScheduler:
         size_bytes: int,
         num_rows: int,
     ) -> None: ...
+    def explain_analyze(self, explain_analyze_dir: str) -> None: ...
 
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.

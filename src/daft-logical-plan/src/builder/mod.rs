@@ -134,11 +134,12 @@ impl LogicalPlanBuilder {
         let source_info = SourceInfo::InMemory(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
-            cache_entry,
+            Some(cache_entry),
             num_partitions,
             size_bytes,
             num_rows,
             None, // TODO(sammy) thread through clustering spec to Python
+            None,
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 

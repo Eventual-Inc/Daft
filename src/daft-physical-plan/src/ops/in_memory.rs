@@ -34,6 +34,9 @@ impl InMemoryScan {
             "Clustering spec = {{ {} }}",
             self.clustering_spec.multiline_display().join(", ")
         ));
+        if let Some(source_id) = self.in_memory_info.source_id {
+            res.push(format!("Source ID = {}", source_id));
+        }
         res
     }
 }
@@ -46,10 +49,16 @@ impl TreeDisplay for InMemoryScan {
                     "InMemoryScan:
 Schema = {},
 Size bytes = {},
-Clustering spec = {{ {} }}",
+Clustering spec = {{ {} }}
+Source ID = {}
+",
                     self.schema.short_string(),
                     self.in_memory_info.size_bytes,
-                    self.clustering_spec.multiline_display().join(", ")
+                    self.clustering_spec.multiline_display().join(", "),
+                    match self.in_memory_info.source_id {
+                        Some(source_id) => source_id.to_string(),
+                        None => "None".to_string(),
+                    }
                 )
             }
             DisplayLevel::Verbose => todo!(),
