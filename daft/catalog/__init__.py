@@ -8,11 +8,15 @@ Examples of Catalogs include AWS Glue, Hive Metastore, Apache Iceberg REST and U
 
 **Catalog**
 
-Daft recognizes a default catalog which it will attempt to use when no specific catalog name is provided.
-
 ```python
-# This will hit the default catalog
-daft.read_table("my_db.my_namespace.my_table")
+# without any qualifiers, the default catalog and namespace are used.
+daft.read_table("my_table")
+
+# with a qualified identifier (uses default catalog)
+daft.read_table("my_namespace.my_table")
+
+# with a fully qualified identifier
+daft.read_table("my_catalog.my_namespace.my_table")
 ```
 
 **Named Tables**
@@ -24,11 +28,8 @@ Note that temporary tables take precedence over catalog tables when resolving un
 ```python
 df = daft.from_pydict({"foo": [1, 2, 3]})
 
-# TODO deprecated catalog APIs #3819
-daft.catalog.register_table(
-    "my_table",
-    df,
-)
+# Attach the DataFrame for use across other APIs.
+daft.attach_table(df, "my_table")
 
 # Your table is now accessible from Daft-SQL, or Daft's `read_table`
 df1 = daft.read_table("my_table")
@@ -67,13 +68,45 @@ __all__ = [
     "unregister_catalog",
 ]
 
+
 # TODO deprecated catalog APIs #3819
-unregister_catalog = native_catalog.unregister_catalog
+def unregister_catalog(catalog_name: str | None) -> bool:
+    """Unregisters a catalog from the Daft catalog system.
+
+    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.detach_catalog`.
+
+    This function removes a previously registered catalog from the Daft catalog system.
+
+    Args:
+        catalog_name (Optional[str]): The name of the catalog to unregister. If None, the default catalog will be unregistered.
+
+    Returns:
+        bool: True if a catalog was successfully unregistered, False otherwise.
+
+    Example:
+        >>> import daft
+        >>> daft.unregister_catalog("my_catalog")
+        True
+    """
+    from daft.session import detach_catalog
+
+    warnings.warn(
+        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.detach_catalog`.",
+        category=DeprecationWarning,
+    )
+    try:
+        alias = catalog_name if catalog_name else "default"
+        detach_catalog(alias)
+        return True
+    except Exception:
+        return False
 
 
 # TODO deprecated catalog APIs #3819
 def read_table(name: str) -> DataFrame:
     """Finds a table with the specified name and reads it as a DataFrame.
+
+    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.read_table`.
 
     The provided name can be any of the following, and Daft will return them with the following order of priority:
 
@@ -87,13 +120,20 @@ def read_table(name: str) -> DataFrame:
     Returns:
         A DataFrame containing the data from the specified table.
     """
-    native_logical_plan_builder = native_catalog.read_table(name)
-    return DataFrame(LogicalPlanBuilder(native_logical_plan_builder))
+    from daft.session import read_table
+
+    warnings.warn(
+        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.read_table`.",
+        category=DeprecationWarning,
+    )
+    return read_table(name)
 
 
 # TODO deprecated catalog APIs #3819
 def register_table(name: str, dataframe: DataFrame) -> str:
     """Register a DataFrame as a named table.
+
+    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_table`.
 
     This function registers a DataFrame as a named table, making it accessible
     via Daft-SQL or Daft's `read_table` function.
@@ -110,12 +150,21 @@ def register_table(name: str, dataframe: DataFrame) -> str:
         >>> daft.catalog.register_table("my_table", df)
         >>> daft.read_table("my_table")
     """
-    return native_catalog.register_table(name, dataframe._builder._builder)
+    from daft.session import attach_table
+
+    warnings.warn(
+        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_table`.",
+        category=DeprecationWarning,
+    )
+    _ = attach_table(dataframe, name)
+    return name
 
 
 # TODO deprecated catalog APIs #3819
 def register_python_catalog(catalog: object, name: str | None = None) -> str:
     """Registers a Python catalog with Daft.
+
+    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_catalog`.
 
     Currently supports:
 
@@ -138,7 +187,16 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
 
     """
-    return native_catalog.register_python_catalog(Catalog._from_obj(catalog), name)
+    from daft.session import attach_catalog
+
+    warnings.warn(
+        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_catalog`.",
+        category=DeprecationWarning,
+    )
+    if name is None:
+        name = "default"
+    _ = attach_catalog(catalog, name)
+    return name
 
 
 class Catalog(ABC):

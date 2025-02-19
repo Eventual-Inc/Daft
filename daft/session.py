@@ -58,13 +58,17 @@ class Session:
     # attach & detach
     ###
 
-    def attach_catalog(self, catalog: object | Catalog, alias: str) -> Catalog:
+    def attach_catalog(self, catalog: object | Catalog, alias: str | None = None) -> Catalog:
         """Attaches an external catalog to this session."""
+        if alias is None:
+            raise ValueError("implicit catalog aliases are not yet supported")
         c = catalog if isinstance(catalog, Catalog) else Catalog._from_obj(catalog)
         return self._session.attach_catalog(c, alias)
 
-    def attach_table(self, table: object | Table, alias: str) -> Table:
+    def attach_table(self, table: object | Table, alias: str | None = None) -> Table:
         """Attaches an external table to this session."""
+        if alias is None:
+            raise ValueError("implicit table aliases are not yet supported")
         t = table if isinstance(table, Table) else Table._from_obj(table)
         return self._session.attach_table(t, alias)
 
@@ -176,12 +180,12 @@ def _session() -> Session:
 ###
 
 
-def attach_catalog(catalog: object | Catalog, alias: str) -> Catalog:
+def attach_catalog(catalog: object | Catalog, alias: str | None = None) -> Catalog:
     """Attaches an external catalog to the current session."""
     return _session().attach_catalog(catalog, alias)
 
 
-def attach_table(table: object | Table, alias: str) -> Table:
+def attach_table(table: object | Table, alias: str | None = None) -> Table:
     """Attaches an external table to the current session."""
     return _session().attach_table(table, alias)
 
