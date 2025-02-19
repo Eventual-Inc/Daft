@@ -133,14 +133,17 @@ fn launch_detached(static_assets_path: &str, noop_if_initialized: bool) -> anyho
         fork::Fork::Parent(..) => Ok(()),
         fork::Fork::Child => {
             let break_reason = tokio_runtime(true).block_on(run(static_assets_path))?;
-            match (break_reason, noop_if_initialized) {
-                (BreakReason::PortAlreadyBound, false) => return Err(already_bound_error()),
-                (BreakReason::PythonSignalInterrupt, _) => {
+            exit(match break_reason {
+                BreakReason::PortAlreadyBound if noop_if_initialized => 0,
+                BreakReason::PortAlreadyBound => {
+                    println!("{}", already_bound_error());
+                    1
+                }
+                BreakReason::PythonSignalInterrupt => {
                     unreachable!("Can't receive a python signal interrupt in an orphaned process")
                 }
-                _ => (),
-            };
-            exit(0);
+                BreakReason::ApiShutdownSignal => 0,
+            });
         }
     }
 }
@@ -151,7 +154,7 @@ async fn run(static_assets_path: &str) -> anyhow::Result<BreakReason> {
         Err(error) if error.kind() == ErrorKind::AddrInUse => {
             return Ok(BreakReason::PortAlreadyBound)
         }
-        _ => todo!(),
+        Err(error) => Err(error)?,
     };
 
     let mut python_signal = pin!(interrupt_handler());
