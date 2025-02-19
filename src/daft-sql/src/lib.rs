@@ -29,7 +29,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use daft_catalog::Identifier;
+    use daft_catalog::{Identifier, View};
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col, Expr, Subquery};
     use daft_logical_plan::{
@@ -117,9 +117,10 @@ mod tests {
     fn planner() -> SQLPlanner<'static> {
         let session = Session::default();
 
-        _ = session.create_table(Identifier::simple("tbl1"), tbl_1());
-        _ = session.create_table(Identifier::simple("tbl2"), tbl_2());
-        _ = session.create_table(Identifier::simple("tbl3"), tbl_3());
+        // construct views from the tables and attach to the session
+        _ = session.attach_table(View::from(tbl_1()).arced(), "tbl1");
+        _ = session.attach_table(View::from(tbl_2()).arced(), "tbl2");
+        _ = session.attach_table(View::from(tbl_3()).arced(), "tbl3");
 
         SQLPlanner::new(session.into())
     }
