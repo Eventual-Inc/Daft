@@ -64,7 +64,6 @@ impl From<LogicalPlanRef> for View {
 }
 
 impl View {
-    /// Remove me?
     pub fn arced(self) -> Arc<View> {
         Arc::new(self)
     }
