@@ -29,7 +29,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use daft_catalog::{Identifier, View};
+    use daft_catalog::View;
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col, Expr, Subquery};
     use daft_logical_plan::{

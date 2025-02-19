@@ -43,7 +43,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from daft.daft import catalog as native_catalog
-from daft.daft import PyIdentifier
+from daft.daft import PyIdentifier, PyTable
 from daft.logical.builder import LogicalPlanBuilder
 
 from daft.dataframe import DataFrame
@@ -144,8 +144,10 @@ class Catalog(ABC):
 
     @staticmethod
     def from_pydict(tables: dict[str, Table]) -> Catalog:
-        """Returns a new in-memory catalog implementation with temporary tables."""
-        raise NotImplementedError("Catalog.from_pydict")
+        """Returns an in-memory catalog from the dictionary."""
+        from daft.catalog.__memory import MemoryCatalog
+
+        return MemoryCatalog(tables)
 
     @staticmethod
     def from_iceberg(obj: object) -> Catalog:
@@ -276,9 +278,17 @@ class Identifier(Sequence):
     def __repr__(self) -> str:
         return f"Identifier('{self._identifier.__repr__()}')"
 
+    def __str__(self) -> str:
+        return ".".join(self)
+
 
 class Table(ABC):
     """Interface for python table implementations."""
+
+    @staticmethod
+    def from_df(dataframe: DataFrame) -> Table:
+        """Returns a read-only table backed by the DataFrame."""
+        return PyTable.from_builder(dataframe._builder._builder)
 
     @staticmethod
     def from_iceberg(obj: object) -> Table:
@@ -299,6 +309,14 @@ class Table(ABC):
             return UnityTable._from_obj(obj)
         except ImportError:
             raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
+
+
+    @staticmethod
+    def _from_obj(obj: object) -> Table:
+        """Returns a Daft Table from a supported object type or raises an error."""
+        if isinstance(obj, DataFrame):
+            return Table.from_df(obj)
+        raise ValueError(f"Unsupported table type: {type(obj)}")
 
     # TODO deprecated catalog APIs #3819
     def to_dataframe(self) -> DataFrame:

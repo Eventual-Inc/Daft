@@ -47,15 +47,13 @@ class Session:
 
     def attach_catalog(self, catalog: object | Catalog, alias: str) -> Catalog:
         """Attaches an external catalog to this session."""
-        if not isinstance(catalog, Catalog):
-            raise ValueError("attach_catalog with object not yet supported")
-        return self._session.attach_catalog(catalog, alias)
+        c = catalog if isinstance(catalog, Catalog) else Catalog._from_obj(catalog)
+        return self._session.attach_catalog(c, alias)
 
     def attach_table(self, table: object | Table, alias: str) -> Table:
         """Attaches an external table to this session."""
-        if not isinstance(table, Table):
-            raise ValueError("attach_table with object not yet supported")
-        return self._session.attach_table(table, alias)
+        t = table if isinstance(table, Table) else Table._from_obj(table)
+        return self._session.attach_table(t, alias)
 
     def detach_catalog(self, alias: str):
         """Detaches the catalog from this session."""
