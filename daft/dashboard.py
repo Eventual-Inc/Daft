@@ -46,7 +46,7 @@ def _broadcast_query_plan(
 ):
     # try launching the dashboard
     # if dashboard is already launched, this will do nothing
-    launch(detach=True)
+    launch(detach=True, noop_if_initialized=True)
 
     headers = {
         "Content-Type": "application/json",
