@@ -234,16 +234,13 @@ impl ConnectSession {
                 )
             })?;
 
-        {
-            // TODO session should handle the pre-existence error
-            if !replace && self.session().has_table(&name.clone().into()) {
-                return Err(Status::internal("Dataframe view already exists"));
-            }
+        let session = self.session_mut();
+
+        if replace {
+            _ = session.detach_table(&name);
         }
 
-        let session = self.session_mut();
         let view = View::from(input.build()).arced();
-
         session.attach_table(view, name).map_err(|e| {
             Status::internal(textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"))
         })?;

@@ -241,6 +241,8 @@ def test_show(spark_session, capsys):
         "│ 9     │\n"
         "╰───────╯\n"
     )
+    # This may fail locally depending on your terminal and how you run the test.
+    # The show() command uses ANSI escape sequences to make the header bold.
     assert captured.out == expected
 
 
