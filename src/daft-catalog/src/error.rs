@@ -32,11 +32,8 @@ pub enum Error {
     Unsupported { message: String },
 
     #[cfg(feature = "python")]
-    #[snafu(display("Python error during {}: {}", context, source))]
-    PythonError {
-        source: pyo3::PyErr,
-        context: String,
-    },
+    #[snafu(display("Python error: {}", source))]
+    PythonError { source: pyo3::PyErr },
 }
 
 impl Error {
@@ -79,5 +76,12 @@ impl From<Error> for PyErr {
     fn from(value: Error) -> Self {
         let daft_error: common_error::DaftError = value.into();
         daft_error.into()
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<PyErr> for Error {
+    fn from(value: PyErr) -> Self {
+        Error::PythonError { source: value }
     }
 }
