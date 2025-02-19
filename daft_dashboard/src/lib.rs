@@ -2,7 +2,7 @@ mod response;
 
 #[cfg(not(feature = "python"))]
 use std::path::Path;
-use std::{net::Ipv4Addr, pin::pin, sync::OnceLock};
+use std::{io::Cursor, net::Ipv4Addr, pin::pin, sync::OnceLock};
 
 use chrono::{DateTime, Utc};
 use http_body_util::{combinators::BoxBody, BodyExt};
@@ -78,8 +78,8 @@ struct QueryMetadata {
 async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req<T>> {
     let (parts, body) = req.into_parts();
     let bytes = body.collect().await.with_internal_error()?.to_bytes();
-    let data = simdutf8::basic::from_utf8(&bytes).with_status_code(StatusCode::BAD_REQUEST)?;
-    let body = serde_json::from_str(data).with_status_code(StatusCode::BAD_REQUEST)?;
+    let mut cursor = Cursor::new(bytes);
+    let body = serde_json::from_reader(&mut cursor).with_status_code(StatusCode::BAD_REQUEST)?;
     Ok(Request::from_parts(parts, body))
 }
 

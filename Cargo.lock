@@ -2704,7 +2704,6 @@ dependencies = [
  "pyo3",
  "serde",
  "serde_json",
- "simdutf8",
  "tokio",
 ]
 
