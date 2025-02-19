@@ -1,7 +1,6 @@
 use std::{
     cmp::Ordering,
     collections::HashMap,
-    fmt,
     fs::File,
     io::Write,
     sync::{atomic::AtomicUsize, Arc},
@@ -9,7 +8,7 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
+use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
 use common_treenode::{
     DynTreeNode, Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter, TreeNodeVisitor,
@@ -22,13 +21,14 @@ use daft_logical_plan::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::translate::translate_single_logical_node;
+use super::{display::StageDisplayMermaidVisitor, translate::translate_single_logical_node};
 use crate::{
     ops::{InMemoryScan, PlaceholderScan},
     PhysicalPlan, PhysicalPlanRef,
 };
 
 static PLACEHOLDER_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 pub(super) struct PhysicalPlanTranslator {
     pub physical_children: Vec<Arc<PhysicalPlan>>,
     pub cfg: Arc<DaftExecutionConfig>,
@@ -146,27 +146,26 @@ impl TreeNodeRewriter for LogicalStageTranslator {
                             }
                         }
                     };
+
+                    let logical_children = node.arc_children();
+                    let logical_left = logical_children.first().expect(
+                        "we expect the logical node of a binary op to also have 2 children",
+                    );
+                    let logical_right = logical_children.get(1).expect(
+                        "we expect the logical node of a binary op to also have 2 children",
+                    );
+
+                    let source_id =
+                        PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    self.source_id = Some(source_id);
                     match run_next {
                         RunNext::Left => {
                             self.physical_children.push(left.clone());
-                            let logical_children = node.arc_children();
-                            let logical_left = logical_children.first().expect(
-                                "we expect the logical node of a binary op to also have 2 children",
-                            );
-                            let logical_right = logical_children.get(1).expect(
-                                "we expect the logical node of a binary op to also have 2 children",
-                            );
-
-                            let source_id = PLACEHOLDER_ID_COUNTER
-                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
                             let ph_info = PlaceHolderInfo::new(
                                 source_id,
                                 logical_left.schema(),
                                 left.clustering_spec(),
                             );
-
-                            self.source_id = Some(source_id);
 
                             let new_left_scan = LogicalPlan::Source(Source::new(
                                 logical_left.schema(),
@@ -182,24 +181,11 @@ impl TreeNodeRewriter for LogicalStageTranslator {
                         }
                         RunNext::Right => {
                             self.physical_children.push(right.clone());
-                            let logical_children = node.arc_children();
-                            let logical_left = logical_children.first().expect(
-                                "we expect the logical node of a binary op to also have 2 children",
-                            );
-                            let logical_right = logical_children.get(1).expect(
-                                "we expect the logical node of a binary op to also have 2 children",
-                            );
-
-                            let source_id = PLACEHOLDER_ID_COUNTER
-                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
                             let ph_info = PlaceHolderInfo::new(
                                 source_id,
                                 logical_right.schema(),
                                 right.clustering_spec(),
                             );
-
-                            self.source_id = Some(source_id);
 
                             let new_right_scan = LogicalPlan::Source(Source::new(
                                 logical_right.schema(),
@@ -362,6 +348,7 @@ impl TreeNodeRewriter for ReplacePhysicalPlaceholderWithMaterializedResults {
     }
 }
 
+// Strip the cache entry from the in memory scan, so that we don't hold a reference to the cache entry for plans that we cache for explain purposes
 struct StripCacheEntryFromInMemoryScan {}
 
 impl TreeNodeRewriter for StripCacheEntryFromInMemoryScan {
@@ -385,11 +372,7 @@ impl TreeNodeRewriter for StripCacheEntryFromInMemoryScan {
                     in_memory_scan.clustering_spec.clone(),
                 );
                 let new_physical_plan = PhysicalPlan::InMemoryScan(new_in_memory_scan);
-                Ok(Transformed::new(
-                    new_physical_plan.arced(),
-                    true,
-                    TreeNodeRecursion::Stop,
-                ))
+                Ok(Transformed::yes(new_physical_plan.arced()))
             }
             _ => Ok(Transformed::no(node)),
         }
@@ -423,28 +406,6 @@ impl QueryStageOutput {
     }
 }
 
-struct EmittedStage {
-    pub stage_id: Option<usize>,
-    pub physical_plan: PhysicalPlanRef,
-    pub input_stages: Vec<EmittedStage>,
-}
-
-impl EmittedStage {
-    pub fn new(
-        stage_id: Option<usize>,
-        physical_plan: PhysicalPlanRef,
-        input_stages: Vec<Self>,
-    ) -> DaftResult<Self> {
-        let mut strip_cache_entry = StripCacheEntryFromInMemoryScan {};
-        let physical_plan = physical_plan.rewrite(&mut strip_cache_entry)?.data;
-        Ok(Self {
-            stage_id,
-            physical_plan,
-            input_stages,
-        })
-    }
-}
-
 #[derive(PartialEq, Debug)]
 enum AdaptivePlannerStatus {
     Ready,
@@ -457,63 +418,54 @@ pub struct MaterializedResults {
     pub in_memory_info: InMemoryInfo,
 }
 
-pub struct AdaptivePlanner {
-    remaining_logical_plan: Option<LogicalPlanRef>,
-    logical_source_id: Option<usize>,
-    remaining_physical_plan: Option<PhysicalPlanRef>,
-    emitted_stages: HashMap<usize, EmittedStage>,
-    final_stage: Option<EmittedStage>,
-    cfg: Arc<DaftExecutionConfig>,
-    status: AdaptivePlannerStatus,
+pub struct EmittedStage {
+    pub stage_id: Option<usize>,
+    pub physical_plan: PhysicalPlanRef,
+    pub input_stages: Vec<EmittedStage>,
 }
 
-impl AdaptivePlanner {
-    pub fn new(logical_plan: LogicalPlanRef, cfg: Arc<DaftExecutionConfig>) -> Self {
-        Self {
-            remaining_logical_plan: Some(logical_plan),
-            logical_source_id: None,
-            remaining_physical_plan: None,
-            emitted_stages: HashMap::new(),
-            final_stage: None,
-            cfg,
-            status: AdaptivePlannerStatus::Ready,
+impl EmittedStage {
+    fn new(
+        query_stage_output: &QueryStageOutput,
+        input_stages: Vec<EmittedStage>,
+    ) -> DaftResult<Self> {
+        let mut strip_cache_entry = StripCacheEntryFromInMemoryScan {};
+        let physical_plan = query_stage_output
+            .physical_plan()
+            .clone()
+            .rewrite(&mut strip_cache_entry)?
+            .data;
+        Ok(Self {
+            stage_id: query_stage_output.source_id(),
+            physical_plan,
+            input_stages,
+        })
+    }
+}
+
+enum StageCache {
+    Intermediate {
+        intermediate_stages: HashMap<usize, EmittedStage>,
+    },
+    Final {
+        final_stage: EmittedStage,
+    },
+}
+
+impl StageCache {
+    pub fn new() -> Self {
+        Self::Intermediate {
+            intermediate_stages: HashMap::new(),
         }
     }
 
-    fn transform_physical_plan(
-        &mut self,
-        physical_plan: PhysicalPlanRef,
-    ) -> DaftResult<(PhysicalPlanRef, Option<usize>)> {
-        let mut physical_stage_translator = PhysicalStageTranslator {
-            partial_physical_plan: None,
-            root: physical_plan.clone(),
-            source_id: self.logical_source_id,
+    pub fn insert_stage(&mut self, stage: &QueryStageOutput) -> DaftResult<()> {
+        let intermediate_stages = match self {
+            Self::Intermediate {
+                intermediate_stages,
+            } => intermediate_stages,
+            Self::Final { .. } => panic!("Cannot insert stage if we already have a final stage"),
         };
-        let result = physical_plan.rewrite(&mut physical_stage_translator)?;
-        if result.transformed {
-            assert!(physical_stage_translator.partial_physical_plan.is_some());
-            self.remaining_physical_plan = Some(result.data);
-            let physical_plan = physical_stage_translator.partial_physical_plan.unwrap();
-            Ok((physical_plan, physical_stage_translator.source_id))
-        } else {
-            assert!(physical_stage_translator.partial_physical_plan.is_none());
-            let physical_plan = result.data;
-            Ok((physical_plan, physical_stage_translator.source_id))
-        }
-    }
-
-    fn cache_emitted_plan(&mut self, plan: QueryStageOutput) -> DaftResult<()> {
-        if self.emitted_stages.is_empty() {
-            if matches!(plan, QueryStageOutput::Final { .. }) {
-                let emitted_stage = EmittedStage::new(None, plan.physical_plan().clone(), vec![])?;
-                self.final_stage = Some(emitted_stage);
-            } else {
-                let emitted_stage =
-                    EmittedStage::new(plan.source_id(), plan.physical_plan().clone(), vec![])?;
-                self.emitted_stages
-                    .insert(plan.source_id().unwrap(), emitted_stage);
-            }
-        }
 
         fn find_input_source_ids(plan: &PhysicalPlan, source_ids: &mut Vec<usize>) {
             match plan {
@@ -530,135 +482,156 @@ impl AdaptivePlanner {
             }
         }
         let mut source_ids = vec![];
-        find_input_source_ids(plan.physical_plan(), &mut source_ids);
+        find_input_source_ids(&stage.physical_plan(), &mut source_ids);
+
         if source_ids.is_empty() {
-            let emitted_stage =
-                EmittedStage::new(plan.source_id(), plan.physical_plan().clone(), vec![])?;
-            if let Some(source_id) = plan.source_id() {
-                self.emitted_stages.insert(source_id, emitted_stage);
+            let emitted_stage = EmittedStage::new(stage, vec![])?;
+            if let Some(source_id) = stage.source_id() {
+                intermediate_stages.insert(source_id, emitted_stage);
             } else {
-                self.final_stage = Some(emitted_stage);
+                *self = Self::Final {
+                    final_stage: emitted_stage,
+                };
             }
         } else {
-            let mut input_stages = vec![];
-            for source_id in source_ids {
-                input_stages.push(self.emitted_stages.remove(&source_id).unwrap());
-            }
-            let emitted_stage =
-                EmittedStage::new(plan.source_id(), plan.physical_plan().clone(), input_stages)?;
-            if let Some(source_id) = plan.source_id() {
-                self.emitted_stages.insert(source_id, emitted_stage);
+            let input_stages = source_ids
+                .iter()
+                .map(|source_id| intermediate_stages.remove(source_id).unwrap())
+                .collect();
+            let emitted_stage = EmittedStage::new(stage, input_stages)?;
+            if let Some(source_id) = stage.source_id() {
+                intermediate_stages.insert(source_id, emitted_stage);
             } else {
-                self.final_stage = Some(emitted_stage);
+                *self = Self::Final {
+                    final_stage: emitted_stage,
+                };
             }
         }
         Ok(())
+    }
+
+    pub fn final_stage(&self) -> Option<&EmittedStage> {
+        match self {
+            Self::Final { final_stage } => Some(final_stage),
+            _ => None,
+        }
+    }
+}
+
+pub struct AdaptivePlanner {
+    remaining_logical_plan: Option<LogicalPlanRef>,
+    remaining_physical_plan: Option<PhysicalPlanRef>,
+    logical_source_id: Option<usize>,
+    stage_cache: StageCache,
+    cfg: Arc<DaftExecutionConfig>,
+    status: AdaptivePlannerStatus,
+}
+
+impl AdaptivePlanner {
+    pub fn new(logical_plan: LogicalPlanRef, cfg: Arc<DaftExecutionConfig>) -> Self {
+        Self {
+            remaining_logical_plan: Some(logical_plan),
+            remaining_physical_plan: None,
+            logical_source_id: None,
+            stage_cache: StageCache::new(),
+            cfg,
+            status: AdaptivePlannerStatus::Ready,
+        }
+    }
+
+    fn transform_physical_plan(
+        &self,
+        physical_plan: PhysicalPlanRef,
+    ) -> DaftResult<(PhysicalPlanRef, Option<PhysicalPlanRef>, Option<usize>)> {
+        let mut physical_stage_translator = PhysicalStageTranslator {
+            partial_physical_plan: None,
+            root: physical_plan.clone(),
+            source_id: self.logical_source_id,
+        };
+        let result = physical_plan.rewrite(&mut physical_stage_translator)?;
+        if result.transformed {
+            assert!(physical_stage_translator.partial_physical_plan.is_some());
+            let physical_plan = physical_stage_translator.partial_physical_plan.unwrap();
+            Ok((
+                physical_plan,
+                Some(result.data),
+                physical_stage_translator.source_id,
+            ))
+        } else {
+            assert!(physical_stage_translator.partial_physical_plan.is_none());
+            let physical_plan = result.data;
+            Ok((physical_plan, None, physical_stage_translator.source_id))
+        }
     }
 
     pub fn next_stage(&mut self) -> DaftResult<QueryStageOutput> {
         assert_eq!(self.status, AdaptivePlannerStatus::Ready);
 
         // First, check if we have a remaining physical plan
-        if let Some(remaining_physical_plan) = self.remaining_physical_plan.take() {
-            let (physical_plan, source_id) =
-                self.transform_physical_plan(remaining_physical_plan)?;
-            // If we have no remaining logical plan and no remaining physical plan, we can emit the final plan
-            if self.remaining_logical_plan.is_none() && self.remaining_physical_plan.is_none() {
+        let (next_physical_plan, source_id) = match self.remaining_physical_plan.take() {
+            Some(remaining_physical_plan) => {
+                let (physical_plan, remaining_physical_plan, source_id) =
+                    self.transform_physical_plan(remaining_physical_plan)?;
+                self.remaining_physical_plan = remaining_physical_plan;
+
+                (physical_plan, source_id)
+            }
+            None => {
+                // If we have no remaining physical plan, we need to translate the remaining logical plan to a physical plan
+                let logical_plan = self.remaining_logical_plan.take().unwrap();
+                let mut logical_rewriter = LogicalStageTranslator {
+                    physical_children: vec![],
+                    root: logical_plan.clone(),
+                    cfg: self.cfg.clone(),
+                    source_id: None,
+                };
+                let logical_output = logical_plan.rewrite(&mut logical_rewriter)?;
+
+                // If we transformed the logical plan, this means we have a remaining logical plan
+                if logical_output.transformed {
+                    self.remaining_logical_plan = Some(logical_output.data);
+                }
+                self.logical_source_id = logical_rewriter.source_id;
+                let physical_plan = logical_rewriter
+                    .physical_children
+                    .pop()
+                    .expect("should have at least 1 child");
+
+                // Now, transform the new physical plan
+                let (physical_plan, remaining_physical_plan, source_id) =
+                    self.transform_physical_plan(physical_plan)?;
+                self.remaining_physical_plan = remaining_physical_plan;
+
+                (physical_plan, source_id)
+            }
+        };
+
+        let next_stage = if source_id.is_some() {
+            QueryStageOutput::Partial {
+                physical_plan: next_physical_plan,
+                source_id: source_id.unwrap(),
+            }
+        } else {
+            QueryStageOutput::Final {
+                physical_plan: next_physical_plan,
+            }
+        };
+
+        self.stage_cache.insert_stage(&next_stage)?;
+        match &next_stage {
+            QueryStageOutput::Final { physical_plan } => {
                 log::info!("Emitting final plan:\n {}", physical_plan.repr_ascii(true));
                 self.status = AdaptivePlannerStatus::Done;
-                self.cache_emitted_plan(QueryStageOutput::Final {
-                    physical_plan: physical_plan.clone(),
-                })?;
-                return Ok(QueryStageOutput::Final { physical_plan });
-            } else {
-                // Otherwise, we need to emit a partial plan
+            }
+            QueryStageOutput::Partial { physical_plan, .. } => {
                 log::info!(
                     "Emitting partial plan:\n {}",
                     physical_plan.repr_ascii(true)
                 );
                 self.status = AdaptivePlannerStatus::WaitingForStats;
-                self.cache_emitted_plan(QueryStageOutput::Partial {
-                    physical_plan: physical_plan.clone(),
-                    source_id: source_id.unwrap(),
-                })?;
-                return Ok(QueryStageOutput::Partial {
-                    physical_plan,
-                    source_id: source_id.unwrap(),
-                });
             }
         }
-
-        // If we have no remaining physical plan, we need to translate the remaining logical plan to a physical plan
-        let logical_plan = self.remaining_logical_plan.take().unwrap();
-        let mut logical_rewriter = LogicalStageTranslator {
-            physical_children: vec![],
-            root: logical_plan.clone(),
-            cfg: self.cfg.clone(),
-            source_id: None,
-        };
-        let logical_output = logical_plan.rewrite(&mut logical_rewriter)?;
-        if let Some(source_id) = logical_rewriter.source_id {
-            self.logical_source_id = Some(source_id);
-        }
-        let physical_plan = logical_rewriter
-            .physical_children
-            .pop()
-            .expect("should have at least 1 child");
-        let (transformed_physical_plan, source_id) = self.transform_physical_plan(physical_plan)?;
-        // If we transformed the logical plan, this means we have a remaining logical plan
-        if logical_output.transformed {
-            self.remaining_logical_plan = Some(logical_output.data);
-            self.status = AdaptivePlannerStatus::WaitingForStats;
-            log::info!(
-                "Logical plan remaining:\n {}",
-                self.remaining_logical_plan
-                    .as_ref()
-                    .unwrap()
-                    .repr_ascii(true)
-            );
-
-            log::info!(
-                "Emitting partial plan:\n {}",
-                transformed_physical_plan.repr_ascii(true)
-            );
-            self.cache_emitted_plan(QueryStageOutput::Partial {
-                physical_plan: transformed_physical_plan.clone(),
-                source_id: source_id.unwrap(),
-            })?;
-            Ok(QueryStageOutput::Partial {
-                physical_plan: transformed_physical_plan,
-                source_id: source_id.unwrap(),
-            })
-        } else {
-            log::info!("Logical plan translation complete");
-            if self.remaining_physical_plan.is_some() {
-                log::info!(
-                    "Emitting partial plan:\n {}",
-                    transformed_physical_plan.repr_ascii(true)
-                );
-                self.status = AdaptivePlannerStatus::WaitingForStats;
-                self.cache_emitted_plan(QueryStageOutput::Partial {
-                    physical_plan: transformed_physical_plan.clone(),
-                    source_id: source_id.unwrap(),
-                })?;
-                Ok(QueryStageOutput::Partial {
-                    physical_plan: transformed_physical_plan,
-                    source_id: source_id.unwrap(),
-                })
-            } else {
-                log::info!(
-                    "Emitting final plan:\n {}",
-                    transformed_physical_plan.repr_ascii(true)
-                );
-                self.status = AdaptivePlannerStatus::Done;
-                self.cache_emitted_plan(QueryStageOutput::Final {
-                    physical_plan: transformed_physical_plan.clone(),
-                })?;
-                Ok(QueryStageOutput::Final {
-                    physical_plan: transformed_physical_plan,
-                })
-            }
-        }
+        Ok(next_stage)
     }
 
     pub fn is_done(&self) -> bool {
@@ -734,101 +707,13 @@ impl AdaptivePlanner {
             subgraph_options: None,
         };
         let mut visitor = StageDisplayMermaidVisitor::new(&mut s, options);
-        let _ = visitor.fmt(self.final_stage.as_ref().unwrap());
+        let _ = visitor.fmt(
+            self.stage_cache
+                .final_stage()
+                .expect("Explain analyze should have a final stage"),
+        );
         writeln!(file, "```mermaid\n{}\n```", s)?;
 
-        Ok(())
-    }
-}
-
-pub struct StageDisplayMermaidVisitor<'a, W> {
-    output: &'a mut W,
-    options: MermaidDisplayOptions,
-}
-
-impl<'a, W> StageDisplayMermaidVisitor<'a, W> {
-    pub fn new(w: &'a mut W, options: MermaidDisplayOptions) -> Self {
-        Self { output: w, options }
-    }
-}
-
-impl<'a, W> StageDisplayMermaidVisitor<'a, W>
-where
-    W: fmt::Write,
-{
-    fn add_node(&mut self, node: &EmittedStage) -> fmt::Result {
-        let display = self.display_for_node(node)?;
-        write!(self.output, "{}", display)?;
-        Ok(())
-    }
-
-    fn display_for_node(&self, node: &EmittedStage) -> Result<String, fmt::Error> {
-        let simple = self.options.simple;
-        let bottom_up = self.options.bottom_up;
-        let stage_id = self.get_node_id(node);
-        let name = self.get_node_name(node);
-        let subgraph_options = SubgraphOptions {
-            name,
-            subgraph_id: stage_id,
-        };
-        let display = node.physical_plan.repr_mermaid(MermaidDisplayOptions {
-            simple,
-            bottom_up,
-            subgraph_options: Some(subgraph_options),
-        });
-        Ok(display)
-    }
-
-    // Get the id of a node that has already been added.
-    fn get_node_id(&self, node: &EmittedStage) -> String {
-        let id = match node.stage_id {
-            Some(id) => id.to_string(),
-            None => "final".to_string(),
-        };
-        format!("stage_{}", id)
-    }
-
-    fn get_node_name(&self, node: &EmittedStage) -> String {
-        let id = match node.stage_id {
-            Some(id) => id.to_string(),
-            None => "final".to_string(),
-        };
-        format!("Stage {}", id)
-    }
-
-    fn add_edge(&mut self, parent: String, child: String) -> fmt::Result {
-        writeln!(self.output, r#"{child} --> {parent}"#)
-    }
-
-    fn fmt_node(&mut self, node: &EmittedStage) -> fmt::Result {
-        self.add_node(node)?;
-        let children = &node.input_stages;
-        if children.is_empty() {
-            return Ok(());
-        }
-
-        for child in children {
-            self.fmt_node(child)?;
-            self.add_edge(self.get_node_id(node), self.get_node_id(child))?;
-        }
-
-        Ok(())
-    }
-
-    fn fmt(&mut self, node: &EmittedStage) -> fmt::Result {
-        if let Some(SubgraphOptions { name, subgraph_id }) = &self.options.subgraph_options {
-            writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
-            self.fmt_node(node)?;
-            writeln!(self.output, "end")?;
-        } else {
-            if self.options.bottom_up {
-                writeln!(self.output, "flowchart BT")?;
-            } else {
-                writeln!(self.output, "flowchart TD")?;
-            }
-
-            self.fmt_node(node)?;
-        }
         Ok(())
     }
 }
