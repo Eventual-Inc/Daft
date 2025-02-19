@@ -73,6 +73,18 @@ impl JoinOrderTree {
             _ => false,
         }
     }
+
+    #[cfg(test)]
+    pub(super) fn num_join_conditions(this: &Self) -> usize {
+        match this {
+            JoinOrderTree::Relation(_, _) => 0,
+            JoinOrderTree::Join(left, right, conditions, _) => {
+                Self::num_join_conditions(left)
+                    + Self::num_join_conditions(right)
+                    + conditions.len()
+            }
+        }
+    }
 }
 
 pub(super) trait JoinOrderer {
@@ -114,9 +126,6 @@ impl Display for JoinNode {
 pub(super) struct JoinCondition {
     pub left_on: String,
     pub right_on: String,
-    // Estimated total domain of this edge, i.e. the number of distinct values in a join.
-    // For a pk-fk join, this would be the number of primary keys.
-    pub total_domain: usize,
 }
 
 pub(super) struct JoinAdjList {
@@ -124,6 +133,18 @@ pub(super) struct JoinAdjList {
     plan_to_id: HashMap<*const LogicalPlan, usize>,
     pub id_to_plan: HashMap<usize, LogicalPlanRef>,
     pub edges: HashMap<usize, HashMap<usize, Vec<JoinCondition>>>,
+    // The maximum equivalence set id. Each equivalence set is a set of columns that are joined together.
+    // For example, if we have a join between A.x and B.x, and B.x and C.x, then the equivalence set is
+    // {A.x, B.x, C.x}. Extending this example, if we have a join between A.y and D.y, then the equivalence sets
+    // are {A.x, B.x, C.x} and {A.y, D.y}.
+    max_equivalence_set_id: usize,
+    // Maps (plan id, column name) -> equivalence set id.
+    pub equivalence_set_map: HashMap<(usize, String), usize>,
+    // Vec of total domains for equivalence sets. Where total_domains[equivalence set id] -> total domain of the equivalence set.
+    // The total domain is the number of distinct values in the columns that are part of the equivalence set. For pk-fk joins,
+    // this would be the number of primary keys. In the absence of ndv statistics, we take the smallest table in the equivalence set,
+    // assume it's the primary key table, and use its cardinality as the total domain.
+    total_domains: Vec<usize>,
 }
 
 impl std::fmt::Display for JoinAdjList {
@@ -155,6 +176,9 @@ impl JoinAdjList {
             plan_to_id: HashMap::new(),
             id_to_plan: HashMap::new(),
             edges: HashMap::new(),
+            max_equivalence_set_id: 0,
+            equivalence_set_map: HashMap::new(),
+            total_domains: vec![],
         }
     }
 
@@ -177,24 +201,84 @@ impl JoinAdjList {
         right_id: usize,
         join_condition: JoinCondition,
     ) {
+        let left_on = join_condition.left_on.clone();
+        let right_on = join_condition.right_on.clone();
         if let Some(neighbors) = self.edges.get_mut(&left_id) {
             if let Some(join_conditions) = neighbors.get_mut(&right_id) {
+                // Check if the condition already exists.
+                if join_conditions
+                    .iter()
+                    .any(|cond| cond.right_on == join_condition.right_on && cond.left_on == left_on)
+                {
+                    return;
+                }
+                // Add a new condition to the existing edge.
                 join_conditions.push(join_condition);
             } else {
+                // Add a new edge.
                 neighbors.insert(right_id, vec![join_condition]);
             }
         } else {
+            // Add a new node then add a new edge.
             let mut neighbors = HashMap::new();
             neighbors.insert(right_id, vec![join_condition]);
             self.edges.insert(left_id, neighbors);
         }
+        // Infer transitive edges.
+        // E.g. if we have (A.x join B.x) and (B.x join C.x), then we infer (A.x join C.x).
+        let mut new_edges = vec![];
+        if let Some(right_neighbours) = self.edges.get(&right_id) {
+            for (&right_neighbour_id, right_neighbour_join_conds) in right_neighbours {
+                if right_neighbour_id == left_id {
+                    continue;
+                }
+                for right_neighbour_join_cond in right_neighbour_join_conds {
+                    if right_neighbour_join_cond.left_on == right_on {
+                        let plan1 = self.id_to_plan.get(&left_id).unwrap();
+                        let plan2 = self.id_to_plan.get(&right_neighbour_id).unwrap();
+                        let node1 = JoinNode::new(left_on.to_string(), plan1.clone());
+                        let node2 = JoinNode::new(
+                            right_neighbour_join_cond.right_on.to_string(),
+                            plan2.clone(),
+                        );
+                        new_edges.push((node1, node2));
+                    }
+                }
+            }
+        }
+        for (node1, node2) in new_edges {
+            self.add_bidirectional_edge(node1, node2);
+        }
     }
 
     pub(super) fn add_bidirectional_edge(&mut self, node1: JoinNode, node2: JoinNode) {
-        let node1_rows = node1.plan.materialized_stats().approx_stats.num_rows;
-        let node2_rows = node2.plan.materialized_stats().approx_stats.num_rows;
-        let total_domain = node1_rows.min(node2_rows);
-        self.add_bidirectional_edge_with_total_domain(node1, node2, total_domain);
+        let node1_id = self.get_or_create_plan_id(&node1.plan);
+        let node2_id = self.get_or_create_plan_id(&node2.plan);
+        // Find the minimal total domain for the join columns, either from the current nodes or from the existing total domains.
+        let mut td = {
+            let node1_stats = node1.plan.materialized_stats();
+            let node2_stats = node2.plan.materialized_stats();
+            // We multiple the number of rows by the reciprocal of the selectivity to get the original total domain.
+            let node1_rows = node1_stats.approx_stats.num_rows as f64
+                / node1_stats.approx_stats.acc_selectivity.max(0.01);
+            let node2_rows = node2_stats.approx_stats.num_rows as f64
+                / node2_stats.approx_stats.acc_selectivity.max(0.01);
+            node1_rows.min(node2_rows).max(1.0) as usize
+        };
+        if let Some(equivalence_set_id) = self
+            .equivalence_set_map
+            .get(&(node1_id, node1.relation_name.clone()))
+        {
+            td = td.min(self.total_domains[*equivalence_set_id]);
+        }
+        if let Some(equivalence_set_id) = self
+            .equivalence_set_map
+            .get(&(node2_id, node2.relation_name.clone()))
+        {
+            td = td.min(self.total_domains[*equivalence_set_id]);
+        }
+
+        self.add_bidirectional_edge_with_total_domain(node1, node2, td);
     }
 
     pub(super) fn add_bidirectional_edge_with_total_domain(
@@ -203,44 +287,105 @@ impl JoinAdjList {
         node2: JoinNode,
         td: usize,
     ) {
-        self.add_unidirectional_edge_with_total_domain(&node1, &node2, td);
-        self.add_unidirectional_edge_with_total_domain(&node2, &node1, td);
+        // Update the total domains for the join columns.
+        let node1_id = self.get_or_create_plan_id(&node1.plan);
+        let node2_id = self.get_or_create_plan_id(&node2.plan);
+        let node1_equivalence_set_id = self
+            .equivalence_set_map
+            .get(&(node1_id, node1.relation_name.clone()));
+        let node2_equivalence_set_id = self
+            .equivalence_set_map
+            .get(&(node2_id, node2.relation_name.clone()));
+        match (node1_equivalence_set_id, node2_equivalence_set_id) {
+            (Some(&node1_equivalence_set_id), Some(&node2_equivalence_set_id)) => {
+                if node1_equivalence_set_id != node2_equivalence_set_id {
+                    // If we had previously seenA.x = B.x, and C.x = D.x, then we would have incorrectly placed them in difference equivalence
+                    // sets. We need to merge the equivalence sets.
+                    let merged_equivalence_set_id =
+                        node1_equivalence_set_id.min(node2_equivalence_set_id);
+                    for value in self.equivalence_set_map.values_mut() {
+                        if *value == node1_equivalence_set_id || *value == node2_equivalence_set_id
+                        {
+                            *value = merged_equivalence_set_id;
+                        }
+                    }
+                    self.total_domains[merged_equivalence_set_id] = td;
+                } else {
+                    self.total_domains[node1_equivalence_set_id] = td;
+                }
+            }
+            (Some(&node1_equivalence_set_id), None) => {
+                self.total_domains[node1_equivalence_set_id] = td;
+                self.equivalence_set_map.insert(
+                    (node2_id, node2.relation_name.clone()),
+                    node1_equivalence_set_id,
+                );
+            }
+            (None, Some(&node2_equivalence_set_id)) => {
+                self.total_domains[node2_equivalence_set_id] = td;
+                self.equivalence_set_map.insert(
+                    (node1_id, node1.relation_name.clone()),
+                    node2_equivalence_set_id,
+                );
+            }
+            _ => {
+                self.total_domains.push(td);
+                self.equivalence_set_map.insert(
+                    (node1_id, node1.relation_name.clone()),
+                    self.max_equivalence_set_id,
+                );
+                self.equivalence_set_map.insert(
+                    (node2_id, node2.relation_name.clone()),
+                    self.max_equivalence_set_id,
+                );
+                self.max_equivalence_set_id += 1;
+            }
+        }
+        // Add the unidirectional edges.
+        self.add_unidirectional_edge(&node1, &node2);
+        self.add_unidirectional_edge(&node2, &node1);
     }
 
-    fn add_unidirectional_edge_with_total_domain(
-        &mut self,
-        left: &JoinNode,
-        right: &JoinNode,
-        td: usize,
-    ) {
+    fn add_unidirectional_edge(&mut self, left: &JoinNode, right: &JoinNode) {
         let join_condition = JoinCondition {
             left_on: left.relation_name.clone(),
             right_on: right.relation_name.clone(),
-            // Assuming a pk-fk join, the total domain would be the number of distinct values of the
-            // primary key. We assume the smaller side is the primary key side.
-            total_domain: td,
         };
         let left_id = self.get_or_create_plan_id(&left.plan);
         let right_id = self.get_or_create_plan_id(&right.plan);
         self.add_join_condition(left_id, right_id, join_condition);
     }
 
+    // Returns the join conditions that connect the left and right trees, and the maximum total domain for the join columns.
     pub(super) fn get_connections(
         &self,
         left: &JoinOrderTree,
         right: &JoinOrderTree,
-    ) -> Vec<JoinCondition> {
+    ) -> (Vec<JoinCondition>, usize) {
+        // Grab the minimum spanning tree of join conditions that connect the left and right trees, i.e. we take at most one join condition
+        // from each equivalence set of join conditions.
         let mut conds = vec![];
+        let mut seen_equivalence_set_ids = HashSet::new();
+        let mut td = 1;
         for left_node in left.iter() {
             if let Some(neighbors) = self.edges.get(&left_node) {
                 for right_node in right.iter() {
                     if let Some(edges) = neighbors.get(&right_node) {
-                        conds.extend(edges.iter().cloned());
+                        for edge in edges {
+                            let equivalence_set_id = self
+                                .equivalence_set_map
+                                .get(&(left_node, edge.left_on.clone()))
+                                .expect("Left join condition should be part of an equivalence set");
+                            if seen_equivalence_set_ids.insert(*equivalence_set_id) {
+                                td *= self.total_domains[*equivalence_set_id];
+                                conds.push(edge.clone());
+                            }
+                        }
                     }
                 }
             }
         }
-        conds
+        (conds, td)
     }
 }
 
@@ -821,11 +966,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - a <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
-            "Source(a) <-> Source(d)"
+            "Source(a) <-> Source(d)",
+            "Source(a) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Source(d)",  // Inferred edge.
         ]));
     }
 
@@ -892,11 +1044,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - b <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
             "Source(b) <-> Source(d)",
+            "Source(a) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Source(d)",  // Inferred edge.
         ]));
     }
 
@@ -956,10 +1115,13 @@ mod tests {
         // There should be edges between:
         // - a_beta <-> b
         // - a_beta <-> c
-        assert!(join_graph.num_edges() == 2);
+        // Plus 1 inferred edge:
+        // - b <-> c
+        assert!(join_graph.num_edges() == 3);
         assert!(join_graph.contains_edges(vec![
             "Project(a_beta) <-> Source(b)",
             "Project(a_beta) <-> Source(c)",
+            "Source(b) <-> Source(c)", // Inferred edge.
         ]));
     }
 
@@ -1027,11 +1189,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - a <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
-            "Source(a) <-> Source(d)"
+            "Source(a) <-> Source(d)",
+            "Source(a) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Source(d)",  // Inferred edge.
         ]));
     }
 
@@ -1117,11 +1286,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - a <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Filter(c) <-> Source(d)",
             "Source(a) <-> Source(d)",
+            "Source(a) <-> Filter(c)", // Inferred edge.
+            "Source(b) <-> Filter(c)", // Inferred edge.
+            "Source(b) <-> Source(d)", // Inferred edge.
         ]));
         // Check for non-join projections and filters at the end.
         // The join graph should only keep track of projections and filters that sit between joins.
@@ -1205,11 +1381,18 @@ mod tests {
         // - a <-> b
         // - c <-> d
         // - a <-> d
-        assert!(join_graph.num_edges() == 3);
+        // Plus 3 inferred edges:
+        // - a <-> c
+        // - b <-> c
+        // - b <-> d
+        assert!(join_graph.num_edges() == 6);
         assert!(join_graph.contains_edges(vec![
             "Aggregate(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
-            "Aggregate(a) <-> Source(d)"
+            "Aggregate(a) <-> Source(d)",
+            "Aggregate(a) <-> Project(c)", // Inferred edge.
+            "Source(b) <-> Project(c)",    // Inferred edge.
+            "Source(b) <-> Source(d)",     // Inferred edge.
         ]));
         // Projections below the aggregation should not be part of the final projections.
         assert!(!join_graph.contains_projections_and_filters(vec![&a_proj]));
