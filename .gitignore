@@ -57,3 +57,6 @@ out
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# added by mkdocs social cards
+.cache
