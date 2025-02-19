@@ -206,6 +206,7 @@ impl AsRef<Identifier> for PyIdentifier {
 
 /// PyTable implements the `daft.catalog.Table`` ABC for some Table trait impl (rust->py).
 #[pyclass]
+#[allow(unused)]
 pub struct PyTable(TableRef);
 
 impl PyTable {
@@ -220,6 +221,12 @@ impl PyTable {}
 /// PyTableWrapper wraps a `daft.catalog.Table` implementation (py->rust).
 #[derive(Debug)]
 pub struct PyTableWrapper(PyObject);
+
+impl From<PyObject> for PyTableWrapper {
+    fn from(obj: PyObject) -> Self {
+        Self(obj)
+    }
+}
 
 impl PyTableWrapper {
     pub fn wrap(obj: PyObject) -> TableRef {
