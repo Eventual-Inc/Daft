@@ -116,7 +116,7 @@ export default function QueryList() {
                                     {row.getAllCells().map(cell => (
                                         <TableCell
                                             key={cell.id}
-                                            className={`py-[15px] ${spacing(cell as any)}`}
+                                            className={`py-[15px] ${spacing(cell as any)} cursor-pointer`}
                                             onClick={() => router.push(`/queries/query?id=${cell.row.original.id}`)}
                                         >
                                             <div className="truncate">

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { SearchForm } from "@/components/search-form";
-import { Home, TableProperties } from "lucide-react";
+import { TableProperties } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import {
@@ -20,11 +20,6 @@ import {
 import { Button } from "./ui/button";
 
 const items = [
-    {
-        title: "Home",
-        url: "home",
-        icon: Home,
-    },
     {
         title: "Queries",
         url: "queries",
