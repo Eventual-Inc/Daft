@@ -3,7 +3,6 @@ use std::{io::ErrorKind, pin::pin, process::exit, time::Duration};
 use clap::Parser;
 use http_body_util::Empty;
 use hyper::{body::Bytes, client::conn::http1, Request};
-use hyper_staticfile::Resolver;
 use hyper_util::rt::TokioIo;
 use pyo3::{
     exceptions,
@@ -19,6 +18,8 @@ use tokio::{
     sync::mpsc,
     time::sleep,
 };
+
+use crate::DashboardState;
 
 const NUMBER_OF_WORKER_THREADS: usize = 3;
 
@@ -160,12 +161,12 @@ async fn run(static_assets_path: &str) -> anyhow::Result<BreakReason> {
     let mut python_signal = pin!(interrupt_handler());
     let (send, mut recv) = mpsc::channel::<()>(1);
     let mut api_signal = pin!(async { recv.recv().await.unwrap() });
-    let resolver = Resolver::new(static_assets_path);
+    let state = DashboardState::new(Some(static_assets_path), send);
 
     Ok(loop {
         tokio::select! {
             stream = listener.accept() => match stream {
-                Ok((stream, _)) => super::handle_stream(stream, Some(resolver.clone()), send.clone()),
+                Ok((stream, _)) => super::handle_stream(stream, state.clone()),
                 Err(error) => log::warn!("Unable to accept incoming connection: {error}"),
             },
             () = &mut python_signal => break BreakReason::PythonSignalInterrupt,

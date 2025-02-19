@@ -1,7 +1,8 @@
 use std::{path::Path, pin::pin};
 
-use hyper_staticfile::Resolver;
 use tokio::{net::TcpListener, sync::mpsc};
+
+use crate::DashboardState;
 
 pub async fn launch(static_assets_path: Option<&Path>) {
     let listener = TcpListener::bind((super::SERVER_ADDR, super::SERVER_PORT))
@@ -12,9 +13,10 @@ pub async fn launch(static_assets_path: Option<&Path>) {
             super::SERVER_PORT,
         ));
 
-    let resolver = static_assets_path.map(Resolver::new);
     let (send, mut recv) = mpsc::channel::<()>(1);
     let mut api_signal = pin!(async { recv.recv().await.unwrap() });
+
+    let state = DashboardState::new(static_assets_path, send);
 
     loop {
         tokio::select! {
@@ -23,7 +25,7 @@ pub async fn launch(static_assets_path: Option<&Path>) {
                     .accept()
                     .await
                     .unwrap_or_else(|error| panic!("Unable to accept incoming connection: {error}"))
-            } => super::handle_stream(stream, resolver.clone(), send.clone()),
+            } => super::handle_stream(stream, state.clone()),
             () = &mut api_signal => break,
         }
     }
