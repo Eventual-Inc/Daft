@@ -421,14 +421,11 @@ pub struct MaterializedResults {
 pub struct EmittedStage {
     pub stage_id: Option<usize>,
     pub physical_plan: PhysicalPlanRef,
-    pub input_stages: Vec<EmittedStage>,
+    pub input_stages: Vec<Self>,
 }
 
 impl EmittedStage {
-    fn new(
-        query_stage_output: &QueryStageOutput,
-        input_stages: Vec<EmittedStage>,
-    ) -> DaftResult<Self> {
+    fn new(query_stage_output: &QueryStageOutput, input_stages: Vec<Self>) -> DaftResult<Self> {
         let mut strip_cache_entry = StripCacheEntryFromInMemoryScan {};
         let physical_plan = query_stage_output
             .physical_plan()
@@ -482,7 +479,7 @@ impl StageCache {
             }
         }
         let mut source_ids = vec![];
-        find_input_source_ids(&stage.physical_plan(), &mut source_ids);
+        find_input_source_ids(stage.physical_plan(), &mut source_ids);
 
         if source_ids.is_empty() {
             let emitted_stage = EmittedStage::new(stage, vec![])?;
@@ -606,10 +603,10 @@ impl AdaptivePlanner {
             }
         };
 
-        let next_stage = if source_id.is_some() {
+        let next_stage = if let Some(source_id) = source_id {
             QueryStageOutput::Partial {
                 physical_plan: next_physical_plan,
-                source_id: source_id.unwrap(),
+                source_id,
             }
         } else {
             QueryStageOutput::Final {

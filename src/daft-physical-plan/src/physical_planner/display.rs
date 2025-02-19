@@ -71,8 +71,8 @@ where
         }
 
         for child in children {
-            self.fmt_node(&child)?;
-            self.add_edge(self.get_node_id(node), self.get_node_id(&child))?;
+            self.fmt_node(child)?;
+            self.add_edge(self.get_node_id(node), self.get_node_id(child))?;
         }
 
         Ok(())
