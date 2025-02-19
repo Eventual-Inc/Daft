@@ -25,11 +25,13 @@ class UnityCatalog(Catalog):
         self._inner = unity_catalog
 
     @staticmethod
-    def _try_from(obj: object) -> UnityCatalog | None:
+    def _from_obj(obj: object) -> UnityCatalog:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
         if isinstance(obj, InnerCatalog):
-            return UnityCatalog(obj)
-        return None
+            c = UnityCatalog.__new__(UnityCatalog)
+            c._inner = obj
+            return c
+        raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
 
     @property
     def inner(self) -> InnerCatalog:

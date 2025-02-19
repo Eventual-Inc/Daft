@@ -136,9 +136,7 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
 
     """
-    if (c := Catalog._try_from(catalog)) is not None:
-        return native_catalog.register_python_catalog(c, name)
-    raise ValueError(f"Unsupported catalog type: {type(catalog)}")
+    return native_catalog.register_python_catalog(Catalog._from_obj(catalog), name)
 
 
 class Catalog(ABC):
@@ -149,31 +147,38 @@ class Catalog(ABC):
         """Returns the inner catalog object if this is an adapter."""
 
     @staticmethod
-    def _try_from(obj: object) -> Catalog | None:
-        for factory in (Catalog._try_from_iceberg, Catalog._try_from_unity):
-            if (c := factory(obj)) is not None:
-                return c
-        return None
-
-    @staticmethod
-    def _try_from_iceberg(obj: object) -> Catalog | None:
+    def from_iceberg(obj: object) -> Catalog:
         """Returns a Daft Catalog instance from an Iceberg catalog."""
         try:
             from daft.catalog.__iceberg import IcebergCatalog
 
-            return IcebergCatalog._try_from(obj)
+            return IcebergCatalog._from_obj(obj)
         except ImportError:
-            return None
+            raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
 
     @staticmethod
-    def _try_from_unity(obj: object) -> Catalog | None:
+    def from_unity(obj: object) -> Catalog:
         """Returns a Daft Catalog instance from a Unity catalog."""
         try:
             from daft.catalog.__unity import UnityCatalog
 
-            return UnityCatalog._try_from(obj)
+            return UnityCatalog._from_obj(obj)
         except ImportError:
-            return None
+            raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
+
+    @staticmethod
+    def _from_obj(obj: object) -> Catalog:
+        """Returns a Daft Catalog from a supported object type or raises a ValueError."""
+        for factory in (Catalog.from_iceberg, Catalog.from_unity):
+            try:
+                return factory(obj)
+            except ValueError:
+                pass
+            except ImportError:
+                pass
+        raise ValueError(
+            f"Unsupported catalog type: {type(obj)}; please ensure all required extra dependencies are installed."
+        )
 
     ###
     # list_*
