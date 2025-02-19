@@ -24,34 +24,41 @@ def _static_assets_path() -> Path:
     return path
 
 
-def launch(detach: bool = False):
+def launch(detach: bool = False, noop_if_initialized: bool = False):
     """Launches the Daft dashboard server on port 3238.
 
     The server serves HTML/CSS/JS bundles, so you are able to point your browser towards `http://localhost:3238` and view information regarding your queries.
+
+    # Arguments:
+        - detach: bool = False
+            Will detach the Daft dashboard server process from this current process.
+            This make this API non-blocking; otherwise, this API is blocking.
+        - noop_if_initialized: bool = False
+            Will not throw an exception a Daft dashboard server process is already launched and running.
+            Otherwise, an exception will be thrown.
     """
     os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
     path = _static_assets_path()
-    native.launch(static_assets_path=str(path), detach=detach)
+    native.launch(static_assets_path=str(path), detach=detach, noop_if_initialized=noop_if_initialized)
 
 
-def shutdown():
+def shutdown(noop_if_shutdown: bool = False):
     """Sends a signal to the Daft dashboard server to shutdown.
 
+    # Arguments:
+        - noop_if_shutdown: bool = False
+            Will not throw an exception the Daft dashboard server process was already shut down.
+            Otherwise, an exception will be thrown.
+
     # Exceptions
-    Will raise a runtime error if:
-    - There is no Daft dashboard server running currently.
-    - The Daft dashboard server responds with an error code after being requested to shutdown.
+        Will raise a runtime error if the Daft dashboard server responds with an error code after being requested to shutdown.
     """
     os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
-    native.shutdown()
+    native.shutdown(noop_if_shutdown=noop_if_shutdown)
 
 
 def cli():
-    """Sends a signal to the Daft dashboard server to shutdown.
-
-    # Exceptions
-    Will raise a runtime error if the Daft dashboard server responds with an error code after being requested to shutdown.
-    """
+    """Runs the Daft dashboard CLI."""
     import sys
 
     os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"

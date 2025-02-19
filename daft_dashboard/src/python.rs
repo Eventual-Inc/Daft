@@ -1,4 +1,4 @@
-use std::{pin::pin, process::exit, time::Duration};
+use std::{io::ErrorKind, pin::pin, process::exit, time::Duration};
 
 use clap::Parser;
 use http_body_util::Empty;
@@ -22,61 +22,27 @@ use tokio::{
 
 const NUMBER_OF_WORKER_THREADS: usize = 3;
 
-#[pyfunction(signature = (static_assets_path, detach = false))]
-fn launch(static_assets_path: String, detach: Option<bool>) {
-    async fn run(static_assets_path: String) -> BreakReason {
-        let resolver = Resolver::new(static_assets_path);
-
-        let Ok(listener) = TcpListener::bind((super::SERVER_ADDR, super::SERVER_PORT)).await else {
-            return BreakReason::PortAlreadyBound;
-        };
-
-        let mut python_signal = pin!(interrupt_handler());
-        let (send, mut recv) = mpsc::channel::<()>(1);
-        let mut api_signal = pin!(async { recv.recv().await.unwrap() });
-
-        loop {
-            tokio::select! {
-                stream = listener.accept() => match stream {
-                    Ok((stream, _)) => super::handle_stream(stream, Some(resolver.clone()), send.clone()),
-                    Err(error) => log::warn!("Unable to accept incoming connection: {error}"),
-                },
-                () = &mut python_signal => break BreakReason::PythonSignalInterrupt,
-                () = &mut api_signal => break BreakReason::ApiShutdownSignal,
-            }
-        }
+#[pyfunction(signature = (static_assets_path, detach = false, noop_if_initialized = false))]
+fn launch(static_assets_path: String, detach: bool, noop_if_initialized: bool) -> PyResult<()> {
+    if detach {
+        launch_detached(&static_assets_path, noop_if_initialized)
+    } else {
+        launch_attached(&static_assets_path, noop_if_initialized)
     }
-
-    if detach.unwrap_or(false) {
-        if matches!(fork::fork().unwrap(), fork::Fork::Child) {
-            if matches!(
-                tokio_runtime(true).block_on(run(static_assets_path)),
-                BreakReason::PythonSignalInterrupt
-            ) {
-                unreachable!("Can't receive a python signal interrupt in an orphaned process");
-            }
-            exit(0);
-        }
-    } else if matches!(
-        tokio_runtime(true).block_on(run(static_assets_path)),
-        BreakReason::PortAlreadyBound,
-    ) {
-        panic!(
-            r#"There's another process already bound to {}:{}.
-If this is the `daft-dashboard-client` (i.e., if you already ran `daft.dashboard.launch(block=False)` inside of a python script previously), then you don't have to do anything else.
-
-However, if this is another process, then kill that other server (by running `kill -9 $(lsof -t -i :3238)` inside of your shell) and then rerun `daft.dashboard.launch()`."#,
-            super::SERVER_ADDR,
-            super::SERVER_PORT,
-        );
-    }
+    .map_err(|error| PyErr::new::<exceptions::PyRuntimeError, _>(error.to_string()))
 }
 
-#[pyfunction]
-fn shutdown() -> PyResult<()> {
-    tokio_runtime(true)
+#[pyfunction(signature = (noop_if_shutdown = false))]
+fn shutdown(noop_if_shutdown: bool) -> PyResult<()> {
+    tokio_runtime(false)
         .block_on(async {
-            let stream = TcpStream::connect((super::SERVER_ADDR, super::SERVER_PORT)).await?;
+            let stream = match TcpStream::connect((super::SERVER_ADDR, super::SERVER_PORT)).await {
+                Ok(stream) => stream,
+                Err(error) if error.kind() == ErrorKind::ConnectionRefused && noop_if_shutdown => {
+                    return Ok(())
+                }
+                Err(error) => return Err(anyhow::anyhow!("{error}")),
+            };
             let io = TokioIo::new(stream);
             let (mut sender, conn) = http1::handshake(io).await?;
 
@@ -111,18 +77,29 @@ fn shutdown() -> PyResult<()> {
 
 #[derive(Clone, PartialEq, Eq, Parser)]
 enum Cli {
-    Start,
-    Stop,
+    Launch {
+        /// Do not fail if a Daft dashboard server process is already bound to port 3238.
+        ///
+        /// Makes this command idempotent.
+        #[arg(short, long)]
+        noop_if_initialized: bool,
+    },
+    Shutdown {
+        /// Do not fail if no Daft dashboard server process is bound to port 3238.
+        ///
+        /// Makes this command idempotent.
+        #[arg(short, long)]
+        noop_if_shutdown: bool,
+    },
 }
 
 #[pyfunction(signature = (args, static_assets_path))]
 fn cli(args: Vec<String>, static_assets_path: String) -> PyResult<()> {
     match Cli::parse_from(args) {
-        Cli::Start => {
-            launch(static_assets_path, Some(true));
-            Ok(())
-        }
-        Cli::Stop => shutdown(),
+        Cli::Launch {
+            noop_if_initialized,
+        } => launch(static_assets_path, true, noop_if_initialized),
+        Cli::Shutdown { noop_if_shutdown } => shutdown(noop_if_shutdown),
     }
 }
 
@@ -134,10 +111,64 @@ fn daft_dashboard(_: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum BreakReason {
     PortAlreadyBound,
     PythonSignalInterrupt,
     ApiShutdownSignal,
+}
+
+fn launch_attached(static_assets_path: &str, noop_if_initialized: bool) -> anyhow::Result<()> {
+    let break_reason = tokio_runtime(true).block_on(run(static_assets_path))?;
+
+    if break_reason == BreakReason::PortAlreadyBound && !noop_if_initialized {
+        Err(already_bound_error())
+    } else {
+        Ok(())
+    }
+}
+
+fn launch_detached(static_assets_path: &str, noop_if_initialized: bool) -> anyhow::Result<()> {
+    match fork::fork().unwrap() {
+        fork::Fork::Parent(..) => Ok(()),
+        fork::Fork::Child => {
+            let break_reason = tokio_runtime(true).block_on(run(static_assets_path))?;
+            match (break_reason, noop_if_initialized) {
+                (BreakReason::PortAlreadyBound, false) => return Err(already_bound_error()),
+                (BreakReason::PythonSignalInterrupt, _) => {
+                    unreachable!("Can't receive a python signal interrupt in an orphaned process")
+                }
+                _ => (),
+            };
+            exit(0);
+        }
+    }
+}
+
+async fn run(static_assets_path: &str) -> anyhow::Result<BreakReason> {
+    let listener = match TcpListener::bind((super::SERVER_ADDR, super::SERVER_PORT)).await {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == ErrorKind::AddrInUse => {
+            return Ok(BreakReason::PortAlreadyBound)
+        }
+        _ => todo!(),
+    };
+
+    let mut python_signal = pin!(interrupt_handler());
+    let (send, mut recv) = mpsc::channel::<()>(1);
+    let mut api_signal = pin!(async { recv.recv().await.unwrap() });
+    let resolver = Resolver::new(static_assets_path);
+
+    Ok(loop {
+        tokio::select! {
+            stream = listener.accept() => match stream {
+                Ok((stream, _)) => super::handle_stream(stream, Some(resolver.clone()), send.clone()),
+                Err(error) => log::warn!("Unable to accept incoming connection: {error}"),
+            },
+            () = &mut python_signal => break BreakReason::PythonSignalInterrupt,
+            () = &mut api_signal => break BreakReason::ApiShutdownSignal,
+        }
+    })
 }
 
 async fn interrupt_handler() {
@@ -162,4 +193,15 @@ fn tokio_runtime(multithreaded: bool) -> Runtime {
     .enable_all()
     .build()
     .unwrap()
+}
+
+fn already_bound_error() -> anyhow::Error {
+    anyhow::anyhow!(
+        r#"There's another process already bound to {}:{}.
+If this is the `daft-dashboard-client` (i.e., if you already ran `dashboard.launch()` inside of a python script previously), then you don't have to do anything else.
+
+However, if this is another process, then kill that other server (by running `kill -9 $(lsof -t -i :3238)` inside of your shell) and then rerun `dashboard.launch()`."#,
+        super::SERVER_ADDR,
+        super::SERVER_PORT,
+    )
 }
