@@ -8,6 +8,9 @@ name = "daft_dashboard"
 requires-python = ">=3.9"
 version = "0.1.0"
 
+[project.scripts]
+daft-dashboard = "daft_dashboard:cli"
+
 [tool.maturin]
 features = ["python"]
 module-name = "daft_dashboard"  # The name of your Rust module

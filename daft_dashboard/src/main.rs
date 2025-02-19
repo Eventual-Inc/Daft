@@ -11,11 +11,11 @@ struct Cli {
     static_assets_path: Option<PathBuf>,
 }
 
-#[tokio::main]
 #[cfg(not(feature = "python"))]
+#[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    daft_dashboard::launch(cli.static_assets_path.as_deref()).await;
+    daft_dashboard::rust::launch(cli.static_assets_path.as_deref()).await;
 }
 
 #[cfg(feature = "python")]

@@ -15,9 +15,7 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
-    SidebarFooter,
 } from "@/components/ui/sidebar";
-import { Button } from "./ui/button";
 
 const items = [
     {
@@ -57,13 +55,6 @@ export function AppSidebar() {
                     </SidebarGroupContent>
                 </SidebarGroup>
             </SidebarContent>
-            <SidebarFooter className="px-4 py-4">
-                <Button variant="destructive" onClick={async () => {
-                    await fetch("http://localhost:3238/api/shutdown", { method: "POST" });
-                }}>
-                    Shutdown
-                </Button>
-            </SidebarFooter>
         </Sidebar>
     );
 }

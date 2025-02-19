@@ -11,8 +11,17 @@ from urllib.error import URLError
 if TYPE_CHECKING:
     from datetime import datetime
 
-DAFT_DASHBOARD_ENV_NAME = "DAFT_DASHBOARD"
-DAFT_DASHBOARD_URL = "http://localhost:3238/api/queries"
+try:
+    # re-export all of the symbols defined inside of `daft_dashboard`
+    # from daft_dashboard import *
+    from daft_dashboard import DAFT_DASHBOARD_ENV_NAME, DAFT_DASHBOARD_QUERIES_URL, cli, launch, shutdown
+except ImportError:
+    warnings.warn(
+        "Unable to import Daft's dashboard features"
+        "Consider re-installing Daft with the 'dashboard' feature installed, e.g.:"
+        'pip install "getdaft[dashboard]"'
+    )
+    raise
 
 
 def _should_run() -> bool:
@@ -37,7 +46,7 @@ def _broadcast_query_plan(
 ):
     # try launching the dashboard
     # if dashboard is already launched, this will do nothing
-    launch(block=False)
+    launch(detach=True)
 
     headers = {
         "Content-Type": "application/json",
@@ -50,27 +59,16 @@ def _broadcast_query_plan(
             "plan_time_end": str(plan_time_end),
         }
     ).encode("utf-8")
-    req = request.Request(DAFT_DASHBOARD_URL, headers=headers, data=data)
+    req = request.Request(DAFT_DASHBOARD_QUERIES_URL, headers=headers, data=data)
 
     try:
         request.urlopen(req, timeout=1)
     except URLError as e:
-        warnings.warn(f"Failed to broadcast metrics over {DAFT_DASHBOARD_URL}: {e}")
+        warnings.warn(f"Failed to broadcast metrics over {DAFT_DASHBOARD_QUERIES_URL}: {e}")
 
 
-def launch(block: bool = False):
-    """Launches the Daft dashboard server on port 3238.
-
-    The server serves HTML/CSS/JS bundles, so you are able to point your browser towards `http://localhost:3238` and view information regarding your queries.
-    """
-    try:
-        from daft_dashboard import launch
-
-        launch(block=block)
-    except ImportError:
-        warnings.warn(
-            "Unable to import Daft's dashboard features"
-            "Consider re-installing Daft with the 'dashboard' feature installed, e.g.:"
-            'pip install "getdaft[dashboard]"'
-        )
-        raise
+__all__ = [
+    "cli",
+    "launch",
+    "shutdown",
+]

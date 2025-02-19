@@ -40,14 +40,12 @@ fn response_builder(status: StatusCode, body: Option<impl Serialize>) -> Res {
                     .boxed()
             },
             |body| {
-                let body =
-                    serde_json::to_string(&body).expect("Body should always be serializable");
-                Full::new(body.into())
+                Full::new(serde_json::to_string(&body).unwrap().into())
                     .map_err(|infallible| match infallible {})
                     .boxed()
             },
         ))
-        .expect("Responses should always be able to be constructed")
+        .unwrap()
 }
 
 pub fn with_body(status: StatusCode, body: impl Serialize) -> Res {

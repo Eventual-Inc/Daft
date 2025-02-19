@@ -97,6 +97,9 @@ root = ".github/ci-scripts"
 [[tool.pyright.executionEnvironments]]
 root = "tools"
 
+[[tool.pyright.executionEnvironments]]
+root = "daft_dashboard"
+
 [tool.pytest.ini_options]
 addopts = "-m 'not (integration or benchmark or hypothesis)'"
 minversion = "6.0"
