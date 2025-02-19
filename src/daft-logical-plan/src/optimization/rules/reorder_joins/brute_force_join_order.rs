@@ -204,20 +204,27 @@ mod tests {
         stats_enricher.try_optimize(plan).data().unwrap()
     }
 
-    fn create_join_graph_with_edges(
-        plans: Vec<LogicalPlanRef>,
-        edges: Vec<(usize, String, usize, String, usize)>,
-    ) -> JoinGraph {
+    // A helper struct to represent a join edge between two nodes with the total domain of the join columns.
+    // i.e. node1.node1_col_name = node2.node2_col_name.
+    struct JoinEdge {
+        node1: usize,
+        node1_col_name: String,
+        node2: usize,
+        node2_col_name: String,
+        total_domain: usize,
+    }
+
+    fn create_join_graph_with_edges(plans: Vec<LogicalPlanRef>, edges: Vec<JoinEdge>) -> JoinGraph {
         let mut adj_list = JoinAdjList::empty();
         // Immediately create plan ids so that they match the ids in the test cases.
         for plan in &plans {
             adj_list.get_or_create_plan_id(&plan);
         }
-        for (from, from_rel_name, to, to_rel_name, td) in edges {
+        for edge in edges {
             adj_list.add_bidirectional_edge_with_total_domain(
-                JoinNode::new(from_rel_name, plans[from].clone()),
-                JoinNode::new(to_rel_name, plans[to].clone()),
-                td,
+                JoinNode::new(edge.node1_col_name, plans[edge.node1].clone()),
+                JoinNode::new(edge.node2_col_name, plans[edge.node2].clone()),
+                edge.total_domain,
             );
         }
         JoinGraph::new(adj_list, vec![])
@@ -251,27 +258,27 @@ mod tests {
         let nodes = vec![("medium", 1_000), ("large", 500_000), ("small", 500)];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (
-                name_to_id["medium"],
-                "m_medium".to_string(),
-                name_to_id["large"],
-                "l_medium".to_string(),
-                1_000,
-            ),
-            (
-                name_to_id["large"],
-                "l_small".to_string(),
-                name_to_id["small"],
-                "s_small".to_string(),
-                500,
-            ),
-            (
-                name_to_id["medium"],
-                "m_small".to_string(),
-                name_to_id["small"],
-                "s_small".to_string(),
-                500,
-            ),
+            JoinEdge {
+                node1: name_to_id["medium"],
+                node1_col_name: "m_medium".to_string(),
+                node2: name_to_id["large"],
+                node2_col_name: "l_medium".to_string(),
+                total_domain: 1_000,
+            },
+            JoinEdge {
+                node1: name_to_id["large"],
+                node1_col_name: "l_small".to_string(),
+                node2: name_to_id["small"],
+                node2_col_name: "s_small".to_string(),
+                total_domain: 500,
+            },
+            JoinEdge {
+                node1: name_to_id["medium"],
+                node1_col_name: "m_small".to_string(),
+                node2: name_to_id["small"],
+                node2_col_name: "s_small".to_string(),
+                total_domain: 500,
+            },
         ];
         let optimal_order = test_join(
             test_relation(name_to_id["large"]),
@@ -290,27 +297,27 @@ mod tests {
         let nodes = vec![("medium", 1_000), ("large", 5_000), ("small", 500)];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (
-                name_to_id["medium"],
-                "m_medium".to_string(),
-                name_to_id["large"],
-                "l_medium".to_string(),
-                1_000,
-            ),
-            (
-                name_to_id["large"],
-                "l_small".to_string(),
-                name_to_id["small"],
-                "s_small".to_string(),
-                500,
-            ),
-            (
-                name_to_id["medium"],
-                "m_small".to_string(),
-                name_to_id["small"],
-                "s_small".to_string(),
-                500,
-            ),
+            JoinEdge {
+                node1: name_to_id["medium"],
+                node1_col_name: "m_medium".to_string(),
+                node2: name_to_id["large"],
+                node2_col_name: "l_medium".to_string(),
+                total_domain: 1_000,
+            },
+            JoinEdge {
+                node1: name_to_id["large"],
+                node1_col_name: "l_small".to_string(),
+                node2: name_to_id["small"],
+                node2_col_name: "s_small".to_string(),
+                total_domain: 500,
+            },
+            JoinEdge {
+                node1: name_to_id["medium"],
+                node1_col_name: "m_small".to_string(),
+                node2: name_to_id["small"],
+                node2_col_name: "s_small".to_string(),
+                total_domain: 500,
+            },
         ];
         let optimal_order = test_join(
             test_relation(name_to_id["small"]),
@@ -334,48 +341,48 @@ mod tests {
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (
-                name_to_id["region"],
-                "r_regionkey".to_string(),
-                name_to_id["nation"],
-                "n_regionkey".to_string(),
-                10,
-            ),
-            (
-                name_to_id["customer"],
-                "c_custkey".to_string(),
-                name_to_id["orders"],
-                "o_custkey".to_string(),
-                1_500_000,
-            ),
-            (
-                name_to_id["orders"],
-                "o_orderkey".to_string(),
-                name_to_id["lineitem"],
-                "l_orderkey".to_string(),
-                15_000_000,
-            ),
-            (
-                name_to_id["lineitem"],
-                "l_suppkey".to_string(),
-                name_to_id["supplier"],
-                "s_suppkey".to_string(),
-                100_000,
-            ),
-            (
-                name_to_id["supplier"],
-                "s_nationkey".to_string(),
-                name_to_id["nation"],
-                "n_nationkey".to_string(),
-                25,
-            ),
-            (
-                name_to_id["customer"],
-                "c_nationkey".to_string(),
-                name_to_id["supplier"],
-                "s_nationkey".to_string(),
-                25,
-            ),
+            JoinEdge {
+                node1: name_to_id["region"],
+                node1_col_name: "r_regionkey".to_string(),
+                node2: name_to_id["nation"],
+                node2_col_name: "n_regionkey".to_string(),
+                total_domain: 10,
+            },
+            JoinEdge {
+                node1: name_to_id["customer"],
+                node1_col_name: "c_custkey".to_string(),
+                node2: name_to_id["orders"],
+                node2_col_name: "o_custkey".to_string(),
+                total_domain: 1_500_000,
+            },
+            JoinEdge {
+                node1: name_to_id["orders"],
+                node1_col_name: "o_orderkey".to_string(),
+                node2: name_to_id["lineitem"],
+                node2_col_name: "l_orderkey".to_string(),
+                total_domain: 15_000_000,
+            },
+            JoinEdge {
+                node1: name_to_id["lineitem"],
+                node1_col_name: "l_suppkey".to_string(),
+                node2: name_to_id["supplier"],
+                node2_col_name: "s_suppkey".to_string(),
+                total_domain: 100_000,
+            },
+            JoinEdge {
+                node1: name_to_id["supplier"],
+                node1_col_name: "s_nationkey".to_string(),
+                node2: name_to_id["nation"],
+                node2_col_name: "n_nationkey".to_string(),
+                total_domain: 25,
+            },
+            JoinEdge {
+                node1: name_to_id["customer"],
+                node1_col_name: "c_nationkey".to_string(),
+                node2: name_to_id["supplier"],
+                node2_col_name: "s_nationkey".to_string(),
+                total_domain: 25,
+            },
         ];
         let optimal_order = test_join(
             test_relation(name_to_id["supplier"]),
@@ -406,27 +413,27 @@ mod tests {
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (
-                name_to_id["fact"],
-                "f_dim1".to_string(),
-                name_to_id["dim1"],
-                "d_dim1".to_string(),
-                10_000,
-            ), // Pretend there was a large filter on dim1.
-            (
-                name_to_id["fact"],
-                "f_dim2".to_string(),
-                name_to_id["dim2"],
-                "d_dim2".to_string(),
-                500,
-            ),
-            (
-                name_to_id["fact"],
-                "f_dim3".to_string(),
-                name_to_id["dim3"],
-                "d_dim3".to_string(),
-                500,
-            ), // Pretend there was a small filter on dim3.
+            JoinEdge {
+                node1: name_to_id["fact"],
+                node1_col_name: "f_dim1".to_string(),
+                node2: name_to_id["dim1"],
+                node2_col_name: "d_dim1".to_string(),
+                total_domain: 10_000,
+            }, // Pretend there was a large filter on dim1.
+            JoinEdge {
+                node1: name_to_id["fact"],
+                node1_col_name: "f_dim2".to_string(),
+                node2: name_to_id["dim2"],
+                node2_col_name: "d_dim2".to_string(),
+                total_domain: 500,
+            },
+            JoinEdge {
+                node1: name_to_id["fact"],
+                node1_col_name: "f_dim3".to_string(),
+                node2: name_to_id["dim3"],
+                node2_col_name: "d_dim3".to_string(),
+                total_domain: 500,
+            }, // Pretend there was a small filter on dim3.
         ];
         let optimal_order = test_join(
             test_join(
@@ -452,34 +459,34 @@ mod tests {
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (
-                name_to_id["fact"],
-                "f_dim1".to_string(),
-                name_to_id["dim1"],
-                "d_dim1".to_string(),
-                500_000,
-            ), // Pretend there was a filter on dim1.
-            (
-                name_to_id["fact"],
-                "f_dim2".to_string(),
-                name_to_id["dim2"],
-                "d_dim2".to_string(),
-                500,
-            ),
-            (
-                name_to_id["dim2"],
-                "d_dim3".to_string(),
-                name_to_id["dim3"],
-                "d_dim3".to_string(),
-                500,
-            ),
-            (
-                name_to_id["dim2"],
-                "d_dim4".to_string(),
-                name_to_id["dim4"],
-                "d_dim4".to_string(),
-                250,
-            ), // Pretend there was a filter on dim4.
+            JoinEdge {
+                node1: name_to_id["fact"],
+                node1_col_name: "f_dim1".to_string(),
+                node2: name_to_id["dim1"],
+                node2_col_name: "d_dim1".to_string(),
+                total_domain: 500_000,
+            }, // Pretend there was a filter on dim1.
+            JoinEdge {
+                node1: name_to_id["fact"],
+                node1_col_name: "f_dim2".to_string(),
+                node2: name_to_id["dim2"],
+                node2_col_name: "d_dim2".to_string(),
+                total_domain: 500,
+            },
+            JoinEdge {
+                node1: name_to_id["dim2"],
+                node1_col_name: "d_dim3".to_string(),
+                node2: name_to_id["dim3"],
+                node2_col_name: "d_dim3".to_string(),
+                total_domain: 500,
+            },
+            JoinEdge {
+                node1: name_to_id["dim2"],
+                node1_col_name: "d_dim4".to_string(),
+                node2: name_to_id["dim4"],
+                node2_col_name: "d_dim4".to_string(),
+                total_domain: 250,
+            }, // Pretend there was a filter on dim4.
         ];
         let optimal_order = test_join(
             test_relation(name_to_id["dim1"]),
@@ -507,27 +514,27 @@ mod tests {
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
-            (
-                name_to_id["table1"],
-                "t1_t2".to_string(),
-                name_to_id["table2"],
-                "t2_t2".to_string(),
-                10,
-            ),
-            (
-                name_to_id["table2"],
-                "t2_t3".to_string(),
-                name_to_id["table3"],
-                "t3_t3".to_string(),
-                2,
-            ),
-            (
-                name_to_id["table3"],
-                "t3_t4".to_string(),
-                name_to_id["table4"],
-                "t4_t4".to_string(),
-                20,
-            ),
+            JoinEdge {
+                node1: name_to_id["table1"],
+                node1_col_name: "t1_t2".to_string(),
+                node2: name_to_id["table2"],
+                node2_col_name: "t2_t2".to_string(),
+                total_domain: 10,
+            },
+            JoinEdge {
+                node1: name_to_id["table2"],
+                node1_col_name: "t2_t3".to_string(),
+                node2: name_to_id["table3"],
+                node2_col_name: "t3_t3".to_string(),
+                total_domain: 2,
+            },
+            JoinEdge {
+                node1: name_to_id["table3"],
+                node1_col_name: "t3_t4".to_string(),
+                node2: name_to_id["table4"],
+                node2_col_name: "t4_t4".to_string(),
+                total_domain: 20,
+            },
         ];
         let optimal_order = test_join(
             test_join(
