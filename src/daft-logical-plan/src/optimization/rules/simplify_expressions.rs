@@ -44,7 +44,7 @@ mod test {
     use std::sync::Arc;
 
     use daft_core::prelude::Schema;
-    use daft_dsl::{lit, resolved_col, unbound_col};
+    use daft_dsl::{lit, resolved_col, unresolved_col};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::SimplifyExpressionsRule;
@@ -81,9 +81,9 @@ mod test {
     #[test]
     fn test_nested_plan() {
         let source = make_source()
-            .filter(unbound_col("int").between(lit(1), lit(10)))
+            .filter(unresolved_col("int").between(lit(1), lit(10)))
             .unwrap()
-            .select(vec![unbound_col("int").add(lit(0))])
+            .select(vec![unresolved_col("int").add(lit(0))])
             .unwrap()
             .build();
         let optimizer = SimplifyExpressionsRule::new();

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::CountMode;
-use daft_dsl::{unbound_col, AggExpr, Expr, ExprRef, LiteralValue};
+use daft_dsl::{unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
@@ -81,7 +81,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
             Some(plan) => {
                 let schema = plan.schema();
-                unbound_col(schema.fields[0].name.clone())
+                unresolved_col(schema.fields[0].name.clone())
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
             }
@@ -92,8 +92,10 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
 
             match &planner.current_plan {
                 Some(plan) => {
-                    if let Some(schema) = plan.plan.clone().get_schema_for_id(&ident.to_string())? {
-                        unbound_col(schema.fields[0].name.clone())
+                    if let Some(schema) =
+                        plan.plan.clone().get_schema_for_alias(&ident.to_string())?
+                    {
+                        unresolved_col(schema.fields[0].name.clone())
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
                     } else {

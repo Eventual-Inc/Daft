@@ -106,29 +106,48 @@ impl std::hash::Hash for Subquery {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Column {
-    /// Column that is not yet resolved to a scope.
-    ///
-    /// Unresolved columns should only be used before logical plan construction
-    /// (e.g. in the DataFrame and SQL frontends and the logical plan builder).
-    ///
-    /// Expressions are assumed to contain no unresolved columns by the time
-    /// they are used in a logical plan op, as well as subsequent steps such as
-    /// physical plan translation and execution.
-    ///
-    /// The logical plan builder is responsible for resolving them to a
-    /// `Resolved`, `JoinSide`, or `OuterRef` column.
-    Unresolved {
-        name: Arc<str>,
-        plan_id: Option<Arc<str>>,
-        plan_schema: Option<SchemaRef>,
-    },
+    Unresolved(UnresolvedColumn),
+    Resolved(ResolvedColumn),
+}
 
+/// Information about the logical plan node that a column comes from.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum PlanRef {
+    /// Corresponds to a SubqueryAlias
+    Alias(Arc<str>),
+
+    /// No specified source.
+    ///
+    /// Can either be from the immediate input or an outer scope.
+    Unqualified,
+}
+
+/// Column that is not yet resolved to a scope.
+///
+/// Unresolved columns should only be used before logical plan construction
+/// (e.g. in the DataFrame and SQL frontends and the logical plan builder).
+///
+/// Expressions are assumed to contain no unresolved columns by the time
+/// they are used in a logical plan op, as well as subsequent steps such as
+/// physical plan translation and execution.
+///
+/// The logical plan builder is responsible for resolving all Column::Unresolved
+/// into Column::Resolved
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct UnresolvedColumn {
+    pub name: Arc<str>,
+    pub plan_ref: PlanRef,
+    pub plan_schema: Option<SchemaRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ResolvedColumn {
     /// Column resolved to the scope of a singular input.
-    Resolved(Arc<str>),
+    Basic(Arc<str>),
 
     /// Column resolved to the scope of either the left or right input of a join.
     ///
-    /// This variant should only exist in non-equality join predicates.
+    /// This variant should only exist in join predicates.
     JoinSide(Arc<str>, JoinSide),
 
     /// Column resolved to the scope of an outer plan of a subquery.
@@ -140,19 +159,10 @@ pub enum Column {
 impl Display for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            Self::Resolved(name)
-            | Self::Unresolved {
-                name,
-                plan_id: None,
-                ..
-            } => name.to_string(),
-            Self::Unresolved {
-                name,
-                plan_id: Some(id),
-                ..
-            } => format!("{id}.{name}"),
-            Self::JoinSide(name, side) => format!("{side}.{name}"),
-            Self::OuterRef(Field { name, .. }) => format!("outer.{name}"),
+            Self::Unresolved(UnresolvedColumn { name, .. }) => name.to_string(),
+            Self::Resolved(ResolvedColumn::Basic(name)) => name.to_string(),
+            Self::Resolved(ResolvedColumn::JoinSide(name, side)) => format!("{side}.{name}"),
+            Self::Resolved(ResolvedColumn::OuterRef(name, ..)) => format!("outer.{name}"),
         };
 
         write!(f, "col({name})")
@@ -306,31 +316,18 @@ pub enum SketchType {
 }
 
 /// Unresolved column with no associated plan ID or schema.
-pub fn unbound_col(name: impl Into<Arc<str>>) -> ExprRef {
-    Expr::Column(Column::Unresolved {
+pub fn unresolved_col(name: impl Into<Arc<str>>) -> ExprRef {
+    Expr::Column(Column::Unresolved(UnresolvedColumn {
         name: name.into(),
-        plan_id: None,
+        plan_ref: PlanRef::Unqualified,
         plan_schema: None,
-    })
+    }))
     .into()
 }
 
-/// Unresolved column with an associated plan ID or schema.
-pub fn bound_col(
-    name: impl Into<Arc<str>>,
-    plan_id: impl Into<Option<Arc<str>>>,
-    plan_schema: impl Into<Option<SchemaRef>>,
-) -> ExprRef {
-    Expr::Column(Column::Unresolved {
-        name: name.into(),
-        plan_id: plan_id.into(),
-        plan_schema: plan_schema.into(),
-    })
-    .into()
-}
-
+/// Basic resolved column, refers to a singular input scope
 pub fn resolved_col<S: Into<Arc<str>>>(name: S) -> ExprRef {
-    Expr::Column(Column::Resolved(name.into())).into()
+    Expr::Column(Column::Resolved(ResolvedColumn::Basic(name.into()))).into()
 }
 
 pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
@@ -812,23 +809,25 @@ impl Expr {
         match self {
             // Base case - anonymous column reference.
             // Look up the column name in the provided schema and get its field ID.
-            Self::Column(Column::Resolved(name)) => FieldID::new(&**name),
-
-            Self::Column(Column::Unresolved {
+            Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
-                plan_id: Some(id),
+                plan_ref: PlanRef::Alias(alias),
                 ..
-            }) => FieldID::new(format!("{id}.{name}")),
+            })) => FieldID::new(format!("{alias}.{name}")),
 
-            Self::Column(Column::Unresolved {
+            Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
-                plan_id: None,
+                plan_ref: PlanRef::Unqualified,
                 ..
-            }) => FieldID::new(&**name),
+            })) => FieldID::new(&**name),
 
-            Self::Column(Column::JoinSide(name, side)) => FieldID::new(format!("{side}.{name}")),
+            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => FieldID::new(&**name),
 
-            Self::Column(Column::OuterRef(Field { name, .. })) => {
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, side))) => {
+                FieldID::new(format!("{side}.{name}"))
+            }
+
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(name, ..))) => {
                 FieldID::new(format!("outer.{name}"))
             }
 
@@ -1055,22 +1054,27 @@ impl Expr {
             Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
             Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
-            Self::Column(Column::Unresolved {
-                name,
-                plan_schema: None,
-                ..
-            }) => Ok(schema.get_field(name).cloned()?),
-            Self::Column(Column::Unresolved {
+            Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
                 plan_schema: Some(plan_schema),
                 ..
-            }) => Ok(plan_schema.get_field(name).cloned()?),
-            Self::Column(Column::JoinSide(..)) => Err(DaftError::InternalError(
-                "Cannot resolve join side column field with Expr::to_field".to_string(),
-            )),
-            Self::Column(Column::OuterRef(field)) => Ok(field.clone()),
+            })) => plan_schema.get_field(name).cloned(),
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_schema: None,
+                ..
+            })) => schema.get_field(name).cloned(),
 
-            Self::Column(Column::Resolved(name)) => Ok(schema.get_field(name).cloned()?),
+            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                schema.get_field(name).cloned()
+            }
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(..))) => {
+                Err(DaftError::InternalError(
+                    "Cannot resolve join side column field with Expr::to_field".to_string(),
+                ))
+            }
+
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(field))) => Ok(field.clone()),
             Self::Not(expr) => {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
@@ -1243,10 +1247,12 @@ impl Expr {
             Self::Alias(.., name) => name.as_ref(),
             Self::Agg(agg_expr) => agg_expr.name(),
             Self::Cast(expr, ..) => expr.name(),
-            Self::Column(Column::Unresolved { name, .. }) => name.as_ref(),
-            Self::Column(Column::Resolved(name)) => name.as_ref(),
-            Self::Column(Column::JoinSide(name, ..)) => name.as_ref(),
-            Self::Column(Column::OuterRef(field)) => field.name.as_ref(),
+            Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
+            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => name.as_ref(),
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, ..))) => name.as_ref(),
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }))) => {
+                name.as_ref()
+            }
             Self::Not(expr) => expr.name(),
             Self::IsNull(expr) => expr.name(),
             Self::NotNull(expr) => expr.name(),
@@ -1295,7 +1301,9 @@ impl Expr {
     pub fn to_sql(&self) -> Option<String> {
         fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {
-                Expr::Column(Column::Resolved(name)) => write!(buffer, "{}", name),
+                Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                    write!(buffer, "{}", name)
+                }
                 Expr::Literal(lit) => lit.display_sql(buffer),
                 Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
                 Expr::BinaryOp { op, left, right } => {

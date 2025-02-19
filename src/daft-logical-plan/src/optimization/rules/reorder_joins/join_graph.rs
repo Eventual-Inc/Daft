@@ -749,7 +749,7 @@ mod tests {
     use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_core::prelude::CountMode;
-    use daft_dsl::{resolved_col, unbound_col, AggExpr, Expr, LiteralValue};
+    use daft_dsl::{resolved_col, unresolved_col, AggExpr, Expr, LiteralValue};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::JoinGraphBuilder;
@@ -782,20 +782,24 @@ mod tests {
             dummy_scan_operator_with_size(vec![Field::new("c_prime", DataType::Int64)], Some(100)),
             Pushdowns::default(),
         )
-        .select(vec![unbound_col("c_prime").alias("c")])
+        .select(vec![unresolved_col("c_prime").alias("c")])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator_with_size(vec![Field::new("d", DataType::Int64)], Some(100)),
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unbound_col("a")], vec![unbound_col("b")])
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unbound_col("c")], vec![unbound_col("d")])
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(join_plan_r, vec![unbound_col("a")], vec![unbound_col("d")])
+            .inner_join(
+                join_plan_r,
+                vec![unresolved_col("a")],
+                vec![unresolved_col("d")],
+            )
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();
@@ -841,20 +845,24 @@ mod tests {
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![unbound_col("c_prime").alias("c")])
+        .select(vec![unresolved_col("c_prime").alias("c")])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unbound_col("a")], vec![unbound_col("b")])
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unbound_col("c")], vec![unbound_col("d")])
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(join_plan_r, vec![unbound_col("b")], vec![unbound_col("d")])
+            .inner_join(
+                join_plan_r,
+                vec![unresolved_col("b")],
+                vec![unresolved_col("d")],
+            )
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();
@@ -895,7 +903,7 @@ mod tests {
             dummy_scan_operator(vec![Field::new("a", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![unbound_col("a").alias("a_alpha")])
+        .select(vec![unresolved_col("a").alias("a_alpha")])
         .unwrap();
         let scan_b = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("b", DataType::Int64)]),
@@ -906,15 +914,23 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_1 = scan_a
-            .inner_join(scan_b, vec![unbound_col("a_alpha")], vec![unbound_col("b")])
+            .inner_join(
+                scan_b,
+                vec![unresolved_col("a_alpha")],
+                vec![unresolved_col("b")],
+            )
             .unwrap()
             .select(vec![
-                unbound_col("a_alpha").alias("a_beta"),
-                unbound_col("b"),
+                unresolved_col("a_alpha").alias("a_beta"),
+                unresolved_col("b"),
             ])
             .unwrap();
         let join_plan_2 = join_plan_1
-            .inner_join(scan_c, vec![unbound_col("a_beta")], vec![unbound_col("c")])
+            .inner_join(
+                scan_c,
+                vec![unresolved_col("a_beta")],
+                vec![unresolved_col("c")],
+            )
             .unwrap();
         let original_plan = join_plan_2.build();
         let scan_materializer = MaterializeScans::new();
@@ -954,27 +970,34 @@ mod tests {
             dummy_scan_operator(vec![Field::new("b", DataType::Int64)]),
             Pushdowns::default(),
         );
-        let double_proj = unbound_col("c_prime")
-            .add(unbound_col("c_prime"))
+        let double_proj = unresolved_col("c_prime")
+            .add(unresolved_col("c_prime"))
             .alias("double");
         let scan_c = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![unbound_col("c_prime").alias("c"), double_proj.clone()])
+        .select(vec![
+            unresolved_col("c_prime").alias("c"),
+            double_proj.clone(),
+        ])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unbound_col("a")], vec![unbound_col("b")])
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unbound_col("c")], vec![unbound_col("d")])
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(join_plan_r, vec![unbound_col("a")], vec![unbound_col("d")])
+            .inner_join(
+                join_plan_r,
+                vec![unresolved_col("a")],
+                vec![unresolved_col("d")],
+            )
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();
@@ -1025,19 +1048,22 @@ mod tests {
             dummy_scan_operator(vec![Field::new("b", DataType::Int64)]),
             Pushdowns::default(),
         );
-        let double_proj = unbound_col("c_prime")
-            .add(unbound_col("c_prime"))
+        let double_proj = unresolved_col("c_prime")
+            .add(unresolved_col("c_prime"))
             .alias("double");
         let filter_c_prime =
-            unbound_col("c_prime").gt(Arc::new(Expr::Literal(LiteralValue::Int64(0))));
-        let filter_c = unbound_col("c").lt(Arc::new(Expr::Literal(LiteralValue::Int64(5))));
+            unresolved_col("c_prime").gt(Arc::new(Expr::Literal(LiteralValue::Int64(0))));
+        let filter_c = unresolved_col("c").lt(Arc::new(Expr::Literal(LiteralValue::Int64(5))));
         let scan_c = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
         .filter(filter_c_prime.clone())
         .unwrap()
-        .select(vec![unbound_col("c_prime").alias("c"), double_proj.clone()])
+        .select(vec![
+            unresolved_col("c_prime").alias("c"),
+            double_proj.clone(),
+        ])
         .unwrap()
         .filter(filter_c.clone())
         .unwrap();
@@ -1046,18 +1072,22 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unbound_col("a")], vec![unbound_col("b")])
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
-        let quad_proj = unbound_col("double")
-            .add(unbound_col("double"))
+        let quad_proj = unresolved_col("double")
+            .add(unresolved_col("double"))
             .alias("quad");
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unbound_col("c")], vec![unbound_col("d")])
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap()
-            .select(vec![unbound_col("d"), quad_proj.clone()])
+            .select(vec![unresolved_col("d"), quad_proj.clone()])
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(join_plan_r, vec![unbound_col("a")], vec![unbound_col("d")])
+            .inner_join(
+                join_plan_r,
+                vec![unresolved_col("a")],
+                vec![unresolved_col("d")],
+            )
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();
@@ -1101,7 +1131,7 @@ mod tests {
         //      (a <- a_prime)
         //       |
         //      Scan(a_prime)
-        let a_proj = unbound_col("a_prime").alias("a");
+        let a_proj = unresolved_col("a_prime").alias("a");
         let scan_a = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("a_prime", DataType::Int64)]),
             Pushdowns::default(),
@@ -1110,7 +1140,7 @@ mod tests {
         .unwrap()
         .aggregate(
             vec![Arc::new(Expr::Agg(AggExpr::Count(
-                unbound_col("a"),
+                unresolved_col("a"),
                 CountMode::All,
             )))],
             vec![],
@@ -1124,20 +1154,24 @@ mod tests {
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![unbound_col("c_prime").alias("c")])
+        .select(vec![unresolved_col("c_prime").alias("c")])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unbound_col("a")], vec![unbound_col("b")])
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unbound_col("c")], vec![unbound_col("d")])
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(join_plan_r, vec![unbound_col("a")], vec![unbound_col("d")])
+            .inner_join(
+                join_plan_r,
+                vec![unresolved_col("a")],
+                vec![unresolved_col("d")],
+            )
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();

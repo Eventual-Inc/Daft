@@ -264,7 +264,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Union(_) => Err(DaftError::InternalError(
             "Union should already be optimized away".to_string(),
         )),
-        LogicalPlan::Alias(_) => Err(DaftError::InternalError(
+        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
             "Alias should already be optimized away".to_string(),
         )),
     }

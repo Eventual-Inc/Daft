@@ -29,7 +29,7 @@ use {
 };
 
 use crate::{
-    logical_plan::{Alias, LogicalPlan},
+    logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{self, join::JoinOptions},
     optimization::OptimizerBuilder,
     partitioning::{
@@ -120,9 +120,9 @@ impl LogicalPlanBuilder {
     }
 
     pub fn alias(&self, id: impl Into<Arc<str>>) -> Self {
-        self.with_new_plan(LogicalPlan::Alias(Alias {
+        self.with_new_plan(LogicalPlan::SubqueryAlias(SubqueryAlias {
             input: self.plan.clone(),
-            id: id.into(),
+            name: id.into(),
         }))
     }
 

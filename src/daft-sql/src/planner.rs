@@ -11,8 +11,8 @@ use daft_algebra::boolean::combine_conjunction;
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
-    bound_col, has_agg, lit, literals_to_series, null_lit, resolved_col, unbound_col, Expr,
-    ExprRef, LiteralValue, Operator, Subquery,
+    has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
+    ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
@@ -567,7 +567,7 @@ impl<'a> SQLPlanner<'a> {
                 let right = self.plan_relation(&tbl.relation)?;
 
                 let mut join_options = JoinOptions::default();
-                if let [id] = right.plan.clone().get_ids().as_slice() {
+                if let [id] = right.plan.clone().get_aliases().as_slice() {
                     join_options = join_options.prefix(format!("{id}."));
                 }
 
@@ -704,7 +704,7 @@ impl<'a> SQLPlanner<'a> {
             let right_plan = self.plan_relation(&join.relation)?;
 
             let mut join_options = JoinOptions::default();
-            if let [id] = right_plan.plan.clone().get_ids().as_slice() {
+            if let [id] = right_plan.plan.clone().get_aliases().as_slice() {
                 join_options = join_options.prefix(format!("{id}."));
             }
 
@@ -748,7 +748,7 @@ impl<'a> SQLPlanner<'a> {
                 JoinConstraint::Using(idents) => {
                     left_on = idents
                         .iter()
-                        .map(|i| unbound_col(i.value.clone()))
+                        .map(|i| unresolved_col(i.value.clone()))
                         .collect::<Vec<_>>();
                     right_on.clone_from(&left_on);
 
@@ -895,13 +895,19 @@ impl<'a> SQLPlanner<'a> {
             schema: SchemaRef,
             bound_columns: &Bindings<ExprRef>,
             idents: &[Ident],
-            plan_id: Option<Arc<str>>,
+            plan_ref: PlanRef,
         ) -> Option<ExprRef> {
             let full_name = compound_ident_to_str(idents);
 
             // TODO: remove this once we do not do join column renaming
             if schema.has_field(&full_name) {
-                return Some(bound_col(full_name, plan_id, schema));
+                return Some(Arc::new(Expr::Column(Column::Unresolved(
+                    UnresolvedColumn {
+                        name: full_name.into(),
+                        plan_ref,
+                        plan_schema: Some(schema),
+                    },
+                ))));
             }
 
             let [first, rest @ ..] = idents else {
@@ -909,7 +915,11 @@ impl<'a> SQLPlanner<'a> {
             };
 
             let root_expr = if schema.has_field(&first.value) {
-                bound_col(first.value.clone(), plan_id, schema)
+                Arc::new(Expr::Column(Column::Unresolved(UnresolvedColumn {
+                    name: first.value.clone().into(),
+                    plan_ref,
+                    plan_schema: Some(schema),
+                })))
             } else if let Some(expr) = bound_columns.get(&first.value) {
                 expr.clone()
             } else {
@@ -927,28 +937,30 @@ impl<'a> SQLPlanner<'a> {
 
         // if the current relation is not resolved (e.g. in a `sql_expr` call, simply wrap identifier in a unresolved_col)
         let Some(current_plan) = &self.current_plan else {
-            return Ok(unbound_col(full_name));
+            return Ok(unresolved_col(full_name));
         };
 
         let schema = current_plan.plan.schema();
 
-        if let Some(expr) = expr_from_idents(schema, &self.bound_columns, idents, None) {
+        if let Some(expr) =
+            expr_from_idents(schema, &self.bound_columns, idents, PlanRef::Unqualified)
+        {
             return Ok(expr);
         }
 
         if idents.len() > 1 {
-            let plan_id = &idents[0].value;
+            let alias = &idents[0].value;
 
-            if let Some(schema) = current_plan.plan.clone().get_schema_for_id(plan_id)? {
+            if let Some(schema) = current_plan.plan.clone().get_schema_for_alias(alias)? {
                 if let Some(expr) = expr_from_idents(
                     schema,
                     &self.bound_columns,
                     &idents[1..],
-                    Some(plan_id.clone().into()),
+                    PlanRef::Alias(alias.clone().into()),
                 ) {
                     return Ok(expr);
                 } else {
-                    column_not_found_err!(compound_ident_to_str(&idents[1..]), plan_id);
+                    column_not_found_err!(compound_ident_to_str(&idents[1..]), alias);
                 }
             }
         }
@@ -997,7 +1009,7 @@ impl<'a> SQLPlanner<'a> {
                             excluded
                                 .names()
                                 .iter()
-                                .map(|n| unbound_col(n.as_ref()))
+                                .map(|n| unresolved_col(n.as_ref()))
                                 .collect::<Vec<_>>()
                         })
                         .map_err(std::convert::Into::into)
@@ -1006,10 +1018,10 @@ impl<'a> SQLPlanner<'a> {
                         .schema()
                         .names()
                         .iter()
-                        .map(|n| unbound_col(n.clone()))
+                        .map(|n| unresolved_col(n.clone()))
                         .collect())
                 } else {
-                    Ok(vec![unbound_col("*")])
+                    Ok(vec![unresolved_col("*")])
                 }
             }
             // TODO: support wildcard struct gets
@@ -1020,8 +1032,10 @@ impl<'a> SQLPlanner<'a> {
                 let Some(current_plan) = self.current_plan.as_ref() else {
                     table_not_found_err!(ident_name);
                 };
-                let Some(subquery_schema) =
-                    current_plan.plan.clone().get_schema_for_id(&ident_name)?
+                let Some(subquery_schema) = current_plan
+                    .plan
+                    .clone()
+                    .get_schema_for_alias(&ident_name)?
                 else {
                     table_not_found_err!(ident_name);
                 };
@@ -1043,13 +1057,13 @@ impl<'a> SQLPlanner<'a> {
                         let full_name = format!("{ident_name}.{n}");
                         if plan_schema.has_field(&full_name) {
                             // TODO: remove this once we do not do join column renaming
-                            unbound_col(full_name).alias(n.clone())
+                            unresolved_col(full_name).alias(n.clone())
                         } else {
-                            bound_col(
-                                n.clone(),
-                                Some(ident_name.clone().into()),
-                                subquery_schema.clone(),
-                            )
+                            Arc::new(Expr::Column(Column::Unresolved(UnresolvedColumn {
+                                name: n.clone().into(),
+                                plan_ref: PlanRef::Alias(ident_name.clone().into()),
+                                plan_schema: Some(subquery_schema.clone()),
+                            })))
                         }
                     })
                     .collect())
@@ -2133,7 +2147,7 @@ fn apply_table_alias(
         let projection = columns
             .into_iter()
             .zip(&alias.columns)
-            .map(|(name, ident)| unbound_col(name).alias(ident.value.clone()))
+            .map(|(name, ident)| unresolved_col(name).alias(ident.value.clone()))
             .collect::<Vec<_>>();
 
         plan = plan.select(projection)?;

@@ -110,7 +110,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_dsl::unbound_col;
+    use daft_dsl::unresolved_col;
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::LiftProjectFromAgg;
@@ -147,13 +147,13 @@ mod tests {
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
                 vec![
-                    unbound_col("a").sum(),
-                    unbound_col("a")
+                    unresolved_col("a").sum(),
+                    unresolved_col("a")
                         .sum()
-                        .add(unbound_col("b").sum())
+                        .add(unresolved_col("b").sum())
                         .alias("a_plus_b"),
-                    unbound_col("b").mean(),
-                    unbound_col("b").mean().alias("c"),
+                    unresolved_col("b").mean(),
+                    unresolved_col("b").mean().alias("c"),
                 ],
                 vec![],
             )?
@@ -161,26 +161,26 @@ mod tests {
 
         let schema = dummy_scan_node(scan_op.clone()).schema();
 
-        let a_sum_id = unbound_col("a").sum().semantic_id(schema.as_ref()).id;
-        let b_sum_id = unbound_col("b").sum().semantic_id(schema.as_ref()).id;
-        let b_mean_id = unbound_col("b").mean().semantic_id(schema.as_ref()).id;
+        let a_sum_id = unresolved_col("a").sum().semantic_id(schema.as_ref()).id;
+        let b_sum_id = unresolved_col("b").sum().semantic_id(schema.as_ref()).id;
+        let b_mean_id = unresolved_col("b").mean().semantic_id(schema.as_ref()).id;
 
         let expected = dummy_scan_node(scan_op)
             .aggregate(
                 vec![
-                    unbound_col("a").sum().alias(a_sum_id.clone()),
-                    unbound_col("b").sum().alias(b_sum_id.clone()),
-                    unbound_col("b").mean().alias(b_mean_id.clone()),
+                    unresolved_col("a").sum().alias(a_sum_id.clone()),
+                    unresolved_col("b").sum().alias(b_sum_id.clone()),
+                    unresolved_col("b").mean().alias(b_mean_id.clone()),
                 ],
                 vec![],
             )?
             .select(vec![
-                unbound_col(a_sum_id.clone()).alias("a"),
-                unbound_col(a_sum_id)
-                    .add(unbound_col(b_sum_id))
+                unresolved_col(a_sum_id.clone()).alias("a"),
+                unresolved_col(a_sum_id)
+                    .add(unresolved_col(b_sum_id))
                     .alias("a_plus_b"),
-                unbound_col(b_mean_id.clone()).alias("b"),
-                unbound_col(b_mean_id).alias("c"),
+                unresolved_col(b_mean_id.clone()).alias("b"),
+                unresolved_col(b_mean_id).alias("c"),
             ])?
             .build();
 
@@ -199,41 +199,41 @@ mod tests {
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
                 vec![
-                    unbound_col("a").sum(),
-                    unbound_col("a")
+                    unresolved_col("a").sum(),
+                    unresolved_col("a")
                         .sum()
-                        .add(unbound_col("b").sum())
+                        .add(unresolved_col("b").sum())
                         .alias("a_plus_b"),
-                    unbound_col("b").mean(),
-                    unbound_col("b").mean().alias("c"),
+                    unresolved_col("b").mean(),
+                    unresolved_col("b").mean().alias("c"),
                 ],
-                vec![unbound_col("groupby_key")],
+                vec![unresolved_col("groupby_key")],
             )?
             .build();
 
         let schema = dummy_scan_node(scan_op.clone()).schema();
 
-        let a_sum_id = unbound_col("a").sum().semantic_id(schema.as_ref()).id;
-        let b_sum_id = unbound_col("b").sum().semantic_id(schema.as_ref()).id;
-        let b_mean_id = unbound_col("b").mean().semantic_id(schema.as_ref()).id;
+        let a_sum_id = unresolved_col("a").sum().semantic_id(schema.as_ref()).id;
+        let b_sum_id = unresolved_col("b").sum().semantic_id(schema.as_ref()).id;
+        let b_mean_id = unresolved_col("b").mean().semantic_id(schema.as_ref()).id;
 
         let expected = dummy_scan_node(scan_op)
             .aggregate(
                 vec![
-                    unbound_col("a").sum().alias(a_sum_id.clone()),
-                    unbound_col("b").sum().alias(b_sum_id.clone()),
-                    unbound_col("b").mean().alias(b_mean_id.clone()),
+                    unresolved_col("a").sum().alias(a_sum_id.clone()),
+                    unresolved_col("b").sum().alias(b_sum_id.clone()),
+                    unresolved_col("b").mean().alias(b_mean_id.clone()),
                 ],
-                vec![unbound_col("groupby_key")],
+                vec![unresolved_col("groupby_key")],
             )?
             .select(vec![
-                unbound_col("groupby_key"),
-                unbound_col(a_sum_id.clone()).alias("a"),
-                unbound_col(a_sum_id)
-                    .add(unbound_col(b_sum_id))
+                unresolved_col("groupby_key"),
+                unresolved_col(a_sum_id.clone()).alias("a"),
+                unresolved_col(a_sum_id)
+                    .add(unresolved_col(b_sum_id))
                     .alias("a_plus_b"),
-                unbound_col(b_mean_id.clone()).alias("b"),
-                unbound_col(b_mean_id).alias("c"),
+                unresolved_col(b_mean_id.clone()).alias("b"),
+                unresolved_col(b_mean_id).alias("c"),
             ])?
             .build();
 
@@ -251,13 +251,13 @@ mod tests {
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
                 vec![
-                    unbound_col("a").sum(),
-                    unbound_col("a")
-                        .add(unbound_col("b"))
+                    unresolved_col("a").sum(),
+                    unresolved_col("a")
+                        .add(unresolved_col("b"))
                         .sum()
                         .alias("a_plus_b"),
-                    unbound_col("b").mean(),
-                    unbound_col("b").mean().alias("c"),
+                    unresolved_col("b").mean(),
+                    unresolved_col("b").mean().alias("c"),
                 ],
                 vec![],
             )?
@@ -280,15 +280,15 @@ mod tests {
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
                 vec![
-                    unbound_col("a").sum(),
-                    unbound_col("a")
-                        .add(unbound_col("b"))
+                    unresolved_col("a").sum(),
+                    unresolved_col("a")
+                        .add(unresolved_col("b"))
                         .sum()
                         .alias("a_plus_b"),
-                    unbound_col("b").mean(),
-                    unbound_col("b").mean().alias("c"),
+                    unresolved_col("b").mean(),
+                    unresolved_col("b").mean().alias("c"),
                 ],
-                vec![unbound_col("groupby_key")],
+                vec![unresolved_col("groupby_key")],
             )?
             .build();
 

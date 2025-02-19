@@ -174,7 +174,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::unbound_col;
+    use daft_dsl::unresolved_col;
 
     use crate::{
         optimization::{
@@ -218,8 +218,8 @@ mod tests {
         let plan = left_scan
             .join(
                 right_scan.clone(),
-                vec![unbound_col("a")],
-                vec![unbound_col("c")],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("c")],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -227,12 +227,12 @@ mod tests {
             .build();
 
         let expected = left_scan
-            .filter(unbound_col("a").is_null().not())?
+            .filter(unresolved_col("a").is_null().not())?
             .clone()
             .join(
-                right_scan.filter(unbound_col("c").is_null().not())?,
-                vec![unbound_col("a")],
-                vec![unbound_col("c")],
+                right_scan.filter(unresolved_col("c").is_null().not())?,
+                vec![unresolved_col("a")],
+                vec![unresolved_col("c")],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -261,8 +261,16 @@ mod tests {
         let plan = left_scan
             .join_with_null_safe_equal(
                 right_scan.clone(),
-                vec![unbound_col("a"), unbound_col("b"), unbound_col("c")],
-                vec![unbound_col("d"), unbound_col("e"), unbound_col("f")],
+                vec![
+                    unresolved_col("a"),
+                    unresolved_col("b"),
+                    unresolved_col("c"),
+                ],
+                vec![
+                    unresolved_col("d"),
+                    unresolved_col("e"),
+                    unresolved_col("f"),
+                ],
                 Some(vec![false, true, false]),
                 JoinType::Left,
                 None,
@@ -270,17 +278,25 @@ mod tests {
             )?
             .build();
 
-        let expected_predicate = unbound_col("d")
+        let expected_predicate = unresolved_col("d")
             .is_null()
             .not()
-            .and(unbound_col("f").is_null().not());
+            .and(unresolved_col("f").is_null().not());
 
         let expected = left_scan
             .clone()
             .join_with_null_safe_equal(
                 right_scan.filter(expected_predicate)?,
-                vec![unbound_col("a"), unbound_col("b"), unbound_col("c")],
-                vec![unbound_col("d"), unbound_col("e"), unbound_col("f")],
+                vec![
+                    unresolved_col("a"),
+                    unresolved_col("b"),
+                    unresolved_col("c"),
+                ],
+                vec![
+                    unresolved_col("d"),
+                    unresolved_col("e"),
+                    unresolved_col("f"),
+                ],
                 Some(vec![false, true, false]),
                 JoinType::Left,
                 None,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::{Column, ExprRef};
+use daft_dsl::{Column, ExprRef, ResolvedColumn};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -231,11 +231,12 @@ fn translate_clustering_spec_expr(
     use daft_dsl::{binary_op, Expr};
 
     match clustering_spec_expr.as_ref() {
-        Expr::Column(Column::Resolved(name)) => match old_colname_to_new_colname.get(name.as_ref())
-        {
-            Some(newname) => Ok(daft_dsl::resolved_col(newname.as_str())),
-            None => Err(()),
-        },
+        Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+            match old_colname_to_new_colname.get(name.as_ref()) {
+                Some(newname) => Ok(daft_dsl::resolved_col(newname.as_str())),
+                None => Err(()),
+            }
+        }
         Expr::Literal(_) => Ok(clustering_spec_expr.clone()),
         Expr::Subquery(_) => Ok(clustering_spec_expr.clone()),
         Expr::Exists(_) => Ok(clustering_spec_expr.clone()),

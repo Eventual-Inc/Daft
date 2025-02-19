@@ -5,7 +5,7 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter
 use daft_dsl::{
     is_actor_pool_udf,
     optimization::{get_required_columns, requires_computation},
-    resolved_col, Column, Expr, ExprRef,
+    resolved_col, Column, Expr, ExprRef, ResolvedColumn,
 };
 use itertools::Itertools;
 
@@ -174,7 +174,7 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
             // If we encounter a ColumnExpr, we add it to new_children only if it hasn't already been accounted for
-            Expr::Column(Column::Resolved(name)) => {
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
                 if !self
                     .new_children
                     .iter()
@@ -233,7 +233,7 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
                 );
             }
             // If we encounter a ColumnExpr, we add it to new_children only if it hasn't already been accounted for
-            Expr::Column(Column::Resolved(name)) => {
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
                 if !self
                     .new_children
                     .iter()

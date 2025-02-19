@@ -7,7 +7,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::{
     join::infer_join_schema, optimization::replace_columns_with_expressions, resolved_col, Column,
-    Expr, ExprRef,
+    Expr, ExprRef, ResolvedColumn,
 };
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -122,8 +122,8 @@ impl Join {
                     .zip(right_on.iter())
                     .filter_map(|(l, r)| match (l.as_ref(), r.as_ref()) {
                         (
-                            Expr::Column(Column::Resolved(l_name)),
-                            Expr::Column(Column::Resolved(r_name)),
+                            Expr::Column(Column::Resolved(ResolvedColumn::Basic(l_name))),
+                            Expr::Column(Column::Resolved(ResolvedColumn::Basic(r_name))),
                         ) if l_name == r_name => Some(l_name.to_string()),
                         _ => None,
                     })

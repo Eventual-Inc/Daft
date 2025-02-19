@@ -24,10 +24,9 @@ from daft.daft import (
     ImageFormat,
     ImageMode,
     ResourceRequest,
-    bound_col,
     initialize_udfs,
     resolved_col,
-    unbound_col,
+    unresolved_col,
 )
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import date_lit as _date_lit
@@ -170,14 +169,7 @@ def col(name: str) -> Expression:
     Returns:
         Expression: Expression representing the selected column
     """
-    return Expression._from_pyexpr(unbound_col(name))
-
-
-def _bound_col(name: str, plan_id: str | None, plan_schema: Schema | None) -> Expression:
-    """Creates an unresolved column with a bound plan id and/or schema."""
-    return Expression._from_pyexpr(
-        bound_col(name, plan_id=plan_id, plan_schema=plan_schema._schema if plan_schema is not None else None)
-    )
+    return Expression._from_pyexpr(unresolved_col(name))
 
 
 def _resolved_col(name: str) -> Expression:

@@ -6,7 +6,7 @@ use daft_core::prelude::*;
 use daft_dsl::{
     is_actor_pool_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
-    resolved_col, Column, Expr, ExprRef,
+    resolved_col, Column, Expr, ExprRef, ResolvedColumn,
 };
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -44,7 +44,9 @@ impl PushDownProjection {
                     .iter()
                     .zip(upstream_schema.names().iter())
                     .all(|(expr, upstream_col)| match expr.as_ref() {
-                        Expr::Column(Column::Resolved(colname)) => colname.as_ref() == upstream_col,
+                        Expr::Column(Column::Resolved(ResolvedColumn::Basic(colname))) => {
+                            colname.as_ref() == upstream_col
+                        }
                         _ => false,
                     })
         };
@@ -88,7 +90,8 @@ impl PushDownProjection {
                         // If it's a reference for a column that requires computation,
                         // record it.
                         if okay_to_merge
-                            && let Expr::Column(Column::Resolved(name)) = expr.as_ref()
+                            && let Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) =
+                                expr.as_ref()
                             && upstream_computations.contains(name.as_ref())
                         {
                             okay_to_merge = okay_to_merge
@@ -544,7 +547,7 @@ impl PushDownProjection {
             LogicalPlan::Sink(_) => {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
-            LogicalPlan::Alias(_) => unreachable!("Alias should have been optimized away"),
+            LogicalPlan::SubqueryAlias(_) => unreachable!("Alias should have been optimized away"),
         }
     }
 
@@ -715,7 +718,7 @@ mod tests {
             python::{MaybeInitializedUDF, PythonUDF, RuntimePyObject},
             FunctionExpr,
         },
-        lit, resolved_col, unbound_col, Expr, ExprRef,
+        lit, resolved_col, unresolved_col, Expr, ExprRef,
     };
 
     use crate::{
@@ -769,7 +772,7 @@ mod tests {
     /// Projection merging: Ensure factored projections do not get merged.
     #[test]
     fn test_merge_does_not_unfactor() -> DaftResult<()> {
-        let a2 = unbound_col("a").add(unbound_col("a"));
+        let a2 = unresolved_col("a").add(unresolved_col("a"));
         let a4 = a2.clone().add(a2);
         let a8 = a4.clone().add(a4);
         let expressions = vec![a8.alias("x")];
@@ -789,14 +792,14 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
         let proj1 = vec![
-            unbound_col("a").add(lit(1)),
-            unbound_col("b").add(lit(2)),
-            unbound_col("a").alias("c"),
+            unresolved_col("a").add(lit(1)),
+            unresolved_col("b").add(lit(2)),
+            unresolved_col("a").alias("c"),
         ];
         let proj2 = vec![
-            unbound_col("a").add(lit(3)),
-            unbound_col("b"),
-            unbound_col("c").add(lit(4)),
+            unresolved_col("a").add(lit(3)),
+            unresolved_col("b"),
+            unresolved_col("c").add(lit(4)),
         ];
         let plan = dummy_scan_node(scan_op.clone())
             .select(proj1)?
@@ -804,9 +807,9 @@ mod tests {
             .build();
 
         let merged_proj = vec![
-            unbound_col("a").add(lit(1)).add(lit(3)),
-            unbound_col("b").add(lit(2)),
-            unbound_col("a").alias("c").add(lit(4)),
+            unresolved_col("a").add(lit(1)).add(lit(3)),
+            unresolved_col("b").add(lit(2)),
+            unresolved_col("a").alias("c").add(lit(4)),
         ];
         let expected = dummy_scan_node(scan_op).select(merged_proj)?.build();
 
@@ -822,7 +825,7 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .select(vec![unbound_col("a"), unbound_col("b")])?
+            .select(vec![unresolved_col("a"), unresolved_col("b")])?
             .build();
 
         let expected = dummy_scan_node(scan_op).build();
@@ -839,7 +842,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let proj = vec![unbound_col("b"), unbound_col("a")];
+        let proj = vec![unresolved_col("b"), unresolved_col("a")];
         let plan = dummy_scan_node(scan_op.clone())
             .select(proj.clone())?
             .build();
@@ -858,7 +861,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let proj = vec![unbound_col("b").add(lit(3))];
+        let proj = vec![unresolved_col("b").add(lit(3))];
         let plan = dummy_scan_node(scan_op.clone())
             .select(proj.clone())?
             .build();
@@ -884,21 +887,21 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
         let proj1 = vec![
-            unbound_col("b").add(lit(3)),
-            unbound_col("a"),
-            unbound_col("a").alias("x"),
+            unresolved_col("b").add(lit(3)),
+            unresolved_col("a"),
+            unresolved_col("a").alias("x"),
         ];
         let proj2 = vec![
-            unbound_col("a"),
-            unbound_col("b"),
-            unbound_col("b").alias("c"),
+            unresolved_col("a"),
+            unresolved_col("b"),
+            unresolved_col("b").alias("c"),
         ];
         let plan = dummy_scan_node(scan_op.clone())
             .select(proj1)?
             .select(proj2.clone())?
             .build();
 
-        let new_proj1 = vec![unbound_col("b").add(lit(3)), unbound_col("a")];
+        let new_proj1 = vec![unresolved_col("b").add(lit(3)), unresolved_col("a")];
         let expected = dummy_scan_node(scan_op)
             .select(new_proj1)?
             .select(proj2)?
@@ -917,16 +920,16 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]);
-        let agg = vec![unbound_col("a").mean(), unbound_col("b").mean()];
-        let group_by = vec![unbound_col("c")];
-        let proj = vec![unbound_col("a")];
+        let agg = vec![unresolved_col("a").mean(), unresolved_col("b").mean()];
+        let group_by = vec![unresolved_col("c")];
+        let proj = vec![unresolved_col("a")];
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(agg, group_by.clone())?
             .select(proj.clone())?
             .build();
 
         let proj_pushdown = vec!["a".to_string(), "c".to_string()];
-        let new_agg = vec![unbound_col("a").mean()];
+        let new_agg = vec![unresolved_col("a").mean()];
         let expected = dummy_scan_node_with_pushdowns(
             scan_op,
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
@@ -948,8 +951,8 @@ mod tests {
             Field::new("b", DataType::Boolean),
             Field::new("c", DataType::Int64),
         ]);
-        let pred = unbound_col("b");
-        let proj = vec![unbound_col("a")];
+        let pred = unresolved_col("b");
+        let proj = vec![unresolved_col("a")];
         let plan = dummy_scan_node(scan_op.clone())
             .filter(pred.clone())?
             .select(proj.clone())?
@@ -978,7 +981,7 @@ mod tests {
         ]);
         let plan = dummy_scan_node(scan_op.clone())
             .add_monotonically_increasing_id(Some("id"))?
-            .select(vec![unbound_col("id")])?
+            .select(vec![unresolved_col("id")])?
             .build();
         let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;

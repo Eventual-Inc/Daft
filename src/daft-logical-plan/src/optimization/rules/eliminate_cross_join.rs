@@ -424,7 +424,7 @@ pub fn can_hash(data_type: &DataType) -> bool {
 #[cfg(test)]
 mod tests {
     use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions};
-    use daft_dsl::{lit, unbound_col};
+    use daft_dsl::{lit, unresolved_col};
     use daft_schema::field::Field;
     use rstest::*;
 
@@ -504,21 +504,21 @@ mod tests {
         let plan = LogicalPlanBuilder::from(t1.clone())
             .cross_join(t2.clone(), Default::default())?
             .filter(
-                unbound_col("a")
-                    .eq(unbound_col("right.a"))
-                    .and(unbound_col("b").eq(unbound_col("right.b"))),
+                unresolved_col("a")
+                    .eq(unresolved_col("right.a"))
+                    .and(unresolved_col("b").eq(unresolved_col("right.b"))),
             )?
             .build();
 
         let expected = LogicalPlanBuilder::from(t1)
             .join(
                 LogicalPlanBuilder::from(t2).select(vec![
-                    unbound_col("a").alias("right.a"),
-                    unbound_col("b").alias("right.b"),
-                    unbound_col("c").alias("right.c"),
+                    unresolved_col("a").alias("right.a"),
+                    unresolved_col("b").alias("right.b"),
+                    unresolved_col("c").alias("right.c"),
                 ])?,
-                vec![unbound_col("a"), unbound_col("b")],
-                vec![unbound_col("right.a"), unbound_col("right.b")],
+                vec![unresolved_col("a"), unresolved_col("b")],
+                vec![unresolved_col("right.a"), unresolved_col("right.b")],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -537,18 +537,18 @@ mod tests {
         let plan = LogicalPlanBuilder::from(t1.clone())
             .cross_join(t2.clone(), Default::default())?
             .filter(
-                unbound_col("a")
-                    .eq(unbound_col("right.a"))
-                    .or(unbound_col("right.b").eq(unbound_col("a"))),
+                unresolved_col("a")
+                    .eq(unresolved_col("right.a"))
+                    .or(unresolved_col("right.b").eq(unresolved_col("a"))),
             )?
             .build();
 
         let expected = LogicalPlanBuilder::from(t1)
             .join(
                 LogicalPlanBuilder::from(t2).select(vec![
-                    unbound_col("a").alias("right.a"),
-                    unbound_col("b").alias("right.b"),
-                    unbound_col("c").alias("right.c"),
+                    unresolved_col("a").alias("right.a"),
+                    unresolved_col("b").alias("right.b"),
+                    unresolved_col("c").alias("right.c"),
                 ])?,
                 vec![],
                 vec![],
@@ -557,9 +557,9 @@ mod tests {
                 Default::default(),
             )?
             .filter(
-                unbound_col("a")
-                    .eq(unbound_col("right.a"))
-                    .or(unbound_col("right.b").eq(unbound_col("a"))),
+                unresolved_col("a")
+                    .eq(unresolved_col("right.a"))
+                    .or(unresolved_col("right.b").eq(unresolved_col("a"))),
             )?
             .build();
 
@@ -570,10 +570,10 @@ mod tests {
 
     #[rstest]
     fn eliminate_cross_with_and(t1: LogicalPlanRef, t2: LogicalPlanRef) -> DaftResult<()> {
-        let expr1 = unbound_col("a").eq(unbound_col("right.a"));
-        let expr2 = unbound_col("right.c").lt(lit(20u32));
-        let expr3 = unbound_col("a").eq(unbound_col("right.a"));
-        let expr4 = unbound_col("right.c").eq(lit(10u32));
+        let expr1 = unresolved_col("a").eq(unresolved_col("right.a"));
+        let expr2 = unresolved_col("right.c").lt(lit(20u32));
+        let expr3 = unresolved_col("a").eq(unresolved_col("right.a"));
+        let expr4 = unresolved_col("right.c").eq(lit(10u32));
         // could eliminate to inner join
         let plan = LogicalPlanBuilder::from(t1.clone())
             .cross_join(t2.clone(), Default::default())?
@@ -583,12 +583,12 @@ mod tests {
         let expected = LogicalPlanBuilder::from(t1)
             .join(
                 LogicalPlanBuilder::from(t2).select(vec![
-                    unbound_col("a").alias("right.a"),
-                    unbound_col("b").alias("right.b"),
-                    unbound_col("c").alias("right.c"),
+                    unresolved_col("a").alias("right.a"),
+                    unresolved_col("b").alias("right.b"),
+                    unresolved_col("c").alias("right.c"),
                 ])?,
-                vec![unbound_col("a")],
-                vec![unbound_col("right.a")],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("right.a")],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -604,10 +604,10 @@ mod tests {
     #[rstest]
     fn eliminate_cross_with_or(t1: LogicalPlanRef, t2: LogicalPlanRef) -> DaftResult<()> {
         // could eliminate to inner join since Or predicates have common Join predicates
-        let expr1 = unbound_col("a").eq(unbound_col("right.a"));
-        let expr2 = unbound_col("right.c").lt(lit(15u32));
-        let expr3 = unbound_col("a").eq(unbound_col("right.a"));
-        let expr4 = unbound_col("right.c").eq(lit(688u32));
+        let expr1 = unresolved_col("a").eq(unresolved_col("right.a"));
+        let expr2 = unresolved_col("right.c").lt(lit(15u32));
+        let expr3 = unresolved_col("a").eq(unresolved_col("right.a"));
+        let expr4 = unresolved_col("right.c").eq(lit(688u32));
         let plan = LogicalPlanBuilder::from(t1.clone())
             .cross_join(t2.clone(), Default::default())?
             .filter(expr1.and(expr2.clone()).or(expr3.and(expr4.clone())))?
@@ -616,12 +616,12 @@ mod tests {
         let expected = LogicalPlanBuilder::from(t1)
             .join(
                 LogicalPlanBuilder::from(t2).select(vec![
-                    unbound_col("a").alias("right.a"),
-                    unbound_col("b").alias("right.b"),
-                    unbound_col("c").alias("right.c"),
+                    unresolved_col("a").alias("right.a"),
+                    unresolved_col("b").alias("right.b"),
+                    unresolved_col("c").alias("right.c"),
                 ])?,
-                vec![unbound_col("a")],
-                vec![unbound_col("right.a")],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("right.a")],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -645,102 +645,102 @@ mod tests {
         let plan1 = LogicalPlanBuilder::from(t1.clone())
             .cross_join(t2.clone(), JoinOptions::default().prefix("t2."))?
             .filter(
-                unbound_col("a")
-                    .eq(unbound_col("t2.a"))
-                    .and(unbound_col("t2.c").lt(lit(15u32)))
-                    .or(unbound_col("a")
-                        .eq(unbound_col("t2.a"))
-                        .and(unbound_col("t2.c").eq(lit(688u32)))),
+                unresolved_col("a")
+                    .eq(unresolved_col("t2.a"))
+                    .and(unresolved_col("t2.c").lt(lit(15u32)))
+                    .or(unresolved_col("a")
+                        .eq(unresolved_col("t2.a"))
+                        .and(unresolved_col("t2.c").eq(lit(688u32)))),
             )?
             .build();
 
         let plan2 = LogicalPlanBuilder::from(t3.clone())
             .cross_join(t4.clone(), JoinOptions::default().prefix("t4."))?
             .filter(
-                (unbound_col("a")
-                    .eq(unbound_col("t4.a"))
-                    .and(unbound_col("t4.c").lt(lit(15u32)))
-                    .or(unbound_col("a")
-                        .eq(unbound_col("t4.a"))
-                        .and(unbound_col("c").eq(lit(688u32)))))
-                .or(unbound_col("a")
-                    .eq(unbound_col("t4.a"))
-                    .and(unbound_col("b").eq(unbound_col("t4.b")))),
+                (unresolved_col("a")
+                    .eq(unresolved_col("t4.a"))
+                    .and(unresolved_col("t4.c").lt(lit(15u32)))
+                    .or(unresolved_col("a")
+                        .eq(unresolved_col("t4.a"))
+                        .and(unresolved_col("c").eq(lit(688u32)))))
+                .or(unresolved_col("a")
+                    .eq(unresolved_col("t4.a"))
+                    .and(unresolved_col("b").eq(unresolved_col("t4.b")))),
             )?
             .build();
 
         let plan = LogicalPlanBuilder::from(plan1.clone())
             .cross_join(plan2.clone(), JoinOptions::default().prefix("t3."))?
             .filter(
-                unbound_col("t3.a")
-                    .eq(unbound_col("a"))
-                    .and(unbound_col("t4.c").lt(lit(15u32)))
-                    .or(unbound_col("t3.a")
-                        .eq(unbound_col("a"))
-                        .and(unbound_col("t4.c").eq(lit(688u32)))),
+                unresolved_col("t3.a")
+                    .eq(unresolved_col("a"))
+                    .and(unresolved_col("t4.c").lt(lit(15u32)))
+                    .or(unresolved_col("t3.a")
+                        .eq(unresolved_col("a"))
+                        .and(unresolved_col("t4.c").eq(lit(688u32)))),
             )?
             .build();
         let plan_1 = LogicalPlanBuilder::from(t1)
             .join(
                 LogicalPlanBuilder::from(t2).select(vec![
-                    unbound_col("a").alias("t2.a"),
-                    unbound_col("b").alias("t2.b"),
-                    unbound_col("c").alias("t2.c"),
+                    unresolved_col("a").alias("t2.a"),
+                    unresolved_col("b").alias("t2.b"),
+                    unresolved_col("c").alias("t2.c"),
                 ])?,
-                vec![unbound_col("a")],
-                vec![unbound_col("t2.a")],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("t2.a")],
                 JoinType::Inner,
                 None,
                 Default::default(),
             )?
             .filter(
-                unbound_col("t2.c")
+                unresolved_col("t2.c")
                     .lt(lit(15u32))
-                    .or(unbound_col("t2.c").eq(lit(688u32))),
+                    .or(unresolved_col("t2.c").eq(lit(688u32))),
             )?
             .build();
 
         let plan_2 = LogicalPlanBuilder::from(t3)
             .join(
                 LogicalPlanBuilder::from(t4).select(vec![
-                    unbound_col("a").alias("t4.a"),
-                    unbound_col("b").alias("t4.b"),
-                    unbound_col("c").alias("t4.c"),
+                    unresolved_col("a").alias("t4.a"),
+                    unresolved_col("b").alias("t4.b"),
+                    unresolved_col("c").alias("t4.c"),
                 ])?,
-                vec![unbound_col("a")],
-                vec![unbound_col("t4.a")],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("t4.a")],
                 JoinType::Inner,
                 None,
                 Default::default(),
             )?
             .filter(
-                unbound_col("t4.c")
+                unresolved_col("t4.c")
                     .lt(lit(15u32))
-                    .or(unbound_col("c").eq(lit(688u32)))
-                    .or(unbound_col("b").eq(unbound_col("t4.b"))),
+                    .or(unresolved_col("c").eq(lit(688u32)))
+                    .or(unresolved_col("b").eq(unresolved_col("t4.b"))),
             )?
             .select(vec![
-                unbound_col("a").alias("t3.a"),
-                unbound_col("b").alias("t3.b"),
-                unbound_col("c").alias("t3.c"),
-                unbound_col("t4.a"),
-                unbound_col("t4.b"),
-                unbound_col("t4.c"),
+                unresolved_col("a").alias("t3.a"),
+                unresolved_col("b").alias("t3.b"),
+                unresolved_col("c").alias("t3.c"),
+                unresolved_col("t4.a"),
+                unresolved_col("t4.b"),
+                unresolved_col("t4.c"),
             ])?
             .build();
         let expected = LogicalPlanBuilder::from(plan_1)
             .join(
                 plan_2,
-                vec![unbound_col("a")],
-                vec![unbound_col("t3.a")],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("t3.a")],
                 JoinType::Inner,
                 None,
                 Default::default(),
             )?
             .filter(
-                unbound_col("t4.c")
+                unresolved_col("t4.c")
                     .lt(lit(15u32))
-                    .or(unbound_col("t4.c").eq(lit(688u32))),
+                    .or(unresolved_col("t4.c").eq(lit(688u32))),
             )?
             .build();
 

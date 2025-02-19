@@ -73,7 +73,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, resolved_col, unbound_col, ExprRef};
+    use daft_dsl::{lit, resolved_col, unresolved_col, ExprRef};
     use daft_logical_plan::partitioning::{
         ClusteringSpec, HashClusteringConfig, UnknownClusteringConfig,
     };
@@ -90,16 +90,16 @@ mod tests {
     fn test_clustering_spec_preserving() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
         let expressions = vec![
-            (unbound_col("a").rem(lit(2))), // this is now "a"
-            unbound_col("b"),
-            unbound_col("a").alias("aa"),
+            (unresolved_col("a").rem(lit(2))), // this is now "a"
+            unresolved_col("b"),
+            unresolved_col("a").alias("aa"),
         ];
         let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(Some(3), vec![unbound_col("a"), unbound_col("b")])?
+        .hash_repartition(Some(3), vec![unresolved_col("a"), unresolved_col("b")])?
         .select(expressions)?
         .build();
 
@@ -123,10 +123,10 @@ mod tests {
     #[rstest]
     fn test_clustering_spec_destroying(
         #[values(
-            vec![unbound_col("a"), unbound_col("c").alias("b")], // original "b" is gone even though "b" is present
-            vec![unbound_col("b")],                      // original "a" dropped
-            vec![unbound_col("a").rem(lit(2)), unbound_col("b")],   // original "a" gone
-            vec![unbound_col("c")],                      // everything gone
+            vec![unresolved_col("a"), unresolved_col("c").alias("b")], // original "b" is gone even though "b" is present
+            vec![unresolved_col("b")],                      // original "a" dropped
+            vec![unresolved_col("a").rem(lit(2)), unresolved_col("b")],   // original "a" gone
+            vec![unresolved_col("c")],                      // everything gone
         )]
         projection: Vec<ExprRef>,
     ) -> DaftResult<()> {
@@ -138,7 +138,7 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(Some(3), vec![unbound_col("a"), unbound_col("b")])?
+        .hash_repartition(Some(3), vec![unresolved_col("a"), unresolved_col("b")])?
         .select(projection)?
         .build();
 
@@ -159,10 +159,10 @@ mod tests {
     fn test_clustering_spec_prefer_existing_names() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
         let expressions = vec![
-            unbound_col("a").alias("y"),
-            unbound_col("a"),
-            unbound_col("a").alias("z"),
-            unbound_col("b"),
+            unresolved_col("a").alias("y"),
+            unresolved_col("a"),
+            unresolved_col("a").alias("z"),
+            unresolved_col("b"),
         ];
 
         let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
@@ -170,7 +170,7 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(Some(3), vec![unbound_col("a"), unbound_col("b")])?
+        .hash_repartition(Some(3), vec![unresolved_col("a"), unresolved_col("b")])?
         .select(expressions)?
         .build();
 

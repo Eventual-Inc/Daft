@@ -78,7 +78,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{resolved_col, unbound_col};
+    use daft_dsl::{resolved_col, unresolved_col};
     use daft_logical_plan::partitioning::{
         ClusteringSpec, HashClusteringConfig, UnknownClusteringConfig,
     };
@@ -98,8 +98,8 @@ mod tests {
             Field::new("b", DataType::List(Box::new(DataType::Int64))),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(Some(3), vec![unbound_col("a")])?
-        .explode(vec![unbound_col("b")])?
+        .hash_repartition(Some(3), vec![unresolved_col("a")])?
+        .explode(vec![unresolved_col("b")])?
         .build();
 
         let physical_plan = logical_to_physical(logical_plan, cfg)?;
@@ -125,8 +125,8 @@ mod tests {
             Field::new("b", DataType::List(Box::new(DataType::Int64))),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(Some(3), vec![unbound_col("a"), unbound_col("b")])?
-        .explode(vec![unbound_col("b")])?
+        .hash_repartition(Some(3), vec![unresolved_col("a"), unresolved_col("b")])?
+        .explode(vec![unresolved_col("b")])?
         .build();
 
         let physical_plan = logical_to_physical(logical_plan, cfg)?;
