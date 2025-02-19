@@ -33,7 +33,7 @@ use spark_connect::{
     set_operation::SetOpType,
     Deduplicate, Expression, Limit, Range, Relation, SetOperation, Sort, Sql,
 };
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::{
     ensure,
@@ -298,14 +298,10 @@ impl SparkAnalyzer<'_> {
             format: &str,
             options: &HashMap<String, String>,
         ) -> ConnectResult<()> {
-            let mut unimplemented_options = Vec::new();
-            for (key, value) in options {
-                warn!("Option '{key}' is not yet implemented");
-                unimplemented_options.push(format!(r#""{}"={}"#, key, value));
-            }
-            if unimplemented_options.is_empty() {
+            if options.is_empty() {
                 Ok(())
             } else {
+                let unimplemented_options = options.keys().cloned().collect::<Vec<_>>();
                 Err(ConnectError::not_yet_implemented(format!(
                     "[{unimplemented_options}] options for {format}",
                     unimplemented_options = unimplemented_options.join(", ")
@@ -316,10 +312,18 @@ impl SparkAnalyzer<'_> {
         let format = &*format;
         Ok(match format {
             "parquet" => {
-                let chunk_size = options.remove("chunk_size").and_then(|v| v.parse().ok());
+                let chunk_size = options
+                    .remove("chunk_size")
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid chunk_size option")?;
+
                 let hive_partitioning = options
                     .remove("hive_partitioning")
-                    .and_then(|v| v.parse().ok());
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid hive_partitioning option")?;
+
                 let mut builder = ParquetScanBuilder::new(paths);
                 builder.chunk_size = chunk_size;
 
@@ -342,14 +346,18 @@ impl SparkAnalyzer<'_> {
                 // spark sets this to false by default, so we'll do the same
                 let header = options
                     .remove("header")
-                    .and_then(|v| v.to_lowercase().parse().ok())
+                    .map(|v| v.to_lowercase().parse())
+                    .transpose()
+                    .wrap_err("invalid header value")?
                     .unwrap_or(false);
 
                 builder = builder.has_headers(header);
 
                 let infer_schema = options
                     .remove("inferSchema")
-                    .and_then(|v| v.to_lowercase().parse().ok())
+                    .map(|v| v.to_lowercase().parse())
+                    .transpose()
+                    .wrap_err("invalid inferSchema value")?
                     .unwrap_or(true);
 
                 builder = builder.infer_schema(infer_schema);
@@ -368,17 +376,26 @@ impl SparkAnalyzer<'_> {
 
                 if let Some(hive_partitioning) = options
                     .remove("hive_partitioning")
-                    .and_then(|v| v.parse().ok())
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid hive_partitioning option")?
                 {
                     builder = builder.hive_partitioning(hive_partitioning);
                 }
-                if let Some(chunk_size) = options.remove("chunk_size").and_then(|v| v.parse().ok())
+                if let Some(chunk_size) = options
+                    .remove("chunk_size")
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid chunk_size option")?
                 {
                     builder = builder.chunk_size(chunk_size);
                 }
 
-                if let Some(buffer_size) =
-                    options.remove("buffer_size").and_then(|v| v.parse().ok())
+                if let Some(buffer_size) = options
+                    .remove("buffer_size")
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid buffer_size option")?
                 {
                     builder = builder.buffer_size(buffer_size);
                 }
