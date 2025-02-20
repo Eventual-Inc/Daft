@@ -1278,10 +1278,18 @@ impl Expr {
             .and_then(|()| String::from_utf8(buffer).ok())
     }
 
-    /// If the expression is a literal, return it. Otherwise, return None.
+    /// Returns the literal value if this is a literal expression, otherwise none.
     pub fn as_literal(&self) -> Option<&lit::LiteralValue> {
         match self {
             Self::Literal(lit) => Some(lit),
+            _ => None,
+        }
+    }
+
+    /// Returns the list vector if this is a list expression, otherwise none.
+    pub fn as_list(&self) -> Option<&Vec<ExprRef>> {
+        match self {
+            Self::List(items) => Some(items),
             _ => None,
         }
     }
