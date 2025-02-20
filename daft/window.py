@@ -1,14 +1,12 @@
-from typing import List, Union
+from __future__ import annotations
 
+from typing import Any
 
-class WindowBoundary:
-    """Represents window frame boundaries."""
-
-    def __init__(self, name: str):
-        self.name = name
-
-    def __repr__(self) -> str:
-        return f"WindowBoundary({self.name})"
+from daft.daft import WindowBoundary as _WindowBoundary
+from daft.daft import WindowFrame as _WindowFrame
+from daft.daft import WindowFrameType as _WindowFrameType
+from daft.daft import WindowSpec as _WindowSpec
+from daft.expressions import col
 
 
 class Window:
@@ -20,21 +18,15 @@ class Window:
     """
 
     # Class-level constants for frame boundaries
-    unbounded_preceding = WindowBoundary("UNBOUNDED PRECEDING")
-    unbounded_following = WindowBoundary("UNBOUNDED FOLLOWING")
-    current_row = WindowBoundary("CURRENT ROW")
+    unbounded_preceding = _WindowBoundary.UnboundedPreceding()
+    unbounded_following = _WindowBoundary.UnboundedFollowing()
+    current_row = _WindowBoundary.CurrentRow()
 
     def __init__(self):
-        self.partition_by = None
-        self.order_by = None
-        self.frame_start = self.unbounded_preceding
-        self.frame_end = self.unbounded_following
+        self._spec = _WindowSpec.new()
 
-    def __repr__(self) -> str:
-        return f"Window(partition_by={self.partition_by}, order_by={self.order_by}, frame_start={self.frame_start}, frame_end={self.frame_end})"
-
-    @staticmethod
-    def partition_by(*cols: Union[str, List[str]]) -> "Window":
+    @classmethod
+    def partition_by(cls, *cols: str | list[str]) -> Window:
         """Partitions the dataset by one or more columns.
 
         Args:
@@ -46,9 +38,24 @@ class Window:
         Raises:
             ValueError: If no partition columns are specified.
         """
-        raise NotImplementedError
+        if not cols:
+            raise ValueError("At least one partition column must be specified")
 
-    def order_by(self, *cols: Union[str, List[str]], ascending: Union[bool, List[bool]] = True) -> "Window":
+        # Flatten list arguments
+        flat_cols = []
+        for c in cols:
+            if isinstance(c, list):
+                flat_cols.extend(c)
+            else:
+                flat_cols.append(c)
+
+        # Create new Window with updated spec
+        window = cls()
+        window._spec = window._spec.with_partition_by([col(c)._expr for c in flat_cols])
+        return window
+
+    @classmethod
+    def order_by(cls, *cols: str | list[str], ascending: bool | list[bool] = True) -> Window:
         """Orders rows within each partition by specified columns.
 
         Args:
@@ -58,14 +65,33 @@ class Window:
         Returns:
             Window: A window specification with the given ordering.
         """
-        raise NotImplementedError
+        # Flatten list arguments
+        flat_cols = []
+        for c in cols:
+            if isinstance(c, list):
+                flat_cols.extend(c)
+            else:
+                flat_cols.append(c)
+
+        # Handle ascending parameter
+        if isinstance(ascending, bool):
+            asc_flags = [ascending] * len(flat_cols)
+        else:
+            if len(ascending) != len(flat_cols):
+                raise ValueError("Length of ascending flags must match number of order by columns")
+            asc_flags = ascending
+
+        # Create new Window with updated spec
+        window = cls()
+        window._spec = window._spec.with_order_by([col(c)._expr for c in flat_cols], asc_flags)
+        return window
 
     def rows_between(
         self,
-        start: Union[int, WindowBoundary] = unbounded_preceding,
-        end: Union[int, WindowBoundary] = unbounded_following,
+        start: int | Any = unbounded_preceding,
+        end: int | Any = unbounded_following,
         min_periods: int = 1,
-    ) -> "Window":
+    ) -> Window:
         """Restricts each window to a row-based frame between start and end boundaries.
 
         Args:
@@ -76,14 +102,29 @@ class Window:
         Returns:
             Window: A window specification with the given frame bounds.
         """
-        raise NotImplementedError
+        # Convert integer offsets to WindowBoundary
+        if isinstance(start, int):
+            start = _WindowBoundary.Preceding(-start) if start < 0 else _WindowBoundary.Following(start)
+        if isinstance(end, int):
+            end = _WindowBoundary.Preceding(-end) if end < 0 else _WindowBoundary.Following(end)
+
+        frame = _WindowFrame(
+            frame_type=_WindowFrameType.Rows(),
+            start=start,
+            end=end,
+        )
+
+        # Create new Window with updated spec
+        new_window = Window()
+        new_window._spec = self._spec.with_frame(frame).with_min_periods(min_periods)
+        return new_window
 
     def range_between(
         self,
-        start: Union[int, WindowBoundary] = unbounded_preceding,
-        end: Union[int, WindowBoundary] = unbounded_following,
+        start: int | Any = unbounded_preceding,
+        end: int | Any = unbounded_following,
         min_periods: int = 1,
-    ) -> "Window":
+    ) -> Window:
         """Restricts each window to a range-based frame between start and end boundaries.
 
         Args:
@@ -94,4 +135,4 @@ class Window:
         Returns:
             Window: A window specification with the given frame bounds.
         """
-        raise NotImplementedError
+        raise NotImplementedError("Window.range_between is not implemented yet")

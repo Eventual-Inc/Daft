@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 pub use window::*;
 
 use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};
-use crate::ExprRef;
+use crate::{expr::window::WindowFunction, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
@@ -29,6 +29,7 @@ pub enum FunctionExpr {
     Struct(StructExpr),
     Python(PythonUDF),
     Partitioning(PartitioningExpr),
+    Window(WindowFunction),
 }
 
 pub trait FunctionEvaluator {
@@ -51,6 +52,7 @@ impl FunctionExpr {
             Self::Struct(expr) => expr.get_evaluator(),
             Self::Python(expr) => expr,
             Self::Partitioning(expr) => expr.get_evaluator(),
+            Self::Window(expr) => expr,
         }
     }
 }

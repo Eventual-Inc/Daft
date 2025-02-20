@@ -1459,7 +1459,7 @@ class Expression:
         Returns:
             Expression: Expression containing rank values
         """
-        return Expression._from_pyexpr(native.rank(self._expr))
+        raise NotImplementedError("Window functions are not yet implemented")
 
     def dense_rank(self) -> Expression:
         """Compute dense rank within window partition.
@@ -1470,7 +1470,7 @@ class Expression:
         Returns:
             Expression: Expression containing dense rank values
         """
-        return Expression._from_pyexpr(native.dense_rank(self._expr))
+        raise NotImplementedError("Window functions are not yet implemented")
 
     def row_number(self) -> Expression:
         """Compute row number within window partition.
@@ -1481,7 +1481,7 @@ class Expression:
         Returns:
             Expression: Expression containing row numbers
         """
-        return Expression._from_pyexpr(native.row_number(self._expr))
+        raise NotImplementedError("Window functions are not yet implemented")
 
     def percent_rank(self) -> Expression:
         """Compute percent rank within window partition.
@@ -1492,7 +1492,7 @@ class Expression:
         Returns:
             Expression: Expression containing percent rank values
         """
-        return Expression._from_pyexpr(native.percent_rank(self._expr))
+        raise NotImplementedError("Window functions are not yet implemented")
 
     def ntile(self, n: int) -> Expression:
         """Divide rows in partition into n buckets numbered from 1 to n.
@@ -1506,7 +1506,7 @@ class Expression:
         Returns:
             Expression: Expression containing bucket numbers
         """
-        return Expression._from_pyexpr(native.ntile(self._expr, n))
+        raise NotImplementedError("Window functions are not yet implemented")
 
     def lag(self, offset: int = 1, default: Any = None) -> Expression:
         """Access value from previous row in partition.
@@ -1518,8 +1518,7 @@ class Expression:
         Returns:
             Expression: Expression containing lagged values
         """
-        default_expr = Expression._to_expression(default)._expr if default is not None else None
-        return Expression._from_pyexpr(native.lag(self._expr, offset, default_expr))
+        raise NotImplementedError("Window functions are not yet implemented")
 
     def lead(self, offset: int = 1, default: Any = None) -> Expression:
         """Access value from following row in partition.
@@ -1531,8 +1530,7 @@ class Expression:
         Returns:
             Expression: Expression containing leading values
         """
-        default_expr = Expression._to_expression(default)._expr if default is not None else None
-        return Expression._from_pyexpr(native.lead(self._expr, offset, default_expr))
+        raise NotImplementedError("Window functions are not yet implemented")
 
     def first_value(self) -> Expression:
         """Get first value in window frame.
@@ -1540,7 +1538,7 @@ class Expression:
         Returns:
             Expression: Expression containing first values
         """
-        return Expression._from_pyexpr(native.first_value(self._expr))
+        raise NotImplementedError("Window functions are not yet implemented")
 
     def last_value(self) -> Expression:
         """Get last value in window frame.
@@ -1548,7 +1546,7 @@ class Expression:
         Returns:
             Expression: Expression containing last values
         """
-        return Expression._from_pyexpr(native.last_value(self._expr))
+        raise NotImplementedError("Window functions are not yet implemented")
 
     def nth_value(self, n: int) -> Expression:
         """Get nth value in window frame.
@@ -1559,7 +1557,7 @@ class Expression:
         Returns:
             Expression: Expression containing nth values
         """
-        return Expression._from_pyexpr(native.nth_value(self._expr, n))
+        raise NotImplementedError("Window functions are not yet implemented")
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
