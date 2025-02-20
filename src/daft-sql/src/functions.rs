@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use daft_dsl::ExprRef;
+use daft_dsl::{Expr, ExprRef};
 use once_cell::sync::Lazy;
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
@@ -211,6 +211,25 @@ impl<T: SQLLiteral> SQLLiteral for Vec<T> {
         expr.as_list()
             .map(|items| items.iter().map(T::from_expr).collect())
             .unwrap_or_else(|| unsupported_sql_err!("Expected a list literal"))
+    }
+}
+
+impl<T: SQLLiteral> SQLLiteral for HashMap<String, T> {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError> {
+        // get reference to struct
+        let fields = expr
+            .as_literal()
+            .and_then(daft_dsl::LiteralValue::as_struct)
+            .ok_or_else(|| PlannerError::invalid_operation("Expected a struct literal"))?;
+        // add literals to new map
+        let mut map = Self::new();
+        for (field, lit) in fields {
+            let e = Expr::Literal(lit.clone()).arced();
+            let k = field.name.clone();
+            let v = T::from_expr(&e)?;
+            map.insert(k, v);
+        }
+        Ok(map)
     }
 }
 

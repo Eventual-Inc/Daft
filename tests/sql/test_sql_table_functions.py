@@ -1,6 +1,7 @@
 import pytest
 
 import daft
+from daft import DataType as dt
 
 # TODO chore: make an asset fixture for all tests (beyond just sql).
 
@@ -45,6 +46,23 @@ def test_sql_read_json_paths():
     assert_eq(actual, expect)
 
 
+def test_sql_read_with_schema():
+    actual = daft.sql("""SELECT * FROM read_json('tests/assets/json-data/sample1.jsonl', schema := {
+        'x': 'int',
+        'y': 'string',
+        'z': 'bool',
+    });""")
+    expect = daft.read_json(
+        "tests/assets/json-data/sample1.jsonl",
+        schema={
+            "x": dt.int32(),
+            "y": dt.string(),
+            "z": dt.bool(),
+        },
+    )
+    assert_eq(actual, expect)
+
+
 def test_sql_read_parquet():
     actual = daft.sql("SELECT * FROM read_parquet('tests/assets/parquet-data/mvp.parquet')")
     expect = daft.read_parquet("tests/assets/parquet-data/mvp.parquet")
@@ -83,6 +101,21 @@ def test_sql_read_csv_paths():
     paths = ["tests/assets/mvp.csv", "tests/assets/sampled-tpch.csv"]
     actual = daft.sql(f"SELECT * FROM read_csv({to_sql_array(paths)})")
     expect = daft.read_csv(paths)
+    assert_eq(actual, expect)
+
+
+def test_sql_read_csv_with_schema(sample_csv_path):
+    actual = daft.sql("""SELECT * FROM read_csv('tests/assets/mvp.csv', schema := {
+        'a': 'double',
+        'b': 'string',
+    });""")
+    expect = daft.read_csv(
+        sample_csv_path,
+        schema={
+            "a": dt.float64(),
+            "b": dt.string(),
+        },
+    )
     assert_eq(actual, expect)
 
 
