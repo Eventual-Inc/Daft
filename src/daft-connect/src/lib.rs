@@ -86,9 +86,16 @@ impl ConnectionHandle {
 static SHUTDOWN_SIGNALS: OnceCell<Arc<Mutex<ShutdownSignals>>> = OnceCell::new();
 
 #[cfg(feature = "python")]
-pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
+pub fn start(port: u16) -> Result<ConnectionHandle, Whatever> {
+    let addr = format!("0.0.0.0:{port}");
     info!("Daft-Connect server listening on {addr}");
-    let addr = util::parse_spark_connect_address(addr).whatever_context("Invalid address")?;
+    let shutdown_signals = SHUTDOWN_SIGNALS.get_or_init(Default::default);
+    let mut lock = shutdown_signals.lock().whatever_context("poisoned lock")?;
+
+    if lock.signals.contains_key(&port) {
+        return Err(error::ConnectError::PortInUse { port })
+            .whatever_context("port already in use");
+    }
 
     let listener =
         std::net::TcpListener::bind(addr).whatever_context("unable to bind to address")?;
@@ -99,14 +106,9 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
 
     let service = DaftSparkConnectService::default();
 
-    info!("Daft-Connect server listening on {addr}");
-
     let (shutdown_signal, shutdown_receiver) = tokio::sync::oneshot::channel();
 
     let handle = ConnectionHandle { port };
-
-    let shutdown_signals = SHUTDOWN_SIGNALS.get_or_init(Default::default);
-    let mut lock = shutdown_signals.lock().whatever_context("poisoned lock")?;
 
     lock.signals.insert(port, shutdown_signal);
 
@@ -152,9 +154,10 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
 
 #[cfg(feature = "python")]
 #[cfg_attr(feature = "python", pyo3::pyfunction)]
-#[pyo3(name = "connect_start", signature = (addr = "sc://0.0.0.0:0"))]
-pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
-    start(addr).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
+#[pyo3(name = "connect_start", signature = (port = None))]
+pub fn py_connect_start(port: Option<u16>) -> pyo3::PyResult<ConnectionHandle> {
+    let port = port.unwrap_or_default();
+    start(port).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
 }
 
 #[cfg(feature = "python")]
