@@ -130,21 +130,31 @@ fn launch_attached(static_assets_path: &str, noop_if_initialized: bool) -> anyho
 }
 
 fn launch_detached(static_assets_path: &str, noop_if_initialized: bool) -> anyhow::Result<()> {
-    match fork::fork().unwrap() {
-        fork::Fork::Parent(..) => Ok(()),
-        fork::Fork::Child => {
-            let break_reason = tokio_runtime(true).block_on(run(static_assets_path))?;
-            exit(match break_reason {
-                BreakReason::PortAlreadyBound if noop_if_initialized => 0,
-                BreakReason::PortAlreadyBound => {
-                    log::error!("{}", already_bound_error());
-                    1
-                }
-                BreakReason::PythonSignalInterrupt => {
-                    unreachable!("Can't receive a python signal interrupt in an orphaned process")
-                }
-                BreakReason::ApiShutdownSignal => 0,
-            });
+    #[cfg(not(unix))]
+    {
+        Err(PyErr::new::<exceptions::PyRuntimeError, _>("Daft dashboard's detaching feature is not available on this platform; unable to fork on Windows"))
+    }
+
+    #[cfg(unix)]
+    {
+        match fork::fork().unwrap() {
+            fork::Fork::Parent(..) => Ok(()),
+            fork::Fork::Child => {
+                let break_reason = tokio_runtime(true).block_on(run(static_assets_path))?;
+                exit(match break_reason {
+                    BreakReason::PortAlreadyBound if noop_if_initialized => 0,
+                    BreakReason::PortAlreadyBound => {
+                        log::error!("{}", already_bound_error());
+                        1
+                    }
+                    BreakReason::PythonSignalInterrupt => {
+                        unreachable!(
+                            "Can't receive a python signal interrupt in an orphaned process"
+                        )
+                    }
+                    BreakReason::ApiShutdownSignal => 0,
+                });
+            }
         }
     }
 }

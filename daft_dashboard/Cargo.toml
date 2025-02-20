@@ -2,7 +2,6 @@
 anyhow = "1.0"
 chrono = {workspace = true, features = ["serde"]}
 clap = {version = "4.5.28", features = ["derive"]}
-fork = "0.2"
 http-body-util = "0.1"
 hyper = {features = ["full"], version = "1.6"}
 hyper-staticfile = "0.10.1"
@@ -28,3 +27,6 @@ workspace = true
 name = "daft_dashboard"
 edition.workspace = true
 version.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+fork = "0.2"
