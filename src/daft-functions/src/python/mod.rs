@@ -20,6 +20,7 @@ mod image;
 mod list;
 mod misc;
 mod numeric;
+mod sequence;
 mod temporal;
 mod tokenize;
 mod uri;
@@ -102,6 +103,8 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::arctanh);
     add!(numeric::arctan2);
     add!(numeric::round);
+
+    add!(sequence::monotonically_increasing_id);
 
     add!(temporal::dt_date);
     add!(temporal::dt_day);
