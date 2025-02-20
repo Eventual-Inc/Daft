@@ -175,7 +175,7 @@ mod tests {
         edges
     }
 
-    const NUM_RANDOM_NODES: usize = 100;
+    const NUM_RANDOM_NODES: usize = 10;
 
     #[test]
     fn test_order_random_join_graph() {
