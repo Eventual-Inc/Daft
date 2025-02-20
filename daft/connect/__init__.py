@@ -55,7 +55,10 @@ try:
     class DaftConnectRayAdaptor:
         """A Ray remote class that wraps the the daft.daft.connect_start function."""
 
-        def __init__(self, port=None):
+        def __init__(self, port: int | None = None):
+            import daft
+
+            daft.context.set_runner_ray()
             self._server = connect_start(port)
 
         def spark_remote_url(self):
