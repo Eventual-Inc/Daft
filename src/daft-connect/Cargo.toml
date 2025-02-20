@@ -5,6 +5,9 @@ common-error = {workspace = true, optional = true, features = ["python"]}
 common-file-formats = {workspace = true, optional = true, features = [
   "python"
 ]}
+common-py-serde = {path = "../common/py-serde", optional = true, features = [
+  "python"
+]}
 common-runtime = {workspace = true}
 daft-catalog = {path = "../daft-catalog", optional = true, features = ["python"]}
 daft-context = {workspace = true, optional = true, features = ["python"]}
@@ -31,6 +34,7 @@ tokio = {version = "1.40.0", features = ["full"]}
 tonic = "0.12.3"
 tracing = {workspace = true}
 uuid = {version = "1.10.0", features = ["v4"]}
+serde.workspace = true
 snafu.workspace = true
 
 [features]
@@ -38,6 +42,7 @@ python = [
   "dep:pyo3",
   "dep:common-error",
   "dep:common-file-formats",
+  "dep:common-py-serde",
   "dep:daft-core",
   "dep:daft-dsl",
   "dep:daft-logical-plan",
