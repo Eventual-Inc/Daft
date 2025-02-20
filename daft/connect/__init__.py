@@ -44,6 +44,46 @@ spark = SparkSession.builder.remote(url).getOrCreate()
 
 spark.createDataFrame([("hello", 1), ("world", 2)], ["word", "count"]).show()
 ```
+
+
+Tip:
+You can force the server to start on the head node. This is useful if you want the spark service to be accessible using the same address as the ray cluster.
+
+```py
+
+# my_script.py
+# submit this code to the head node
+#
+import ray
+from daft.connect import DaftConnectRayAdaptor
+
+DaftConnectRayAdaptor.options(
+  lifetime="detached",
+  scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+    node_id=ray.get_runtime_context().get_node_id(),
+    soft=False,
+  )
+  name = "daft-connect-server",
+  get_if_exists=True,
+).remote(port=9999)
+
+```
+
+```sh
+ray job submit -- python my_script.py --head
+```
+
+
+Then elsewhere, you can connect to the server using the same address as the ray cluster. (Note: this assumes that the specified port is open on the head node)
+
+```py
+from pyspark.sql import SparkSession
+
+RAY_ADDRESS='http://127.0.0.1'
+
+url = f"sc://{RAY_ADDRESS}:9999"
+spark = SparkSession.builder.remote(url).getOrCreate()
+```
 """
 
 from daft.daft import connect_start
