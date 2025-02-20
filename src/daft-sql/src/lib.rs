@@ -5,6 +5,7 @@ pub mod functions;
 mod modules;
 
 mod planner;
+mod schema;
 mod statement;
 pub use planner::*;
 
