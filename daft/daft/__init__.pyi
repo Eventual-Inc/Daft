@@ -1586,7 +1586,7 @@ class AdaptivePhysicalPlanScheduler:
     # Todo use in memory info here instead
     def update(
         self,
-        source_id: int,
+        stage_id: int,
         partition_key: str,
         cache_entry: PartitionCacheEntry,
         num_partitions: int,

@@ -71,19 +71,13 @@ impl Hash for InMemoryInfo {
 pub struct PlaceHolderInfo {
     pub source_schema: SchemaRef,
     pub clustering_spec: ClusteringSpecRef,
-    pub source_id: usize,
 }
 
 impl PlaceHolderInfo {
-    pub fn new(
-        source_id: usize,
-        source_schema: SchemaRef,
-        clustering_spec: ClusteringSpecRef,
-    ) -> Self {
+    pub fn new(source_schema: SchemaRef, clustering_spec: ClusteringSpecRef) -> Self {
         Self {
             source_schema,
             clustering_spec,
-            source_id,
         }
     }
 }

@@ -6,22 +6,17 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlaceholderScan {
-    pub source_id: usize,
     pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl PlaceholderScan {
-    pub(crate) fn new(source_id: usize, clustering_spec: Arc<ClusteringSpec>) -> Self {
-        Self {
-            source_id,
-            clustering_spec,
-        }
+    pub(crate) fn new(clustering_spec: Arc<ClusteringSpec>) -> Self {
+        Self { clustering_spec }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("PlaceholderScan:".to_string());
-        res.push(format!("Source ID = {}", self.source_id));
         res.push(self.clustering_spec.multiline_display().join(", "));
         res
     }
@@ -37,9 +32,7 @@ impl TreeDisplay for PlaceholderScan {
             DisplayLevel::Default => {
                 format!(
                     "PlaceholderScan:
-Source ID = {}
 Clustering spec = {{ {} }}",
-                    self.source_id,
                     self.clustering_spec.multiline_display().join(", ")
                 )
             }
@@ -48,7 +41,7 @@ Clustering spec = {{ {} }}",
     }
 
     fn get_name(&self) -> String {
-        format!("PlaceholderScan: Source ID = {}", self.source_id)
+        "PlaceholderScan".to_string()
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {

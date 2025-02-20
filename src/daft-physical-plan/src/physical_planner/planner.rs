@@ -27,7 +27,7 @@ use crate::{
     PhysicalPlan, PhysicalPlanRef,
 };
 
-static PLACEHOLDER_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static STAGE_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub(super) struct PhysicalPlanTranslator {
     pub physical_children: Vec<Arc<PhysicalPlan>>,
@@ -52,7 +52,6 @@ pub(super) struct LogicalStageTranslator {
     pub physical_children: Vec<Arc<PhysicalPlan>>,
     pub root: Arc<LogicalPlan>,
     pub cfg: Arc<DaftExecutionConfig>,
-    pub source_id: Option<usize>,
 }
 
 impl TreeNodeRewriter for LogicalStageTranslator {
@@ -76,16 +75,8 @@ impl TreeNodeRewriter for LogicalStageTranslator {
                 [] | [_] => {
                     self.physical_children.push(translated_pplan.clone());
 
-                    let source_id =
-                        PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-                    let ph_info = PlaceHolderInfo::new(
-                        source_id,
-                        node.schema(),
-                        translated_pplan.clustering_spec(),
-                    );
-
-                    self.source_id = Some(source_id);
+                    let ph_info =
+                        PlaceHolderInfo::new(node.schema(), translated_pplan.clustering_spec());
 
                     let new_scan = LogicalPlan::Source(Source::new(
                         node.schema(),
@@ -155,17 +146,11 @@ impl TreeNodeRewriter for LogicalStageTranslator {
                         "we expect the logical node of a binary op to also have 2 children",
                     );
 
-                    let source_id =
-                        PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    self.source_id = Some(source_id);
                     match run_next {
                         RunNext::Left => {
                             self.physical_children.push(left.clone());
-                            let ph_info = PlaceHolderInfo::new(
-                                source_id,
-                                logical_left.schema(),
-                                left.clustering_spec(),
-                            );
+                            let ph_info =
+                                PlaceHolderInfo::new(logical_left.schema(), left.clustering_spec());
 
                             let new_left_scan = LogicalPlan::Source(Source::new(
                                 logical_left.schema(),
@@ -182,7 +167,6 @@ impl TreeNodeRewriter for LogicalStageTranslator {
                         RunNext::Right => {
                             self.physical_children.push(right.clone());
                             let ph_info = PlaceHolderInfo::new(
-                                source_id,
                                 logical_right.schema(),
                                 right.clustering_spec(),
                             );
@@ -231,9 +215,6 @@ impl TreeNodeRewriter for ReplaceLogicalPlaceholderWithMaterializedResults {
                 SourceInfo::PlaceHolder(phi) => {
                     assert!(self.mat_results.is_some());
                     let mut mat_results = self.mat_results.take().unwrap();
-                    if mat_results.source_id != phi.source_id {
-                        return Err(common_error::DaftError::ValueError(format!("During AQE: We are replacing a PlaceHolder Node with materialized results. There should only be 1 placeholder at a time but we found one with a different id, {} vs {}", mat_results.source_id, phi.source_id)));
-                    }
                     // use the clustering spec from the original plan
                     mat_results.in_memory_info.clustering_spec = Some(phi.clustering_spec.clone());
                     mat_results.in_memory_info.source_schema = phi.source_schema.clone();
@@ -258,7 +239,6 @@ impl TreeNodeRewriter for ReplaceLogicalPlaceholderWithMaterializedResults {
 
 struct PhysicalStageTranslator {
     partial_physical_plan: Option<PhysicalPlanRef>,
-    source_id: Option<usize>,
     root: Arc<PhysicalPlan>,
 }
 
@@ -270,44 +250,44 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
     }
 
     fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
-        let is_root = Arc::ptr_eq(&node, &self.root);
-        if is_root {
-            return Ok(Transformed::no(node));
-        }
-
-        // If the node is a shuffle exchange, we have reached a physical boundary
+        // If not a shuffle exchange, don't transform
         let shuffle_exchange = match node.as_ref() {
-            PhysicalPlan::ShuffleExchange(shuffle_exchange) => shuffle_exchange,
+            PhysicalPlan::ShuffleExchange(se) => se,
             _ => return Ok(Transformed::no(node)),
         };
 
-        let source_id = PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.source_id = Some(source_id);
-        // If the input is an in memory scan, emit the shuffle exchange and return a placeholder
-        if matches!(
+        // If child is not an in memory scan, emit the child
+        if !matches!(
             shuffle_exchange.input.as_ref(),
             PhysicalPlan::InMemoryScan(..)
         ) {
-            self.partial_physical_plan = Some(node.clone());
-            let placeholder = PhysicalPlan::PlaceholderScan(PlaceholderScan::new(
-                source_id,
-                node.clustering_spec(),
-            ));
+            let child = shuffle_exchange.input.clone();
+            self.partial_physical_plan = Some(child.clone());
+
+            let placeholder =
+                PhysicalPlan::PlaceholderScan(PlaceholderScan::new(child.clustering_spec()));
+
             return Ok(Transformed::new(
-                placeholder.arced(),
+                node.with_new_children(&[placeholder.arced()]).arced(),
                 true,
                 TreeNodeRecursion::Stop,
             ));
         }
 
-        // Otherwise, emit the child and add a placeholder as the child of the shuffle exchange
-        let child = shuffle_exchange.input.clone();
+        // If it's a root node with in memory scan child, don't transform
+        let is_root = Arc::ptr_eq(&node, &self.root);
+        if is_root {
+            return Ok(Transformed::no(node));
+        }
+
+        // Otherwise emit the shuffle exchange and return transformed placeholder
+        self.partial_physical_plan = Some(node.clone());
+
         let placeholder =
-            PhysicalPlan::PlaceholderScan(PlaceholderScan::new(source_id, child.clustering_spec()));
-        self.partial_physical_plan = Some(child);
-        let node_with_placeholder_child = node.with_new_children(&[placeholder.arced()]);
+            PhysicalPlan::PlaceholderScan(PlaceholderScan::new(node.clustering_spec()));
+
         Ok(Transformed::new(
-            node_with_placeholder_child.arced(),
+            placeholder.arced(),
             true,
             TreeNodeRecursion::Stop,
         ))
@@ -329,9 +309,6 @@ impl TreeNodeRewriter for ReplacePhysicalPlaceholderWithMaterializedResults {
         match node.as_ref() {
             PhysicalPlan::PlaceholderScan(ph_scan) => {
                 let mat_results = self.mat_results.take().unwrap();
-                if mat_results.source_id != ph_scan.source_id {
-                    return Err(common_error::DaftError::ValueError(format!("During AQE: We are replacing a PlaceHolder Node with materialized results. There should only be 1 placeholder at a time but we found one with a different id, {} vs {}", mat_results.source_id, ph_scan.source_id)));
-                }
                 let new_source_node = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mat_results.in_memory_info.source_schema.clone(),
                     mat_results.in_memory_info,
@@ -383,7 +360,7 @@ impl TreeNodeRewriter for StripCacheEntryFromInMemoryScan {
 pub enum QueryStageOutput {
     Partial {
         physical_plan: PhysicalPlanRef,
-        source_id: usize,
+        stage_id: Option<usize>,
     },
     Final {
         physical_plan: PhysicalPlanRef,
@@ -391,9 +368,9 @@ pub enum QueryStageOutput {
 }
 
 impl QueryStageOutput {
-    pub fn source_id(&self) -> Option<usize> {
+    pub fn stage_id(&self) -> Option<usize> {
         match self {
-            Self::Partial { source_id, .. } => Some(*source_id),
+            Self::Partial { stage_id, .. } => *stage_id,
             Self::Final { .. } => None,
         }
     }
@@ -414,7 +391,7 @@ enum AdaptivePlannerStatus {
 }
 
 pub struct MaterializedResults {
-    pub source_id: usize,
+    pub stage_id: usize,
     pub in_memory_info: InMemoryInfo,
 }
 
@@ -433,7 +410,7 @@ impl EmittedStage {
             .rewrite(&mut strip_cache_entry)?
             .data;
         Ok(Self {
-            stage_id: query_stage_output.source_id(),
+            stage_id: query_stage_output.stage_id(),
             physical_plan,
             input_stages,
         })
@@ -483,8 +460,8 @@ impl StageCache {
 
         if source_ids.is_empty() {
             let emitted_stage = EmittedStage::new(stage, vec![])?;
-            if let Some(source_id) = stage.source_id() {
-                intermediate_stages.insert(source_id, emitted_stage);
+            if let Some(stage_id) = stage.stage_id() {
+                intermediate_stages.insert(stage_id, emitted_stage);
             } else {
                 *self = Self::Final {
                     final_stage: emitted_stage,
@@ -496,8 +473,8 @@ impl StageCache {
                 .map(|source_id| intermediate_stages.remove(source_id).unwrap())
                 .collect();
             let emitted_stage = EmittedStage::new(stage, input_stages)?;
-            if let Some(source_id) = stage.source_id() {
-                intermediate_stages.insert(source_id, emitted_stage);
+            if let Some(stage_id) = stage.stage_id() {
+                intermediate_stages.insert(stage_id, emitted_stage);
             } else {
                 *self = Self::Final {
                     final_stage: emitted_stage,
@@ -518,7 +495,7 @@ impl StageCache {
 pub struct AdaptivePlanner {
     remaining_logical_plan: Option<LogicalPlanRef>,
     remaining_physical_plan: Option<PhysicalPlanRef>,
-    logical_source_id: Option<usize>,
+    last_stage_id: usize,
     stage_cache: StageCache,
     cfg: Arc<DaftExecutionConfig>,
     status: AdaptivePlannerStatus,
@@ -529,7 +506,7 @@ impl AdaptivePlanner {
         Self {
             remaining_logical_plan: Some(logical_plan),
             remaining_physical_plan: None,
-            logical_source_id: None,
+            last_stage_id: 0,
             stage_cache: StageCache::new(),
             cfg,
             status: AdaptivePlannerStatus::Ready,
@@ -539,25 +516,20 @@ impl AdaptivePlanner {
     fn transform_physical_plan(
         &self,
         physical_plan: PhysicalPlanRef,
-    ) -> DaftResult<(PhysicalPlanRef, Option<PhysicalPlanRef>, Option<usize>)> {
+    ) -> DaftResult<(PhysicalPlanRef, Option<PhysicalPlanRef>)> {
         let mut physical_stage_translator = PhysicalStageTranslator {
             partial_physical_plan: None,
             root: physical_plan.clone(),
-            source_id: self.logical_source_id,
         };
         let result = physical_plan.rewrite(&mut physical_stage_translator)?;
         if result.transformed {
             assert!(physical_stage_translator.partial_physical_plan.is_some());
             let physical_plan = physical_stage_translator.partial_physical_plan.unwrap();
-            Ok((
-                physical_plan,
-                Some(result.data),
-                physical_stage_translator.source_id,
-            ))
+            Ok((physical_plan, Some(result.data)))
         } else {
             assert!(physical_stage_translator.partial_physical_plan.is_none());
             let physical_plan = result.data;
-            Ok((physical_plan, None, physical_stage_translator.source_id))
+            Ok((physical_plan, None))
         }
     }
 
@@ -565,13 +537,13 @@ impl AdaptivePlanner {
         assert_eq!(self.status, AdaptivePlannerStatus::Ready);
 
         // First, check if we have a remaining physical plan
-        let (next_physical_plan, source_id) = match self.remaining_physical_plan.take() {
+        let next_physical_plan = match self.remaining_physical_plan.take() {
             Some(remaining_physical_plan) => {
-                let (physical_plan, remaining_physical_plan, source_id) =
+                let (physical_plan, remaining_physical_plan) =
                     self.transform_physical_plan(remaining_physical_plan)?;
                 self.remaining_physical_plan = remaining_physical_plan;
 
-                (physical_plan, source_id)
+                physical_plan
             }
             None => {
                 // If we have no remaining physical plan, we need to translate the remaining logical plan to a physical plan
@@ -580,7 +552,6 @@ impl AdaptivePlanner {
                     physical_children: vec![],
                     root: logical_plan.clone(),
                     cfg: self.cfg.clone(),
-                    source_id: None,
                 };
                 let logical_output = logical_plan.rewrite(&mut logical_rewriter)?;
 
@@ -588,31 +559,33 @@ impl AdaptivePlanner {
                 if logical_output.transformed {
                     self.remaining_logical_plan = Some(logical_output.data);
                 }
-                self.logical_source_id = logical_rewriter.source_id;
                 let physical_plan = logical_rewriter
                     .physical_children
                     .pop()
                     .expect("should have at least 1 child");
 
                 // Now, transform the new physical plan
-                let (physical_plan, remaining_physical_plan, source_id) =
+                let (physical_plan, remaining_physical_plan) =
                     self.transform_physical_plan(physical_plan)?;
                 self.remaining_physical_plan = remaining_physical_plan;
 
-                (physical_plan, source_id)
+                physical_plan
             }
         };
 
-        let next_stage = if let Some(source_id) = source_id {
-            QueryStageOutput::Partial {
-                physical_plan: next_physical_plan,
-                source_id,
-            }
-        } else {
-            QueryStageOutput::Final {
-                physical_plan: next_physical_plan,
-            }
-        };
+        let next_stage =
+            if self.remaining_physical_plan.is_some() || self.remaining_logical_plan.is_some() {
+                let stage_id = STAGE_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.last_stage_id = stage_id;
+                QueryStageOutput::Partial {
+                    physical_plan: next_physical_plan,
+                    stage_id: Some(stage_id),
+                }
+            } else {
+                QueryStageOutput::Final {
+                    physical_plan: next_physical_plan,
+                }
+            };
 
         self.stage_cache.insert_stage(&next_stage)?;
         match &next_stage {
@@ -637,6 +610,7 @@ impl AdaptivePlanner {
 
     pub fn update(&mut self, mat_results: MaterializedResults) -> DaftResult<()> {
         assert_eq!(self.status, AdaptivePlannerStatus::WaitingForStats);
+        assert!(mat_results.stage_id == self.last_stage_id);
 
         // If we have a remaining physical plan, we need to replace the physical placeholder with the materialized results
         if let Some(remaining_physical_plan) = self.remaining_physical_plan.take() {

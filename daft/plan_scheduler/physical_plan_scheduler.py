@@ -83,7 +83,7 @@ class AdaptivePhysicalPlanScheduler:
     def is_done(self) -> bool:
         return self._scheduler.is_done()
 
-    def update(self, source_id: int, cache_entry: PartitionCacheEntry):
+    def update(self, stage_id: int, cache_entry: PartitionCacheEntry):
         num_partitions = cache_entry.num_partitions()
         assert num_partitions is not None
         size_bytes = cache_entry.size_bytes()
@@ -92,7 +92,7 @@ class AdaptivePhysicalPlanScheduler:
         assert num_rows is not None
 
         self._scheduler.update(
-            source_id,
+            stage_id,
             cache_entry.key,
             cache_entry,
             num_partitions=num_partitions,

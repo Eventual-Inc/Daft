@@ -56,7 +56,6 @@ mod test {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -76,7 +75,6 @@ mod test {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -125,7 +123,6 @@ On = col(id)
 Output schema = id#Int32, text#Utf8, id2#UInt64, first_name#Utf8, last_name#Utf8"]
 Filter4["Filter: col(id) == lit(1)"]
 Source5["PlaceHolder:
-Source ID = 0
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
 Source5 --> Filter4
@@ -137,7 +134,6 @@ Limit9["Limit: 1000"]
 Filter10["Filter: startswith(col(last_name), lit('S')) & endswith(col(last_name),
 lit('n'))"]
 Source11["PlaceHolder:
-Source ID = 0
 Num partitions = 0
 Output schema = first_name#Utf8, last_name#Utf8, id#Int32"]
 Source11 --> Filter10

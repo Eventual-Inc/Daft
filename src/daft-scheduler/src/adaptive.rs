@@ -44,7 +44,7 @@ impl AdaptivePhysicalPlanScheduler {
     pub fn next(&mut self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {
         py.allow_threads(|| {
             let output = self.planner.next_stage()?;
-            let sid = output.source_id();
+            let sid = output.stage_id();
             Ok((sid, output.into()))
         })
     }
@@ -55,7 +55,7 @@ impl AdaptivePhysicalPlanScheduler {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
-        source_id: usize,
+        stage_id: usize,
         partition_key: &str,
         cache_entry: PyObject,
         num_partitions: usize,
@@ -72,11 +72,11 @@ impl AdaptivePhysicalPlanScheduler {
                 size_bytes,
                 num_rows,
                 None, // TODO(sammy) thread through clustering spec to Python
-                Some(source_id),
+                Some(stage_id),
             );
 
             self.planner.update(MaterializedResults {
-                source_id,
+                stage_id,
                 in_memory_info,
             })?;
             Ok(())
