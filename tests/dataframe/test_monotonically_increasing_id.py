@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from daft.datatype import DataType
+from daft.functions import monotonically_increasing_id
 from daft.io._generator import read_generator
 from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
@@ -17,6 +18,10 @@ def test_monotonically_increasing_id_single_partition(make_df) -> None:
     assert df.schema()["id"].dtype == DataType.uint64()
     assert df.to_pydict() == {"id": [0, 1, 2, 3, 4], "a": [1, 2, 3, 4, 5]}
 
+    # Test new function matches old behavior
+    df2 = make_df(data).with_column("id", monotonically_increasing_id()).collect()
+    assert df.to_pydict() == df2.to_pydict()
+
 
 def test_monotonically_increasing_id_empty_table(make_df) -> None:
     data = {"a": []}
@@ -26,6 +31,10 @@ def test_monotonically_increasing_id_empty_table(make_df) -> None:
     assert set(df.column_names) == {"id", "a"}
     assert df.schema()["id"].dtype == DataType.uint64()
     assert df.to_pydict() == {"id": [], "a": []}
+
+    # Test new function matches old behavior
+    df2 = make_df(data).with_column("id", monotonically_increasing_id()).collect()
+    assert df.to_pydict() == df2.to_pydict()
 
 
 @pytest.mark.skipif(
@@ -42,6 +51,10 @@ def test_monotonically_increasing_id_multiple_partitions_with_into_partition(mak
     assert len(df) == 100
     assert set(df.column_names) == {"id", "a"}
     assert df.schema()["id"].dtype == DataType.uint64()
+
+    # Test new function matches old behavior
+    df2 = make_df(data).into_partitions(repartition_nparts).with_column("id", monotonically_increasing_id()).collect()
+    assert df.to_pydict() == df2.to_pydict()
 
     # we can predict the ids because into_partitions evenly distributes without shuffling the data,
     # and the chosen repartition_nparts is a multiple of the number of items, so each partition will have the same number of items
@@ -76,6 +89,10 @@ def test_monotonically_increasing_id_from_generator() -> None:
     assert set(df.column_names) == {"id", "a"}
     assert df.schema()["id"].dtype == DataType.uint64()
 
+    # Test new function matches old behavior
+    df2 = read_generator(generators(), schema=table.schema()).with_column("id", monotonically_increasing_id()).collect()
+    assert df.to_pydict() == df2.to_pydict()
+
     if get_tests_daft_runner_name() == "native":
         # On the native runner, there are no partitions, so the ids are just the row numbers.
         assert df.to_pydict() == {"id": list(range(90)), "a": ITEMS * 9}
@@ -98,6 +115,10 @@ def test_monotonically_increasing_id_multiple_partitions_with_repartition(make_d
     assert set(df.column_names) == {"id", "a"}
     assert df.schema()["id"].dtype == DataType.uint64()
 
+    # Test new function matches old behavior
+    df2 = make_df(data, repartition=repartition_nparts).with_column("id", monotonically_increasing_id()).collect()
+    assert df.to_pydict() == df2.to_pydict()
+
     py_dict = df.to_pydict()
     assert set(py_dict["a"]) == set(ITEMS)
 
@@ -113,3 +134,7 @@ def test_monotonically_increasing_id_custom_col_name(make_df) -> None:
     assert set(df.column_names) == {"custom_id", "a"}
     assert df.schema()["custom_id"].dtype == DataType.uint64()
     assert df.to_pydict() == {"custom_id": [0, 1, 2, 3, 4], "a": [1, 2, 3, 4, 5]}
+
+    # Test new function matches old behavior with custom column name
+    df2 = make_df(data).with_column("custom_id", monotonically_increasing_id()).collect()
+    assert df.to_pydict() == df2.to_pydict()
