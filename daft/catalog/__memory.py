@@ -41,9 +41,11 @@ class MemoryCatalog(Catalog):
 class MemoryTable(Table):
     """An in-memory table holds a reference to an existing dataframe."""
 
+    _name: str
     _inner: DataFrame
 
-    def __init__(self, inner: DataFrame):
+    def __init__(self, name: str, inner: DataFrame):
+        self._name = name
         self._inner = inner
 
     ###

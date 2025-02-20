@@ -42,13 +42,15 @@ import warnings
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from daft.daft import catalog as native_catalog
+from daft.daft import PyTableSource, catalog as native_catalog
 from daft.daft import PyIdentifier, PyTable
 from daft.logical.builder import LogicalPlanBuilder
 
 from daft.dataframe import DataFrame
 
 from typing import TYPE_CHECKING
+
+from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import ColumnInputType
@@ -286,9 +288,11 @@ class Table(ABC):
     """Interface for python table implementations."""
 
     @staticmethod
-    def from_df(dataframe: DataFrame) -> Table:
+    def from_df(name: str, dataframe: DataFrame) -> Table:
         """Returns a read-only table backed by the DataFrame."""
-        return PyTable.from_builder(dataframe._builder._builder)
+        from daft.catalog.__memory import MemoryTable
+
+        return MemoryTable(name, dataframe)
 
     @staticmethod
     def from_iceberg(obj: object) -> Table:
@@ -314,9 +318,23 @@ class Table(ABC):
     @staticmethod
     def _from_obj(obj: object) -> Table:
         """Returns a Daft Table from a supported object type or raises an error."""
-        if isinstance(obj, DataFrame):
-            return Table.from_df(obj)
         raise ValueError(f"Unsupported table type: {type(obj)}")
+
+    # TODO catalog APIs part 3
+    # @property
+    # @abstractmethod
+    # def name(self) -> str:
+    #     """Returns the table name."""
+
+    # TODO catalog APIs part 3
+    # @property
+    # @abstractmethod
+    # def inner(self) -> object | None:
+    #     """Returns the inner table object if this is an adapter."""
+
+    @abstractmethod
+    def read(self) -> DataFrame:
+        """Returns a DataFrame from this table."""
 
     # TODO deprecated catalog APIs #3819
     def to_dataframe(self) -> DataFrame:
@@ -327,10 +345,6 @@ class Table(ABC):
         )
         return self.read()
 
-    @abstractmethod
-    def read(self) -> DataFrame:
-        """Returns a DataFrame from this table."""
-
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Returns a DataFrame from this table with the selected columns."""
         return self.read().select(*columns)
@@ -338,3 +352,55 @@ class Table(ABC):
     def show(self, n: int = 8) -> None:
         """Shows the first n rows from this table."""
         return self.read().show(n)
+
+
+class TableSource:
+    """A TableSource is used to create a new table; this could be a Schema or DataFrame."""
+
+    _source: PyTableSource
+
+    def __init__(self) -> None:
+        raise ValueError("We do not support creating a TableSource via __init__")
+
+    @staticmethod
+    def from_df(df: DataFrame) -> TableSource:
+        s = TableSource.__new__(TableSource)
+        s._source = PyTableSource.from_builder(df._builder._builder)
+        return s
+
+    @staticmethod
+    def _from_obj(obj: object = None) -> TableSource:
+        # TODO for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
+        if obj is None:
+            return TableSource._from_none()
+        elif isinstance(obj, DataFrame):
+            return TableSource.from_df(obj)
+        elif isinstance(obj, str):
+            return TableSource._from_path(obj)
+        elif isinstance(obj, Schema):
+            return TableSource._from_schema(obj)
+        else:
+            raise Exception(f"Unknown table source: {obj}")
+
+    @staticmethod
+    def _from_none() -> TableSource:
+        # for creating temp mutable tables, but we don't have those yet
+        # s = TableSource.__new__(TableSource)
+        # s._source = PyTableSource.empty()
+        # return s
+        # todo temp workaround just use an empty schema
+        return TableSource._from_schema(Schema._from_fields([]))
+
+    @staticmethod
+    def _from_schema(schema: Schema) -> TableSource:
+        # we don't have mutable temp tables, so just make an empty view
+        # s = TableSource.__new__(TableSource)
+        # s._source = PyTableSource.from_schema(schema._schema)
+        # return s
+        # todo temp workaround until create_table is wired
+        return TableSource.from_df(DataFrame._from_pylist([]))
+
+    @staticmethod
+    def _from_path(path: str) -> TableSource:
+        # for supporting daft.create_table("t", "/path/to/data") <-> CREATE TABLE t AS '/path/to/my.data'
+        raise NotImplementedError("creating a table source from a path is not yet supported.")

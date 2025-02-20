@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef};
+use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef, TableSource, View};
 use uuid::Uuid;
 
 use crate::{
@@ -70,6 +70,32 @@ impl Session {
         }
         self.state_mut().tables.insert(alias, table);
         Ok(())
+    }
+
+    /// Creates a temp table scoped to this session from an existing view.
+    ///
+    /// TODO feat: consider making a CreateTableSource object for more complicated options.
+    ///
+    /// ```
+    /// CREATE [OR REPLACE] TEMP TABLE [IF NOT EXISTS] <name> <source>;
+    /// ```
+    pub fn create_temp_table(
+        &self,
+        name: impl Into<String>,
+        source: &TableSource,
+        replace: bool,
+    ) -> Result<TableRef> {
+        let name = name.into();
+        if !replace && self.state().tables.exists(&name) {
+            obj_already_exists_err!("Temporary table", &name.into())
+        }
+        // we don't have mutable temporary tables, only immutable views over dataframes.
+        let table = match source {
+            TableSource::Schema(_) => unsupported_err!("temporary table with schema"),
+            TableSource::View(plan) => View::from(plan.clone()).arced(),
+        };
+        self.state_mut().tables.insert(name, table.clone());
+        Ok(table)
     }
 
     /// Returns the session's current catalog.

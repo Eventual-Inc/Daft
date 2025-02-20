@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use daft_core::prelude::SchemaRef;
+use daft_core::{prelude::SchemaRef, python::PySchema};
 use daft_logical_plan::{LogicalPlanRef, PyLogicalPlanBuilder};
 use pyo3::{exceptions::PyIndexError, intern, prelude::*};
 
 use crate::{
-    error::Result, global_catalog, Catalog, CatalogRef, Identifier, Table, TableRef, View,
+    error::Result, global_catalog, Catalog, CatalogRef, Identifier, Table, TableRef, TableSource,
+    View,
 };
 
 /// Read a table from the specified `DaftMetaCatalog`.
@@ -277,10 +278,41 @@ impl Table for PyTableWrapper {
     }
 }
 
+/// PyTableSource wraps either a schema or dataframe.
+#[pyclass]
+pub struct PyTableSource(TableSource);
+
+impl From<TableSource> for PyTableSource {
+    fn from(source: TableSource) -> Self {
+        Self(source)
+    }
+}
+
+/// PyTableSource -> TableSource
+impl AsRef<TableSource> for PyTableSource {
+    fn as_ref(&self) -> &TableSource {
+        &self.0
+    }
+}
+
+#[pymethods]
+impl PyTableSource {
+    #[staticmethod]
+    pub fn from_schema(schema: PySchema) -> PyTableSource {
+        Self(TableSource::Schema(schema.schema))
+    }
+
+    #[staticmethod]
+    pub fn from_builder(view: &PyLogicalPlanBuilder) -> PyTableSource {
+        Self(TableSource::View(view.builder.build()))
+    }
+}
+
 pub fn register_modules<'py>(parent: &Bound<'py, PyModule>) -> PyResult<Bound<'py, PyModule>> {
     parent.add_class::<PyCatalog>()?;
     parent.add_class::<PyIdentifier>()?;
     parent.add_class::<PyTable>()?;
+    parent.add_class::<PyTableSource>()?;
     // TODO deprecated catalog APIs #3819
     let module = PyModule::new(parent.py(), "catalog")?;
     module.add_wrapped(wrap_pyfunction!(py_read_table))?;

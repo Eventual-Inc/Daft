@@ -1,4 +1,6 @@
-use daft_catalog::python::{PyCatalogWrapper, PyIdentifier, PyTableWrapper};
+use daft_catalog::python::{
+    PyCatalogWrapper, PyIdentifier, PyTable, PyTableSource, PyTableWrapper,
+};
 use pyo3::prelude::*;
 
 use crate::Session;
@@ -19,8 +21,8 @@ impl PySession {
             .attach_catalog(PyCatalogWrapper::wrap(catalog), alias)?)
     }
 
-    pub fn current_catalog(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.0.current_catalog()?.to_py(py)
+    pub fn attach_table(&self, table: PyObject, alias: String) -> PyResult<()> {
+        Ok(self.0.attach_table(PyTableWrapper::wrap(table), alias)?)
     }
 
     pub fn detach_catalog(&self, alias: &str) -> PyResult<()> {
@@ -31,8 +33,19 @@ impl PySession {
         Ok(self.0.detach_table(alias)?)
     }
 
-    pub fn attach_table(&self, table: PyObject, alias: String) -> PyResult<()> {
-        Ok(self.0.attach_table(PyTableWrapper::wrap(table), alias)?)
+    pub fn create_temp_table(
+        &self,
+        name: String,
+        source: &PyTableSource,
+        replace: bool,
+    ) -> PyResult<PyTable> {
+        let table = self.0.create_temp_table(name, source.as_ref(), replace)?;
+        let table = PyTable::new(table);
+        Ok(table)
+    }
+
+    pub fn current_catalog(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.0.current_catalog()?.to_py(py)
     }
 
     pub fn get_catalog(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {

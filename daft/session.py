@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Table
+from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.daft import PySession
 
 if TYPE_CHECKING:
@@ -15,18 +15,11 @@ class Session:
     _session: PySession
 
     def __init__(self):
-        raise NotImplementedError("We do not support creating a Session via __init__ ")
+        self._session = PySession.empty()
 
     ###
     # factory methods
     ###
-
-    @staticmethod
-    def empty() -> Session:
-        """Creates an empty session."""
-        s = Session.__new__(Session)
-        s._session = PySession.empty()
-        return s
 
     @staticmethod
     def _from_pysession(session: PySession) -> Session:
@@ -39,7 +32,7 @@ class Session:
     def _from_env() -> Session:
         """Creates a session from the environment's configuration."""
         # todo session builders, raise if DAFT_SESSION=0
-        return Session.empty()
+        return Session()
 
     ###
     # attach & detach
@@ -62,6 +55,15 @@ class Session:
     def detach_table(self, alias: str):
         """Detaches the table from this session."""
         return self._session.detach_table(alias)
+
+    ###
+    # create_*
+    ###
+
+    def create_temp_table(self, name: str, source: object | TableSource = None) -> Table:
+        """Creates a temp table scoped to this session's lifetime."""
+        s = source if isinstance(source, TableSource) else TableSource._from_obj(source)
+        return self._session.create_temp_table(name, s._source, replace=True)
 
     ###
     # session state

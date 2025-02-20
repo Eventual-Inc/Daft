@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftPlanningConfig;
-use daft_catalog::View;
+use daft_catalog::TableSource;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_session::Session;
@@ -43,8 +43,8 @@ pub fn sql(
 ) -> PyResult<PyLogicalPlanBuilder> {
     // TODO deprecated catalog APIs #3819
     let session = Session::empty();
-    for (name, plan) in catalog.tables {
-        session.attach_table(View::from(plan).arced(), name)?;
+    for (name, view) in catalog.tables {
+        session.create_temp_table(name, &TableSource::View(view), true)?;
     }
     let mut planner = SQLPlanner::new(session.into());
     let plan = planner.plan_sql(sql)?;
