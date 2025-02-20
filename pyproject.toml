@@ -22,9 +22,10 @@ readme = "README.rst"
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
+all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity, dashboard]"]
 aws = ["boto3"]
 azure = []
+dashboard = ["daft_dashboard"]
 deltalake = ["deltalake"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
@@ -96,9 +97,18 @@ root = ".github/ci-scripts"
 [[tool.pyright.executionEnvironments]]
 root = "tools"
 
+[[tool.pyright.executionEnvironments]]
+root = "daft_dashboard"
+
 [tool.pytest.ini_options]
 addopts = "-m 'not (integration or benchmark or hypothesis)'"
 minversion = "6.0"
 testpaths = [
   "tests"
 ]
+
+[tool.uv.sources.daft_dashboard]
+workspace = true
+
+[tool.uv.workspace]
+members = ["daft_dashboard"]
