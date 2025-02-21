@@ -144,6 +144,13 @@ impl<'a> SQLPlanner<'a> {
         }
     }
 
+    /// Set `self.current_plan`. Should only be called once per query.
+    fn set_plan(&mut self, plan: LogicalPlanBuilder) {
+        assert!(self.current_plan.is_none());
+
+        self.current_plan = Some(plan);
+    }
+
     fn update_plan<E>(
         &mut self,
         f: impl FnOnce(&LogicalPlanBuilder) -> Result<LogicalPlanBuilder, E>,
@@ -672,7 +679,7 @@ impl<'a> SQLPlanner<'a> {
         let relation = from.relation.clone();
         let left_plan = self.plan_relation(&relation)?;
         let mut left_planner = self.new_with_context();
-        left_planner.current_plan = Some(left_plan);
+        left_planner.set_plan(left_plan);
 
         for join in &from.joins {
             use sqlparser::ast::{
@@ -689,7 +696,7 @@ impl<'a> SQLPlanner<'a> {
 
             // construct a planner with the right table to use for expr planning
             let mut right_planner = self.new_with_context();
-            right_planner.current_plan = Some(right_plan);
+            right_planner.set_plan(right_plan);
 
             let (join_type, constraint) = match &join.join_operator {
                 Inner(constraint) => (JoinType::Inner, constraint),
@@ -761,7 +768,7 @@ impl<'a> SQLPlanner<'a> {
         Ok(left_planner.current_plan.unwrap())
     }
 
-    /// Plans the FROM clause of a query and populates self.current_relation and self.table_map
+    /// Plans the FROM clause of a query and populates `self.current_relation`.
     /// Should only be called once per query.
     fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<()> {
         let plan = if let Some(plan) = from
@@ -782,10 +789,11 @@ impl<'a> SQLPlanner<'a> {
         {
             plan
         } else {
+            // singleton plan for SELECT without FROM
             singleton_plan()?
         };
 
-        self.current_plan = Some(plan);
+        self.set_plan(plan);
 
         Ok(())
     }
