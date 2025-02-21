@@ -9,9 +9,8 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction, to_cnf};
 use daft_core::join::JoinType;
 use daft_dsl::{
-    col,
     optimization::{get_required_columns, replace_columns_with_expressions},
-    ExprRef,
+    resolved_col, ExprRef,
 };
 
 use super::OptimizerRule;
@@ -179,7 +178,10 @@ impl PushDownFilter {
                 let projection_input_mapping = child_project
                     .projection
                     .iter()
-                    .filter_map(|e| e.input_mapping().map(|s| (e.name().to_string(), col(s))))
+                    .filter_map(|e| {
+                        e.input_mapping()
+                            .map(|s| (e.name().to_string(), resolved_col(s)))
+                    })
                     .collect::<HashMap<String, ExprRef>>();
                 // Split predicate expressions into those that don't depend on projection compute (can_push) and those
                 // that do (can_not_push).
@@ -355,7 +357,7 @@ mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit};
+    use daft_dsl::{lit, resolved_col};
     use daft_functions::uri::download::UrlDownloadArgs;
     use rstest::rstest;
 
@@ -395,7 +397,7 @@ mod tests {
         ]);
         let plan =
             dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_limit(Some(1)))
-                .filter(col("a").lt(lit(2)))?
+                .filter(resolved_col("a").lt(lit(2)))?
                 .build();
         // Plan should be unchanged after optimization.
         let expected = plan.clone();
@@ -406,6 +408,8 @@ mod tests {
     /// Tests combining of two Filters by merging their predicates.
     #[rstest]
     fn filter_combine_with_filter(#[values(false, true)] push_into_scan: bool) -> DaftResult<()> {
+        use daft_dsl::resolved_col;
+
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
@@ -414,8 +418,8 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let p1 = col("a").lt(lit(2));
-        let p2 = col("b").eq(lit("foo"));
+        let p1 = resolved_col("a").lt(lit(2));
+        let p2 = resolved_col("b").eq(lit("foo"));
         let plan = scan_plan.filter(p1.clone())?.filter(p2.clone())?.build();
         let merged_filter = p2.and(p1);
         let expected = if push_into_scan {
@@ -437,7 +441,7 @@ mod tests {
     #[test]
     fn filter_with_udf_not_pushed_down_into_scan() -> DaftResult<()> {
         let pred = daft_functions::uri::download(
-            col("a"),
+            resolved_col("a"),
             Some(UrlDownloadArgs::new(1, true, true, None)),
         );
         let plan = dummy_scan_node(dummy_scan_operator(vec![
@@ -464,8 +468,8 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(lit(2));
-        let proj = vec![col("a")];
+        let pred = resolved_col("a").lt(lit(2));
+        let proj = vec![resolved_col("a")];
         let plan = scan_plan
             .select(proj.clone())?
             .filter(pred.clone())?
@@ -493,8 +497,10 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(lit(2)).and(col("b").eq(lit("foo")));
-        let proj = vec![col("a"), col("b")];
+        let pred = resolved_col("a")
+            .lt(lit(2))
+            .and(resolved_col("b").eq(lit("foo")));
+        let proj = vec![resolved_col("a"), resolved_col("b")];
         let plan = scan_plan
             .select(proj.clone())?
             .filter(pred.clone())?
@@ -517,8 +523,8 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         // Projection involves compute on filtered column "a".
-        .select(vec![col("a").add(lit(1))])?
-        .filter(col("a").lt(lit(2)))?
+        .select(vec![resolved_col("a").add(lit(1))])?
+        .filter(resolved_col("a").lt(lit(2)))?
         .build();
         // Filter should NOT commute with Project, since this would involve redundant computation.
         let expected = plan.clone();
@@ -541,8 +547,8 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(lit(2));
-        let proj = vec![col("a").add(lit(1))];
+        let pred = resolved_col("a").lt(lit(2));
+        let proj = vec![resolved_col("a").add(lit(1))];
         let plan = scan_plan
             // Projection involves compute on filtered column "a".
             .select(proj.clone())?
@@ -569,8 +575,8 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(lit(2));
-        let sort_by = vec![col("a")];
+        let pred = resolved_col("a").lt(lit(2));
+        let sort_by = vec![resolved_col("a")];
         let descending = vec![true];
         let nulls_first = vec![false];
         let plan = scan_plan
@@ -602,9 +608,9 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(lit(2));
+        let pred = resolved_col("a").lt(lit(2));
         let num_partitions = 1;
-        let repartition_by = vec![col("a")];
+        let repartition_by = vec![resolved_col("a")];
         let plan = scan_plan
             .hash_repartition(Some(num_partitions), repartition_by.clone())?
             .filter(pred.clone())?
@@ -639,7 +645,7 @@ mod tests {
             scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
-        let pred = col("a").lt(lit(2));
+        let pred = resolved_col("a").lt(lit(2));
         let plan = left_scan_plan
             .concat(&right_scan_plan)?
             .filter(pred.clone())?
@@ -684,13 +690,13 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
         );
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
-        let join_on = vec![col("b")];
+        let join_on = vec![resolved_col("b")];
         let null_equals_nulls = if null_equals_null {
             Some(vec![true])
         } else {
             None
         };
-        let pred = col("a").lt(lit(2));
+        let pred = resolved_col("a").lt(lit(2));
         let plan = left_scan_plan
             .join_with_null_safe_equal(
                 &right_scan_plan,
@@ -746,13 +752,13 @@ mod tests {
             right_scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
-        let join_on = vec![col("b")];
+        let join_on = vec![resolved_col("b")];
         let null_equals_nulls = if null_equals_null {
             Some(vec![true])
         } else {
             None
         };
-        let pred = col("c").lt(lit(2.0));
+        let pred = resolved_col("c").lt(lit(2.0));
         let plan = left_scan_plan
             .join_with_null_safe_equal(
                 &right_scan_plan,
@@ -823,13 +829,13 @@ mod tests {
             right_scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
-        let join_on = vec![col("b")];
+        let join_on = vec![resolved_col("b")];
         let null_equals_nulls = if null_equals_null {
             Some(vec![true])
         } else {
             None
         };
-        let pred = col("b").lt(lit(2));
+        let pred = resolved_col("b").lt(lit(2));
         let plan = left_scan_plan
             .join_with_null_safe_equal(
                 &right_scan_plan,
@@ -889,13 +895,13 @@ mod tests {
         ]);
         let left_scan_plan = dummy_scan_node(left_scan_op.clone());
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
-        let join_on = vec![col("b")];
+        let join_on = vec![resolved_col("b")];
         let null_equals_nulls = if null_equal_null {
             Some(vec![true])
         } else {
             None
         };
-        let pred = col("a").lt(lit(2));
+        let pred = resolved_col("a").lt(lit(2));
         let plan = left_scan_plan
             .join_with_null_safe_equal(
                 &right_scan_plan,
@@ -930,13 +936,13 @@ mod tests {
         ]);
         let left_scan_plan = dummy_scan_node(left_scan_op.clone());
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
-        let join_on = vec![col("b")];
+        let join_on = vec![resolved_col("b")];
         let null_equals_nulls = if null_equal_null {
             Some(vec![true])
         } else {
             None
         };
-        let pred = col("c").lt(lit(2.0));
+        let pred = resolved_col("c").lt(lit(2.0));
         let plan = left_scan_plan
             .join_with_null_safe_equal(
                 &right_scan_plan,
@@ -972,22 +978,30 @@ mod tests {
                 Default::default(),
             )?
             .filter(
-                (col("a").eq(lit("FRANCE")).and(col("b").eq(lit("GERMANY"))))
-                    .or(col("a").eq(lit("GERMANY")).and(col("b").eq(lit("FRANCE")))),
+                (resolved_col("a")
+                    .eq(lit("FRANCE"))
+                    .and(resolved_col("b").eq(lit("GERMANY"))))
+                .or(resolved_col("a")
+                    .eq(lit("GERMANY"))
+                    .and(resolved_col("b").eq(lit("FRANCE")))),
             )?
             .build();
 
         let expected = dummy_scan_node_with_pushdowns(
             left_scan_op,
             Pushdowns::default().with_filters(Some(
-                col("a").eq(lit("FRANCE")).or(col("a").eq(lit("GERMANY"))),
+                resolved_col("a")
+                    .eq(lit("FRANCE"))
+                    .or(resolved_col("a").eq(lit("GERMANY"))),
             )),
         )
         .join(
             dummy_scan_node_with_pushdowns(
                 right_scan_op,
                 Pushdowns::default().with_filters(Some(
-                    col("b").eq(lit("GERMANY")).or(col("b").eq(lit("FRANCE"))),
+                    resolved_col("b")
+                        .eq(lit("GERMANY"))
+                        .or(resolved_col("b").eq(lit("FRANCE"))),
                 )),
             ),
             vec![],
@@ -997,8 +1011,14 @@ mod tests {
             Default::default(),
         )?
         .filter(
-            (col("a").eq(lit("FRANCE")).or(col("b").eq(lit("FRANCE"))))
-                .and(col("b").eq(lit("GERMANY")).or(col("a").eq(lit("GERMANY")))),
+            (resolved_col("a")
+                .eq(lit("FRANCE"))
+                .or(resolved_col("b").eq(lit("FRANCE"))))
+            .and(
+                resolved_col("b")
+                    .eq(lit("GERMANY"))
+                    .or(resolved_col("a").eq(lit("GERMANY"))),
+            ),
         )?
         .build();
 

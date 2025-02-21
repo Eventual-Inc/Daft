@@ -17,7 +17,7 @@ def test_dataframe_getitem_single(valid_data: list[dict[str, float]]) -> None:
 
 def test_dataframe_getitem_single_bad(valid_data: list[dict[str, float]]) -> None:
     df = daft.from_pylist(valid_data)
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(ValueError, match="foo does not exist in schema"):
         df["foo"]
 
     with pytest.raises(ValueError, match="bounds"):

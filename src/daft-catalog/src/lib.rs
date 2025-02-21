@@ -60,7 +60,7 @@ pub struct DaftCatalog {
     data_catalogs: HashMap<String, Arc<dyn DataCatalog>>,
 
     /// LogicalPlans that were "named" and registered with Daft
-    named_tables: HashMap<String, LogicalPlanBuilder>,
+    named_tables: HashMap<Arc<str>, LogicalPlanBuilder>,
 }
 
 impl DaftCatalog {
@@ -133,7 +133,10 @@ impl DaftCatalog {
         // Check the default catalog for a match
         if let Some(default_data_catalog) = self.data_catalogs.get(DEFAULT_CATALOG_NAME) {
             if let Some(tbl) = default_data_catalog.get_table(table_identifier)? {
-                return tbl.as_ref().to_logical_plan_builder();
+                return Ok(tbl
+                    .as_ref()
+                    .to_logical_plan_builder()?
+                    .alias(searched_table_name));
             }
         }
 
@@ -143,7 +146,10 @@ impl DaftCatalog {
                 searched_catalog_name = catalog_name;
                 searched_table_name = table_name;
                 if let Some(tbl) = data_catalog.get_table(table_name)? {
-                    return tbl.as_ref().to_logical_plan_builder();
+                    return Ok(tbl
+                        .as_ref()
+                        .to_logical_plan_builder()?
+                        .alias(searched_table_name));
                 }
             }
         }

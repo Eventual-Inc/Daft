@@ -6,7 +6,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_core::join::JoinType;
-use daft_dsl::{col, optimization::replace_columns_with_expressions, ExprRef};
+use daft_dsl::{optimization::replace_columns_with_expressions, resolved_col, ExprRef};
 
 use crate::{
     ops::{Filter, Join, Project},
@@ -465,8 +465,8 @@ impl JoinGraph {
                 let mut left_cols = vec![];
                 let mut right_cols = vec![];
                 for cond in conds {
-                    left_cols.push(col(cond.left_on.clone()));
-                    right_cols.push(col(cond.right_on.clone()));
+                    left_cols.push(resolved_col(cond.left_on.clone()));
+                    right_cols.push(resolved_col(cond.right_on.clone()));
                 }
                 Ok(left_builder.inner_join(right_builder, left_cols, right_cols)?)
             }
@@ -615,7 +615,7 @@ impl JoinGraphBuilder {
         let output_projection = output_schema
             .fields
             .iter()
-            .map(|(name, _)| col(name.clone()))
+            .map(|(name, _)| resolved_col(name.clone()))
             .collect();
         Self {
             plan,
@@ -746,7 +746,7 @@ impl JoinGraphBuilder {
                             self.final_name_map.insert(input.clone(), final_name);
                         } else {
                             self.final_name_map
-                                .insert(input.clone(), col(output.clone()));
+                                .insert(input.clone(), resolved_col(output.clone()));
                         }
                     }
                     if !compute_projections.is_empty() {
@@ -784,7 +784,8 @@ impl JoinGraphBuilder {
                     let final_name = if let Some(final_name) = self.final_name_map.get(name) {
                         final_name.name()
                     } else {
-                        self.final_name_map.insert(name.to_string(), col(name));
+                        self.final_name_map
+                            .insert(name.to_string(), resolved_col(name));
                         name
                     };
                     self.join_conds_to_resolve.push((
@@ -803,7 +804,8 @@ impl JoinGraphBuilder {
                     let final_name = if let Some(final_name) = self.final_name_map.get(name) {
                         final_name.name()
                     } else {
-                        self.final_name_map.insert(name.to_string(), col(name));
+                        self.final_name_map
+                            .insert(name.to_string(), resolved_col(name));
                         name
                     };
                     self.join_conds_to_resolve.push((
@@ -852,10 +854,10 @@ impl JoinGraphBuilder {
                 seen_names.insert(input);
                 let final_name = final_name.name().to_string();
                 if final_name != *input {
-                    projections.push(col(input.clone()).alias(final_name));
+                    projections.push(resolved_col(input.clone()).alias(final_name));
                     needs_projection = true;
                 } else {
-                    projections.push(col(input.clone()));
+                    projections.push(resolved_col(input.clone()));
                 }
             }
         }
@@ -864,7 +866,7 @@ impl JoinGraphBuilder {
             // Add the non-join-key columns to the projection.
             for name in &schema.names() {
                 if !seen_names.contains(name) {
-                    projections.push(col(name.clone()));
+                    projections.push(resolved_col(name.clone()));
                 }
             }
             let projected_plan = LogicalPlanBuilder::from(plan.clone())
@@ -892,7 +894,7 @@ mod tests {
     use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_core::prelude::CountMode;
-    use daft_dsl::{col, AggExpr, Expr, LiteralValue};
+    use daft_dsl::{resolved_col, unresolved_col, AggExpr, Expr, LiteralValue};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::JoinGraphBuilder;
@@ -925,31 +927,23 @@ mod tests {
             dummy_scan_operator_with_size(vec![Field::new("c_prime", DataType::Int64)], Some(100)),
             Pushdowns::default(),
         )
-        .select(vec![col("c_prime").alias("c")])
+        .select(vec![unresolved_col("c_prime").alias("c")])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator_with_size(vec![Field::new("d", DataType::Int64)], Some(100)),
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(
-                scan_b,
-                vec![Arc::new(Expr::Column(Arc::from("a")))],
-                vec![Arc::new(Expr::Column(Arc::from("b")))],
-            )
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(
-                scan_d,
-                vec![Arc::new(Expr::Column(Arc::from("c")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
-            )
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap();
         let join_plan = join_plan_l
             .inner_join(
                 join_plan_r,
-                vec![Arc::new(Expr::Column(Arc::from("a")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("d")],
             )
             .unwrap();
         let original_plan = join_plan.build();
@@ -1003,31 +997,23 @@ mod tests {
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![col("c_prime").alias("c")])
+        .select(vec![unresolved_col("c_prime").alias("c")])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(
-                scan_b,
-                vec![Arc::new(Expr::Column(Arc::from("a")))],
-                vec![Arc::new(Expr::Column(Arc::from("b")))],
-            )
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(
-                scan_d,
-                vec![Arc::new(Expr::Column(Arc::from("c")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
-            )
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap();
         let join_plan = join_plan_l
             .inner_join(
                 join_plan_r,
-                vec![Arc::new(Expr::Column(Arc::from("b")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
+                vec![unresolved_col("b")],
+                vec![unresolved_col("d")],
             )
             .unwrap();
         let original_plan = join_plan.build();
@@ -1076,7 +1062,7 @@ mod tests {
             dummy_scan_operator(vec![Field::new("a", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![col("a").alias("a_alpha")])
+        .select(vec![unresolved_col("a").alias("a_alpha")])
         .unwrap();
         let scan_b = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("b", DataType::Int64)]),
@@ -1089,17 +1075,20 @@ mod tests {
         let join_plan_1 = scan_a
             .inner_join(
                 scan_b,
-                vec![Arc::new(Expr::Column(Arc::from("a_alpha")))],
-                vec![Arc::new(Expr::Column(Arc::from("b")))],
+                vec![unresolved_col("a_alpha")],
+                vec![unresolved_col("b")],
             )
             .unwrap()
-            .select(vec![col("a_alpha").alias("a_beta"), col("b")])
+            .select(vec![
+                unresolved_col("a_alpha").alias("a_beta"),
+                unresolved_col("b"),
+            ])
             .unwrap();
         let join_plan_2 = join_plan_1
             .inner_join(
                 scan_c,
-                vec![Arc::new(Expr::Column(Arc::from("a_beta")))],
-                vec![Arc::new(Expr::Column(Arc::from("c")))],
+                vec![unresolved_col("a_beta")],
+                vec![unresolved_col("c")],
             )
             .unwrap();
         let original_plan = join_plan_2.build();
@@ -1143,36 +1132,33 @@ mod tests {
             dummy_scan_operator(vec![Field::new("b", DataType::Int64)]),
             Pushdowns::default(),
         );
-        let double_proj = col("c_prime").add(col("c_prime")).alias("double");
+        let double_proj = unresolved_col("c_prime")
+            .add(unresolved_col("c_prime"))
+            .alias("double");
         let scan_c = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![col("c_prime").alias("c"), double_proj.clone()])
+        .select(vec![
+            unresolved_col("c_prime").alias("c"),
+            double_proj.clone(),
+        ])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(
-                scan_b,
-                vec![Arc::new(Expr::Column(Arc::from("a")))],
-                vec![Arc::new(Expr::Column(Arc::from("b")))],
-            )
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(
-                scan_d,
-                vec![Arc::new(Expr::Column(Arc::from("c")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
-            )
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap();
         let join_plan = join_plan_l
             .inner_join(
                 join_plan_r,
-                vec![Arc::new(Expr::Column(Arc::from("a")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("d")],
             )
             .unwrap();
         let original_plan = join_plan.build();
@@ -1231,16 +1217,22 @@ mod tests {
             dummy_scan_operator(vec![Field::new("b", DataType::Int64)]),
             Pushdowns::default(),
         );
-        let double_proj = col("c_prime").add(col("c_prime")).alias("double");
-        let filter_c_prime = col("c_prime").gt(Arc::new(Expr::Literal(LiteralValue::Int64(0))));
-        let filter_c = col("c").lt(Arc::new(Expr::Literal(LiteralValue::Int64(5))));
+        let double_proj = unresolved_col("c_prime")
+            .add(unresolved_col("c_prime"))
+            .alias("double");
+        let filter_c_prime =
+            unresolved_col("c_prime").gt(Arc::new(Expr::Literal(LiteralValue::Int64(0))));
+        let filter_c = unresolved_col("c").lt(Arc::new(Expr::Literal(LiteralValue::Int64(5))));
         let scan_c = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
         .filter(filter_c_prime.clone())
         .unwrap()
-        .select(vec![col("c_prime").alias("c"), double_proj.clone()])
+        .select(vec![
+            unresolved_col("c_prime").alias("c"),
+            double_proj.clone(),
+        ])
         .unwrap()
         .filter(filter_c.clone())
         .unwrap();
@@ -1249,27 +1241,21 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(
-                scan_b,
-                vec![Arc::new(Expr::Column(Arc::from("a")))],
-                vec![Arc::new(Expr::Column(Arc::from("b")))],
-            )
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
-        let quad_proj = col("double").add(col("double")).alias("quad");
+        let quad_proj = unresolved_col("double")
+            .add(unresolved_col("double"))
+            .alias("quad");
         let join_plan_r = scan_c
-            .inner_join(
-                scan_d,
-                vec![Arc::new(Expr::Column(Arc::from("c")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
-            )
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap()
-            .select(vec![col("d"), quad_proj.clone()])
+            .select(vec![unresolved_col("d"), quad_proj.clone()])
             .unwrap();
         let join_plan = join_plan_l
             .inner_join(
                 join_plan_r,
-                vec![Arc::new(Expr::Column(Arc::from("a")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("d")],
             )
             .unwrap();
         let original_plan = join_plan.build();
@@ -1301,7 +1287,11 @@ mod tests {
         ]));
         // Check for non-join projections and filters at the end.
         // The join graph should only keep track of projections and filters that sit between joins.
-        assert!(join_graph.contains_projections_and_filters(vec![&quad_proj,]));
+        assert!(
+            join_graph.contains_projections_and_filters(vec![&resolved_col("double")
+                .add(resolved_col("double"))
+                .alias("quad"),])
+        );
     }
 
     #[test]
@@ -1317,7 +1307,7 @@ mod tests {
         //      (a <- a_prime)
         //       |
         //      Scan(a_prime)
-        let a_proj = col("a_prime").alias("a");
+        let a_proj = unresolved_col("a_prime").alias("a");
         let scan_a = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("a_prime", DataType::Int64)]),
             Pushdowns::default(),
@@ -1326,7 +1316,7 @@ mod tests {
         .unwrap()
         .aggregate(
             vec![Arc::new(Expr::Agg(AggExpr::Count(
-                col("a"),
+                unresolved_col("a"),
                 CountMode::All,
             )))],
             vec![],
@@ -1340,31 +1330,23 @@ mod tests {
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![col("c_prime").alias("c")])
+        .select(vec![unresolved_col("c_prime").alias("c")])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(
-                scan_b,
-                vec![Arc::new(Expr::Column(Arc::from("a")))],
-                vec![Arc::new(Expr::Column(Arc::from("b")))],
-            )
+            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(
-                scan_d,
-                vec![Arc::new(Expr::Column(Arc::from("c")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
-            )
+            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
             .unwrap();
         let join_plan = join_plan_l
             .inner_join(
                 join_plan_r,
-                vec![Arc::new(Expr::Column(Arc::from("a")))],
-                vec![Arc::new(Expr::Column(Arc::from("d")))],
+                vec![unresolved_col("a")],
+                vec![unresolved_col("d")],
             )
             .unwrap();
         let original_plan = join_plan.build();
@@ -1395,6 +1377,8 @@ mod tests {
             "Source(b) <-> Source(d)",     // Inferred edge.
         ]));
         // Projections below the aggregation should not be part of the final projections.
-        assert!(!join_graph.contains_projections_and_filters(vec![&a_proj]));
+        assert!(
+            !join_graph.contains_projections_and_filters(vec![&resolved_col("a_prime").alias("a")])
+        );
     }
 }

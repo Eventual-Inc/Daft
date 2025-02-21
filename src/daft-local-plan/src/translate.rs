@@ -181,7 +181,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 .schema()
                 .names()
                 .iter()
-                .map(|name| daft_dsl::col(name.clone()))
+                .map(|name| daft_dsl::resolved_col(name.clone()))
                 .collect::<Vec<ExprRef>>();
             Ok(LocalPhysicalPlan::hash_aggregate(
                 input,
@@ -258,6 +258,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 explode.stats_state.clone(),
             ))
         }
-        _ => todo!("{} not yet implemented", plan.name()),
+        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
+            "Intersect should already be optimized away".to_string(),
+        )),
+        LogicalPlan::Union(_) => Err(DaftError::InternalError(
+            "Union should already be optimized away".to_string(),
+        )),
+        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
+            "Alias should already be optimized away".to_string(),
+        )),
     }
 }

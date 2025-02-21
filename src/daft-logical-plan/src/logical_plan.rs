@@ -6,7 +6,8 @@ use std::{
 };
 
 use common_display::ascii::AsciiTreeDisplay;
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
+use common_treenode::TreeNodeRecursion;
 use daft_dsl::{optimization::get_required_columns, Subquery, SubqueryPlan};
 use daft_schema::schema::SchemaRef;
 use indexmap::IndexSet;
@@ -37,9 +38,29 @@ pub enum LogicalPlan {
     Sink(Sink),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    SubqueryAlias(SubqueryAlias),
 }
 
 pub type LogicalPlanRef = Arc<LogicalPlan>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SubqueryAlias {
+    pub input: LogicalPlanRef,
+    pub name: Arc<str>,
+}
+
+impl SubqueryAlias {
+    pub fn new(input: LogicalPlanRef, name: impl Into<Arc<str>>) -> Self {
+        Self {
+            input,
+            name: name.into(),
+        }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec![format!("Alias"), format!("name = {}", self.name)]
+    }
+}
 
 impl LogicalPlan {
     pub fn arced(self) -> Arc<Self> {
@@ -75,6 +96,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => {
                 schema.clone()
             }
+            Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.schema(),
         }
     }
 
@@ -177,6 +199,7 @@ impl LogicalPlan {
             Self::Union(_) => vec![IndexSet::new(), IndexSet::new()],
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
+            Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
         }
     }
 
@@ -201,6 +224,7 @@ impl LogicalPlan {
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
+            Self::SubqueryAlias(..) => "Alias",
         }
     }
 
@@ -231,6 +255,9 @@ impl LogicalPlan {
             Self::Union(_) => {
                 panic!("Union nodes should be optimized away before stats are materialized")
             }
+            Self::SubqueryAlias(_) => {
+                panic!("Alias nodes should be optimized away before stats are materialized")
+            }
         }
     }
 
@@ -260,6 +287,9 @@ impl LogicalPlan {
             }
             Self::Union(_) => {
                 panic!("Union should be optimized away before stats are derived")
+            }
+            Self::SubqueryAlias(_) => {
+                panic!("Alias should be optimized away before stats are derived")
             }
             Self::Join(plan) => Self::Join(plan.with_materialized_stats()),
             Self::Sink(plan) => Self::Sink(plan.with_materialized_stats()),
@@ -293,6 +323,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
+            Self::SubqueryAlias(alias) => alias.multiline_display(),
         }
     }
 
@@ -319,6 +350,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
             }
+            Self::SubqueryAlias(SubqueryAlias { input, .. }) => vec![input],
         }
     }
 
@@ -343,6 +375,7 @@ impl LogicalPlan {
                 Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) =>
                     Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
                 Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
+                Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone())),
                 Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
                 Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
                 Self::Union(_) => panic!("Union ops should never have only one input, but got one"),
@@ -394,6 +427,50 @@ impl LogicalPlan {
         let mut s = String::new();
         self.fmt_tree_indent_style(0, &mut s).unwrap();
         s
+    }
+
+    pub fn get_aliases(self: Arc<Self>) -> Vec<Arc<str>> {
+        use common_treenode::TreeNode;
+
+        let mut names = Vec::new();
+
+        self.apply(|node| {
+            if let Self::SubqueryAlias(SubqueryAlias { name, .. }) = node.as_ref() {
+                names.push(name.clone());
+                Ok(TreeNodeRecursion::Jump)
+            } else {
+                Ok(TreeNodeRecursion::Continue)
+            }
+        })
+        .unwrap();
+
+        names
+    }
+
+    pub fn get_schema_for_alias(self: Arc<Self>, alias: &str) -> DaftResult<Option<SchemaRef>> {
+        use common_treenode::TreeNode;
+
+        let mut schema = None;
+
+        self.apply(|node| {
+            if let Self::SubqueryAlias(SubqueryAlias { name, .. }) = node.as_ref()
+                && name.as_ref() == alias
+            {
+                if schema.is_some() {
+                    return Err(DaftError::ValueError(format!(
+                        "Plan must not have duplicate aliases in the same scope, found: {alias}"
+                    )));
+                }
+
+                schema = Some(node.schema());
+
+                Ok(TreeNodeRecursion::Jump)
+            } else {
+                Ok(TreeNodeRecursion::Continue)
+            }
+        })?;
+
+        Ok(schema)
     }
 }
 

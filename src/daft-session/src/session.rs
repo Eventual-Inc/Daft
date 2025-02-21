@@ -86,7 +86,9 @@ impl Session {
         if name.has_namespace() {
             unsupported_err!("Creating a table with a namespace is not yet supported, Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name);
         }
-        self.state_mut().tables.insert(name.name, view.into());
+        self.state_mut()
+            .tables
+            .insert(name.name.clone(), view.into().alias(name.name));
         Ok(())
     }
 
