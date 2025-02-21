@@ -104,6 +104,8 @@ impl std::hash::Hash for Subquery {
 
 pub type ExprRef = Arc<Expr>;
 
+pub mod window;
+
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
     #[display("{_0} as {_1}")]
