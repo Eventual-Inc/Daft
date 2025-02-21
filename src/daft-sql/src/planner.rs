@@ -555,38 +555,8 @@ impl<'a> SQLPlanner<'a> {
         })
     }
 
-    /// Plans the FROM clause of a query and populates self.current_relation and self.table_map
-    /// Should only be called once per query.
-    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<()> {
-        if from.len() > 1 {
-            let mut from_iter = from.iter();
-
-            let first = from_iter.next().unwrap();
-            let mut plan = self.plan_relation(&first.relation)?;
-            for tbl in from_iter {
-                let right = self.plan_relation(&tbl.relation)?;
-
-                let mut join_options = JoinOptions::default();
-                if let [id] = right.plan.clone().get_aliases().as_slice() {
-                    join_options = join_options.prefix(format!("{id}."));
-                }
-
-                plan = plan.cross_join(right, join_options)?;
-            }
-            self.current_plan = Some(plan);
-            return Ok(());
-        }
-
-        if from.is_empty() {
-            self.current_plan = Some(singleton_plan()?);
-            return Ok(());
-        }
-
-        let from = from
-            .iter()
-            .next()
-            .expect("expected at least one from source");
-
+    /// Plans a single set of table and joins in a FROM clause.
+    fn plan_single_from(&self, from: &TableWithJoins) -> SQLPlannerResult<LogicalPlanBuilder> {
         macro_rules! return_non_ident_errors {
             ($e:expr) => {
                 if !matches!(
@@ -701,7 +671,8 @@ impl<'a> SQLPlanner<'a> {
 
         let relation = from.relation.clone();
         let left_plan = self.plan_relation(&relation)?;
-        self.current_plan = Some(left_plan);
+        let mut left_planner = self.new_with_context();
+        left_planner.current_plan = Some(left_plan);
 
         for join in &from.joins {
             use sqlparser::ast::{
@@ -742,7 +713,7 @@ impl<'a> SQLPlanner<'a> {
 
                     process_join_on(
                         expr,
-                        self,
+                        &left_planner,
                         &right_planner,
                         &mut left_on,
                         &mut right_on,
@@ -767,14 +738,14 @@ impl<'a> SQLPlanner<'a> {
             };
 
             if let Some(left_predicate) = combine_conjunction(left_filters) {
-                self.update_plan(|plan| plan.filter(left_predicate))?;
+                left_planner.update_plan(|plan| plan.filter(left_predicate))?;
             }
 
             if let Some(right_predicate) = combine_conjunction(right_filters) {
                 right_planner.update_plan(|plan| plan.filter(right_predicate))?;
             }
 
-            self.update_plan(|plan| {
+            left_planner.update_plan(|plan| {
                 plan.join_with_null_safe_equal(
                     right_planner.current_plan.unwrap(),
                     left_on,
@@ -786,6 +757,35 @@ impl<'a> SQLPlanner<'a> {
                 )
             })?;
         }
+
+        Ok(left_planner.current_plan.unwrap())
+    }
+
+    /// Plans the FROM clause of a query and populates self.current_relation and self.table_map
+    /// Should only be called once per query.
+    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<()> {
+        let plan = if let Some(plan) = from
+            .iter()
+            .map(|f| self.plan_single_from(f))
+            .reduce(|left, right| {
+                let left = left?;
+                let right = right?;
+
+                let mut join_options = JoinOptions::default();
+                if let [id] = right.plan.clone().get_aliases().as_slice() {
+                    join_options = join_options.prefix(format!("{id}."));
+                }
+
+                Ok(left.cross_join(right, join_options)?)
+            })
+            .transpose()?
+        {
+            plan
+        } else {
+            singleton_plan()?
+        };
+
+        self.current_plan = Some(plan);
 
         Ok(())
     }

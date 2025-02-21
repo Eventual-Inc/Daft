@@ -475,4 +475,49 @@ mod tests {
 
         Ok(())
     }
+
+    #[rstest]
+    fn test_multiple_from_with_join(
+        mut planner: SQLPlanner,
+        tbl_1: LogicalPlanRef,
+        tbl_2: LogicalPlanRef,
+        tbl_3: LogicalPlanRef,
+    ) -> SQLPlannerResult<()> {
+        let sql = "select tbl2.val from tbl1 left join tbl2 on tbl1.utf8 = tbl2.text, (tbl1 as tbl4) right join tbl3 on tbl4.i32 = tbl3.id";
+        let plan = planner.plan_sql(sql)?;
+
+        let first_from = LogicalPlanBuilder::from(tbl_1.clone())
+            .alias("tbl1")
+            .join_with_null_safe_equal(
+                LogicalPlanBuilder::from(tbl_2).alias("tbl2"),
+                vec![unresolved_col("utf8")],
+                vec![unresolved_col("text")],
+                Some(vec![false]),
+                JoinType::Left,
+                None,
+                JoinOptions::default().prefix("tbl2."),
+            )?;
+
+        let second_from = LogicalPlanBuilder::from(tbl_1)
+            .alias("tbl1")
+            .alias("tbl4")
+            .join_with_null_safe_equal(
+                LogicalPlanBuilder::from(tbl_3).alias("tbl3"),
+                vec![unresolved_col("i32")],
+                vec![unresolved_col("id")],
+                Some(vec![false]),
+                JoinType::Right,
+                None,
+                JoinOptions::default().prefix("tbl3."),
+            )?;
+
+        let expected = first_from
+            .cross_join(second_from, JoinOptions::default())?
+            .select(vec![unresolved_col("val")])?
+            .build();
+
+        assert_eq!(plan, expected);
+
+        Ok(())
+    }
 }
