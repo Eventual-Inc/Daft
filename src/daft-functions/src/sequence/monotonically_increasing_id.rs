@@ -6,8 +6,13 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Marker trait for special functions that must be handled by the planner
+pub trait SpecialFunction {}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct MonotonicallyIncreasingId {}
+
+impl SpecialFunction for MonotonicallyIncreasingId {}
 
 #[typetag::serde]
 impl ScalarUDF for MonotonicallyIncreasingId {
@@ -30,10 +35,13 @@ impl ScalarUDF for MonotonicallyIncreasingId {
     }
 
     fn evaluate(&self, _inputs: &[Series]) -> DaftResult<Series> {
-        // TODO: Implement actual monotonically increasing ID generation
         Err(DaftError::NotImplemented(
-            "monotonically_increasing_id not yet implemented".to_string(),
+            "monotonically_increasing_id is a special function that must be handled by the query planner".to_string(),
         ))
+    }
+
+    fn is_special(&self) -> bool {
+        true
     }
 }
 
