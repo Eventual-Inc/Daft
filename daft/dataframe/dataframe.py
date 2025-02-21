@@ -832,12 +832,13 @@ class DataFrame:
 
         data_files_protocol = get_protocol_from_path(table.metadata.location)
         for data_file in data_files:
+            file_path = data_file.file_path
             operations.append("ADD")
-            path.append(data_file.file_path)
+            path.append(file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
             data_file_with_protocol = copy.deepcopy(data_file)
-            data_file_with_protocol.file_path = f"{data_files_protocol}://{data_file_with_protocol.file_path}"
+            data_file_with_protocol.file_path = f"{data_files_protocol}://{file_path}"
             data_files_with_protocol.append(data_file_with_protocol)
 
             for field in partitioning.keys():
