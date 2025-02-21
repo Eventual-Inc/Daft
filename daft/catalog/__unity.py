@@ -5,7 +5,7 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Table
+from daft.catalog import Catalog, Identifier, Table
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
@@ -33,16 +33,13 @@ class UnityCatalog(Catalog):
             return c
         raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
 
-    @property
-    def inner(self) -> InnerCatalog:
-        """Returns the inner unity catalog."""
-        return self._inner
-
     ###
     # get_*
     ###
 
-    def get_table(self, name: str) -> UnityTable:
+    def get_table(self, name: str | Identifier) -> UnityTable:
+        if isinstance(name, Identifier):
+            name = ".".join(name)  # TODO unity qualified identifiers
         return UnityTable(self._inner.load_table(name))
 
     ###
@@ -74,7 +71,21 @@ class UnityTable(Table):
     _inner: InnerTable
 
     def __init__(self, unity_table: InnerTable):
+        """DEPRECATED: Please use `Table.from_unity`; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Table.from_unity` instead; version 0.5.0!",
+            category=DeprecationWarning,
+        )
         self._inner = unity_table
+
+    @staticmethod
+    def _from_obj(obj: object) -> UnityTable | None:
+        """Returns a UnityTable if the given object can be adapted so."""
+        if isinstance(obj, InnerTable):
+            t = UnityTable.__new__(UnityTable)
+            t._inner = obj
+            return t
+        raise ValueError(f"Unsupported unity table type: {type(obj)}")
 
     @staticmethod
     def _try_from(obj: object) -> UnityTable | None:

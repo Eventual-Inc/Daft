@@ -168,6 +168,12 @@ impl<'a> SQLPlanner<'a> {
         Ref::map(self.context.borrow(), |i| &i.bound_ctes)
     }
 
+    fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
+        let table = self.session().get_table(name)?;
+        let plan = table.get_logical_plan()?;
+        Ok(plan.into())
+    }
+
     /// Borrow the planning session
     fn session(&self) -> Ref<'_, Rc<Session>> {
         Ref::map(self.context.borrow(), |i| &i.session)
@@ -802,7 +808,7 @@ impl<'a> SQLPlanner<'a> {
                 ..
             } => {
                 let tbl_fn = name.0.first().unwrap().value.as_str();
-                (self.plan_table_function(tbl_fn, args)?, alias)
+                (self.plan_table_function(tbl_fn, args)?, alias.clone())
             }
             sqlparser::ast::TableFactor::Table {
                 name,
@@ -815,6 +821,20 @@ impl<'a> SQLPlanner<'a> {
                 } else {
                     self.plan_relation_table(name)?
                 };
+
+                // we require all logical plans to be named, apply the name from the identifier used to resolve this relation.
+                let alias = if let Some(alias) = alias {
+                    Some(alias.clone())
+                } else {
+                    let name = name
+                        .0
+                        .last()
+                        .expect("table name must have at least 1 identifier part")
+                        .clone();
+                    let columns = vec![];
+                    Some(TableAlias { name, columns })
+                };
+
                 (plan, alias)
             }
             sqlparser::ast::TableFactor::Derived {
@@ -826,7 +846,7 @@ impl<'a> SQLPlanner<'a> {
                     unsupported_sql_err!("LATERAL");
                 }
                 let subquery = self.new_with_context().plan_query(subquery)?;
-                (subquery, alias)
+                (subquery, alias.clone())
             }
             sqlparser::ast::TableFactor::TableFunction { .. } => {
                 unsupported_sql_err!("Unsupported table factor: TableFunction")
@@ -854,7 +874,7 @@ impl<'a> SQLPlanner<'a> {
             }
         };
         if let Some(alias) = alias {
-            apply_table_alias(plan, alias)
+            apply_table_alias(plan, &alias)
         } else {
             Ok(plan)
         }
@@ -886,14 +906,14 @@ impl<'a> SQLPlanner<'a> {
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let ident = normalize(name);
         let table = if ident.has_namespace() {
-            // qualified search of sesison metadata
-            self.session().get_table(&ident).ok()
+            // qualified search of session metadata
+            self.get_table(&ident).ok()
         } else {
             // search bindings then session metadata
             self.bound_ctes()
                 .get(&ident.name)
                 .cloned()
-                .or_else(|| self.session().get_table(&ident).ok())
+                .or_else(|| self.get_table(&ident).ok())
         };
         table.ok_or_else(|| PlannerError::table_not_found(ident.to_string()))
     }
@@ -976,7 +996,7 @@ impl<'a> SQLPlanner<'a> {
         if let Some(parent) = self.parent {
             parent.plan_identifier(idents)
         } else {
-            column_not_found_err!(full_name, "")
+            column_not_found_err!(full_name, "current scope")
         }
     }
 
