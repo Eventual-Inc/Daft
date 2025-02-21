@@ -1,15 +1,12 @@
-"""The `daft.catalog` module contains functionality for Data Catalogs.
+"""The `daft.catalog` module contains functionality for Catalogs.
 
-A Data Catalog can be understood as a system/service for users to discover, access and query their data.
-Most commonly, users' data is represented as a "table". Some more modern Data Catalogs such as Unity Catalog
+A Catalog can be understood as a system/service for users to discover, access and query their data.
+Most commonly, users' data is represented as a "table". Some more modern Catalogs such as Unity Catalog
 also expose other types of data including files, ML models, registered functions and more.
 
-Examples of Data Catalogs include AWS Glue, Hive Metastore, Apache Iceberg REST and Unity Catalog.
+Examples of Catalogs include AWS Glue, Hive Metastore, Apache Iceberg REST and Unity Catalog.
 
-Daft manages Data Catalogs by registering them in an internal meta-catalog, called the "DaftMetaCatalog". This
-is simple a collection of data catalogs, which Daft will attempt to detect from a users' current environment.
-
-**Data Catalog**
+**Catalog**
 
 Daft recognizes a default catalog which it will attempt to use when no specific catalog name is provided.
 
@@ -20,13 +17,14 @@ daft.read_table("my_db.my_namespace.my_table")
 
 **Named Tables**
 
-Daft allows also the registration of named tables, which have no catalog associated with them.
+Daft allows also the registration of temporary tables, which have no catalog associated with them.
 
-Note that named tables take precedence over the default catalog's table names when resolving names.
+Note that temporary tables take precedence over catalog tables when resolving unqualified names.
 
 ```python
 df = daft.from_pydict({"foo": [1, 2, 3]})
 
+# TODO deprecated catalog APIs #3819
 daft.catalog.register_table(
     "my_table",
     df,
@@ -40,8 +38,12 @@ df2 = daft.sql("SELECT * FROM my_table")
 
 from __future__ import annotations
 
+import warnings
+
+from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from daft.daft import catalog as native_catalog
+from daft.daft import PyIdentifier
 from daft.logical.builder import LogicalPlanBuilder
 
 from daft.dataframe import DataFrame
@@ -49,22 +51,25 @@ from daft.dataframe import DataFrame
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyiceberg.catalog import Catalog as PyIcebergCatalog
-    from daft.unity_catalog import UnityCatalog
+    from daft.dataframe.dataframe import ColumnInputType
 
 
 __all__ = [
+    "Catalog",
     "Identifier",
+    "Table",
+    # TODO deprecated catalog APIs #3819
     "read_table",
     "register_python_catalog",
     "register_table",
     "unregister_catalog",
 ]
 
-# Forward imports from the native catalog which don't require Python wrappers
+# TODO deprecated catalog APIs #3819
 unregister_catalog = native_catalog.unregister_catalog
 
 
+# TODO deprecated catalog APIs #3819
 def read_table(name: str) -> DataFrame:
     """Finds a table with the specified name and reads it as a DataFrame.
 
@@ -84,6 +89,7 @@ def read_table(name: str) -> DataFrame:
     return DataFrame(LogicalPlanBuilder(native_logical_plan_builder))
 
 
+# TODO deprecated catalog APIs #3819
 def register_table(name: str, dataframe: DataFrame) -> str:
     """Register a DataFrame as a named table.
 
@@ -105,7 +111,8 @@ def register_table(name: str, dataframe: DataFrame) -> str:
     return native_catalog.register_table(name, dataframe._builder._builder)
 
 
-def register_python_catalog(catalog: PyIcebergCatalog | UnityCatalog, name: str | None = None) -> str:
+# TODO deprecated catalog APIs #3819
+def register_python_catalog(catalog: object, name: str | None = None) -> str:
     """Registers a Python catalog with Daft.
 
     Currently supports:
@@ -129,35 +136,72 @@ def register_python_catalog(catalog: PyIcebergCatalog | UnityCatalog, name: str 
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
 
     """
-    _PYICEBERG_AVAILABLE = False
-    try:
-        from pyiceberg.catalog import Catalog as PyIcebergCatalog
+    return native_catalog.register_python_catalog(Catalog._from_obj(catalog), name)
 
-        _PYICEBERG_AVAILABLE = True
-    except ImportError:
-        pass
 
-    _UNITY_AVAILABLE = False
-    try:
-        from daft.unity_catalog import UnityCatalog
+class Catalog(ABC):
+    """Interface for python catalog implementations."""
 
-        _UNITY_AVAILABLE = True
-    except ImportError:
-        pass
+    @property
+    def inner(self) -> object | None:
+        """Returns the inner catalog object if this is an adapter."""
 
-    python_catalog: PyIcebergCatalog
-    if _PYICEBERG_AVAILABLE and isinstance(catalog, PyIcebergCatalog):
-        from daft.catalog.pyiceberg import PyIcebergCatalogAdaptor
+    @staticmethod
+    def from_iceberg(obj: object) -> Catalog:
+        """Returns a Daft Catalog instance from an Iceberg catalog."""
+        try:
+            from daft.catalog.__iceberg import IcebergCatalog
 
-        python_catalog = PyIcebergCatalogAdaptor(catalog)
-    elif _UNITY_AVAILABLE and isinstance(catalog, UnityCatalog):
-        from daft.catalog.unity import UnityCatalogAdaptor
+            return IcebergCatalog._from_obj(obj)
+        except ImportError:
+            raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
 
-        python_catalog = UnityCatalogAdaptor(catalog)
-    else:
-        raise ValueError(f"Unsupported catalog type: {type(catalog)}")
+    @staticmethod
+    def from_unity(obj: object) -> Catalog:
+        """Returns a Daft Catalog instance from a Unity catalog."""
+        try:
+            from daft.catalog.__unity import UnityCatalog
 
-    return native_catalog.register_python_catalog(python_catalog, name)
+            return UnityCatalog._from_obj(obj)
+        except ImportError:
+            raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
+
+    @staticmethod
+    def _from_obj(obj: object) -> Catalog:
+        """Returns a Daft Catalog from a supported object type or raises a ValueError."""
+        for factory in (Catalog.from_iceberg, Catalog.from_unity):
+            try:
+                return factory(obj)
+            except ValueError:
+                pass
+            except ImportError:
+                pass
+        raise ValueError(
+            f"Unsupported catalog type: {type(obj)}; please ensure all required extra dependencies are installed."
+        )
+
+    ###
+    # list_*
+    ###
+
+    @abstractmethod
+    def list_tables(self, pattern: str | None = None) -> list[str]: ...
+
+    ###
+    # get_*
+    ###
+
+    @abstractmethod
+    def get_table(self, name: str) -> Table: ...
+
+    # TODO deprecated catalog APIs #3819
+    def load_table(self, name: str) -> Table:
+        """DEPRECATED: Please use `get_table` instead; version=0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please use `get_table` instead.",
+            category=DeprecationWarning,
+        )
+        return self.get_table(name)
 
 
 class Identifier(Sequence):
@@ -168,28 +212,27 @@ class Identifier(Sequence):
     >>> assert len(id) == 2
     """
 
-    _identifier: native_catalog.PyIdentifier
+    _identifier: PyIdentifier
 
     def __init__(self, *parts: str):
         """Creates an Identifier from its parts.
 
         Example:
-        >>> Identifier("schema", "table")
-        >>> #
+        >>> Identifier("namespace", "table")
 
         Returns:
             Identifier: A new identifier.
         """
         if len(parts) < 1:
             raise ValueError("Identifier requires at least one part.")
-        self._identifier = native_catalog.PyIdentifier(parts[:-1], parts[-1])
+        self._identifier = PyIdentifier(parts[:-1], parts[-1])
 
     @staticmethod
     def from_sql(input: str, normalize: bool = False) -> Identifier:
         """Parses an Identifier from an SQL string, normalizing to lowercase if specified.
 
         Example:
-        >>> Identifier.from_sql("schema.table") == Identifier("schema", "table")
+        >>> Identifier.from_sql("namespace.table") == Identifier("namespace", "table")
         >>> Identifier.from_sql('"a.b"') == Identifier('"a.b."')
         >>> Identifier.from_sql('ABC."xYz"', normalize=True) == Identifier("abc", "xYz")
 
@@ -197,7 +240,7 @@ class Identifier(Sequence):
             Identifier: A new identifier.
         """
         i = Identifier.__new__(Identifier)
-        i._identifier = native_catalog.PyIdentifier.from_sql(input, normalize)
+        i._identifier = PyIdentifier.from_sql(input, normalize)
         return i
 
     def __eq__(self, other: object) -> bool:
@@ -216,3 +259,32 @@ class Identifier(Sequence):
 
     def __repr__(self) -> str:
         return f"Identifier('{self._identifier.__repr__()}')"
+
+
+class Table(ABC):
+    """Interface for python table implementations."""
+
+    @property
+    def inner(self) -> object | None:
+        """Returns the inner table object if this is an adapter."""
+
+    # TODO deprecated catalog APIs #3819
+    def to_dataframe(self) -> DataFrame:
+        """DEPRECATED: Please use `read` instead; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please use `read` instead.",
+            category=DeprecationWarning,
+        )
+        return self.read()
+
+    @abstractmethod
+    def read(self) -> DataFrame:
+        """Returns a DataFrame from this table."""
+
+    def select(self, *columns: ColumnInputType) -> DataFrame:
+        """Returns a DataFrame from this table with the selected columns."""
+        return self.read().select(*columns)
+
+    def show(self, n: int = 8) -> None:
+        """Shows the first n rows from this table."""
+        return self.read().show(n)
