@@ -300,7 +300,6 @@ impl LogicalPlanBuilder {
 
         let predicate = expr_resolver.resolve_single(predicate, self.plan.clone())?;
 
-        println!("resolved predicate: {predicate:?}");
         let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(self.with_new_plan(logical_plan))
     }
