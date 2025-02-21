@@ -193,7 +193,7 @@ impl SparkAnalyzer<'_> {
         } in order
         {
             let expr = child.required("child")?;
-            let expr = self.to_daft_expr(&expr)?;
+            let expr = self.to_daft_expr(&expr, false)?;
 
             let sort_direction = SortDirection::try_from(direction).map_err(|e| {
                 ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
@@ -381,12 +381,12 @@ impl SparkAnalyzer<'_> {
 
         let grouping_expressions: Vec<_> = grouping_expressions
             .iter()
-            .map(|e| self.to_daft_expr(e))
+            .map(|e| self.to_daft_expr(e, false))
             .try_collect()?;
 
         let aggregate_expressions: Vec<_> = aggregate_expressions
             .iter()
-            .map(|e| self.to_daft_expr(e))
+            .map(|e| self.to_daft_expr(e, false))
             .try_collect()?;
 
         plan = plan.aggregate(aggregate_expressions, grouping_expressions)?;
@@ -429,7 +429,7 @@ impl SparkAnalyzer<'_> {
 
         let input = input.required("input")?;
         let condition = condition.required("condition")?;
-        let condition = self.to_daft_expr(&condition)?;
+        let condition = self.to_daft_expr(&condition, false)?;
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
         Ok(plan.filter(condition)?)
@@ -502,7 +502,7 @@ impl SparkAnalyzer<'_> {
 
         let daft_exprs: Vec<_> = expressions
             .iter()
-            .map(|e| self.to_daft_expr(e))
+            .map(|e| self.to_daft_expr(e, false))
             .try_collect()?;
         plan = plan.select(daft_exprs)?;
 
@@ -527,7 +527,7 @@ impl SparkAnalyzer<'_> {
                     expr_type: Some(ExprType::Alias(Box::new(alias))),
                 };
 
-                self.to_daft_expr(&expression)
+                self.to_daft_expr(&expression, false)
             })
             .try_collect()?;
 
@@ -880,7 +880,7 @@ impl SparkAnalyzer<'_> {
         let mut left_on = vec![];
         let mut right_on = vec![];
         if let Some(join_cond) = join_condition {
-            let join_cond = self.to_daft_expr(&join_cond)?;
+            let join_cond = self.to_daft_expr(&join_cond, true)?;
             process_join_on(
                 join_cond,
                 &mut left_on,
@@ -911,7 +911,11 @@ impl SparkAnalyzer<'_> {
         Ok(plan)
     }
 
-    pub fn to_daft_expr(&self, expression: &Expression) -> ConnectResult<daft_dsl::ExprRef> {
+    pub fn to_daft_expr(
+        &self,
+        expression: &Expression,
+        in_join: bool,
+    ) -> ConnectResult<daft_dsl::ExprRef> {
         if let Some(common) = &expression.common {
             if common.origin.is_some() {
                 debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
@@ -933,8 +937,7 @@ impl SparkAnalyzer<'_> {
                 if let Some(is_metadata_column) = is_metadata_column {
                     debug!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
                 }
-
-                if let Some(id) = plan_id {
+                if in_join && let Some(id) = plan_id {
                     let plan = self.plan_nodes.get(id);
                     let plan_schema = plan.map(|p| p.schema());
                     let plan_ref = if plan.is_some() {
@@ -979,7 +982,7 @@ impl SparkAnalyzer<'_> {
                     not_yet_implemented!("Alias metadata: {metadata:?}");
                 }
 
-                let child = self.to_daft_expr(expr)?;
+                let child = self.to_daft_expr(expr, in_join)?;
 
                 let name = Arc::from(name.as_str());
 
@@ -996,7 +999,7 @@ impl SparkAnalyzer<'_> {
                     invalid_argument_err!("Cast expression is required");
                 };
 
-                let expr = self.to_daft_expr(expr)?;
+                let expr = self.to_daft_expr(expr, in_join)?;
 
                 let Some(cast_to_type) = cast_to_type else {
                     invalid_argument_err!("Cast to type is required");

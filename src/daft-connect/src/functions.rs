@@ -84,7 +84,7 @@ where
         let sf = ScalarFunction::new(
             self.clone(),
             args.iter()
-                .map(|arg| analyzer.to_daft_expr(arg))
+                .map(|arg| analyzer.to_daft_expr(arg, false))
                 .collect::<ConnectResult<Vec<_>>>()?,
         );
         Ok(sf.into())
@@ -99,7 +99,7 @@ impl SparkFunction for UnaryFunction {
     ) -> ConnectResult<daft_dsl::ExprRef> {
         match args {
             [arg] => {
-                let arg = analyzer.to_daft_expr(arg)?;
+                let arg = analyzer.to_daft_expr(arg, false)?;
                 Ok(self.0(arg))
             }
             _ => invalid_argument_err!("requires exactly one argument"),
@@ -115,8 +115,8 @@ impl SparkFunction for BinaryFunction {
     ) -> ConnectResult<daft_dsl::ExprRef> {
         match args {
             [arg, arg2] => {
-                let arg = analyzer.to_daft_expr(arg)?;
-                let arg2 = analyzer.to_daft_expr(arg2)?;
+                let arg = analyzer.to_daft_expr(arg, false)?;
+                let arg2 = analyzer.to_daft_expr(arg2, false)?;
                 Ok(self.0(arg, arg2))
             }
             _ => invalid_argument_err!("requires exactly two arguments"),

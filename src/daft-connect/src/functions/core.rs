@@ -72,7 +72,7 @@ impl SparkFunction for BinaryOpFunction {
     ) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| analyzer.to_daft_expr(arg))
+            .map(|arg| analyzer.to_daft_expr(arg, false))
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [lhs, rhs] = args.try_into().map_err(|args| {
@@ -95,7 +95,7 @@ impl SparkFunction for SqlExpr {
     ) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| analyzer.to_daft_expr(arg))
+            .map(|arg| analyzer.to_daft_expr(arg, false))
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [sql] = args.as_slice() else {

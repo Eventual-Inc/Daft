@@ -29,7 +29,7 @@ impl SparkFunction for CountFunction {
     ) -> ConnectResult<daft_dsl::ExprRef> {
         match args {
             [arg] => {
-                let arg = analyzer.to_daft_expr(arg)?;
+                let arg = analyzer.to_daft_expr(arg, false)?;
 
                 let arg = if arg.as_literal().and_then(|lit| lit.as_i32()) == Some(1i32) {
                     unresolved_col("*")

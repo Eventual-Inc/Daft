@@ -31,8 +31,8 @@ impl SparkFunction for BucketFunction {
     ) -> ConnectResult<daft_dsl::ExprRef> {
         match args {
             [n_buckets, arg] => {
-                let n_buckets = analyzer.to_daft_expr(n_buckets)?;
-                let arg = analyzer.to_daft_expr(arg)?;
+                let n_buckets = analyzer.to_daft_expr(n_buckets, false)?;
+                let arg = analyzer.to_daft_expr(arg, false)?;
 
                 let n_buckets = n_buckets
                     .as_literal()
