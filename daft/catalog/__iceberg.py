@@ -84,11 +84,6 @@ class IcebergTable(Table):
             return IcebergTable(obj)
         return None
 
-    @property
-    def inner(self) -> InnerTable:
-        """Returns the inner iceberg table."""
-        return self._inner
-
     def read(self) -> DataFrame:
         import daft
 
