@@ -847,7 +847,6 @@ impl SparkAnalyzer<'_> {
                             internal_err!("both sides of join condition are on the same side");
                         }
                     }
-                    // if there are literals,
                 }
                 Expr::BinaryOp {
                     op: Operator::And,
