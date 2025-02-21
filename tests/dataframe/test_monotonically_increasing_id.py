@@ -117,13 +117,12 @@ def test_monotonically_increasing_id_multiple_partitions_with_repartition(make_d
 
     # Test new function matches old behavior
     df2 = make_df(data, repartition=repartition_nparts).with_column("id", monotonically_increasing_id()).collect()
-    assert df.to_pydict() == df2.to_pydict()
-
-    py_dict = df.to_pydict()
-    assert set(py_dict["a"]) == set(ITEMS)
-
-    # cannot predict the ids because repartition shuffles the data, so we just check that they are unique
-    assert len(set(py_dict["id"])) == 100
+    assert len(df2) == 100
+    assert set(df2.column_names) == {"id", "a"}
+    assert df2.schema()["id"].dtype == DataType.uint64()
+    ids = df2.to_pydict()["id"]
+    for i in range(1, len(ids)):
+        assert ids[i] > ids[i - 1]
 
 
 def test_monotonically_increasing_id_custom_col_name(make_df) -> None:

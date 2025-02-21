@@ -6,7 +6,7 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, EliminateCrossJoin, EnrichWithStats, FilterNullJoinKey,
+        DetectMonotonicId, DropRepartition, EliminateCrossJoin, EnrichWithStats, FilterNullJoinKey,
         LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownFilter, PushDownLimit,
         PushDownProjection, ReorderJoins, SimplifyExpressionsRule, SplitActorPoolProjects,
         UnnestPredicateSubquery, UnnestScalarSubquery,
@@ -91,6 +91,13 @@ impl Default for OptimizerBuilder {
     fn default() -> Self {
         Self {
             rule_batches: vec![
+                // --- Detect special functions ---
+                // This must be done first to ensure special functions are transformed
+                // before any other rules are applied
+                RuleBatch::new(
+                    vec![Box::new(DetectMonotonicId)],
+                    RuleExecutionStrategy::FixedPoint(None),
+                ),
                 // --- Rewrite rules ---
                 RuleBatch::new(
                     vec![
