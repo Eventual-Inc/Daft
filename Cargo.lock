@@ -1924,7 +1924,6 @@ dependencies = [
  "common-version",
  "daft-algebra",
  "daft-catalog",
- "daft-catalog-python-catalog",
  "daft-compression",
  "daft-connect",
  "daft-context",
@@ -1985,16 +1984,6 @@ dependencies = [
  "pyo3",
  "snafu",
  "sqlparser",
-]
-
-[[package]]
-name = "daft-catalog-python-catalog"
-version = "0.3.0-dev0"
-dependencies = [
- "daft-catalog",
- "daft-logical-plan",
- "pyo3",
- "snafu",
 ]
 
 [[package]]
