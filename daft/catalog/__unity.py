@@ -70,8 +70,13 @@ class UnityCatalog(Catalog):
 class UnityTable(Table):
     _inner: InnerTable
 
-    def __init__(self):
-        raise ValueError("UnityTable.__init__ is not supported, please use `Table.from_unity`.")
+    def __init__(self, unity_table: InnerTable):
+        """DEPRECATED: Please use `Table.from_unity`; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Table.from_unity` instead; version 0.5.0!",
+            category=DeprecationWarning,
+        )
+        self._inner = unity_table
 
     @staticmethod
     def _from_obj(obj: object) -> UnityTable | None:
