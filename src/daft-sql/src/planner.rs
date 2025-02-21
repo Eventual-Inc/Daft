@@ -146,7 +146,7 @@ impl<'a> SQLPlanner<'a> {
 
     /// Set `self.current_plan`. Should only be called once per query.
     fn set_plan(&mut self, plan: LogicalPlanBuilder) {
-        assert!(self.current_plan.is_none());
+        debug_assert!(self.current_plan.is_none());
 
         self.current_plan = Some(plan);
     }
