@@ -2615,7 +2615,6 @@ name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
  "daft-catalog",
- "daft-logical-plan",
  "pyo3",
  "uuid 1.13.2",
 ]
