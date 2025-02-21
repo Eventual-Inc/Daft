@@ -21,6 +21,7 @@ use crate::{
     functions::CONNECT_FUNCTIONS,
     invalid_argument_err, invalid_relation_err, not_yet_implemented,
 };
+
 pub(crate) struct ExprResolver<'a> {
     pub(crate) plan_nodes: &'a HashMap<i64, LogicalPlanBuilder>,
     pub(crate) in_join: bool,
