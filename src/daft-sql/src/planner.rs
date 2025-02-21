@@ -822,18 +822,18 @@ impl<'a> SQLPlanner<'a> {
                     self.plan_relation_table(name)?
                 };
 
-                // we require all logical plans to be named, apply the name from the identifier used to resolve this relation.
-                let alias = if let Some(alias) = alias {
-                    Some(alias.clone())
-                } else {
+                // we require all logical plans to be named, apply the name from the identifier used to resolve this table.
+                let alias = alias.clone().or_else(|| {
                     let name = name
                         .0
                         .last()
-                        .expect("table name must have at least 1 identifier part")
+                        .expect("table name must have at least one identifier")
                         .clone();
-                    let columns = vec![];
-                    Some(TableAlias { name, columns })
-                };
+                    Some(TableAlias {
+                        name,
+                        columns: vec![],
+                    })
+                });
 
                 (plan, alias)
             }
@@ -996,6 +996,7 @@ impl<'a> SQLPlanner<'a> {
         if let Some(parent) = self.parent {
             parent.plan_identifier(idents)
         } else {
+            // err: "column <col> not found in current scope"
             column_not_found_err!(full_name, "current scope")
         }
     }
