@@ -168,10 +168,13 @@ impl<'a> SQLPlanner<'a> {
         Ref::map(self.context.borrow(), |i| &i.bound_ctes)
     }
 
+    /// Get the table associated with the name from the session.
+    ///
+    /// Also adds a SubqueryAlias to the table with the name.
     fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
         let table = self.session().get_table(name)?;
         let plan = table.get_logical_plan()?;
-        Ok(plan.into())
+        Ok(LogicalPlanBuilder::from(plan).alias(name.name.clone()))
     }
 
     /// Borrow the planning session
@@ -822,20 +825,7 @@ impl<'a> SQLPlanner<'a> {
                     self.plan_relation_table(name)?
                 };
 
-                // we require all logical plans to be named, apply the name from the identifier used to resolve this relation.
-                let alias = if let Some(alias) = alias {
-                    Some(alias.clone())
-                } else {
-                    let name = name
-                        .0
-                        .last()
-                        .expect("table name must have at least 1 identifier part")
-                        .clone();
-                    let columns = vec![];
-                    Some(TableAlias { name, columns })
-                };
-
-                (plan, alias)
+                (plan, alias.clone())
             }
             sqlparser::ast::TableFactor::Derived {
                 lateral,
@@ -900,6 +890,8 @@ impl<'a> SQLPlanner<'a> {
     }
 
     /// Plan a `FROM <table>` table factor.
+    ///
+    /// All plans returned by plan_relation_table should have a SubqueryAlias with the table's name.
     pub(crate) fn plan_relation_table(
         &self,
         name: &ObjectName,
