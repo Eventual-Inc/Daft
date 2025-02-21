@@ -1,7 +1,7 @@
 //! Translation between Spark Connect and Daft
 
 mod datatype;
-mod literal;
+mod expr_resolver;
 
 use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
 
@@ -16,17 +16,15 @@ use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
+pub(crate) use expr_resolver::ExprResolver;
 use itertools::zip_eq;
-use literal::to_daft_literal;
 use pyo3::{intern, prelude::*};
 use spark_connect::{
     aggregate::GroupType,
     data_type::StructField,
     expression::{
-        self as spark_expr,
-        cast::{CastToType, EvalMode},
         sort_order::{NullOrdering, SortDirection},
-        ExprType, SortOrder, UnresolvedFunction,
+        ExprType, SortOrder,
     },
     join::JoinType as SparkJoinType,
     read::ReadType,
@@ -39,7 +37,6 @@ use tracing::debug;
 use crate::{
     ensure,
     error::{ConnectError, ConnectResult, Context},
-    functions::CONNECT_FUNCTIONS,
     internal_err, invalid_argument_err, not_yet_implemented,
     session::ConnectSession,
     util::FromOptionalField,
@@ -186,6 +183,10 @@ impl SparkAnalyzer<'_> {
         let mut descending = Vec::with_capacity(order.len());
         let mut nulls_first = Vec::with_capacity(order.len());
 
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
         for SortOrder {
             child,
             direction,
@@ -193,7 +194,7 @@ impl SparkAnalyzer<'_> {
         } in order
         {
             let expr = child.required("child")?;
-            let expr = self.to_daft_expr(&expr, false)?;
+            let expr = expr_resolver.resolve_expr(&expr)?;
 
             let sort_direction = SortDirection::try_from(direction).map_err(|e| {
                 ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
@@ -378,15 +379,19 @@ impl SparkAnalyzer<'_> {
         if !grouping_sets.is_empty() {
             not_yet_implemented!("Grouping sets not yet supported; got {grouping_sets:?}");
         }
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
 
         let grouping_expressions: Vec<_> = grouping_expressions
             .iter()
-            .map(|e| self.to_daft_expr(e, false))
+            .map(|e| expr_resolver.resolve_expr(e))
             .try_collect()?;
 
         let aggregate_expressions: Vec<_> = aggregate_expressions
             .iter()
-            .map(|e| self.to_daft_expr(e, false))
+            .map(|e| expr_resolver.resolve_expr(e))
             .try_collect()?;
 
         plan = plan.aggregate(aggregate_expressions, grouping_expressions)?;
@@ -427,9 +432,13 @@ impl SparkAnalyzer<'_> {
     ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Filter { input, condition } = filter;
 
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
         let input = input.required("input")?;
         let condition = condition.required("condition")?;
-        let condition = self.to_daft_expr(&condition, false)?;
+        let condition = expr_resolver.resolve_expr(&condition)?;
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
         Ok(plan.filter(condition)?)
@@ -499,10 +508,13 @@ impl SparkAnalyzer<'_> {
         let input = input.required("input")?;
 
         let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
-
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
         let daft_exprs: Vec<_> = expressions
             .iter()
-            .map(|e| self.to_daft_expr(e, false))
+            .map(|e| expr_resolver.resolve_expr(e))
             .try_collect()?;
         plan = plan.select(daft_exprs)?;
 
@@ -519,6 +531,10 @@ impl SparkAnalyzer<'_> {
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
         let daft_exprs: Vec<_> = aliases
             .into_iter()
             .map(|alias| {
@@ -527,7 +543,7 @@ impl SparkAnalyzer<'_> {
                     expr_type: Some(ExprType::Alias(Box::new(alias))),
                 };
 
-                self.to_daft_expr(&expression, false)
+                expr_resolver.resolve_expr(&expression)
             })
             .try_collect()?;
 
@@ -879,8 +895,12 @@ impl SparkAnalyzer<'_> {
 
         let mut left_on = vec![];
         let mut right_on = vec![];
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: true,
+        };
         if let Some(join_cond) = join_condition {
-            let join_cond = self.to_daft_expr(&join_cond, true)?;
+            let join_cond = expr_resolver.resolve_expr(&join_cond)?;
             process_join_on(
                 join_cond,
                 &mut left_on,
@@ -909,165 +929,6 @@ impl SparkAnalyzer<'_> {
             },
         )?;
         Ok(plan)
-    }
-
-    pub fn to_daft_expr(
-        &self,
-        expression: &Expression,
-        in_join: bool,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
-        if let Some(common) = &expression.common {
-            if common.origin.is_some() {
-                debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
-            }
-        };
-
-        let Some(expr) = &expression.expr_type else {
-            not_yet_implemented!("Expression is required");
-        };
-
-        match expr {
-            spark_expr::ExprType::Literal(l) => to_daft_literal(l),
-            spark_expr::ExprType::UnresolvedAttribute(attr) => {
-                let spark_expr::UnresolvedAttribute {
-                    unparsed_identifier,
-                    plan_id,
-                    is_metadata_column,
-                } = attr;
-                if let Some(is_metadata_column) = is_metadata_column {
-                    debug!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
-                }
-                if in_join && let Some(id) = plan_id {
-                    let plan = self.plan_nodes.get(id);
-                    let plan_schema = plan.map(|p| p.schema());
-                    let plan_ref = if plan.is_some() {
-                        let id = format!("{id}");
-                        PlanRef::Alias(Arc::from(id))
-                    } else {
-                        PlanRef::Unqualified
-                    };
-
-                    Ok(UnresolvedColumn {
-                        name: Arc::from(unparsed_identifier.as_str()),
-                        plan_ref,
-                        plan_schema,
-                    }
-                    .into())
-                } else {
-                    Ok(daft_dsl::unresolved_col(unparsed_identifier.as_str()))
-                }
-            }
-            spark_expr::ExprType::UnresolvedFunction(f) => self.process_function(f),
-            spark_expr::ExprType::ExpressionString(_) => {
-                not_yet_implemented!("Expression string not yet supported")
-            }
-            spark_expr::ExprType::UnresolvedStar(_) => {
-                not_yet_implemented!("Unresolved star expressions not yet supported")
-            }
-            spark_expr::ExprType::Alias(alias) => {
-                let spark_expr::Alias {
-                    expr,
-                    name,
-                    metadata,
-                } = &**alias;
-                let Some(expr) = expr else {
-                    invalid_argument_err!("Alias expression is required");
-                };
-
-                let [name] = name.as_slice() else {
-                    invalid_argument_err!("Alias name is required and currently only works with a single string; got {name:?}");
-                };
-
-                if let Some(metadata) = metadata {
-                    not_yet_implemented!("Alias metadata: {metadata:?}");
-                }
-
-                let child = self.to_daft_expr(expr, in_join)?;
-
-                let name = Arc::from(name.as_str());
-
-                Ok(child.alias(name))
-            }
-            spark_expr::ExprType::Cast(c) => {
-                let spark_expr::Cast {
-                    expr,
-                    eval_mode,
-                    cast_to_type,
-                } = &**c;
-
-                let Some(expr) = expr else {
-                    invalid_argument_err!("Cast expression is required");
-                };
-
-                let expr = self.to_daft_expr(expr, in_join)?;
-
-                let Some(cast_to_type) = cast_to_type else {
-                    invalid_argument_err!("Cast to type is required");
-                };
-
-                let data_type = match &cast_to_type {
-                    CastToType::Type(kind) => to_daft_datatype(kind)?,
-                    CastToType::TypeStr(s) => {
-                        not_yet_implemented!(
-                            "Cast to type string not yet supported; tried to cast to {s}"
-                        );
-                    }
-                };
-
-                let eval_mode = EvalMode::try_from(*eval_mode).map_err(|e| {
-                    ConnectError::invalid_relation(format!("Unknown eval mode: {e}"))
-                })?;
-
-                debug!("Ignoring cast eval mode: {eval_mode:?}");
-
-                Ok(expr.cast(&data_type))
-            }
-            spark_expr::ExprType::SortOrder(s) => {
-                let spark_expr::SortOrder {
-                    child,
-                    direction,
-                    null_ordering,
-                } = &**s;
-
-                let Some(_child) = child else {
-                    invalid_argument_err!("Sort order child is required");
-                };
-
-                let _sort_direction = SortDirection::try_from(*direction).map_err(|e| {
-                    ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
-                })?;
-
-                let _sort_nulls = NullOrdering::try_from(*null_ordering).map_err(|e| {
-                    ConnectError::invalid_relation(format!("Unknown null ordering: {e}"))
-                })?;
-
-                not_yet_implemented!("Sort order expressions not yet supported");
-            }
-            other => not_yet_implemented!("expression type: {other:?}"),
-        }
-    }
-
-    fn process_function(&self, f: &UnresolvedFunction) -> ConnectResult<daft_dsl::ExprRef> {
-        let UnresolvedFunction {
-            function_name,
-            arguments,
-            is_distinct,
-            is_user_defined_function,
-        } = f;
-
-        if *is_distinct {
-            not_yet_implemented!("Distinct");
-        }
-
-        if *is_user_defined_function {
-            not_yet_implemented!("User-defined functions");
-        }
-
-        let Some(f) = CONNECT_FUNCTIONS.get(function_name.as_str()) else {
-            not_yet_implemented!("function: {function_name}");
-        };
-
-        f.to_expr(arguments, self)
     }
 }
 

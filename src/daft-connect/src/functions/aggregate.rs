@@ -4,7 +4,7 @@ use daft_schema::dtype::DataType;
 use spark_connect::Expression;
 
 use super::{FunctionModule, SparkFunction, UnaryFunction};
-use crate::{error::ConnectResult, invalid_argument_err, spark_analyzer::SparkAnalyzer};
+use crate::{error::ConnectResult, invalid_argument_err, spark_analyzer::ExprResolver};
 
 pub struct AggregateFunctions;
 
@@ -25,11 +25,11 @@ impl SparkFunction for CountFunction {
     fn to_expr(
         &self,
         args: &[Expression],
-        analyzer: &SparkAnalyzer,
+        expr_resolver: &ExprResolver,
     ) -> ConnectResult<daft_dsl::ExprRef> {
         match args {
             [arg] => {
-                let arg = analyzer.to_daft_expr(arg, false)?;
+                let arg = expr_resolver.resolve_expr(arg)?;
 
                 let arg = if arg.as_literal().and_then(|lit| lit.as_i32()) == Some(1i32) {
                     unresolved_col("*")

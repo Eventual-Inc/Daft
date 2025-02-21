@@ -7,7 +7,7 @@ use daft_functions::utf8::{
 use spark_connect::Expression;
 
 use super::{FunctionModule, SparkFunction, TODO_FUNCTION};
-use crate::{error::ConnectResult, invalid_argument_err, spark_analyzer::SparkAnalyzer};
+use crate::{error::ConnectResult, invalid_argument_err, spark_analyzer::ExprResolver};
 
 // see https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#string-functions
 pub struct StringFunctions;
@@ -89,11 +89,11 @@ impl SparkFunction for RegexpExtract {
     fn to_expr(
         &self,
         args: &[Expression],
-        analyzer: &SparkAnalyzer,
+        expr_resolver: &ExprResolver,
     ) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| analyzer.to_daft_expr(arg, false))
+            .map(|arg| expr_resolver.resolve_expr(arg))
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [input, pattern, idx] = args.as_slice() else {
@@ -120,11 +120,11 @@ impl SparkFunction for RegexpExtractAll {
     fn to_expr(
         &self,
         args: &[Expression],
-        analyzer: &SparkAnalyzer,
+        expr_resolver: &ExprResolver,
     ) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| analyzer.to_daft_expr(arg, false))
+            .map(|arg| expr_resolver.resolve_expr(arg))
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [input, pattern, idx] = args.as_slice() else {
