@@ -4,6 +4,7 @@
 # in order to support runtime typechecking across different Python versions.
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
+import copy
 import io
 import multiprocessing
 import os
@@ -39,7 +40,7 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.filesystem import overwrite_files
+from daft.filesystem import get_protocol_from_path, overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
@@ -811,6 +812,7 @@ class DataFrame:
         path = []
         rows = []
         size = []
+        data_files_with_protocol = []
 
         builder = self._builder.write_iceberg(table, io_config)
         write_df = DataFrame(builder)
@@ -828,11 +830,15 @@ class DataFrame:
         schema = table.schema()
         partitioning: Dict[str, list] = {schema.find_field(field.source_id).name: [] for field in table.spec().fields}
 
+        data_files_protocol = get_protocol_from_path(table.metadata.location)
         for data_file in data_files:
             operations.append("ADD")
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
+            data_file_with_protocol = copy.deepcopy(data_file)
+            data_file_with_protocol.file_path = f"{data_files_protocol}://{data_file_with_protocol.file_path}"
+            data_files_with_protocol.append(data_file_with_protocol)
 
             for field in partitioning.keys():
                 partitioning[field].append(getattr(data_file.partition, field, None))
@@ -875,7 +881,7 @@ class DataFrame:
             append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
 
             with append_method() as append_files:
-                for data_file in data_files:
+                for data_file in data_files_with_protocol:
                     append_files.append_data_file(data_file)
 
             tx.commit_transaction()
@@ -890,7 +896,7 @@ class DataFrame:
 
             merge = _MergingSnapshotProducer(operation=operations_map[mode], table=table)
 
-            for data_file in data_files:
+            for data_file in data_files_with_protocol:
                 merge.append_data_file(data_file)
 
             merge.commit()
