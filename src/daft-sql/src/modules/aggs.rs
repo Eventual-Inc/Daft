@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::CountMode;
-use daft_dsl::{col, AggExpr, Expr, ExprRef, LiteralValue};
+use daft_dsl::{unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
@@ -9,8 +9,9 @@ use crate::{
     ensure,
     error::SQLPlannerResult,
     functions::{SQLFunction, SQLFunctions},
+    normalize,
     planner::SQLPlanner,
-    unsupported_sql_err,
+    table_not_found_err, unsupported_sql_err,
 };
 
 pub struct SQLModuleAggs;
@@ -77,22 +78,29 @@ impl SQLFunction for AggExpr {
 
 fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
     Ok(match inputs {
-        [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match planner.relation_opt() {
-            Some(rel) => {
-                let schema = rel.schema();
-                col(schema.fields[0].name.clone())
+        [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
+            Some(plan) => {
+                let schema = plan.schema();
+                unresolved_col(schema.fields[0].name.clone())
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
             }
             None => unsupported_sql_err!("Wildcard is not supported in this context"),
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
-            match planner.relation_opt() {
-                Some(rel) if name.to_string() == rel.get_name() => {
-                    let schema = rel.schema();
-                    col(schema.fields[0].name.clone())
-                        .count(daft_core::count_mode::CountMode::All)
-                        .alias("count")
+            let ident = normalize(name);
+
+            match &planner.current_plan {
+                Some(plan) => {
+                    if let Some(schema) =
+                        plan.plan.clone().get_schema_for_alias(&ident.to_string())?
+                    {
+                        unresolved_col(schema.fields[0].name.clone())
+                            .count(daft_core::count_mode::CountMode::All)
+                            .alias("count")
+                    } else {
+                        table_not_found_err!(ident.to_string())
+                    }
                 }
                 _ => unsupported_sql_err!("Wildcard is not supported in this context"),
             }

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use daft_core::prelude::TimeUnit;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_scan::builder::ParquetScanBuilder;
@@ -10,6 +12,7 @@ use crate::{
     invalid_operation_err,
     modules::config::expr_to_iocfg,
     planner::SQLPlanner,
+    schema::try_parse_schema,
 };
 
 pub(super) struct ReadParquetFunction;
@@ -43,7 +46,11 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
 
         let field_id_mapping = None; // TODO
         let row_groups = None; // TODO
-        let schema = None; // TODO
+        let schema = if let Some(schema_arg) = args.try_get_named("schema")? {
+            Some(Arc::new(try_parse_schema(schema_arg)?))
+        } else {
+            None
+        };
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
 
         Ok(Self {
@@ -75,7 +82,7 @@ impl SQLTableFunction for ReadParquetFunction {
                 "coerce_int96_timestamp_unit",
                 "chunk_size",
                 "multithreaded",
-                // "schema",
+                "schema",
                 // "field_id_mapping",
                 // "row_groups",
                 "io_config",
