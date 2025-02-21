@@ -70,6 +70,7 @@ pub trait FunctionModule {
 }
 
 struct UnaryFunction(fn(ExprRef) -> ExprRef);
+struct BinaryFunction(fn(ExprRef, ExprRef) -> ExprRef);
 
 impl<T> SparkFunction for T
 where
@@ -100,6 +101,23 @@ impl SparkFunction for UnaryFunction {
             [arg] => {
                 let arg = analyzer.to_daft_expr(arg)?;
                 Ok(self.0(arg))
+            }
+            _ => invalid_argument_err!("requires exactly one argument"),
+        }
+    }
+}
+
+impl SparkFunction for BinaryFunction {
+    fn to_expr(
+        &self,
+        args: &[Expression],
+        analyzer: &SparkAnalyzer,
+    ) -> ConnectResult<daft_dsl::ExprRef> {
+        match args {
+            [arg, arg2] => {
+                let arg = analyzer.to_daft_expr(arg)?;
+                let arg2 = analyzer.to_daft_expr(arg2)?;
+                Ok(self.0(arg, arg2))
             }
             _ => invalid_argument_err!("requires exactly one argument"),
         }

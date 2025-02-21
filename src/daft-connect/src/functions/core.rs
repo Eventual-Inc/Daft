@@ -3,7 +3,7 @@ use daft_functions::{coalesce::Coalesce, float::IsNan};
 use daft_sql::sql_expr;
 use spark_connect::Expression;
 
-use super::{FunctionModule, SparkFunction, UnaryFunction, TODO_FUNCTION};
+use super::{BinaryFunction, FunctionModule, SparkFunction, UnaryFunction, TODO_FUNCTION};
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
@@ -58,6 +58,7 @@ impl FunctionModule for CoreFunctions {
         parent.add_fn("isnotnull", UnaryFunction(|arg| arg.not_null()));
         parent.add_fn("isnull", UnaryFunction(|arg| arg.is_null()));
         parent.add_fn("not", UnaryFunction(|arg| arg.not()));
+        parent.add_fn("and", BinaryFunction(|arg1, arg2| arg1.and(arg2)));
     }
 }
 
