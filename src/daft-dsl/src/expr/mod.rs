@@ -162,7 +162,7 @@ impl Display for Column {
             Self::Unresolved(UnresolvedColumn { name, .. }) => name.to_string(),
             Self::Resolved(ResolvedColumn::Basic(name)) => name.to_string(),
             Self::Resolved(ResolvedColumn::JoinSide(name, side)) => format!("{side}.{name}"),
-            Self::Resolved(ResolvedColumn::OuterRef(name, ..)) => format!("outer.{name}"),
+            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. })) => format!("outer.{name}"),
         };
 
         write!(f, "col({name})")
@@ -827,7 +827,7 @@ impl Expr {
                 FieldID::new(format!("{side}.{name}"))
             }
 
-            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(name, ..))) => {
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }))) => {
                 FieldID::new(format!("outer.{name}"))
             }
 

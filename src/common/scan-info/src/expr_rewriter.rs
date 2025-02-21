@@ -162,6 +162,14 @@ pub fn rewrite_predicate_for_partitioning(
         map
     };
 
+    let get_pfield_for_col = |expr: &ExprRef| -> Option<&&PartitionField> {
+        if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) = expr.as_ref() {
+            source_to_pfield.get(col_name.as_ref())
+        } else {
+            None
+        }
+    };
+
     let with_part_cols = predicate.transform(&|expr: ExprRef| {
         use Operator::{Eq, Gt, GtEq, Lt, LtEq, NotEq};
         match expr.as_ref() {
@@ -172,10 +180,7 @@ pub fn rewrite_predicate_for_partitioning(
                 ref left,
                 ref right,
             } => {
-                if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) =
-                    left.as_ref()
-                    && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
-                {
+                if let Some(pfield) = get_pfield_for_col(left) {
                     if let Some(tfm) = pfield.transform
                         && tfm.supports_equals()
                         && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield)
@@ -189,11 +194,7 @@ pub fn rewrite_predicate_for_partitioning(
                             .arced(),
                         ));
                     }
-                    Ok(Transformed::no(expr))
-                } else if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) =
-                    right.as_ref()
-                    && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
-                {
+                } else if let Some(pfield) = get_pfield_for_col(right) {
                     if let Some(tfm) = pfield.transform
                         && tfm.supports_equals()
                         && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
@@ -207,10 +208,9 @@ pub fn rewrite_predicate_for_partitioning(
                             .arced(),
                         ));
                     }
-                    Ok(Transformed::no(expr))
-                } else {
-                    Ok(Transformed::no(expr))
                 }
+
+                Ok(Transformed::no(expr))
             }
             // Binary Op for NotEq
             // Should only work for Identity
@@ -219,10 +219,7 @@ pub fn rewrite_predicate_for_partitioning(
                 ref left,
                 ref right,
             } => {
-                if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) =
-                    left.as_ref()
-                    && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
-                {
+                if let Some(pfield) = get_pfield_for_col(left) {
                     if let Some(tfm) = pfield.transform
                         && tfm.supports_not_equals()
                         && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield)
@@ -236,11 +233,7 @@ pub fn rewrite_predicate_for_partitioning(
                             .arced(),
                         ));
                     }
-                    Ok(Transformed::no(expr))
-                } else if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) =
-                    right.as_ref()
-                    && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
-                {
+                } else if let Some(pfield) = get_pfield_for_col(right) {
                     if let Some(tfm) = pfield.transform
                         && tfm.supports_not_equals()
                         && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
@@ -254,10 +247,9 @@ pub fn rewrite_predicate_for_partitioning(
                             .arced(),
                         ));
                     }
-                    Ok(Transformed::no(expr))
-                } else {
-                    Ok(Transformed::no(expr))
                 }
+
+                Ok(Transformed::no(expr))
             }
             // Binary Op for Lt | LtEq | Gt | GtEq
             // we need to relax Lt and LtEq and only allow certain Transforms
@@ -272,10 +264,7 @@ pub fn rewrite_predicate_for_partitioning(
                     _ => unreachable!("this branch only supports Lt | LtEq | Gt | GtEq"),
                 };
 
-                if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) =
-                    left.as_ref()
-                    && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
-                {
+                if let Some(pfield) = get_pfield_for_col(left) {
                     if let Some(tfm) = pfield.transform
                         && tfm.supports_comparison()
                         && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield)
@@ -289,11 +278,7 @@ pub fn rewrite_predicate_for_partitioning(
                             .arced(),
                         ));
                     }
-                    Ok(Transformed::no(expr))
-                } else if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) =
-                    right.as_ref()
-                    && let Some(pfield) = source_to_pfield.get(col_name.as_ref())
-                {
+                } else if let Some(pfield) = get_pfield_for_col(right) {
                     if let Some(tfm) = pfield.transform
                         && tfm.supports_comparison()
                         && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
@@ -307,30 +292,17 @@ pub fn rewrite_predicate_for_partitioning(
                             .arced(),
                         ));
                     }
-                    Ok(Transformed::no(expr))
-                } else {
-                    Ok(Transformed::no(expr))
                 }
+
+                Ok(Transformed::no(expr))
             }
 
-            Expr::IsNull(ref expr)
-                if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) =
-                    expr.as_ref()
-                    && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) =>
-            {
-                Ok(Transformed::yes(
-                    Expr::IsNull(resolved_col(pfield.field.name.as_str())).arced(),
-                ))
-            }
-            Expr::NotNull(ref expr)
-                if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) =
-                    expr.as_ref()
-                    && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) =>
-            {
-                Ok(Transformed::yes(
-                    Expr::NotNull(resolved_col(pfield.field.name.as_str())).arced(),
-                ))
-            }
+            Expr::IsNull(ref expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
+                Transformed::yes(Expr::IsNull(resolved_col(pfield.field.name.as_str())).arced()),
+            ),
+            Expr::NotNull(ref expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
+                Transformed::yes(Expr::NotNull(resolved_col(pfield.field.name.as_str())).arced()),
+            ),
             _ => Ok(Transformed::no(expr)),
         }
     })?;
