@@ -119,7 +119,7 @@ impl SparkFunction for BinaryFunction {
                 let arg2 = analyzer.to_daft_expr(arg2)?;
                 Ok(self.0(arg, arg2))
             }
-            _ => invalid_argument_err!("requires exactly one argument"),
+            _ => invalid_argument_err!("requires exactly two arguments"),
         }
     }
 }
