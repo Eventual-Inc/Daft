@@ -168,6 +168,19 @@ impl<'a> SQLPlanner<'a> {
         Ref::map(self.context.borrow(), |i| &i.bound_ctes)
     }
 
+    /// Lookup a table by identifier in the current session
+    fn get_table(&self, ident: &Identifier) -> Option<LogicalPlanBuilder> {
+        self.session()
+            .get_table(ident)
+            .map(|table| {
+                table
+                    .get_logical_plan()
+                    .expect("could not create a logical plan from the table")
+                    .into()
+            })
+            .ok()
+    }
+
     /// Borrow the planning session
     fn session(&self) -> Ref<'_, Rc<Session>> {
         Ref::map(self.context.borrow(), |i| &i.session)
@@ -887,13 +900,14 @@ impl<'a> SQLPlanner<'a> {
         let ident = normalize(name);
         let table = if ident.has_namespace() {
             // qualified search of sesison metadata
-            self.session().get_table(&ident).ok()
+            self.get_table(&ident)
         } else {
             // search bindings then session metadata
             self.bound_ctes()
                 .get(&ident.name)
                 .cloned()
-                .or_else(|| self.session().get_table(&ident).ok())
+                .or_else(|| self.bound_ctes().get(&ident.name).cloned())
+                .or_else(|| self.get_table(&ident))
         };
         table.ok_or_else(|| PlannerError::table_not_found(ident.to_string()))
     }

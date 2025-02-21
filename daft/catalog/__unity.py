@@ -82,11 +82,6 @@ class UnityTable(Table):
             return t
         raise ValueError(f"Unsupported unity table type: {type(obj)}")
 
-    @property
-    def inner(self) -> InnerTable:
-        """Returns the inner unity table."""
-        return self._inner
-
     @staticmethod
     def _try_from(obj: object) -> UnityTable | None:
         """Returns an UnityTable if the given object can be adapted so."""

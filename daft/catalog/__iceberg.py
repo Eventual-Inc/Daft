@@ -34,11 +34,6 @@ class IcebergCatalog(Catalog):
             return c
         raise ValueError(f"Unsupported iceberg catalog type: {type(obj)}")
 
-    @property
-    def inner(self) -> InnerCatalog:
-        """Returns the inner iceberg catalog."""
-        return self._inner
-
     ###
     # get_*
     ###
@@ -71,11 +66,6 @@ class IcebergTable(Table):
             t._inner = obj
             return t
         raise ValueError(f"Unsupported iceberg table type: {type(obj)}")
-
-    @property
-    def inner(self) -> InnerTable:
-        """Returns the inner iceberg table."""
-        return self._inner
 
     @staticmethod
     def _try_from(obj: object) -> IcebergTable | None:

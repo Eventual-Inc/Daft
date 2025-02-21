@@ -43,7 +43,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from daft.daft import PyTableSource, catalog as native_catalog
-from daft.daft import PyIdentifier, PyTable
+from daft.daft import PyIdentifier
 from daft.logical.builder import LogicalPlanBuilder
 
 from daft.dataframe import DataFrame
@@ -185,10 +185,6 @@ class Catalog(ABC):
             f"Unsupported catalog type: {type(obj)}; please ensure all required extra dependencies are installed."
         )
 
-    @property
-    def inner(self) -> object | None:
-        """Returns the inner catalog object if this is an adapter."""
-
     ###
     # list_*
     ###
@@ -313,7 +309,6 @@ class Table(ABC):
             return UnityTable._from_obj(obj)
         except ImportError:
             raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
-
 
     @staticmethod
     def _from_obj(obj: object) -> Table:

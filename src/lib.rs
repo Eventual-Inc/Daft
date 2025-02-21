@@ -124,6 +124,11 @@ pub mod pylib {
         daft_session::register_modules(m)?;
         daft_sql::register_modules(m)?;
 
+        // Register `py_register_python_catalog` to daft.catalog
+        let catalog_attr = m.getattr("catalog")?;
+        let catalog_module = catalog_attr.downcast()?;
+        daft_catalog_python_catalog::python::register_modules(catalog_module)?;
+
         // Register testing module
         let testing_module = PyModule::new(m.py(), "testing")?;
         m.add_submodule(&testing_module)?;
