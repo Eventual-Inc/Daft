@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::Transformed;
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_dsl::{col, Expr, ExprRef};
 
 use crate::{
@@ -95,44 +95,50 @@ impl DetectMonotonicId {
 
 impl OptimizerRule for DetectMonotonicId {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        match plan.as_ref() {
-            LogicalPlan::Project(project) => {
-                // Find all monotonically_increasing_id() calls in this Project
-                let monotonic_ids = Self::find_monotonic_ids(project);
+        // First try to optimize any child plans
+        let mut transformed = false;
+        let optimized_plan = plan.clone().transform_down(|node| {
+            match node.as_ref() {
+                LogicalPlan::Project(project) => {
+                    // Find all monotonically_increasing_id() calls in this Project
+                    let monotonic_ids = Self::find_monotonic_ids(project);
 
-                if !monotonic_ids.is_empty() {
-                    // Create a chain of MonotonicallyIncreasingId operations
-                    let monotonic_plan =
-                        Self::create_monotonic_chain(project.input.clone(), monotonic_ids.clone())?;
+                    if !monotonic_ids.is_empty() {
+                        transformed = true;
+                        // Create a chain of MonotonicallyIncreasingId operations
+                        let monotonic_plan = Self::create_monotonic_chain(
+                            project.input.clone(),
+                            monotonic_ids.clone(),
+                        )?;
 
-                    // Create a new projection list that preserves the original order
-                    let new_projection =
-                        Self::create_new_projection(&project.projection, &monotonic_ids);
+                        // Create a new projection list that preserves the original order
+                        let new_projection =
+                            Self::create_new_projection(&project.projection, &monotonic_ids);
 
-                    // Create a new Project operation with the updated projection list
-                    let final_plan = Arc::new(LogicalPlan::Project(Project::try_new(
-                        monotonic_plan,
-                        new_projection,
-                    )?));
+                        // Create a new Project operation with the updated projection list
+                        let final_plan = Arc::new(LogicalPlan::Project(Project::try_new(
+                            monotonic_plan,
+                            new_projection,
+                        )?));
 
-                    Ok(Transformed {
-                        data: final_plan,
-                        transformed: true,
-                        tnr: common_treenode::TreeNodeRecursion::Continue,
-                    })
-                } else {
-                    Ok(Transformed {
-                        data: plan,
-                        transformed: false,
-                        tnr: common_treenode::TreeNodeRecursion::Continue,
-                    })
+                        Ok(Transformed::yes(final_plan))
+                    } else {
+                        Ok(Transformed::no(node))
+                    }
                 }
+                _ => Ok(Transformed::no(node)),
             }
-            _ => Ok(Transformed {
-                data: plan,
-                transformed: false,
-                tnr: common_treenode::TreeNodeRecursion::Continue,
-            }),
+        })?;
+
+        // If any transformations occurred, continue recursing down the tree
+        if transformed {
+            Ok(Transformed {
+                data: optimized_plan.data,
+                transformed,
+                tnr: TreeNodeRecursion::Continue,
+            })
+        } else {
+            Ok(Transformed::no(plan))
         }
     }
 }
