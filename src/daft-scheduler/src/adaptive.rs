@@ -44,7 +44,7 @@ impl AdaptivePhysicalPlanScheduler {
     pub fn next(&mut self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {
         py.allow_threads(|| {
             let output = self.planner.next_stage()?;
-            let sid = output.source_id();
+            let sid = output.stage_id();
             Ok((sid, output.into()))
         })
     }
@@ -55,30 +55,45 @@ impl AdaptivePhysicalPlanScheduler {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
-        source_id: usize,
+        stage_id: usize,
         partition_key: &str,
         cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
         py: Python,
+        time_taken: f64,
     ) -> PyResult<()> {
         py.allow_threads(|| {
             let in_memory_info = InMemoryInfo::new(
                 Schema::empty().into(), // TODO thread in schema from in memory scan
                 partition_key.into(),
-                PartitionCacheEntry::Python(Arc::new(cache_entry)),
+                Some(PartitionCacheEntry::Python(Arc::new(cache_entry))),
                 num_partitions,
                 size_bytes,
                 num_rows,
                 None, // TODO(sammy) thread through clustering spec to Python
+                Some(stage_id),
             );
 
-            self.planner.update(MaterializedResults {
-                source_id,
-                in_memory_info,
-            })?;
+            self.planner.update(
+                MaterializedResults {
+                    stage_id,
+                    in_memory_info,
+                },
+                time_taken,
+            )?;
             Ok(())
         })
+    }
+
+    pub fn explain_analyze(
+        &mut self,
+        explain_analyze_dir: &str,
+        last_stage_time_taken: f64,
+    ) -> PyResult<()> {
+        self.planner
+            .explain_analyze(explain_analyze_dir, last_stage_time_taken)?;
+        Ok(())
     }
 }

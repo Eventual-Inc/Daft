@@ -31,6 +31,8 @@ pub struct SubgraphOptions {
     pub name: String,
     /// The unique id for the subgraph.
     pub subgraph_id: String,
+    /// metadata
+    pub metadata: Option<String>,
 }
 
 impl<T: TreeDisplay> MermaidDisplay for T {
@@ -146,9 +148,31 @@ where
     }
 
     pub fn fmt(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
-        if let Some(SubgraphOptions { name, subgraph_id }) = &self.subgraph_options {
+        if let Some(SubgraphOptions {
+            name,
+            subgraph_id,
+            metadata,
+        }) = &self.subgraph_options
+        {
             writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
+
+            // add metadata to the subgraph
+            let metadata_id = if let Some(metadata) = metadata {
+                let id = format!("{subgraph_id}_metadata");
+                writeln!(self.output, r#"{id}["{metadata}"]"#)?;
+                Some(id)
+            } else {
+                None
+            };
+
             self.fmt_node(node)?;
+
+            // stack metadata on top of first node with an invisible edge
+            if let Some(metadata_id) = metadata_id {
+                let first_node_id = self.nodes.values().last().unwrap();
+                writeln!(self.output, r#"{metadata_id} ~~~ {first_node_id}"#)?;
+            }
+
             writeln!(self.output, "end")?;
         } else {
             if self.bottom_up {

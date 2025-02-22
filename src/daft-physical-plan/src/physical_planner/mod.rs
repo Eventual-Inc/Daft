@@ -13,6 +13,8 @@ use crate::{optimization::optimizer::PhysicalOptimizer, PhysicalPlanRef};
 mod translate;
 pub use translate::{extract_agg_expr, populate_aggregation_stages};
 
+mod display;
+
 /// Translate a logical plan to a physical plan.
 pub fn logical_to_physical(
     logical_plan: Arc<LogicalPlan>,

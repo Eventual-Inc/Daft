@@ -430,8 +430,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
-        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo, JoinOptions, LogicalPlan,
+        LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
 
     #[fixture]
@@ -448,8 +448,6 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -469,8 +467,6 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
