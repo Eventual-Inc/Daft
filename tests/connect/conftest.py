@@ -26,3 +26,13 @@ def spark_session():
     # Cleanup
     server.shutdown()
     session.stop()
+
+
+@pytest.fixture(scope="function")
+def make_spark_df(spark_session):
+    def make_df(data):
+        fields = [name for name in data]
+        rows = list(zip(*[data[name] for name in fields]))
+        return spark_session.createDataFrame(rows, fields)
+
+    yield make_df

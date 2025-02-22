@@ -45,7 +45,7 @@ use crate::{
 ///
 /// This builder holds the current root (sink) of the logical plan, and the building methods return
 /// a brand new builder holding a new plan; i.e., this is an immutable builder.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,

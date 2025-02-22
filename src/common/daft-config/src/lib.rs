@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
 ///     that this does not include the actual scan, which is taken care of by the DaftExecutionConfig.
 /// 2. Building of logical plan nodes
-#[derive(Clone, Serialize, Deserialize, Default, Debug)]
+#[derive(Clone, Serialize, Deserialize, Default, Debug, Eq, PartialEq)]
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
     pub enable_join_reordering: bool,

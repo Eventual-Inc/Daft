@@ -1,14 +1,14 @@
 //! Translation between Spark Connect and Daft
 
 mod datatype;
-mod literal;
+mod expr_resolver;
 
-use std::{io::Cursor, rc::Rc, sync::Arc};
+use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
-use daft_core::series::Series;
-use daft_dsl::unresolved_col;
-use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+use daft_core::{join::JoinSide, series::Series};
+use daft_dsl::{unresolved_col, Column, Expr, ExprRef, Operator, PlanRef, UnresolvedColumn};
+use daft_logical_plan::{JoinOptions, JoinType, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
@@ -16,29 +16,27 @@ use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
+pub(crate) use expr_resolver::ExprResolver;
 use itertools::zip_eq;
-use literal::to_daft_literal;
 use pyo3::{intern, prelude::*};
 use spark_connect::{
     aggregate::GroupType,
     data_type::StructField,
     expression::{
-        self as spark_expr,
-        cast::{CastToType, EvalMode},
         sort_order::{NullOrdering, SortDirection},
-        ExprType, SortOrder, UnresolvedFunction,
+        ExprType, SortOrder,
     },
+    join::JoinType as SparkJoinType,
     read::ReadType,
     relation::RelType,
     set_operation::SetOpType,
-    Deduplicate, Expression, Limit, Range, Relation, SetOperation, Sort, Sql,
+    Deduplicate, Expression, Join, Limit, Range, Relation, SetOperation, Sort, Sql,
 };
 use tracing::debug;
 
 use crate::{
     ensure,
     error::{ConnectError, ConnectResult, Context},
-    functions::CONNECT_FUNCTIONS,
     internal_err, invalid_argument_err, not_yet_implemented,
     session::ConnectSession,
     util::FromOptionalField,
@@ -47,11 +45,15 @@ use crate::{
 #[derive(Clone)]
 pub struct SparkAnalyzer<'a> {
     pub session: &'a ConnectSession,
+    plan_nodes: HashMap<i64, LogicalPlanBuilder>,
 }
 
 impl SparkAnalyzer<'_> {
     pub fn new(session: &ConnectSession) -> SparkAnalyzer<'_> {
-        SparkAnalyzer { session }
+        SparkAnalyzer {
+            session,
+            plan_nodes: HashMap::new(),
+        }
     }
 
     /// Creates a logical source (scan) operator from a vec of tables.
@@ -88,7 +90,11 @@ impl SparkAnalyzer<'_> {
         })
     }
 
-    pub async fn to_logical_plan(&self, relation: Relation) -> ConnectResult<LogicalPlanBuilder> {
+    #[allow(clippy::wrong_self_convention)]
+    pub async fn to_logical_plan(
+        &mut self,
+        relation: Relation,
+    ) -> ConnectResult<LogicalPlanBuilder> {
         let common = relation.common.required("common")?;
 
         if common.origin.is_some() {
@@ -97,7 +103,7 @@ impl SparkAnalyzer<'_> {
 
         let rel_type = relation.rel_type.required("rel_type")?;
 
-        match rel_type {
+        let lp = match rel_type {
             RelType::Limit(l) => self.limit(*l).await,
             RelType::Range(r) => self.range(r),
             RelType::Project(p) => self.project(*p).await,
@@ -117,11 +123,17 @@ impl SparkAnalyzer<'_> {
             RelType::Sort(rel) => self.sort(*rel).await,
             RelType::Sql(sql) => self.sql(sql).await,
             RelType::SetOp(set_op) => self.set_op(*set_op).await,
+            RelType::Join(join) => self.join(*join).await,
             plan => not_yet_implemented!(r#"relation type: "{}""#, rel_name(&plan)),
-        }
+        }?;
+        let plan_id = common.plan_id.required("plan_id")?;
+
+        self.plan_nodes.insert(plan_id, lp.clone());
+
+        Ok(lp)
     }
 
-    async fn limit(&self, limit: Limit) -> ConnectResult<LogicalPlanBuilder> {
+    async fn limit(&mut self, limit: Limit) -> ConnectResult<LogicalPlanBuilder> {
         let Limit { input, limit } = limit;
         let input = input.required("input")?;
 
@@ -130,7 +142,7 @@ impl SparkAnalyzer<'_> {
         plan.limit(i64::from(limit), false).map_err(Into::into)
     }
 
-    async fn deduplicate(&self, deduplicate: Deduplicate) -> ConnectResult<LogicalPlanBuilder> {
+    async fn deduplicate(&mut self, deduplicate: Deduplicate) -> ConnectResult<LogicalPlanBuilder> {
         let Deduplicate {
             input,
             column_names,
@@ -148,7 +160,7 @@ impl SparkAnalyzer<'_> {
         plan.distinct().map_err(Into::into)
     }
 
-    async fn sort(&self, sort: Sort) -> ConnectResult<LogicalPlanBuilder> {
+    async fn sort(&mut self, sort: Sort) -> ConnectResult<LogicalPlanBuilder> {
         let Sort {
             input,
             order,
@@ -171,6 +183,10 @@ impl SparkAnalyzer<'_> {
         let mut descending = Vec::with_capacity(order.len());
         let mut nulls_first = Vec::with_capacity(order.len());
 
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
         for SortOrder {
             child,
             direction,
@@ -178,7 +194,7 @@ impl SparkAnalyzer<'_> {
         } in order
         {
             let expr = child.required("child")?;
-            let expr = self.to_daft_expr(&expr)?;
+            let expr = expr_resolver.resolve_expr(&expr)?;
 
             let sort_direction = SortDirection::try_from(direction).map_err(|e| {
                 ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
@@ -314,7 +330,7 @@ impl SparkAnalyzer<'_> {
     }
 
     async fn aggregate(
-        &self,
+        &mut self,
         aggregate: spark_connect::Aggregate,
     ) -> ConnectResult<LogicalPlanBuilder> {
         fn check_grouptype(group_type: GroupType) -> ConnectResult<()> {
@@ -363,15 +379,19 @@ impl SparkAnalyzer<'_> {
         if !grouping_sets.is_empty() {
             not_yet_implemented!("Grouping sets not yet supported; got {grouping_sets:?}");
         }
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
 
         let grouping_expressions: Vec<_> = grouping_expressions
             .iter()
-            .map(|e| self.to_daft_expr(e))
+            .map(|e| expr_resolver.resolve_expr(e))
             .try_collect()?;
 
         let aggregate_expressions: Vec<_> = aggregate_expressions
             .iter()
-            .map(|e| self.to_daft_expr(e))
+            .map(|e| expr_resolver.resolve_expr(e))
             .try_collect()?;
 
         plan = plan.aggregate(aggregate_expressions, grouping_expressions)?;
@@ -379,7 +399,7 @@ impl SparkAnalyzer<'_> {
         Ok(plan)
     }
 
-    async fn drop(&self, drop: spark_connect::Drop) -> ConnectResult<LogicalPlanBuilder> {
+    async fn drop(&mut self, drop: spark_connect::Drop) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Drop {
             input,
             columns,
@@ -406,12 +426,19 @@ impl SparkAnalyzer<'_> {
         Ok(plan.select(to_select)?)
     }
 
-    pub async fn filter(&self, filter: spark_connect::Filter) -> ConnectResult<LogicalPlanBuilder> {
+    pub async fn filter(
+        &mut self,
+        filter: spark_connect::Filter,
+    ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Filter { input, condition } = filter;
 
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
         let input = input.required("input")?;
         let condition = condition.required("condition")?;
-        let condition = self.to_daft_expr(&condition)?;
+        let condition = expr_resolver.resolve_expr(&condition)?;
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
         Ok(plan.filter(condition)?)
@@ -472,16 +499,22 @@ impl SparkAnalyzer<'_> {
         self.create_in_memory_scan(plan_id as _, daft_schema, tables)
     }
 
-    async fn project(&self, project: spark_connect::Project) -> ConnectResult<LogicalPlanBuilder> {
+    async fn project(
+        &mut self,
+        project: spark_connect::Project,
+    ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Project { input, expressions } = project;
 
         let input = input.required("input")?;
 
         let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
-
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
         let daft_exprs: Vec<_> = expressions
             .iter()
-            .map(|e| self.to_daft_expr(e))
+            .map(|e| expr_resolver.resolve_expr(e))
             .try_collect()?;
         plan = plan.select(daft_exprs)?;
 
@@ -489,7 +522,7 @@ impl SparkAnalyzer<'_> {
     }
 
     async fn with_columns(
-        &self,
+        &mut self,
         with_columns: spark_connect::WithColumns,
     ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::WithColumns { input, aliases } = with_columns;
@@ -498,6 +531,10 @@ impl SparkAnalyzer<'_> {
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: false,
+        };
         let daft_exprs: Vec<_> = aliases
             .into_iter()
             .map(|alias| {
@@ -506,7 +543,7 @@ impl SparkAnalyzer<'_> {
                     expr_type: Some(ExprType::Alias(Box::new(alias))),
                 };
 
-                self.to_daft_expr(&expression)
+                expr_resolver.resolve_expr(&expression)
             })
             .try_collect()?;
 
@@ -514,7 +551,7 @@ impl SparkAnalyzer<'_> {
     }
 
     async fn with_columns_renamed(
-        &self,
+        &mut self,
         with_columns_renamed: spark_connect::WithColumnsRenamed,
     ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::WithColumnsRenamed {
@@ -556,7 +593,8 @@ impl SparkAnalyzer<'_> {
         Ok(plan)
     }
 
-    async fn to_df(&self, to_df: spark_connect::ToDf) -> ConnectResult<LogicalPlanBuilder> {
+    #[allow(clippy::wrong_self_convention)]
+    async fn to_df(&mut self, to_df: spark_connect::ToDf) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::ToDf {
             input,
             column_names,
@@ -574,7 +612,7 @@ impl SparkAnalyzer<'_> {
         Ok(plan)
     }
 
-    async fn set_op(&self, set_op: SetOperation) -> ConnectResult<LogicalPlanBuilder> {
+    async fn set_op(&mut self, set_op: SetOperation) -> ConnectResult<LogicalPlanBuilder> {
         let set_op_type = set_op.set_op_type;
         let left = set_op.left_input.required("left_input")?;
         let right = set_op.right_input.required("right_input")?;
@@ -598,7 +636,7 @@ impl SparkAnalyzer<'_> {
     }
 
     pub async fn relation_to_spark_schema(
-        &self,
+        &mut self,
         input: Relation,
     ) -> ConnectResult<spark_connect::DataType> {
         let result = self.relation_to_daft_schema(input).await?;
@@ -627,7 +665,7 @@ impl SparkAnalyzer<'_> {
         })
     }
 
-    pub async fn relation_to_daft_schema(&self, input: Relation) -> ConnectResult<SchemaRef> {
+    pub async fn relation_to_daft_schema(&mut self, input: Relation) -> ConnectResult<SchemaRef> {
         if let Some(common) = &input.common {
             if common.origin.is_some() {
                 debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
@@ -672,149 +710,225 @@ impl SparkAnalyzer<'_> {
         Ok(plan.into())
     }
 
-    pub fn to_daft_expr(&self, expression: &Expression) -> ConnectResult<daft_dsl::ExprRef> {
-        if let Some(common) = &expression.common {
-            if common.origin.is_some() {
-                debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
-            }
+    async fn join(&mut self, join: Join) -> ConnectResult<LogicalPlanBuilder> {
+        let Join {
+            left,
+            right,
+            join_condition,
+            join_type,
+            using_columns,
+            join_data_type,
+        } = join;
+
+        if join_data_type.is_some() {
+            not_yet_implemented!("join_data_type is not supported;");
+        }
+
+        let left = left.required("left")?;
+        let right = right.required("right")?;
+
+        let left_plan = Box::pin(self.to_logical_plan(*left)).await?;
+        let right_plan = Box::pin(self.to_logical_plan(*right)).await?;
+        let join_type: SparkJoinType =
+            SparkJoinType::try_from(join_type).wrap_err("Invalid join type")?;
+        let join_type = match join_type {
+            SparkJoinType::Unspecified => JoinType::Inner,
+            SparkJoinType::Inner => JoinType::Inner,
+            SparkJoinType::FullOuter => JoinType::Outer,
+            SparkJoinType::LeftOuter => JoinType::Left,
+            SparkJoinType::RightOuter => JoinType::Right,
+            SparkJoinType::LeftAnti => JoinType::Anti,
+            SparkJoinType::LeftSemi => JoinType::Semi,
+            SparkJoinType::Cross => JoinType::Inner,
         };
 
-        let Some(expr) = &expression.expr_type else {
-            not_yet_implemented!("Expression is required");
-        };
+        fn process_join_on(
+            join_cond: ExprRef,
+            left_on: &mut Vec<ExprRef>,
+            right_on: &mut Vec<ExprRef>,
+            left_plan: &LogicalPlanBuilder,
+            right_plan: &LogicalPlanBuilder,
+            plan_nodes: &HashMap<i64, LogicalPlanBuilder>,
+        ) -> ConnectResult<()> {
+            match join_cond.as_ref() {
+                Expr::BinaryOp {
+                    op: Operator::Eq,
+                    left,
+                    right,
+                } => {
+                    let mut left_expr_join_side = None;
+                    let mut right_expr_join_side = None;
 
-        match expr {
-            spark_expr::ExprType::Literal(l) => to_daft_literal(l),
-            spark_expr::ExprType::UnresolvedAttribute(attr) => {
-                let spark_expr::UnresolvedAttribute {
-                    unparsed_identifier,
-                    plan_id,
-                    is_metadata_column,
-                } = attr;
-
-                if let Some(plan_id) = plan_id {
-                    debug!(
-                        "Ignoring plan_id {plan_id} for attribute expressions; not yet implemented"
-                    );
-                }
-
-                if let Some(is_metadata_column) = is_metadata_column {
-                    debug!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
-                }
-
-                Ok(daft_dsl::unresolved_col(unparsed_identifier.as_str()))
-            }
-            spark_expr::ExprType::UnresolvedFunction(f) => self.process_function(f),
-            spark_expr::ExprType::ExpressionString(_) => {
-                not_yet_implemented!("Expression string not yet supported")
-            }
-            spark_expr::ExprType::UnresolvedStar(_) => {
-                not_yet_implemented!("Unresolved star expressions not yet supported")
-            }
-            spark_expr::ExprType::Alias(alias) => {
-                let spark_expr::Alias {
-                    expr,
-                    name,
-                    metadata,
-                } = &**alias;
-                let Some(expr) = expr else {
-                    invalid_argument_err!("Alias expression is required");
-                };
-
-                let [name] = name.as_slice() else {
-                    invalid_argument_err!("Alias name is required and currently only works with a single string; got {name:?}");
-                };
-
-                if let Some(metadata) = metadata {
-                    not_yet_implemented!("Alias metadata: {metadata:?}");
-                }
-
-                let child = self.to_daft_expr(expr)?;
-
-                let name = Arc::from(name.as_str());
-
-                Ok(child.alias(name))
-            }
-            spark_expr::ExprType::Cast(c) => {
-                let spark_expr::Cast {
-                    expr,
-                    eval_mode,
-                    cast_to_type,
-                } = &**c;
-
-                let Some(expr) = expr else {
-                    invalid_argument_err!("Cast expression is required");
-                };
-
-                let expr = self.to_daft_expr(expr)?;
-
-                let Some(cast_to_type) = cast_to_type else {
-                    invalid_argument_err!("Cast to type is required");
-                };
-
-                let data_type = match &cast_to_type {
-                    CastToType::Type(kind) => to_daft_datatype(kind)?,
-                    CastToType::TypeStr(s) => {
-                        not_yet_implemented!(
-                            "Cast to type string not yet supported; tried to cast to {s}"
-                        );
+                    // check what side left is on
+                    if let Expr::Column(Column::Unresolved(UnresolvedColumn {
+                        name,
+                        plan_ref,
+                        plan_schema: _,
+                    })) = left.as_ref()
+                    {
+                        match plan_ref {
+                            PlanRef::Alias(alias) => {
+                                let plan_id = alias.parse::<i64>().unwrap();
+                                let plan = plan_nodes.get(&plan_id);
+                                match plan {
+                                    Some(plan) if plan == left_plan => {
+                                        left_on.push(unresolved_col(name.clone()));
+                                        left_expr_join_side = Some(JoinSide::Left);
+                                    }
+                                    Some(plan) if plan == right_plan => {
+                                        right_on.push(unresolved_col(name.clone()));
+                                        left_expr_join_side = Some(JoinSide::Right);
+                                    }
+                                    _ => {
+                                        internal_err!("plan not found");
+                                    }
+                                };
+                            }
+                            PlanRef::Unqualified => {
+                                // check if the column is in the left or right plan
+                                let left_schema = left_plan.schema();
+                                let right_schema = right_plan.schema();
+                                if left_schema.has_field(name) && right_schema.has_field(name) {
+                                    internal_err!("ambiguous column name");
+                                } else if left_schema.has_field(name) {
+                                    left_on.push(unresolved_col(name.clone()));
+                                    left_expr_join_side = Some(JoinSide::Left);
+                                } else if right_schema.has_field(name) {
+                                    right_on.push(unresolved_col(name.clone()));
+                                    left_expr_join_side = Some(JoinSide::Right);
+                                } else {
+                                    internal_err!("column not found");
+                                }
+                            }
+                        }
                     }
-                };
 
-                let eval_mode = EvalMode::try_from(*eval_mode).map_err(|e| {
-                    ConnectError::invalid_relation(format!("Unknown eval mode: {e}"))
-                })?;
+                    // check what side right is on
+                    if let Expr::Column(Column::Unresolved(UnresolvedColumn {
+                        name,
+                        plan_ref,
+                        plan_schema: _,
+                    })) = right.as_ref()
+                    {
+                        match plan_ref {
+                            PlanRef::Alias(alias) => {
+                                let plan_id = alias.parse::<i64>().unwrap();
+                                let plan = plan_nodes.get(&plan_id);
+                                match plan {
+                                    Some(plan) if plan == left_plan => {
+                                        left_on.push(unresolved_col(name.clone()));
+                                        right_expr_join_side = Some(JoinSide::Left);
+                                    }
+                                    Some(plan) if plan == right_plan => {
+                                        right_on.push(unresolved_col(name.clone()));
+                                        right_expr_join_side = Some(JoinSide::Right);
+                                    }
+                                    _ => {
+                                        internal_err!("plan not found");
+                                    }
+                                };
+                            }
+                            PlanRef::Unqualified => {
+                                // check if the column is in the left or right plan
+                                let left_schema = left_plan.schema();
+                                let right_schema = right_plan.schema();
+                                if left_schema.has_field(name) && right_schema.has_field(name) {
+                                    internal_err!("ambiguous column name");
+                                } else if left_schema.has_field(name) {
+                                    left_on.push(unresolved_col(name.clone()));
+                                    right_expr_join_side = Some(JoinSide::Left);
+                                } else if right_schema.has_field(name) {
+                                    right_on.push(unresolved_col(name.clone()));
+                                    right_expr_join_side = Some(JoinSide::Right);
+                                } else {
+                                    internal_err!("column not found");
+                                }
+                            }
+                        }
+                    }
 
-                debug!("Ignoring cast eval mode: {eval_mode:?}");
-
-                Ok(expr.cast(&data_type))
-            }
-            spark_expr::ExprType::SortOrder(s) => {
-                let spark_expr::SortOrder {
-                    child,
-                    direction,
-                    null_ordering,
-                } = &**s;
-
-                let Some(_child) = child else {
-                    invalid_argument_err!("Sort order child is required");
-                };
-
-                let _sort_direction = SortDirection::try_from(*direction).map_err(|e| {
-                    ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
-                })?;
-
-                let _sort_nulls = NullOrdering::try_from(*null_ordering).map_err(|e| {
-                    ConnectError::invalid_relation(format!("Unknown null ordering: {e}"))
-                })?;
-
-                not_yet_implemented!("Sort order expressions not yet supported");
-            }
-            other => not_yet_implemented!("expression type: {other:?}"),
+                    // make sure the join condition is valid
+                    // any non-column expression should also be handled here.
+                    // ex: col(z) = 1
+                    // if the column (z) is on the left side, then the right side should be the literal and vice versa
+                    // ensuring that there is an expression on both sides
+                    match (left_expr_join_side, right_expr_join_side) {
+                        (None, Some(JoinSide::Right)) => left_on.push(left.clone()),
+                        (Some(JoinSide::Left), None) => right_on.push(right.clone()),
+                        (Some(JoinSide::Right), None) => left_on.push(right.clone()),
+                        (None, Some(JoinSide::Left)) => right_on.push(left.clone()),
+                        (Some(JoinSide::Left), Some(JoinSide::Right))
+                        | (Some(JoinSide::Right), Some(JoinSide::Left)) => {}
+                        _ => {
+                            internal_err!("both sides of join condition are on the same side");
+                        }
+                    }
+                }
+                Expr::BinaryOp {
+                    op: Operator::And,
+                    left,
+                    right,
+                } => {
+                    process_join_on(
+                        left.clone(),
+                        left_on,
+                        right_on,
+                        left_plan,
+                        right_plan,
+                        plan_nodes,
+                    )?;
+                    process_join_on(
+                        right.clone(),
+                        left_on,
+                        right_on,
+                        left_plan,
+                        right_plan,
+                        plan_nodes,
+                    )?;
+                }
+                _ => {
+                    not_yet_implemented!("join condition");
+                }
+            };
+            Ok(())
         }
-    }
 
-    fn process_function(&self, f: &UnresolvedFunction) -> ConnectResult<daft_dsl::ExprRef> {
-        let UnresolvedFunction {
-            function_name,
-            arguments,
-            is_distinct,
-            is_user_defined_function,
-        } = f;
-
-        if *is_distinct {
-            not_yet_implemented!("Distinct");
-        }
-
-        if *is_user_defined_function {
-            not_yet_implemented!("User-defined functions");
-        }
-
-        let Some(f) = CONNECT_FUNCTIONS.get(function_name.as_str()) else {
-            not_yet_implemented!("function: {function_name}");
+        let mut left_on = vec![];
+        let mut right_on = vec![];
+        let expr_resolver = ExprResolver {
+            plan_nodes: &self.plan_nodes,
+            in_join: true,
+        };
+        if let Some(join_cond) = join_condition {
+            let join_cond = expr_resolver.resolve_expr(&join_cond)?;
+            process_join_on(
+                join_cond,
+                &mut left_on,
+                &mut right_on,
+                &left_plan,
+                &right_plan,
+                &self.plan_nodes,
+            )?;
+        } else {
+            let using_columns: Vec<ExprRef> =
+                using_columns.into_iter().map(unresolved_col).collect();
+            left_on.clone_from(&using_columns);
+            right_on.clone_from(&using_columns);
         };
 
-        f.to_expr(arguments, self)
+        let plan = left_plan.join(
+            right_plan,
+            left_on,
+            right_on,
+            join_type,
+            None,
+            JoinOptions {
+                prefix: None,
+                suffix: None,
+                merge_matching_join_keys: true,
+            },
+        )?;
+        Ok(plan)
     }
 }
 
