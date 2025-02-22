@@ -266,8 +266,9 @@ class IcebergWriter(ParquetFileWriter):
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]
         size = self.fs.get_file_info(self.full_path).size
+        path_with_protocol = f"{self.protocol}://{self.full_path}"
         data_file = make_iceberg_data_file(
-            self.full_path,
+            path_with_protocol,
             size,
             metadata,
             self.part_record,
@@ -329,8 +330,9 @@ class DeltalakeWriter(ParquetFileWriter):
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]
         size = self.fs.get_file_info(self.full_path).size
+        path_with_protocol = f"{self.protocol}://{self.full_path}"
         add_action = make_deltalake_add_action(
-            path=self.full_path,
+            path=path_with_protocol,
             metadata=metadata,
             size=size,
             partition_values=self.partition_strings,
