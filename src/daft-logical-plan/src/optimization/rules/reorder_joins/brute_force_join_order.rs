@@ -241,7 +241,7 @@ mod tests {
             let order = $orderer.order(&graph);
             assert!(JoinOrderTree::order_eq(&order, &$optimal_order));
             // Check that the number of join conditions does not increase due to join edge inference.
-            assert_eq!(JoinOrderTree::num_join_conditions(&order), num_edges);
+            assert!(JoinOrderTree::num_join_conditions(&order) <= num_edges);
         };
     }
 
@@ -403,6 +403,138 @@ mod tests {
         create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
     }
 
+    #[test]
+    fn test_brute_force_order_mock_tpch_sub_q9() {
+        let nodes = vec![
+            ("nation", 25),
+            ("supplier", 100_000),
+            ("part", 100_000),
+            ("partsupp", 8_000_000),
+        ];
+        let name_to_id = node_to_id_map(nodes.clone());
+        let edges = vec![
+            JoinEdge {
+                node1: name_to_id["partsupp"],
+                node1_col_name: "ps_partkey".to_string(),
+                node2: name_to_id["part"],
+                node2_col_name: "p_partkey".to_string(),
+                total_domain: 2_000_000,
+            },
+            JoinEdge {
+                node1: name_to_id["partsupp"],
+                node1_col_name: "ps_suppkey".to_string(),
+                node2: name_to_id["supplier"],
+                node2_col_name: "s_suppkey".to_string(),
+                total_domain: 100_000,
+            },
+            JoinEdge {
+                node1: name_to_id["supplier"],
+                node1_col_name: "s_nationkey".to_string(),
+                node2: name_to_id["nation"],
+                node2_col_name: "n_nationkey".to_string(),
+                total_domain: 25,
+            },
+        ];
+        let optimal_order = test_join(
+            test_join(
+                test_relation(name_to_id["nation"]),
+                test_relation(name_to_id["supplier"]),
+            ),
+            test_join(
+                test_relation(name_to_id["part"]),
+                test_relation(name_to_id["partsupp"]),
+            ),
+        );
+        create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
+    }
+
+    #[test]
+    fn test_brute_force_order_mock_tpch_q9() {
+        let nodes = vec![
+            ("nation", 22),
+            ("orders", 1_350_000),
+            ("lineitem", 4_374_885),
+            ("supplier", 8_100),
+            ("part", 18_000),
+            ("partsupp", 648_000),
+        ];
+        let name_to_id = node_to_id_map(nodes.clone());
+        let edges = vec![
+            JoinEdge {
+                node1: name_to_id["partsupp"],
+                node1_col_name: "ps_partkey".to_string(),
+                node2: name_to_id["part"],
+                node2_col_name: "p_partkey".to_string(),
+                total_domain: 200_000,
+            },
+            JoinEdge {
+                node1: name_to_id["partsupp"],
+                node1_col_name: "ps_partkey".to_string(),
+                node2: name_to_id["lineitem"],
+                node2_col_name: "l_partkey".to_string(),
+                total_domain: 200_000,
+            },
+            JoinEdge {
+                node1: name_to_id["partsupp"],
+                node1_col_name: "ps_suppkey".to_string(),
+                node2: name_to_id["lineitem"],
+                node2_col_name: "l_suppkey".to_string(),
+                total_domain: 10_000,
+            },
+            JoinEdge {
+                node1: name_to_id["partsupp"],
+                node1_col_name: "ps_suppkey".to_string(),
+                node2: name_to_id["supplier"],
+                node2_col_name: "s_suppkey".to_string(),
+                total_domain: 10_000,
+            },
+            JoinEdge {
+                node1: name_to_id["orders"],
+                node1_col_name: "o_orderkey".to_string(),
+                node2: name_to_id["lineitem"],
+                node2_col_name: "l_orderkey".to_string(),
+                total_domain: 1_500_000,
+            },
+            JoinEdge {
+                node1: name_to_id["lineitem"],
+                node1_col_name: "l_partkey".to_string(),
+                node2: name_to_id["part"],
+                node2_col_name: "p_partkey".to_string(),
+                total_domain: 200_000,
+            },
+            JoinEdge {
+                node1: name_to_id["lineitem"],
+                node1_col_name: "l_suppkey".to_string(),
+                node2: name_to_id["supplier"],
+                node2_col_name: "s_suppkey".to_string(),
+                total_domain: 10_000,
+            },
+            JoinEdge {
+                node1: name_to_id["supplier"],
+                node1_col_name: "s_nationkey".to_string(),
+                node2: name_to_id["nation"],
+                node2_col_name: "n_nationkey".to_string(),
+                total_domain: 25,
+            },
+        ];
+        let optimal_order = test_join(
+            test_relation(name_to_id["orders"]),
+            test_join(
+                test_relation(name_to_id["lineitem"]),
+                test_join(
+                    test_join(
+                        test_relation(name_to_id["nation"]),
+                        test_relation(name_to_id["supplier"]),
+                    ),
+                    test_join(
+                        test_relation(name_to_id["part"]),
+                        test_relation(name_to_id["partsupp"]),
+                    ),
+                ),
+            ),
+        );
+        create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
+    }
     #[test]
     fn test_brute_force_order_star_schema() {
         let nodes = vec![
