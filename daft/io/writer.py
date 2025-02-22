@@ -330,9 +330,8 @@ class DeltalakeWriter(ParquetFileWriter):
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]
         size = self.fs.get_file_info(self.full_path).size
-        path_with_protocol = f"{self.protocol}://{self.full_path}"
         add_action = make_deltalake_add_action(
-            path=path_with_protocol,
+            path=self.full_path,
             metadata=metadata,
             size=size,
             partition_values=self.partition_strings,
