@@ -32,6 +32,8 @@ pub enum ConnectError {
         #[snafu(source(from(Box<dyn std::error::Error + 'static + Send + Sync>, Some)))]
         source: Option<Box<dyn std::error::Error + 'static + Send + Sync>>,
     },
+    #[snafu(display("Port in use: {port}"))]
+    PortInUse { port: u16 },
 }
 
 impl From<daft_micropartition::Error> for ConnectError {

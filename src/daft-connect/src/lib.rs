@@ -30,46 +30,72 @@ mod spark_analyzer;
 #[cfg(feature = "python")]
 pub mod util;
 
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+use once_cell::sync::OnceCell;
+use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot::Sender;
 #[cfg(feature = "python")]
-use connect_service::DaftSparkConnectService;
-#[cfg(feature = "python")]
-use pyo3::types::PyModuleMethods;
-#[cfg(feature = "python")]
-use snafu::{ResultExt, Whatever};
-#[cfg(feature = "python")]
-use spark_connect::spark_connect_service_server::{SparkConnectService, SparkConnectServiceServer};
-#[cfg(feature = "python")]
-use tonic::transport::Server;
-#[cfg(feature = "python")]
-use tracing::info;
+use {
+    common_py_serde::impl_bincode_py_state_serialization,
+    connect_service::DaftSparkConnectService,
+    pyo3::prelude::*,
+    pyo3::types::PyModuleMethods,
+    snafu::{ResultExt, Whatever},
+    spark_connect::spark_connect_service_server::{SparkConnectService, SparkConnectServiceServer},
+    tonic::transport::Server,
+    tracing::info,
+};
 
 #[cfg(feature = "python")]
 pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
 #[cfg_attr(feature = "python", pyo3::pyclass)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ConnectionHandle {
-    shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
-    port: u16,
+    pub port: u16,
+}
+
+#[cfg(feature = "python")]
+impl_bincode_py_state_serialization!(ConnectionHandle);
+
+#[derive(Default)]
+struct ShutdownSignals {
+    signals: HashMap<u16, Sender<()>>,
 }
 
 #[cfg_attr(feature = "python", pyo3::pymethods)]
 impl ConnectionHandle {
-    pub fn shutdown(&mut self) {
-        let Some(shutdown_signal) = self.shutdown_signal.take() else {
-            return;
-        };
-        shutdown_signal.send(()).unwrap();
-    }
-
     pub fn port(&self) -> u16 {
         self.port
     }
+
+    pub fn shutdown(&self) {
+        let shutdown_signals = SHUTDOWN_SIGNALS
+            .get()
+            .expect("SHUTDOWN_SIGNALS not initialized");
+        let mut lock = shutdown_signals.lock().expect("poisoned lock");
+        let signal = lock.signals.remove(&self.port).expect("no signal for port");
+        signal.send(()).expect("send failed");
+    }
 }
 
+static SHUTDOWN_SIGNALS: OnceCell<Arc<Mutex<ShutdownSignals>>> = OnceCell::new();
+
 #[cfg(feature = "python")]
-pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
+pub fn start(port: u16) -> Result<ConnectionHandle, Whatever> {
+    let addr = format!("0.0.0.0:{port}");
     info!("Daft-Connect server listening on {addr}");
-    let addr = util::parse_spark_connect_address(addr).whatever_context("Invalid address")?;
+    let shutdown_signals = SHUTDOWN_SIGNALS.get_or_init(Default::default);
+    let mut lock = shutdown_signals.lock().whatever_context("poisoned lock")?;
+
+    if lock.signals.contains_key(&port) {
+        return Err(error::ConnectError::PortInUse { port })
+            .whatever_context("port already in use");
+    }
 
     let listener =
         std::net::TcpListener::bind(addr).whatever_context("unable to bind to address")?;
@@ -80,14 +106,12 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
 
     let service = DaftSparkConnectService::default();
 
-    info!("Daft-Connect server listening on {addr}");
-
     let (shutdown_signal, shutdown_receiver) = tokio::sync::oneshot::channel();
 
-    let handle = ConnectionHandle {
-        shutdown_signal: Some(shutdown_signal),
-        port,
-    };
+    let handle = ConnectionHandle { port };
+
+    lock.signals.insert(port, shutdown_signal);
+
     let runtime = common_runtime::get_io_runtime(true);
 
     std::thread::spawn(move || {
@@ -130,9 +154,10 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
 
 #[cfg(feature = "python")]
 #[cfg_attr(feature = "python", pyo3::pyfunction)]
-#[pyo3(name = "connect_start", signature = (addr = "sc://0.0.0.0:0"))]
-pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
-    start(addr).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
+#[pyo3(name = "connect_start", signature = (port = None))]
+pub fn py_connect_start(port: Option<u16>) -> pyo3::PyResult<ConnectionHandle> {
+    let port = port.unwrap_or_default();
+    start(port).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
 }
 
 #[cfg(feature = "python")]
