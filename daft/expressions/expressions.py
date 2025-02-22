@@ -20,9 +20,16 @@ from typing import (
 
 import daft.daft as native
 from daft import context
-from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, initialize_udfs
+from daft.daft import (
+    CountMode,
+    ImageFormat,
+    ImageMode,
+    ResourceRequest,
+    initialize_udfs,
+    resolved_col,
+    unresolved_col,
+)
 from daft.daft import PyExpr as _PyExpr
-from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
@@ -163,7 +170,12 @@ def col(name: str) -> Expression:
     Returns:
         Expression: Expression representing the selected column
     """
-    return Expression._from_pyexpr(_col(name))
+    return Expression._from_pyexpr(unresolved_col(name))
+
+
+def _resolved_col(name: str) -> Expression:
+    """Creates a resolved column."""
+    return Expression._from_pyexpr(resolved_col(name))
 
 
 def list_(*items: Expression | str):

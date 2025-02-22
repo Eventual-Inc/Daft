@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction};
 use daft_core::{join::JoinType, prelude::SchemaRef};
-use daft_dsl::{col, Expr, ExprRef, Operator, Subquery};
+use daft_dsl::{resolved_col, Column, Expr, ExprRef, Operator, ResolvedColumn, Subquery};
 use itertools::multiunzip;
 use uuid::Uuid;
 
@@ -82,7 +82,7 @@ impl UnnestScalarSubquery {
                         if let Expr::Subquery(subquery) = e.as_ref() {
                             subqueries.insert(subquery.clone());
 
-                            Ok(Transformed::yes(col(subquery.semantic_id().id)))
+                            Ok(Transformed::yes(resolved_col(subquery.semantic_id().id)))
                         } else {
                             Ok(Transformed::no(e))
                         }
@@ -113,7 +113,7 @@ impl UnnestScalarSubquery {
                 // alias output column
                 let subquery_plan = Arc::new(LogicalPlan::Project(Project::try_new(
                     subquery_plan,
-                    vec![col(output_col.as_str()).alias(subquery_alias)],
+                    vec![resolved_col(output_col.as_str()).alias(subquery_alias)],
                 )?));
 
                 let (decorrelated_subquery, subquery_on, input_on) =
@@ -317,7 +317,7 @@ impl OptimizerRule for UnnestPredicateSubquery {
                         };
 
                         input_on.push(in_expr);
-                        subquery_on.push(col(output_col.as_str()));
+                        subquery_on.push(resolved_col(output_col.as_str()));
                     }
 
                     if subquery_on.is_empty() {
@@ -388,16 +388,24 @@ fn pull_up_correlated_cols(
                     {
                         match (left.as_ref(), right.as_ref()) {
                             (
-                                Expr::Column(subquery_col_name),
-                                Expr::OuterReferenceColumn(outer_col),
+                                Expr::Column(Column::Resolved(ResolvedColumn::Basic(
+                                    subquery_col_name,
+                                ))),
+                                Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                                    outer_field,
+                                ))),
                             )
                             | (
-                                Expr::OuterReferenceColumn(outer_col),
-                                Expr::Column(subquery_col_name),
+                                Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                                    outer_field,
+                                ))),
+                                Expr::Column(Column::Resolved(ResolvedColumn::Basic(
+                                    subquery_col_name,
+                                ))),
                             ) => {
                                 // remove correlated col from filter, use in join instead
-                                subquery_on.push(col(subquery_col_name.clone()));
-                                outer_on.push(col(outer_col.field.name.as_str()));
+                                subquery_on.push(resolved_col(subquery_col_name.clone()));
+                                outer_on.push(resolved_col(outer_field.name.as_str()));
 
                                 found_correlated_col = true;
                                 return false;
@@ -486,7 +494,8 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Repartition(..)
         | LogicalPlan::Union(..)
         | LogicalPlan::Intersect(..)
-        | LogicalPlan::Sort(..) => Ok((plan.clone(), subquery_on, outer_on)),
+        | LogicalPlan::Sort(..)
+        | LogicalPlan::SubqueryAlias(..) => Ok((plan.clone(), subquery_on, outer_on)),
 
         // ops that cannot pull up correlated columns
         LogicalPlan::ActorPoolProject(..)
@@ -527,7 +536,7 @@ fn get_missing_exprs(
             // another expression takes pull up column name, we rename the pull up column.
             let new_name = format!("{}-{}", expr.name(), Uuid::new_v4());
 
-            new_subquery_on.push(col(new_name.clone()));
+            new_subquery_on.push(resolved_col(new_name.clone()));
             missing_exprs.push(expr.alias(new_name));
         } else {
             // missing from schema, can keep original name
@@ -546,7 +555,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::join::JoinType;
-    use daft_dsl::{col, Expr, OuterReferenceColumn, Subquery};
+    use daft_dsl::{unresolved_col, Column, Expr, ResolvedColumn, Subquery};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::{UnnestPredicateSubquery, UnnestScalarSubquery};
@@ -599,29 +608,29 @@ mod tests {
             DataType::Int64,
         )]));
 
-        let subquery = tbl2.aggregate(vec![col("key").max()], vec![])?;
+        let subquery = tbl2.aggregate(vec![unresolved_col("key").max()], vec![])?;
         let subquery_expr = Arc::new(Expr::Subquery(Subquery {
             plan: subquery.build(),
         }));
         let subquery_alias = subquery_expr.semantic_id(&subquery.schema()).id;
 
         let plan = tbl1
-            .filter(col("key").eq(subquery_expr))?
-            .select(vec![col("val")])?
+            .filter(unresolved_col("key").eq(subquery_expr))?
+            .select(vec![unresolved_col("val")])?
             .build();
 
         let expected = tbl1
             .join(
-                subquery.select(vec![col("key").alias(subquery_alias.clone())])?,
+                subquery.select(vec![unresolved_col("key").alias(subquery_alias.clone())])?,
                 vec![],
                 vec![],
                 JoinType::Inner,
                 None,
                 Default::default(),
             )?
-            .filter(col("key").eq(col(subquery_alias)))?
-            .select(vec![col("key"), col("val")])?
-            .select(vec![col("val")])?
+            .filter(unresolved_col("key").eq(unresolved_col(subquery_alias)))?
+            .select(vec![unresolved_col("key"), unresolved_col("val")])?
+            .select(vec![unresolved_col("val")])?
             .build();
 
         assert_scalar_optimized_plan_eq(plan, expected)?;
@@ -642,39 +651,45 @@ mod tests {
         ]));
 
         let subquery = tbl2
-            .filter(col("inner_key").eq(Arc::new(Expr::OuterReferenceColumn(
-                OuterReferenceColumn {
-                    field: Field::new("inner_key", DataType::Int64),
-                    depth: 1,
-                },
-            ))))?
-            .aggregate(vec![col("outer_key").max()], vec![])?;
+            .filter(
+                unresolved_col("inner_key").eq(Arc::new(Expr::Column(Column::Resolved(
+                    ResolvedColumn::OuterRef(Field::new("inner_key", DataType::Int64)),
+                )))),
+            )?
+            .aggregate(vec![unresolved_col("outer_key").max()], vec![])?;
         let subquery_expr = Arc::new(Expr::Subquery(Subquery {
             plan: subquery.build(),
         }));
         let subquery_alias = subquery_expr.semantic_id(&subquery.schema()).id;
 
         let plan = tbl1
-            .filter(col("outer_key").eq(subquery_expr))?
-            .select(vec![col("val")])?
+            .filter(unresolved_col("outer_key").eq(subquery_expr))?
+            .select(vec![unresolved_col("val")])?
             .build();
 
         let expected = tbl1
             .join(
-                tbl2.aggregate(vec![col("outer_key").max()], vec![col("inner_key")])?
-                    .select(vec![
-                        col("outer_key").alias(subquery_alias.clone()),
-                        col("inner_key"),
-                    ])?,
-                vec![col("inner_key")],
-                vec![col("inner_key")],
+                tbl2.aggregate(
+                    vec![unresolved_col("outer_key").max()],
+                    vec![unresolved_col("inner_key")],
+                )?
+                .select(vec![
+                    unresolved_col("outer_key").alias(subquery_alias.clone()),
+                    unresolved_col("inner_key"),
+                ])?,
+                vec![unresolved_col("inner_key")],
+                vec![unresolved_col("inner_key")],
                 JoinType::Left,
                 None,
                 Default::default(),
             )?
-            .filter(col("outer_key").eq(col(subquery_alias)))?
-            .select(vec![col("outer_key"), col("inner_key"), col("val")])?
-            .select(vec![col("val")])?
+            .filter(unresolved_col("outer_key").eq(unresolved_col(subquery_alias)))?
+            .select(vec![
+                unresolved_col("outer_key"),
+                unresolved_col("inner_key"),
+                unresolved_col("val"),
+            ])?
+            .select(vec![unresolved_col("val")])?
             .build();
 
         assert_scalar_optimized_plan_eq(plan, expected)?;
@@ -695,22 +710,22 @@ mod tests {
 
         let plan = tbl1
             .filter(Arc::new(Expr::InSubquery(
-                col("key"),
+                unresolved_col("key"),
                 Subquery { plan: tbl2.build() },
             )))?
-            .select(vec![col("val")])?
+            .select(vec![unresolved_col("val")])?
             .build();
 
         let expected = tbl1
             .join(
                 tbl2,
-                vec![col("key")],
-                vec![col("key")],
+                vec![unresolved_col("key")],
+                vec![unresolved_col("key")],
                 JoinType::Semi,
                 None,
                 Default::default(),
             )?
-            .select(vec![col("val")])?
+            .select(vec![unresolved_col("val")])?
             .build();
 
         assert_predicate_optimized_plan_eq(plan, expected)?;
@@ -731,28 +746,27 @@ mod tests {
 
         let subquery = tbl2
             .filter(
-                col("key").eq(Arc::new(Expr::OuterReferenceColumn(OuterReferenceColumn {
-                    field: Field::new("key", DataType::Int64),
-                    depth: 1,
-                }))),
+                unresolved_col("key").eq(Arc::new(Expr::Column(Column::Resolved(
+                    ResolvedColumn::OuterRef(Field::new("key", DataType::Int64)),
+                )))),
             )?
             .build();
 
         let plan = tbl1
             .filter(Arc::new(Expr::Exists(Subquery { plan: subquery })).not())?
-            .select(vec![col("val")])?
+            .select(vec![unresolved_col("val")])?
             .build();
 
         let expected = tbl1
             .join(
                 tbl2,
-                vec![col("key")],
-                vec![col("key")],
+                vec![unresolved_col("key")],
+                vec![unresolved_col("key")],
                 JoinType::Anti,
                 None,
                 Default::default(),
             )?
-            .select(vec![col("val")])?
+            .select(vec![unresolved_col("val")])?
             .build();
 
         assert_predicate_optimized_plan_eq(plan, expected)?;

@@ -81,7 +81,6 @@ python = [
   "daft-stats/python",
   "daft-recordbatch/python",
   "daft-writers/python",
-  "dep:daft-catalog-python-catalog",
   "dep:daft-connect",
   "daft-connect/python",
   "dep:pyo3",

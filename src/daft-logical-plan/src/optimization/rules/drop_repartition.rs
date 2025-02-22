@@ -48,7 +48,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::col;
+    use daft_dsl::unresolved_col;
 
     use crate::{
         optimization::{
@@ -84,7 +84,7 @@ mod tests {
     fn repartition_dropped_in_back_to_back() -> DaftResult<()> {
         let num_partitions1 = 10;
         let num_partitions2 = 5;
-        let partition_by = vec![col("a")];
+        let partition_by = vec![unresolved_col("a")];
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),

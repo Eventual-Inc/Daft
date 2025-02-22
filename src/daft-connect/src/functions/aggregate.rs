@@ -1,5 +1,5 @@
 use daft_core::count_mode::CountMode;
-use daft_dsl::col;
+use daft_dsl::unresolved_col;
 use daft_schema::dtype::DataType;
 use spark_connect::Expression;
 
@@ -32,7 +32,7 @@ impl SparkFunction for CountFunction {
                 let arg = analyzer.to_daft_expr(arg)?;
 
                 let arg = if arg.as_literal().and_then(|lit| lit.as_i32()) == Some(1i32) {
-                    col("*")
+                    unresolved_col("*")
                 } else {
                     arg
                 };

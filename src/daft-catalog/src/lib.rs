@@ -1,20 +1,36 @@
-pub mod catalog;
+mod bindings;
+mod catalog;
+mod identifier;
+mod table;
+
+pub use bindings::*;
+pub use catalog::*;
+pub use identifier::*;
+pub use table::*;
+
+#[cfg(feature = "python")]
+pub mod python;
+
+#[cfg(feature = "python")]
+pub use python::register_modules;
+
+// TODO audit daft-catalog and daft-session errors.
+pub mod error;
+
+// ----------------------------------
+// TODO deprecated catalog APIs #3819
+// ----------------------------------
+
 mod data_catalog;
 mod data_catalog_table;
-pub mod error;
-mod identifier;
+
 // Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
 
 use daft_logical_plan::LogicalPlanBuilder;
 pub use data_catalog::DataCatalog;
 pub use data_catalog_table::DataCatalogTable;
-
-#[cfg(feature = "python")]
-pub mod python;
-
 use error::{Error, Result};
-pub use identifier::*;
 
 pub mod global_catalog {
     use std::sync::{Arc, RwLock};
@@ -60,7 +76,7 @@ pub struct DaftCatalog {
     data_catalogs: HashMap<String, Arc<dyn DataCatalog>>,
 
     /// LogicalPlans that were "named" and registered with Daft
-    named_tables: HashMap<String, LogicalPlanBuilder>,
+    named_tables: HashMap<Arc<str>, LogicalPlanBuilder>,
 }
 
 impl DaftCatalog {
@@ -133,7 +149,10 @@ impl DaftCatalog {
         // Check the default catalog for a match
         if let Some(default_data_catalog) = self.data_catalogs.get(DEFAULT_CATALOG_NAME) {
             if let Some(tbl) = default_data_catalog.get_table(table_identifier)? {
-                return tbl.as_ref().to_logical_plan_builder();
+                return Ok(tbl
+                    .as_ref()
+                    .to_logical_plan_builder()?
+                    .alias(searched_table_name));
             }
         }
 
@@ -143,7 +162,10 @@ impl DaftCatalog {
                 searched_catalog_name = catalog_name;
                 searched_table_name = table_name;
                 if let Some(tbl) = data_catalog.get_table(table_name)? {
-                    return tbl.as_ref().to_logical_plan_builder();
+                    return Ok(tbl
+                        .as_ref()
+                        .to_logical_plan_builder()?
+                        .alias(searched_table_name));
                 }
             }
         }

@@ -1,9 +1,17 @@
-use daft_logical_plan::PyLogicalPlanBuilder;
-use pyo3::{exceptions::PyIndexError, prelude::*};
+use std::sync::Arc;
 
-use crate::{global_catalog, identifier::Identifier};
+use daft_core::{prelude::SchemaRef, python::PySchema};
+use daft_logical_plan::{LogicalPlanRef, PyLogicalPlanBuilder};
+use pyo3::{exceptions::PyIndexError, intern, prelude::*};
+
+use crate::{
+    error::Result, global_catalog, Catalog, CatalogRef, Identifier, Table, TableRef, TableSource,
+    View,
+};
 
 /// Read a table from the specified `DaftMetaCatalog`.
+///
+/// TODO deprecated catalog APIs #3819
 ///
 /// This function reads a table from a `DaftMetaCatalog` and returns a PyLogicalPlanBuilder
 /// object representing the plan required to read the table.
@@ -38,6 +46,8 @@ fn py_read_table(table_identifier: &str) -> PyResult<PyLogicalPlanBuilder> {
 
 /// Register a table with the global catalog.
 ///
+/// TODO deprecated catalog APIs #3819
+///
 /// This function registers a table with the global `DaftMetaCatalog` using the provided
 /// table identifier and logical plan.
 ///
@@ -67,6 +77,8 @@ fn py_register_table(
 
 /// Unregisters a catalog from the Daft catalog system
 ///
+/// TODO deprecated catalog APIs #3819
+///
 /// This function removes a previously registered catalog from the Daft catalog system.
 ///
 /// Args:
@@ -88,7 +100,54 @@ pub fn py_unregister_catalog(catalog_name: Option<&str>) -> bool {
     crate::global_catalog::unregister_catalog(catalog_name)
 }
 
-/// Bridge from identifier.py to identifier.rs
+/// PyCatalog implements the Catalog ABC for some Catalog trait impl (rust->py).
+#[pyclass]
+pub struct PyCatalog(CatalogRef);
+
+impl From<CatalogRef> for PyCatalog {
+    fn from(catalog: CatalogRef) -> Self {
+        Self(catalog)
+    }
+}
+
+#[pymethods]
+impl PyCatalog {
+    fn name(&self) -> String {
+        self.0.name()
+    }
+}
+
+/// PyCatalogWrapper wraps a `daft.catalog.Catalog` implementation (py->rust).
+#[derive(Debug)]
+pub struct PyCatalogWrapper(PyObject);
+
+impl From<PyObject> for PyCatalogWrapper {
+    fn from(obj: PyObject) -> Self {
+        Self(obj)
+    }
+}
+
+impl PyCatalogWrapper {
+    pub fn wrap(obj: PyObject) -> CatalogRef {
+        Arc::new(Self::from(obj))
+    }
+}
+
+impl Catalog for PyCatalogWrapper {
+    fn name(&self) -> String {
+        todo!()
+    }
+
+    fn get_table(&self, _name: &Identifier) -> Result<Option<Box<dyn Table>>> {
+        todo!()
+    }
+
+    fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.0.extract(py)
+    }
+}
+
+/// PyIdentifier maps identifier.py to identifier.rs
 #[pyclass(sequence)]
 #[derive(Debug, Clone)]
 pub struct PyIdentifier(Identifier);
@@ -142,10 +201,120 @@ impl From<Identifier> for PyIdentifier {
     }
 }
 
-/// Defines the python daft.
+impl AsRef<Identifier> for PyIdentifier {
+    fn as_ref(&self) -> &Identifier {
+        &self.0
+    }
+}
+
+/// PyTable implements the `daft.catalog.Table`` ABC for some Table trait impl (rust->py).
+#[pyclass]
+#[allow(unused)]
+pub struct PyTable(TableRef);
+
+impl PyTable {
+    pub fn new(table: TableRef) -> Self {
+        Self(table)
+    }
+}
+
+#[pymethods]
+impl PyTable {
+    /// Create an immutable table backed by the logical plan.
+    #[staticmethod]
+    fn from_builder(builder: &PyLogicalPlanBuilder) -> PyResult<PyTable> {
+        let view = builder.builder.build();
+        let view = View::from(view).arced();
+        Ok(PyTable::new(view))
+    }
+
+    /// Creates a python DataFrame for this table, likely easier with python-side helpers.
+    fn read(&self, py: Python<'_>) -> PyResult<PyObject> {
+        // builder = 'compiled plan'
+        let builder = self.0.get_logical_plan()?;
+        let builder = PyLogicalPlanBuilder::new(builder.into());
+        // builder = LogicalPlanBuilder.__init__(builder)
+        let builder = py
+            .import(intern!(py, "daft.logical.builder"))?
+            .getattr(intern!(py, "LogicalPlanBuilder"))?
+            .call1((builder,))?;
+        // df = DataFrame.__init__(builder)
+        let df = py
+            .import(intern!(py, "daft.dataframe"))?
+            .getattr(intern!(py, "DataFrame"))?
+            .call1((builder,))?;
+        // df as object
+        df.extract()
+    }
+}
+
+/// PyTableWrapper wraps a `daft.catalog.Table` implementation (py->rust).
+#[derive(Debug)]
+pub struct PyTableWrapper(PyObject);
+
+impl From<PyObject> for PyTableWrapper {
+    fn from(obj: PyObject) -> Self {
+        Self(obj)
+    }
+}
+
+impl PyTableWrapper {
+    pub fn wrap(obj: PyObject) -> TableRef {
+        Arc::new(Self::from(obj))
+    }
+}
+
+impl Table for PyTableWrapper {
+    fn get_schema(&self) -> SchemaRef {
+        todo!()
+    }
+
+    fn get_logical_plan(&self) -> Result<LogicalPlanRef> {
+        todo!()
+    }
+
+    fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.0.extract(py)
+    }
+}
+
+/// PyTableSource wraps either a schema or dataframe.
+#[pyclass]
+pub struct PyTableSource(TableSource);
+
+impl From<TableSource> for PyTableSource {
+    fn from(source: TableSource) -> Self {
+        Self(source)
+    }
+}
+
+/// PyTableSource -> TableSource
+impl AsRef<TableSource> for PyTableSource {
+    fn as_ref(&self) -> &TableSource {
+        &self.0
+    }
+}
+
+#[pymethods]
+impl PyTableSource {
+    #[staticmethod]
+    pub fn from_schema(schema: PySchema) -> PyTableSource {
+        Self(TableSource::Schema(schema.schema))
+    }
+
+    #[staticmethod]
+    pub fn from_builder(view: &PyLogicalPlanBuilder) -> PyTableSource {
+        Self(TableSource::View(view.builder.build()))
+    }
+}
+
 pub fn register_modules<'py>(parent: &Bound<'py, PyModule>) -> PyResult<Bound<'py, PyModule>> {
+    parent.add_class::<PyCatalog>()?;
+    parent.add_class::<PyIdentifier>()?;
+    parent.add_class::<PyTable>()?;
+    parent.add_class::<PyTableSource>()?;
+    // TODO deprecated catalog APIs #3819
     let module = PyModule::new(parent.py(), "catalog")?;
-    module.add_class::<PyIdentifier>()?;
     module.add_wrapped(wrap_pyfunction!(py_read_table))?;
     module.add_wrapped(wrap_pyfunction!(py_register_table))?;
     module.add_wrapped(wrap_pyfunction!(py_unregister_catalog))?;

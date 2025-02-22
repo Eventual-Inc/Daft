@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
-use daft_dsl::{col, Expr, ExprRef};
+use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn};
 
 use crate::{
     logical_plan::{LogicalPlan, Project},
@@ -80,11 +80,11 @@ impl DetectMonotonicId {
                 if Self::is_monotonic_id_expr(expr) {
                     // Find the corresponding column name for this monotonic ID
                     let column_name = match expr.as_ref() {
-                        Expr::Alias(_, name) => name.to_string(),
-                        _ => "id".to_string(),
+                        Expr::Alias(_, name) => name.clone(),
+                        _ => Arc::from("id"),
                     };
                     // Replace with a column reference
-                    col(column_name)
+                    Expr::Column(Column::Resolved(ResolvedColumn::Basic(column_name))).into()
                 } else {
                     expr.clone()
                 }
@@ -211,7 +211,14 @@ mod tests {
         let mono_id = monotonically_increasing_id().alias("id");
 
         let plan = Arc::new(LogicalPlan::Project(
-            Project::try_new(source.clone(), vec![col("a"), mono_id]).unwrap(),
+            Project::try_new(
+                source.clone(),
+                vec![
+                    Expr::Column(Column::Resolved(ResolvedColumn::Basic(Arc::from("a")))).into(),
+                    mono_id,
+                ],
+            )
+            .unwrap(),
         ));
 
         let rule = DetectMonotonicId;
@@ -246,7 +253,15 @@ mod tests {
         let mono_id2 = monotonically_increasing_id().alias("id2");
 
         let plan = Arc::new(LogicalPlan::Project(
-            Project::try_new(source.clone(), vec![col("a"), mono_id1, mono_id2]).unwrap(),
+            Project::try_new(
+                source.clone(),
+                vec![
+                    Expr::Column(Column::Resolved(ResolvedColumn::Basic(Arc::from("a")))).into(),
+                    mono_id1,
+                    mono_id2,
+                ],
+            )
+            .unwrap(),
         ));
 
         let rule = DetectMonotonicId;
@@ -283,7 +298,11 @@ mod tests {
     fn test_no_transformation_needed() {
         let source = create_test_plan();
         let plan = Arc::new(LogicalPlan::Project(
-            Project::try_new(source.clone(), vec![col("a")]).unwrap(),
+            Project::try_new(
+                source.clone(),
+                vec![Expr::Column(Column::Resolved(ResolvedColumn::Basic(Arc::from("a")))).into()],
+            )
+            .unwrap(),
         ));
 
         let rule = DetectMonotonicId;

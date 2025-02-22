@@ -7,7 +7,7 @@ use std::{io::Cursor, rc::Rc, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::series::Series;
-use daft_dsl::col;
+use daft_dsl::unresolved_col;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
@@ -164,7 +164,7 @@ impl SparkAnalyzer<'_> {
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
         if order.is_empty() {
             return plan
-                .sort(vec![col("*")], vec![false], vec![false])
+                .sort(vec![unresolved_col("*")], vec![false], vec![false])
                 .map_err(Into::into);
         }
         let mut sort_by = Vec::with_capacity(order.len());
@@ -399,7 +399,7 @@ impl SparkAnalyzer<'_> {
             .exclude(&column_names)?
             .names()
             .into_iter()
-            .map(daft_dsl::col)
+            .map(unresolved_col)
             .collect();
 
         // Use select to keep only the columns we want
@@ -534,13 +534,17 @@ impl SparkAnalyzer<'_> {
             // Use rename_columns_map if provided (legacy format)
             rename_columns_map
                 .into_iter()
-                .map(|(old_name, new_name)| col(old_name.as_str()).alias(new_name.as_str()))
+                .map(|(old_name, new_name)| {
+                    unresolved_col(old_name.as_str()).alias(new_name.as_str())
+                })
                 .collect()
         } else {
             // Use renames if provided (new format)
             renames
                 .into_iter()
-                .map(|rename| col(rename.col_name.as_str()).alias(rename.new_col_name.as_str()))
+                .map(|rename| {
+                    unresolved_col(rename.col_name.as_str()).alias(rename.new_col_name.as_str())
+                })
                 .collect()
         };
 
@@ -562,7 +566,7 @@ impl SparkAnalyzer<'_> {
 
         let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        let column_names: Vec<_> = column_names.into_iter().map(daft_dsl::col).collect();
+        let column_names: Vec<_> = column_names.into_iter().map(unresolved_col).collect();
 
         plan = plan
             .select(column_names)
@@ -698,7 +702,7 @@ impl SparkAnalyzer<'_> {
                     debug!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
                 }
 
-                Ok(daft_dsl::col(unparsed_identifier.as_str()))
+                Ok(daft_dsl::unresolved_col(unparsed_identifier.as_str()))
             }
             spark_expr::ExprType::UnresolvedFunction(f) => self.process_function(f),
             spark_expr::ExprType::ExpressionString(_) => {

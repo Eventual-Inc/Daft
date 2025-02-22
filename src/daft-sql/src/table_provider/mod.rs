@@ -21,7 +21,7 @@ use crate::{
     functions::SQLLiteral,
     invalid_operation_err,
     modules::config::expr_to_iocfg,
-    planner::{Relation, SQLPlanner},
+    planner::SQLPlanner,
     unsupported_sql_err,
 };
 
@@ -64,7 +64,7 @@ impl<'a> SQLPlanner<'a> {
         &self,
         fn_name: &str,
         args: &TableFunctionArgs,
-    ) -> SQLPlannerResult<Relation> {
+    ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let fns = &SQL_TABLE_FUNCTIONS;
 
         let Some(func) = fns.get(fn_name) else {
@@ -73,7 +73,7 @@ impl<'a> SQLPlanner<'a> {
 
         let builder = func.plan(self, args)?;
 
-        Ok(Relation::new(builder, fn_name.to_string()))
+        Ok(builder)
     }
 }
 
