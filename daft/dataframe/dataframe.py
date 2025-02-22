@@ -24,7 +24,6 @@ from typing import (
     Literal,
     Mapping,
     Optional,
-    Set,
     Tuple,
     TypeVar,
     Union,
@@ -520,13 +519,16 @@ class DataFrame:
     @classmethod
     def _from_pylist(cls, data: List[Dict[str, Any]]) -> "DataFrame":
         """Creates a DataFrame from a list of dictionaries."""
-        headers: Set[str] = set()
+        headers: List[str] = []
         for row in data:
             if not isinstance(row, dict):
                 raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
-            headers.update(row.keys())
-        headers_ordered = sorted(list(headers))
-        return cls._from_pydict(data={header: [row.get(header, None) for row in data] for header in headers_ordered})
+            if len(headers) == 0:
+                headers = row.keys()
+            else:
+                if headers != row.keys():
+                    raise ValueError("Data dictionaries have different schema.")
+        return cls._from_pydict(data={header: [row.get(header, None) for row in data] for header in headers})
 
     @classmethod
     def _from_pydict(cls, data: Dict[str, InputListType]) -> "DataFrame":
