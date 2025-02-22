@@ -115,11 +115,8 @@ impl Source {
                 res.push("Source:".to_string());
                 res.push(format!("Number of partitions = {}", num_partitions));
             }
-            SourceInfo::PlaceHolder(PlaceHolderInfo {
-                clustering_spec, ..
-            }) => {
+            SourceInfo::PlaceHolder(PlaceHolderInfo { .. }) => {
                 res.push("PlaceHolder:".to_string());
-                res.extend(clustering_spec.multiline_display());
             }
         }
         res.push(format!(

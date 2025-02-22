@@ -62,6 +62,7 @@ impl AdaptivePhysicalPlanScheduler {
         size_bytes: usize,
         num_rows: usize,
         py: Python,
+        time_taken: f64,
     ) -> PyResult<()> {
         py.allow_threads(|| {
             let in_memory_info = InMemoryInfo::new(
@@ -75,16 +76,24 @@ impl AdaptivePhysicalPlanScheduler {
                 Some(stage_id),
             );
 
-            self.planner.update(MaterializedResults {
-                stage_id,
-                in_memory_info,
-            })?;
+            self.planner.update(
+                MaterializedResults {
+                    stage_id,
+                    in_memory_info,
+                },
+                time_taken,
+            )?;
             Ok(())
         })
     }
 
-    pub fn explain_analyze(&self, explain_analyze_dir: &str) -> PyResult<()> {
-        self.planner.explain_analyze(explain_analyze_dir)?;
+    pub fn explain_analyze(
+        &mut self,
+        explain_analyze_dir: &str,
+        last_stage_time_taken: f64,
+    ) -> PyResult<()> {
+        self.planner
+            .explain_analyze(explain_analyze_dir, last_stage_time_taken)?;
         Ok(())
     }
 }

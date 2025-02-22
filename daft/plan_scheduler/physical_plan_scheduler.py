@@ -83,7 +83,7 @@ class AdaptivePhysicalPlanScheduler:
     def is_done(self) -> bool:
         return self._scheduler.is_done()
 
-    def update(self, stage_id: int, cache_entry: PartitionCacheEntry):
+    def update(self, stage_id: int, cache_entry: PartitionCacheEntry, time_taken: float):
         num_partitions = cache_entry.num_partitions()
         assert num_partitions is not None
         size_bytes = cache_entry.size_bytes()
@@ -98,7 +98,8 @@ class AdaptivePhysicalPlanScheduler:
             num_partitions=num_partitions,
             size_bytes=size_bytes,
             num_rows=num_rows,
+            time_taken=time_taken,
         )
 
-    def explain_analyze(self, explain_analyze_dir: str) -> None:
-        self._scheduler.explain_analyze(explain_analyze_dir)
+    def explain_analyze(self, explain_analyze_dir: str, last_stage_time_taken: float) -> None:
+        self._scheduler.explain_analyze(explain_analyze_dir, last_stage_time_taken)

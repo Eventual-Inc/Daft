@@ -33,6 +33,10 @@ where
         let subgraph_options = SubgraphOptions {
             name,
             subgraph_id: stage_id,
+            metadata: Some(format!(
+                "Time Taken: {:.2}s",
+                node.time_taken.unwrap_or(0.0)
+            )),
         };
         let display = node.physical_plan.repr_mermaid(MermaidDisplayOptions {
             simple,
@@ -79,7 +83,10 @@ where
     }
 
     pub fn fmt(&mut self, node: &EmittedStage) -> fmt::Result {
-        if let Some(SubgraphOptions { name, subgraph_id }) = &self.options.subgraph_options {
+        if let Some(SubgraphOptions {
+            name, subgraph_id, ..
+        }) = &self.options.subgraph_options
+        {
             writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
             self.fmt_node(node)?;
             writeln!(self.output, "end")?;

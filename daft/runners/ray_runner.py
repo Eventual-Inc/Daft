@@ -1282,6 +1282,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
                 stage_id, plan_scheduler = adaptive_planner.next()
+                start_time = time.time()
                 # don't store partition sets in variable to avoid reference
                 result_uuid = self._start_plan(
                     plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
@@ -1293,18 +1294,22 @@ class RayRunner(Runner[ray.ObjectRef]):
                     yield from results_iter
                 else:
                     cache_entry = self._collect_into_cache(results_iter)
-                    adaptive_planner.update(stage_id, cache_entry)
+                    time_taken = time.time() - start_time
+                    adaptive_planner.update(stage_id, cache_entry, time_taken)
                     del cache_entry
+
             enable_explain_analyze = os.getenv("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE")
             ray_logs_location = ray_tracing.get_log_location()
-            if (
+            should_explain_analyze = (
                 ray_logs_location.exists()
                 and enable_explain_analyze is not None
                 and enable_explain_analyze in ["1", "true"]
-            ):
+            )
+            if should_explain_analyze:
+                last_stage_time_taken = time.time() - start_time
                 explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
                 explain_analyze_dir.mkdir(exist_ok=True, parents=True)
-                adaptive_planner.explain_analyze(str(explain_analyze_dir))
+                adaptive_planner.explain_analyze(str(explain_analyze_dir), last_stage_time_taken)
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.

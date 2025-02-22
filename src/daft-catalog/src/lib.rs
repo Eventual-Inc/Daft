@@ -179,8 +179,7 @@ mod tests {
 
     use daft_core::prelude::*;
     use daft_logical_plan::{
-        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanRef,
-        SourceInfo,
+        ops::Source, source_info::PlaceHolderInfo, LogicalPlan, LogicalPlanRef, SourceInfo,
     };
 
     use super::*;
@@ -197,7 +196,6 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
             })),
         ))
         .arced()

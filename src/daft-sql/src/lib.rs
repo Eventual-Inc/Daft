@@ -32,8 +32,8 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
-        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo, JoinOptions, LogicalPlan,
+        LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
     use daft_session::Session;
     use error::SQLPlannerResult;
@@ -63,7 +63,6 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
             })),
         ))
         .arced()
@@ -83,7 +82,6 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
             })),
         ))
         .arced()
@@ -103,7 +101,6 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
             })),
         ))
         .arced()

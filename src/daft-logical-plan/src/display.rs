@@ -39,8 +39,8 @@ mod test {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions, LogicalPlan,
-        LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        ops::Source, source_info::PlaceHolderInfo, JoinOptions, LogicalPlan, LogicalPlanBuilder,
+        LogicalPlanRef, SourceInfo,
     };
 
     fn plan_1() -> LogicalPlanRef {
@@ -55,7 +55,6 @@ mod test {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
             })),
         ))
         .arced()
@@ -74,7 +73,6 @@ mod test {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
             })),
         ))
         .arced()
@@ -225,6 +223,7 @@ Project1 --> Limit0
             subgraph_options: Some(SubgraphOptions {
                 name: "Optimized Logical Plan".to_string(),
                 subgraph_id: "optimized".to_string(),
+                metadata: None,
             }),
         };
 
