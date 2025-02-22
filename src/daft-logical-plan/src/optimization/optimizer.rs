@@ -157,12 +157,27 @@ impl Default for OptimizerBuilder {
 }
 
 impl OptimizerBuilder {
+    pub fn new() -> Self {
+        Self {
+            rule_batches: vec![],
+            config: Default::default(),
+        }
+    }
+
     pub fn reorder_joins(mut self) -> Self {
         self.rule_batches.push(RuleBatch::new(
             vec![
                 Box::new(ReorderJoins::new()),
                 Box::new(EnrichWithStats::new()),
             ],
+            RuleExecutionStrategy::Once,
+        ));
+        self
+    }
+
+    pub fn enrich_with_stats(mut self) -> Self {
+        self.rule_batches.push(RuleBatch::new(
+            vec![Box::new(EnrichWithStats::new())],
             RuleExecutionStrategy::Once,
         ));
         self

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
+import os
 import threading
 import time
 import uuid
@@ -1280,20 +1281,30 @@ class RayRunner(Runner[ray.ObjectRef]):
         if daft_execution_config.enable_aqe:
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
-                source_id, plan_scheduler = adaptive_planner.next()
+                stage_id, plan_scheduler = adaptive_planner.next()
                 # don't store partition sets in variable to avoid reference
                 result_uuid = self._start_plan(
                     plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
                 )
                 del plan_scheduler
                 results_iter = self._stream_plan(result_uuid)
-                # if source_id is None that means this is the final stage
-                if source_id is None:
+                # if stage_id is None that means this is the final stage
+                if stage_id is None:
                     yield from results_iter
                 else:
                     cache_entry = self._collect_into_cache(results_iter)
-                    adaptive_planner.update(source_id, cache_entry)
+                    adaptive_planner.update(stage_id, cache_entry)
                     del cache_entry
+            enable_explain_analyze = os.getenv("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE")
+            ray_logs_location = ray_tracing.get_log_location()
+            if (
+                ray_logs_location.exists()
+                and enable_explain_analyze is not None
+                and enable_explain_analyze in ["1", "true"]
+            ):
+                explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
+                explain_analyze_dir.mkdir(exist_ok=True, parents=True)
+                adaptive_planner.explain_analyze(str(explain_analyze_dir))
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.
