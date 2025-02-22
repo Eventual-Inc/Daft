@@ -65,7 +65,7 @@ These modules can also be understood as:
 2. **PhysicalPlan:** how to run it
 3. **Runner:** when and where to run it
 
-By default, Daft runs on the PyRunner which uses Python multithreading as its backend. Daft also includes other runners including the RayRunner which can run the PhysicalPlan on a distributed Ray cluster.
+By default, Daft runs on the Native Runner which uses native multithreading as its backend. Daft also includes other runners including the RayRunner which can run the PhysicalPlan on a distributed Ray cluster.
 
 ## DataFrame Partitioning
 

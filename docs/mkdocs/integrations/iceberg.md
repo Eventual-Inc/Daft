@@ -4,7 +4,7 @@
 
 Daft currently natively supports:
 
-1. **Distributed Reads:** Daft will fully distribute the I/O of reads over your compute resources (whether Ray or on multithreading on the local PyRunner)
+1. **Distributed Reads:** Daft will fully distribute the I/O of reads over your compute resources (whether Ray or on local multithreading)
 2. **Skipping Filtered Data:** Daft uses [`df.where(...)`](../{{ api_path }}/dataframe_methods/daft.DataFrame.where.html) filter calls to only read data that matches your predicates
 3. **All Catalogs From PyIceberg:** Daft is natively integrated with PyIceberg, and supports all the catalogs that PyIceberg does
 

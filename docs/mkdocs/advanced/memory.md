@@ -41,7 +41,7 @@ While Daft is built to be extremely memory-efficient, there will inevitably be s
 
 Even with object spilling enabled, you may still sometimes see errors indicating OOMKill behavior on various levels such as your operating system, Ray or a higher-level cluster orchestrator such as Kubernetes:
 
-1. On the local PyRunner, you may see that your operating system kills the process with an error message `OOMKilled`.
+1. On the local runner, you may see that your operating system kills the process with an error message `OOMKilled`.
 
 2. On the RayRunner, you may notice Ray logs indicating that workers are aggressively being killed by the Raylet with log messages such as: `Workers (tasks / actors) killed due to memory pressure (OOM)`
 

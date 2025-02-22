@@ -67,6 +67,20 @@ def set_runner_ray(
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> DaftContext:
+    """Configure Daft to execute dataframes using the Ray distributed computing framework.
+
+    Args:
+        address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
+        noop_if_initialized: If True, skip initialization if Ray is already running.
+        max_task_backlog: Maximum number of tasks that can be queued. None means Daft will automatically determine a good default.
+        force_client_mode: If True, forces Ray to run in client mode.
+
+    Returns:
+        DaftContext: Updated Daft execution context configured for Ray.
+
+    Note:
+        Can also be configured via environment variable: DAFT_RUNNER=ray
+    """
     py_ctx = _set_runner_ray(
         address=address,
         noop_if_initialized=noop_if_initialized,
@@ -78,12 +92,21 @@ def set_runner_ray(
 
 
 def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
-    """Set the runner for executing Daft dataframes to your local Python interpreter - this is the default behavior.
+    """Configure Daft to execute dataframes in the local Python interpreter.
 
-    Alternatively, users can set this behavior via an environment variable: DAFT_RUNNER=py
+    Args:
+        use_thread_pool: If True, uses a thread pool for parallel execution.
+            If False, runs single-threaded. If None, uses system default.
 
     Returns:
-        DaftContext: Daft context after setting the Py runner
+        DaftContext: Updated Daft execution context configured for local Python.
+
+    Note:
+        Can also be configured via environment variable: DAFT_RUNNER=py
+
+    Deprecated:
+        This execution mode is deprecated. Use set_runner_native() instead for
+        improved local performance with native multi-threading.
     """
     py_ctx = _set_runner_py(
         use_thread_pool=use_thread_pool,
@@ -93,12 +116,15 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
 
 
 def set_runner_native() -> DaftContext:
-    """Set the runner for executing Daft dataframes to the native runner.
+    """Configure Daft to execute dataframes using native multi-threaded processing.
 
-    Alternatively, users can set this behavior via an environment variable: DAFT_RUNNER=native
+    This is the default execution mode for Daft.
 
     Returns:
-        DaftContext: Daft context after setting the native runner
+        DaftContext: Updated Daft execution context configured for native execution.
+
+    Note:
+        Can also be configured via environment variable: DAFT_RUNNER=native
     """
     py_ctx = _set_runner_native()
 
