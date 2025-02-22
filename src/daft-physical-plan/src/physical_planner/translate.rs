@@ -196,41 +196,40 @@ pub(super) fn translate_single_logical_node(
                 // Repartitioning to the same partition spec as the input is always a no-op.
                 || (&clustering_spec == input_clustering_spec.as_ref())
             {
-                Ok(input_physical)
-            } else {
-                let repartitioned_plan = match clustering_spec {
-                    ClusteringSpec::Unknown(_) => {
-                        match num_partitions.cmp(&input_num_partitions) {
-                            Ordering::Equal => {
-                                // # of output partitions == # of input partitions; this should have already short-circuited with
-                                // a repartition drop above.
-                                unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
-                            }
-                            _ => PhysicalPlan::ShuffleExchange(
-                                ShuffleExchangeFactory::new(input_physical)
-                                    .get_split_or_coalesce(num_partitions),
-                            ),
-                        }
-                    }
-                    ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
-                        ShuffleExchangeFactory::new(input_physical)
-                            .get_random_partitioning(num_partitions, Some(cfg)),
-                    ),
-                    ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
-                        PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(input_physical).get_hash_partitioning(
-                                by,
-                                num_partitions,
-                                Some(cfg),
-                            ),
-                        )
-                    }
-                    ClusteringSpec::Range(_) => {
-                        unreachable!("Repartitioning by range is not supported")
-                    }
-                };
-                Ok(repartitioned_plan.arced())
+                return Ok(input_physical);
             }
+            let repartitioned_plan = match clustering_spec {
+                ClusteringSpec::Unknown(_) => {
+                    match num_partitions.cmp(&input_num_partitions) {
+                        Ordering::Equal => {
+                            // # of output partitions == # of input partitions; this should have already short-circuited with
+                            // a repartition drop above.
+                            unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
+                        }
+                        _ => PhysicalPlan::ShuffleExchange(
+                            ShuffleExchangeFactory::new(input_physical)
+                                .get_split_or_coalesce(num_partitions),
+                        ),
+                    }
+                }
+                ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
+                    ShuffleExchangeFactory::new(input_physical)
+                        .get_random_partitioning(num_partitions, Some(cfg)),
+                ),
+                ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
+                    PhysicalPlan::ShuffleExchange(
+                        ShuffleExchangeFactory::new(input_physical).get_hash_partitioning(
+                            by,
+                            num_partitions,
+                            Some(cfg),
+                        ),
+                    )
+                }
+                ClusteringSpec::Range(_) => {
+                    unreachable!("Repartitioning by range is not supported")
+                }
+            };
+            Ok(repartitioned_plan.arced())
         }
         LogicalPlan::Distinct(LogicalDistinct { input, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
