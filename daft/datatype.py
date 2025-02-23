@@ -374,10 +374,18 @@ class DataType:
         If ``shape`` is not given, the ndarrays in the column can have different shapes. This is much more flexible,
         but will result in a less compact representation and may be make some operations less efficient.
 
+        The ``is_indices_offsets`` parameter determines how the indices of the SparseTensor are stored:
+            - ``False`` (default) – Indices represent the actual positions of nonzero values.
+            - ``True`` – Indices represent the offsets between consecutive nonzero values.
+        This can improve compression efficiency, especially when nonzero values are clustered together,
+        as offsets between them are often zero, making them easier to compress.
+
         Args:
             dtype: The type of the data contained within the tensor elements.
             shape: The shape of each SparseTensor in the column. This is ``None`` by default, which allows the shapes of
                 each tensor element to vary.
+            is_indices_offsets: Determines how indices are represented.
+                        Defaults to `False` (storing actual indices). If `True`, stores offsets between nonzero indices.
         """
         if shape is not None:
             if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
