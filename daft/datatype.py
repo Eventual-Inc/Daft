@@ -365,6 +365,7 @@ class DataType:
         cls,
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
+        is_indices_offsets: bool = False,
     ) -> DataType:
         """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided ``shape``.
 
@@ -381,7 +382,7 @@ class DataType:
         if shape is not None:
             if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
                 raise ValueError("SparseTensor shape must be a non-empty tuple of ints, but got: ", shape)
-        return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape))
+        return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape, is_indices_offsets))
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:

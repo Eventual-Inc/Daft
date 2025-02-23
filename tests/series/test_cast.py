@@ -1182,12 +1182,15 @@ def minimal_indices_dtype(shape: tuple[int]) -> np.dtype:
     return minimal_dtype
 
 
-def to_coo_sparse_dict(ndarray: np.ndarray) -> dict[str, np.ndarray]:
+def to_coo_sparse_dict(ndarray: np.ndarray, is_indices_offsets: bool = False) -> dict[str, np.ndarray]:
     flat_array = ndarray.ravel()
     indices = np.flatnonzero(flat_array)
-    if len(indices):
-        indices = np.ediff1d(indices, to_begin=indices[0])
-    values = flat_array[np.flatnonzero(flat_array)]
+    if is_indices_offsets:
+        if len(indices):
+            indices = np.ediff1d(indices, to_begin=indices[0])
+        values = flat_array[np.flatnonzero(flat_array)]
+    else:
+        values = flat_array[indices]
     shape = list(ndarray.shape)
 
     indices_dtype = minimal_indices_dtype(shape)
@@ -1195,16 +1198,53 @@ def to_coo_sparse_dict(ndarray: np.ndarray) -> dict[str, np.ndarray]:
     return {"values": values, "indices": indices, "shape": shape}
 
 
-def test_series_cast_sparse_to_python(sparse_tensor_data) -> None:
+@pytest.mark.parametrize("is_indices_offset", [False, True])
+def test_series_cast_sparse_to_python(sparse_tensor_data, is_indices_offset) -> None:
+    series = Series.from_pylist(sparse_tensor_data).cast(
+        DataType.sparse_tensor(DataType.uint8(), is_indices_offsets=is_indices_offset)
+    )
+    assert series.datatype() == DataType.sparse_tensor(DataType.uint8(), is_indices_offsets=is_indices_offset)
+
+    given = series.to_pylist()
+    expected = [
+        to_coo_sparse_dict(ndarray, is_indices_offset) if ndarray is not None else None
+        for ndarray in sparse_tensor_data
+    ]
+    np.testing.assert_equal(given, expected)
+
+
+def test_series_cast_sparse_without_indices_offset_to_python(sparse_tensor_data) -> None:
     series = Series.from_pylist(sparse_tensor_data).cast(DataType.sparse_tensor(DataType.uint8()))
     assert series.datatype() == DataType.sparse_tensor(DataType.uint8())
 
     given = series.to_pylist()
-    expected = [to_coo_sparse_dict(ndarray) if ndarray is not None else None for ndarray in sparse_tensor_data]
+    expected = [
+        to_coo_sparse_dict(ndarray, is_indices_offsets=False) if ndarray is not None else None
+        for ndarray in sparse_tensor_data
+    ]
     np.testing.assert_equal(given, expected)
 
 
-def test_series_cast_fixed_shape_sparse_to_python(sparse_tensor_data) -> None:
+@pytest.mark.parametrize("is_indices_offset", [False, True])
+def test_series_cast_fixed_shape_sparse_to_python(sparse_tensor_data, is_indices_offset) -> None:
+    series = (
+        Series.from_pylist(sparse_tensor_data)
+        .cast(DataType.tensor(DataType.uint8(), shape=(2, 7)))  # TODO: direct cast to fixed shape sparse
+        .cast(DataType.sparse_tensor(DataType.uint8(), shape=(2, 7), is_indices_offsets=is_indices_offset))
+    )
+    assert series.datatype() == DataType.sparse_tensor(
+        DataType.uint8(), shape=(2, 7), is_indices_offsets=is_indices_offset
+    )
+
+    given = series.to_pylist()
+    expected = [
+        to_coo_sparse_dict(ndarray, is_indices_offsets=is_indices_offset) if ndarray is not None else None
+        for ndarray in sparse_tensor_data
+    ]
+    np.testing.assert_equal(given, expected)
+
+
+def test_series_cast_fixed_shape_sparse_without_indices_offset_to_python(sparse_tensor_data) -> None:
     series = (
         Series.from_pylist(sparse_tensor_data)
         .cast(DataType.tensor(DataType.uint8(), shape=(2, 7)))  # TODO: direct cast to fixed shape sparse
@@ -1213,11 +1253,25 @@ def test_series_cast_fixed_shape_sparse_to_python(sparse_tensor_data) -> None:
     assert series.datatype() == DataType.sparse_tensor(DataType.uint8(), shape=(2, 7))
 
     given = series.to_pylist()
-    expected = [to_coo_sparse_dict(ndarray) if ndarray is not None else None for ndarray in sparse_tensor_data]
+    expected = [
+        to_coo_sparse_dict(ndarray, is_indices_offsets=False) if ndarray is not None else None
+        for ndarray in sparse_tensor_data
+    ]
     np.testing.assert_equal(given, expected)
 
 
-def test_series_cast_from_sparse_to_regular(sparse_tensor_data) -> None:
+@pytest.mark.parametrize("is_indices_offset", [False, True])
+def test_series_cast_from_sparse_to_regular(sparse_tensor_data, is_indices_offset) -> None:
+    sparse_series = Series.from_pylist(sparse_tensor_data).cast(
+        DataType.sparse_tensor(DataType.uint8(), is_indices_offsets=is_indices_offset)
+    )
+    regular_series = sparse_series.cast(DataType.tensor(DataType.uint8()))
+
+    regular_series = regular_series.to_pylist()
+    np.testing.assert_equal(regular_series, sparse_tensor_data)
+
+
+def test_series_cast_from_sparse_without_indices_offset_to_regular(sparse_tensor_data) -> None:
     sparse_series = Series.from_pylist(sparse_tensor_data).cast(DataType.sparse_tensor(DataType.uint8()))
     regular_series = sparse_series.cast(DataType.tensor(DataType.uint8()))
 
@@ -1225,7 +1279,20 @@ def test_series_cast_from_sparse_to_regular(sparse_tensor_data) -> None:
     np.testing.assert_equal(regular_series, sparse_tensor_data)
 
 
-def test_series_cast_fixed_shape_sparse_to_regular(sparse_tensor_data) -> None:
+@pytest.mark.parametrize("is_indices_offset", [False, True])
+def test_series_cast_fixed_shape_sparse_to_regular(sparse_tensor_data, is_indices_offset) -> None:
+    sparse_fixed_shape_series = (
+        Series.from_pylist(sparse_tensor_data)
+        .cast(DataType.tensor(DataType.uint8(), shape=(2, 7)))  # TODO: direct cast to fixed shape sparse
+        .cast(DataType.sparse_tensor(DataType.uint8(), shape=(2, 7), is_indices_offsets=is_indices_offset))
+    )
+    regular_fixed_shape_series = sparse_fixed_shape_series.cast(DataType.tensor(DataType.uint8(), shape=(2, 7)))
+
+    regular_fixed_shape_series = regular_fixed_shape_series.to_pylist()
+    np.testing.assert_equal(regular_fixed_shape_series, sparse_tensor_data)
+
+
+def test_series_cast_fixed_shape_sparse_without_indices_offset_to_regular(sparse_tensor_data) -> None:
     sparse_fixed_shape_series = (
         Series.from_pylist(sparse_tensor_data)
         .cast(DataType.tensor(DataType.uint8(), shape=(2, 7)))  # TODO: direct cast to fixed shape sparse
