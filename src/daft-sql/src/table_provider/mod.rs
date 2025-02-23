@@ -6,6 +6,7 @@ mod read_parquet;
 
 use std::{collections::HashMap, sync::Arc};
 
+use daft_dsl::{Expr, ExprRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use once_cell::sync::Lazy;
 use read_csv::ReadCsvFunction;
@@ -16,9 +17,11 @@ use read_parquet::ReadParquetFunction;
 use sqlparser::ast::TableFunctionArgs;
 
 use crate::{
-    error::SQLPlannerResult,
+    error::{PlannerError, SQLPlannerResult},
+    functions::SQLLiteral,
+    invalid_operation_err,
     modules::config::expr_to_iocfg,
-    planner::{Relation, SQLPlanner},
+    planner::SQLPlanner,
     unsupported_sql_err,
 };
 
@@ -32,9 +35,8 @@ pub(crate) static SQL_TABLE_FUNCTIONS: Lazy<SQLTableFunctions> = Lazy::new(|| {
     functions
 });
 
-/// TODOs
-///   - Use multimap for function variants.
-///   - Add more functions..
+/// TODO chore: cleanup table_provider module
+/// TODO feat: use multimap for function variants.
 pub struct SQLTableFunctions {
     pub(crate) map: HashMap<String, Arc<dyn SQLTableFunction>>,
 }
@@ -62,7 +64,7 @@ impl<'a> SQLPlanner<'a> {
         &self,
         fn_name: &str,
         args: &TableFunctionArgs,
-    ) -> SQLPlannerResult<Relation> {
+    ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let fns = &SQL_TABLE_FUNCTIONS;
 
         let Some(func) = fns.get(fn_name) else {
@@ -71,7 +73,7 @@ impl<'a> SQLPlanner<'a> {
 
         let builder = func.plan(self, args)?;
 
-        Ok(Relation::new(builder, fn_name.to_string()))
+        Ok(builder)
     }
 }
 
@@ -82,4 +84,13 @@ pub(crate) trait SQLTableFunction: Send + Sync {
         planner: &SQLPlanner,
         args: &TableFunctionArgs,
     ) -> SQLPlannerResult<LogicalPlanBuilder>;
+}
+
+// TODO feat: support assignment casts for function arguments
+pub(crate) fn try_coerce_list<T: SQLLiteral>(expr: ExprRef) -> Result<Vec<T>, PlannerError> {
+    match expr.as_ref() {
+        Expr::List(items) => items.iter().map(T::from_expr).collect(),
+        Expr::Literal(_) => Ok(vec![T::from_expr(&expr)?]),
+        _ => invalid_operation_err!("Expected a scalar or list literal"),
+    }
 }

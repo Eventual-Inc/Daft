@@ -8,7 +8,12 @@ sqlparser = {workspace = true}
 snafu.workspace = true
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-logical-plan/python", "daft-core/python"]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "daft-core/python",
+  "daft-logical-plan/python"
+]
 
 [package]
 name = "daft-catalog"

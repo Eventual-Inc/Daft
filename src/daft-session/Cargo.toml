@@ -1,0 +1,18 @@
+[dependencies]
+daft-catalog = {path = "../daft-catalog"}
+pyo3 = {workspace = true, optional = true}
+uuid = {version = "1.10.0", features = ["v4"]}
+
+[features]
+python = [
+  "dep:pyo3",
+  "daft-catalog/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-session"
+edition.workspace = true
+version.workspace = true

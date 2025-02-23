@@ -1,7 +1,28 @@
+mod bindings;
+mod catalog;
+mod identifier;
+mod table;
+
+pub use bindings::*;
+pub use catalog::*;
+pub use identifier::*;
+pub use table::*;
+
+#[cfg(feature = "python")]
+pub mod python;
+
+#[cfg(feature = "python")]
+pub use python::register_modules;
+
+// TODO audit daft-catalog and daft-session errors.
+pub mod error;
+
+// ----------------------------------
+// TODO deprecated catalog APIs #3819
+// ----------------------------------
+
 mod data_catalog;
 mod data_catalog_table;
-pub mod errors;
-pub mod identifier;
 
 // Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
@@ -9,11 +30,7 @@ use std::{collections::HashMap, default, sync::Arc};
 use daft_logical_plan::LogicalPlanBuilder;
 pub use data_catalog::DataCatalog;
 pub use data_catalog_table::DataCatalogTable;
-
-#[cfg(feature = "python")]
-pub mod python;
-
-use errors::{Error, Result};
+use error::{Error, Result};
 
 pub mod global_catalog {
     use std::sync::{Arc, RwLock};
@@ -43,7 +60,6 @@ pub mod global_catalog {
             .unregister_catalog(name)
     }
 }
-use identifier::Identifier;
 
 /// Name of the default catalog
 static DEFAULT_CATALOG_NAME: &str = "default";
@@ -60,7 +76,7 @@ pub struct DaftCatalog {
     data_catalogs: HashMap<String, Arc<dyn DataCatalog>>,
 
     /// LogicalPlans that were "named" and registered with Daft
-    named_tables: HashMap<String, LogicalPlanBuilder>,
+    named_tables: HashMap<Arc<str>, LogicalPlanBuilder>,
 }
 
 impl DaftCatalog {
@@ -103,13 +119,8 @@ impl DaftCatalog {
         name: &str,
         view: impl Into<LogicalPlanBuilder>,
     ) -> Result<()> {
-        let identifier = Identifier::parse(name)?;
-        if identifier.has_namespace() {
-            return Err(Error::Unsupported {
-                message: format!("Qualified identifiers are not yet supported. Instead use a single identifier, or wrap your table name in quotes such as `\"{}\"`", name),
-            });
-        }
-        self.named_tables.insert(identifier.name, view.into());
+        // TODO this API is being removed, for now preserve the exact name as if it were delimited.
+        self.named_tables.insert(name.into(), view.into());
         Ok(())
     }
 
@@ -126,7 +137,7 @@ impl DaftCatalog {
     /// 2. If the [`DaftMetaCatalog`] has a default catalog, we will attempt to resolve the `table_identifier` against the default catalog
     /// 3. If the `table_identifier` is hierarchical (delimited by "."), use the first component as the Data Catalog name and resolve the rest of the components against
     ///     the selected Data Catalog
-    pub fn read_table(&self, table_identifier: &str) -> errors::Result<LogicalPlanBuilder> {
+    pub fn read_table(&self, table_identifier: &str) -> error::Result<LogicalPlanBuilder> {
         // If the name is an exact match with a registered view, return it.
         if let Some(view) = self.named_tables.get(table_identifier) {
             return Ok(view.clone());
@@ -138,7 +149,10 @@ impl DaftCatalog {
         // Check the default catalog for a match
         if let Some(default_data_catalog) = self.data_catalogs.get(DEFAULT_CATALOG_NAME) {
             if let Some(tbl) = default_data_catalog.get_table(table_identifier)? {
-                return tbl.as_ref().to_logical_plan_builder();
+                return Ok(tbl
+                    .as_ref()
+                    .to_logical_plan_builder()?
+                    .alias(searched_table_name));
             }
         }
 
@@ -148,7 +162,10 @@ impl DaftCatalog {
                 searched_catalog_name = catalog_name;
                 searched_table_name = table_name;
                 if let Some(tbl) = data_catalog.get_table(table_name)? {
-                    return tbl.as_ref().to_logical_plan_builder();
+                    return Ok(tbl
+                        .as_ref()
+                        .to_logical_plan_builder()?
+                        .alias(searched_table_name));
                 }
             }
         }
@@ -159,6 +176,7 @@ impl DaftCatalog {
             table_id: searched_table_name.to_string(),
         })
     }
+
     /// Copy from another catalog, using tables from other in case of conflict
     pub fn copy_from(&mut self, other: &Self) {
         for (name, plan) in &other.named_tables {
@@ -167,6 +185,13 @@ impl DaftCatalog {
         for (name, catalog) in &other.data_catalogs {
             self.data_catalogs.insert(name.clone(), catalog.clone());
         }
+    }
+
+    /// TODO remove py register and read methods are moved to session
+    /// I cannot remove DaftMetaCatalog until I invert the dependency
+    /// so that the current register_ methods use the session rather than the catalog.
+    pub fn into_catalog_map(self) -> HashMap<String, Arc<dyn DataCatalog>> {
+        self.data_catalogs
     }
 }
 
@@ -208,11 +233,6 @@ mod tests {
 
         // Register a table
         assert!(catalog.register_table("test_table", plan.clone()).is_ok());
-
-        // Try to register a table with invalid name
-        assert!(catalog
-            .register_table("invalid name", plan.clone())
-            .is_err());
     }
 
     #[test]

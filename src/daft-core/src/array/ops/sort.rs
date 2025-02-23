@@ -21,7 +21,6 @@ use crate::{
     },
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
     series::Series,
-    utils::{ensure_nulls_first, ensure_nulls_first_arr},
 };
 
 pub fn build_multi_array_compare(
@@ -68,8 +67,6 @@ where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first(descending, nulls_first)?;
-
         let arrow_array = self.as_arrow();
 
         let result =
@@ -77,7 +74,7 @@ where
                 I::Native,
                 T::Native,
                 _,
-            >(arrow_array, ord::total_cmp, descending);
+            >(arrow_array, ord::total_cmp, descending, nulls_first);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -92,9 +89,9 @@ where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first_arr(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
+        let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
@@ -116,6 +113,7 @@ where
                 &others_cmp,
                 arrow_array.len(),
                 first_desc,
+                first_nulls_first,
             )
         } else {
             multi_column_idx_sort(
@@ -133,6 +131,7 @@ where
                 &others_cmp,
                 arrow_array.len(),
                 first_desc,
+                first_nulls_first,
             )
         };
 
@@ -164,7 +163,6 @@ impl Float32Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
 
         let result =
@@ -172,7 +170,7 @@ impl Float32Array {
                 I::Native,
                 f32,
                 _,
-            >(arrow_array, cmp_float::<f32>, descending);
+            >(arrow_array, cmp_float::<f32>, descending, nulls_first);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -187,10 +185,9 @@ impl Float32Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first_arr(descending, nulls_first)?;
-
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
+        let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
@@ -212,6 +209,7 @@ impl Float32Array {
                 &others_cmp,
                 arrow_array.len(),
                 first_desc,
+                first_nulls_first,
             )
         } else {
             multi_column_idx_sort(
@@ -229,6 +227,7 @@ impl Float32Array {
                 &others_cmp,
                 arrow_array.len(),
                 first_desc,
+                first_nulls_first,
             )
         };
 
@@ -260,7 +259,6 @@ impl Float64Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
 
         let result =
@@ -268,7 +266,7 @@ impl Float64Array {
                 I::Native,
                 f64,
                 _,
-            >(arrow_array, cmp_float::<f64>, descending);
+            >(arrow_array, cmp_float::<f64>, descending, nulls_first);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -283,10 +281,9 @@ impl Float64Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first_arr(descending, nulls_first)?;
-
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
+        let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
@@ -308,6 +305,7 @@ impl Float64Array {
                 &others_cmp,
                 arrow_array.len(),
                 first_desc,
+                first_nulls_first,
             )
         } else {
             multi_column_idx_sort(
@@ -325,6 +323,7 @@ impl Float64Array {
                 &others_cmp,
                 arrow_array.len(),
                 first_desc,
+                first_nulls_first,
             )
         };
 
@@ -356,7 +355,6 @@ impl Decimal128Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
 
         let result =
@@ -364,7 +362,7 @@ impl Decimal128Array {
                 I::Native,
                 i128,
                 _,
-            >(arrow_array, ord::total_cmp, descending);
+            >(arrow_array, ord::total_cmp, descending, nulls_first);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -379,9 +377,9 @@ impl Decimal128Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first_arr(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
+        let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
@@ -403,6 +401,7 @@ impl Decimal128Array {
                 &others_cmp,
                 arrow_array.len(),
                 first_desc,
+                first_nulls_first,
             )
         } else {
             multi_column_idx_sort(
@@ -420,6 +419,7 @@ impl Decimal128Array {
                 &others_cmp,
                 arrow_array.len(),
                 first_desc,
+                first_nulls_first,
             )
         };
 
@@ -464,8 +464,8 @@ impl NullArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first_arr(descending, nulls_first)?;
         let first_desc = *descending.first().unwrap();
+        let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
@@ -479,6 +479,7 @@ impl NullArray {
             &others_cmp,
             self.len(),
             first_desc,
+            first_nulls_first,
         );
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
@@ -516,8 +517,8 @@ impl BooleanArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        ensure_nulls_first_arr(descending, nulls_first)?;
         let first_desc = *descending.first().unwrap();
+        let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
@@ -544,6 +545,7 @@ impl BooleanArray {
                 &others_cmp,
                 self.len(),
                 first_desc,
+                first_nulls_first,
             )
         } else {
             multi_column_idx_sort(
@@ -561,6 +563,7 @@ impl BooleanArray {
                 &others_cmp,
                 self.len(),
                 first_desc,
+                first_nulls_first,
             )
         };
 
@@ -615,8 +618,8 @@ macro_rules! impl_binary_like_sort {
                 I: DaftIntegerType,
                 <I as DaftNumericType>::Native: arrow2::types::Index,
             {
-                ensure_nulls_first_arr(descending, nulls_first)?;
                 let first_desc = *descending.first().unwrap();
+                let first_nulls_first = *nulls_first.first().unwrap();
 
                 let others_cmp = build_multi_array_compare(others, &descending[1..])?;
 
@@ -638,6 +641,7 @@ macro_rules! impl_binary_like_sort {
                         &others_cmp,
                         self.len(),
                         first_desc,
+                        first_nulls_first,
                     )
                 } else {
                     multi_column_idx_sort(
@@ -655,6 +659,7 @@ macro_rules! impl_binary_like_sort {
                         &others_cmp,
                         self.len(),
                         first_desc,
+                        first_nulls_first,
                     )
                 };
 

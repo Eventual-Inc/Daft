@@ -3,7 +3,9 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_treenode::Transformed;
 use daft_core::prelude::*;
-use daft_dsl::{optimization, AggExpr, ApproxPercentileParams, Expr, ExprRef};
+use daft_dsl::{
+    optimization, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
+};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 
@@ -51,11 +53,7 @@ impl Project {
         input: Arc<LogicalPlan>,
         schema: SchemaRef,
     ) -> logical_plan::Result<Self> {
-        let expr: Vec<ExprRef> = schema
-            .names()
-            .into_iter()
-            .map(|n| Arc::new(Expr::Column(Arc::from(n))))
-            .collect();
+        let expr: Vec<ExprRef> = schema.names().into_iter().map(resolved_col).collect();
         Self::try_new(input, expr)
     }
 
@@ -142,7 +140,7 @@ impl Project {
                         expr.children()
                     } else {
                         let expr_id = expr.semantic_id(schema);
-                        if let Expr::Column(..) = expr.as_ref() {
+                        if let Expr::Column(Column::Resolved(..)) = expr.as_ref() {
                             column_name_substitutions.insert(expr_id.clone(), expr.clone());
                         }
                         // Mark expr as seen
@@ -213,19 +211,17 @@ fn replace_column_with_semantic_id(
 ) -> Transformed<ExprRef> {
     let sem_id = e.semantic_id(schema);
     if subexprs_to_replace.contains(&sem_id) {
-        let new_expr = Expr::Column(sem_id.id);
+        let new_expr = resolved_col(sem_id.id);
         let new_expr = match e.as_ref() {
-            Expr::Alias(_, name) => Expr::Alias(new_expr.into(), name.clone()),
+            Expr::Alias(_, name) => Expr::Alias(new_expr, name.clone()).into(),
             _ => new_expr,
         };
-        Transformed::yes(new_expr.into())
+        Transformed::yes(new_expr)
     } else {
         match e.as_ref() {
-            Expr::Column(_)
-            | Expr::Literal(_)
-            | Expr::Subquery(_)
-            | Expr::Exists(_)
-            | Expr::OuterReferenceColumn { .. } => Transformed::no(e),
+            Expr::Column(_) | Expr::Literal(_) | Expr::Subquery(_) | Expr::Exists(_) => {
+                Transformed::no(e)
+            }
             Expr::Agg(agg_expr) => replace_column_with_semantic_id_aggexpr(
                 agg_expr.clone(),
                 subexprs_to_replace,
@@ -497,6 +493,14 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Max, |_| e)
         }
+        AggExpr::BoolAnd(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::BoolAnd, |_| e)
+        }
+        AggExpr::BoolOr(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::BoolOr, |_| e)
+        }
         AggExpr::AnyValue(ref child, ignore_nulls) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
                 |transformed_child| AggExpr::AnyValue(transformed_child, ignore_nulls),
@@ -506,6 +510,10 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::List(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::List, |_| e)
+        }
+        AggExpr::Set(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Set, |_| e)
         }
         AggExpr::Concat(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
@@ -532,7 +540,7 @@ fn replace_column_with_semantic_id_aggexpr(
 mod tests {
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{binary_op, col, lit, Operator};
+    use daft_dsl::{binary_op, lit, resolved_col, Operator};
 
     use crate::{
         ops::Project,
@@ -555,7 +563,7 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]))
         .build();
-        let a2 = binary_op(Operator::Plus, col("a"), col("a"));
+        let a2 = binary_op(Operator::Plus, resolved_col("a"), resolved_col("a"));
         let a2_colname = a2.semantic_id(&source.schema()).id;
 
         let a4 = binary_op(Operator::Plus, a2.clone(), a2.clone());
@@ -565,12 +573,12 @@ mod tests {
         let expressions = vec![a8.alias("x")];
         let result_projection = Project::try_new(source, expressions)?;
 
-        let a4_col = col(a4_colname.clone());
+        let a4_col = resolved_col(a4_colname.clone());
         let expected_result_projection =
             vec![binary_op(Operator::Plus, a4_col.clone(), a4_col).alias("x")];
         assert_eq!(result_projection.projection, expected_result_projection);
 
-        let a2_col = col(a2_colname.clone());
+        let a2_col = resolved_col(a2_colname.clone());
         let expected_subprojection =
             vec![binary_op(Operator::Plus, a2_col.clone(), a2_col).alias(a4_colname)];
         let LogicalPlan::Project(subprojection) = result_projection.input.as_ref() else {
@@ -601,23 +609,23 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]))
         .build();
-        let a2 = binary_op(Operator::Plus, col("a"), col("a"));
+        let a2 = binary_op(Operator::Plus, resolved_col("a"), resolved_col("a"));
         let a2_colname = a2.semantic_id(&source.schema()).id;
 
         let expressions = vec![
             a2.alias("x"),
-            binary_op(Operator::Plus, a2.clone(), col("a")).alias("y"),
+            binary_op(Operator::Plus, a2.clone(), resolved_col("a")).alias("y"),
         ];
         let result_projection = Project::try_new(source, expressions)?;
 
-        let a2_col = col(a2_colname.clone());
+        let a2_col = resolved_col(a2_colname.clone());
         let expected_result_projection = vec![
             a2_col.alias("x"),
-            binary_op(Operator::Plus, a2_col, col("a")).alias("y"),
+            binary_op(Operator::Plus, a2_col, resolved_col("a")).alias("y"),
         ];
         assert_eq!(result_projection.projection, expected_result_projection);
 
-        let expected_subprojection = vec![a2.alias(a2_colname), col("a").alias("a")];
+        let expected_subprojection = vec![a2.alias(a2_colname), resolved_col("a").alias("a")];
         let LogicalPlan::Project(subprojection) = result_projection.input.as_ref() else {
             panic!()
         };
@@ -642,8 +650,8 @@ mod tests {
         let expressions = vec![
             lit(3).alias("x"),
             lit(3).alias("y"),
-            col("a").alias("w"),
-            col("a").alias("z"),
+            resolved_col("a").alias("w"),
+            resolved_col("a").alias("z"),
         ];
         let result_projection = Project::try_new(source, expressions.clone())?;
 

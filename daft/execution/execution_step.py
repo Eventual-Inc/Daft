@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Generic, Protocol
 from daft.context import get_context
 from daft.daft import JoinSide, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
+from daft.recordbatch import MicroPartition, recordbatch_io
 from daft.runners.partitioning import (
     Boundaries,
     MaterializedResult,
@@ -14,7 +15,6 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionT,
 )
-from daft.table import MicroPartition, table_io
 
 if TYPE_CHECKING:
     import pathlib
@@ -423,7 +423,7 @@ class WriteFile(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        return table_io.write_tabular(
+        return recordbatch_io.write_tabular(
             input,
             path=self.root_dir,
             schema=self.schema,
@@ -463,7 +463,7 @@ class WriteIceberg(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        return table_io.write_iceberg(
+        return recordbatch_io.write_iceberg(
             input,
             base_path=self.base_path,
             schema=self.iceberg_schema,
@@ -502,7 +502,7 @@ class WriteDeltaLake(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        return table_io.write_deltalake(
+        return recordbatch_io.write_deltalake(
             input,
             large_dtypes=self.large_dtypes,
             base_path=self.base_path,
@@ -539,7 +539,7 @@ class WriteLance(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        return table_io.write_lance(
+        return recordbatch_io.write_lance(
             input,
             base_path=self.base_path,
             mode=self.mode,
@@ -935,12 +935,15 @@ class ReduceMergeAndSort(ReduceInstruction):
     sort_by: ExpressionsProjection
     descending: list[bool]
     bounds: MicroPartition
+    nulls_first: list[bool] | None = None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._reduce_merge_and_sort(inputs)
 
     def _reduce_merge_and_sort(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        partition = MicroPartition.concat(inputs).sort(self.sort_by, descending=self.descending)
+        partition = MicroPartition.concat(inputs).sort(
+            self.sort_by, descending=self.descending, nulls_first=self.nulls_first
+        )
         return [partition]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
@@ -969,7 +972,6 @@ class ReduceToQuantiles(ReduceInstruction):
         merged = MicroPartition.concat(inputs)
 
         nulls_first = self.nulls_first if self.nulls_first is not None else self.descending
-
         # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
         merged_sorted = merged.sort(
             self.sort_by.to_column_expressions(), descending=self.descending, nulls_first=nulls_first

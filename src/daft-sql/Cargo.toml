@@ -11,6 +11,8 @@ daft-functions = {path = "../daft-functions"}
 daft-functions-json = {path = "../daft-functions-json"}
 daft-logical-plan = {path = "../daft-logical-plan"}
 daft-scan = {path = "../daft-scan"}
+daft-session = {path = "../daft-session"}
+itertools = {workspace = true}
 once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
@@ -23,11 +25,17 @@ rstest = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
+  "common-daft-config/python",
   "common-error/python",
+  "common-io-config/python",
+  "daft-catalog/python",
+  "daft-core/python",
+  "daft-dsl/python",
   "daft-functions/python",
   "daft-functions-json/python",
+  "daft-logical-plan/python",
   "daft-scan/python",
-  "daft-catalog/python"
+  "daft-session/python"
 ]
 
 [lints]

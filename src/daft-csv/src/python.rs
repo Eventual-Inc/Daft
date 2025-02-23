@@ -3,7 +3,7 @@ pub mod pylib {
 
     use daft_core::python::PySchema;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
-    use daft_table::python::PyTable;
+    use daft_recordbatch::python::PyRecordBatch;
     use pyo3::{pyfunction, PyResult, Python};
 
     use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
@@ -24,7 +24,7 @@ pub mod pylib {
         read_options: Option<CsvReadOptions>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
-    ) -> PyResult<PyTable> {
+    ) -> PyResult<PyRecordBatch> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
 

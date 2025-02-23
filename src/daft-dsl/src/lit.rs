@@ -77,12 +77,12 @@ pub enum LiteralValue {
     Float64(f64),
     /// An [`i128`] representing a decimal number with the provided precision and scale.
     Decimal(i128, u8, i8),
-    /// A list
+    /// A series literal.
     Series(Series),
     /// Python object.
     #[cfg(feature = "python")]
     Python(PyObjectWrapper),
-
+    /// TODO chore: audit struct literal vs. struct expression support.
     Struct(IndexMap<Field, LiteralValue>),
 }
 
@@ -336,6 +336,7 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is `Binary`, return it. Otherwise, return None.
     pub fn as_binary(&self) -> Option<&[u8]> {
         match self {
@@ -351,6 +352,7 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is `UInt8`, return it. Otherwise, return None.
     pub fn as_u8(&self) -> Option<u8> {
         match self {
@@ -358,6 +360,7 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is `Int16`, return it. Otherwise, return None.
     pub fn as_i16(&self) -> Option<i16> {
         match self {
@@ -365,6 +368,7 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is `UInt16`, return it. Otherwise, return None.
     pub fn as_u16(&self) -> Option<u16> {
         match self {
@@ -372,6 +376,7 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is `Int32`, return it. Otherwise, return None.
     pub fn as_i32(&self) -> Option<i32> {
         match self {
@@ -379,6 +384,7 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is `UInt32`, return it. Otherwise, return None.
     pub fn as_u32(&self) -> Option<u32> {
         match self {
@@ -386,6 +392,7 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is `Int64`, return it. Otherwise, return None.
     pub fn as_i64(&self) -> Option<i64> {
         match self {
@@ -393,6 +400,7 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is `UInt64`, return it. Otherwise, return None.
     pub fn as_u64(&self) -> Option<u64> {
         match self {
@@ -400,6 +408,7 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is `Float64`, return it. Otherwise, return None.
     pub fn as_f64(&self) -> Option<f64> {
         match self {
@@ -407,10 +416,19 @@ impl LiteralValue {
             _ => None,
         }
     }
+
     /// If the literal is a series, return it. Otherwise, return None.
     pub fn as_series(&self) -> Option<&Series> {
         match self {
             Self::Series(series) => Some(series),
+            _ => None,
+        }
+    }
+
+    /// If the literal is a struct, return the reference to its map. Otherwise, return None.
+    pub fn as_struct(&self) -> Option<&IndexMap<Field, Self>> {
+        match self {
+            Self::Struct(map) => Some(map),
             _ => None,
         }
     }

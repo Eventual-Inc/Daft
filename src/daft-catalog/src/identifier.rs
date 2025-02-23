@@ -1,11 +1,11 @@
-use std::{fmt::Display, iter::once, vec::IntoIter};
+use std::fmt::Display;
 
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 
-/// An object's namespace (location).
+/// A reference qualifier.
 pub type Namespace = Vec<String>;
 
-/// A reference (path) to some catalog object.
+/// A reference to a catalog object.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
     pub namespace: Namespace,
@@ -18,13 +18,21 @@ impl Identifier {
         Self { namespace, name }
     }
 
-    /// Returns true if this is a qualified identifier e.g. has a namespace.
+    /// Returns a new simple identifier (no namespace)
+    pub fn simple<T: Into<String>>(name: T) -> Self {
+        Self {
+            namespace: vec![],
+            name: name.into(),
+        }
+    }
+
+    /// Returns true if this is a qualified identifier.
     pub fn has_namespace(&self) -> bool {
         !self.namespace.is_empty()
     }
 
     /// Parses an identifier using sqlparser to validate the input.
-    pub fn parse(input: &str) -> Result<Identifier> {
+    pub fn from_sql(input: &str, normalize: bool) -> Result<Identifier> {
         // TODO daft should define its own identifier domain.
         use sqlparser::{dialect::PostgreSqlDialect, parser::Parser};
         let err = Error::InvalidIdentifier {
@@ -33,58 +41,59 @@ impl Identifier {
         let Ok(mut parser) = Parser::new(&PostgreSqlDialect {}).try_with_sql(input) else {
             return Err(err);
         };
-        let Ok(parts) = parser.parse_multipart_identifier() else {
+        let Ok(idents) = parser.parse_multipart_identifier() else {
             return Err(err);
         };
-        if parts.is_empty() {
+        if idents.is_empty() {
             return Err(err);
         }
-        // TODO Identifier normalization is omitted until further discussion.
-        let mut parts = parts
-            .iter()
-            .map(|part| part.value.to_string())
-            .collect::<Vec<String>>();
-        let name = parts.pop().unwrap();
-        let namespace = parts;
+        // Convert sqlparser identifiers applying normalization if given.
+        let mut names: Vec<String> = vec![];
+        for ident in idents {
+            if normalize && ident.quote_style.is_none() {
+                names.push(ident.value.to_lowercase());
+            } else {
+                names.push(ident.value);
+            }
+        }
+        let name = names.pop().unwrap();
+        let namespace = names;
         Ok(Identifier::new(namespace, name))
     }
 }
 
 impl Display for Identifier {
-    /// Joins the identifier to a dot-delimited path.
+    /// Returns the identifier as a dot-delimited string with double-quoted parts.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.namespace.is_empty() {
-            f.write_str(&self.name)
+            write!(f, "{}", escape_double_quotes(&self.name))
         } else {
-            let prefix = self.namespace.join(".");
-            let string = format!("{}.{}", prefix, self.name);
-            f.write_str(&string)
+            let namespace = self
+                .namespace
+                .iter()
+                .map(|n| escape_double_quotes(n))
+                .collect::<Vec<String>>()
+                .join(".");
+            let name = escape_double_quotes(&self.name);
+            write!(f, "{}.{}", namespace, name)
         }
     }
 }
 
-impl IntoIterator for Identifier {
-    type Item = String;
-    type IntoIter = IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.namespace
-            .into_iter()
-            .chain(once(self.name))
-            .collect::<Vec<String>>()
-            .into_iter()
+impl From<String> for Identifier {
+    /// Returns an unqualified delimited identifier.
+    fn from(name: String) -> Self {
+        Self::simple(name)
     }
 }
 
-impl<'a> IntoIterator for &'a Identifier {
-    type Item = &'a String;
-    type IntoIter = IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.namespace
-            .iter()
-            .chain(once(&self.name))
-            .collect::<Vec<&String>>()
-            .into_iter()
+impl From<&str> for Identifier {
+    /// Returns an unqualified delmited identifier.
+    fn from(name: &str) -> Self {
+        Self::simple(name.to_string())
     }
+}
+
+fn escape_double_quotes(text: &str) -> String {
+    text.replace('"', "\"\"")
 }

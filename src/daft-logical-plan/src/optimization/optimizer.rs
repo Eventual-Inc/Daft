@@ -6,10 +6,10 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, EliminateCrossJoin, EnrichWithStats, FilterNullJoinKey,
-        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownFilter, PushDownLimit,
-        PushDownProjection, ReorderJoins, SimplifyExpressionsRule, SplitActorPoolProjects,
-        UnnestPredicateSubquery, UnnestScalarSubquery,
+        DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule, EnrichWithStats,
+        FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownFilter,
+        PushDownLimit, PushDownProjection, ReorderJoins, SimplifyExpressionsRule,
+        SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -97,6 +97,7 @@ impl Default for OptimizerBuilder {
                         Box::new(LiftProjectFromAgg::new()),
                         Box::new(UnnestScalarSubquery::new()),
                         Box::new(UnnestPredicateSubquery::new()),
+                        Box::new(EliminateSubqueryAliasRule::new()),
                         Box::new(SplitActorPoolProjects::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
@@ -304,7 +305,7 @@ mod tests {
     use common_error::DaftResult;
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit};
+    use daft_dsl::{lit, unresolved_col};
 
     use super::{Optimizer, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
@@ -373,9 +374,9 @@ mod tests {
             OptimizerConfig::new(20),
         );
         let proj_exprs = vec![
-            col("a").add(lit(1)),
-            col("a").add(lit(2)).alias("b"),
-            col("a").add(lit(3)).alias("c"),
+            unresolved_col("a").add(lit(1)),
+            unresolved_col("a").add(lit(2)).alias("b"),
+            unresolved_col("a").add(lit(3)).alias("c"),
         ];
         let plan = dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]))
             .select(proj_exprs)?
@@ -408,9 +409,9 @@ mod tests {
             OptimizerConfig::new(20),
         );
         let proj_exprs = vec![
-            col("a").add(lit(1)),
-            col("a").add(lit(2)).alias("b"),
-            col("a").add(lit(3)).alias("c"),
+            unresolved_col("a").add(lit(1)),
+            unresolved_col("a").add(lit(2)).alias("b"),
+            unresolved_col("a").add(lit(3)).alias("c"),
         ];
         let plan = dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]))
             .select(proj_exprs)?
@@ -459,11 +460,11 @@ mod tests {
             OptimizerConfig::new(20),
         );
         let proj_exprs = vec![
-            col("a").add(lit(1)),
-            col("a").add(lit(2)).alias("b"),
-            col("a").add(lit(3)).alias("c"),
+            unresolved_col("a").add(lit(1)),
+            unresolved_col("a").add(lit(2)).alias("b"),
+            unresolved_col("a").add(lit(3)).alias("c"),
         ];
-        let filter_predicate = col("a").lt(lit(2));
+        let filter_predicate = unresolved_col("a").lt(lit(2));
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let plan = dummy_scan_node(scan_op.clone())
             .select(proj_exprs.clone())?

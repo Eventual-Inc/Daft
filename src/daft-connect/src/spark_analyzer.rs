@@ -3,23 +3,17 @@
 mod datatype;
 mod literal;
 
-use std::{io::Cursor, sync::Arc};
+use std::{io::Cursor, rc::Rc, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::series::Series;
-use daft_dsl::col;
+use daft_dsl::unresolved_col;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
-use daft_micropartition::{
-    partitioning::{
-        MicroPartitionSet, PartitionCacheEntry, PartitionMetadata, PartitionSet, PartitionSetCache,
-    },
-    python::PyMicroPartition,
-    MicroPartition,
-};
+use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
+use daft_recordbatch::RecordBatch;
 use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
-use daft_table::Table;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
 use itertools::zip_eq;
@@ -46,24 +40,23 @@ use crate::{
     error::{ConnectError, ConnectResult, Context},
     functions::CONNECT_FUNCTIONS,
     internal_err, invalid_argument_err, not_yet_implemented,
-    session::Session,
+    session::ConnectSession,
     util::FromOptionalField,
-    Runner,
 };
 
 #[derive(Clone)]
 pub struct SparkAnalyzer<'a> {
-    pub session: &'a Session,
+    pub session: &'a ConnectSession,
 }
 
 impl SparkAnalyzer<'_> {
-    pub fn new(session: &Session) -> SparkAnalyzer<'_> {
+    pub fn new(session: &ConnectSession) -> SparkAnalyzer<'_> {
         SparkAnalyzer { session }
     }
 
     /// Creates a logical source (scan) operator from a vec of tables.
     ///
-    /// Consider moving into LogicalBuilder, but this would re-introduce the daft-table dependency.
+    /// Consider moving into LogicalBuilder, but this would re-introduce the daft-recordbatch dependency.
     ///
     /// TODOs
     ///   * https://github.com/Eventual-Inc/Daft/pull/3250
@@ -71,59 +64,28 @@ impl SparkAnalyzer<'_> {
     ///
     pub fn create_in_memory_scan(
         &self,
-        plan_id: usize,
+        _plan_id: usize,
         schema: Arc<Schema>,
-        tables: Vec<Table>,
+        tables: Vec<RecordBatch>,
     ) -> ConnectResult<LogicalPlanBuilder> {
-        let runner = self.session.get_runner()?;
+        let mp = MicroPartition::new_loaded(schema, Arc::new(tables), None);
+        Python::with_gil(|py| {
+            // Convert MicroPartition to a logical plan using Python interop.
+            let py_micropartition = py
+                .import(intern!(py, "daft.recordbatch"))?
+                .getattr(intern!(py, "MicroPartition"))?
+                .getattr(intern!(py, "_from_pymicropartition"))?
+                .call1((PyMicroPartition::from(mp),))?;
 
-        match runner {
-            Runner::Ray => {
-                let mp = MicroPartition::new_loaded(schema, Arc::new(tables), None);
-                Python::with_gil(|py| {
-                    // Convert MicroPartition to a logical plan using Python interop.
-                    let py_micropartition = py
-                        .import(intern!(py, "daft.table"))?
-                        .getattr(intern!(py, "MicroPartition"))?
-                        .getattr(intern!(py, "_from_pymicropartition"))?
-                        .call1((PyMicroPartition::from(mp),))?;
+            let py_plan_builder = py
+                .import(intern!(py, "daft.dataframe.dataframe"))?
+                .getattr(intern!(py, "to_logical_plan_builder"))?
+                .call1((py_micropartition,))?;
+            let py_plan_builder = py_plan_builder.getattr(intern!(py, "_builder"))?;
+            let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
 
-                    // ERROR:   2: AttributeError: 'daft.daft.PySchema' object has no attribute '_schema'
-                    let py_plan_builder = py
-                        .import(intern!(py, "daft.dataframe.dataframe"))?
-                        .getattr(intern!(py, "to_logical_plan_builder"))?
-                        .call1((py_micropartition,))?;
-                    let py_plan_builder = py_plan_builder.getattr(intern!(py, "_builder"))?;
-                    let plan: PyLogicalPlanBuilder = py_plan_builder.extract()?;
-
-                    Ok::<_, ConnectError>(plan.builder)
-                })
-            }
-            Runner::Native => {
-                let partition_key = uuid::Uuid::new_v4().to_string();
-
-                let pset = Arc::new(MicroPartitionSet::from_tables(plan_id, tables)?);
-
-                let PartitionMetadata {
-                    num_rows,
-                    size_bytes,
-                } = pset.metadata();
-                let num_partitions = pset.num_partitions();
-
-                self.session.psets.put_partition_set(&partition_key, &pset);
-
-                let cache_entry = PartitionCacheEntry::new_rust(partition_key.clone(), pset);
-
-                Ok(LogicalPlanBuilder::in_memory_scan(
-                    &partition_key,
-                    cache_entry,
-                    schema,
-                    num_partitions,
-                    size_bytes,
-                    num_rows,
-                )?)
-            }
-        }
+            Ok::<_, ConnectError>(plan.builder)
+        })
     }
 
     pub async fn to_logical_plan(&self, relation: Relation) -> ConnectResult<LogicalPlanBuilder> {
@@ -202,7 +164,7 @@ impl SparkAnalyzer<'_> {
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
         if order.is_empty() {
             return plan
-                .sort(vec![col("*")], vec![false], vec![false])
+                .sort(vec![unresolved_col("*")], vec![false], vec![false])
                 .map_err(Into::into);
         }
         let mut sort_by = Vec::with_capacity(order.len());
@@ -437,7 +399,7 @@ impl SparkAnalyzer<'_> {
             .exclude(&column_names)?
             .names()
             .into_iter()
-            .map(daft_dsl::col)
+            .map(unresolved_col)
             .collect();
 
         // Use select to keep only the columns we want
@@ -502,7 +464,7 @@ impl SparkAnalyzer<'_> {
                 })
                 .collect::<ConnectResult<Vec<_>>>()?;
 
-            let batch = Table::from_nonempty_columns(columns)?;
+            let batch = RecordBatch::from_nonempty_columns(columns)?;
 
             Ok(batch)
          }).collect::<ConnectResult<Vec<_>>>()?;
@@ -572,13 +534,17 @@ impl SparkAnalyzer<'_> {
             // Use rename_columns_map if provided (legacy format)
             rename_columns_map
                 .into_iter()
-                .map(|(old_name, new_name)| col(old_name.as_str()).alias(new_name.as_str()))
+                .map(|(old_name, new_name)| {
+                    unresolved_col(old_name.as_str()).alias(new_name.as_str())
+                })
                 .collect()
         } else {
             // Use renames if provided (new format)
             renames
                 .into_iter()
-                .map(|rename| col(rename.col_name.as_str()).alias(rename.new_col_name.as_str()))
+                .map(|rename| {
+                    unresolved_col(rename.col_name.as_str()).alias(rename.new_col_name.as_str())
+                })
                 .collect()
         };
 
@@ -600,7 +566,7 @@ impl SparkAnalyzer<'_> {
 
         let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        let column_names: Vec<_> = column_names.into_iter().map(daft_dsl::col).collect();
+        let column_names: Vec<_> = column_names.into_iter().map(unresolved_col).collect();
 
         plan = plan
             .select(column_names)
@@ -697,14 +663,11 @@ impl SparkAnalyzer<'_> {
             not_yet_implemented!("pos_arguments");
         }
 
-        let catalog = self
-            .session
-            .catalog
-            .read()
-            .map_err(|e| ConnectError::internal(format!("Failed to read catalog: {e}")))?;
-        let catalog = catalog.clone();
+        // TODO: converge Session and ConnectSession
+        let session = self.session.session().clone();
+        let session = Rc::new(session);
 
-        let mut planner = SQLPlanner::new(catalog);
+        let mut planner = SQLPlanner::new(session);
         let plan = planner.plan_sql(&query)?;
         Ok(plan.into())
     }
@@ -739,7 +702,7 @@ impl SparkAnalyzer<'_> {
                     debug!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
                 }
 
-                Ok(daft_dsl::col(unparsed_identifier.as_str()))
+                Ok(daft_dsl::unresolved_col(unparsed_identifier.as_str()))
             }
             spark_expr::ExprType::UnresolvedFunction(f) => self.process_function(f),
             spark_expr::ExprType::ExpressionString(_) => {

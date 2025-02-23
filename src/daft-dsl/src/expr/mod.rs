@@ -5,6 +5,7 @@ mod tests;
 use std::{
     any::Any,
     collections::HashSet,
+    fmt::Formatter,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
     str::FromStr,
@@ -19,6 +20,7 @@ use daft_core::{
         try_mean_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
         InferDataType,
     },
+    join::JoinSide,
     prelude::*,
     utils::supertype::try_get_supertype,
 };
@@ -102,10 +104,78 @@ impl std::hash::Hash for Subquery {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum Column {
+    Unresolved(UnresolvedColumn),
+    Resolved(ResolvedColumn),
+}
+
+/// Information about the logical plan node that a column comes from.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum PlanRef {
+    /// Corresponds to a SubqueryAlias
+    Alias(Arc<str>),
+
+    /// No specified source.
+    ///
+    /// Can either be from the immediate input or an outer scope.
+    Unqualified,
+}
+
+/// Column that is not yet resolved to a scope.
+///
+/// Unresolved columns should only be used before logical plan construction
+/// (e.g. in the DataFrame and SQL frontends and the logical plan builder).
+///
+/// Expressions are assumed to contain no unresolved columns by the time
+/// they are used in a logical plan op, as well as subsequent steps such as
+/// physical plan translation and execution.
+///
+/// The logical plan builder is responsible for resolving all Column::Unresolved
+/// into Column::Resolved
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct UnresolvedColumn {
+    pub name: Arc<str>,
+    pub plan_ref: PlanRef,
+    pub plan_schema: Option<SchemaRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ResolvedColumn {
+    /// Column resolved to the scope of a singular input.
+    Basic(Arc<str>),
+
+    /// Column resolved to the scope of either the left or right input of a join.
+    ///
+    /// This variant should only exist in join predicates.
+    JoinSide(Arc<str>, JoinSide),
+
+    /// Column resolved to the scope of an outer plan of a subquery.
+    ///
+    /// This variant should only exist in subquery plans.
+    OuterRef(Field),
+}
+
+impl Display for Column {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::Unresolved(UnresolvedColumn { name, .. }) => name.to_string(),
+            Self::Resolved(ResolvedColumn::Basic(name)) => name.to_string(),
+            Self::Resolved(ResolvedColumn::JoinSide(name, side)) => format!("{side}.{name}"),
+            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. })) => format!("outer.{name}"),
+        };
+
+        write!(f, "col({name})")
+    }
+}
+
 pub type ExprRef = Arc<Expr>;
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
+    #[display("{_0}")]
+    Column(Column),
+
     #[display("{_0} as {_1}")]
     Alias(ExprRef, Arc<str>),
 
@@ -121,9 +191,6 @@ pub enum Expr {
 
     #[display("cast({_0} as {_1})")]
     Cast(ExprRef, DataType),
-
-    #[display("col({_0})")]
-    Column(Arc<str>),
 
     #[display("{}", function_display_without_formatter(func, inputs)?)]
     Function {
@@ -173,9 +240,6 @@ pub enum Expr {
 
     #[display("exists {_0}")]
     Exists(Subquery),
-
-    #[display("{_0}")]
-    OuterReferenceColumn(OuterReferenceColumn),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -183,20 +247,6 @@ pub struct ApproxPercentileParams {
     pub child: ExprRef,
     pub percentiles: Vec<FloatWrapper<f64>>,
     pub force_list_output: bool,
-}
-
-/// Reference to a qualified field in a parent query, used for correlated subqueries.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
-pub struct OuterReferenceColumn {
-    pub field: Field,
-    /// The parent query that the column refers to, with depth=1 denoting the direct parent.
-    pub depth: u64,
-}
-
-impl Display for OuterReferenceColumn {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "outer_col({}, depth={})", self.field.name, self.depth)
-    }
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -234,11 +284,20 @@ pub enum AggExpr {
     #[display("max({_0})")]
     Max(ExprRef),
 
+    #[display("bool_and({_0})")]
+    BoolAnd(ExprRef),
+
+    #[display("bool_or({_0})")]
+    BoolOr(ExprRef),
+
     #[display("any_value({_0}, ignore_nulls={_1})")]
     AnyValue(ExprRef, bool),
 
     #[display("list({_0})")]
     List(ExprRef),
+
+    #[display("set({_0})")]
+    Set(ExprRef),
 
     #[display("list({_0})")]
     Concat(ExprRef),
@@ -256,8 +315,19 @@ pub enum SketchType {
     HyperLogLog,
 }
 
-pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
-    Expr::Column(name.into()).into()
+/// Unresolved column with no associated plan ID or schema.
+pub fn unresolved_col(name: impl Into<Arc<str>>) -> ExprRef {
+    Expr::Column(Column::Unresolved(UnresolvedColumn {
+        name: name.into(),
+        plan_ref: PlanRef::Unqualified,
+        plan_schema: None,
+    }))
+    .into()
+}
+
+/// Basic resolved column, refers to a singular input scope
+pub fn resolved_col<S: Into<Arc<str>>>(name: S) -> ExprRef {
+    Expr::Column(Column::Resolved(ResolvedColumn::Basic(name.into()))).into()
 }
 
 pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
@@ -278,8 +348,11 @@ impl AggExpr {
             | Self::Stddev(expr)
             | Self::Min(expr)
             | Self::Max(expr)
+            | Self::BoolAnd(expr)
+            | Self::BoolOr(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr)
             | Self::Concat(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
@@ -342,6 +415,14 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_max()"))
             }
+            Self::BoolAnd(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_bool_and()"))
+            }
+            Self::BoolOr(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_bool_or()"))
+            }
             Self::AnyValue(expr, ignore_nulls) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!(
@@ -351,6 +432,10 @@ impl AggExpr {
             Self::List(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_list()"))
+            }
+            Self::Set(_expr) => {
+                let child_id = _expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_set()"))
             }
             Self::Concat(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -373,8 +458,11 @@ impl AggExpr {
             | Self::Stddev(expr)
             | Self::Min(expr)
             | Self::Max(expr)
+            | Self::BoolAnd(expr)
+            | Self::BoolOr(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::Set(expr)
             | Self::Concat(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
@@ -395,8 +483,11 @@ impl AggExpr {
             Self::Stddev(_) => Self::Stddev(first_child()),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
+            Self::BoolAnd(_) => Self::BoolAnd(first_child()),
+            Self::BoolOr(_) => Self::BoolOr(first_child()),
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
             Self::List(_) => Self::List(first_child()),
+            Self::Set(_expr) => Self::Set(first_child()),
             Self::Concat(_) => Self::Concat(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
@@ -510,7 +601,14 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
-            Self::List(expr) => expr.to_field(schema)?.to_list_field(),
+
+            Self::List(expr) | Self::Set(expr) => expr.to_field(schema)?.to_list_field(),
+
+            Self::BoolAnd(expr) | Self::BoolOr(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_str(), DataType::Boolean))
+            }
+
             Self::Concat(expr) => {
                 let field = expr.to_field(schema)?;
                 match field.dtype {
@@ -623,12 +721,24 @@ impl Expr {
         Self::Agg(AggExpr::Max(self)).into()
     }
 
+    pub fn bool_and(self: ExprRef) -> ExprRef {
+        Arc::new(Self::Agg(AggExpr::BoolAnd(self)))
+    }
+
+    pub fn bool_or(self: ExprRef) -> ExprRef {
+        Arc::new(Self::Agg(AggExpr::BoolOr(self)))
+    }
+
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
         Self::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
     }
 
     pub fn agg_list(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::List(self)).into()
+    }
+
+    pub fn agg_set(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Set(self)).into()
     }
 
     pub fn agg_concat(self: ExprRef) -> ExprRef {
@@ -699,7 +809,27 @@ impl Expr {
         match self {
             // Base case - anonymous column reference.
             // Look up the column name in the provided schema and get its field ID.
-            Self::Column(name) => FieldID::new(&**name),
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Alias(alias),
+                ..
+            })) => FieldID::new(format!("{alias}.{name}")),
+
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Unqualified,
+                ..
+            })) => FieldID::new(&**name),
+
+            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => FieldID::new(&**name),
+
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, side))) => {
+                FieldID::new(format!("{side}.{name}"))
+            }
+
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }))) => {
+                FieldID::new(format!("outer.{name}"))
+            }
 
             // Base case - literal.
             Self::Literal(value) => FieldID::new(format!("Literal({value:?})")),
@@ -780,22 +910,13 @@ impl Expr {
 
                 FieldID::new(format!("(EXISTS {subquery_id})"))
             }
-            Self::OuterReferenceColumn(c) => {
-                let name = &c.field.name;
-                let depth = c.depth;
-                FieldID::new(format!("outer_col({name}, {depth})"))
-            }
         }
     }
 
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
             // No children.
-            Self::Column(..) => vec![],
-            Self::Literal(..) => vec![],
-            Self::Subquery(..) => vec![],
-            Self::Exists(..) => vec![],
-            Self::OuterReferenceColumn(..) => vec![],
+            Self::Column(..) | Self::Literal(..) | Self::Subquery(..) | Self::Exists(..) => vec![],
 
             // One child.
             Self::Not(expr)
@@ -833,11 +954,7 @@ impl Expr {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
             // no children
-            Self::Column(..)
-            | Self::Literal(..)
-            | Self::Subquery(..)
-            | Self::Exists(..)
-            | Self::OuterReferenceColumn(..) => {
+            Self::Column(..) | Self::Literal(..) | Self::Subquery(..) | Self::Exists(..) => {
                 assert!(children.is_empty(), "Should have no children");
                 self.clone()
             }
@@ -937,7 +1054,27 @@ impl Expr {
             Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
             Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
-            Self::Column(name) => Ok(schema.get_field(name).cloned()?),
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_schema: Some(plan_schema),
+                ..
+            })) => plan_schema.get_field(name).cloned(),
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_schema: None,
+                ..
+            })) => schema.get_field(name).cloned(),
+
+            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                schema.get_field(name).cloned()
+            }
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(..))) => {
+                Err(DaftError::InternalError(
+                    "Cannot resolve join side column field with Expr::to_field".to_string(),
+                ))
+            }
+
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(field))) => Ok(field.clone()),
             Self::Not(expr) => {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
@@ -1102,7 +1239,6 @@ impl Expr {
             }
             Self::InSubquery(expr, _) => Ok(Field::new(expr.name(), DataType::Boolean)),
             Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
-            Self::OuterReferenceColumn(c) => Ok(c.field.clone()),
         }
     }
 
@@ -1111,7 +1247,12 @@ impl Expr {
             Self::Alias(.., name) => name.as_ref(),
             Self::Agg(agg_expr) => agg_expr.name(),
             Self::Cast(expr, ..) => expr.name(),
-            Self::Column(name) => name.as_ref(),
+            Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
+            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => name.as_ref(),
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, ..))) => name.as_ref(),
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }))) => {
+                name.as_ref()
+            }
             Self::Not(expr) => expr.name(),
             Self::IsNull(expr) => expr.name(),
             Self::NotNull(expr) => expr.name(),
@@ -1137,7 +1278,6 @@ impl Expr {
             Self::Subquery(subquery) => subquery.name(),
             Self::InSubquery(expr, _) => expr.name(),
             Self::Exists(subquery) => subquery.name(),
-            Self::OuterReferenceColumn(c) => &c.field.name,
         }
     }
 
@@ -1161,7 +1301,9 @@ impl Expr {
     pub fn to_sql(&self) -> Option<String> {
         fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {
-                Expr::Column(name) => write!(buffer, "{}", name),
+                Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                    write!(buffer, "{}", name)
+                }
                 Expr::Literal(lit) => lit.display_sql(buffer),
                 Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
                 Expr::BinaryOp { op, left, right } => {
@@ -1216,7 +1358,7 @@ impl Expr {
                 | Expr::Subquery(..)
                 | Expr::InSubquery(..)
                 | Expr::Exists(..)
-                | Expr::OuterReferenceColumn(..) => Err(io::Error::new(
+                | Expr::Column(..) => Err(io::Error::new(
                     io::ErrorKind::Other,
                     "Unsupported expression for SQL translation",
                 )),
@@ -1229,11 +1371,47 @@ impl Expr {
             .and_then(|()| String::from_utf8(buffer).ok())
     }
 
-    /// If the expression is a literal, return it. Otherwise, return None.
+    /// Returns the literal value if this is a literal expression, otherwise none.
     pub fn as_literal(&self) -> Option<&lit::LiteralValue> {
         match self {
             Self::Literal(lit) => Some(lit),
             _ => None,
+        }
+    }
+
+    /// Returns the list vector if this is a list expression, otherwise none.
+    pub fn as_list(&self) -> Option<&Vec<ExprRef>> {
+        match self {
+            Self::List(items) => Some(items),
+            _ => None,
+        }
+    }
+
+    pub fn has_compute(&self) -> bool {
+        match self {
+            Self::Column(..) => false,
+            Self::Literal(..) => false,
+            Self::Subquery(..) => false,
+            Self::Exists(..) => false,
+            Self::Function { .. } => true,
+            Self::ScalarFunction(..) => true,
+            Self::Agg(_) => true,
+            Self::IsIn(..) => true,
+            Self::Between(..) => true,
+            Self::BinaryOp { .. } => true,
+            Self::Alias(expr, ..) => expr.has_compute(),
+            Self::Cast(expr, ..) => expr.has_compute(),
+            Self::Not(expr) => expr.has_compute(),
+            Self::IsNull(expr) => expr.has_compute(),
+            Self::NotNull(expr) => expr.has_compute(),
+            Self::FillNull(expr, fill_value) => expr.has_compute() || fill_value.has_compute(),
+            Self::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
+            Self::InSubquery(expr, _) => expr.has_compute(),
+            Self::List(..) => true,
         }
     }
 
@@ -1440,7 +1618,6 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::ScalarFunction(_)
         | Expr::Function { .. }
         | Expr::Column(_)
-        | Expr::OuterReferenceColumn(_)
         | Expr::IfElse { .. }
         | Expr::FillNull(_, _) => match expr.to_field(schema) {
             Ok(field) if field.dtype == DataType::Boolean => 0.2,

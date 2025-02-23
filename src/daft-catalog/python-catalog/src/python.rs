@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_catalog::{
-    errors::{Error as DaftCatalogError, Result},
+    error::{Error as DaftCatalogError, Result},
     DataCatalog, DataCatalogTable,
 };
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
@@ -61,7 +61,7 @@ impl PythonTable {
 }
 
 impl DataCatalogTable for PythonTable {
-    fn to_logical_plan_builder(&self) -> daft_catalog::errors::Result<LogicalPlanBuilder> {
+    fn to_logical_plan_builder(&self) -> daft_catalog::error::Result<LogicalPlanBuilder> {
         Python::with_gil(|py| {
             let dataframe = self
                 .table_pyobj

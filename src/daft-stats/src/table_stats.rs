@@ -7,8 +7,8 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{Expr, ExprRef};
-use daft_table::Table;
+use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn};
+use daft_recordbatch::RecordBatch;
 use indexmap::{IndexMap, IndexSet};
 
 use crate::column_stats::ColumnRangeStatistics;
@@ -28,7 +28,7 @@ impl Hash for TableStatistics {
 }
 
 impl TableStatistics {
-    pub fn from_stats_table(table: &Table) -> DaftResult<Self> {
+    pub fn from_stats_table(table: &RecordBatch) -> DaftResult<Self> {
         // Assumed format is each column having 2 rows:
         // - row 0: Minimum value for the column.
         // - row 1: Maximum value for the column.
@@ -45,7 +45,7 @@ impl TableStatistics {
     }
 
     #[must_use]
-    pub fn from_table(table: &Table) -> Self {
+    pub fn from_table(table: &RecordBatch) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
             let col = table.get_column(&name).unwrap();
@@ -132,7 +132,7 @@ impl TableStatistics {
     pub fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
-            Expr::Column(col_name) => {
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) => {
                 let col = self.columns.get(col_name.as_ref());
                 let Some(col) = col else {
                     return Err(crate::Error::DaftCoreCompute {
@@ -202,7 +202,7 @@ impl Display for TableStatistics {
             .map(|(s, c)| c.combined_series().unwrap().rename(s))
             .collect::<Vec<_>>();
         let tbl_schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect()).unwrap();
-        let tab = Table::new_with_size(tbl_schema, columns, 2).unwrap();
+        let tab = RecordBatch::new_with_size(tbl_schema, columns, 2).unwrap();
         write!(f, "{tab}")
     }
 }
@@ -210,39 +210,40 @@ impl Display for TableStatistics {
 #[cfg(test)]
 mod test {
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit};
-    use daft_table::Table;
+    use daft_dsl::{lit, resolved_col};
+    use daft_recordbatch::RecordBatch;
 
     use super::TableStatistics;
     use crate::column_stats::TruthValue;
 
     #[test]
     fn test_equal() -> crate::Result<()> {
-        let table = Table::from_nonempty_columns(vec![
-            Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()
-        ])
-        .unwrap();
+        let table =
+            RecordBatch::from_nonempty_columns(vec![
+                Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()
+            ])
+            .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
         // False case
-        let expr = col("a").eq(lit(0));
+        let expr = resolved_col("a").eq(lit(0));
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::False);
 
         // Maybe case
-        let expr = col("a").eq(lit(3));
+        let expr = resolved_col("a").eq(lit(3));
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::Maybe);
 
         // True case
         let table =
-            Table::from_nonempty_columns(
-                vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()],
-            )
+            RecordBatch::from_nonempty_columns(vec![
+                Int64Array::from(("a", vec![0, 0, 0])).into_series()
+            ])
             .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
-        let expr = col("a").eq(lit(0));
+        let expr = resolved_col("a").eq(lit(0));
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::True);
 

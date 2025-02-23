@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
+use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
 use daft_schema::field::Field;
 
 use crate::{
-    array::ListArray,
+    array::{growable::make_growable, ListArray},
     datatypes::{DataType, UInt64Array, Utf8Array},
     prelude::{CountMode, Int64Array},
-    series::{IntoSeries, Series},
+    series::{array_impl::IntoSeries, Series},
 };
 
 impl Series {
@@ -23,6 +26,32 @@ impl Series {
         .into_series();
 
         Ok(series)
+    }
+
+    pub fn list_bool_and(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::List(_) => Ok(self.list()?.list_bool_and()?.into_series()),
+            DataType::FixedSizeList(..) => {
+                Ok(self.fixed_size_list()?.list_bool_and()?.into_series())
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "list_bool_and not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn list_bool_or(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::List(_) => Ok(self.list()?.list_bool_or()?.into_series()),
+            DataType::FixedSizeList(..) => {
+                Ok(self.fixed_size_list()?.list_bool_or()?.into_series())
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "list_bool_or not implemented for {}",
+                dt
+            ))),
+        }
     }
 
     pub fn explode(&self) -> DaftResult<Self> {
@@ -187,7 +216,7 @@ impl Series {
     /// ```txt
     /// [[1, 2, 3], [1, 1, 1], [NULL, NULL, 5]] -> [3, 1, 1]
     /// ```
-    pub fn list_unique_count(&self) -> DaftResult<Self> {
+    pub fn list_count_distinct(&self) -> DaftResult<Self> {
         let field = Field::new(self.name(), DataType::UInt64);
         match self.data_type() {
             DataType::List(..) => {
@@ -227,5 +256,65 @@ impl Series {
     /// ```
     pub fn list_fill(&self, num: &Int64Array) -> DaftResult<Self> {
         ListArray::list_fill(self, num).map(|arr| arr.into_series())
+    }
+
+    /// Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
+    ///
+    /// # Example
+    /// ```txt
+    /// [[1, 2, 3], [1, 1, 1], [NULL, NULL, 5]] -> [[1, 2, 3], [1], [5]]
+    /// ```
+    pub fn list_distinct(&self) -> DaftResult<Self> {
+        let input = if let DataType::FixedSizeList(inner_type, _) = self.data_type() {
+            self.cast(&DataType::List(inner_type.clone()))?
+        } else {
+            self.clone()
+        };
+
+        let list = input.list()?;
+        let mut offsets = Vec::new();
+        offsets.push(0i64);
+        let mut current_offset = 0i64;
+
+        let field = Arc::new(input.field().to_exploded_field()?);
+        let child_data_type = if let DataType::List(inner_type) = input.data_type() {
+            inner_type.as_ref().clone()
+        } else {
+            return Err(DaftError::TypeError("Expected list type".into()));
+        };
+
+        // Create growable with the flat child as source, overestimating capacity
+        let mut growable = make_growable(
+            &field.name,
+            &child_data_type,
+            vec![&list.flat_child],
+            false,
+            list.flat_child.len(),
+        );
+
+        // Single pass: process each sub-series
+        let list_offsets = list.offsets();
+        for (i, sub_series) in list.into_iter().enumerate() {
+            let start_offset = list_offsets.get(i).unwrap();
+            if let Some(sub_series) = sub_series {
+                let probe_table = sub_series.build_probe_table_without_nulls()?;
+                let indices: Vec<_> = probe_table.keys().map(|k| k.idx).collect();
+                let unique_count = indices.len();
+                for idx in indices {
+                    growable.extend(0, *start_offset as usize + idx as usize, 1);
+                }
+                current_offset += unique_count as i64;
+            }
+            offsets.push(current_offset);
+        }
+
+        let list_array = ListArray::new(
+            Arc::new(Field::new(input.name(), input.data_type().clone())),
+            growable.build()?,
+            OffsetsBuffer::try_from(offsets)?,
+            input.validity().cloned(),
+        );
+
+        Ok(list_array.into_series())
     }
 }

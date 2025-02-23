@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::CountMode;
-use daft_dsl::{col, AggExpr, Expr, ExprRef, LiteralValue};
+use daft_dsl::{unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
@@ -9,8 +9,9 @@ use crate::{
     ensure,
     error::SQLPlannerResult,
     functions::{SQLFunction, SQLFunctions},
+    normalize,
     planner::SQLPlanner,
-    unsupported_sql_err,
+    table_not_found_err, unsupported_sql_err,
 };
 
 pub struct SQLModuleAggs;
@@ -26,6 +27,8 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("mean", AggExpr::Mean(nil.clone()));
         parent.add_fn("min", AggExpr::Min(nil.clone()));
         parent.add_fn("max", AggExpr::Max(nil.clone()));
+        parent.add_fn("bool_and", AggExpr::BoolAnd(nil.clone()));
+        parent.add_fn("bool_or", AggExpr::BoolOr(nil.clone()));
         parent.add_fn("stddev", AggExpr::Stddev(nil.clone()));
         parent.add_fn("stddev_samp", AggExpr::Stddev(nil));
     }
@@ -51,6 +54,8 @@ impl SQLFunction for AggExpr {
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
             Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
             Self::Stddev(_) => static_docs::STDDEV_DOCSTRING.to_string(),
+            Self::BoolAnd(_) => static_docs::BOOL_AND_DOCSTRING.to_string(),
+            Self::BoolOr(_) => static_docs::BOOL_OR_DOCSTRING.to_string(),
             e => unimplemented!("Need to implement docstrings for {e}"),
         }
     }
@@ -63,7 +68,9 @@ impl SQLFunction for AggExpr {
             | Self::Mean(_)
             | Self::Min(_)
             | Self::Max(_)
-            | Self::Stddev(_) => &["input"],
+            | Self::Stddev(_)
+            | Self::BoolAnd(_)
+            | Self::BoolOr(_) => &["input"],
             e => unimplemented!("Need to implement arg names for {e}"),
         }
     }
@@ -71,22 +78,29 @@ impl SQLFunction for AggExpr {
 
 fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
     Ok(match inputs {
-        [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match planner.relation_opt() {
-            Some(rel) => {
-                let schema = rel.schema();
-                col(schema.fields[0].name.clone())
+        [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
+            Some(plan) => {
+                let schema = plan.schema();
+                unresolved_col(schema.fields[0].name.clone())
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
             }
             None => unsupported_sql_err!("Wildcard is not supported in this context"),
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
-            match planner.relation_opt() {
-                Some(rel) if name.to_string() == rel.get_name() => {
-                    let schema = rel.schema();
-                    col(schema.fields[0].name.clone())
-                        .count(daft_core::count_mode::CountMode::All)
-                        .alias("count")
+            let ident = normalize(name);
+
+            match &planner.current_plan {
+                Some(plan) => {
+                    if let Some(schema) =
+                        plan.plan.clone().get_schema_for_alias(&ident.to_string())?
+                    {
+                        unresolved_col(schema.fields[0].name.clone())
+                            .count(daft_core::count_mode::CountMode::All)
+                            .alias("count")
+                    } else {
+                        table_not_found_err!(ident.to_string())
+                    }
                 }
                 _ => unsupported_sql_err!("Wildcard is not supported in this context"),
             }
@@ -131,10 +145,19 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 1, "max takes exactly one argument");
             Ok(args[0].clone().max())
         }
+        AggExpr::BoolAnd(_) => {
+            ensure!(args.len() == 1, "bool_and takes exactly one argument");
+            Ok(args[0].clone().bool_and())
+        }
+        AggExpr::BoolOr(_) => {
+            ensure!(args.len() == 1, "bool_or takes exactly one argument");
+            Ok(args[0].clone().bool_or())
+        }
         AggExpr::AnyValue(_, _) => unsupported_sql_err!("any_value"),
         AggExpr::List(_) => unsupported_sql_err!("list"),
         AggExpr::Concat(_) => unsupported_sql_err!("concat"),
         AggExpr::MapGroups { .. } => unsupported_sql_err!("map_groups"),
+        AggExpr::Set(_) => unsupported_sql_err!("set"),
     }
 }
 
@@ -411,5 +434,81 @@ Example:
     ╞══════════════╡
     │ 70.710678118 │
     ╰──────────────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const BOOL_AND_DOCSTRING: &str =
+        "Returns true if all non-null elements in the input expression are true, false if any are false, and null if all elements are null.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT bool_and(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Boolean │
+    ╞═════════╡
+    │ true    │
+    ├╌╌╌╌╌╌╌╌╌┤
+    │ true    │
+    ├╌╌╌╌╌╌╌╌╌┤
+    │ null    │
+    ╰─────────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Boolean │
+    ╞═════════╡
+    │ true    │
+    ╰─────────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const BOOL_OR_DOCSTRING: &str =
+        "Returns true if any non-null elements in the input expression are true, false if all are false, and null if all elements are null.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT bool_or(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Boolean │
+    ╞═════════╡
+    │ false   │
+    ├╌╌╌╌╌╌╌╌╌┤
+    │ true    │
+    ├╌╌╌╌╌╌╌╌╌┤
+    │ null    │
+    ╰─────────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Boolean │
+    ╞═════════╡
+    │ true    │
+    ╰─────────╯
     (Showing first 1 of 1 rows)";
 }

@@ -17,14 +17,14 @@ use crate::{
     error::Context,
     invalid_argument_err, not_yet_implemented,
     response_builder::ResponseBuilder,
-    session::Session,
+    session::ConnectSession,
     spark_analyzer::{to_spark_datatype, SparkAnalyzer},
     util::FromOptionalField,
 };
 
 #[derive(Default)]
 pub struct DaftSparkConnectService {
-    client_to_session: DashMap<Uuid, Session>, // To track session data
+    client_to_session: DashMap<Uuid, ConnectSession>, // To track session data
 }
 type ExecutePlanStream = std::pin::Pin<
     Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
@@ -34,7 +34,7 @@ impl DaftSparkConnectService {
     fn get_session(
         &self,
         session_id: &str,
-    ) -> Result<dashmap::mapref::one::RefMut<Uuid, Session>, Status> {
+    ) -> Result<dashmap::mapref::one::RefMut<Uuid, ConnectSession>, Status> {
         let Ok(uuid) = Uuid::parse_str(session_id) else {
             return Err(Status::invalid_argument(
                 "Invalid session_id format, must be a UUID",
@@ -44,7 +44,7 @@ impl DaftSparkConnectService {
         let res = self
             .client_to_session
             .entry(uuid)
-            .or_insert_with(|| Session::new(session_id.to_string()));
+            .or_insert_with(|| ConnectSession::new(session_id.to_string()));
 
         Ok(res)
     }

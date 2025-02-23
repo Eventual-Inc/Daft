@@ -24,8 +24,13 @@ use serde::{Deserialize, Serialize};
 use crate::{Expr, ExprRef, LiteralValue};
 
 #[pyfunction]
-pub fn col(name: &str) -> PyResult<PyExpr> {
-    Ok(PyExpr::from(crate::col(name)))
+pub fn unresolved_col(name: &str) -> PyExpr {
+    PyExpr::from(crate::unresolved_col(name))
+}
+
+#[pyfunction]
+pub fn resolved_col(name: &str) -> PyExpr {
+    PyExpr::from(crate::resolved_col(name))
 }
 
 #[pyfunction]
@@ -344,12 +349,24 @@ impl PyExpr {
         Ok(self.expr.clone().max().into())
     }
 
+    pub fn bool_and(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().bool_and().into())
+    }
+
+    pub fn bool_or(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().bool_or().into())
+    }
+
     pub fn any_value(&self, ignore_nulls: bool) -> PyResult<Self> {
         Ok(self.expr.clone().any_value(ignore_nulls).into())
     }
 
     pub fn agg_list(&self) -> PyResult<Self> {
         Ok(self.expr.clone().agg_list().into())
+    }
+
+    pub fn agg_set(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().agg_set().into())
     }
 
     pub fn agg_concat(&self) -> PyResult<Self> {

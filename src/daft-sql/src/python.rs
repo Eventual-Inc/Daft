@@ -1,7 +1,10 @@
+use std::{collections::HashMap, sync::Arc};
+
 use common_daft_config::PyDaftPlanningConfig;
-use daft_catalog::DaftCatalog;
+use daft_catalog::TableSource;
 use daft_dsl::python::PyExpr;
-use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
+use daft_session::Session;
 use pyo3::prelude::*;
 
 use crate::{functions::SQL_FUNCTIONS, planner::SQLPlanner};
@@ -31,13 +34,19 @@ impl SQLFunctionStub {
     }
 }
 
+// TODO replace with session.exec to invert responsibilities
 #[pyfunction]
 pub fn sql(
     sql: &str,
     catalog: PyCatalog,
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
-    let mut planner = SQLPlanner::new(catalog.catalog);
+    // TODO deprecated catalog APIs #3819
+    let session = Session::empty();
+    for (name, view) in catalog.tables {
+        session.create_temp_table(name, &TableSource::View(view), true)?;
+    }
+    let mut planner = SQLPlanner::new(session.into());
     let plan = planner.plan_sql(sql)?;
     Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config)).into())
 }
@@ -65,11 +74,12 @@ pub fn list_sql_functions() -> Vec<SQLFunctionStub> {
         .collect()
 }
 
+/// TODO remove once session is merged on python side.
 /// PyCatalog is the Python interface to the Catalog.
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone)]
 pub struct PyCatalog {
-    catalog: DaftCatalog,
+    tables: HashMap<String, Arc<LogicalPlan>>,
 }
 
 #[pymethods]
@@ -78,7 +88,7 @@ impl PyCatalog {
     #[staticmethod]
     pub fn new() -> Self {
         Self {
-            catalog: DaftCatalog::default(),
+            tables: HashMap::new(),
         }
     }
 
@@ -88,19 +98,22 @@ impl PyCatalog {
         name: &str,
         dataframe: &mut PyLogicalPlanBuilder,
     ) -> PyResult<()> {
+        // TODO this is being removed, but do not parse python strings as SQL strings.
         let plan = dataframe.builder.build();
-        self.catalog.register_table(name, plan)?;
+        self.tables.insert(name.to_string(), plan);
         Ok(())
     }
 
     /// Copy from another catalog, using tables from other in case of conflict
     pub fn copy_from(&mut self, other: &Self) {
-        self.catalog.copy_from(&other.catalog);
+        for (name, plan) in &other.tables {
+            self.tables.insert(name.clone(), plan.clone());
+        }
     }
 
     /// __str__ to print the catalog's tables
     fn __str__(&self) -> String {
-        format!("{:?}", self.catalog)
+        format!("{:?}", self.tables)
     }
 }
 
