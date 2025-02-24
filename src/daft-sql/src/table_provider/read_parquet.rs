@@ -46,11 +46,11 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
 
         let field_id_mapping = None; // TODO
         let row_groups = None; // TODO
-        let schema = if let Some(schema_arg) = args.try_get_named("schema")? {
-            Some(Arc::new(try_parse_schema(schema_arg)?))
-        } else {
-            None
-        };
+        let schema = args
+            .try_get_named("schema")?
+            .map(try_parse_schema)
+            .transpose()?
+            .map(Arc::new);
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
 
         Ok(Self {
