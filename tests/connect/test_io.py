@@ -55,6 +55,7 @@ def test_write_parquet(spark_session, tmp_path):
     assert df_pandas["id"].equals(df_read_pandas["id"]), "Data should be unchanged after write/read"
 
 
+@pytest.importorskip("deltalake")
 def test_read_delta(spark_session, make_spark_df, assert_spark_equals, tmp_path):
     df = daft.from_pydict({"id": [1, 2, 3]})
     delta_dir = os.path.join(tmp_path, "test.delta")
