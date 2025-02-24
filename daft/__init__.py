@@ -14,7 +14,7 @@ if "COV_CORE_SOURCE" in os.environ:
         import sys
 
         sys.stderr.write(
-            "pytest-cov: Failed to setup subprocess coverage. " "Environ: {!r} " "Exception: {!r}\n".format(
+            "pytest-cov: Failed to setup subprocess coverage. Environ: {!r} Exception: {!r}\n".format(
                 {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
             )
         )
@@ -94,6 +94,7 @@ from daft.session import Session, current_session, set_session
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
+import daft.spark as spark
 
 to_struct = Expression.to_struct
 
@@ -141,6 +142,7 @@ __all__ = [
     "set_execution_config",
     "set_planning_config",
     "set_session",
+    "spark",
     "sql",
     "sql_expr",
     "struct",

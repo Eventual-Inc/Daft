@@ -73,6 +73,10 @@ impl ConnectionHandle {
         self.port
     }
 
+    pub fn spark_remote_url(&self) -> String {
+        format!("sc://localhost:{}", self.port)
+    }
+
     pub fn shutdown(&self) {
         let shutdown_signals = SHUTDOWN_SIGNALS
             .get()

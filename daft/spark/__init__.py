@@ -4,13 +4,12 @@ Additionally, Daft Connect provides a Ray remote class that wraps the the daft.d
 
 Usage:
 ```py
-from daft.daft import connect_start
+import daft
 
-connect_server = connect_start()  # optionally pass in a port `connect_start(port=1234)`
+server = daft.spark.connect_start()  # optionally pass in a port `connect_start(port=1234)`
 
 # Get the url to connect to the spark service
-port = connect_server.port()
-url = f"sc://localhost:{port}"
+url = server.spark_remote_url()
 
 # Connect to the spark service
 spark = SparkSession.builder.remote(url).getOrCreate()
@@ -18,7 +17,7 @@ spark = SparkSession.builder.remote(url).getOrCreate()
 spark.createDataFrame([("hello", 1), ("world", 2)], ["word", "count"]).show()
 
 # Shutdown the server
-connect_server.shutdown()
+server.shutdown()
 ```
 
 Ray Usage:
@@ -29,15 +28,15 @@ For ray, we provide an Actor class that can be used to start a daft connect serv
 
 ```py
 import ray
-from daft.connect import DaftConnectRayAdaptor
+import daft
 from pyspark.sql import SparkSession
 
 # we recommend using the detached lifetime for the server
 # this will keep the server running even if the client disconnects
-server = DaftConnectRayAdaptor.options(lifetime="detached").remote()
+server = daft.spark.connect_start_ray(lifetime="detached")
 
 # Get the url to connect to the spark service
-url = ray.get(server.spark_remote_url.remote())
+url = server.spark_remote_url()
 
 # Connect to the spark service
 spark = SparkSession.builder.remote(url).getOrCreate()
@@ -50,23 +49,19 @@ Tip:
 You can force the server to start on the head node. This is useful if you want the spark service to be accessible using the same address as the ray cluster.
 
 ```py
-
 # my_script.py
 # submit this code to the head node
 #
 import ray
-from daft.connect import DaftConnectRayAdaptor
+import daft
 
-DaftConnectRayAdaptor.options(
-  lifetime="detached",
-  scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-    node_id=ray.get_runtime_context().get_node_id(),
-    soft=False,
-  )
-  name = "daft-connect-server",
-  get_if_exists=True,
-).remote(port=9999)
-
+daft.spark.connect_start_ray(
+    port=9999,
+    run_on_head_node=True,
+    lifetime="detached",
+    name="daft-connect-server",
+    get_if_exists=True,
+)
 ```
 
 ```sh
@@ -92,7 +87,7 @@ try:
     import ray
 
     @ray.remote
-    class DaftConnectRayAdaptor:
+    class DaftConnectRayAdaptorActor:
         """A Ray remote class that wraps the the daft.daft.connect_start function."""
 
         def __init__(self, port: int | None = None):
@@ -106,10 +101,45 @@ try:
             ip = ray._private.services.get_node_ip_address()
             return f"sc://{ip}:{self._server.port()}"
 
+        def port(self):
+            """Returns the port that the server is running on."""
+            return self._server.port()
+
         def shutdown(self):
             """Shuts down the server."""
             self._server.shutdown()
 
-    __all__ = ["DaftConnectRayAdaptor", "connect_start"]
+    class DaftConnectRayAdaptor:
+        def __init__(self, actor: DaftConnectRayAdaptorActor):
+            self._actor = actor
+
+        def spark_remote_url(self):
+            """Returns the remote url to connect to the spark service."""
+            return ray.get(self._actor.spark_remote_url.remote())
+
+        def port(self):
+            """Returns the port that the server is running on."""
+            return ray.get(self._actor.port.remote())
+
+        def shutdown(self):
+            """Shuts down the server."""
+            ray.get(self._actor.shutdown.remote())
+
+    def connect_start_ray(port: int | None = None, run_on_head_node: bool = False, **kwargs) -> DaftConnectRayAdaptor:
+        """Starts a Daft Connect server on the ray cluster.
+
+        Args:
+            port: The port to start the server on. If not provided, a random available port will be chosen.
+            run_on_head_node: If True, the server will be started on the head node of the ray cluster. You must submit the script to the head node (via `ray job submit -- python my_script.py --head`)
+            **kwargs: Additional arguments to pass to the ray actor
+        """
+        if run_on_head_node:
+            kwargs["scheduling_strategy"] = ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                node_id=ray.get_runtime_context().get_node_id(),
+                soft=False,
+            )
+        return DaftConnectRayAdaptor(DaftConnectRayAdaptorActor.options(**kwargs).remote(port))
+
+    __all__ = ["DaftConnectRayAdaptor", "DaftConnectRayAdaptorActor", "connect_start", "connect_start_ray"]
 except ImportError:
     __all__ = ["connect_start"]
