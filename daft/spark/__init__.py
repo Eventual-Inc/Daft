@@ -82,6 +82,7 @@ spark = SparkSession.builder.remote(url).getOrCreate()
 """
 
 from daft.daft import connect_start
+from typing import Optional
 
 try:
     import ray
@@ -90,7 +91,7 @@ try:
     class DaftConnectRayAdaptorActor:
         """A Ray remote class that wraps the the daft.daft.connect_start function."""
 
-        def __init__(self, port: int | None = None):
+        def __init__(self, port: Optional[int] = None):
             import daft
 
             daft.context.set_runner_ray()
@@ -125,7 +126,9 @@ try:
             """Shuts down the server."""
             ray.get(self._actor.shutdown.remote())
 
-    def connect_start_ray(port: int | None = None, run_on_head_node: bool = False, **kwargs) -> DaftConnectRayAdaptor:
+    def connect_start_ray(
+        port: Optional[int] = None, run_on_head_node: bool = False, **kwargs
+    ) -> DaftConnectRayAdaptor:
         """Starts a Daft Connect server on the ray cluster.
 
         Args:
