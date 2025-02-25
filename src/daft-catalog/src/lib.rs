@@ -13,3 +13,6 @@ pub mod python;
 
 #[cfg(feature = "python")]
 pub use python::register_modules;
+
+// TODO audit daft-catalog and daft-session errors.
+pub mod error;

@@ -4,7 +4,7 @@ use daft_core::{prelude::SchemaRef, python::PySchema};
 use daft_logical_plan::{LogicalPlanRef, PyLogicalPlanBuilder};
 use pyo3::{exceptions::PyIndexError, intern, prelude::*};
 
-use crate::{error::Result, Catalog, CatalogRef, Identifier, Table, TableRef, View};
+use crate::{error::Result, Catalog, CatalogRef, Identifier, Table, TableRef, TableSource, View};
 
 /// PyCatalog implements the Catalog ABC for some Catalog trait impl (rust->py).
 #[pyclass]
@@ -172,22 +172,11 @@ impl PyTableWrapper {
 
 impl Table for PyTableWrapper {
     fn get_schema(&self) -> SchemaRef {
-        todo!("Table.schema not yet defined")
+        todo!()
     }
 
     fn get_logical_plan(&self) -> Result<LogicalPlanRef> {
-        Python::with_gil(|py| {
-            let builder = self
-                .0
-                .bind(py)
-                .call_method0("read")?
-                .getattr("_builder")?
-                .getattr("_builder")?;
-            let builder = builder
-                .downcast::<PyLogicalPlanBuilder>()
-                .expect("downcast PyAny to PyLogicalPlanBuilder");
-            Ok(builder.borrow().builder.plan.clone())
-        })
+        todo!()
     }
 
     fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
@@ -225,10 +214,10 @@ impl PyTableSource {
     }
 }
 
-pub fn register_modules<'py>(parent: &Bound<'py, PyModule>) -> PyResult<Bound<'py, PyModule>> {
+pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
     parent.add_class::<PyCatalog>()?;
     parent.add_class::<PyIdentifier>()?;
     parent.add_class::<PyTable>()?;
     parent.add_class::<PyTableSource>()?;
-    Ok(module)
+    Ok(())
 }

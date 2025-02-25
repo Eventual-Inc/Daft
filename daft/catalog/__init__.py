@@ -43,9 +43,7 @@ import warnings
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from daft.daft import PyTableSource, catalog as native_catalog
-from daft.daft import PyIdentifier
-from daft.logical.builder import LogicalPlanBuilder
+from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
@@ -150,13 +148,13 @@ def register_table(name: str, dataframe: DataFrame) -> str:
         >>> daft.catalog.register_table("my_table", df)
         >>> daft.read_table("my_table")
     """
-    from daft.session import attach_table
+    from daft.session import create_temp_table
 
     warnings.warn(
-        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_table`.",
+        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.create_temp_table`.",
         category=DeprecationWarning,
     )
-    _ = attach_table(dataframe, name)
+    _ = create_temp_table(name, dataframe)
     return name
 
 
