@@ -34,7 +34,6 @@ impl SQLFunctionStub {
     }
 }
 
-// TODO replace with session.exec to invert responsibilities
 #[pyfunction]
 pub fn sql(
     sql: &str,
