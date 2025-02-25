@@ -47,7 +47,7 @@ print(daft.context.get_context()._runner.name)
 
 
 def test_implicit_set_runner_native():
-    """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Python."""
+    """Test that a freshly imported context doesn't have a runner config set and is set implicitly to Native."""
     implicit_set_runner_script = """
 import daft
 print(daft.context.get_context()._runner)
