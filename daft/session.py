@@ -157,11 +157,11 @@ class Session:
     # set_*
     ###
 
-    def set_catalog(self, identifier: str):
-        """Set the given catalog as current_catalog or err if not exists."""
+    def set_catalog(self, identifier: str | None):
+        """Set the given catalog as current_catalog or raises an err if it does not exist."""
         self._session.set_catalog(identifier)
 
-    def set_namespace(self, identifier: Identifier | str):
+    def set_namespace(self, identifier: Identifier | str | None):
         """Set the given namespace as current_namespace for table resolution."""
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
@@ -304,12 +304,12 @@ def read_table(identifier: Identifier | str) -> DataFrame:
 ###
 
 
-def set_catalog(identifier: str):
-    """Set the given catalog as current_catalog for the current session or err if not exists."""
+def set_catalog(identifier: str | None):
+    """Set the given catalog as current_catalog for the current session or raises an if it does not exist."""
     _session().set_catalog(identifier)
 
 
-def set_namespace(identifier: Identifier | str):
+def set_namespace(identifier: Identifier | str | None):
     """Set the given namespace as current_namespace for the current session."""
     _session().set_namespace(identifier)
 

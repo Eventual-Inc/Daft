@@ -84,8 +84,9 @@ impl PySession {
         Ok(self.0.list_tables(pattern)?)
     }
 
-    pub fn set_catalog(&self, name: &str) -> PyResult<()> {
-        Ok(self.0.set_catalog(name)?)
+    #[pyo3(signature = (ident))]
+    pub fn set_catalog(&self, ident: Option<&str>) -> PyResult<()> {
+        Ok(self.0.set_catalog(ident)?)
     }
 
     #[pyo3(signature = (ident))]

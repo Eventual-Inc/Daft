@@ -51,10 +51,14 @@ impl Catalog for PyCatalogWrapper {
             // TODO chore: create a python identifier here.
             let identifier = ident.to_string();
             // table = catalog.get_table(ident)
-            let table = catalog.getattr("get_table")?.call1((identifier,))?;
-            let table = PyTableWrapper::from(table.unbind());
-            // wrap py table object so it's an impl Table
-            Ok(Some(Box::new(table) as Box<dyn Table>))
+            if let Ok(table) = catalog.getattr("get_table")?.call1((identifier,)) {
+                // wrap py table object so it's an impl Table
+                let table = PyTableWrapper::from(table.unbind());
+                Ok(Some(Box::new(table) as Box<dyn Table>))
+            } else {
+                // ignore table not found to make this optional
+                Ok(None)
+            }
         })
     }
 

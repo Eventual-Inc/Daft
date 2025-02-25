@@ -131,6 +131,10 @@ impl Session {
             obj_not_found_err!("Catalog", &alias.into())
         }
         self.state_mut().catalogs.remove(alias);
+        // cleanup session state
+        if self.state().catalogs.is_empty() {
+            self.set_catalog(None)?;
+        }
         Ok(())
     }
 
@@ -159,7 +163,6 @@ impl Session {
             None => obj_not_found_err!("Table", name),
         };
         let curr_namespace = self.current_namespace()?;
-        //
         //
         // Rule 1: try to resolve using the current catalog and current schema.
         if let Some(qualifier) = curr_namespace {
@@ -208,18 +211,22 @@ impl Session {
     }
 
     /// Sets the current_catalog
-    pub fn set_catalog(&self, name: &str) -> Result<()> {
-        if !self.has_catalog(name) {
-            obj_not_found_err!("Catalog", &name.into())
+    pub fn set_catalog(&self, ident: Option<&str>) -> Result<()> {
+        if let Some(ident) = ident {
+            if !self.has_catalog(ident) {
+                obj_not_found_err!("Catalog", &ident.into())
+            }
+            self.state_mut().options.curr_catalog = Some(ident.to_string());
+        } else {
+            self.state_mut().options.curr_catalog = None;
         }
-        self.state_mut().options.curr_catalog = Some(name.to_string());
         Ok(())
     }
 
     /// Sets the current_namespace (consider an Into at a later time).
-    pub fn set_namespace(&self, namespace: Option<&Identifier>) -> Result<()> {
+    pub fn set_namespace(&self, ident: Option<&Identifier>) -> Result<()> {
         // TODO chore: update once Identifier is a Vec<String>
-        if let Some(ident) = namespace {
+        if let Some(ident) = ident {
             let mut path = vec![];
             path.extend_from_slice(&ident.qualifier);
             path.push(ident.name.clone());
