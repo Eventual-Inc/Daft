@@ -120,6 +120,7 @@ pub enum PlanRef {
     ///
     /// Can either be from the immediate input or an outer scope.
     Unqualified,
+    Id(usize),
 }
 
 /// Column that is not yet resolved to a scope.
@@ -831,6 +832,12 @@ impl Expr {
                 plan_ref: PlanRef::Alias(alias),
                 ..
             })) => FieldID::new(format!("{alias}.{name}")),
+
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Id(id),
+                ..
+            })) => FieldID::new(format!("{id}.{name}")),
 
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,

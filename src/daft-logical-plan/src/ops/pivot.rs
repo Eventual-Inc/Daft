@@ -14,6 +14,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pivot {
+    pub plan_id: Option<usize>,
     pub input: Arc<LogicalPlan>,
     pub group_by: Vec<ExprRef>,
     pub pivot_column: ExprRef,
@@ -60,6 +61,7 @@ impl Pivot {
         };
 
         Ok(Self {
+            plan_id: None,
             input,
             group_by,
             pivot_column,
@@ -69,6 +71,11 @@ impl Pivot {
             output_schema,
             stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {

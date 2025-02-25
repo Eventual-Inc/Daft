@@ -1,8 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use daft_core::datatypes::IntervalValue;
 use daft_dsl::{PlanRef, UnresolvedColumn};
-use daft_logical_plan::LogicalPlanBuilder;
 use spark_connect::{
     expression::{
         self as spark_expr,
@@ -22,12 +21,14 @@ use crate::{
     invalid_argument_err, invalid_relation_err, not_yet_implemented,
 };
 
-pub(crate) struct ExprResolver<'a> {
-    pub(crate) plan_nodes: &'a HashMap<i64, LogicalPlanBuilder>,
-    pub(crate) in_join: bool,
-}
+#[derive(Debug, Clone)]
+pub(crate) struct ExprResolver {}
 
-impl ExprResolver<'_> {
+impl ExprResolver {
+    pub fn new() -> Self {
+        Self {}
+    }
+
     pub(crate) fn resolve_expr(&self, expression: &Expression) -> ConnectResult<daft_dsl::ExprRef> {
         if let Some(common) = &expression.common {
             if common.origin.is_some() {
@@ -50,24 +51,16 @@ impl ExprResolver<'_> {
                 if let Some(is_metadata_column) = is_metadata_column {
                     debug!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
                 }
-                if self.in_join
-                    && let Some(id) = plan_id
-                {
-                    let plan = self.plan_nodes.get(id);
-
-                    let plan_schema = plan.map(|p| p.schema());
-
-                    let plan_ref = if plan.is_some() {
-                        let id = format!("{id}");
-                        PlanRef::Alias(Arc::from(id))
-                    } else {
-                        PlanRef::Unqualified
-                    };
+                if let Some(id) = plan_id {
+                    let id = *id;
+                    let id: usize = id.try_into().map_err(|_| {
+                        ConnectError::invalid_relation(format!("Invalid plan ID: {id}"))
+                    })?;
 
                     Ok(UnresolvedColumn {
                         name: Arc::from(unparsed_identifier.as_str()),
-                        plan_ref,
-                        plan_schema,
+                        plan_ref: PlanRef::Id(id),
+                        plan_schema: None,
                     }
                     .into())
                 } else {

@@ -3,7 +3,7 @@
 mod datatype;
 mod expr_resolver;
 
-use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
+use std::{io::Cursor, rc::Rc, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::{join::JoinSide, series::Series};
@@ -45,14 +45,14 @@ use crate::{
 #[derive(Clone)]
 pub struct SparkAnalyzer<'a> {
     pub session: &'a ConnectSession,
-    plan_nodes: HashMap<i64, LogicalPlanBuilder>,
+    expr_resolver: ExprResolver,
 }
 
 impl SparkAnalyzer<'_> {
     pub fn new(session: &ConnectSession) -> SparkAnalyzer<'_> {
         SparkAnalyzer {
             session,
-            plan_nodes: HashMap::new(),
+            expr_resolver: ExprResolver::new(),
         }
     }
 
@@ -128,9 +128,7 @@ impl SparkAnalyzer<'_> {
         }?;
         let plan_id = common.plan_id.required("plan_id")?;
 
-        self.plan_nodes.insert(plan_id, lp.clone());
-
-        Ok(lp)
+        Ok(lp.with_plan_id(plan_id as _))
     }
 
     async fn limit(&mut self, limit: Limit) -> ConnectResult<LogicalPlanBuilder> {
@@ -183,10 +181,6 @@ impl SparkAnalyzer<'_> {
         let mut descending = Vec::with_capacity(order.len());
         let mut nulls_first = Vec::with_capacity(order.len());
 
-        let expr_resolver = ExprResolver {
-            plan_nodes: &self.plan_nodes,
-            in_join: false,
-        };
         for SortOrder {
             child,
             direction,
@@ -194,7 +188,7 @@ impl SparkAnalyzer<'_> {
         } in order
         {
             let expr = child.required("child")?;
-            let expr = expr_resolver.resolve_expr(&expr)?;
+            let expr = self.expr_resolver.resolve_expr(&expr)?;
 
             let sort_direction = SortDirection::try_from(direction).map_err(|e| {
                 ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
@@ -379,19 +373,15 @@ impl SparkAnalyzer<'_> {
         if !grouping_sets.is_empty() {
             not_yet_implemented!("Grouping sets not yet supported; got {grouping_sets:?}");
         }
-        let expr_resolver = ExprResolver {
-            plan_nodes: &self.plan_nodes,
-            in_join: false,
-        };
 
         let grouping_expressions: Vec<_> = grouping_expressions
             .iter()
-            .map(|e| expr_resolver.resolve_expr(e))
+            .map(|e| self.expr_resolver.resolve_expr(e))
             .try_collect()?;
 
         let aggregate_expressions: Vec<_> = aggregate_expressions
             .iter()
-            .map(|e| expr_resolver.resolve_expr(e))
+            .map(|e| self.expr_resolver.resolve_expr(e))
             .try_collect()?;
 
         plan = plan.aggregate(aggregate_expressions, grouping_expressions)?;
@@ -432,13 +422,9 @@ impl SparkAnalyzer<'_> {
     ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Filter { input, condition } = filter;
 
-        let expr_resolver = ExprResolver {
-            plan_nodes: &self.plan_nodes,
-            in_join: false,
-        };
         let input = input.required("input")?;
         let condition = condition.required("condition")?;
-        let condition = expr_resolver.resolve_expr(&condition)?;
+        let condition = self.expr_resolver.resolve_expr(&condition)?;
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
         Ok(plan.filter(condition)?)
@@ -508,13 +494,10 @@ impl SparkAnalyzer<'_> {
         let input = input.required("input")?;
 
         let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
-        let expr_resolver = ExprResolver {
-            plan_nodes: &self.plan_nodes,
-            in_join: false,
-        };
+
         let daft_exprs: Vec<_> = expressions
             .iter()
-            .map(|e| expr_resolver.resolve_expr(e))
+            .map(|e| self.expr_resolver.resolve_expr(e))
             .try_collect()?;
         plan = plan.select(daft_exprs)?;
 
@@ -531,10 +514,6 @@ impl SparkAnalyzer<'_> {
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        let expr_resolver = ExprResolver {
-            plan_nodes: &self.plan_nodes,
-            in_join: false,
-        };
         let daft_exprs: Vec<_> = aliases
             .into_iter()
             .map(|alias| {
@@ -543,7 +522,7 @@ impl SparkAnalyzer<'_> {
                     expr_type: Some(ExprType::Alias(Box::new(alias))),
                 };
 
-                expr_resolver.resolve_expr(&expression)
+                self.expr_resolver.resolve_expr(&expression)
             })
             .try_collect()?;
 
@@ -748,7 +727,6 @@ impl SparkAnalyzer<'_> {
             right_on: &mut Vec<ExprRef>,
             left_plan: &LogicalPlanBuilder,
             right_plan: &LogicalPlanBuilder,
-            plan_nodes: &HashMap<i64, LogicalPlanBuilder>,
         ) -> ConnectResult<()> {
             match join_cond.as_ref() {
                 Expr::BinaryOp {
@@ -767,24 +745,28 @@ impl SparkAnalyzer<'_> {
                     })) = left.as_ref()
                     {
                         match plan_ref {
-                            PlanRef::Alias(alias) => {
-                                let plan_id = alias.parse::<i64>().unwrap();
-                                let plan = plan_nodes.get(&plan_id);
-                                match plan {
-                                    Some(plan) if plan == left_plan => {
-                                        left_on.push(unresolved_col(name.clone()));
-                                        left_expr_join_side = Some(JoinSide::Left);
-                                    }
-                                    Some(plan) if plan == right_plan => {
-                                        right_on.push(unresolved_col(name.clone()));
-                                        left_expr_join_side = Some(JoinSide::Right);
-                                    }
-                                    _ => {
-                                        internal_err!("plan not found");
-                                    }
-                                };
+                            PlanRef::Id(plan_id) => {
+                                if left_plan
+                                    .plan
+                                    .clone()
+                                    .get_schema_for_id(*plan_id)?
+                                    .is_some()
+                                {
+                                    left_on.push(unresolved_col(name.clone()));
+                                    left_expr_join_side = Some(JoinSide::Left);
+                                } else if right_plan
+                                    .plan
+                                    .clone()
+                                    .get_schema_for_id(*plan_id)?
+                                    .is_some()
+                                {
+                                    right_on.push(unresolved_col(name.clone()));
+                                    left_expr_join_side = Some(JoinSide::Right);
+                                } else {
+                                    internal_err!("plan not found");
+                                }
                             }
-                            PlanRef::Unqualified => {
+                            _ => {
                                 // check if the column is in the left or right plan
                                 let left_schema = left_plan.schema();
                                 let right_schema = right_plan.schema();
@@ -811,24 +793,28 @@ impl SparkAnalyzer<'_> {
                     })) = right.as_ref()
                     {
                         match plan_ref {
-                            PlanRef::Alias(alias) => {
-                                let plan_id = alias.parse::<i64>().unwrap();
-                                let plan = plan_nodes.get(&plan_id);
-                                match plan {
-                                    Some(plan) if plan == left_plan => {
-                                        left_on.push(unresolved_col(name.clone()));
-                                        right_expr_join_side = Some(JoinSide::Left);
-                                    }
-                                    Some(plan) if plan == right_plan => {
-                                        right_on.push(unresolved_col(name.clone()));
-                                        right_expr_join_side = Some(JoinSide::Right);
-                                    }
-                                    _ => {
-                                        internal_err!("plan not found");
-                                    }
-                                };
+                            PlanRef::Id(plan_id) => {
+                                if left_plan
+                                    .plan
+                                    .clone()
+                                    .get_schema_for_id(*plan_id)?
+                                    .is_some()
+                                {
+                                    left_on.push(unresolved_col(name.clone()));
+                                    right_expr_join_side = Some(JoinSide::Left);
+                                } else if right_plan
+                                    .plan
+                                    .clone()
+                                    .get_schema_for_id(*plan_id)?
+                                    .is_some()
+                                {
+                                    right_on.push(unresolved_col(name.clone()));
+                                    right_expr_join_side = Some(JoinSide::Right);
+                                } else {
+                                    internal_err!("plan not found");
+                                }
                             }
-                            PlanRef::Unqualified => {
+                            _ => {
                                 // check if the column is in the left or right plan
                                 let left_schema = left_plan.schema();
                                 let right_schema = right_plan.schema();
@@ -869,22 +855,8 @@ impl SparkAnalyzer<'_> {
                     left,
                     right,
                 } => {
-                    process_join_on(
-                        left.clone(),
-                        left_on,
-                        right_on,
-                        left_plan,
-                        right_plan,
-                        plan_nodes,
-                    )?;
-                    process_join_on(
-                        right.clone(),
-                        left_on,
-                        right_on,
-                        left_plan,
-                        right_plan,
-                        plan_nodes,
-                    )?;
+                    process_join_on(left.clone(), left_on, right_on, left_plan, right_plan)?;
+                    process_join_on(right.clone(), left_on, right_on, left_plan, right_plan)?;
                 }
                 _ => {
                     not_yet_implemented!("join condition");
@@ -895,19 +867,14 @@ impl SparkAnalyzer<'_> {
 
         let mut left_on = vec![];
         let mut right_on = vec![];
-        let expr_resolver = ExprResolver {
-            plan_nodes: &self.plan_nodes,
-            in_join: true,
-        };
         if let Some(join_cond) = join_condition {
-            let join_cond = expr_resolver.resolve_expr(&join_cond)?;
+            let join_cond = self.expr_resolver.resolve_expr(&join_cond)?;
             process_join_on(
                 join_cond,
                 &mut left_on,
                 &mut right_on,
                 &left_plan,
                 &right_plan,
-                &self.plan_nodes,
             )?;
         } else {
             let using_columns: Vec<ExprRef> =
