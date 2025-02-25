@@ -29,6 +29,29 @@ __all__ = [
 ]
 
 
+__all__ = [
+    "Session",
+    "attach_catalog",
+    "attach_table",
+    "create_temp_table",
+    "current_catalog",
+    "current_namespace",
+    "current_session",
+    "detach_catalog",
+    "detach_table",
+    "get_catalog",
+    "get_table",
+    "has_catalog",
+    "has_table",
+    "list_catalogs",
+    "list_tables",
+    "read_table",
+    "set_catalog",
+    "set_namespace",
+    "set_session",
+]
+
+
 class Session:
     """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs."""
 

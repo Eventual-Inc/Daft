@@ -817,7 +817,7 @@ impl<'a> SQLPlanner<'a> {
                 ..
             } => {
                 let tbl_fn = name.0.first().unwrap().value.as_str();
-                (self.plan_table_function(tbl_fn, args)?, alias.clone())
+                (self.plan_table_function(tbl_fn, args)?, alias)
             }
             sqlparser::ast::TableFactor::Table {
                 name,
@@ -831,7 +831,7 @@ impl<'a> SQLPlanner<'a> {
                     self.plan_relation_table(name)?
                 };
 
-                (plan, alias.clone())
+                (plan, alias)
             }
             sqlparser::ast::TableFactor::Derived {
                 lateral,
@@ -842,7 +842,7 @@ impl<'a> SQLPlanner<'a> {
                     unsupported_sql_err!("LATERAL");
                 }
                 let subquery = self.new_with_context().plan_query(subquery)?;
-                (subquery, alias.clone())
+                (subquery, alias)
             }
             sqlparser::ast::TableFactor::TableFunction { .. } => {
                 unsupported_sql_err!("Unsupported table factor: TableFunction")
@@ -870,7 +870,7 @@ impl<'a> SQLPlanner<'a> {
             }
         };
         if let Some(alias) = alias {
-            apply_table_alias(plan, &alias)
+            apply_table_alias(plan, alias)
         } else {
             Ok(plan)
         }
