@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from daft.catalog import Catalog, Identifier, Table, TableSource
-from daft.daft import PySession
-
-if TYPE_CHECKING:
-    from daft.dataframe import DataFrame
-
+from daft.context import get_context
+from daft.daft import PySession, plan_sql
+from daft.dataframe import DataFrame
+from daft.logical.builder import LogicalPlanBuilder
 
 __all__ = [
     "Session",
@@ -56,6 +53,17 @@ class Session:
         """Creates a session from the environment's configuration."""
         # todo session builders, raise if DAFT_SESSION=0
         return Session()
+
+    ###
+    # exec
+    ###
+
+    def sql(self, sql: str) -> DataFrame:
+        """Executes the SQL statement using this session."""
+        py_sess = self._session
+        py_config = get_context().daft_planning_config
+        py_builder = plan_sql(sql, py_sess, py_config)
+        return DataFrame(LogicalPlanBuilder(py_builder))
 
     ###
     # attach & detach
