@@ -28,9 +28,9 @@ jobs:
       build_type: release
     strategy:
       matrix:
-        os: [ubuntu, macos, windows]
-        arch: [x86_64, aarch64]
-        lts: [false, true]
+        os: [ubuntu] # [ubuntu, macos, windows]
+        arch: [x86_64] # [x86_64, aarch64]
+        lts: [false] # [false, true]
 
         exclude:
         - os: windows
@@ -47,6 +47,9 @@ jobs:
       contents: read
 
     steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
     - uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
