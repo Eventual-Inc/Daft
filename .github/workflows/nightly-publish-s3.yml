@@ -63,14 +63,14 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Upload wheels to S3
-      run: aws s3 cp --recursive dist/ ${{ env.S3_BUCKET }}
+      run: aws s3 cp --no-progress --recursive dist/ ${{ env.S3_BUCKET }}
 
     - name: Install boto3 and packaging
       run: pip3 install boto3 packaging
     - name: Generate Python simple repository API files
       run: python3 .github/ci-scripts/generate_simple_py_index.py ${{ env.S3_BUCKET }}
     - name: Upload index files to S3
-      run: aws s3 cp --recursive dist/indices/ ${{ env.S3_BUCKET }}
+      run: aws s3 cp --no-progress --recursive dist/indices/ ${{ env.S3_BUCKET }}
 
     - name: Invalidate Cloudfront cache
       run: aws cloudfront create-invalidation --distribution-id ${{ env.CLOUDFRONT_DIST_ID }} --paths '/builds/nightly*'
