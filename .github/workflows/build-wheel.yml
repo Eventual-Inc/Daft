@@ -42,7 +42,10 @@ jobs:
     - run: uv pip install twine yq setuptools_scm
 
     - name: Patch package version
-      run: tomlq -i -t ".package.version = \"$(python -m setuptools_scm | sed 's/\.dev/-dev/'g)\"" Cargo.toml  # replace ".dev" with "-dev" to comply with Cargo SemVer rules
+      run: |
+        VERSION="$(python -m setuptools_scm | sed 's/\.dev/-dev/'g)" # replace ".dev" with "-dev" to comply with Cargo SemVer rules
+        tomlq -i -t ".package.version = \"$VERSION\"" Cargo.toml
+        tomlq -i -t ".workspace.package.version = \"$VERSION\"" Cargo.toml
 
     - name: Patch name to daft-lts if LTS
       if: ${{ inputs.lts }}

@@ -75,7 +75,9 @@ jobs:
       run: aws cloudfront create-invalidation --distribution-id ${{ env.CLOUDFRONT_DIST_ID }} --paths '/builds/nightly*'
 
     - name: Print install instructions
-      run: 'echo "To install the nightly build, run: \npip install getdaft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly"'
+      run: |
+        echo "To install the nightly build, run:"
+        echo "pip install getdaft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly"
 
   on-failure:
     name: Send Slack notification on failure
