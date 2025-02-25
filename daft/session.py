@@ -13,6 +13,7 @@ __all__ = [
     "Session",
     "attach_catalog",
     "attach_table",
+    "create_temp_table",
     "current_catalog",
     "current_session",
     "detach_catalog",
@@ -198,6 +199,16 @@ def detach_catalog(alias: str):
 def detach_table(alias: str):
     """Detaches the table from the current session."""
     return _session().detach_table(alias)
+
+
+###
+# create_*
+###
+
+
+def create_temp_table(self, name: str, source: object | TableSource = None) -> Table:
+    """Creates a temp table scoped to current session's lifetime."""
+    return _session().create_temp_table(name, source)
 
 
 ###

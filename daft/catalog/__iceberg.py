@@ -55,8 +55,13 @@ class IcebergCatalog(Catalog):
 class IcebergTable(Table):
     _inner: InnerTable
 
-    def __init__(self):
-        raise ValueError("IcebergTable.__init__ is not supported, please use `Table.from_iceberg`.")
+    def __init__(self, inner: InnerTable):
+        """DEPRECATED: Please use `Table.from_iceberg`; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Table.from_iceberg` instead; version 0.5.0!",
+            category=DeprecationWarning,
+        )
+        self._inner = inner
 
     @staticmethod
     def _from_obj(obj: object) -> IcebergTable | None:

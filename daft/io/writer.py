@@ -41,8 +41,8 @@ class FileWriterBase(ABC):
         default_partition_fallback: Optional[str] = None,
     ):
         resolved_path, self.fs = self.resolve_path_and_fs(root_dir, io_config=io_config)
-        protocol = get_protocol_from_path(root_dir)
-        canonicalized_protocol = canonicalize_protocol(protocol)
+        self.protocol = get_protocol_from_path(root_dir)
+        canonicalized_protocol = canonicalize_protocol(self.protocol)
         is_local_fs = canonicalized_protocol == "file"
 
         self.file_name = (
@@ -266,8 +266,9 @@ class IcebergWriter(ParquetFileWriter):
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]
         size = self.fs.get_file_info(self.full_path).size
+        path_with_protocol = f"{self.protocol}://{self.full_path}"
         data_file = make_iceberg_data_file(
-            self.full_path,
+            path_with_protocol,
             size,
             metadata,
             self.part_record,

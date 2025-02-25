@@ -195,9 +195,40 @@ impl Table for PyTableWrapper {
     }
 }
 
-pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+/// PyTableSource wraps either a schema or dataframe.
+#[pyclass]
+pub struct PyTableSource(TableSource);
+
+impl From<TableSource> for PyTableSource {
+    fn from(source: TableSource) -> Self {
+        Self(source)
+    }
+}
+
+/// PyTableSource -> TableSource
+impl AsRef<TableSource> for PyTableSource {
+    fn as_ref(&self) -> &TableSource {
+        &self.0
+    }
+}
+
+#[pymethods]
+impl PyTableSource {
+    #[staticmethod]
+    pub fn from_schema(schema: PySchema) -> PyTableSource {
+        Self(TableSource::Schema(schema.schema))
+    }
+
+    #[staticmethod]
+    pub fn from_builder(view: &PyLogicalPlanBuilder) -> PyTableSource {
+        Self(TableSource::View(view.builder.build()))
+    }
+}
+
+pub fn register_modules<'py>(parent: &Bound<'py, PyModule>) -> PyResult<Bound<'py, PyModule>> {
     parent.add_class::<PyCatalog>()?;
     parent.add_class::<PyIdentifier>()?;
     parent.add_class::<PyTable>()?;
-    Ok(())
+    parent.add_class::<PyTableSource>()?;
+    Ok(module)
 }
