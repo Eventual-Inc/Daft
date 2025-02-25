@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 env:
-  OUTPUT_BUCKET: s3://github-actions-artifacts-bucket/builds/nightly/
+  S3_BUCKET: s3://github-actions-artifacts-bucket/builds/nightly/
   AWS_REGION: us-west-2
   CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
 
@@ -62,24 +62,18 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Upload wheels to S3
-      uses: reggionick/s3-deploy@v4
-      with:
-        folder: dist
-        bucket: ${{ env.OUTPUT_BUCKET }}
-        bucket-region: ${{ env.AWS_REGION }}
-        dist-id: ${{ env.CLOUDFRONT_DIST_ID }}
+      run: aws s3 cp --recursive dist/ ${{ env.S3_BUCKET }}
 
     - name: Install boto3 and packaging
       run: pip3 install boto3 packaging
     - name: Generate Python simple repository API files
-      run: python3 .github/ci-scripts/generate_simple_py_index.py
+      run: python3 .github/ci-scripts/generate_simple_py_index.py ${{ env.S3_BUCKET }}
     - name: Upload index files to S3
-      uses: reggionick/s3-deploy@v4
-      with:
-        folder: dist/indices
-        bucket: ${{ env.OUTPUT_BUCKET }}
-        bucket-region: ${{ env.AWS_REGION }}
-        dist-id: ${{ env.CLOUDFRONT_DIST_ID }}
+      run: aws s3 cp --recursive dist/indices/ ${{ env.S3_BUCKET }}
+
+    - name: Invalidate Cloudfront cache
+      run: aws cloudfront create-invalidation --distribution-id ${{ env.CLOUDFRONT_DIST_ID }} --paths 'builds/nightly*'
+
     - name: Print install instructions
       run: 'echo "To install the nightly build, run: \npip install getdaft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly"'
 
