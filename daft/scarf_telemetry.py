@@ -12,9 +12,10 @@ def scarf_telemetry(runner: str):
     version = get_version()
     build_type = get_build_type()
     scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
+    daft_analytics_enabled = os.getenv("DAFT_ANALYTICS_ENABLED") != "0"
 
     # Skip analytics for dev builds or if user opted out
-    if build_type == "dev" or scarf_opt_out:
+    if build_type == "dev" or scarf_opt_out or daft_analytics_enabled:
         return None, None
 
     try:
