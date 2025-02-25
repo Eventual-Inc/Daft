@@ -32,8 +32,22 @@ print(daft.context.get_context()._runner.name)
         assert result.stdout.decode().strip() == "None\npy"
 
 
-def test_implicit_set_runner_py():
-    """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Python."""
+def test_explicit_set_runner_native():
+    """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Native."""
+    explicit_set_runner_script_native = """
+import daft
+print(daft.context.get_context()._runner)
+daft.context.set_runner_native()
+print(daft.context.get_context()._runner.name)
+    """
+
+    with with_null_env():
+        result = subprocess.run([sys.executable, "-c", explicit_set_runner_script_native], capture_output=True)
+        assert result.stdout.decode().strip() == "None\nnative"
+
+
+def test_implicit_set_runner_native():
+    """Test that a freshly imported context doesn't have a runner config set and is set implicitly to Native."""
     implicit_set_runner_script = """
 import daft
 print(daft.context.get_context()._runner)
@@ -43,7 +57,7 @@ print(daft.context.get_context()._runner.name)
 
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", implicit_set_runner_script], capture_output=True)
-        assert result.stdout.decode().strip() == "None\npy" or result.stdout.decode().strip() == "None\nnative"
+        assert result.stdout.decode().strip() == "None\nnative"
 
 
 def test_explicit_set_runner_ray():
