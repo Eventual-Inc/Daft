@@ -32,8 +32,6 @@ jobs:
     runs-on: ${{ inputs.os }}-latest
 
     steps:
-    - name: test failure
-      run: exit 1
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
