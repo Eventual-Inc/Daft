@@ -380,7 +380,7 @@ impl JoinAdjList {
             if let Some(neighbors) = self.edges.get(&left_node) {
                 for right_node in right.iter() {
                     if let Some(edges) = neighbors.get(&right_node) {
-                        // When there is only one join condition, we multiple the total domain by the domain of the equivalence set.
+                        // When there is only one join condition, we multiply the total domain by the domain of the equivalence set.
                         // However, when there's more than one join condition between two nodes, then we know that this is not a pk-fk join
                         // on the join keys. Rather, it's a pk-fk join on the tuple of join keys. So we estimate its total domain as the
                         // cardinality of the smaller table. In this case as well, we should avoid multiplying the total domain by the
