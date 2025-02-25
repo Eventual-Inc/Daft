@@ -17,6 +17,7 @@ It will generate these files in `dist/indices/`:
 
 import os
 import sys
+import urllib.parse
 
 import boto3
 from packaging.utils import parse_wheel_filename
@@ -29,7 +30,7 @@ def write_file_ensure_dir(filename, s):
 
 
 def generate_root_index(pkg_names):
-    links = [f'<a href="/{name}/">{name}</a>' for name in pkg_names]
+    links = [f'<a href="/{urllib.parse.quote(name)}/">{name}</a>' for name in pkg_names]
 
     return f"""<!DOCTYPE html>
 <html>
@@ -40,7 +41,7 @@ def generate_root_index(pkg_names):
 
 
 def generate_pkg_index(wheel_names):
-    links = [f'<a href="../{name}">{name}</a>' for name in wheel_names]
+    links = [f'<a href="../{urllib.parse.quote(name)}">{name}</a>' for name in wheel_names]
 
     return f"""<!DOCTYPE html>
 <html>
