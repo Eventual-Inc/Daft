@@ -253,7 +253,7 @@ class Catalog(ABC):
     ###
 
     @abstractmethod
-    def get_table(self, name: str | Identifier) -> Table: ...
+    def get_table(self, ident: Identifier | str) -> Table: ...
 
     # TODO deprecated catalog APIs #3819
     def load_table(self, name: str) -> Table:
@@ -273,7 +273,7 @@ class Identifier(Sequence):
     >>> assert len(id) == 2
     """
 
-    _identifier: PyIdentifier
+    _ident: PyIdentifier
 
     def __init__(self, *parts: str):
         """Creates an Identifier from its parts.
@@ -286,12 +286,12 @@ class Identifier(Sequence):
         """
         if len(parts) < 1:
             raise ValueError("Identifier requires at least one part.")
-        self._identifier = PyIdentifier(parts[:-1], parts[-1])
+        self._ident = PyIdentifier(parts[:-1], parts[-1])
 
     @staticmethod
-    def _from_pyidentifier(identifier: PyIdentifier) -> Identifier:
+    def _from_pyidentifier(ident: PyIdentifier) -> Identifier:
         i = Identifier.__new__(Identifier)
-        i._identifier = identifier
+        i._ident = ident
         return i
 
     @staticmethod
@@ -307,7 +307,7 @@ class Identifier(Sequence):
             Identifier: A new identifier.
         """
         i = Identifier.__new__(Identifier)
-        i._identifier = PyIdentifier.from_sql(input, normalize)
+        i._ident = PyIdentifier.from_sql(input, normalize)
         return i
 
     @staticmethod
@@ -318,19 +318,19 @@ class Identifier(Sequence):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Identifier):
             return False
-        return self._identifier.eq(other._identifier)
+        return self._ident.eq(other._ident)
 
     def __getitem__(self, index: int | slice) -> str | Sequence[str]:
         if isinstance(index, slice):
             raise IndexError("slicing not supported")
         if isinstance(index, int):
-            return self._identifier.getitem(index)
+            return self._ident.getitem(index)
 
     def __len__(self) -> int:
-        return self._identifier.__len__()
+        return self._ident.__len__()
 
     def __repr__(self) -> str:
-        return f"Identifier('{self._identifier.__repr__()}')"
+        return f"Identifier('{self._ident.__repr__()}')"
 
     def __str__(self) -> str:
         return ".".join(self)

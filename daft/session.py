@@ -106,11 +106,11 @@ class Session:
         """Returns the catalog or raises an exception if it does not exist."""
         return self._session.get_catalog(name)
 
-    def get_table(self, name: str | Identifier) -> Table:
+    def get_table(self, name: Identifier | str) -> Table:
         """Returns the table or raises an exception if it does not exist."""
         if isinstance(name, str):
             name = Identifier(*name.split("."))
-        return self._session.get_table(name._identifier)
+        return self._session.get_table(name._ident)
 
     ###
     # has_*
@@ -120,11 +120,11 @@ class Session:
         """Returns true if a catalog with the given name exists."""
         return self._session.has_catalog(name)
 
-    def has_table(self, name: str | Identifier) -> bool:
+    def has_table(self, name: Identifier | str) -> bool:
         """Returns true if a table with the given name exists."""
         if isinstance(name, str):
             name = Identifier.from_str(name)
-        return self._session.has_table(name._identifier)
+        return self._session.has_table(name._ident)
 
     ###
     # list_*
@@ -142,7 +142,7 @@ class Session:
     # read_*
     ###
 
-    def read_table(self, name: str | Identifier) -> DataFrame:
+    def read_table(self, name: Identifier | str) -> DataFrame:
         """Returns the table as a DataFrame or raises an exception if it does not exist."""
         return self.get_table(name).read()
 
@@ -153,6 +153,12 @@ class Session:
     def set_catalog(self, name: str):
         """Set the given catalog as current_catalog or err if not exists."""
         self._session.set_catalog(name)
+
+    def set_namespace(self, name: Identifier | str):
+        """Set the given namespace as current_namespace for table resolution."""
+        if isinstance(name, str):
+            name = Identifier.from_str(name)
+        self._session.set_namespace(name._ident)
 
 
 ###
@@ -206,7 +212,7 @@ def detach_table(alias: str):
 ###
 
 
-def create_temp_table(self, name: str, source: object | TableSource = None) -> Table:
+def create_temp_table(name: str, source: object | TableSource = None) -> Table:
     """Creates a temp table scoped to current session's lifetime."""
     return _session().create_temp_table(name, source)
 
@@ -236,7 +242,7 @@ def get_catalog(name: str) -> Catalog:
     return _session().get_catalog(name)
 
 
-def get_table(name: str | Identifier) -> Table:
+def get_table(name: Identifier | str) -> Table:
     """Returns the table from the current session or raises an exception if it does not exist."""
     return _session().get_table(name)
 
@@ -251,7 +257,7 @@ def has_catalog(name: str) -> bool:
     return _session().has_catalog(name)
 
 
-def has_table(name: str | Identifier) -> bool:
+def has_table(name: Identifier | str) -> bool:
     """Returns true if a table with the given name exists in the current session."""
     return _session().has_table(name)
 
@@ -276,7 +282,7 @@ def list_tables(pattern: None | str = None) -> list[Identifier]:
 ###
 
 
-def read_table(name: str | Identifier) -> DataFrame:
+def read_table(name: Identifier | str) -> DataFrame:
     """Returns the table as a DataFrame or raises an exception if it does not exist."""
     return _session().get_table(name).read()
 
@@ -289,6 +295,11 @@ def read_table(name: str | Identifier) -> DataFrame:
 def set_catalog(name: str):
     """Set the given catalog as current_catalog for the current session or err if not exists."""
     _session().set_catalog(name)
+
+
+def set_namespace(name: Identifier | str):
+    """Set the given namespace as current_namespace for the current session."""
+    _session().set_namespace(name)
 
 
 def set_session(session: Session):

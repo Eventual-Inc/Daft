@@ -903,7 +903,7 @@ impl<'a> SQLPlanner<'a> {
         name: &ObjectName,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let ident = normalize(name);
-        let table = if ident.has_namespace() {
+        let table = if ident.has_qualifier() {
             // qualified search of session metadata
             self.get_table(&ident).ok()
         } else {
