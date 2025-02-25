@@ -44,6 +44,7 @@ jobs:
     - name: Patch package version
       run: |
         VERSION="$(python -m setuptools_scm | sed 's/\.dev/-dev/'g)" # replace ".dev" with "-dev" to comply with Cargo SemVer rules
+        echo "Setting package version to: $VERSION"
         tomlq -i -t ".package.version = \"$VERSION\"" Cargo.toml
         tomlq -i -t ".workspace.package.version = \"$VERSION\"" Cargo.toml
 
