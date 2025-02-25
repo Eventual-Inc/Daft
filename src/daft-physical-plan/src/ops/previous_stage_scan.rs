@@ -5,18 +5,18 @@ use daft_logical_plan::ClusteringSpec;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PlaceholderScan {
+pub struct PreviousStageScan {
     pub clustering_spec: Arc<ClusteringSpec>,
 }
 
-impl PlaceholderScan {
+impl PreviousStageScan {
     pub(crate) fn new(clustering_spec: Arc<ClusteringSpec>) -> Self {
         Self { clustering_spec }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         vec![
-            "PlaceholderScan".to_string(),
+            "PreviousStageScan".to_string(),
             self.clustering_spec.multiline_display().join(", "),
         ]
     }
@@ -25,13 +25,13 @@ impl PlaceholderScan {
         &self.clustering_spec
     }
 }
-impl TreeDisplay for PlaceholderScan {
+impl TreeDisplay for PreviousStageScan {
     fn display_as(&self, level: DisplayLevel) -> String {
         match level {
             DisplayLevel::Compact => self.get_name(),
             DisplayLevel::Default => {
                 format!(
-                    "PlaceholderScan:
+                    "PreviousStageScan:
 Clustering spec = {{ {} }}",
                     self.clustering_spec.multiline_display().join(", ")
                 )
@@ -41,7 +41,7 @@ Clustering spec = {{ {} }}",
     }
 
     fn get_name(&self) -> String {
-        "PlaceholderScan".to_string()
+        "PreviousStageScan".to_string()
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {

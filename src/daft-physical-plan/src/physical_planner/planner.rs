@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{display::StageDisplayMermaidVisitor, translate::translate_single_logical_node};
 use crate::{
-    ops::{InMemoryScan, PlaceholderScan},
+    ops::{InMemoryScan, PreviousStageScan},
     PhysicalPlan, PhysicalPlanRef,
 };
 
@@ -254,7 +254,7 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
             self.partial_physical_plan = Some(child.clone());
 
             let placeholder =
-                PhysicalPlan::PlaceholderScan(PlaceholderScan::new(child.clustering_spec()));
+                PhysicalPlan::PreviousStageScan(PreviousStageScan::new(child.clustering_spec()));
 
             return Ok(Transformed::new(
                 node.with_new_children(&[placeholder.arced()]).arced(),
@@ -273,7 +273,7 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
         self.partial_physical_plan = Some(node.clone());
 
         let placeholder =
-            PhysicalPlan::PlaceholderScan(PlaceholderScan::new(node.clustering_spec()));
+            PhysicalPlan::PreviousStageScan(PreviousStageScan::new(node.clustering_spec()));
 
         Ok(Transformed::new(
             placeholder.arced(),
@@ -283,11 +283,11 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
     }
 }
 
-struct ReplacePhysicalPlaceholderWithMaterializedResults {
+struct ReplacePreviousStageScanWithInMemoryScan {
     mat_results: Option<MaterializedResults>,
 }
 
-impl TreeNodeRewriter for ReplacePhysicalPlaceholderWithMaterializedResults {
+impl TreeNodeRewriter for ReplacePreviousStageScanWithInMemoryScan {
     type Node = Arc<PhysicalPlan>;
 
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
@@ -296,7 +296,7 @@ impl TreeNodeRewriter for ReplacePhysicalPlaceholderWithMaterializedResults {
 
     fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
-            PhysicalPlan::PlaceholderScan(ph_scan) => {
+            PhysicalPlan::PreviousStageScan(ph_scan) => {
                 let mat_results = self.mat_results.take().unwrap();
                 let new_source_node = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mat_results.in_memory_info.source_schema.clone(),
@@ -633,9 +633,9 @@ impl AdaptivePlanner {
         assert_eq!(self.status, AdaptivePlannerStatus::WaitingForStats);
         assert!(mat_results.stage_id == self.last_stage_id);
 
-        // If we have a remaining physical plan, we need to replace the physical placeholder with the materialized results
+        // If we have a remaining physical plan, we need to replace the physical previous stage scan with the materialized results
         if let Some(remaining_physical_plan) = self.remaining_physical_plan.take() {
-            let mut rewriter = ReplacePhysicalPlaceholderWithMaterializedResults {
+            let mut rewriter = ReplacePreviousStageScanWithInMemoryScan {
                 mat_results: Some(mat_results),
             };
             let result = remaining_physical_plan.rewrite(&mut rewriter)?;
