@@ -22,20 +22,20 @@ jobs:
     uses: ./.github/workflows/build-wheel.yml
     with:
       os: ${{ matrix.os }}
-      arch: ${{ matrix.compile_arch }}
+      arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       build_type: release
     strategy:
       matrix:
         os: [ubuntu, macos, windows]
-        compile_arch: [x86_64, aarch64]
-        lts: [0, 1]
+        arch: [x86_64, aarch64]
+        lts: [false, true]
 
         exclude:
         - os: windows
-          compile_arch: aarch64
-        - lts: 1
-          compile_arch: aarch64
+          arch: aarch64
+        - lts: true
+          arch: aarch64
 
   publish:
     name: Publish wheels to S3
