@@ -25,7 +25,7 @@ pub struct InMemoryInfo {
     pub size_bytes: usize,
     pub num_rows: usize,
     pub clustering_spec: Option<ClusteringSpecRef>,
-    pub source_id: Option<usize>,
+    pub source_stage_id: Option<usize>,
 }
 
 impl InMemoryInfo {
@@ -38,7 +38,7 @@ impl InMemoryInfo {
         size_bytes: usize,
         num_rows: usize,
         clustering_spec: Option<ClusteringSpecRef>,
-        source_id: Option<usize>,
+        source_stage_id: Option<usize>,
     ) -> Self {
         Self {
             source_schema,
@@ -48,7 +48,7 @@ impl InMemoryInfo {
             size_bytes,
             num_rows,
             clustering_spec,
-            source_id,
+            source_stage_id,
         }
     }
 }

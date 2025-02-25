@@ -31,6 +31,8 @@ jobs:
         include:
         - daft-runner: ray
           enable-aqe: 1
+        - daft-runner: ray
+          enable-aqe: 0
         exclude:
         - daft-runner: ray
           pyarrow-version: 8.0.0
@@ -229,6 +231,8 @@ jobs:
         include:
         - daft-runner: ray
           enable-aqe: 1
+        - daft-runner: ray
+          enable-aqe: 0
     steps:
     - uses: actions/checkout@v4
       with:
@@ -307,6 +311,8 @@ jobs:
         include:
         - daft-runner: ray
           enable-aqe: 1
+        - daft-runner: ray
+          enable-aqe: 0
     steps:
     - uses: actions/checkout@v4
       with:
@@ -389,6 +395,8 @@ jobs:
         include:
         - daft-runner: ray
           enable-aqe: 1
+        - daft-runner: ray
+          enable-aqe: 0
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
@@ -487,6 +495,8 @@ jobs:
         include:
         - daft-runner: ray
           enable-aqe: 1
+        - daft-runner: ray
+          enable-aqe: 0
     steps:
     - uses: actions/checkout@v4
       with:
@@ -568,6 +578,8 @@ jobs:
         include:
         - daft-runner: ray
           enable-aqe: 1
+        - daft-runner: ray
+          enable-aqe: 0
     steps:
     - uses: actions/checkout@v4
       with:
