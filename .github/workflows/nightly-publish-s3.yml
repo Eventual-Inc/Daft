@@ -28,9 +28,9 @@ jobs:
       build_type: release
     strategy:
       matrix:
-        os: [ubuntu] # [ubuntu, macos, windows]
-        arch: [x86_64] # [x86_64, aarch64]
-        lts: [false] # [false, true]
+        os: [ubuntu, macos, windows]
+        arch: [x86_64, aarch64]
+        lts: [false, true]
 
         exclude:
         - os: windows

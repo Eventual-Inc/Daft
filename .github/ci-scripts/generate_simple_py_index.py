@@ -71,7 +71,7 @@ def main():
     for page in pages:
         for obj in page["Contents"]:
             if obj["Key"].endswith(".whl"):
-                wheel_name = obj["Key"].removeprefix(prefix)
+                wheel_name = obj["Key"].removeprefix(prefix + "/")
 
                 pkg_name, _, _, _ = parse_wheel_filename(wheel_name)
                 if pkg_name not in pkg_map:
