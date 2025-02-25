@@ -2,7 +2,7 @@
 pub(crate) const _DAFT_SESSION: &str = "default";
 pub(crate) const _DAFT_SESSION_USER: &str = "daft";
 pub(crate) const _DAFT_SESSION_TEMP_DIR: &str = "/tmp";
-pub(crate) const DAFT_SESSION_DEFAULT_CATALOG: &str = "daft";
+pub(crate) const DAFT_SESSION_DEFAULT_CATALOG: &str = "default";
 
 #[derive(Debug)]
 pub(crate) struct Options {
