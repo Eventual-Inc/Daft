@@ -16,6 +16,7 @@ from daft.io._json import read_json
 from daft.io._lance import read_lance
 from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
+from daft.io._warc import read_warc
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
 
@@ -37,4 +38,5 @@ __all__ = [
     "read_lance",
     "read_parquet",
     "read_sql",
+    "read_warc",
 ]

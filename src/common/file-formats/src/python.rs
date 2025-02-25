@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     file_format_config::DatabaseSourceConfig, CsvSourceConfig, FileFormat, FileFormatConfig,
-    JsonSourceConfig, ParquetSourceConfig,
+    JsonSourceConfig, ParquetSourceConfig, WarcSourceConfig,
 };
 
 /// Configuration for parsing a particular file format.
@@ -38,6 +38,12 @@ impl PyFileFormatConfig {
         Self(Arc::new(FileFormatConfig::Json(config)))
     }
 
+    /// Create a Warc file format config.
+    #[staticmethod]
+    fn from_warc_config(config: WarcSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Warc(config)))
+    }
+
     /// Create a Database file format config.
     #[staticmethod]
     fn from_database_config(config: DatabaseSourceConfig) -> Self {
@@ -57,6 +63,10 @@ impl PyFileFormatConfig {
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
             FileFormatConfig::Json(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Warc(config) => config
                 .clone()
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),

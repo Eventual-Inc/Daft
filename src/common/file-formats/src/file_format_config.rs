@@ -18,6 +18,7 @@ pub enum FileFormatConfig {
     Parquet(ParquetSourceConfig),
     Csv(CsvSourceConfig),
     Json(JsonSourceConfig),
+    Warc(WarcSourceConfig),
     #[cfg(feature = "python")]
     Database(DatabaseSourceConfig),
     #[cfg(feature = "python")]
@@ -36,6 +37,7 @@ impl FileFormatConfig {
             Self::Parquet(_) => "Parquet",
             Self::Csv(_) => "Csv",
             Self::Json(_) => "Json",
+            Self::Warc(_) => "Warc",
             #[cfg(feature = "python")]
             Self::Database(_) => "Database",
             #[cfg(feature = "python")]
@@ -49,6 +51,7 @@ impl FileFormatConfig {
             Self::Parquet(source) => source.multiline_display(),
             Self::Csv(source) => source.multiline_display(),
             Self::Json(source) => source.multiline_display(),
+            Self::Warc(source) => source.multiline_display(),
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
             #[cfg(feature = "python")]
@@ -373,3 +376,29 @@ impl DatabaseSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(DatabaseSourceConfig);
+
+/// Configuration for a Warc data source.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+pub struct WarcSourceConfig {}
+
+impl WarcSourceConfig {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        let res = vec![];
+        res
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl WarcSourceConfig {
+    /// Create a config for a Warc data source.
+    #[new]
+    #[pyo3(signature = ())]
+    fn new() -> PyResult<Self> {
+        Ok(Self {})
+    }
+}
+
+impl_bincode_py_state_serialization!(WarcSourceConfig);

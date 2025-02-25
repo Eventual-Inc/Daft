@@ -1,6 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
+    collections::{HashMap, HashSet}, fs, io::BufReader, sync::Arc
 };
 
 use async_trait::async_trait;
@@ -10,16 +9,19 @@ use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
 use common_scan_info::{Pushdowns, ScanTaskLike};
-use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
+use daft_core::{prelude::{AsArrow, Field, Int64Array, Schema, SchemaRef, Utf8Array}, series::Series};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_io::IOStatsRef;
+use daft_io::{parse_url, IOClient, IOStatsRef, SourceType};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
+use daft_recordbatch::RecordBatch;
 use daft_scan::{ChunkSpec, ScanTask};
-use futures::{Stream, StreamExt, TryStreamExt};
+use daft_warc::WarcConvertOptions;
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
+use warc::{BufferedBody, WarcReader};
 
 use crate::{
     sources::source::{Source, SourceStream},
@@ -452,6 +454,15 @@ async fn stream_scan_task(
                 // maintain_order, TODO: Implement maintain_order for JSON
             )
             .await?
+        }
+        FileFormatConfig::Warc(_) => {
+            let convert_options = WarcConvertOptions {
+                limit: scan_task.pushdowns.limit,
+                include_columns: None,
+                schema: Some(scan_task.schema.clone()),
+                predicate: None,
+            };
+            daft_warc::stream_warc(url.to_string(), io_client, io_stats, convert_options).await?
         }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {

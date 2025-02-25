@@ -269,6 +269,13 @@ fn materialize_scan_task(
             )
             .context(DaftCoreComputeSnafu)?
         }
+
+        // ****************
+        // Native Warc Reads
+        // ****************
+        FileFormatConfig::Warc(_) => {
+            todo!()
+        }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {
             let predicate = scan_task

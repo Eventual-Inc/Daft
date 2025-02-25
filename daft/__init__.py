@@ -88,6 +88,7 @@ from daft.io import (
     read_parquet,
     read_sql,
     read_lance,
+    read_warc,
 )
 from daft.series import Series
 from daft.session import Session, current_session, set_session
@@ -135,6 +136,7 @@ __all__ = [
     "read_parquet",
     "read_sql",
     "read_table",
+    "read_warc",
     "refresh_logger",
     "register_table",
     "register_viz_hook",

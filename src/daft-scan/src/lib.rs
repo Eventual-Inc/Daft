@@ -671,6 +671,8 @@ impl ScanTask {
                         FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
                             config.csv_inflation_factor
                         }
+                        // TODO(desmond): We can do a lot better here.
+                        FileFormatConfig::Warc(_) => 1.0,
                         #[cfg(feature = "python")]
                         FileFormatConfig::Database(_) => 1.0,
                         #[cfg(feature = "python")]
