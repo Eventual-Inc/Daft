@@ -27,6 +27,7 @@ jobs:
       lts: ${{ matrix.lts }}
       build_type: release
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu, macos, windows]
         arch: [x86_64, aarch64]
