@@ -31,8 +31,8 @@ def write_file_ensure_dir(filename, s):
         f.write(s)
 
 
-def generate_root_index(pkg_names):
-    links = "\n".join([f'<a href="{urllib.parse.quote(name)}/">{name}</a>' for name in pkg_names])
+def generate_root_index(prefix, pkg_names):
+    links = "\n".join([f'<a href="/{prefix}/{urllib.parse.quote(name)}/">{name}</a>' for name in pkg_names])
 
     return f"""<!DOCTYPE html>
 <html>
@@ -42,8 +42,8 @@ def generate_root_index(pkg_names):
 </html>"""
 
 
-def generate_pkg_index(wheel_names):
-    links = "\n".join([f'<a href="../{urllib.parse.quote(name)}">{name}</a>' for name in wheel_names])
+def generate_pkg_index(prefix, wheel_names):
+    links = "\n".join([f'<a href="/{prefix}/{urllib.parse.quote(name)}">{name}</a>' for name in wheel_names])
 
     return f"""<!DOCTYPE html>
 <html>
@@ -61,7 +61,7 @@ def main():
     s3_prefix = "s3://"
     s3_url = sys.argv[1]
     assert s3_url.startswith(s3_prefix)
-    (bucket, _, prefix) = s3_url.removeprefix(s3_prefix).partition("/")
+    (bucket, _, prefix) = s3_url.removeprefix(s3_prefix).removesuffix("/").partition("/")
 
     s3 = boto3.client("s3")
     paginator = s3.get_paginator("list_objects_v2")
@@ -78,11 +78,11 @@ def main():
                     pkg_map[pkg_name] = []
                 pkg_map[pkg_name].append(wheel_name)
 
-    root_index = generate_root_index(pkg_map.keys())
+    root_index = generate_root_index(prefix, pkg_map.keys())
     write_file_ensure_dir("dist/indices/index.html", root_index)
 
     for pkg_name, wheel_names in pkg_map.items():
-        pkg_index = generate_pkg_index(wheel_names)
+        pkg_index = generate_pkg_index(prefix, wheel_names)
         write_file_ensure_dir(f"dist/indices/{pkg_name}/index.html", pkg_index)
 
 
