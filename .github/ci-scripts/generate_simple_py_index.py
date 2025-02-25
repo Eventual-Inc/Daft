@@ -32,23 +32,23 @@ def write_file_ensure_dir(filename, s):
 
 
 def generate_root_index(pkg_names):
-    links = [f'<a href="{urllib.parse.quote(name)}/">{name}</a>' for name in pkg_names]
+    links = "\n".join([f'<a href="{urllib.parse.quote(name)}/">{name}</a>' for name in pkg_names])
 
     return f"""<!DOCTYPE html>
 <html>
   <body>
-    {"\n".join(links)}
+    {links}
   </body>
 </html>"""
 
 
 def generate_pkg_index(wheel_names):
-    links = [f'<a href="../{urllib.parse.quote(name)}">{name}</a>' for name in wheel_names]
+    links = "\n".join([f'<a href="../{urllib.parse.quote(name)}">{name}</a>' for name in wheel_names])
 
     return f"""<!DOCTYPE html>
 <html>
   <body>
-    {"\n".join(links)}
+    {links}
   </body>
 </html>"""
 
@@ -71,10 +71,10 @@ def main():
     for page in pages:
         for obj in page["Contents"]:
             if obj["Key"].endswith(".whl"):
-                wheel_name = obj["Key"]
+                wheel_name = obj["Key"].removeprefix(prefix)
 
                 pkg_name, _, _, _ = parse_wheel_filename(wheel_name)
-                if pkg_name not in pkg_name:
+                if pkg_name not in pkg_map:
                     pkg_map[pkg_name] = []
                 pkg_map[pkg_name].append(wheel_name)
 
