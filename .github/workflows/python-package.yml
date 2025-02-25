@@ -28,7 +28,6 @@ jobs:
         daft-runner: [py, ray, native]
         pyarrow-version: [8.0.0, 16.0.0]
         os: [ubuntu-20.04, windows-latest]
-        enable-aqe: [0]
         include:
         - daft-runner: ray
           enable-aqe: 1
@@ -227,7 +226,6 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [py, ray, native]
-        enable-aqe: [0]
         include:
         - daft-runner: ray
           enable-aqe: 1
@@ -306,7 +304,6 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
-        enable-aqe: [0]
         include:
         - daft-runner: ray
           enable-aqe: 1
@@ -389,7 +386,6 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
-        enable-aqe: [0]
         include:
         - daft-runner: ray
           enable-aqe: 1
@@ -488,7 +484,6 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
-        enable-aqe: [0]
         include:
         - daft-runner: ray
           enable-aqe: 1
@@ -570,7 +565,6 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
-        enable-aqe: [0]
         include:
         - daft-runner: ray
           enable-aqe: 1
