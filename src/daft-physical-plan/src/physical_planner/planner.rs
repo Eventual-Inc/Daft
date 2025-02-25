@@ -326,9 +326,7 @@ impl TreeNodeRewriter for StripCacheEntryFromInMemoryScan {
 
     fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
-            PhysicalPlan::InMemoryScan(in_memory_scan)
-                if in_memory_scan.in_memory_info.source_stage_id.is_some() =>
-            {
+            PhysicalPlan::InMemoryScan(in_memory_scan) => {
                 // new in memory scan with no partition cache entry
                 let mut new_in_memory_info = in_memory_scan.in_memory_info.clone();
                 new_in_memory_info.cache_entry = None;
