@@ -58,6 +58,10 @@ impl Session {
         if self.state().catalogs.exists(&alias) {
             obj_already_exists_err!("Catalog", &alias.into())
         }
+        if self.state().catalogs.is_empty() {
+            // use only catalog as the current catalog
+            self.state_mut().options.curr_catalog = Some(alias.clone());
+        }
         self.state_mut().catalogs.insert(alias, catalog);
         Ok(())
     }
@@ -99,8 +103,12 @@ impl Session {
     }
 
     /// Returns the session's current catalog.
-    pub fn current_catalog(&self) -> Result<CatalogRef> {
-        self.get_catalog(&self.state().options.curr_catalog)
+    pub fn current_catalog(&self) -> Result<Option<CatalogRef>> {
+        if let Some(catalog) = &self.state().options.curr_catalog {
+            self.get_catalog(catalog).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns the session's current namespace.
@@ -145,9 +153,13 @@ impl Session {
             }
         }
         //
-        // session state is required to resolve the table.
-        let curr_catalog = self.current_catalog()?;
+        // Use session state, but error if there's no catalog and the table was not in temp tables.
+        let curr_catalog = match self.current_catalog()? {
+            Some(catalog) => catalog,
+            None => obj_not_found_err!("Table", name),
+        };
         let curr_namespace = self.current_namespace()?;
+        //
         //
         // Rule 1: try to resolve using the current catalog and current schema.
         if let Some(qualifier) = curr_namespace {
@@ -166,7 +178,7 @@ impl Session {
             return Ok(table.into());
         };
         //
-        // Rule 3: try to resolve as catalog-qualified .
+        // Rule 3: try to resolve as catalog-qualified.
         if let Ok(catalog) = self.get_catalog(&name.qualifier[0]) {
             if let Some(table) = catalog.get_table(&name.drop(1))? {
                 return Ok(table.into());
@@ -200,7 +212,7 @@ impl Session {
         if !self.has_catalog(name) {
             obj_not_found_err!("Catalog", &name.into())
         }
-        self.state_mut().options.curr_catalog = name.to_string();
+        self.state_mut().options.curr_catalog = Some(name.to_string());
         Ok(())
     }
 

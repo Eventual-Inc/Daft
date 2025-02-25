@@ -99,6 +99,7 @@ from daft.session import (
     detach_table,
     create_temp_table,
     current_catalog,
+    current_namespace,
     current_session,
     get_catalog,
     get_table,
@@ -108,6 +109,7 @@ from daft.session import (
     list_tables,
     read_table,
     set_catalog,
+    set_namespace,
     set_session,
 )
 from daft.sql import sql, sql_expr
@@ -138,6 +140,7 @@ __all__ = [
     "col",
     "create_temp_table",
     "current_catalog",
+    "current_namespace",
     "current_session",
     "detach_catalog",
     "detach_table",
@@ -173,6 +176,7 @@ __all__ = [
     "register_viz_hook",
     "set_catalog",
     "set_execution_config",
+    "set_namespace",
     "set_planning_config",
     "set_session",
     "sql",

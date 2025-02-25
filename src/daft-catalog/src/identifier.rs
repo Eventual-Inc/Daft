@@ -78,8 +78,7 @@ impl Identifier {
     }
 
     /// This will replace `new` once Identifier is updated to just Vec<String>.
-    #[allow(unused)]
-    pub(crate) fn from_iter<I, T>(iter: I) -> Result<Identifier>
+    pub fn from_path<I, T>(iter: I) -> Result<Identifier>
     where
         I: IntoIterator<Item = T>,
         T: Into<String>,
@@ -153,7 +152,7 @@ mod test {
 
     #[test]
     fn test_drop() -> Result<()> {
-        let id = Identifier::from_iter(vec!["a", "b", "c"])?;
+        let id = Identifier::from_path(vec!["a", "b", "c"])?;
         // drop first element
         let dropped = id.drop(1);
         assert_eq!(dropped.qualifier, vec!["b"]);
@@ -172,19 +171,19 @@ mod test {
     #[test]
     fn test_from_vec() -> Result<()> {
         // single part
-        let id = Identifier::from_iter(vec!["a"])?;
+        let id = Identifier::from_path(vec!["a"])?;
         assert_eq!(id.qualifier, Vec::<String>::new());
         assert_eq!(id.name, "a");
         // multi part (2)
-        let id = Identifier::from_iter(vec!["a", "b"])?;
+        let id = Identifier::from_path(vec!["a", "b"])?;
         assert_eq!(id.qualifier, vec!["a"]);
         assert_eq!(id.name, "b");
         // multi part (3)
-        let id = Identifier::from_iter(vec!["a", "b", "c"])?;
+        let id = Identifier::from_path(vec!["a", "b", "c"])?;
         assert_eq!(id.qualifier, vec!["a", "b"]);
         assert_eq!(id.name, "c");
         // err! empty vec
-        let id = Identifier::from_iter(vec![] as Vec<String>);
+        let id = Identifier::from_path(vec![] as Vec<String>);
         assert!(matches!(id, Err(Error::InvalidIdentifier { .. })));
         Ok(())
     }

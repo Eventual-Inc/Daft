@@ -253,7 +253,7 @@ class Catalog(ABC):
     ###
 
     @abstractmethod
-    def get_table(self, ident: Identifier | str) -> Table: ...
+    def get_table(self, identifier: Identifier | str) -> Table: ...
 
     # TODO deprecated catalog APIs #3819
     def load_table(self, name: str) -> Table:

@@ -38,6 +38,13 @@ pub enum Error {
 
 impl Error {
     #[inline]
+    pub fn invalid_identifier<S: Into<String>>(input: S) -> Error {
+        Error::InvalidIdentifier {
+            input: input.into(),
+        }
+    }
+
+    #[inline]
     pub fn unsupported<S: Into<String>>(message: S) -> Error {
         Error::Unsupported {
             message: message.into(),

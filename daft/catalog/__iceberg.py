@@ -41,7 +41,7 @@ class IcebergCatalog(Catalog):
     def get_table(self, ident: Identifier | str) -> IcebergTable:
         if isinstance(ident, Identifier):
             ident = tuple(ident)  # type: ignore
-        return IcebergTable(self._inner.load_table(ident))
+        return IcebergTable._from_obj(self._inner.load_table(ident))
 
     ###
     # list_*

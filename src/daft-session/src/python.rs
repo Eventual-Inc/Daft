@@ -1,5 +1,6 @@
-use daft_catalog::python::{
-    PyCatalogWrapper, PyIdentifier, PyTable, PyTableSource, PyTableWrapper,
+use daft_catalog::{
+    python::{PyCatalogWrapper, PyIdentifier, PyTable, PyTableSource, PyTableWrapper},
+    Identifier,
 };
 use pyo3::prelude::*;
 
@@ -44,8 +45,17 @@ impl PySession {
         Ok(table)
     }
 
-    pub fn current_catalog(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.0.current_catalog()?.to_py(py)
+    pub fn current_catalog(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+        self.0.current_catalog()?.map(|c| c.to_py(py)).transpose()
+    }
+
+    pub fn current_namespace(&self) -> PyResult<Option<PyIdentifier>> {
+        if let Some(namespace) = self.0.current_namespace()? {
+            let ident = Identifier::from_path(namespace)?;
+            let ident = PyIdentifier::from(ident);
+            return Ok(Some(ident));
+        }
+        Ok(None)
     }
 
     pub fn get_catalog(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {

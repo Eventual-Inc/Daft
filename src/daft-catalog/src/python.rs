@@ -41,11 +41,21 @@ impl PyCatalogWrapper {
 
 impl Catalog for PyCatalogWrapper {
     fn name(&self) -> String {
-        todo!()
+        todo!("Catalogs do not currently hold their names")
     }
 
-    fn get_table(&self, _name: &Identifier) -> Result<Option<Box<dyn Table>>> {
-        todo!()
+    fn get_table(&self, ident: &Identifier) -> Result<Option<Box<dyn Table>>> {
+        Python::with_gil(|py| {
+            // catalog = 'python catalog object'
+            let catalog = self.0.bind(py);
+            // TODO chore: create a python identifier here.
+            let identifier = ident.to_string();
+            // table = catalog.get_table(ident)
+            let table = catalog.getattr("get_table")?.call1((identifier,))?;
+            let table = PyTableWrapper::from(table.unbind());
+            // wrap py table object so it's an impl Table
+            Ok(Some(Box::new(table) as Box<dyn Table>))
+        })
     }
 
     fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
