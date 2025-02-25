@@ -13,6 +13,8 @@ It will generate these files in `dist/indices/`:
 - index.html
 - foo/index.html
 - bar/index.html
+
+Then, put these files in the same bucket with a Cloudfront distribution configured to serve via HTTPS and serve index.html for directory paths.
 """
 
 import os
@@ -30,7 +32,7 @@ def write_file_ensure_dir(filename, s):
 
 
 def generate_root_index(pkg_names):
-    links = [f'<a href="/{urllib.parse.quote(name)}/">{name}</a>' for name in pkg_names]
+    links = [f'<a href="{urllib.parse.quote(name)}/">{name}</a>' for name in pkg_names]
 
     return f"""<!DOCTYPE html>
 <html>

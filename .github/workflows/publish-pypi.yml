@@ -37,7 +37,7 @@ jobs:
     name: Publish wheels to PyPI
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing. It is also tied to the name of the workflow file, so do not change the file name without changing the OIDC config.
     needs: build
     steps:
     - uses: actions/download-artifact@v4
