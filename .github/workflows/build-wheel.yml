@@ -34,7 +34,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 1
+        fetch-depth: 0
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
@@ -42,7 +42,11 @@ jobs:
     - run: uv pip install twine yq setuptools_scm
 
     - name: Patch package version
-      run: tomlq -i -t ".package.version = \"$(python -m setuptools_scm)\"" Cargo.toml
+      run: |
+        VERSION="$(python -m setuptools_scm | sed 's/\.dev/-dev/'g)" # replace ".dev" with "-dev" to comply with Cargo SemVer rules
+        echo "Setting package version to: $VERSION"
+        tomlq -i -t ".package.version = \"$VERSION\"" Cargo.toml
+        tomlq -i -t ".workspace.package.version = \"$VERSION\"" Cargo.toml
 
     - name: Patch name to daft-lts if LTS
       if: ${{ inputs.lts }}
@@ -51,7 +55,7 @@ jobs:
     - name: Configure RUSTFLAGS for x86
       if: ${{ (inputs.arch == 'x86_64') }}
       run: |
-        if [[ ${{ inputs.lts }} ]]; then
+        if [[ "${{ inputs.lts }}" == "true" ]]; then
           echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b" >> $GITHUB_ENV && \
           echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16" >> $GITHUB_ENV
         else
