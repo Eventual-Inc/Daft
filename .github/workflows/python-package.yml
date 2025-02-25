@@ -28,6 +28,10 @@ jobs:
         daft-runner: [py, ray, native]
         pyarrow-version: [8.0.0, 16.0.0]
         os: [ubuntu-20.04, windows-latest]
+        enable-aqe: [0]
+        include:
+        - daft-runner: ray
+          enable-aqe: 1
         exclude:
         - daft-runner: ray
           pyarrow-version: 8.0.0
@@ -119,6 +123,7 @@ jobs:
         CARGO_TARGET_DIR: ./target
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
 
     - name: Build library and Test with pytest (Windows)
       if: ${{ (runner.os == 'Windows') }}
@@ -135,6 +140,7 @@ jobs:
         # cargo llvm-cov --no-run --lcov --output-path report-output\rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
@@ -263,7 +269,7 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -340,6 +346,7 @@ jobs:
         pytest tests/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -436,6 +443,7 @@ jobs:
         pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() }}
@@ -513,6 +521,7 @@ jobs:
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -589,6 +598,7 @@ jobs:
         pytest tests/integration/sql -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
