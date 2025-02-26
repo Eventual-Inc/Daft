@@ -19,7 +19,7 @@ pub enum PhysicalPlan {
     InMemoryScan(InMemoryScan),
     TabularScan(TabularScan),
     EmptyScan(EmptyScan),
-    PlaceholderScan(PlaceholderScan),
+    PreviousStageScan(PreviousStageScan),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
     Filter(Filter),
@@ -65,7 +65,7 @@ impl PhysicalPlan {
             Self::EmptyScan(EmptyScan {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
-            Self::PlaceholderScan(PlaceholderScan {
+            Self::PreviousStageScan(PreviousStageScan {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
             Self::Project(Project {
@@ -218,7 +218,7 @@ impl PhysicalPlan {
                 size_bytes: 0,
                 acc_selectivity: 0.0,
             },
-            Self::PlaceholderScan(..) => ApproxStats {
+            Self::PreviousStageScan(..) => ApproxStats {
                 num_rows: 0,
                 size_bytes: 0,
                 acc_selectivity: 0.0,
@@ -374,7 +374,7 @@ impl PhysicalPlan {
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::InMemoryScan(..) => vec![],
-            Self::TabularScan(..) | Self::EmptyScan(..) | Self::PlaceholderScan(..) => vec![],
+            Self::TabularScan(..) | Self::EmptyScan(..) | Self::PreviousStageScan(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
@@ -418,7 +418,7 @@ impl PhysicalPlan {
                 Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::TabularScan(..)
                 | Self::EmptyScan(..)
-                | Self::PlaceholderScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
+                | Self::PreviousStageScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::Project(Project { projection, clustering_spec, .. }) =>
                     Self::Project(Project::new_with_clustering_spec(
                     input.clone(), projection.clone(), clustering_spec.clone(),
@@ -474,7 +474,7 @@ impl PhysicalPlan {
             Self::InMemoryScan(..) => "InMemoryScan",
             Self::TabularScan(..) => "TabularScan",
             Self::EmptyScan(..) => "EmptyScan",
-            Self::PlaceholderScan(..) => "PlaceholderScan",
+            Self::PreviousStageScan(..) => "PreviousStageScan",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
@@ -510,7 +510,7 @@ impl PhysicalPlan {
             Self::InMemoryScan(in_memory_scan) => in_memory_scan.multiline_display(),
             Self::TabularScan(tabular_scan) => tabular_scan.multiline_display(),
             Self::EmptyScan(empty_scan) => empty_scan.multiline_display(),
-            Self::PlaceholderScan(placeholder_scan) => placeholder_scan.multiline_display(),
+            Self::PreviousStageScan(previous_stage_scan) => previous_stage_scan.multiline_display(),
             Self::Project(project) => project.multiline_display(),
             Self::ActorPoolProject(ap_project) => ap_project.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),

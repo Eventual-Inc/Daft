@@ -10,8 +10,9 @@ use common_file_formats::FileFormat;
 use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    col, estimated_selectivity, functions::agg::merge_mean, is_partition_compatible,
-    join::normalize_join_keys, AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
+    estimated_selectivity, functions::agg::merge_mean, is_partition_compatible,
+    join::normalize_join_keys, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef,
+    SketchType,
 };
 use daft_functions::{
     list::{count_distinct, distinct},
@@ -238,7 +239,7 @@ pub(super) fn translate_single_logical_node(
                 .schema()
                 .names()
                 .iter()
-                .map(|name| daft_dsl::col(name.clone()))
+                .map(|name| daft_dsl::resolved_col(name.clone()))
                 .collect::<Vec<ExprRef>>();
             let agg_op =
                 PhysicalPlan::Aggregate(Aggregate::new(input_physical, vec![], col_exprs.clone()));
@@ -310,7 +311,7 @@ pub(super) fn translate_single_logical_node(
                                 groupby.clone(),
                             ))
                             .arced(),
-                            groupby.iter().map(|e| col(e.name())).collect(),
+                            groupby.iter().map(|e| resolved_col(e.name())).collect(),
                         )
                     };
                     let gather_plan = if groupby.is_empty() {
@@ -510,6 +511,9 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Union(_) => Err(DaftError::InternalError(
             "Union should already be optimized away".to_string(),
         )),
+        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
+            "Alias should already be optimized away".to_string(),
+        )),
     }?;
     // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
     // different size estimations depending on when the approximation is computed. Once we fix
@@ -607,7 +611,7 @@ pub fn populate_aggregation_stages(
     let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
     let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
     // Project the aggregation results to their final output names
-    let mut final_exprs: Vec<ExprRef> = group_by.iter().map(|e| col(e.name())).collect();
+    let mut final_exprs: Vec<ExprRef> = group_by.iter().map(|e| resolved_col(e.name())).collect();
 
     fn add_to_stage<F>(
         f: F,
@@ -629,16 +633,18 @@ pub fn populate_aggregation_stages(
         match agg_expr {
             AggExpr::Count(e, mode) => {
                 let count_id = agg_expr.semantic_id(schema).id;
-                let sum_of_count_id = AggExpr::Sum(col(count_id.clone())).semantic_id(schema).id;
+                let sum_of_count_id = AggExpr::Sum(resolved_col(count_id.clone()))
+                    .semantic_id(schema)
+                    .id;
                 first_stage_aggs
                     .entry(count_id.clone())
                     .or_insert(AggExpr::Count(e.alias(count_id.clone()).clone(), *mode));
                 second_stage_aggs
                     .entry(sum_of_count_id.clone())
                     .or_insert(AggExpr::Sum(
-                        col(count_id.clone()).alias(sum_of_count_id.clone()),
+                        resolved_col(count_id.clone()).alias(sum_of_count_id.clone()),
                     ));
-                final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
+                final_exprs.push(resolved_col(sum_of_count_id.clone()).alias(output_name));
             }
             AggExpr::CountDistinct(sub_expr) => {
                 // First stage
@@ -652,35 +658,42 @@ pub fn populate_aggregation_stages(
                 // Second stage
                 let list_concat_id = add_to_stage(
                     AggExpr::Concat,
-                    col(list_agg_id.clone()),
+                    resolved_col(list_agg_id.clone()),
                     schema,
                     &mut second_stage_aggs,
                 );
 
                 // Final projection
-                let result = count_distinct(col(list_concat_id.clone())).alias(output_name);
+                let result =
+                    count_distinct(resolved_col(list_concat_id.clone())).alias(output_name);
                 final_exprs.push(result);
             }
             AggExpr::Sum(e) => {
                 let sum_id = agg_expr.semantic_id(schema).id;
-                let sum_of_sum_id = AggExpr::Sum(col(sum_id.clone())).semantic_id(schema).id;
+                let sum_of_sum_id = AggExpr::Sum(resolved_col(sum_id.clone()))
+                    .semantic_id(schema)
+                    .id;
                 first_stage_aggs
                     .entry(sum_id.clone())
                     .or_insert(AggExpr::Sum(e.alias(sum_id.clone()).clone()));
                 second_stage_aggs
                     .entry(sum_of_sum_id.clone())
                     .or_insert(AggExpr::Sum(
-                        col(sum_id.clone()).alias(sum_of_sum_id.clone()),
+                        resolved_col(sum_id.clone()).alias(sum_of_sum_id.clone()),
                     ));
-                final_exprs.push(col(sum_of_sum_id.clone()).alias(output_name));
+                final_exprs.push(resolved_col(sum_of_sum_id.clone()).alias(output_name));
             }
             AggExpr::Mean(e) => {
                 let sum_id = AggExpr::Sum(e.clone()).semantic_id(schema).id;
                 let count_id = AggExpr::Count(e.clone(), CountMode::Valid)
                     .semantic_id(schema)
                     .id;
-                let sum_of_sum_id = AggExpr::Sum(col(sum_id.clone())).semantic_id(schema).id;
-                let sum_of_count_id = AggExpr::Sum(col(count_id.clone())).semantic_id(schema).id;
+                let sum_of_sum_id = AggExpr::Sum(resolved_col(sum_id.clone()))
+                    .semantic_id(schema)
+                    .id;
+                let sum_of_count_id = AggExpr::Sum(resolved_col(count_id.clone()))
+                    .semantic_id(schema)
+                    .id;
                 first_stage_aggs
                     .entry(sum_id.clone())
                     .or_insert(AggExpr::Sum(e.alias(sum_id.clone()).clone()));
@@ -693,16 +706,19 @@ pub fn populate_aggregation_stages(
                 second_stage_aggs
                     .entry(sum_of_sum_id.clone())
                     .or_insert(AggExpr::Sum(
-                        col(sum_id.clone()).alias(sum_of_sum_id.clone()),
+                        resolved_col(sum_id.clone()).alias(sum_of_sum_id.clone()),
                     ));
                 second_stage_aggs
                     .entry(sum_of_count_id.clone())
                     .or_insert(AggExpr::Sum(
-                        col(count_id.clone()).alias(sum_of_count_id.clone()),
+                        resolved_col(count_id.clone()).alias(sum_of_count_id.clone()),
                     ));
                 final_exprs.push(
-                    merge_mean(col(sum_of_sum_id.clone()), col(sum_of_count_id.clone()))
-                        .alias(output_name),
+                    merge_mean(
+                        resolved_col(sum_of_sum_id.clone()),
+                        resolved_col(sum_of_count_id.clone()),
+                    )
+                    .alias(output_name),
                 );
             }
             AggExpr::Stddev(sub_expr) => {
@@ -740,27 +756,27 @@ pub fn populate_aggregation_stages(
                 // second stage aggregation
                 let global_sum_id = add_to_stage(
                     AggExpr::Sum,
-                    col(sum_id.clone()),
+                    resolved_col(sum_id.clone()),
                     schema,
                     &mut second_stage_aggs,
                 );
                 let global_sq_sum_id = add_to_stage(
                     AggExpr::Sum,
-                    col(sq_sum_id.clone()),
+                    resolved_col(sq_sum_id.clone()),
                     schema,
                     &mut second_stage_aggs,
                 );
                 let global_count_id = add_to_stage(
                     AggExpr::Sum,
-                    col(count_id.clone()),
+                    resolved_col(count_id.clone()),
                     schema,
                     &mut second_stage_aggs,
                 );
 
                 // final projection
-                let g_sq_sum = col(global_sq_sum_id);
-                let g_sum = col(global_sum_id);
-                let g_count = col(global_count_id);
+                let g_sq_sum = resolved_col(global_sq_sum_id);
+                let g_sum = resolved_col(global_sum_id);
+                let g_count = resolved_col(global_count_id);
                 let left = g_sq_sum.div(g_count.clone());
                 let right = g_sum.div(g_count);
                 let right = right.clone().mul(right);
@@ -770,29 +786,33 @@ pub fn populate_aggregation_stages(
             }
             AggExpr::Min(e) => {
                 let min_id = agg_expr.semantic_id(schema).id;
-                let min_of_min_id = AggExpr::Min(col(min_id.clone())).semantic_id(schema).id;
+                let min_of_min_id = AggExpr::Min(resolved_col(min_id.clone()))
+                    .semantic_id(schema)
+                    .id;
                 first_stage_aggs
                     .entry(min_id.clone())
                     .or_insert(AggExpr::Min(e.alias(min_id.clone()).clone()));
                 second_stage_aggs
                     .entry(min_of_min_id.clone())
                     .or_insert(AggExpr::Min(
-                        col(min_id.clone()).alias(min_of_min_id.clone()),
+                        resolved_col(min_id.clone()).alias(min_of_min_id.clone()),
                     ));
-                final_exprs.push(col(min_of_min_id.clone()).alias(output_name));
+                final_exprs.push(resolved_col(min_of_min_id.clone()).alias(output_name));
             }
             AggExpr::Max(e) => {
                 let max_id = agg_expr.semantic_id(schema).id;
-                let max_of_max_id = AggExpr::Max(col(max_id.clone())).semantic_id(schema).id;
+                let max_of_max_id = AggExpr::Max(resolved_col(max_id.clone()))
+                    .semantic_id(schema)
+                    .id;
                 first_stage_aggs
                     .entry(max_id.clone())
                     .or_insert(AggExpr::Max(e.alias(max_id.clone()).clone()));
                 second_stage_aggs
                     .entry(max_of_max_id.clone())
                     .or_insert(AggExpr::Max(
-                        col(max_id.clone()).alias(max_of_max_id.clone()),
+                        resolved_col(max_id.clone()).alias(max_of_max_id.clone()),
                     ));
-                final_exprs.push(col(max_of_max_id.clone()).alias(output_name));
+                final_exprs.push(resolved_col(max_of_max_id.clone()).alias(output_name));
             }
             AggExpr::BoolAnd(e) => {
                 // First stage
@@ -802,13 +822,13 @@ pub fn populate_aggregation_stages(
                 // Second stage
                 let bool_of_bool_and_id = add_to_stage(
                     AggExpr::BoolAnd,
-                    col(bool_and_id.clone()),
+                    resolved_col(bool_and_id.clone()),
                     schema,
                     &mut second_stage_aggs,
                 );
 
                 // Final projection
-                final_exprs.push(col(bool_of_bool_and_id.clone()).alias(output_name));
+                final_exprs.push(resolved_col(bool_of_bool_and_id.clone()).alias(output_name));
             }
             AggExpr::BoolOr(e) => {
                 // First stage
@@ -818,17 +838,17 @@ pub fn populate_aggregation_stages(
                 // Second stage
                 let bool_of_bool_or_id = add_to_stage(
                     AggExpr::BoolOr,
-                    col(bool_or_id.clone()),
+                    resolved_col(bool_or_id.clone()),
                     schema,
                     &mut second_stage_aggs,
                 );
 
                 // Final projection
-                final_exprs.push(col(bool_of_bool_or_id.clone()).alias(output_name));
+                final_exprs.push(resolved_col(bool_of_bool_or_id.clone()).alias(output_name));
             }
             AggExpr::AnyValue(e, ignore_nulls) => {
                 let any_id = agg_expr.semantic_id(schema).id;
-                let any_of_any_id = AggExpr::AnyValue(col(any_id.clone()), *ignore_nulls)
+                let any_of_any_id = AggExpr::AnyValue(resolved_col(any_id.clone()), *ignore_nulls)
                     .semantic_id(schema)
                     .id;
                 first_stage_aggs
@@ -840,40 +860,41 @@ pub fn populate_aggregation_stages(
                 second_stage_aggs
                     .entry(any_of_any_id.clone())
                     .or_insert(AggExpr::AnyValue(
-                        col(any_id.clone()).alias(any_of_any_id.clone()),
+                        resolved_col(any_id.clone()).alias(any_of_any_id.clone()),
                         *ignore_nulls,
                     ));
-                final_exprs.push(col(any_of_any_id.clone()).alias(output_name));
+                final_exprs.push(resolved_col(any_of_any_id.clone()).alias(output_name));
             }
             AggExpr::List(e) => {
                 let list_id = agg_expr.semantic_id(schema).id;
-                let concat_of_list_id =
-                    AggExpr::Concat(col(list_id.clone())).semantic_id(schema).id;
+                let concat_of_list_id = AggExpr::Concat(resolved_col(list_id.clone()))
+                    .semantic_id(schema)
+                    .id;
                 first_stage_aggs
                     .entry(list_id.clone())
                     .or_insert(AggExpr::List(e.alias(list_id.clone()).clone()));
                 second_stage_aggs
                     .entry(concat_of_list_id.clone())
                     .or_insert(AggExpr::Concat(
-                        col(list_id.clone()).alias(concat_of_list_id.clone()),
+                        resolved_col(list_id.clone()).alias(concat_of_list_id.clone()),
                     ));
-                final_exprs.push(col(concat_of_list_id.clone()).alias(output_name));
+                final_exprs.push(resolved_col(concat_of_list_id.clone()).alias(output_name));
             }
             AggExpr::Set(e) => {
                 let list_agg_id =
                     add_to_stage(AggExpr::Set, e.clone(), schema, &mut first_stage_aggs);
                 let list_concat_id = add_to_stage(
                     AggExpr::Concat,
-                    col(list_agg_id.clone()),
+                    resolved_col(list_agg_id.clone()),
                     schema,
                     &mut second_stage_aggs,
                 );
-                let result = distinct(col(list_concat_id.clone())).alias(output_name);
+                let result = distinct(resolved_col(list_concat_id.clone())).alias(output_name);
                 final_exprs.push(result);
             }
             AggExpr::Concat(e) => {
                 let concat_id = agg_expr.semantic_id(schema).id;
-                let concat_of_concat_id = AggExpr::Concat(col(concat_id.clone()))
+                let concat_of_concat_id = AggExpr::Concat(resolved_col(concat_id.clone()))
                     .semantic_id(schema)
                     .id;
                 first_stage_aggs
@@ -882,9 +903,9 @@ pub fn populate_aggregation_stages(
                 second_stage_aggs
                     .entry(concat_of_concat_id.clone())
                     .or_insert(AggExpr::Concat(
-                        col(concat_id.clone()).alias(concat_of_concat_id.clone()),
+                        resolved_col(concat_id.clone()).alias(concat_of_concat_id.clone()),
                     ));
-                final_exprs.push(col(concat_of_concat_id.clone()).alias(output_name));
+                final_exprs.push(resolved_col(concat_of_concat_id.clone()).alias(output_name));
             }
             AggExpr::MapGroups { func, inputs } => {
                 let func_id = agg_expr.semantic_id(schema).id;
@@ -895,7 +916,7 @@ pub fn populate_aggregation_stages(
                         func: func.clone(),
                         inputs: inputs.clone(),
                     });
-                final_exprs.push(col(output_name));
+                final_exprs.push(resolved_col(output_name));
             }
             &AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child: ref e,
@@ -904,9 +925,10 @@ pub fn populate_aggregation_stages(
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
                 let sketch_id = agg_expr.semantic_id(schema).id;
-                let approx_id = AggExpr::ApproxSketch(col(sketch_id.clone()), SketchType::DDSketch)
-                    .semantic_id(schema)
-                    .id;
+                let approx_id =
+                    AggExpr::ApproxSketch(resolved_col(sketch_id.clone()), SketchType::DDSketch)
+                        .semantic_id(schema)
+                        .id;
                 first_stage_aggs
                     .entry(sketch_id.clone())
                     .or_insert(AggExpr::ApproxSketch(
@@ -916,21 +938,23 @@ pub fn populate_aggregation_stages(
                 second_stage_aggs
                     .entry(approx_id.clone())
                     .or_insert(AggExpr::MergeSketch(
-                        col(sketch_id.clone()).alias(approx_id.clone()),
+                        resolved_col(sketch_id.clone()).alias(approx_id.clone()),
                         SketchType::DDSketch,
                     ));
                 final_exprs.push(
-                    col(approx_id)
+                    resolved_col(approx_id)
                         .sketch_percentile(percentiles.as_slice(), force_list_output)
                         .alias(output_name),
                 );
             }
             AggExpr::ApproxCountDistinct(e) => {
                 let first_stage_id = agg_expr.semantic_id(schema).id;
-                let second_stage_id =
-                    AggExpr::MergeSketch(col(first_stage_id.clone()), SketchType::HyperLogLog)
-                        .semantic_id(schema)
-                        .id;
+                let second_stage_id = AggExpr::MergeSketch(
+                    resolved_col(first_stage_id.clone()),
+                    SketchType::HyperLogLog,
+                )
+                .semantic_id(schema)
+                .id;
                 first_stage_aggs
                     .entry(first_stage_id.clone())
                     .or_insert(AggExpr::ApproxSketch(
@@ -940,10 +964,10 @@ pub fn populate_aggregation_stages(
                 second_stage_aggs
                     .entry(second_stage_id.clone())
                     .or_insert(AggExpr::MergeSketch(
-                        col(first_stage_id).alias(second_stage_id.clone()),
+                        resolved_col(first_stage_id).alias(second_stage_id.clone()),
                         SketchType::HyperLogLog,
                     ));
-                final_exprs.push(col(second_stage_id).alias(output_name));
+                final_exprs.push(resolved_col(second_stage_id).alias(output_name));
             }
             AggExpr::ApproxSketch(..) => {
                 unimplemented!("User-facing approx_sketch aggregation is not implemented")
@@ -1369,7 +1393,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit};
+    use daft_dsl::{lit, resolved_col};
     use daft_logical_plan::LogicalPlanBuilder;
 
     use super::HashJoin;
@@ -1391,7 +1415,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]))
         .into_partitions(10)?
-        .filter(col("a").lt(lit(2)))?;
+        .filter(resolved_col("a").lt(lit(2)))?;
         assert_eq!(
             logical_to_physical(builder.build(), cfg.clone())?
                 .clustering_spec()
@@ -1422,7 +1446,9 @@ mod tests {
                 .num_partitions(),
             1
         );
-        let logical_plan = builder.hash_repartition(Some(1), vec![col("a")])?.build();
+        let logical_plan = builder
+            .hash_repartition(Some(1), vec![resolved_col("a")])?
+            .build();
         let physical_plan = logical_to_physical(logical_plan, cfg)?;
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::TabularScan(_));
         Ok(())
@@ -1438,9 +1464,9 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .hash_repartition(Some(10), vec![col("a")])?
-        .filter(col("a").lt(lit(2)))?
-        .hash_repartition(Some(10), vec![col("a")])?
+        .hash_repartition(Some(10), vec![resolved_col("a")])?
+        .filter(resolved_col("a").lt(lit(2)))?
+        .hash_repartition(Some(10), vec![resolved_col("a")])?
         .build();
         let physical_plan = logical_to_physical(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be the filter).
@@ -1458,9 +1484,9 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]))
-        .hash_repartition(Some(10), vec![col("a")])?
-        .aggregate(vec![col("a").sum()], vec![col("b")])?
-        .hash_repartition(Some(10), vec![col("b")])?
+        .hash_repartition(Some(10), vec![resolved_col("a")])?
+        .aggregate(vec![resolved_col("a").sum()], vec![resolved_col("b")])?
+        .hash_repartition(Some(10), vec![resolved_col("b")])?
         .build();
         let physical_plan = logical_to_physical(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be a projection for a multi-partition aggregation).
@@ -1490,10 +1516,14 @@ mod tests {
         opts: RepartitionOptions,
     ) -> DaftResult<LogicalPlanBuilder> {
         match opts {
-            RepartitionOptions::Good(x) => node.hash_repartition(Some(x), vec![col("a"), col("b")]),
-            RepartitionOptions::Bad(x) => node.hash_repartition(Some(x), vec![col("a"), col("c")]),
+            RepartitionOptions::Good(x) => {
+                node.hash_repartition(Some(x), vec![resolved_col("a"), resolved_col("b")])
+            }
+            RepartitionOptions::Bad(x) => {
+                node.hash_repartition(Some(x), vec![resolved_col("a"), resolved_col("c")])
+            }
             RepartitionOptions::Reversed(x) => {
-                node.hash_repartition(Some(x), vec![col("b"), col("a")])
+                node.hash_repartition(Some(x), vec![resolved_col("b"), resolved_col("a")])
             }
         }
     }
@@ -1510,9 +1540,9 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]));
         let join_node = force_repartition(join_node, right_partitions)?.select(vec![
-            col("a"),
-            col("b"),
-            col("c").alias("dataR"),
+            resolved_col("a"),
+            resolved_col("b"),
+            resolved_col("c").alias("dataR"),
         ])?;
 
         let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
@@ -1521,11 +1551,15 @@ mod tests {
             Field::new("c", DataType::Int64),
         ]));
         let logical_plan = force_repartition(logical_plan, left_partitions)?
-            .select(vec![col("a"), col("b"), col("c").alias("dataL")])?
+            .select(vec![
+                resolved_col("a"),
+                resolved_col("b"),
+                resolved_col("c").alias("dataL"),
+            ])?
             .join(
                 join_node,
-                vec![col("a"), col("b")],
-                vec![col("a"), col("b")],
+                vec![resolved_col("a"), resolved_col("b")],
+                vec![resolved_col("a"), resolved_col("b")],
                 JoinType::Inner,
                 Some(JoinStrategy::Hash),
                 Default::default(),

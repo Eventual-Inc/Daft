@@ -58,8 +58,9 @@ analytics_client.track_import()
 ###
 
 from daft.catalog import (
+    Catalog,
     Identifier,
-    read_table,
+    Table,
     register_table,
 )
 from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
@@ -90,7 +91,27 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
-from daft.session import Session, current_session, set_session
+from daft.session import (
+    Session,
+    attach_catalog,
+    attach_table,
+    detach_catalog,
+    detach_table,
+    create_temp_table,
+    current_catalog,
+    current_namespace,
+    current_session,
+    get_catalog,
+    get_table,
+    has_catalog,
+    has_table,
+    list_catalogs,
+    list_tables,
+    read_table,
+    set_catalog,
+    set_namespace,
+    set_session,
+)
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
@@ -98,6 +119,7 @@ from daft.viz import register_viz_hook
 to_struct = Expression.to_struct
 
 __all__ = [
+    "Catalog",
     "DataCatalogTable",
     "DataCatalogType",
     "DataFrame",
@@ -110,10 +132,18 @@ __all__ = [
     "Schema",
     "Series",
     "Session",
+    "Table",
     "TimeUnit",
+    "attach_catalog",
+    "attach_table",
     "coalesce",
     "col",
+    "create_temp_table",
+    "current_catalog",
+    "current_namespace",
     "current_session",
+    "detach_catalog",
+    "detach_table",
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
@@ -122,8 +152,14 @@ __all__ = [
     "from_pydict",
     "from_pylist",
     "from_ray_dataset",
+    "get_catalog",
+    "get_table",
+    "has_catalog",
+    "has_table",
     "interval",
     "list_",
+    "list_catalogs",
+    "list_tables",
     "lit",
     "planning_config_ctx",
     "read_csv",
@@ -138,7 +174,9 @@ __all__ = [
     "refresh_logger",
     "register_table",
     "register_viz_hook",
+    "set_catalog",
     "set_execution_config",
+    "set_namespace",
     "set_planning_config",
     "set_session",
     "sql",

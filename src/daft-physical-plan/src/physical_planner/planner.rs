@@ -26,7 +26,7 @@ use super::{
     translate::{adaptively_translate_single_logical_node, translate_single_logical_node},
 };
 use crate::{
-    ops::{InMemoryScan, PlaceholderScan},
+    ops::{InMemoryScan, PreviousStageScan},
     PhysicalPlan, PhysicalPlanRef,
 };
 
@@ -151,7 +151,7 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
             self.partial_physical_plan = Some(child.clone());
 
             let placeholder =
-                PhysicalPlan::PlaceholderScan(PlaceholderScan::new(child.clustering_spec()));
+                PhysicalPlan::PreviousStageScan(PreviousStageScan::new(child.clustering_spec()));
 
             return Ok(Transformed::new(
                 node.with_new_children(&[placeholder.arced()]).arced(),
@@ -170,7 +170,7 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
         self.partial_physical_plan = Some(node.clone());
 
         let placeholder =
-            PhysicalPlan::PlaceholderScan(PlaceholderScan::new(node.clustering_spec()));
+            PhysicalPlan::PreviousStageScan(PreviousStageScan::new(node.clustering_spec()));
 
         Ok(Transformed::new(
             placeholder.arced(),
@@ -180,11 +180,11 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
     }
 }
 
-struct ReplacePhysicalPlaceholderWithMaterializedResults {
+struct ReplacePreviousStageScanWithInMemoryScan {
     mat_results: Option<MaterializedResults>,
 }
 
-impl TreeNodeRewriter for ReplacePhysicalPlaceholderWithMaterializedResults {
+impl TreeNodeRewriter for ReplacePreviousStageScanWithInMemoryScan {
     type Node = Arc<PhysicalPlan>;
 
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
@@ -193,7 +193,7 @@ impl TreeNodeRewriter for ReplacePhysicalPlaceholderWithMaterializedResults {
 
     fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
-            PhysicalPlan::PlaceholderScan(ph_scan) => {
+            PhysicalPlan::PreviousStageScan(ph_scan) => {
                 let mat_results = self.mat_results.take().unwrap();
                 let new_source_node = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mat_results.in_memory_info.source_schema.clone(),
@@ -223,9 +223,7 @@ impl TreeNodeRewriter for StripCacheEntryFromInMemoryScan {
 
     fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
-            PhysicalPlan::InMemoryScan(in_memory_scan)
-                if in_memory_scan.in_memory_info.source_id.is_some() =>
-            {
+            PhysicalPlan::InMemoryScan(in_memory_scan) => {
                 // new in memory scan with no partition cache entry
                 let mut new_in_memory_info = in_memory_scan.in_memory_info.clone();
                 new_in_memory_info.cache_entry = None;
@@ -239,6 +237,27 @@ impl TreeNodeRewriter for StripCacheEntryFromInMemoryScan {
             }
             _ => Ok(Transformed::no(node)),
         }
+    }
+}
+
+fn num_in_memory_children(plan: &PhysicalPlan) -> usize {
+    if matches!(plan, PhysicalPlan::InMemoryScan(..)) {
+        1
+    } else {
+        plan.children()
+            .iter()
+            .map(|c| num_in_memory_children(c))
+            .sum()
+    }
+}
+
+// Check that the physical plan has no cache entries after stripping them
+fn has_cache_entries(plan: &PhysicalPlan) -> bool {
+    match plan {
+        PhysicalPlan::InMemoryScan(InMemoryScan { in_memory_info, .. }) => {
+            in_memory_info.cache_entry.is_some()
+        }
+        _ => plan.children().iter().any(|child| has_cache_entries(child)),
     }
 }
 
@@ -322,6 +341,11 @@ impl EmittedStage {
             .clone()
             .rewrite(&mut strip_cache_entry)?
             .data;
+
+        assert!(
+            !has_cache_entries(&physical_plan),
+            "Should not have cache entries in an emitted stage"
+        );
         Ok(Self {
             stage_id: query_stage_output.stage_id(),
             physical_plan,
@@ -355,24 +379,24 @@ impl StageCache {
             Self::Final { .. } => panic!("Cannot insert stage if we already have a final stage"),
         };
 
-        fn find_input_source_ids(plan: &PhysicalPlan, source_ids: &mut Vec<usize>) {
+        fn find_input_stage_ids(plan: &PhysicalPlan, stage_ids: &mut Vec<usize>) {
             match plan {
                 PhysicalPlan::InMemoryScan(InMemoryScan { in_memory_info, .. }) => {
-                    if let Some(source_id) = in_memory_info.source_id {
-                        source_ids.push(source_id);
+                    if let Some(stage_id) = in_memory_info.source_stage_id {
+                        stage_ids.push(stage_id);
                     }
                 }
                 _ => {
                     for child in plan.children() {
-                        find_input_source_ids(child, source_ids);
+                        find_input_stage_ids(child, stage_ids);
                     }
                 }
             }
         }
-        let mut source_ids = vec![];
-        find_input_source_ids(stage.physical_plan(), &mut source_ids);
+        let mut stage_ids = vec![];
+        find_input_stage_ids(stage.physical_plan(), &mut stage_ids);
 
-        if source_ids.is_empty() {
+        if stage_ids.is_empty() {
             let emitted_stage = EmittedStage::new(stage, vec![])?;
             if let Some(stage_id) = stage.stage_id() {
                 intermediate_stages.insert(stage_id, emitted_stage);
@@ -382,9 +406,9 @@ impl StageCache {
                 };
             }
         } else {
-            let input_stages = source_ids
+            let input_stages = stage_ids
                 .iter()
-                .map(|source_id| intermediate_stages.remove(source_id).unwrap())
+                .map(|stage_id| intermediate_stages.remove(stage_id).unwrap())
                 .collect();
             let emitted_stage = EmittedStage::new(stage, input_stages)?;
             if let Some(stage_id) = stage.stage_id() {
@@ -531,6 +555,12 @@ impl AdaptivePlanner {
                 self.status = AdaptivePlannerStatus::WaitingForStats;
             }
         }
+        if num_in_memory_children(next_stage.physical_plan()) > 1 {
+            assert!(
+                has_cache_entries(next_stage.physical_plan()),
+                "Next stage must have cache entries in in-memory scans"
+            );
+        }
         Ok(next_stage)
     }
 
@@ -541,9 +571,9 @@ impl AdaptivePlanner {
     pub fn update(&mut self, mat_results: MaterializedResults) -> DaftResult<()> {
         assert_eq!(self.status, AdaptivePlannerStatus::WaitingForStats);
         assert!(mat_results.stage_id == self.last_stage_id);
-        // If we have a remaining physical plan, we need to replace the physical placeholder with the materialized results
+        // If we have a remaining physical plan, we need to replace the physical previous stage scan with the materialized results
         if let Some(remaining_physical_plan) = self.remaining_physical_plan.take() {
-            let mut rewriter = ReplacePhysicalPlaceholderWithMaterializedResults {
+            let mut rewriter = ReplacePreviousStageScanWithInMemoryScan {
                 mat_results: Some(mat_results),
             };
             let result = remaining_physical_plan.rewrite(&mut rewriter)?;

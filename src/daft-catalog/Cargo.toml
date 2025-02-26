@@ -2,13 +2,17 @@
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
-lazy_static = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
 snafu.workspace = true
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-logical-plan/python", "daft-core/python"]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "daft-core/python",
+  "daft-logical-plan/python"
+]
 
 [package]
 name = "daft-catalog"

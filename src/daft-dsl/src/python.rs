@@ -24,8 +24,13 @@ use serde::{Deserialize, Serialize};
 use crate::{Expr, ExprRef, LiteralValue};
 
 #[pyfunction]
-pub fn col(name: &str) -> PyResult<PyExpr> {
-    Ok(PyExpr::from(crate::col(name)))
+pub fn unresolved_col(name: &str) -> PyExpr {
+    PyExpr::from(crate::unresolved_col(name))
+}
+
+#[pyfunction]
+pub fn resolved_col(name: &str) -> PyExpr {
+    PyExpr::from(crate::resolved_col(name))
 }
 
 #[pyfunction]
