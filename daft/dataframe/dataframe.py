@@ -11,6 +11,7 @@ import pathlib
 import typing
 import warnings
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import partial, reduce
 from typing import (
     TYPE_CHECKING,
@@ -32,7 +33,7 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, check_column_name_validity
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -157,6 +158,26 @@ class DataFrame:
             return None
         else:
             return self._result_cache.value
+
+    def _broadcast_query_plan(self):
+        from daft import dashboard
+        from daft.dataframe.display import MermaidFormatter
+
+        if not dashboard._should_run():
+            return
+
+        is_cached = self._result_cache is not None
+        plan_time_start = datetime.now(timezone.utc)
+        mermaid_plan: str = MermaidFormatter(
+            builder=self.__builder, show_all=True, simple=False, is_cached=is_cached
+        )._repr_markdown_()
+        plan_time_end = datetime.now(timezone.utc)
+
+        dashboard._broadcast_query_plan(
+            mermaid_plan,
+            plan_time_start,
+            plan_time_end,
+        )
 
     @DataframePublicAPI
     def explain(
@@ -1273,7 +1294,8 @@ class DataFrame:
             return result
         elif isinstance(item, str):
             schema = self._builder.schema()
-            check_column_name_validity(item, schema._schema)
+            if item not in schema.column_names() and item != "*":
+                raise ValueError(f"{item} does not exist in schema {schema}")
 
             return col(item)
         elif isinstance(item, Iterable):
@@ -2846,6 +2868,7 @@ class DataFrame:
             DataFrame: DataFrame with materialized results.
         """
         self._materialize_results()
+        self._broadcast_query_plan()
 
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -2917,6 +2940,8 @@ class DataFrame:
             n: number of rows to show. Defaults to 8.
         """
         dataframe_display = self._construct_show_display(n)
+        self._broadcast_query_plan()
+
         try:
             from IPython.display import display
 

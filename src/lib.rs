@@ -103,6 +103,7 @@ pub mod pylib {
         common_resource_request::register_modules(m)?;
         common_file_formats::python::register_modules(m)?;
         common_scan_info::register_modules(m)?;
+        daft_catalog::register_modules(m)?;
         daft_connect::register_modules(m)?;
         daft_context::register_modules(m)?;
         daft_core::register_modules(m)?;
@@ -120,12 +121,8 @@ pub mod pylib {
         daft_recordbatch::register_modules(m)?;
         daft_scan::register_modules(m)?;
         daft_scheduler::register_modules(m)?;
-        daft_sql::register_modules(m)?;
         daft_session::register_modules(m)?;
-
-        // Register catalog module
-        let catalog_module = daft_catalog::python::register_modules(m)?;
-        daft_catalog_python_catalog::python::register_modules(&catalog_module)?;
+        daft_sql::register_modules(m)?;
 
         // Register testing module
         let testing_module = PyModule::new(m.py(), "testing")?;

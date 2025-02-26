@@ -1,0 +1,13 @@
+{ "x": 42, "y": "apple", "z": true }
+{ "x": 17, "y": "banana", "z": false }
+{ "x": 89, "y": "cherry", "z": true }
+{ "x": 3, "y": "date", "z": false }
+{ "x": 156, "y": "elderberry", "z": true }
+{ "x": 23, "y": "fig", "z": true }
+{ "x": 777, "y": "grape", "z": false }
+{ "x": 444, "y": "honeydew", "z": true }
+{ "x": 91, "y": "kiwi", "z": false }
+{ "x": 12, "y": "lemon", "z": true }
+{ "x": 365, "y": "mango", "z": false }
+{ "x": 55, "y": "nectarine", "z": true }
+{ "x": 888, "y": "orange", "z": false }

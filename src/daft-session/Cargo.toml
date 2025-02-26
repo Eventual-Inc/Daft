@@ -1,5 +1,6 @@
 [dependencies]
 daft-catalog = {path = "../daft-catalog"}
+daft-core = {path = "../daft-core", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan"}
 pyo3 = {workspace = true, optional = true}
 uuid = {version = "1.10.0", features = ["v4"]}
@@ -8,6 +9,7 @@ uuid = {version = "1.10.0", features = ["v4"]}
 python = [
   "dep:pyo3",
   "daft-catalog/python",
+  "daft-core/python",
   "daft-logical-plan/python"
 ]
 

@@ -1,14 +1,18 @@
+use std::sync::Arc;
+
 use daft_core::prelude::TimeUnit;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_scan::builder::ParquetScanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 
-use super::SQLTableFunction;
+use super::{try_coerce_list, SQLTableFunction};
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::SQLFunctionArguments,
+    invalid_operation_err,
     modules::config::expr_to_iocfg,
     planner::SQLPlanner,
+    schema::try_parse_schema,
 };
 
 pub(super) struct ReadParquetFunction;
@@ -17,9 +21,14 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
     type Error = PlannerError;
 
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
-        let glob_paths: String = args.try_get_positional(0)?.ok_or_else(|| {
-            PlannerError::invalid_operation("path is required for `read_parquet`")
-        })?;
+        let glob_paths: Vec<String> = if let Some(arg) = args.get_positional(0) {
+            try_coerce_list(arg.clone())?
+        } else if let Some(arg) = args.get_named("path") {
+            try_coerce_list(arg.clone())?
+        } else {
+            invalid_operation_err!("path is required for `read_json`")
+        };
+
         let infer_schema = args.try_get_named("infer_schema")?.unwrap_or(true);
         let coerce_int96_timestamp_unit =
             args.try_get_named::<String>("coerce_int96_timestamp_unit")?;
@@ -37,11 +46,15 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
 
         let field_id_mapping = None; // TODO
         let row_groups = None; // TODO
-        let schema = None; // TODO
+        let schema = args
+            .try_get_named("schema")?
+            .map(try_parse_schema)
+            .transpose()?
+            .map(Arc::new);
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
 
         Ok(Self {
-            glob_paths: vec![glob_paths],
+            glob_paths,
             infer_schema,
             coerce_int96_timestamp_unit,
             field_id_mapping,
@@ -69,7 +82,7 @@ impl SQLTableFunction for ReadParquetFunction {
                 "coerce_int96_timestamp_unit",
                 "chunk_size",
                 "multithreaded",
-                // "schema",
+                "schema",
                 // "field_id_mapping",
                 // "row_groups",
                 "io_config",
