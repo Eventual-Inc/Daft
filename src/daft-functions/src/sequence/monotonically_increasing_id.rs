@@ -36,7 +36,7 @@ impl ScalarUDF for MonotonicallyIncreasingId {
 
     fn evaluate(&self, _inputs: &[Series]) -> DaftResult<Series> {
         Err(DaftError::NotImplemented(
-            "monotonically_increasing_id is a special function that must be handled by the query planner".to_string(),
+            "monotonically_increasing_id should be rewritten into a separate plan step by the optimizer. If you're seeing this error, the DetectMonotonicId optimization rule may not have been applied.".to_string(),
         ))
     }
 
