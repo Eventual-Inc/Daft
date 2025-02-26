@@ -95,6 +95,12 @@ impl PySession {
     }
 }
 
+impl From<&PySession> for Session {
+    fn from(sess: &PySession) -> Self {
+        sess.0.clone()
+    }
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PySession>()?;
     Ok(())

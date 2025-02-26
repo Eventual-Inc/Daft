@@ -186,11 +186,24 @@ impl PyTableWrapper {
 
 impl Table for PyTableWrapper {
     fn get_schema(&self) -> SchemaRef {
-        todo!()
+        todo!("get_schema")
     }
 
     fn get_logical_plan(&self) -> Result<LogicalPlanRef> {
-        todo!()
+        Python::with_gil(|py| {
+            // table = 'python table object'
+            let table = self.0.bind(py);
+            // df = table.read()
+            let df = table.call_method0("read")?;
+            // builder = df._builder._builder
+            let builder = df.getattr("_builder")?.getattr("_builder")?;
+            // builder as PyLogicalPlanBuilder
+            let builder = builder
+                .downcast::<PyLogicalPlanBuilder>()
+                .expect("downcast to PyLogicalPlanBuilder failed")
+                .borrow();
+            Ok(builder.builder.plan.clone())
+        })
     }
 
     fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
