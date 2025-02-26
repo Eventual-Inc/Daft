@@ -19,7 +19,7 @@ use super::{FunctionModule, SparkFunction, TODO_FUNCTION};
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
-    spark_analyzer::ExprResolver,
+    spark_analyzer::expr_analyzer::analyze_expr,
 };
 
 // see https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#math-functions
@@ -96,14 +96,10 @@ impl FunctionModule for MathFunctions {
 
 struct LogFunction;
 impl SparkFunction for LogFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        expr_resolver: &ExprResolver,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| expr_resolver.resolve_expr(arg))
+            .map(analyze_expr)
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [input, base] = args.as_slice() else {
@@ -129,14 +125,10 @@ impl SparkFunction for LogFunction {
 struct RoundFunction;
 
 impl SparkFunction for RoundFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        expr_resolver: &ExprResolver,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         let mut args = args
             .iter()
-            .map(|arg| expr_resolver.resolve_expr(arg))
+            .map(analyze_expr)
             .collect::<ConnectResult<Vec<_>>>()?
             .into_iter();
 

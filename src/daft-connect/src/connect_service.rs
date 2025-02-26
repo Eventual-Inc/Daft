@@ -150,7 +150,7 @@ impl DaftSparkConnectService {
                     invalid_argument_err!("op_type must be Root");
                 };
 
-                let mut translator = SparkAnalyzer::new(&session);
+                let translator = SparkAnalyzer::new(&session);
 
                 let result = match translator.relation_to_spark_schema(relation).await {
                     Ok(schema) => schema,
@@ -189,7 +189,7 @@ impl DaftSparkConnectService {
                     }
                 }
 
-                let mut translator = SparkAnalyzer::new(&session);
+                let translator = SparkAnalyzer::new(&session);
                 let plan = Box::pin(translator.to_logical_plan(input))
                     .await
                     .unwrap()
@@ -213,7 +213,7 @@ impl DaftSparkConnectService {
                     invalid_argument_err!("op_type must be Root");
                 };
 
-                let mut translator = SparkAnalyzer::new(&session);
+                let translator = SparkAnalyzer::new(&session);
                 let plan = Box::pin(translator.to_logical_plan(input))
                     .await
                     .unwrap()

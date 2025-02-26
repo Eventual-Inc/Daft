@@ -1,7 +1,7 @@
 //! Translation between Spark Connect and Daft
 
 mod datatype;
-mod expr_resolver;
+pub(crate) mod expr_analyzer;
 
 use std::{io::Cursor, rc::Rc, sync::Arc};
 
@@ -16,7 +16,7 @@ use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
 use datatype::to_daft_datatype;
 pub use datatype::to_spark_datatype;
-pub(crate) use expr_resolver::ExprResolver;
+use expr_analyzer::analyze_expr;
 use itertools::zip_eq;
 use pyo3::{intern, prelude::*};
 use spark_connect::{
@@ -45,15 +45,11 @@ use crate::{
 #[derive(Clone)]
 pub struct SparkAnalyzer<'a> {
     pub session: &'a ConnectSession,
-    expr_resolver: ExprResolver,
 }
 
 impl SparkAnalyzer<'_> {
     pub fn new(session: &ConnectSession) -> SparkAnalyzer<'_> {
-        SparkAnalyzer {
-            session,
-            expr_resolver: ExprResolver::new(),
-        }
+        SparkAnalyzer { session }
     }
 
     /// Creates a logical source (scan) operator from a vec of tables.
@@ -91,10 +87,7 @@ impl SparkAnalyzer<'_> {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub async fn to_logical_plan(
-        &mut self,
-        relation: Relation,
-    ) -> ConnectResult<LogicalPlanBuilder> {
+    pub async fn to_logical_plan(&self, relation: Relation) -> ConnectResult<LogicalPlanBuilder> {
         let common = relation.common.required("common")?;
 
         if common.origin.is_some() {
@@ -131,7 +124,7 @@ impl SparkAnalyzer<'_> {
         Ok(lp.with_plan_id(plan_id as _))
     }
 
-    async fn limit(&mut self, limit: Limit) -> ConnectResult<LogicalPlanBuilder> {
+    async fn limit(&self, limit: Limit) -> ConnectResult<LogicalPlanBuilder> {
         let Limit { input, limit } = limit;
         let input = input.required("input")?;
 
@@ -140,7 +133,7 @@ impl SparkAnalyzer<'_> {
         plan.limit(i64::from(limit), false).map_err(Into::into)
     }
 
-    async fn deduplicate(&mut self, deduplicate: Deduplicate) -> ConnectResult<LogicalPlanBuilder> {
+    async fn deduplicate(&self, deduplicate: Deduplicate) -> ConnectResult<LogicalPlanBuilder> {
         let Deduplicate {
             input,
             column_names,
@@ -158,7 +151,7 @@ impl SparkAnalyzer<'_> {
         plan.distinct().map_err(Into::into)
     }
 
-    async fn sort(&mut self, sort: Sort) -> ConnectResult<LogicalPlanBuilder> {
+    async fn sort(&self, sort: Sort) -> ConnectResult<LogicalPlanBuilder> {
         let Sort {
             input,
             order,
@@ -188,7 +181,7 @@ impl SparkAnalyzer<'_> {
         } in order
         {
             let expr = child.required("child")?;
-            let expr = self.expr_resolver.resolve_expr(&expr)?;
+            let expr = analyze_expr(&expr)?;
 
             let sort_direction = SortDirection::try_from(direction).map_err(|e| {
                 ConnectError::invalid_relation(format!("Unknown sort direction: {e}"))
@@ -324,7 +317,7 @@ impl SparkAnalyzer<'_> {
     }
 
     async fn aggregate(
-        &mut self,
+        &self,
         aggregate: spark_connect::Aggregate,
     ) -> ConnectResult<LogicalPlanBuilder> {
         fn check_grouptype(group_type: GroupType) -> ConnectResult<()> {
@@ -376,12 +369,12 @@ impl SparkAnalyzer<'_> {
 
         let grouping_expressions: Vec<_> = grouping_expressions
             .iter()
-            .map(|e| self.expr_resolver.resolve_expr(e))
+            .map(analyze_expr)
             .try_collect()?;
 
         let aggregate_expressions: Vec<_> = aggregate_expressions
             .iter()
-            .map(|e| self.expr_resolver.resolve_expr(e))
+            .map(analyze_expr)
             .try_collect()?;
 
         plan = plan.aggregate(aggregate_expressions, grouping_expressions)?;
@@ -389,7 +382,7 @@ impl SparkAnalyzer<'_> {
         Ok(plan)
     }
 
-    async fn drop(&mut self, drop: spark_connect::Drop) -> ConnectResult<LogicalPlanBuilder> {
+    async fn drop(&self, drop: spark_connect::Drop) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Drop {
             input,
             columns,
@@ -416,15 +409,12 @@ impl SparkAnalyzer<'_> {
         Ok(plan.select(to_select)?)
     }
 
-    pub async fn filter(
-        &mut self,
-        filter: spark_connect::Filter,
-    ) -> ConnectResult<LogicalPlanBuilder> {
+    pub async fn filter(&self, filter: spark_connect::Filter) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Filter { input, condition } = filter;
 
         let input = input.required("input")?;
         let condition = condition.required("condition")?;
-        let condition = self.expr_resolver.resolve_expr(&condition)?;
+        let condition = analyze_expr(&condition)?;
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
         Ok(plan.filter(condition)?)
@@ -485,27 +475,21 @@ impl SparkAnalyzer<'_> {
         self.create_in_memory_scan(plan_id as _, daft_schema, tables)
     }
 
-    async fn project(
-        &mut self,
-        project: spark_connect::Project,
-    ) -> ConnectResult<LogicalPlanBuilder> {
+    async fn project(&self, project: spark_connect::Project) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::Project { input, expressions } = project;
 
         let input = input.required("input")?;
 
         let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        let daft_exprs: Vec<_> = expressions
-            .iter()
-            .map(|e| self.expr_resolver.resolve_expr(e))
-            .try_collect()?;
+        let daft_exprs: Vec<_> = expressions.iter().map(analyze_expr).try_collect()?;
         plan = plan.select(daft_exprs)?;
 
         Ok(plan)
     }
 
     async fn with_columns(
-        &mut self,
+        &self,
         with_columns: spark_connect::WithColumns,
     ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::WithColumns { input, aliases } = with_columns;
@@ -522,7 +506,7 @@ impl SparkAnalyzer<'_> {
                     expr_type: Some(ExprType::Alias(Box::new(alias))),
                 };
 
-                self.expr_resolver.resolve_expr(&expression)
+                analyze_expr(&expression)
             })
             .try_collect()?;
 
@@ -530,7 +514,7 @@ impl SparkAnalyzer<'_> {
     }
 
     async fn with_columns_renamed(
-        &mut self,
+        &self,
         with_columns_renamed: spark_connect::WithColumnsRenamed,
     ) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::WithColumnsRenamed {
@@ -573,7 +557,7 @@ impl SparkAnalyzer<'_> {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    async fn to_df(&mut self, to_df: spark_connect::ToDf) -> ConnectResult<LogicalPlanBuilder> {
+    async fn to_df(&self, to_df: spark_connect::ToDf) -> ConnectResult<LogicalPlanBuilder> {
         let spark_connect::ToDf {
             input,
             column_names,
@@ -591,7 +575,7 @@ impl SparkAnalyzer<'_> {
         Ok(plan)
     }
 
-    async fn set_op(&mut self, set_op: SetOperation) -> ConnectResult<LogicalPlanBuilder> {
+    async fn set_op(&self, set_op: SetOperation) -> ConnectResult<LogicalPlanBuilder> {
         let set_op_type = set_op.set_op_type;
         let left = set_op.left_input.required("left_input")?;
         let right = set_op.right_input.required("right_input")?;
@@ -615,7 +599,7 @@ impl SparkAnalyzer<'_> {
     }
 
     pub async fn relation_to_spark_schema(
-        &mut self,
+        &self,
         input: Relation,
     ) -> ConnectResult<spark_connect::DataType> {
         let result = self.relation_to_daft_schema(input).await?;
@@ -644,7 +628,7 @@ impl SparkAnalyzer<'_> {
         })
     }
 
-    pub async fn relation_to_daft_schema(&mut self, input: Relation) -> ConnectResult<SchemaRef> {
+    pub async fn relation_to_daft_schema(&self, input: Relation) -> ConnectResult<SchemaRef> {
         if let Some(common) = &input.common {
             if common.origin.is_some() {
                 debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
@@ -689,7 +673,7 @@ impl SparkAnalyzer<'_> {
         Ok(plan.into())
     }
 
-    async fn join(&mut self, join: Join) -> ConnectResult<LogicalPlanBuilder> {
+    async fn join(&self, join: Join) -> ConnectResult<LogicalPlanBuilder> {
         let Join {
             left,
             right,
@@ -868,7 +852,7 @@ impl SparkAnalyzer<'_> {
         let mut left_on = vec![];
         let mut right_on = vec![];
         if let Some(join_cond) = join_condition {
-            let join_cond = self.expr_resolver.resolve_expr(&join_cond)?;
+            let join_cond = analyze_expr(&join_cond)?;
             process_join_on(
                 join_cond,
                 &mut left_on,

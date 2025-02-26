@@ -60,7 +60,7 @@ impl ConnectSession {
         let this = self.clone();
         self.compute_runtime.runtime.spawn(async move {
             let execution_fut = async {
-                let mut translator = SparkAnalyzer::new(&this);
+                let translator = SparkAnalyzer::new(&this);
                 match command.rel_type {
                     Some(RelType::ShowString(ss)) => {
                         let response = this.show_string(*ss, res.clone()).await?;
@@ -173,7 +173,7 @@ impl ConnectSession {
                     }
                 };
 
-                let mut translator = SparkAnalyzer::new(&this);
+                let translator = SparkAnalyzer::new(&this);
 
                 let plan = translator.to_logical_plan(input).await?;
 
@@ -336,7 +336,7 @@ impl ConnectSession {
         show_string: ShowString,
         response_builder: ResponseBuilder<ExecutePlanResponse>,
     ) -> ConnectResult<ExecutePlanResponse> {
-        let mut translator = SparkAnalyzer::new(self);
+        let translator = SparkAnalyzer::new(self);
 
         let ShowString {
             input,

@@ -7,7 +7,7 @@ use super::{BinaryFunction, FunctionModule, SparkFunction, UnaryFunction, TODO_F
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
-    spark_analyzer::ExprResolver,
+    spark_analyzer::expr_analyzer::analyze_expr,
 };
 
 // Core functions are the most basic functions such as `+`, `-`, `*`, `/`, not, notnull, etc.
@@ -65,14 +65,10 @@ impl FunctionModule for CoreFunctions {
 pub struct BinaryOpFunction(Operator);
 
 impl SparkFunction for BinaryOpFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        expr_resolver: &ExprResolver,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| expr_resolver.resolve_expr(arg))
+            .map(analyze_expr)
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [lhs, rhs] = args.try_into().map_err(|args| {
@@ -88,14 +84,10 @@ impl SparkFunction for BinaryOpFunction {
 
 struct SqlExpr;
 impl SparkFunction for SqlExpr {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        expr_resolver: &ExprResolver,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| expr_resolver.resolve_expr(arg))
+            .map(analyze_expr)
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [sql] = args.as_slice() else {

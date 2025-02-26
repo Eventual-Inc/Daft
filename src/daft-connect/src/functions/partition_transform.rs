@@ -5,7 +5,7 @@ use super::{FunctionModule, SparkFunction, UnaryFunction};
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
-    spark_analyzer::ExprResolver,
+    spark_analyzer::expr_analyzer::analyze_expr,
 };
 
 // https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#partition-transformation-functions
@@ -24,15 +24,11 @@ impl FunctionModule for PartitionTransformFunctions {
 struct BucketFunction;
 
 impl SparkFunction for BucketFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        expr_resolver: &ExprResolver,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         match args {
             [n_buckets, arg] => {
-                let n_buckets = expr_resolver.resolve_expr(n_buckets)?;
-                let arg = expr_resolver.resolve_expr(arg)?;
+                let n_buckets = analyze_expr(n_buckets)?;
+                let arg = analyze_expr(arg)?;
 
                 let n_buckets = n_buckets
                     .as_literal()
