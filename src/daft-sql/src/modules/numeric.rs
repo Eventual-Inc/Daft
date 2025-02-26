@@ -175,8 +175,11 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
             Ok(sign(args[0].clone()))
         }
         SQLNumericExpr::Round => {
-            ensure!(args.len() == 2, "round takes exactly two arguments");
-            let precision = match args[1].as_ref().as_literal() {
+            ensure!(
+                args.len() == 2 || args.len() == 1,
+                "round takes one or two arguments"
+            );
+            let precision = match args.get(1).and_then(|arg| arg.as_literal()) {
                 Some(LiteralValue::Int8(i)) => *i as i32,
                 Some(LiteralValue::UInt8(u)) => *u as i32,
                 Some(LiteralValue::Int16(i)) => *i as i32,
@@ -185,6 +188,7 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
                 Some(LiteralValue::UInt32(u)) => *u as i32,
                 Some(LiteralValue::Int64(i)) => *i as i32,
                 Some(LiteralValue::UInt64(u)) => *u as i32,
+                None => 0,
                 _ => invalid_operation_err!("round precision must be an integer"),
             };
             Ok(round(args[0].clone(), Some(precision)))
