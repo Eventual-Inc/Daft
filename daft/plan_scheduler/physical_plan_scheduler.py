@@ -93,6 +93,7 @@ class AdaptivePhysicalPlanScheduler:
 
         self._scheduler.update(
             stage_id,
+            stage_id,
             cache_entry.key,
             cache_entry,
             num_partitions=num_partitions,

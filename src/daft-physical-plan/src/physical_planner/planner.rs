@@ -103,7 +103,7 @@ impl TreeNodeRewriter for ReplaceLogicalPlaceholderWithMaterializedResults {
                 SourceInfo::PlaceHolder(phi) => {
                     assert!(self.mat_results.is_some());
                     let mut mat_results = self.mat_results.take().unwrap();
-                    mat_results.in_memory_info.source_schema = phi.source_schema.clone();
+                    // use the clustering spec from the original plan
                     mat_results.in_memory_info.clustering_spec = Some(phi.clustering_spec.clone());
                     let new_source_node = LogicalPlan::Source(Source::new(
                         mat_results.in_memory_info.source_schema.clone(),
@@ -590,6 +590,7 @@ impl AdaptivePlanner {
             let logical_plan = self.remaining_logical_plan.take().unwrap();
             let result = logical_plan.rewrite(&mut rewriter)?;
 
+            assert!(result.transformed);
             assert!(result.transformed);
 
             let optimizer = OptimizerBuilder::new().enrich_with_stats().build();
