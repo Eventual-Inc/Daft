@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use common_treenode::{Transformed, TreeNode};
 use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn};
 
 use crate::{
@@ -98,16 +98,13 @@ impl DetectMonotonicId {
 
 impl OptimizerRule for DetectMonotonicId {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        // First try to optimize any child plans
-        let mut transformed = false;
-        let optimized_plan = plan.clone().transform_down(|node| {
+        plan.transform_down(|node| {
             match node.as_ref() {
                 LogicalPlan::Project(project) => {
                     // Find all monotonically_increasing_id() calls in this Project
                     let monotonic_ids = Self::find_monotonic_ids(project);
 
                     if !monotonic_ids.is_empty() {
-                        transformed = true;
                         // Create a chain of MonotonicallyIncreasingId operations
                         let monotonic_plan = Self::create_monotonic_chain(
                             project.input.clone(),
@@ -131,17 +128,6 @@ impl OptimizerRule for DetectMonotonicId {
                 }
                 _ => Ok(Transformed::no(node)),
             }
-        })?;
-
-        // If any transformations occurred, continue recursing down the tree
-        if transformed {
-            Ok(Transformed {
-                data: optimized_plan.data,
-                transformed,
-                tnr: TreeNodeRecursion::Continue,
-            })
-        } else {
-            Ok(Transformed::no(plan))
-        }
+        })
     }
 }
