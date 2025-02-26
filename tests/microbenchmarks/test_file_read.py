@@ -37,6 +37,8 @@ def gen_simple_csvs(request) -> str:
 
         print(f"tmpdirname: {tmpdirname}, num_files: {num_files}, mibs_per_file: {mibs_per_file}")
         yield tmpdirname, num_files * mibs_per_file * 1024 * 128
+        print("yielded")
+    print("done")
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"native", "py"}, reason="requires local runner")
@@ -53,11 +55,13 @@ def test_csv_read(gen_simple_csvs, benchmark):
     df = benchmark(bench)
     print(f"len(df): {len(df)}")
     assert len(df) == num_rows
+    print("assert ok")
 
 
 @pytest.mark.benchmark(group="file_read")
 @pytest.mark.parametrize("prune", [True, False])
 def test_s3_parquet_read_1x64mb(benchmark, prune):
+    print(f"test_s3_parquet_read_1x64mb, prune: {prune}")
     parquet_glob = "s3://daft-public-data/test_fixtures/parquet/95c7fba0-265d-440b-88cb-2897047fc5f9-0.parquet"
     expected_rows = 1500000
 
@@ -74,6 +78,7 @@ def test_s3_parquet_read_1x64mb(benchmark, prune):
 @pytest.mark.benchmark(group="file_read")
 @pytest.mark.parametrize("prune", [True, False])
 def test_s3_parquet_read_32x2mb(benchmark, prune):
+    print(f"test_s3_parquet_read_32x2mb, prune: {prune}")
     parquet_glob = "s3://daft-public-data/test_fixtures/parquet_small/*"
     expected_rows = 2000000
 
