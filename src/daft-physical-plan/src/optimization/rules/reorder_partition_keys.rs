@@ -156,6 +156,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::InMemoryScan(..) |
                 PhysicalPlan::TabularScan(..) |
                 PhysicalPlan::EmptyScan(..) |
+                PhysicalPlan::PreviousStageScan(..) |
                 PhysicalPlan::Concat(..) |
                 PhysicalPlan::HashJoin(..) |
                 PhysicalPlan::SortMergeJoin(..) |

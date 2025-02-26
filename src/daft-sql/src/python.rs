@@ -1,10 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use common_daft_config::PyDaftPlanningConfig;
 use daft_catalog::TableSource;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
-use daft_session::Session;
+use daft_session::{python::PySession, Session};
 use pyo3::prelude::*;
 
 use crate::{functions::SQL_FUNCTIONS, planner::SQLPlanner};
@@ -34,7 +34,17 @@ impl SQLFunctionStub {
     }
 }
 
-// TODO replace with session.exec to invert responsibilities
+#[pyfunction]
+pub fn plan_sql(
+    sql: &str,
+    session: &PySession,
+    config: PyDaftPlanningConfig,
+) -> PyResult<PyLogicalPlanBuilder> {
+    let sess = Rc::new(session.into());
+    let plan = SQLPlanner::new(sess).plan_sql(sql)?;
+    Ok(LogicalPlanBuilder::new(plan, Some(config.config)).into())
+}
+
 #[pyfunction]
 pub fn sql(
     sql: &str,

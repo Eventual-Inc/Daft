@@ -37,10 +37,10 @@ class UnityCatalog(Catalog):
     # get_*
     ###
 
-    def get_table(self, name: str | Identifier) -> UnityTable:
-        if isinstance(name, Identifier):
-            name = ".".join(name)  # TODO unity qualified identifiers
-        return UnityTable(self._inner.load_table(name))
+    def get_table(self, ident: Identifier | str) -> UnityTable:
+        if isinstance(ident, Identifier):
+            ident = ".".join(ident)  # TODO unity qualified identifiers
+        return UnityTable(self._inner.load_table(ident))
 
     ###
     # list_.*

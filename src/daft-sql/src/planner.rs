@@ -175,9 +175,7 @@ impl<'a> SQLPlanner<'a> {
         Ref::map(self.context.borrow(), |i| &i.bound_ctes)
     }
 
-    /// Get the table associated with the name from the session.
-    ///
-    /// Also adds a SubqueryAlias to the table with the name.
+    /// Get the table associated with the name from the session and wrap in a SubqueryAlias.
     fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
         let table = self.session().get_table(name)?;
         let plan = table.get_logical_plan()?;
@@ -905,7 +903,7 @@ impl<'a> SQLPlanner<'a> {
         name: &ObjectName,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let ident = normalize(name);
-        let table = if ident.has_namespace() {
+        let table = if ident.has_qualifier() {
             // qualified search of session metadata
             self.get_table(&ident).ok()
         } else {

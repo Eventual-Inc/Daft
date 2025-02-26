@@ -38,10 +38,10 @@ class IcebergCatalog(Catalog):
     # get_*
     ###
 
-    def get_table(self, name: str | Identifier) -> IcebergTable:
-        if isinstance(name, Identifier):
-            name = tuple(name)  # type: ignore
-        return IcebergTable(self._inner.load_table(name))
+    def get_table(self, ident: Identifier | str) -> IcebergTable:
+        if isinstance(ident, Identifier):
+            ident = tuple(ident)  # type: ignore
+        return IcebergTable._from_obj(self._inner.load_table(ident))
 
     ###
     # list_*
