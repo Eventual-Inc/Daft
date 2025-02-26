@@ -6,13 +6,8 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Marker trait for special functions that must be handled by the planner
-pub trait SpecialFunction {}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct MonotonicallyIncreasingId {}
-
-impl SpecialFunction for MonotonicallyIncreasingId {}
 
 #[typetag::serde]
 impl ScalarUDF for MonotonicallyIncreasingId {
@@ -38,10 +33,6 @@ impl ScalarUDF for MonotonicallyIncreasingId {
         Err(DaftError::NotImplemented(
             "monotonically_increasing_id should be rewritten into a separate plan step by the optimizer. If you're seeing this error, the DetectMonotonicId optimization rule may not have been applied.".to_string(),
         ))
-    }
-
-    fn is_special(&self) -> bool {
-        true
     }
 }
 

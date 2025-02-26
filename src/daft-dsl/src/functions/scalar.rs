@@ -10,9 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Expr, ExprRef};
 
-/// Marker trait for special functions that must be handled by the planner
-pub trait SpecialFunction {}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalarFunction {
     pub udf: Arc<dyn ScalarUDF>,
@@ -34,11 +31,6 @@ impl ScalarFunction {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         self.udf.to_field(&self.inputs, schema)
     }
-
-    /// Returns true if this function is a special function that must be handled by the planner
-    pub fn is_special_function(&self) -> bool {
-        self.udf.is_special()
-    }
 }
 
 impl From<ScalarFunction> for ExprRef {
@@ -53,11 +45,6 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &'static str;
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series>;
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
-
-    /// Returns true if this UDF is a special function that must be handled by the planner
-    fn is_special(&self) -> bool {
-        false
-    }
 }
 
 pub fn scalar_function_semantic_id(func: &ScalarFunction, schema: &Schema) -> FieldID {

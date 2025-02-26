@@ -22,12 +22,15 @@ impl Default for DetectMonotonicId {
 }
 
 impl DetectMonotonicId {
+    /// Creates a new instance of DetectMonotonicId
+    pub fn new() -> Self {
+        Self
+    }
+
     /// Helper function to detect if an expression is a monotonically_increasing_id() call
     fn is_monotonic_id_expr(expr: &ExprRef) -> bool {
         match expr.as_ref() {
-            Expr::ScalarFunction(func) => {
-                func.is_special_function() && func.name() == "monotonically_increasing_id"
-            }
+            Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
             Expr::Alias(inner, _) => Self::is_monotonic_id_expr(inner),
             _ => false,
         }

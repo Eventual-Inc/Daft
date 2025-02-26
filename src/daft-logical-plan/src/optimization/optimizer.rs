@@ -91,13 +91,6 @@ impl Default for OptimizerBuilder {
     fn default() -> Self {
         Self {
             rule_batches: vec![
-                // --- Detect special functions ---
-                // This must be done first to ensure special functions are transformed
-                // before any other rules are applied
-                RuleBatch::new(
-                    vec![Box::new(DetectMonotonicId)],
-                    RuleExecutionStrategy::FixedPoint(None),
-                ),
                 // --- Rewrite rules ---
                 RuleBatch::new(
                     vec![
@@ -106,6 +99,7 @@ impl Default for OptimizerBuilder {
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
                         Box::new(SplitActorPoolProjects::new()),
+                        Box::new(DetectMonotonicId::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
