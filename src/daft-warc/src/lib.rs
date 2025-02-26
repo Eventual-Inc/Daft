@@ -1,32 +1,27 @@
-use std::{io::BufReader, sync::Arc};
+use std::sync::Arc;
 
 use arrow2::{self, array::BinaryArray};
 use common_error::DaftResult;
+use daft_compression::CompressionCodec;
 use daft_core::{prelude::{Field, Schema, SchemaRef, TimeUnit}, series::Series};
 use daft_dsl::ExprRef;
-use daft_io::{parse_url, IOClient, IOStatsRef, SourceType};
+use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_recordbatch::RecordBatch;
 use futures::stream::BoxStream;
 use futures::StreamExt;
+use tokio::{io::{AsyncBufRead, BufReader}, fs::File};
+use tokio_util::io::StreamReader;
 use warc::{BufferedBody, Record, WarcHeader, WarcReader, Error as WarcError};
 use arrow2::array::{Int64Array, Utf8Array};
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
+use arrow2::buffer::Buffer;
 
 pub struct WarcConvertOptions {
     pub limit: Option<usize>,
     pub include_columns: Option<Vec<String>>,
     pub schema: Option<SchemaRef>,
     pub predicate: Option<ExprRef>,
-}
-
-fn get_warc_reader(uri: &str, file: std::fs::File) -> WarcReader<BufReader<Box<dyn std::io::Read>>> {
-    let reader = if uri.ends_with(".gz") {
-        let gzip_reader = flate2::read::GzDecoder::new(file);
-        Box::new(gzip_reader) as Box<dyn std::io::Read>
-    } else {
-        Box::new(file) as Box<dyn std::io::Read>
-    };
-    let buf_reader = BufReader::with_capacity(16 * 1024 * 1024, reader);
-    WarcReader::new(buf_reader)
 }
 
 struct WarcChunkIterator<I> {
@@ -74,60 +69,171 @@ impl<I> WarcChunkIterator<I> {
     }
 }
 
-async fn stream_warc_local(uri: &str, convert_options: WarcConvertOptions) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let uri = uri.trim_start_matches("file://").to_string();
-    let (tx, rx): (
-        tokio::sync::mpsc::Sender<DaftResult<RecordBatch>>,
-        tokio::sync::mpsc::Receiver<DaftResult<RecordBatch>>
-    ) = tokio::sync::mpsc::channel(20);
-    let schema = if let Some(schema) = convert_options.schema {
-        schema
-    } else {
-        let full_schema = Arc::new(Schema::new(vec![
-            Field::new("warc_id", daft_core::prelude::DataType::Utf8),
-            Field::new("warc_type", daft_core::prelude::DataType::Utf8),
-            Field::new("warc_version", daft_core::prelude::DataType::Utf8),
-            Field::new("warc_date", daft_core::prelude::DataType::Timestamp(TimeUnit::Nanoseconds, Some("Etc/UTC".to_string()))),
-            Field::new("warc_target_uri", daft_core::prelude::DataType::Utf8),
-            Field::new("warc_content_type", daft_core::prelude::DataType::Utf8),
-            Field::new("warc_content_length", daft_core::prelude::DataType::Int64),
-            Field::new("warc_body", daft_core::prelude::DataType::Binary),
-        ])?);
-        full_schema
-    };
-    let (schema, projection_indices) = if let Some(include_columns) = &convert_options.include_columns {
-        let mut indices = Vec::new();
-        let filtered_fields: Vec<_> = schema
-            .fields
-            .iter()
-            .enumerate()
-            .filter(|(_, (name, _))| include_columns.contains(name))
-            .map(|(i, (_, field))| {
-                indices.push(i);
-                field.clone()
-            })
-            .collect();
-        (Arc::new(Schema::new(filtered_fields)?), Some(indices))
-    } else {
-        (schema, None)
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncReadExt;
+
+#[derive(Debug, Clone)]
+pub enum WarcType {
+    Warcinfo,
+    Response,
+    Resource,
+    Request,
+    Metadata,
+    Revisit,
+    Conversion,
+    Continuation,
+}
+
+impl WarcType {
+    fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "warcinfo" => Some(WarcType::Warcinfo),
+            "response" => Some(WarcType::Response),
+            "resource" => Some(WarcType::Resource),
+            "request" => Some(WarcType::Request),
+            "metadata" => Some(WarcType::Metadata),
+            "revisit" => Some(WarcType::Revisit),
+            "conversion" => Some(WarcType::Conversion),
+            "continuation" => Some(WarcType::Continuation),
+            _ => None,
+        }
+    }
+}
+
+struct WarcHeaderState {
+    content_length: Option<usize>,
+    record_id: Option<Uuid>,
+    warc_date: Option<DateTime<Utc>>,
+    warc_type: Option<WarcType>,
+}
+
+async fn stream_warc_local(uri: &str, io_client: Arc<IOClient>, io_stats: Option<IOStatsRef>, convert_options: WarcConvertOptions) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
+    match io_client
+        .single_url_get(uri.to_string(), None, io_stats)
+        .await?
+    {
+        GetResult::File(file) => {
+            println!("Opening local file: {}", file.path.display());
+            let buffer_size = 256 * 1024;
+            let file_reader = File::open(file.path).await?;
+            println!("File opened successfully");
+            (
+                Box::new(BufReader::with_capacity(buffer_size, file_reader)),
+                buffer_size,
+                64,
+            )
+        }
+        GetResult::Stream(stream, ..) => {
+            println!("Opening stream");
+            (
+                Box::new(StreamReader::new(stream)),
+                8 * 1024 * 1024,
+                64,
+            )
+        }
     };
 
-    let file = std::fs::File::open(&uri).unwrap();
-    let warc_reader = get_warc_reader(&uri, file);
-    let chunk_iter = WarcChunkIterator::new(warc_reader.iter_records());
-    let stream = futures::stream::iter(chunk_iter).map(move |records| {
-        create_record_batch(records, schema.clone(), projection_indices.as_ref())
-    });
+    let compression = CompressionCodec::from_uri(uri);
 
-    // TODO: apply limit.
-    Ok(Box::pin(futures::stream::unfold(rx, |mut rx| async move {
-        rx.recv()
-            .await
-            .map(|result| match result {
-                Ok(batch) => (Ok(batch), rx),
-                Err(e) => (Err(e.into()), rx)
-            })
-    })))
+    let mut reader: Box<dyn AsyncBufRead + Unpin + Send> = if let Some(compression) = compression {
+        let decoder = compression.to_decoder(reader);
+        Box::new(tokio::io::BufReader::with_capacity(buffer_size, decoder))
+    } else {
+        reader
+    };
+
+    let mut line_buf = Vec::with_capacity(4096);
+    let mut header_state = WarcHeaderState {
+        content_length: None,
+        record_id: None,
+        warc_date: None,
+        warc_type: None,
+    };
+    
+    let mut content_buffer = arrow2::array::new_null_array(arrow2::datatypes::DataType::Binary, 4096);
+    let mut buf = vec![];
+    let content = reader.read_to_end(&mut buf).await?;
+    println!("Content: {:?}", buf);
+
+    loop {
+        line_buf.clear();
+        match reader.read_until(b'\n', &mut line_buf).await {
+            Ok(0) => {
+                println!("EOF");
+
+                if let Some(len) = header_state.content_length {
+                    println!("Read content chunk of size: {}", len);
+                }
+                if let Some(id) = &header_state.record_id {
+                    println!("Record ID: {}", id);
+                }
+                if let Some(date) = &header_state.warc_date {
+                    println!("WARC Date: {}", date);
+                }
+                if let Some(wtype) = &header_state.warc_type {
+                    println!("WARC Type: {:?}", wtype);
+                }
+                break;
+            }
+            Ok(2) if line_buf[0] == b'\r' && line_buf[1] == b'\n' => {
+                // Found end of headers, now read the content
+                // let len = header_state.content_length.unwrap_or(0);
+                // let slice = buffer.as_slice_mut();
+                // // Read directly into the buffer
+                // reader.read_exact(slice).await?;
+                // // Mark the buffer as initialized since we've filled it
+                // unsafe { buffer.set_len(len); }
+                
+                // Reset header state
+                header_state.content_length = None;
+                header_state.record_id = None;
+                header_state.warc_date = None;
+                header_state.warc_type = None;
+            }
+            Ok(_) => {
+                // Warc headers are ASCII, so we can use from_utf8_lossy.
+                let line = String::from_utf8_lossy(&line_buf);
+                if line.starts_with("Content-Length:") {
+                    if let Some(len) = line["Content-Length:".len()..]
+                        .trim()
+                        .parse::<usize>()
+                        .ok() 
+                    {
+                        header_state.content_length = Some(len);
+                    }
+                } else if line.starts_with("WARC-Record-ID:") {
+                    // Parse the WARC Record ID (urn:uuid)
+                    let id = line["WARC-Record-ID:".len()..].trim();
+                    if id.starts_with('<') && id.ends_with('>') {
+                        let uuid_str = &id[10..id.len()-1];  // Skip <urn:uuid: and >
+                        if let Ok(uuid) = Uuid::parse_str(uuid_str) {
+                            header_state.record_id = Some(uuid);
+                        }
+                    }
+                } else if line.starts_with("WARC-Date:") {
+                    // Parse the WARC Date which is always in UTC.
+                    let date_str = line["WARC-Date:".len()..].trim();
+                    if let Ok(date) = DateTime::parse_from_rfc3339(date_str) {
+                        header_state.warc_date = Some(date.with_timezone(&Utc));
+                    }
+                } else if line.starts_with("WARC-Type:") {
+                    // Parse the WARC Type.
+                    let type_str = line["WARC-Type:".len()..].trim();
+                    header_state.warc_type = WarcType::from_str(type_str);
+                    // TODO(desmond): based on the spec, if the warc type is not one of the known types, we should ignore the record.
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading line: {}", e);
+                break;
+            }
+        }
+    }
+
+    // let read_stream = read_into_line_chunk_stream(reader, convert_options.limit, chunk_size);
+
+    todo!()
 }
 
 fn create_record_batch(
@@ -244,7 +350,7 @@ pub async fn stream_warc(uri: String, io_client: Arc<IOClient>, io_stats: IOStat
     let uri = uri.as_str();
     let (source_type, _) = parse_url(uri)?;
     if matches!(source_type, SourceType::File) {
-        stream_warc_local(uri, convert_options).await
+        stream_warc_local(uri, io_client, Some(io_stats), convert_options).await
     } else {
         todo!()
     }

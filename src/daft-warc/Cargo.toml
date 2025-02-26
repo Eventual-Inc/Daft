@@ -23,7 +23,8 @@ tokio = {workspace = true}
 tokio-stream = {workspace = true, features = ["io-util"]}
 tokio-util = {workspace = true}
 warc = "0.4.0"
-flate2 = "1.1.0"
+uuid = {version = "1.10.0", features = ["v4"]}
+
 [dev-dependencies]
 rstest = {workspace = true}
 

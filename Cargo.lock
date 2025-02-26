@@ -2688,7 +2688,6 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
- "flate2",
  "futures",
  "indexmap 2.7.0",
  "memchr",
@@ -2702,6 +2701,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "uuid 1.11.0",
  "warc",
 ]
 

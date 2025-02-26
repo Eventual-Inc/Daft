@@ -23,14 +23,22 @@ impl CompressionCodec {
     #[must_use]
     pub fn from_uri(uri: &str) -> Option<Self> {
         let url = Url::parse(uri);
-        let path = match &url {
-            Ok(url) => url.path(),
-            _ => uri,
+        println!("URL: {:?}", url);
+        let path = if uri.starts_with("file://") {
+            // Handle file URLs properly by stripping the scheme
+            &uri[7..]
+        } else {
+            match &url {
+                Ok(url) => url.path(),
+                _ => uri,
+            }
         };
+        println!("Path: {}", path);
         let extension = PathBuf::from(path)
             .extension()?
             .to_string_lossy()
             .to_string();
+        println!("Extension: {}", extension);
         Self::from_extension(extension.as_ref())
     }
     #[must_use]
