@@ -100,5 +100,10 @@ class AdaptivePhysicalPlanScheduler:
             num_rows=num_rows,
         )
 
+    def update_stats(
+        self, time_taken: float, size_bytes: int | None, num_rows: int | None, stage_id: int | None
+    ) -> None:
+        self._scheduler.update_stats(time_taken, size_bytes, num_rows, stage_id)
+
     def explain_analyze(self, explain_analyze_dir: str) -> None:
         self._scheduler.explain_analyze(explain_analyze_dir)

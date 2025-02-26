@@ -33,6 +33,7 @@ where
         let subgraph_options = SubgraphOptions {
             name,
             subgraph_id: stage_id,
+            metadata: Some(node.stats.as_ref().unwrap().to_string()),
         };
         let display = node.physical_plan.repr_mermaid(MermaidDisplayOptions {
             simple,
@@ -79,8 +80,16 @@ where
     }
 
     pub fn fmt(&mut self, node: &EmittedStage) -> fmt::Result {
-        if let Some(SubgraphOptions { name, subgraph_id }) = &self.options.subgraph_options {
+        if let Some(SubgraphOptions {
+            name, subgraph_id, ..
+        }) = &self.options.subgraph_options
+        {
             writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
+            if self.options.bottom_up {
+                writeln!(self.output, r#"direction BT"#)?;
+            } else {
+                writeln!(self.output, r#"direction TB"#)?;
+            }
             self.fmt_node(node)?;
             writeln!(self.output, "end")?;
         } else {

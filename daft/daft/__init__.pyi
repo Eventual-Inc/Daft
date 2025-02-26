@@ -1595,6 +1595,9 @@ class AdaptivePhysicalPlanScheduler:
         size_bytes: int,
         num_rows: int,
     ) -> None: ...
+    def update_stats(
+        self, time_taken: float, size_bytes: int | None, num_rows: int | None, stage_id: int | None
+    ) -> None: ...
     def explain_analyze(self, explain_analyze_dir: str) -> None: ...
 
 class LogicalPlanBuilder:

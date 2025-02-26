@@ -227,11 +227,13 @@ Project1 --> Limit0
             subgraph_options: Some(SubgraphOptions {
                 name: "Optimized Logical Plan".to_string(),
                 subgraph_id: "optimized".to_string(),
+                metadata: None,
             }),
         };
 
         let mermaid_repr = plan.repr_mermaid(opts);
         let expected = r#"subgraph optimized["Optimized Logical Plan"]
+direction TB
 optimizedSource0["PlaceHolder:
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]

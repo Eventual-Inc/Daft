@@ -1282,6 +1282,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
                 stage_id, plan_scheduler = adaptive_planner.next()
+                start_time = time.time()
                 # don't store partition sets in variable to avoid reference
                 result_uuid = self._start_plan(
                     plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
@@ -1290,18 +1291,34 @@ class RayRunner(Runner[ray.ObjectRef]):
                 results_iter = self._stream_plan(result_uuid)
                 # if stage_id is None that means this is the final stage
                 if stage_id is None:
-                    yield from results_iter
+                    num_rows_processed = 0
+                    bytes_processed = 0
+
+                    for result in results_iter:
+                        num_rows_processed += result.metadata().num_rows
+                        size_bytes = result.metadata().size_bytes
+                        if size_bytes is not None:
+                            bytes_processed += size_bytes
+                        yield result
+                    adaptive_planner.update_stats(
+                        time.time() - start_time, bytes_processed, num_rows_processed, stage_id
+                    )
                 else:
                     cache_entry = self._collect_into_cache(results_iter)
+                    adaptive_planner.update_stats(
+                        time.time() - start_time, cache_entry.size_bytes(), cache_entry.num_rows(), stage_id
+                    )
                     adaptive_planner.update(stage_id, cache_entry)
                     del cache_entry
+
             enable_explain_analyze = os.getenv("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE")
             ray_logs_location = ray_tracing.get_log_location()
-            if (
+            should_explain_analyze = (
                 ray_logs_location.exists()
                 and enable_explain_analyze is not None
                 and enable_explain_analyze in ["1", "true"]
-            ):
+            )
+            if should_explain_analyze:
                 explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
                 explain_analyze_dir.mkdir(exist_ok=True, parents=True)
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))

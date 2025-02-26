@@ -1,27 +1,30 @@
 use std::{
-    cmp::Ordering,
     collections::HashMap,
+    fmt::{self, Display},
     fs::File,
     io::Write,
     sync::{atomic::AtomicUsize, Arc},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::mermaid::MermaidDisplayOptions;
+use common_display::{mermaid::MermaidDisplayOptions, utils::bytes_to_human_readable};
 use common_error::DaftResult;
 use common_treenode::{
-    DynTreeNode, Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter, TreeNodeVisitor,
+    Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter, TreeNodeVisitor,
 };
 use daft_logical_plan::{
     ops::Source,
     optimization::OptimizerBuilder,
-    source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
+    source_info::{InMemoryInfo, SourceInfo},
     LogicalPlan, LogicalPlanRef,
 };
 use serde::{Deserialize, Serialize};
 
-use super::{display::StageDisplayMermaidVisitor, translate::translate_single_logical_node};
+use super::{
+    display::StageDisplayMermaidVisitor,
+    translate::{adaptively_translate_single_logical_node, translate_single_logical_node},
+};
 use crate::{
     ops::{InMemoryScan, PreviousStageScan},
     PhysicalPlan, PhysicalPlanRef,
@@ -41,8 +44,7 @@ impl TreeNodeVisitor for PhysicalPlanTranslator {
     }
 
     fn f_up(&mut self, node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
-        let (output, _) =
-            translate_single_logical_node(node, &mut self.physical_children, &self.cfg)?;
+        let output = translate_single_logical_node(node, &mut self.physical_children, &self.cfg)?;
         self.physical_children.push(output);
         Ok(TreeNodeRecursion::Continue)
     }
@@ -50,7 +52,6 @@ impl TreeNodeVisitor for PhysicalPlanTranslator {
 
 pub(super) struct LogicalStageTranslator {
     pub physical_children: Vec<Arc<PhysicalPlan>>,
-    pub root: Arc<LogicalPlan>,
     pub cfg: Arc<DaftExecutionConfig>,
 }
 
@@ -62,122 +63,20 @@ impl TreeNodeRewriter for LogicalStageTranslator {
     }
 
     fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
-        let (translated_pplan, is_logical_boundary) =
-            translate_single_logical_node(&node, &mut self.physical_children, &self.cfg)?;
+        let (translated_pplan, boundary_placeholder) = adaptively_translate_single_logical_node(
+            &node,
+            &mut self.physical_children,
+            &self.cfg,
+        )?;
 
-        let is_root_node = Arc::ptr_eq(&node, &self.root);
-        if is_logical_boundary && !is_root_node {
-            log::info!(
-                "Detected Query Stage Boundary at {}",
-                translated_pplan.name()
-            );
-            match &translated_pplan.arc_children()[..] {
-                [] | [_] => {
-                    self.physical_children.push(translated_pplan.clone());
-
-                    let ph_info =
-                        PlaceHolderInfo::new(node.schema(), translated_pplan.clustering_spec());
-
-                    let new_scan = LogicalPlan::Source(Source::new(
-                        node.schema(),
-                        SourceInfo::PlaceHolder(ph_info).into(),
-                    ));
-                    Ok(Transformed::new(
-                        new_scan.arced(),
-                        true,
-                        TreeNodeRecursion::Stop,
-                    ))
-                }
-                [left, right] => {
-                    enum RunNext {
-                        Left,
-                        Right,
-                    }
-
-                    let run_next: RunNext = match (left.as_ref(), right.as_ref()) {
-                        (PhysicalPlan::InMemoryScan(..), _) => {
-                            // we know the left, so let's run the right
-                            RunNext::Right
-                        }
-                        (_, PhysicalPlan::InMemoryScan(..)) => {
-                            // we know the right, so let's run the left
-                            RunNext::Left
-                        }
-                        (_, _) => {
-                            let left_num_in_memory_children = num_in_memory_children(left.as_ref());
-                            let right_num_in_memory_children =
-                                num_in_memory_children(right.as_ref());
-
-                            // Bias towards the side that has more materialized children
-                            match left_num_in_memory_children.cmp(&right_num_in_memory_children) {
-                                Ordering::Greater => RunNext::Left,
-                                Ordering::Less => RunNext::Right,
-                                Ordering::Equal => {
-                                    // Both sides are not in memory, so we should rank which side to run
-                                    let left_stats = left.approximate_stats();
-                                    let right_stats = right.approximate_stats();
-
-                                    if left_stats.size_bytes <= right_stats.size_bytes {
-                                        RunNext::Left
-                                    } else {
-                                        RunNext::Right
-                                    }
-                                }
-                            }
-                        }
-                    };
-
-                    let logical_children = node.arc_children();
-                    let logical_left = logical_children.first().expect(
-                        "we expect the logical node of a binary op to also have 2 children",
-                    );
-                    let logical_right = logical_children.get(1).expect(
-                        "we expect the logical node of a binary op to also have 2 children",
-                    );
-
-                    match run_next {
-                        RunNext::Left => {
-                            self.physical_children.push(left.clone());
-                            let ph_info =
-                                PlaceHolderInfo::new(logical_left.schema(), left.clustering_spec());
-
-                            let new_left_scan = LogicalPlan::Source(Source::new(
-                                logical_left.schema(),
-                                SourceInfo::PlaceHolder(ph_info).into(),
-                            ));
-                            let new_bin_node = node
-                                .with_new_children(&[new_left_scan.arced(), logical_right.clone()]);
-                            Ok(Transformed::new(
-                                new_bin_node.arced(),
-                                true,
-                                TreeNodeRecursion::Stop,
-                            ))
-                        }
-                        RunNext::Right => {
-                            self.physical_children.push(right.clone());
-                            let ph_info = PlaceHolderInfo::new(
-                                logical_right.schema(),
-                                right.clustering_spec(),
-                            );
-
-                            let new_right_scan = LogicalPlan::Source(Source::new(
-                                logical_right.schema(),
-                                SourceInfo::PlaceHolder(ph_info).into(),
-                            ));
-                            let new_bin_node = node
-                                .with_new_children(&[logical_left.clone(), new_right_scan.arced()]);
-                            Ok(Transformed::new(
-                                new_bin_node.arced(),
-                                true,
-                                TreeNodeRecursion::Stop,
-                            ))
-                        }
-                    }
-                }
-                _ => panic!("We shouldn't have any nodes that have more than 3 children"),
-            }
+        self.physical_children.push(translated_pplan);
+        if let Some(boundary_placeholder) = boundary_placeholder {
+            Ok(Transformed::new(
+                boundary_placeholder.arced(),
+                true,
+                TreeNodeRecursion::Stop,
+            ))
         } else {
-            self.physical_children.push(translated_pplan);
             Ok(Transformed::no(node))
         }
     }
@@ -347,7 +246,7 @@ fn num_in_memory_children(plan: &PhysicalPlan) -> usize {
     if matches!(plan, PhysicalPlan::InMemoryScan(..)) {
         1
     } else {
-        plan.arc_children()
+        plan.children()
             .iter()
             .map(|c| num_in_memory_children(c))
             .sum()
@@ -403,10 +302,36 @@ pub struct MaterializedResults {
     pub in_memory_info: InMemoryInfo,
 }
 
+pub struct StageStats {
+    pub time_taken: Duration,
+    pub size_bytes: Option<usize>,
+    pub num_rows: Option<usize>,
+}
+
+impl Display for StageStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use num_format::{Locale, ToFormattedString};
+        write!(f, "Time taken: {:.2}s", self.time_taken.as_secs_f64())?;
+        if let Some(size) = self.size_bytes {
+            write!(f, "\nBytes processed: {}", bytes_to_human_readable(size))?;
+        }
+        if let Some(rows) = self.num_rows {
+            write!(
+                f,
+                "\nRows processed: {}",
+                rows.to_formatted_string(&Locale::en)
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
 pub struct EmittedStage {
     pub stage_id: Option<usize>,
     pub physical_plan: PhysicalPlanRef,
     pub input_stages: Vec<Self>,
+    pub stats: Option<StageStats>,
 }
 
 impl EmittedStage {
@@ -426,6 +351,7 @@ impl EmittedStage {
             stage_id: query_stage_output.stage_id(),
             physical_plan,
             input_stages,
+            stats: None,
         })
     }
 }
@@ -497,6 +423,23 @@ impl StageCache {
         Ok(())
     }
 
+    pub fn set_stats(&mut self, stage_id: Option<usize>, stats: StageStats) -> DaftResult<()> {
+        match self {
+            Self::Intermediate {
+                intermediate_stages,
+            } => {
+                intermediate_stages
+                    .get_mut(&stage_id.unwrap())
+                    .unwrap()
+                    .stats = Some(stats);
+            }
+            Self::Final { final_stage } => {
+                final_stage.stats = Some(stats);
+            }
+        }
+        Ok(())
+    }
+
     pub fn final_stage(&self) -> Option<&EmittedStage> {
         match self {
             Self::Final { final_stage } => Some(final_stage),
@@ -563,7 +506,6 @@ impl AdaptivePlanner {
                 let logical_plan = self.remaining_logical_plan.take().unwrap();
                 let mut logical_rewriter = LogicalStageTranslator {
                     physical_children: vec![],
-                    root: logical_plan.clone(),
                     cfg: self.cfg.clone(),
                 };
                 let logical_output = logical_plan.rewrite(&mut logical_rewriter)?;
@@ -683,17 +625,23 @@ impl AdaptivePlanner {
         Ok(())
     }
 
-    pub fn explain_analyze(&self, explain_analyze_dir: &str) -> DaftResult<()> {
+    pub fn update_stats(&mut self, stats: StageStats, stage_id: Option<usize>) -> DaftResult<()> {
+        self.stage_cache.set_stats(stage_id, stats)?;
+        Ok(())
+    }
+
+    pub fn explain_analyze(&mut self, explain_analyze_dir: &str) -> DaftResult<()> {
         let curr_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_millis();
         let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-        let mut file = File::create(std::path::Path::new(explain_analyze_dir).join(file_name))?;
+        let path = std::path::Path::new(explain_analyze_dir).join(file_name);
+        let mut file = File::create(path.clone())?;
         let mut s = String::new();
         let options = MermaidDisplayOptions {
             simple: false,
-            bottom_up: false,
+            bottom_up: true,
             subgraph_options: None,
         };
         let mut visitor = StageDisplayMermaidVisitor::new(&mut s, options);
@@ -704,6 +652,7 @@ impl AdaptivePlanner {
         );
         writeln!(file, "```mermaid\n{}\n```", s)?;
 
+        println!("Exported explain analyze to {}", path.display());
         Ok(())
     }
 }
