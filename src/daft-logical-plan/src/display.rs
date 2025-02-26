@@ -233,6 +233,7 @@ Project1 --> Limit0
 
         let mermaid_repr = plan.repr_mermaid(opts);
         let expected = r#"subgraph optimized["Optimized Logical Plan"]
+direction TB
 optimizedSource0["PlaceHolder:
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
