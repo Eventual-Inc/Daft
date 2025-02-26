@@ -1588,13 +1588,14 @@ class AdaptivePhysicalPlanScheduler:
     # Todo use in memory info here instead
     def update(
         self,
-        source_id: int,
+        stage_id: int,
         partition_key: str,
         cache_entry: PartitionCacheEntry,
         num_partitions: int,
         size_bytes: int,
         num_rows: int,
     ) -> None: ...
+    def explain_analyze(self, explain_analyze_dir: str) -> None: ...
 
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.

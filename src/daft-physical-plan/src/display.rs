@@ -10,6 +10,7 @@ impl TreeDisplay for PhysicalPlan {
             Self::InMemoryScan(scan) => scan.display_as(level),
             Self::TabularScan(scan) => scan.display_as(level),
             Self::EmptyScan(scan) => scan.display_as(level),
+            Self::PreviousStageScan(scan) => scan.display_as(level),
             Self::Project(p) => p.display_as(level),
             Self::ActorPoolProject(p) => p.display_as(level),
             Self::Filter(f) => f.display_as(level),

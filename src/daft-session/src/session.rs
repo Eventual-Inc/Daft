@@ -271,7 +271,6 @@ mod tests {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
