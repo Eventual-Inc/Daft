@@ -33,10 +33,7 @@ where
         let subgraph_options = SubgraphOptions {
             name,
             subgraph_id: stage_id,
-            metadata: Some(format!(
-                "Time Taken: {:.2}s",
-                node.time_taken.unwrap_or(0.0)
-            )),
+            metadata: Some(node.stats.as_ref().unwrap().to_string()),
         };
         let display = node.physical_plan.repr_mermaid(MermaidDisplayOptions {
             simple,

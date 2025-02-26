@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use common_daft_config::DaftExecutionConfig;
 use common_partitioning::PartitionCacheEntry;
 use daft_core::prelude::Schema;
 use daft_logical_plan::{InMemoryInfo, LogicalPlan};
-use daft_physical_plan::{AdaptivePlanner, MaterializedResults};
+use daft_physical_plan::{AdaptivePlanner, MaterializedResults, StageStats};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig, daft_logical_plan::PyLogicalPlanBuilder,
@@ -62,7 +62,6 @@ impl AdaptivePhysicalPlanScheduler {
         size_bytes: usize,
         num_rows: usize,
         py: Python,
-        time_taken: f64,
     ) -> PyResult<()> {
         py.allow_threads(|| {
             let in_memory_info = InMemoryInfo::new(
@@ -76,24 +75,33 @@ impl AdaptivePhysicalPlanScheduler {
                 Some(stage_id),
             );
 
-            self.planner.update(
-                MaterializedResults {
-                    stage_id,
-                    in_memory_info,
-                },
-                time_taken,
-            )?;
+            self.planner.update(MaterializedResults {
+                stage_id,
+                in_memory_info,
+            })?;
             Ok(())
         })
     }
 
-    pub fn explain_analyze(
+    #[pyo3(signature = (time_taken, size_bytes, num_rows, stage_id=None))]
+    pub fn update_stats(
         &mut self,
-        explain_analyze_dir: &str,
-        last_stage_time_taken: f64,
+        time_taken: f64,
+        size_bytes: Option<usize>,
+        num_rows: Option<usize>,
+        stage_id: Option<usize>,
     ) -> PyResult<()> {
-        self.planner
-            .explain_analyze(explain_analyze_dir, last_stage_time_taken)?;
+        let stats = StageStats {
+            time_taken: Duration::from_secs_f64(time_taken),
+            size_bytes,
+            num_rows,
+        };
+        self.planner.update_stats(stats, stage_id)?;
+        Ok(())
+    }
+
+    pub fn explain_analyze(&mut self, explain_analyze_dir: &str) -> PyResult<()> {
+        self.planner.explain_analyze(explain_analyze_dir)?;
         Ok(())
     }
 }

@@ -1289,13 +1289,27 @@ class RayRunner(Runner[ray.ObjectRef]):
                 )
                 del plan_scheduler
                 results_iter = self._stream_plan(result_uuid)
+
                 # if stage_id is None that means this is the final stage
                 if stage_id is None:
-                    yield from results_iter
+                    num_rows_processed = 0
+                    bytes_processed = 0
+
+                    for result in results_iter:
+                        num_rows_processed += result.metadata().num_rows
+                        size_bytes = result.metadata().size_bytes
+                        if size_bytes is not None:
+                            bytes_processed += size_bytes
+                        yield result
+                    adaptive_planner.update_stats(
+                        time.time() - start_time, bytes_processed, num_rows_processed, stage_id
+                    )
                 else:
                     cache_entry = self._collect_into_cache(results_iter)
-                    time_taken = time.time() - start_time
-                    adaptive_planner.update(stage_id, cache_entry, time_taken)
+                    adaptive_planner.update_stats(
+                        time.time() - start_time, cache_entry.size_bytes(), cache_entry.num_rows(), stage_id
+                    )
+                    adaptive_planner.update(stage_id, cache_entry)
                     del cache_entry
 
             enable_explain_analyze = os.getenv("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE")
@@ -1306,10 +1320,9 @@ class RayRunner(Runner[ray.ObjectRef]):
                 and enable_explain_analyze in ["1", "true"]
             )
             if should_explain_analyze:
-                last_stage_time_taken = time.time() - start_time
                 explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
                 explain_analyze_dir.mkdir(exist_ok=True, parents=True)
-                adaptive_planner.explain_analyze(str(explain_analyze_dir), last_stage_time_taken)
+                adaptive_planner.explain_analyze(str(explain_analyze_dir))
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.

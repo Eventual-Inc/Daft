@@ -1592,9 +1592,11 @@ class AdaptivePhysicalPlanScheduler:
         num_partitions: int,
         size_bytes: int,
         num_rows: int,
-        time_taken: float,
     ) -> None: ...
-    def explain_analyze(self, explain_analyze_dir: str, last_stage_time_taken: float) -> None: ...
+    def update_stats(
+        self, time_taken: float, size_bytes: int | None, num_rows: int | None, stage_id: int | None
+    ) -> None: ...
+    def explain_analyze(self, explain_analyze_dir: str) -> None: ...
 
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.

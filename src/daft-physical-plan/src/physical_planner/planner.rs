@@ -1,13 +1,14 @@
 use std::{
     collections::HashMap,
+    fmt::{self, Display},
     fs::File,
     io::Write,
     sync::{atomic::AtomicUsize, Arc},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::mermaid::MermaidDisplayOptions;
+use common_display::{mermaid::MermaidDisplayOptions, utils::bytes_to_human_readable};
 use common_error::DaftResult;
 use common_treenode::{
     Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter, TreeNodeVisitor,
@@ -15,7 +16,6 @@ use common_treenode::{
 use daft_logical_plan::{
     ops::Source,
     optimization::OptimizerBuilder,
-    partitioning::ClusteringSpecRef,
     source_info::{InMemoryInfo, SourceInfo},
     LogicalPlan, LogicalPlanRef,
 };
@@ -84,7 +84,6 @@ impl TreeNodeRewriter for LogicalStageTranslator {
 
 struct ReplaceLogicalPlaceholderWithMaterializedResults {
     mat_results: Option<MaterializedResults>,
-    clustering_spec: Option<ClusteringSpecRef>,
 }
 
 impl TreeNodeRewriter for ReplaceLogicalPlaceholderWithMaterializedResults {
@@ -105,7 +104,7 @@ impl TreeNodeRewriter for ReplaceLogicalPlaceholderWithMaterializedResults {
                     assert!(self.mat_results.is_some());
                     let mut mat_results = self.mat_results.take().unwrap();
                     mat_results.in_memory_info.source_schema = phi.source_schema.clone();
-                    mat_results.in_memory_info.clustering_spec = self.clustering_spec.take();
+                    mat_results.in_memory_info.clustering_spec = Some(phi.clustering_spec.clone());
                     let new_source_node = LogicalPlan::Source(Source::new(
                         mat_results.in_memory_info.source_schema.clone(),
                         SourceInfo::InMemory(mat_results.in_memory_info).into(),
@@ -282,11 +281,37 @@ pub struct MaterializedResults {
     pub in_memory_info: InMemoryInfo,
 }
 
+pub struct StageStats {
+    pub time_taken: Duration,
+    pub size_bytes: Option<usize>,
+    pub num_rows: Option<usize>,
+}
+
+impl Display for StageStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use num_format::{Locale, ToFormattedString};
+        // Always display time taken
+        write!(f, "Time taken: {:.2}s", self.time_taken.as_secs_f64())?;
+        if let Some(size) = self.size_bytes {
+            write!(f, "\nBytes processed: {}", bytes_to_human_readable(size))?;
+        }
+        if let Some(rows) = self.num_rows {
+            write!(
+                f,
+                "\nRows processed: {}",
+                rows.to_formatted_string(&Locale::en)
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
 pub struct EmittedStage {
     pub stage_id: Option<usize>,
     pub physical_plan: PhysicalPlanRef,
     pub input_stages: Vec<Self>,
-    pub time_taken: Option<f64>,
+    pub stats: Option<StageStats>,
 }
 
 impl EmittedStage {
@@ -301,7 +326,7 @@ impl EmittedStage {
             stage_id: query_stage_output.stage_id(),
             physical_plan,
             input_stages,
-            time_taken: None,
+            stats: None,
         })
     }
 }
@@ -373,7 +398,7 @@ impl StageCache {
         Ok(())
     }
 
-    pub fn set_time_taken(&mut self, stage_id: Option<usize>, time_taken: f64) -> DaftResult<()> {
+    pub fn set_stats(&mut self, stage_id: Option<usize>, stats: StageStats) -> DaftResult<()> {
         match self {
             Self::Intermediate {
                 intermediate_stages,
@@ -381,10 +406,10 @@ impl StageCache {
                 intermediate_stages
                     .get_mut(&stage_id.unwrap())
                     .unwrap()
-                    .time_taken = Some(time_taken);
+                    .stats = Some(stats);
             }
             Self::Final { final_stage } => {
-                final_stage.time_taken = Some(time_taken);
+                final_stage.stats = Some(stats);
             }
         }
         Ok(())
@@ -402,7 +427,6 @@ pub struct AdaptivePlanner {
     remaining_logical_plan: Option<LogicalPlanRef>,
     remaining_physical_plan: Option<PhysicalPlanRef>,
     last_stage_id: usize,
-    last_stage_clustering_spec: Option<ClusteringSpecRef>,
     stage_cache: StageCache,
     cfg: Arc<DaftExecutionConfig>,
     status: AdaptivePlannerStatus,
@@ -414,7 +438,6 @@ impl AdaptivePlanner {
             remaining_logical_plan: Some(logical_plan),
             remaining_physical_plan: None,
             last_stage_id: 0,
-            last_stage_clustering_spec: None,
             stage_cache: StageCache::new(),
             cfg,
             status: AdaptivePlannerStatus::Ready,
@@ -494,7 +517,6 @@ impl AdaptivePlanner {
                 }
             };
 
-        self.last_stage_clustering_spec = Some(next_stage.physical_plan().clustering_spec());
         self.stage_cache.insert_stage(&next_stage)?;
         match &next_stage {
             QueryStageOutput::Final { physical_plan } => {
@@ -516,11 +538,9 @@ impl AdaptivePlanner {
         self.status == AdaptivePlannerStatus::Done
     }
 
-    pub fn update(&mut self, mat_results: MaterializedResults, time_taken: f64) -> DaftResult<()> {
+    pub fn update(&mut self, mat_results: MaterializedResults) -> DaftResult<()> {
         assert_eq!(self.status, AdaptivePlannerStatus::WaitingForStats);
         assert!(mat_results.stage_id == self.last_stage_id);
-        self.stage_cache
-            .set_time_taken(Some(self.last_stage_id), time_taken)?;
         // If we have a remaining physical plan, we need to replace the physical placeholder with the materialized results
         if let Some(remaining_physical_plan) = self.remaining_physical_plan.take() {
             let mut rewriter = ReplacePhysicalPlaceholderWithMaterializedResults {
@@ -536,7 +556,6 @@ impl AdaptivePlanner {
         else {
             let mut rewriter = ReplaceLogicalPlaceholderWithMaterializedResults {
                 mat_results: Some(mat_results),
-                clustering_spec: self.last_stage_clustering_spec.take(),
             };
             let logical_plan = self.remaining_logical_plan.take().unwrap();
             let result = logical_plan.rewrite(&mut rewriter)?;
@@ -574,13 +593,12 @@ impl AdaptivePlanner {
         Ok(())
     }
 
-    pub fn explain_analyze(
-        &mut self,
-        explain_analyze_dir: &str,
-        last_stage_time_taken: f64,
-    ) -> DaftResult<()> {
-        self.stage_cache
-            .set_time_taken(None, last_stage_time_taken)?;
+    pub fn update_stats(&mut self, stats: StageStats, stage_id: Option<usize>) -> DaftResult<()> {
+        self.stage_cache.set_stats(stage_id, stats)?;
+        Ok(())
+    }
+
+    pub fn explain_analyze(&mut self, explain_analyze_dir: &str) -> DaftResult<()> {
         let curr_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")

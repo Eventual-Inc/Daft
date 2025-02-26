@@ -70,10 +70,14 @@ impl Hash for InMemoryInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PlaceHolderInfo {
     pub source_schema: SchemaRef,
+    pub clustering_spec: ClusteringSpecRef,
 }
 
 impl PlaceHolderInfo {
-    pub fn new(source_schema: SchemaRef) -> Self {
-        Self { source_schema }
+    pub fn new(source_schema: SchemaRef, clustering_spec: ClusteringSpecRef) -> Self {
+        Self {
+            source_schema,
+            clustering_spec,
+        }
     }
 }

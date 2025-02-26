@@ -7,7 +7,7 @@ use daft_logical_plan::LogicalPlan;
 mod planner;
 
 use planner::PhysicalPlanTranslator;
-pub use planner::{AdaptivePlanner, MaterializedResults, QueryStageOutput};
+pub use planner::{AdaptivePlanner, MaterializedResults, QueryStageOutput, StageStats};
 
 use crate::{optimization::optimizer::PhysicalOptimizer, PhysicalPlanRef};
 mod translate;

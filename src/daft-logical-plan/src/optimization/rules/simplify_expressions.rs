@@ -53,7 +53,7 @@ mod test {
         optimization::rules::OptimizerRule,
         source_info::PlaceHolderInfo,
         stats::StatsState,
-        LogicalPlan, LogicalPlanBuilder, SourceInfo,
+        ClusteringSpec, LogicalPlan, LogicalPlanBuilder, SourceInfo,
     };
 
     fn make_source() -> LogicalPlanBuilder {
@@ -69,6 +69,7 @@ mod test {
                 output_schema: schema.clone(),
                 source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                     source_schema: schema,
+                    clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 })),
                 stats_state: StatsState::NotMaterialized,
             })
