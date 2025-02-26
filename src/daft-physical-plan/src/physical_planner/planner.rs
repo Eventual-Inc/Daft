@@ -105,6 +105,8 @@ impl TreeNodeRewriter for ReplaceLogicalPlaceholderWithMaterializedResults {
                     let mut mat_results = self.mat_results.take().unwrap();
                     // use the clustering spec from the original plan
                     mat_results.in_memory_info.clustering_spec = Some(phi.clustering_spec.clone());
+                    mat_results.in_memory_info.source_schema = phi.source_schema.clone();
+
                     let new_source_node = LogicalPlan::Source(Source::new(
                         mat_results.in_memory_info.source_schema.clone(),
                         SourceInfo::InMemory(mat_results.in_memory_info).into(),
@@ -309,7 +311,6 @@ pub struct StageStats {
 impl Display for StageStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use num_format::{Locale, ToFormattedString};
-        // Always display time taken
         write!(f, "Time taken: {:.2}s", self.time_taken.as_secs_f64())?;
         if let Some(size) = self.size_bytes {
             write!(f, "\nBytes processed: {}", bytes_to_human_readable(size))?;
@@ -571,6 +572,7 @@ impl AdaptivePlanner {
     pub fn update(&mut self, mat_results: MaterializedResults) -> DaftResult<()> {
         assert_eq!(self.status, AdaptivePlannerStatus::WaitingForStats);
         assert!(mat_results.stage_id == self.last_stage_id);
+
         // If we have a remaining physical plan, we need to replace the physical previous stage scan with the materialized results
         if let Some(remaining_physical_plan) = self.remaining_physical_plan.take() {
             let mut rewriter = ReplacePreviousStageScanWithInMemoryScan {
@@ -590,7 +592,6 @@ impl AdaptivePlanner {
             let logical_plan = self.remaining_logical_plan.take().unwrap();
             let result = logical_plan.rewrite(&mut rewriter)?;
 
-            assert!(result.transformed);
             assert!(result.transformed);
 
             let optimizer = OptimizerBuilder::new().enrich_with_stats().build();
@@ -640,7 +641,7 @@ impl AdaptivePlanner {
         let mut s = String::new();
         let options = MermaidDisplayOptions {
             simple: false,
-            bottom_up: false,
+            bottom_up: true,
             subgraph_options: None,
         };
         let mut visitor = StageDisplayMermaidVisitor::new(&mut s, options);

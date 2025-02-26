@@ -155,7 +155,11 @@ where
         }) = &self.subgraph_options
         {
             writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
-
+            if self.bottom_up {
+                writeln!(self.output, r#"direction BT"#)?;
+            } else {
+                writeln!(self.output, r#"direction TB"#)?;
+            }
             // add metadata to the subgraph
             let metadata_id = if let Some(metadata) = metadata {
                 let id = format!("{subgraph_id}_metadata");
@@ -169,8 +173,13 @@ where
 
             // stack metadata on top of first node with an invisible edge
             if let Some(metadata_id) = metadata_id {
-                let first_node_id = self.nodes.values().last().unwrap();
-                writeln!(self.output, r#"{metadata_id} ~~~ {first_node_id}"#)?;
+                if self.bottom_up {
+                    let first_node_id = self.nodes.values().next().unwrap();
+                    writeln!(self.output, r#"{first_node_id} ~~~ {metadata_id}"#)?;
+                } else {
+                    let last_node_id = self.nodes.values().last().unwrap();
+                    writeln!(self.output, r#"{metadata_id} ~~~ {last_node_id}"#)?;
+                };
             }
 
             writeln!(self.output, "end")?;

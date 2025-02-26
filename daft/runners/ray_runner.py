@@ -1289,7 +1289,6 @@ class RayRunner(Runner[ray.ObjectRef]):
                 )
                 del plan_scheduler
                 results_iter = self._stream_plan(result_uuid)
-
                 # if stage_id is None that means this is the final stage
                 if stage_id is None:
                     num_rows_processed = 0

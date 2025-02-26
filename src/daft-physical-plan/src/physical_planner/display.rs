@@ -85,6 +85,11 @@ where
         }) = &self.options.subgraph_options
         {
             writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
+            if self.options.bottom_up {
+                writeln!(self.output, r#"direction BT"#)?;
+            } else {
+                writeln!(self.output, r#"direction TB"#)?;
+            }
             self.fmt_node(node)?;
             writeln!(self.output, "end")?;
         } else {
