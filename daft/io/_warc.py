@@ -55,14 +55,11 @@ def read_warc(
     storage_config = StorageConfig(multithreaded_io, io_config)
 
     schema = {
-        "warc_id": DataType.string(),
+        "warc_record_id": DataType.string(),
         "warc_type": DataType.string(),
-        "warc_version": DataType.string(),
         "warc_date": DataType.timestamp(TimeUnit.ns(), timezone="Etc/UTC"),
-        "warc_target_uri": DataType.string(),
-        "warc_content_type": DataType.string(),
         "warc_content_length": DataType.int64(),
-        "warc_body": DataType.binary(),
+        "warc_content": DataType.binary(),
     }
 
 
