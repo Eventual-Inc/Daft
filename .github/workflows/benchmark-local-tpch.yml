@@ -26,7 +26,7 @@ jobs:
   benchmark:
     needs: build
     if: ${{ !failure() && !cancelled() }}
-    runs-on: [self-hosted, linux, arm, benchmark-local-tpch]
+    runs-on: [self-hosted, linux, arm64, benchmark-local-tpch]
     permissions:
       id-token: write
       contents: read
