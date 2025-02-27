@@ -461,7 +461,7 @@ async fn stream_scan_task(
                 schema: Some(scan_task.schema.clone()),
                 predicate: scan_task.pushdowns.filters.clone(),
             };
-            daft_warc::stream_warc(url.to_string(), io_client, io_stats, convert_options).await?
+            daft_warc::stream_warc(url, io_client, Some(io_stats), convert_options).await?
         }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {

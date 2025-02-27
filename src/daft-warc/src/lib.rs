@@ -290,7 +290,7 @@ impl WarcRecordBatchIterator {
     }
 }
 
-async fn stream_warc_single(
+pub async fn stream_warc(
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -396,14 +396,4 @@ fn create_record_batch(
     }
 
     RecordBatch::new_with_size(schema, series_vec, num_records)
-}
-
-pub async fn stream_warc(
-    uri: String,
-    io_client: Arc<IOClient>,
-    io_stats: IOStatsRef,
-    convert_options: WarcConvertOptions,
-) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let uri = uri.as_str();
-    stream_warc_single(uri, io_client, Some(io_stats), convert_options).await
 }
