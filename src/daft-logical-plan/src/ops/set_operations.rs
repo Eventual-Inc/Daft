@@ -392,8 +392,8 @@ impl Union {
         match self.quantifier {
             SetQuantifier::Distinct => res.push("Union:".to_string()),
             SetQuantifier::All => res.push("Union All:".to_string()),
-            SetQuantifier::AllByName => res.push("Union By Name:".to_string()),
-            SetQuantifier::DistinctByName => res.push("Union By Name Distinct:".to_string()),
+            SetQuantifier::AllByName => res.push("Union All By Name:".to_string()),
+            SetQuantifier::DistinctByName => res.push("Union By Name:".to_string()),
         }
         res
     }
