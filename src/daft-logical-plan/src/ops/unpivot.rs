@@ -14,6 +14,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Unpivot {
+    pub plan_id: Option<usize>,
     pub input: Arc<LogicalPlan>,
     pub ids: Vec<ExprRef>,
     pub values: Vec<ExprRef>,
@@ -33,6 +34,7 @@ impl Unpivot {
         output_schema: SchemaRef,
     ) -> Self {
         Self {
+            plan_id: None,
             input,
             ids,
             values,
@@ -41,6 +43,11 @@ impl Unpivot {
             output_schema,
             stats_state: StatsState::NotMaterialized,
         }
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     // Similar to new, except that `try_new` is not given the output schema and instead extracts it.
@@ -76,6 +83,7 @@ impl Unpivot {
         let output_schema = Schema::new(output_fields)?.into();
 
         Ok(Self {
+            plan_id: None,
             input,
             ids,
             values,

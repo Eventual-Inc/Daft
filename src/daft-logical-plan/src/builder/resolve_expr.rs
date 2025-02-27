@@ -49,6 +49,17 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                             },
                         }
                     }
+                    PlanRef::Id(id) => {
+                        match (&plan.clone().get_schema_for_id(*id)?, plan_schema) {
+                            (None, None) => {
+                                return Err(DaftError::ValueError(format!("Plan id {id} in unresolved column is not in current scope, must have schema specified.")));
+                            }
+                            (Some(schema), _) | (None, Some(schema)) => {
+                                set_wildcard_expansion(&mut wildcard_expansion, &expr, schema.fields.keys().cloned())?;
+                            },
+                        }
+
+                    }
                     PlanRef::Unqualified => set_wildcard_expansion(&mut wildcard_expansion, &expr, plan.schema().fields.keys().cloned())?,
                 }
             }
@@ -126,6 +137,18 @@ fn resolve_unresolved_columns(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult
                         Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(schema.get_field(name)?.clone()))))))
                     } else {
                         Err(DaftError::FieldNotFound(format!("Column {alias}.{name} is an outer column but does not have an associated schema.")))
+                    }
+                }
+                PlanRef::Id(id) => {
+                    if let Some(schema) = plan.clone().get_schema_for_id(*id)? {
+                        // make sure column exists in schema
+                        schema.get_field(name)?;
+
+                        Ok(Transformed::yes(resolved_col(name.clone())))
+                    } else if let Some(schema) = plan_schema {
+                        Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(schema.get_field(name)?.clone()))))))
+                    } else {
+                        Err(DaftError::FieldNotFound(format!("Column {id}.{name} is an outer column but does not have an associated schema.")))
                     }
                 }
                 PlanRef::Unqualified => {

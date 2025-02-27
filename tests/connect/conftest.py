@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from daft.pyspark import SparkSession
+
 
 @pytest.fixture(params=["local_spark", "ray_spark"], scope="session")
 def spark_session(request):
@@ -10,30 +12,23 @@ def spark_session(request):
 
 @pytest.fixture(scope="session")
 def local_spark():
-    """Fixture to create and clean up a Spark session.
-
-    This fixture is available to all test files and creates a single
-    Spark session for the entire test suite run.
-    """
-    from daft.pyspark import SparkSession
-
-    # Initialize Spark Connect session
     session = SparkSession.builder.appName("DaftConfigTest").local().getOrCreate()
-
     yield session
+    session.stop()
 
 
 @pytest.fixture(scope="session")
 def ray_spark():
-    """Fixture to create and clean up a Spark session.
-
-    This fixture is available to all test files and creates a single
-    Spark session for the entire test suite run.
-    """
-    from daft.pyspark import SparkSession
-
-    # Initialize Spark Connect session
-
     session = SparkSession.builder.appName("DaftConfigTest").remote("ray://localhost:10001").getOrCreate()
-
     yield session
+    session.stop()
+
+
+@pytest.fixture(scope="function")
+def make_spark_df(spark_session):
+    def make_df(data):
+        fields = [name for name in data]
+        rows = list(zip(*[data[name] for name in fields]))
+        return spark_session.createDataFrame(rows, fields)
+
+    yield make_df

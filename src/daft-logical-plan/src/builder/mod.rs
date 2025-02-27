@@ -45,7 +45,7 @@ use crate::{
 ///
 /// This builder holds the current root (sink) of the logical plan, and the building methods return
 /// a brand new builder holding a new plan; i.e., this is an immutable builder.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
@@ -121,9 +121,14 @@ impl LogicalPlanBuilder {
 
     pub fn alias(&self, id: impl Into<Arc<str>>) -> Self {
         self.with_new_plan(LogicalPlan::SubqueryAlias(SubqueryAlias {
+            plan_id: None,
             input: self.plan.clone(),
             name: id.into(),
         }))
+    }
+
+    pub fn with_plan_id(&self, id: usize) -> Self {
+        self.with_new_plan(self.plan.clone().with_plan_id(id))
     }
 
     pub fn in_memory_scan(

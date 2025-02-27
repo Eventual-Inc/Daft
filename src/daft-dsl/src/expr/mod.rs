@@ -120,6 +120,7 @@ pub enum PlanRef {
     ///
     /// Can either be from the immediate input or an outer scope.
     Unqualified,
+    Id(usize),
 }
 
 /// Column that is not yet resolved to a scope.
@@ -633,6 +634,23 @@ impl From<&AggExpr> for ExprRef {
     }
 }
 
+impl From<UnresolvedColumn> for ExprRef {
+    fn from(col: UnresolvedColumn) -> Self {
+        Self::new(Expr::Column(Column::Unresolved(col)))
+    }
+}
+impl From<ResolvedColumn> for ExprRef {
+    fn from(col: ResolvedColumn) -> Self {
+        Self::new(Expr::Column(Column::Resolved(col)))
+    }
+}
+
+impl From<Column> for ExprRef {
+    fn from(col: Column) -> Self {
+        Self::new(Expr::Column(col))
+    }
+}
+
 impl AsRef<Self> for Expr {
     fn as_ref(&self) -> &Self {
         self
@@ -814,6 +832,12 @@ impl Expr {
                 plan_ref: PlanRef::Alias(alias),
                 ..
             })) => FieldID::new(format!("{alias}.{name}")),
+
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Id(id),
+                ..
+            })) => FieldID::new(format!("{id}.{name}")),
 
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,

@@ -11,6 +11,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {
+    pub plan_id: Option<usize>,
     /// The schema of the output of this node (the source data schema).
     /// May be a subset of the source data schema; executors should push down this projection if possible.
     pub output_schema: SchemaRef,
@@ -23,10 +24,16 @@ pub struct Source {
 impl Source {
     pub fn new(output_schema: SchemaRef, source_info: Arc<SourceInfo>) -> Self {
         Self {
+            plan_id: None,
             output_schema,
             source_info,
             stats_state: StatsState::NotMaterialized,
         }
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     // Helper method that converts the ScanOperatorRef inside a Source node's PhysicalScanInfo into scan tasks.

@@ -24,6 +24,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Join {
+    pub plan_id: Option<usize>,
     // Upstream nodes.
     pub left: Arc<LogicalPlan>,
     pub right: Arc<LogicalPlan>,
@@ -85,6 +86,7 @@ impl Join {
         let output_schema = infer_join_schema(&left.schema(), &right.schema(), join_type)?;
 
         Ok(Self {
+            plan_id: None,
             left,
             right,
             left_on,
@@ -95,6 +97,11 @@ impl Join {
             output_schema,
             stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     /// Add a project under the right side plan when necessary in order to resolve naming conflicts

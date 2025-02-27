@@ -94,6 +94,7 @@ const V_MIN_COUNT: &str = "__min_count";
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Intersect {
+    pub plan_id: Option<usize>,
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
@@ -109,7 +110,17 @@ impl Intersect {
         let lhs_schema = lhs.schema();
         let rhs_schema = rhs.schema();
         check_structurally_equal(lhs_schema, rhs_schema, "intersect")?;
-        Ok(Self { lhs, rhs, is_all })
+        Ok(Self {
+            plan_id: None,
+            lhs,
+            rhs,
+            is_all,
+        })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     /// intersect operations could be represented by other logical plans
@@ -232,6 +243,7 @@ impl Intersect {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Union {
+    pub plan_id: Option<usize>,
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
@@ -263,7 +275,17 @@ impl Union {
             )))
             .context(CreationSnafu);
         }
-        Ok(Self { lhs, rhs, is_all })
+        Ok(Self {
+            plan_id: None,
+            lhs,
+            rhs,
+            is_all,
+        })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     /// union could be represented as a concat + distinct
@@ -321,6 +343,7 @@ impl Union {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Except {
+    pub plan_id: Option<usize>,
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
@@ -335,7 +358,17 @@ impl Except {
         let lhs_schema = lhs.schema();
         let rhs_schema = rhs.schema();
         check_structurally_equal(lhs_schema, rhs_schema, "except")?;
-        Ok(Self { lhs, rhs, is_all })
+        Ok(Self {
+            plan_id: None,
+            lhs,
+            rhs,
+            is_all,
+        })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     /// except could be represented by other logical plans
