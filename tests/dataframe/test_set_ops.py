@@ -143,6 +143,17 @@ def test_union():
     assert actual_sql == expected
 
 
+@pytest.mark.parametrize("quantifier", [None, "all"])
+def test_union_fails_for_different_schemas(quantifier):
+    df1 = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    df2 = daft.from_pydict({"x": [3, 4, 5], "z": [6, 7, 8]})
+    with pytest.raises(daft.exceptions.DaftCoreException):
+        if quantifier == "all":
+            df1.union_all(df2).collect()
+        else:
+            df1.union(df2).collect()
+
+
 def test_union_all():
     df1 = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     df2 = daft.from_pydict({"x": [3, 2, 1], "y": [6, 5, 4]})
