@@ -5,10 +5,19 @@ use daft_core::{count_mode::CountMode, join::JoinType, utils::supertype::get_sup
 use daft_dsl::{lit, null_lit, resolved_col, ExprRef};
 use daft_functions::list::{explode, list_fill};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
+use indexmap::IndexSet;
 use snafu::ResultExt;
 
 use super::{Aggregate, Concat, Distinct, Filter, Project};
 use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SetQuantifier {
+    All,
+    Distinct,
+    AllByName,
+    DistinctByName,
+}
 
 fn build_union_all_internal(
     lhs: Arc<LogicalPlan>,
@@ -18,7 +27,12 @@ fn build_union_all_internal(
 ) -> logical_plan::Result<LogicalPlan> {
     let left_with_v_col = Project::try_new(lhs, left_v_cols)?;
     let right_with_v_col = Project::try_new(rhs, right_v_cols)?;
-    Union::try_new(left_with_v_col.into(), right_with_v_col.into(), true)?.to_logical_plan()
+    Union::try_new(
+        left_with_v_col.into(),
+        right_with_v_col.into(),
+        SetQuantifier::All,
+    )?
+    .to_logical_plan()
 }
 
 fn intersect_or_except_plan(
@@ -247,7 +261,7 @@ pub struct Union {
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
-    pub is_all: bool,
+    pub quantifier: SetQuantifier,
 }
 
 impl Union {
@@ -262,9 +276,11 @@ impl Union {
     pub(crate) fn try_new(
         lhs: Arc<LogicalPlan>,
         rhs: Arc<LogicalPlan>,
-        is_all: bool,
+        quantifier: SetQuantifier,
     ) -> logical_plan::Result<Self> {
-        if lhs.schema().len() != rhs.schema().len() {
+        if matches!(quantifier, SetQuantifier::All | SetQuantifier::Distinct)
+            && lhs.schema().len() != rhs.schema().len()
+        {
             return Err(DaftError::SchemaMismatch(format!(
                 "Both plans must have the same num of fields to union, \
                 but got[lhs: {} v.s rhs: {}], lhs schema: {}, rhs schema: {}",
@@ -279,7 +295,7 @@ impl Union {
             plan_id: None,
             lhs,
             rhs,
-            is_all,
+            quantifier,
         })
     }
 
@@ -293,49 +309,91 @@ impl Union {
     pub(crate) fn to_logical_plan(&self) -> logical_plan::Result<LogicalPlan> {
         let lhs_schema = self.lhs.schema();
         let rhs_schema = self.rhs.schema();
-        let (lhs, rhs) = if lhs_schema != rhs_schema {
-            // we need to try to do a type coercion
-            let coerced_fields = lhs_schema
-                .fields
-                .values()
-                .zip(rhs_schema.fields.values())
-                .map(|(l, r)| {
-                    let new_dtype = get_supertype(&l.dtype, &r.dtype).ok_or_else(|| {
-                        logical_plan::Error::CreationError {
-                            source: DaftError::ComputeError(
-                                format!("
-                                    unable to find a common supertype for union. {} and {} have no common supertype",
-                                l.dtype, r.dtype
-                                ),
-                            ),
+        match self.quantifier {
+            SetQuantifier::All | SetQuantifier::Distinct => {
+                let (lhs, rhs) = if lhs_schema != rhs_schema {
+                    // we need to try to do a type coercion
+                    let coerced_fields = lhs_schema
+                        .fields
+                        .values()
+                        .zip(rhs_schema.fields.values())
+                        .map(|(l, r)| {
+                            let new_dtype = get_supertype(&l.dtype, &r.dtype).ok_or_else(|| {
+                                logical_plan::Error::CreationError {
+                                    source: DaftError::ComputeError(
+                                        format!("
+                                            unable to find a common supertype for union. {} and {} have no common supertype",
+                                        l.dtype, r.dtype
+                                        ),
+                                    ),
+                                }
+                            })?;
+                            Ok::<_, logical_plan::Error>(Field::new(l.name.clone(), new_dtype))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let projection_fields = coerced_fields
+                        .into_iter()
+                        .map(|f| resolved_col(f.name.clone()).cast(&f.dtype))
+                        .collect::<Vec<_>>();
+                    let lhs = Project::try_new(self.lhs.clone(), projection_fields.clone())?.into();
+                    let rhs = Project::try_new(self.rhs.clone(), projection_fields)?.into();
+                    (lhs, rhs)
+                } else {
+                    (self.lhs.clone(), self.rhs.clone())
+                };
+                let concat = LogicalPlan::Concat(Concat::try_new(lhs, rhs)?);
+                match self.quantifier {
+                    SetQuantifier::All => Ok(concat),
+                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced()).into()),
+                    _ => unreachable!(),
+                }
+            }
+            SetQuantifier::AllByName | SetQuantifier::DistinctByName => {
+                let lhs_fields = lhs_schema.fields.values().cloned().collect::<IndexSet<_>>();
+                let rhs_fields = rhs_schema.fields.values().cloned().collect::<IndexSet<_>>();
+                let all_fields = lhs_fields
+                    .union(&rhs_fields)
+                    .cloned()
+                    .collect::<IndexSet<_>>();
+                let lhs_with_columns = all_fields
+                    .iter()
+                    .map(|f| {
+                        if lhs_fields.contains(f) {
+                            resolved_col(f.name.clone())
+                        } else {
+                            null_lit().cast(&f.dtype).alias(f.name.clone())
                         }
-                    })?;
-                    Ok::<_, logical_plan::Error>(Field::new(l.name.clone(), new_dtype))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let projection_fields = coerced_fields
-                .into_iter()
-                .map(|f| resolved_col(f.name.clone()).cast(&f.dtype))
-                .collect::<Vec<_>>();
-            let lhs = Project::try_new(self.lhs.clone(), projection_fields.clone())?.into();
-            let rhs = Project::try_new(self.rhs.clone(), projection_fields)?.into();
-            (lhs, rhs)
-        } else {
-            (self.lhs.clone(), self.rhs.clone())
-        };
-        let concat = LogicalPlan::Concat(Concat::try_new(lhs, rhs)?);
-        if self.is_all {
-            Ok(concat)
-        } else {
-            Ok(Distinct::new(concat.arced()).into())
+                    })
+                    .collect::<Vec<_>>();
+                let rhs_with_columns = all_fields
+                    .iter()
+                    .map(|f| {
+                        if rhs_fields.contains(f) {
+                            resolved_col(f.name.clone())
+                        } else {
+                            null_lit().cast(&f.dtype).alias(f.name.clone())
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let lhs = Project::try_new(self.lhs.clone(), lhs_with_columns)?;
+                let rhs = Project::try_new(self.rhs.clone(), rhs_with_columns)?;
+                let concat = LogicalPlan::Concat(Concat::try_new(lhs.into(), rhs.into())?);
+
+                match self.quantifier {
+                    SetQuantifier::AllByName => Ok(concat),
+                    SetQuantifier::DistinctByName => Ok(Distinct::new(concat.arced()).into()),
+                    _ => unreachable!(),
+                }
+            }
         }
     }
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        if self.is_all {
-            res.push("Union All:".to_string());
-        } else {
-            res.push("Union:".to_string());
+        match self.quantifier {
+            SetQuantifier::Distinct => res.push("Union:".to_string()),
+            SetQuantifier::All => res.push("Union All:".to_string()),
+            SetQuantifier::AllByName => res.push("Union By Name:".to_string()),
+            SetQuantifier::DistinctByName => res.push("Union By Name Distinct:".to_string()),
         }
         res
     }

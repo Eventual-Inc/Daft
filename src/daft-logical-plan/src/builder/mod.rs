@@ -30,7 +30,7 @@ use {
 
 use crate::{
     logical_plan::{LogicalPlan, SubqueryAlias},
-    ops::{self, join::JoinOptions},
+    ops::{self, join::JoinOptions, SetQuantifier},
     optimization::OptimizerBuilder,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
@@ -608,9 +608,9 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn union(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
+    pub fn union(&self, other: &Self, set_quantifier: SetQuantifier) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Union::try_new(self.plan.clone(), other.plan.clone(), is_all)?
+            ops::Union::try_new(self.plan.clone(), other.plan.clone(), set_quantifier)?
                 .to_logical_plan()?;
         Ok(self.with_new_plan(logical_plan))
     }
@@ -1078,6 +1078,22 @@ impl PyLogicalPlanBuilder {
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
         Ok(self.builder.concat(&other.builder)?.into())
+    }
+
+    #[pyo3(signature = (other, quantifier=None))]
+    pub fn union(&self, other: &Self, quantifier: Option<String>) -> DaftResult<Self> {
+        let quantifier = match quantifier.map(|s| s.to_lowercase()).as_deref() {
+            Some("all") => SetQuantifier::All,
+            Some("all_by_name") => SetQuantifier::AllByName,
+            Some("distinct_by_name") => SetQuantifier::DistinctByName,
+            Some("distinct") | None => SetQuantifier::Distinct,
+            _ => {
+                return Err(DaftError::InternalError(
+                    "Invalid set quantifier".to_string(),
+                ))
+            }
+        };
+        Ok(self.builder.union(&other.builder, quantifier)?.into())
     }
 
     pub fn intersect(&self, other: &Self, is_all: bool) -> DaftResult<Self> {

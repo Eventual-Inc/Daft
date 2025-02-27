@@ -31,7 +31,7 @@ pub use pivot::Pivot;
 pub use project::Project;
 pub use repartition::Repartition;
 pub use sample::Sample;
-pub use set_operations::{Except, Intersect, Union};
+pub use set_operations::{Except, Intersect, SetQuantifier, Union};
 pub use sink::Sink;
 pub use sort::Sort;
 pub use source::Source;

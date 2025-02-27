@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Literal
 
 from daft.context import get_context
 from daft.daft import (
@@ -290,6 +290,12 @@ class LogicalPlanBuilder:
 
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:  # type: ignore[override]
         builder = self._builder.concat(other._builder)
+        return LogicalPlanBuilder(builder)
+
+    def union(
+        self, other: LogicalPlanBuilder, quantifier: Literal["all", "by_name", "distinct_by_name"] | None
+    ) -> LogicalPlanBuilder:
+        builder = self._builder.union(other._builder, quantifier)
         return LogicalPlanBuilder(builder)
 
     def intersect(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:

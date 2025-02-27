@@ -131,3 +131,85 @@ def test_except_with_nulls(make_df, op, left, right, expected):
 )
 def test_multiple_fields(make_df, op, left, right, expected):
     helper(make_df, op, left, right, expected)
+
+
+def test_union():
+    df1 = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    df2 = daft.from_pydict({"x": [3, 4, 5], "y": [6, 7, 8]})
+    expected = {"x": [1, 2, 3, 4, 5], "y": [4, 5, 6, 7, 8]}
+    actual = df1.union(df2).sort("x").to_pydict()
+    actual_sql = daft.sql("select * from df1 union select * from df2").sort("x").to_pydict()
+    assert actual == expected
+    assert actual_sql == expected
+
+
+def test_union_all():
+    df1 = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    df2 = daft.from_pydict({"x": [3, 2, 1], "y": [6, 5, 4]})
+    expected = {"x": [1, 1, 2, 2, 3, 3], "y": [4, 4, 5, 5, 6, 6]}
+    actual = df1.union_all(df2).sort("x").to_pydict()
+    actual_sql = daft.sql("select * from df1 union all select * from df2").sort("x").to_pydict()
+    assert actual == expected
+    assert actual_sql == expected
+
+
+def test_union_by_name():
+    df1 = daft.from_pydict({"name": ["Alice", "Bob", "Bob"], "age": [25, 30, 30], "city": ["NY", "LA", "LA"]})
+
+    df2 = daft.from_pydict(
+        {
+            "name": ["Bob", "Carol", "Bob"],
+            "salary": [50000, 60000, 50000],
+            "city": ["LA", "SF", "LA"],
+            "occupation": ["barista", "cashier", "barista"],
+        }
+    )
+
+    expected = {
+        "name": ["Alice", "Bob", "Bob", "Carol"],
+        "age": [25, None, 30, None],
+        "city": ["NY", "LA", "LA", "SF"],
+        "salary": [None, 50000, None, 60000],
+        "occupation": [None, "barista", None, "cashier"],
+    }
+
+    actual_sql = (
+        daft.sql("select * from df1 union by name select * from df2")
+        .sort(by=["name", "city", "occupation"])
+        .to_pydict()
+    )
+    actual_df = df1.union_by_name(df2).sort(by=["name", "city", "occupation"]).to_pydict()
+
+    assert actual_sql == expected
+    assert actual_df == expected
+
+
+def test_union_all_by_name():
+    df1 = daft.from_pydict({"name": ["Alice", "Bob", "Bob"], "age": [25, 30, 30], "city": ["NY", "LA", "LA"]})
+
+    df2 = daft.from_pydict(
+        {
+            "name": ["Bob", "Carol", "Bob"],
+            "salary": [50000, 60000, 50000],
+            "city": ["LA", "SF", "LA"],
+            "occupation": ["barista", "cashier", "barista"],
+        }
+    )
+
+    expected = {
+        "name": ["Alice", "Bob", "Bob", "Bob", "Bob", "Carol"],
+        "age": [25, None, None, 30, 30, None],
+        "city": ["NY", "LA", "LA", "LA", "LA", "SF"],
+        "salary": [None, 50000, 50000, None, None, 60000],
+        "occupation": [None, "barista", "barista", None, None, "cashier"],
+    }
+
+    actual_sql = (
+        daft.sql("select * from df1 union all by name select * from df2")
+        .sort(by=["name", "city", "occupation"])
+        .to_pydict()
+    )
+    actual_df = df1.union_all_by_name(df2).sort(by=["name", "city", "occupation"]).to_pydict()
+
+    assert actual_sql == expected
+    assert actual_df == expected

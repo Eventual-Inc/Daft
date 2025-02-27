@@ -2344,9 +2344,9 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(result, DataFrame), (
-            f"Func returned an instance of type [{type(result)}], " "should have been DataFrame."
-        )
+        assert isinstance(
+            result, DataFrame
+        ), f"Func returned an instance of type [{type(result)}], should have been DataFrame."
         return result
 
     def _agg(
@@ -2638,7 +2638,11 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ...     {
+            ...         "pet": ["cat", "dog", "dog", "cat"],
+            ...         "age": [1, 2, 3, 4],
+            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
+            ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
@@ -2725,6 +2729,128 @@ class DataFrame:
             names = self.select(pivot_col_expr).distinct().to_pydict()[pivot_col_expr.name()]
             names = [str(x) for x in names]
         builder = self._builder.pivot(group_by_expr, pivot_col_expr, value_col_expr, agg_expr, names)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def union(self, other: "DataFrame") -> "DataFrame":
+        """Returns the distinct union of two DataFrames.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df2 = daft.from_pydict({"x": [3, 4, 5], "y": [6, 7, 8]})
+            >>> df1.union(df2).sort("x").show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 5     ┆ 8     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+        """
+        builder = self._builder.union(other._builder, None)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def union_all(self, other: "DataFrame") -> "DataFrame":
+        """Returns the union of two DataFrames, including duplicates.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df2 = daft.from_pydict({"x": [3, 2, 1], "y": [6, 5, 4]})
+            >>> df1.union_all(df2).sort("x").show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        builder = self._builder.union(other._builder, "all")
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def union_by_name(self, other: "DataFrame") -> "DataFrame":
+        """Returns the distinct union by name.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"x": [1, 2], "y": [4, 5], "w": [9, 10]})
+            >>> df2 = daft.from_pydict({"y": [6, 7], "z": ["a", "b"]})
+            >>> df1.union_by_name(df2).sort("y").show()
+            ╭───────┬───────┬───────┬──────╮
+            │ x     ┆ y     ┆ w     ┆ z    │
+            │ ---   ┆ ---   ┆ ---   ┆ ---  │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ Utf8 │
+            ╞═══════╪═══════╪═══════╪══════╡
+            │ 1     ┆ 4     ┆ 9     ┆ None │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 10    ┆ None │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 6     ┆ None  ┆ a    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 7     ┆ None  ┆ b    │
+            ╰───────┴───────┴───────┴──────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        builder = self._builder.union(other._builder, "distinct_by_name")
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def union_all_by_name(self, other: "DataFrame") -> "DataFrame":
+        """Returns the union of two DataFrames, including duplicates, with columns matched by name.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"x": [1, 2], "y": [4, 5], "w": [9, 10]})
+            >>> df2 = daft.from_pydict({"y": [6, 6, 7, 7], "z": ["a", "a", "b", "b"]})
+            >>> df1.union_all_by_name(df2).sort("y").show()
+            ╭───────┬───────┬───────┬──────╮
+            │ x     ┆ y     ┆ w     ┆ z    │
+            │ ---   ┆ ---   ┆ ---   ┆ ---  │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ Utf8 │
+            ╞═══════╪═══════╪═══════╪══════╡
+            │ 1     ┆ 4     ┆ 9     ┆ None │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 10    ┆ None │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 6     ┆ None  ┆ a    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 6     ┆ None  ┆ a    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 7     ┆ None  ┆ b    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 7     ┆ None  ┆ b    │
+            ╰───────┴───────┴───────┴──────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        builder = self._builder.union(other._builder, "all_by_name")
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -3422,7 +3548,11 @@ class GroupedDataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ...     {
+            ...         "pet": ["cat", "dog", "dog", "cat"],
+            ...         "age": [1, 2, 3, 4],
+            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
+            ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),

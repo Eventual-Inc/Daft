@@ -18,7 +18,7 @@ use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
     utf8::{ilike, like, to_date, to_datetime},
 };
-use daft_logical_plan::{JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
+use daft_logical_plan::{ops::SetQuantifier, JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
 use daft_session::Session;
 use itertools::Itertools;
 use sqlparser::{
@@ -259,7 +259,7 @@ impl<'a> SQLPlanner<'a> {
             } => {
                 use sqlparser::ast::{
                     SetOperator::{Intersect, Union},
-                    SetQuantifier,
+                    SetQuantifier as SQLSetQuantifier,
                 };
                 fn make_query(expr: &SetExpr) -> Query {
                     Query {
@@ -281,16 +281,24 @@ impl<'a> SQLPlanner<'a> {
                 let right = self.new_with_context().plan_query(&make_query(right))?;
 
                 return match (op, set_quantifier) {
-                    (Union, SetQuantifier::All) => left.union(&right, true).map_err(|e| e.into()),
-
-                    (Union, SetQuantifier::None | SetQuantifier::Distinct) => {
-                        left.union(&right, false).map_err(|e| e.into())
+                    (Union, set_quantifier) => {
+                        let set_quantifier = match set_quantifier {
+                            SQLSetQuantifier::All => SetQuantifier::All,
+                            SQLSetQuantifier::None | SQLSetQuantifier::Distinct => {
+                                SetQuantifier::Distinct
+                            }
+                            SQLSetQuantifier::ByName | SQLSetQuantifier::DistinctByName => {
+                                SetQuantifier::DistinctByName
+                            }
+                            SQLSetQuantifier::AllByName => SetQuantifier::AllByName,
+                        };
+                        left.union(&right, set_quantifier).map_err(|e| e.into())
                     }
 
-                    (Intersect, SetQuantifier::All) => {
+                    (Intersect, SQLSetQuantifier::All) => {
                         left.intersect(&right, true).map_err(|e| e.into())
                     }
-                    (Intersect, SetQuantifier::None | SetQuantifier::Distinct) => {
+                    (Intersect, SQLSetQuantifier::None | SQLSetQuantifier::Distinct) => {
                         left.intersect(&right, false).map_err(|e| e.into())
                     }
                     (op, set_quantifier) => {
