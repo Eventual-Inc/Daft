@@ -2688,7 +2688,6 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
- "flate2",
  "futures",
  "indexmap 2.7.0",
  "memchr",
@@ -2698,12 +2697,12 @@ dependencies = [
  "rayon",
  "rstest",
  "serde",
+ "serde_json",
  "snafu",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "uuid 1.11.0",
- "warc",
 ]
 
 [[package]]

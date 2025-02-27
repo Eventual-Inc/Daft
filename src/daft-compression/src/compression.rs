@@ -23,9 +23,9 @@ impl CompressionCodec {
     #[must_use]
     pub fn from_uri(uri: &str) -> Option<Self> {
         let url = Url::parse(uri);
-        let path = if uri.starts_with("file://") {
+        let path = if let Some(stripped) = uri.strip_prefix("file://") {
             // Handle file URLs properly by stripping the scheme
-            &uri[7..]
+            stripped
         } else {
             match &url {
                 Ok(url) => url.path(),

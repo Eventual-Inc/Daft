@@ -238,7 +238,7 @@ class JsonSourceConfig:
 
 class WarcSourceConfig:
     """Configuration of a Warc data source."""
-    def __init__(): ...
+    def __init__(self): ...
 
 class DatabaseSourceConfig:
     """Configuration of a database data source."""

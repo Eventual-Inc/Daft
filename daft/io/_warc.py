@@ -1,14 +1,14 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
     IOConfig,
-    WarcSourceConfig,
     StorageConfig,
+    WarcSourceConfig,
 )
 from daft.dataframe import DataFrame
 from daft.datatype import DataType, TimeUnit
@@ -60,8 +60,8 @@ def read_warc(
         "warc_date": DataType.timestamp(TimeUnit.ns(), timezone="Etc/UTC"),
         "warc_content_length": DataType.int64(),
         "warc_content": DataType.binary(),
+        "warc_header": DataType.string(),
     }
-
 
     warc_config = WarcSourceConfig()
     file_format_config = FileFormatConfig.from_warc_config(warc_config)

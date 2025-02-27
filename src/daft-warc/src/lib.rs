@@ -1,21 +1,26 @@
 use std::sync::Arc;
 
-use arrow2::{self, array::{MutablePrimitiveArray, MutableUtf8Array}};
+use arrow2::{
+    self,
+    array::{MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array},
+};
+use chrono::{DateTime, Utc};
 use common_error::DaftResult;
 use daft_compression::CompressionCodec;
-use daft_core::{prelude::{DataType, Field, Schema, SchemaRef, TimeUnit}, series::Series};
+use daft_core::{
+    prelude::{DataType, Field, Schema, SchemaRef, TimeUnit},
+    series::Series,
+};
 use daft_dsl::ExprRef;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
-use futures::stream::BoxStream;
-use futures::StreamExt;
-use tokio::{io::{AsyncBufRead, BufReader}, fs::File};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use tokio::{
+    fs::File,
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
+};
 use tokio_util::io::StreamReader;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use arrow2::array::MutableBinaryArray;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncReadExt;
 
 pub struct WarcConvertOptions {
     pub limit: Option<usize>,
@@ -39,29 +44,31 @@ pub enum WarcType {
 impl WarcType {
     fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "warcinfo" => Some(WarcType::Warcinfo),
-            "response" => Some(WarcType::Response),
-            "resource" => Some(WarcType::Resource),
-            "request" => Some(WarcType::Request),
-            "metadata" => Some(WarcType::Metadata),
-            "revisit" => Some(WarcType::Revisit),
-            "conversion" => Some(WarcType::Conversion),
-            "continuation" => Some(WarcType::Continuation),
-            _ => Some(WarcType::FutureType(s.to_string())),
+            "warcinfo" => Some(Self::Warcinfo),
+            "response" => Some(Self::Response),
+            "resource" => Some(Self::Resource),
+            "request" => Some(Self::Request),
+            "metadata" => Some(Self::Metadata),
+            "revisit" => Some(Self::Revisit),
+            "conversion" => Some(Self::Conversion),
+            "continuation" => Some(Self::Continuation),
+            _ => Some(Self::FutureType(s.to_string())),
         }
     }
+}
 
-    fn to_string(&self) -> String {
+impl std::fmt::Display for WarcType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WarcType::Warcinfo => "warcinfo".to_string(),
-            WarcType::Response => "response".to_string(),
-            WarcType::Resource => "resource".to_string(),
-            WarcType::Request => "request".to_string(),
-            WarcType::Metadata => "metadata".to_string(),
-            WarcType::Revisit => "revisit".to_string(),
-            WarcType::Conversion => "conversion".to_string(),
-            WarcType::Continuation => "continuation".to_string(),
-            WarcType::FutureType(s) => s.clone(),
+            Self::Warcinfo => write!(f, "warcinfo"),
+            Self::Response => write!(f, "response"),
+            Self::Resource => write!(f, "resource"),
+            Self::Request => write!(f, "request"),
+            Self::Metadata => write!(f, "metadata"),
+            Self::Revisit => write!(f, "revisit"),
+            Self::Conversion => write!(f, "conversion"),
+            Self::Continuation => write!(f, "continuation"),
+            Self::FutureType(s) => write!(f, "{}", s),
         }
     }
 }
@@ -71,6 +78,7 @@ struct WarcHeaderState {
     record_id: Option<Uuid>,
     warc_date: Option<DateTime<Utc>>,
     warc_type: Option<WarcType>,
+    header_lines: Vec<(String, String)>,
 }
 
 impl WarcHeaderState {
@@ -79,143 +87,299 @@ impl WarcHeaderState {
         self.record_id = None;
         self.warc_date = None;
         self.warc_type = None;
+        self.header_lines.clear();
     }
 }
 
 use arrow2::array::MutableArray;
 
-async fn stream_warc_single(uri: &str, io_client: Arc<IOClient>, io_stats: Option<IOStatsRef>, convert_options: WarcConvertOptions) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {    
+struct WarcRecordBatchIterator {
+    reader: Box<dyn AsyncBufRead + Unpin + Send>,
+    schema: SchemaRef,
+    chunk_size: usize,
+    bytes_read: usize,
+    complete_record: bool,
+    header_state: WarcHeaderState,
+    record_id_array: MutableUtf8Array<i64>,
+    warc_type_array: MutableUtf8Array<i64>,
+    warc_date_array: MutablePrimitiveArray<i64>,
+    warc_content_length_array: MutablePrimitiveArray<i64>,
+    content_array: MutableBinaryArray<i64>,
+    header_array: MutableUtf8Array<i64>,
+}
+
+impl WarcRecordBatchIterator {
+    fn new(
+        reader: Box<dyn AsyncBufRead + Unpin + Send>,
+        schema: SchemaRef,
+        chunk_size: usize,
+    ) -> Self {
+        Self {
+            reader,
+            schema,
+            chunk_size,
+            bytes_read: 0,
+            complete_record: false,
+            header_state: WarcHeaderState {
+                content_length: None,
+                record_id: None,
+                warc_date: None,
+                warc_type: None,
+                header_lines: Vec::new(),
+            },
+            record_id_array: MutableUtf8Array::new(),
+            warc_type_array: MutableUtf8Array::new(),
+            warc_date_array: MutablePrimitiveArray::new(),
+            warc_content_length_array: MutablePrimitiveArray::new(),
+            content_array: MutableBinaryArray::new(),
+            header_array: MutableUtf8Array::new(),
+        }
+    }
+
+    async fn read_chunk(&mut self) -> DaftResult<Option<RecordBatch>> {
+        let mut line_buf = Vec::with_capacity(4096);
+
+        loop {
+            if self.complete_record {
+                return Ok(Some(self.create_batch()?));
+            }
+
+            line_buf.clear();
+            match self.reader.read_until(b'\n', &mut line_buf).await {
+                Ok(0) => {
+                    return if self.complete_record {
+                        self.complete_record = false;
+                        Ok(Some(self.create_batch()?))
+                    } else {
+                        Ok(None)
+                    };
+                }
+                Ok(2)
+                    if line_buf[0] == b'\r'
+                        && line_buf[1] == b'\n'
+                        && self.header_state.content_length.is_some() =>
+                {
+                    self.bytes_read += 2;
+
+                    // Create properly escaped JSON object from accumulated headers
+                    let header_json = if self.header_state.header_lines.is_empty() {
+                        "{}".to_string()
+                    } else {
+                        let mut obj = serde_json::Map::new();
+                        for (key, value) in &self.header_state.header_lines {
+                            obj.insert(key.clone(), serde_json::Value::String(value.clone()));
+                        }
+                        serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string())
+                    };
+                    self.header_array.push(Some(header_json));
+
+                    let len = self
+                        .header_state
+                        .content_length
+                        .expect("Content length is required");
+
+                    if len == 0 {
+                        self.content_array.push_null();
+                    } else {
+                        let mut content_vec = vec![0; len];
+                        self.reader.read_exact(&mut content_vec).await?;
+                        self.content_array.push(Some(content_vec));
+                        self.bytes_read += len;
+                    }
+
+                    self.record_id_array
+                        .push(self.header_state.record_id.map(|id| id.to_string()));
+                    self.warc_type_array
+                        .push(self.header_state.warc_type.take().map(|t| t.to_string()));
+                    self.warc_date_array.push(
+                        self.header_state
+                            .warc_date
+                            .and_then(|d| d.timestamp_nanos_opt()),
+                    );
+                    self.warc_content_length_array
+                        .push(self.header_state.content_length.map(|len| len as i64));
+
+                    self.complete_record = true;
+                    self.header_state.reset();
+                    if self.bytes_read >= self.chunk_size {
+                        self.complete_record = false;
+                        return Ok(Some(self.create_batch()?));
+                    }
+                }
+                Ok(n) => {
+                    // Handle WARC header lines.
+                    self.bytes_read += n;
+                    let line = String::from_utf8_lossy(&line_buf);
+                    let line = line.trim();
+
+                    // Skip the WARC version line.
+                    if line.starts_with("WARC/") {
+                        continue;
+                    }
+                    if let Some(colon_pos) = line.find(':') {
+                        let key = line[..colon_pos].trim().to_string();
+                        let value = line[colon_pos + 1..].trim().to_string();
+
+                        match key.as_str() {
+                            "Content-Length" => {
+                                if let Ok(len) = value.parse::<usize>() {
+                                    self.header_state.content_length = Some(len);
+                                }
+                            }
+                            "WARC-Record-ID" => {
+                                if value.starts_with('<') && value.ends_with('>') {
+                                    let uuid_str = &value[10..value.len() - 1];
+                                    if let Ok(uuid) = Uuid::parse_str(uuid_str) {
+                                        self.header_state.record_id = Some(uuid);
+                                    }
+                                }
+                            }
+                            "WARC-Type" => {
+                                self.header_state.warc_type = WarcType::from_str(&value);
+                            }
+                            "WARC-Date" => {
+                                if let Ok(date) = DateTime::parse_from_rfc3339(&value) {
+                                    self.header_state.warc_date = Some(date.with_timezone(&Utc));
+                                }
+                            }
+                            _ => {
+                                // Store non-mandatory headers.
+                                self.header_state.header_lines.push((key, value));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error reading line: {}", e);
+                    return if self.complete_record {
+                        self.complete_record = false;
+                        Ok(Some(self.create_batch()?))
+                    } else {
+                        Ok(None)
+                    };
+                }
+            }
+        }
+    }
+
+    fn create_batch(&mut self) -> DaftResult<RecordBatch> {
+        let num_records = self.content_array.len();
+
+        let batch = create_record_batch(
+            self.schema.clone(),
+            vec![
+                self.record_id_array.as_box(),
+                self.warc_type_array.as_box(),
+                self.warc_date_array.as_box(),
+                self.warc_content_length_array.as_box(),
+                self.content_array.as_box(),
+                self.header_array.as_box(),
+            ],
+            num_records,
+        )?;
+
+        // Reset arrays.
+        self.record_id_array = MutableUtf8Array::new();
+        self.warc_type_array = MutableUtf8Array::new();
+        self.warc_date_array = MutablePrimitiveArray::new();
+        self.warc_content_length_array = MutablePrimitiveArray::new();
+        self.content_array = MutableBinaryArray::new();
+        self.header_array = MutableUtf8Array::new();
+
+        Ok(batch)
+    }
+}
+
+async fn stream_warc_single(
+    uri: &str,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    convert_options: WarcConvertOptions,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let predicate = convert_options.predicate.clone();
+    let limit = convert_options.limit;
+    let include_columns = convert_options.include_columns.clone();
+
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
-    match io_client
-        .single_url_get(uri.to_string(), None, io_stats)
-        .await?
-    {
-        GetResult::File(file) => {
-            let buffer_size = 256 * 1024;
-            let file_reader = File::open(file.path).await?;
-            (
-                Box::new(BufReader::with_capacity(buffer_size, file_reader)),
-                buffer_size,
-                64,
-            )
-        }
-        GetResult::Stream(stream, ..) => {
-            (
-                Box::new(StreamReader::new(stream)),
-                8 * 1024 * 1024,
-                64,
-            )
-        }
-    };
+        match io_client
+            .single_url_get(uri.to_string(), None, io_stats)
+            .await?
+        {
+            GetResult::File(file) => {
+                let buffer_size = 256 * 1024;
+                let file_reader = File::open(file.path).await?;
+                (
+                    Box::new(BufReader::with_capacity(buffer_size, file_reader)),
+                    buffer_size,
+                    64,
+                )
+            }
+            GetResult::Stream(stream, ..) => {
+                (Box::new(StreamReader::new(stream)), 8 * 1024 * 1024, 64)
+            }
+        };
 
     let compression = CompressionCodec::from_uri(uri);
 
-    let mut reader: Box<dyn AsyncBufRead + Unpin + Send> = if let Some(compression) = compression {
+    let reader: Box<dyn AsyncBufRead + Unpin + Send> = if let Some(compression) = compression {
         let decoder = compression.to_decoder(reader);
         Box::new(tokio::io::BufReader::with_capacity(buffer_size, decoder))
     } else {
         reader
     };
 
-    let mut line_buf = Vec::with_capacity(4096);
-    let mut header_state = WarcHeaderState {
-        content_length: None,
-        record_id: None,
-        warc_date: None,
-        warc_type: None,
-    };
-    
-    let mut record_id_array = MutableUtf8Array::<i64>::new();
-    let mut warc_type_array = MutableUtf8Array::<i64>::new();
-    let mut warc_date_array = MutablePrimitiveArray::<i64>::new();
-    let mut warc_content_length_array = MutablePrimitiveArray::<i64>::new();
-    let mut content_array = MutableBinaryArray::<i64>::new();
-
-    loop {
-        line_buf.clear();
-        match reader.read_until(b'\n', &mut line_buf).await {
-            Ok(0) => {
-                break;
-            }
-            Ok(2) if line_buf[0] == b'\r' && line_buf[1] == b'\n' && header_state.content_length.is_some() => {
-                // Header is complete. Read the contents and save the header fields.
-                let len = header_state.content_length.expect("Content length is required");
-                if len == 0 {
-                    content_array.push_null();
-                } else {
-                    let mut content_vec = vec![0; len];
-                    reader.read_exact(&mut content_vec).await?;
-                    content_array.push(Some(content_vec));
-                }
-                record_id_array.push(header_state.record_id.map_or(None, |id| Some(id.to_string())));
-                warc_type_array.push(header_state.warc_type.take().map_or(None, |t| Some(t.to_string())));
-                warc_date_array.push(header_state.warc_date.and_then(|d| d.timestamp_nanos_opt()));
-                warc_content_length_array.push(header_state.content_length.map(|len| len as i64));
-
-                header_state.reset();
-            }
-            Ok(_) => {
-                // Warc headers are ASCII, so we can use from_utf8_lossy.
-                let line = String::from_utf8_lossy(&line_buf);
-                if line.starts_with("Content-Length:") {
-                    if let Some(len) = line["Content-Length:".len()..]
-                        .trim()
-                        .parse::<usize>()
-                        .ok() 
-                    {
-                        header_state.content_length = Some(len);
-                    }
-                } else if line.starts_with("WARC-Record-ID:") {
-                    // Parse the WARC Record ID (urn:uuid)
-                    let id = line["WARC-Record-ID:".len()..].trim();
-                    if id.starts_with('<') && id.ends_with('>') {
-                        let uuid_str = &id[10..id.len()-1];  // Skip <urn:uuid: and >
-                        if let Ok(uuid) = Uuid::parse_str(uuid_str) {
-                            header_state.record_id = Some(uuid);
-                        }
-                    }
-                } else if line.starts_with("WARC-Type:") {
-                    // Parse the WARC Type.
-                    let type_str = line["WARC-Type:".len()..].trim();
-                    header_state.warc_type = WarcType::from_str(type_str);
-                    // TODO(desmond): based on the spec, if the warc type is not one of the known types, we should ignore the record.
-                } else if line.starts_with("WARC-Date:") {
-                    // Parse the WARC Date which is always in UTC.
-                    let date_str = line["WARC-Date:".len()..].trim();
-                    if let Ok(date) = DateTime::parse_from_rfc3339(date_str) {
-                        header_state.warc_date = Some(date.with_timezone(&Utc));
-                    }
-                } 
-            }
-            Err(e) => {
-                eprintln!("Error reading line: {}", e);
-                break;
-            }
-        }
-    }
-
-    let num_records = content_array.len();
     let schema = Arc::new(Schema::new(vec![
         Field::new("warc_record_id", DataType::Utf8),
         Field::new("warc_type", DataType::Utf8),
-        Field::new("warc_date", DataType::Timestamp(TimeUnit::Nanoseconds, Some("Etc/UTC".to_string()))),
+        Field::new(
+            "warc_date",
+            DataType::Timestamp(TimeUnit::Nanoseconds, Some("Etc/UTC".to_string())),
+        ),
         Field::new("warc_content_length", DataType::Int64),
         Field::new("warc_content", DataType::Binary),
+        Field::new("warc_header", DataType::Utf8),
     ])?);
-    let record_batch = create_record_batch(
-        schema, 
-        vec![
-            record_id_array.as_box(),
-            warc_type_array.as_box(),
-            warc_date_array.as_box(),
-            warc_content_length_array.as_box(),
-            content_array.as_box(),
-        ], 
-        num_records
-    )?;    
-    let stream = futures::stream::once(async move { Ok(record_batch) }).boxed();
 
-    Ok(stream)
+    let warc_record_batch_iter = WarcRecordBatchIterator::new(reader, schema, chunk_size);
+    let stream = futures::stream::unfold(warc_record_batch_iter, |mut reader| async move {
+        match reader.read_chunk().await {
+            Ok(Some(batch)) => Some((Ok(batch), reader)),
+            Ok(None) => None,
+            Err(e) => Some((Err(e), reader)),
+        }
+    });
+
+    let filtered_stream = stream.map(move |table| {
+        if let Some(predicate) = &predicate {
+            let filtered = table?.filter(&[predicate.clone()])?;
+            if let Some(include_columns) = &include_columns {
+                filtered.get_columns(include_columns.as_slice())
+            } else {
+                Ok(filtered)
+            }
+        } else {
+            table
+        }
+    });
+
+    let mut remaining_rows = limit.map(|limit| limit as i64);
+    let limited_stream = filtered_stream
+        .try_take_while(move |recordbatch| {
+            match (recordbatch, remaining_rows) {
+                // Limit has been met, early-terminate.
+                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                // Limit has not yet been met, update remaining limit slack and continue
+                (table, Some(rows_left)) => {
+                    remaining_rows = Some(rows_left - table.len() as i64);
+                    futures::future::ready(Ok(true))
+                }
+                // No limit, never early-terminate
+                (_, None) => futures::future::ready(Ok(true)),
+            }
+        })
+        .boxed();
+
+    Ok(limited_stream)
 }
 
 fn create_record_batch(
@@ -224,23 +388,22 @@ fn create_record_batch(
     num_records: usize,
 ) -> DaftResult<RecordBatch> {
     let mut series_vec = Vec::with_capacity(schema.fields.len());
-    
+
     // Create series from the provided arrow arrays
     for ((_, field), array) in schema.fields.iter().zip(arrays.into_iter()) {
         let series = Series::from_arrow(Arc::new(field.clone()), array)?;
         series_vec.push(series);
     }
 
-    println!("Creating record batch with {} records", num_records);
-
-    RecordBatch::new_with_size(
-        schema.clone(),
-        series_vec,
-        num_records,
-    )
+    RecordBatch::new_with_size(schema, series_vec, num_records)
 }
 
-pub async fn stream_warc(uri: String, io_client: Arc<IOClient>, io_stats: IOStatsRef, convert_options: WarcConvertOptions) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+pub async fn stream_warc(
+    uri: String,
+    io_client: Arc<IOClient>,
+    io_stats: IOStatsRef,
+    convert_options: WarcConvertOptions,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let uri = uri.as_str();
     stream_warc_single(uri, io_client, Some(io_stats), convert_options).await
 }

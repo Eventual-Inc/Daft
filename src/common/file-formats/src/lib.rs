@@ -5,7 +5,7 @@ mod file_format_config;
 #[cfg(feature = "python")]
 pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, WarcSourceConfig
+    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, WarcSourceConfig,
 };
 
 #[cfg(feature = "python")]

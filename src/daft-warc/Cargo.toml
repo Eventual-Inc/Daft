@@ -18,13 +18,13 @@ num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
+serde_json = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true, features = ["io-util"]}
 tokio-util = {workspace = true}
-warc = "0.4.0"
 uuid = {version = "1.10.0", features = ["v4"]}
-flate2 = "1.1.0"
+
 [dev-dependencies]
 rstest = {workspace = true}
 
