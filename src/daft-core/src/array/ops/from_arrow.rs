@@ -133,7 +133,6 @@ impl FromArrow for MapArray {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         // we need to handle map type separately because the physical type of map in arrow2 is map but in Daft is list
 
-        println!("map");
         match (&field.dtype, arrow_arr.data_type()) {
             (DataType::Map { key, value }, arrow2::datatypes::DataType::Map(map_field, _)) => {
                 let arrow_arr = arrow_arr
@@ -156,7 +155,6 @@ impl FromArrow for MapArray {
 
                 let child_series =
                     Series::from_arrow(child_field.into(), arrow_child_array.clone())?;
-                println!("start");
 
                 let physical = ListArray::new(
                     physical_field,
@@ -164,7 +162,6 @@ impl FromArrow for MapArray {
                     arrow_arr.offsets().into(),
                     arrow_arr.validity().cloned(),
                 );
-                println!("end");
 
                 Ok(Self::new(field, physical))
             }
