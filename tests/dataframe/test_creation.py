@@ -325,7 +325,7 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -
         ),
         pytest.param(
             pa.array(
-                [{"a": {"b": 1}, "c": {"d": 2}}, {"e": {"f": 3}, "g": {"h": 4}}],
+                [[("a", [("b", 1)]), ("c", [("d", 2)])], [("e", [("f", 3)]), ("g", [("h", 4)])]],
                 type=pa.map_(pa.string(), pa.map_(pa.string(), pa.int64())),
             ),
             DataType.map(DataType.string(), DataType.map(DataType.string(), DataType.int64())),
