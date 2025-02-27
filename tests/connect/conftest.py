@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import daft
 from daft.pyspark import SparkSession
 
 
@@ -32,3 +33,11 @@ def make_spark_df(spark_session):
         return spark_session.createDataFrame(rows, fields)
 
     yield make_df
+
+
+@pytest.fixture(scope="function")
+def spark_to_daft():
+    def inner(spark_df):
+        return daft.from_pandas(spark_df.toPandas())
+
+    yield inner
