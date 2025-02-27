@@ -431,3 +431,102 @@ def test_monotonic_id_complex_conditionals(make_df) -> None:
 
     # Verify both paths produce identical results
     assert df1.to_pydict() == df2.to_pydict()
+
+
+def test_monotonic_id_in_filter(make_df) -> None:
+    """Test using monotonically_increasing_id in filter conditions."""
+    data = {"a": [1, 2, 3, 4, 5]}
+
+    # Use _add_monotonically_increasing_id
+    df0 = make_df(data)._add_monotonically_increasing_id().filter(col("id") > 2).collect()
+
+    # Filter using monotonically_increasing_id
+    df1 = (
+        make_df(data)
+        .with_column("id", monotonically_increasing_id())
+        .filter(monotonically_increasing_id() > 2)
+        .collect()
+    )
+
+    # Verify that filtering works correctly
+    assert len(df1) == 2  # Should only keep last 2 rows
+    assert df1.schema()["id"].dtype == DataType.uint64()
+
+    # Compare with explicit filtering
+    df2 = make_df(data).with_column("id", monotonically_increasing_id()).filter(col("id") > 2).collect()
+
+    assert df0.to_pydict() == df1.to_pydict()
+    assert df0.to_pydict() == df2.to_pydict()
+
+
+def test_monotonic_id_in_aggregation(make_df) -> None:
+    """Test using monotonically_increasing_id in aggregation expressions."""
+    data = {"key": ["a", "b", "a", "b", "c"], "value": [1, 2, 3, 4, 5]}
+
+    # Use _add_monotonically_increasing_id
+    df0 = (
+        make_df(data)
+        ._add_monotonically_increasing_id()
+        .groupby("key")
+        .agg((col("id") + col("value")).sum().alias("sum_id_plus_value"), col("id").max().alias("max_id"))
+        .sort("key")
+        .collect()
+    )
+
+    # Use monotonically_increasing_id in aggregation
+    df1 = (
+        make_df(data)
+        .with_column("id", monotonically_increasing_id())
+        .groupby("key")
+        .agg(
+            (monotonically_increasing_id() + col("value")).sum().alias("sum_id_plus_value"),
+            monotonically_increasing_id().max().alias("max_id"),
+        )
+        .sort("key")
+        .collect()
+    )
+
+    # Compare with explicit aggregation
+    df2 = (
+        make_df(data)
+        .with_column("id", monotonically_increasing_id())
+        .groupby("key")
+        .agg((col("id") + col("value")).sum().alias("sum_id_plus_value"), col("id").max().alias("max_id"))
+        .sort("key")
+        .collect()
+    )
+
+    assert df0.to_pydict() == df1.to_pydict()
+    assert df0.to_pydict() == df2.to_pydict()
+
+
+def test_monotonic_id_in_join_condition(make_df) -> None:
+    """Test using monotonically_increasing_id in join conditions."""
+    left_data = {"key": ["a", "b", "c"], "value": [1, 2, 3]}
+    right_data = {"key": ["b", "c", "d"], "other": [4, 5, 6]}
+
+    # Use _add_monotonically_increasing_id
+    df0 = (
+        make_df(left_data)
+        ._add_monotonically_increasing_id()
+        .join(make_df(right_data)._add_monotonically_increasing_id(), on="id", how="inner")
+        .collect()
+    )
+
+    # Use monotonically_increasing_id in join condition
+    df1 = (
+        make_df(left_data)
+        .join(make_df(right_data), on=monotonically_increasing_id() == monotonically_increasing_id(), how="inner")
+        .collect()
+    )
+
+    # Compare with explicit join
+    df2 = (
+        make_df(left_data)
+        .with_column("id", monotonically_increasing_id())
+        .join(make_df(right_data).with_column("id", monotonically_increasing_id()), on="id", how="inner")
+        .collect()
+    )
+
+    assert df0.to_pydict() == df1.to_pydict()
+    assert df0.to_pydict() == df2.to_pydict()
