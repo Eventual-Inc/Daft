@@ -248,3 +248,23 @@ def test_coalesce():
     ).to_pydict()
 
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "precision, value, expected",
+    [
+        (None, 3.14159, 3),
+        (None, 3, 3),
+        (1, 3.14159, 3.1),
+        (2, 3.14159, 3.14),
+    ],
+)
+def test_round(precision, value, expected):
+    if precision is None:
+        query = f"select round({value})"
+    else:
+        query = f"select round({value}, {precision})"
+    actual = daft.sql(query).to_pydict()
+    expected = {"literal": [expected]}
+
+    assert actual == expected

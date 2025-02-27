@@ -6,15 +6,13 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_algebra::boolean::combine_conjunction;
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
-    col,
-    common_treenode::{Transformed, TreeNode},
-    has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
-    OuterReferenceColumn, Subquery,
+    has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
+    ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
@@ -22,13 +20,13 @@ use daft_functions::{
 };
 use daft_logical_plan::{JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
 use daft_session::Session;
+use itertools::Itertools;
 use sqlparser::{
     ast::{
-        self, ArrayElemTypeDef, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct,
-        ExactNumberInfo, ExcludeSelectItem, FunctionArg, FunctionArgExpr, GroupByExpr, Ident,
-        ObjectName, Query, SelectItem, SetExpr, StructField, Subscript, TableAlias,
-        TableFunctionArgs, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
-        WildcardAdditionalOptions, With,
+        self, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct, ExcludeSelectItem,
+        FunctionArg, FunctionArgExpr, GroupByExpr, Ident, ObjectName, Query, SelectItem, SetExpr,
+        Subscript, TableAlias, TableFunctionArgs, TableWithJoins, TimezoneInfo, UnaryOperator,
+        Value, WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -36,7 +34,8 @@ use sqlparser::{
 };
 
 use crate::{
-    column_not_found_err, error::*, invalid_operation_err, table_not_found_err, unsupported_sql_err,
+    column_not_found_err, error::*, invalid_operation_err, schema::sql_dtype_to_dtype,
+    table_not_found_err, unsupported_sql_err,
 };
 
 /// Bindings are used to lookup in-scope tables, views, and columns (targets T).
@@ -68,41 +67,10 @@ impl<T> Default for Bindings<T> {
     }
 }
 
-/// A named logical plan
-/// This is used to keep track of the table name associated with a logical plan while planning a SQL query
-#[derive(Debug, Clone)]
-pub struct Relation {
-    pub(crate) inner: LogicalPlanBuilder,
-    pub(crate) name: String,
-    pub(crate) alias: Option<TableAlias>,
-}
-
-impl Relation {
-    pub fn new(inner: LogicalPlanBuilder, name: String) -> Self {
-        Self {
-            inner,
-            name,
-            alias: None,
-        }
-    }
-
-    pub fn with_alias(self, alias: TableAlias) -> Self {
-        Self {
-            alias: Some(alias),
-            ..self
-        }
-    }
-
-    pub fn get_name(&self) -> String {
-        self.alias
-            .as_ref()
-            .map(|alias| ident_to_str(&alias.name))
-            .unwrap_or_else(|| self.name.clone())
-    }
-
-    pub(crate) fn schema(&self) -> SchemaRef {
-        self.inner.schema()
-    }
+struct OrderByExprs {
+    exprs: Vec<ExprRef>,
+    descending: Vec<bool>,
+    nulls_first: Vec<bool>,
 }
 
 /// Context for the planning the statement.
@@ -115,7 +83,7 @@ struct PlannerContext {
     /// TODO consider decoupling session from planner via a resolver trait.
     session: Rc<Session>,
     /// Bindings for common table expressions (cte).
-    bound_ctes: Bindings<Relation>,
+    bound_ctes: Bindings<LogicalPlanBuilder>,
 }
 
 impl PlannerContext {
@@ -143,10 +111,8 @@ pub struct SQLPlanner<'a> {
     context: Rc<RefCell<PlannerContext>>,
     /// Planner for the outer scope
     parent: Option<&'a SQLPlanner<'a>>,
-    /// Cache of known, in-scope tables
-    bound_tables: Bindings<Relation>,
     /// In-scope bindings introduced by the current relation's schema
-    current_relation: Option<Relation>,
+    pub(crate) current_plan: Option<LogicalPlanBuilder>,
     /// Aliases from selection that can be used in other clauses
     /// but may not yet be in the schema of `current_relation`.
     bound_columns: Bindings<ExprRef>,
@@ -171,38 +137,49 @@ impl<'a> SQLPlanner<'a> {
         }
     }
 
-    fn new_with_context(&'a self) -> Self {
+    fn new_with_context(&self) -> Self {
         Self {
             context: self.context.clone(),
             ..Default::default()
         }
     }
 
-    /// SAFETY: it is up to the caller to ensure that the relation is set before calling this method.
-    /// It's a programming error to call this method without setting the relation first.
-    /// Some methods such as `plan_expr` do not require the relation to be set.
-    fn relation_mut(&mut self) -> &mut Relation {
-        self.current_relation.as_mut().expect("relation not set")
+    /// Set `self.current_plan`. Should only be called once per query.
+    fn set_plan(&mut self, plan: LogicalPlanBuilder) {
+        debug_assert!(self.current_plan.is_none());
+
+        self.current_plan = Some(plan);
     }
 
-    pub(crate) fn relation_opt(&self) -> Option<&Relation> {
-        self.current_relation.as_ref()
+    fn update_plan<E>(
+        &mut self,
+        f: impl FnOnce(&LogicalPlanBuilder) -> Result<LogicalPlanBuilder, E>,
+    ) -> Result<(), E> {
+        let plan = self.current_plan.as_ref().expect("current plan is set");
+        let new_plan = f(plan)?;
+
+        self.current_plan = Some(new_plan);
+
+        Ok(())
+    }
+
+    fn current_plan_ref(&self) -> &LogicalPlanBuilder {
+        self.current_plan.as_ref().expect("current plan is set")
     }
 
     fn context_mut(&self) -> RefMut<'_, PlannerContext> {
         self.context.as_ref().borrow_mut()
     }
 
-    fn bound_ctes(&self) -> Ref<'_, Bindings<Relation>> {
+    fn bound_ctes(&self) -> Ref<'_, Bindings<LogicalPlanBuilder>> {
         Ref::map(self.context.borrow(), |i| &i.bound_ctes)
     }
 
-    /// Lookup a table by identifier in the current session
-    fn get_table(&self, ident: &Identifier) -> Option<Relation> {
-        self.session()
-            .get_table(ident)
-            .ok()
-            .map(|view| Relation::new(view, ident.name.to_string()))
+    /// Get the table associated with the name from the session and wrap in a SubqueryAlias.
+    fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
+        let table = self.session().get_table(name)?;
+        let plan = table.get_logical_plan()?;
+        Ok(LogicalPlanBuilder::from(plan).alias(name.name.clone()))
     }
 
     /// Borrow the planning session
@@ -212,33 +189,8 @@ impl<'a> SQLPlanner<'a> {
 
     /// Clears the current context used for planning a SQL query
     fn clear_context(&mut self) {
-        self.current_relation = None;
-        self.bound_tables.clear();
+        self.current_plan = None;
         self.context_mut().clear();
-    }
-
-    fn register_cte(&self, mut rel: Relation, column_aliases: &[Ident]) -> SQLPlannerResult<()> {
-        if !column_aliases.is_empty() {
-            let schema = rel.schema();
-            let columns = schema.names();
-            if columns.len() != column_aliases.len() {
-                invalid_operation_err!(
-                    "Column count mismatch: expected {} columns, found {}",
-                    column_aliases.len(),
-                    columns.len()
-                );
-            }
-
-            let projection = columns
-                .into_iter()
-                .zip(column_aliases)
-                .map(|(name, alias)| col(name).alias(ident_to_str(alias)))
-                .collect::<Vec<_>>();
-
-            rel.inner = rel.inner.select(projection)?;
-        }
-        self.context_mut().bound_ctes.insert(rel.get_name(), rel);
-        Ok(())
     }
 
     fn plan_ctes(&self, with: &With) -> SQLPlannerResult<()> {
@@ -255,11 +207,13 @@ impl<'a> SQLPlanner<'a> {
                 invalid_operation_err!("FROM should only exist in recursive CTEs");
             }
 
-            let name = ident_to_str(&cte.alias.name);
             let plan = self.new_with_context().plan_query(&cte.query)?;
-            let rel = Relation::new(plan, name);
 
-            self.register_cte(rel, cte.alias.columns.as_slice())?;
+            let plan = apply_table_alias(plan, &cte.alias)?;
+
+            self.context_mut()
+                .bound_ctes
+                .insert(cte.alias.name.value.clone(), plan);
         }
         Ok(())
     }
@@ -358,32 +312,19 @@ impl<'a> SQLPlanner<'a> {
         // FROM/JOIN
         let from = selection.clone().from;
         self.plan_from(&from)?;
-        let schema = self.relation_opt().unwrap().schema();
 
         // SELECT
-        let mut projections = Vec::with_capacity(selection.projection.len());
-        let mut projection_fields = Vec::with_capacity(selection.projection.len());
-        for expr in &selection.projection {
-            let exprs = self.select_item_to_expr(expr, &schema)?;
-
-            let fields = exprs
-                .iter()
-                .map(|expr| expr.to_field(&schema).map_err(PlannerError::from))
-                .collect::<SQLPlannerResult<Vec<_>>>()?;
-
-            projections.extend(exprs);
-
-            projection_fields.extend(fields);
-        }
-
-        let projection_schema = Schema::new(projection_fields)?;
-        let has_orderby = query.order_by.is_some();
+        let projections = selection
+            .projection
+            .iter()
+            .map(|p| self.select_item_to_expr(p))
+            .flatten_ok()
+            .collect::<Result<Vec<_>, _>>()?;
 
         // WHERE
         if let Some(selection) = &selection.selection {
             let filter = self.plan_expr(selection)?;
-            let rel = self.relation_mut();
-            rel.inner = rel.inner.filter(filter)?;
+            self.update_plan(|plan| plan.filter(filter))?;
         }
 
         // GROUP BY
@@ -403,6 +344,19 @@ impl<'a> SQLPlanner<'a> {
             }
         }
 
+        // ORDER BY
+        let order_by = query
+            .order_by
+            .as_ref()
+            .map(|order_by| {
+                if order_by.interpolate.is_some() {
+                    unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+                }
+
+                self.plan_order_by_exprs(&order_by.exprs)
+            })
+            .transpose()?;
+
         let has_aggs = projections.iter().any(has_agg) || !groupby_exprs.is_empty();
 
         if has_aggs {
@@ -412,23 +366,14 @@ impl<'a> SQLPlanner<'a> {
                 .map(|h| self.plan_expr(h))
                 .transpose()?;
 
-            self.plan_aggregate_query(
-                &projections,
-                &schema,
-                has_orderby,
-                groupby_exprs,
-                query,
-                &projection_schema,
-                having,
-            )?;
+            self.plan_aggregate_query(projections, order_by, groupby_exprs, having)?;
         } else {
-            self.plan_non_agg_query(projections, schema, has_orderby, query, projection_schema)?;
+            self.plan_non_agg_query(projections, order_by)?;
         }
 
         match &selection.distinct {
             Some(Distinct::Distinct) => {
-                let rel = self.relation_mut();
-                rel.inner = rel.inner.distinct()?;
+                self.update_plan(|plan| plan.distinct())?;
             }
             Some(Distinct::On(_)) => unsupported_sql_err!("DISTINCT ON"),
             None => {}
@@ -437,8 +382,7 @@ impl<'a> SQLPlanner<'a> {
         if let Some(limit) = &query.limit {
             let limit = self.plan_expr(limit)?;
             if let Expr::Literal(LiteralValue::Int64(limit)) = limit.as_ref() {
-                let rel = self.relation_mut();
-                rel.inner = rel.inner.limit(*limit, true)?; // TODO: Should this be eager or not?
+                self.update_plan(|plan| plan.limit(*limit, true))?; // TODO: Should this be eager or not?
             } else {
                 invalid_operation_err!(
                     "LIMIT <n> must be a constant integer, instead got: {limit}"
@@ -446,86 +390,24 @@ impl<'a> SQLPlanner<'a> {
             }
         }
 
-        Ok(self.current_relation.clone().unwrap().inner)
+        Ok(self.current_plan.clone().unwrap())
     }
 
     fn plan_non_agg_query(
         &mut self,
         projections: Vec<Arc<Expr>>,
-        schema: Arc<Schema>,
-        has_orderby: bool,
-        query: &Query,
-        projection_schema: Schema,
+        order_by: Option<OrderByExprs>,
     ) -> Result<(), PlannerError> {
-        // Final/selected cols
-        // if there is an orderby, and it references a column that is not part of the final projection (such as an alias)
-        // then we need to keep the original column in the projection, and remove it at the end
-        // ex: `SELECT a as b, c FROM t ORDER BY a`
-        // we need to keep a, and c in the first projection
-        // but only c in the final projection
-        // We only will apply 2 projections if there is an order by and the order by references a column that is not in the final projection
-        let mut final_projection = Vec::with_capacity(projections.len());
-        let mut orderby_projection = Vec::with_capacity(projections.len());
-        for p in &projections {
-            let fld = p.to_field(&schema);
-
-            let fld = fld?;
-            let name = fld.name.clone();
-
-            // if there is an orderby, then the final projection will only contain the columns that are in the orderby
-            final_projection.push(if has_orderby {
-                col(name.as_ref())
-            } else {
-                // otherwise we just do a normal projection
-                p.clone()
-            });
+        if let Some(OrderByExprs {
+            exprs,
+            descending,
+            nulls_first,
+        }) = order_by
+        {
+            self.update_plan(|plan| plan.sort(exprs, descending, nulls_first))?;
         }
 
-        if has_orderby {
-            let order_by = query.order_by.as_ref().unwrap();
-
-            if order_by.interpolate.is_some() {
-                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-            };
-
-            let (orderby_exprs, orderby_desc, orderby_nulls_first) =
-                self.plan_order_by_exprs(order_by.exprs.as_slice())?;
-
-            for expr in &orderby_exprs {
-                if let Err(DaftError::FieldNotFound(_)) = expr.to_field(&projection_schema) {
-                    // this is likely an alias
-                    orderby_projection.push(expr.clone());
-                }
-            }
-            // if the orderby references a column that is not in the final projection
-            // then we need an additional projection
-            let needs_projection = !orderby_projection.is_empty();
-
-            let rel = self.relation_mut();
-            if needs_projection {
-                let pre_orderby_projections = projections
-                    .iter()
-                    .cloned()
-                    .chain(orderby_projection)
-                    .collect::<HashSet<_>>() // dedup
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                rel.inner = rel.inner.select(pre_orderby_projections)?;
-            } else {
-                rel.inner = rel.inner.select(projections)?;
-            }
-
-            rel.inner = rel
-                .inner
-                .sort(orderby_exprs, orderby_desc, orderby_nulls_first)?;
-
-            if needs_projection {
-                rel.inner = rel.inner.select(final_projection)?;
-            }
-        } else {
-            let rel = self.relation_mut();
-            rel.inner = rel.inner.select(projections)?;
-        }
+        self.update_plan(|plan| plan.select(projections))?;
 
         Ok(())
     }
@@ -533,221 +415,88 @@ impl<'a> SQLPlanner<'a> {
     #[allow(clippy::too_many_arguments)]
     fn plan_aggregate_query(
         &mut self,
-        projections: &Vec<Arc<Expr>>,
-        schema: &Arc<Schema>,
-        has_orderby: bool,
+        projections: Vec<Arc<Expr>>,
+        order_by: Option<OrderByExprs>,
         groupby_exprs: Vec<Arc<Expr>>,
-        query: &Query,
-        projection_schema: &Schema,
         having: Option<Arc<Expr>>,
     ) -> Result<(), PlannerError> {
-        let mut final_projection = Vec::with_capacity(projections.len());
-        let mut aggs = Vec::with_capacity(projections.len());
+        let mut aggs = HashSet::new();
 
-        // these are orderbys that are part of the final projection
-        let mut orderbys_after_projection = Vec::new();
-        let mut orderbys_after_projection_desc = Vec::new();
-        let mut orderbys_after_projection_nulls_first = Vec::new();
+        let schema = self.current_plan_ref().schema();
 
-        // these are orderbys that are not part of the final projection
-        let mut orderbys_before_projection = Vec::new();
-        let mut orderbys_before_projection_desc = Vec::new();
-        let mut orderbys_before_projection_nulls_first = Vec::new();
-
-        for p in projections {
-            let fld = p.to_field(schema)?;
-
-            let name = fld.name.clone();
-            if has_agg(p) {
-                // this is an aggregate, so it is resolved during `.agg`. So we just push the column name
-                final_projection.push(col(name.as_ref()));
-                // add it to the aggs list
-                aggs.push(p.clone());
-            } else {
-                // otherwise we just do a normal projection
-                final_projection.push(p.clone());
-            }
-        }
-
-        if let Some(having) = &having {
-            if has_agg(having) {
-                let having = having.alias(having.semantic_id(schema).id);
-
-                aggs.push(having);
-            }
-        }
-
-        let groupby_exprs = groupby_exprs
+        let projections = projections
             .into_iter()
-            .map(|e| {
-                // instead of trying to do an additional projection for the groupby column, we just map it back to the original (unaliased) column
-                // ex: SELECT a as b FROM t GROUP BY b
-                // in this case, we need to resolve b to a
-                if let Err(DaftError::FieldNotFound(_)) = e.to_field(schema) {
-                    // this is likely an alias
-                    unresolve_alias(e, &final_projection)
+            .map(|expr| {
+                if has_agg(&expr) {
+                    aggs.insert(expr.clone());
+
+                    resolved_col(expr.name())
                 } else {
-                    Ok(e)
+                    expr
                 }
             })
-            .collect::<SQLPlannerResult<Vec<_>>>()?;
+            .collect();
 
-        if has_orderby {
-            let order_by = query.order_by.as_ref().unwrap();
+        let having = having.map(|expr| {
+            // ensure that all aggs required for having filter are present
+            if has_agg(&expr) {
+                let id = expr.semantic_id(&schema).id;
 
-            if order_by.interpolate.is_some() {
-                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-            };
+                aggs.insert(expr.alias(id.clone()));
 
-            let (exprs, desc, nulls_first) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
-
-            for (i, expr) in exprs.iter().enumerate() {
-                // the orderby is ordered by a column of the projection
-                // ex: SELECT a as b FROM t ORDER BY b
-                // so we don't need an additional projection
-
-                if let Ok(fld) = expr.to_field(projection_schema) {
-                    // check if it's an aggregate
-                    // ex: SELECT sum(a) FROM t ORDER BY sum(a)
-
-                    // special handling for count(*)
-                    // TODO: this is a hack, we should handle this better
-                    //
-                    // Since count(*) will always be `Ok` for `to_field(schema)`
-                    // we need to manually check if it's in the final schema or not
-                    if let Expr::Alias(e, alias) = expr.as_ref() {
-                        if alias.as_ref() == "count"
-                            && matches!(e.as_ref(), Expr::Agg(AggExpr::Count(_, CountMode::All)))
-                        {
-                            if let Some(alias) = aggs.iter().find_map(|agg| {
-                                if let Expr::Alias(e, alias) = agg.as_ref() {
-                                    if e == expr {
-                                        Some(alias)
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
-                            }) {
-                                // its a count(*) that is already in the final projection
-                                // ex: SELECT count(*) as c FROM t ORDER BY count(*)
-                                orderbys_after_projection.push(col(alias.as_ref()));
-                                orderbys_after_projection_desc.push(desc[i]);
-                                orderbys_after_projection_nulls_first.push(nulls_first[i]);
-                            } else {
-                                // its a count(*) that is not in the final projection
-                                // ex: SELECT sum(n) FROM t ORDER BY count(*);
-                                aggs.push(expr.clone());
-                                orderbys_before_projection.push(col(fld.name.as_ref()));
-                                orderbys_before_projection_desc.push(desc[i]);
-                                orderbys_before_projection_nulls_first.push(nulls_first[i]);
-                            }
-                        }
-                    } else if has_agg(expr) {
-                        // aggregates part of the final projection are already resolved
-                        // so we just need to push the column name
-                        orderbys_after_projection.push(col(fld.name.as_ref()));
-                        orderbys_after_projection_desc.push(desc[i]);
-                        orderbys_after_projection_nulls_first.push(nulls_first[i]);
-                    } else {
-                        orderbys_after_projection.push(expr.clone());
-                        orderbys_after_projection_desc.push(desc[i]);
-                        orderbys_after_projection_nulls_first.push(nulls_first[i]);
-                    }
-
-                // the orderby is ordered by an expr from the original schema
-                // ex: SELECT sum(b) FROM t ORDER BY sum(a)
-                } else if let Ok(fld) = expr.to_field(schema) {
-                    // check if it's an aggregate
-                    if has_agg(expr) {
-                        // check if it's an alias of something in the aggs
-                        // if so, we can just use that column
-                        // This way we avoid computing the aggregate twice
-                        //
-                        // ex: SELECT sum(a) as b FROM t ORDER BY sum(a);
-                        if let Some(alias) = aggs.iter().find_map(|p| {
-                            if let Expr::Alias(e, alias) = p.as_ref() {
-                                if e == expr {
-                                    Some(alias)
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        }) {
-                            orderbys_after_projection.push(col(alias.as_ref()));
-                            orderbys_after_projection_desc.push(desc[i]);
-                            orderbys_after_projection_nulls_first.push(nulls_first[i]);
-                        } else {
-                            // its an aggregate that is not part of the final projection
-                            // ex: SELECT sum(a) FROM t ORDER BY sum(b)
-                            // so we need need to add it to the aggs list
-                            aggs.push(expr.clone());
-
-                            // then add it to the orderbys that are not part of the final projection
-                            orderbys_before_projection.push(col(fld.name.as_ref()));
-                            orderbys_before_projection_desc.push(desc[i]);
-                            orderbys_before_projection_nulls_first.push(nulls_first[i]);
-                        }
-                    } else {
-                        // we know it's a column of the original schema
-                        // and its nt part of the final projection
-                        // so we need an additional projection
-                        // ex: SELECT sum(a) FROM t ORDER BY b
-
-                        orderbys_before_projection.push(col(fld.name.as_ref()));
-                        orderbys_before_projection_desc.push(desc[i]);
-                        orderbys_before_projection_nulls_first.push(nulls_first[i]);
-                    }
-                } else {
-                    panic!("unexpected order by expr");
-                }
+                resolved_col(id)
+            } else {
+                expr
             }
-        }
+        });
 
-        let rel = self.relation_mut();
-        rel.inner = rel.inner.aggregate(aggs.clone(), groupby_exprs)?;
+        let order_by = order_by.map(
+            |OrderByExprs {
+                 exprs,
+                 descending,
+                 nulls_first,
+             }| {
+                // for order by expressions with aggregations,
+                // ensure aggregations are present and update expression to point to agg
+                let updated_exprs = exprs
+                    .into_iter()
+                    .map(|e| {
+                        if has_agg(&e) {
+                            let id = e.semantic_id(&schema).id;
 
-        let has_orderby_before_projection = !orderbys_before_projection.is_empty();
-        let has_orderby_after_projection = !orderbys_after_projection.is_empty();
+                            aggs.insert(e.alias(id.clone()));
 
-        // ----------------
-        // PERF(cory): if there are order bys from both parts, can we combine them into a single sort instead of two?
-        // or can we optimize them into a single sort?
-        // ----------------
+                            resolved_col(id)
+                        } else {
+                            e
+                        }
+                    })
+                    .collect();
 
-        // order bys that are not in the final projection
-        if has_orderby_before_projection {
-            rel.inner = rel.inner.sort(
-                orderbys_before_projection,
-                orderbys_before_projection_desc,
-                orderbys_before_projection_nulls_first,
-            )?;
-        }
+                OrderByExprs {
+                    exprs: updated_exprs,
+                    descending,
+                    nulls_first,
+                }
+            },
+        );
+
+        self.update_plan(|plan| plan.aggregate(aggs.into_iter().collect(), groupby_exprs))?;
 
         if let Some(having) = having {
-            // if it's an agg, it's already resolved during .agg, so we just reference the column name
-            let having = if has_agg(&having) {
-                col(having.semantic_id(schema).id)
-            } else {
-                having
-            };
-            rel.inner = rel.inner.filter(having)?;
+            self.update_plan(|plan| plan.filter(having))?;
         }
 
-        // apply the final projection
-        rel.inner = rel.inner.select(final_projection)?;
-
-        // order bys that are in the final projection
-        if has_orderby_after_projection {
-            rel.inner = rel.inner.sort(
-                orderbys_after_projection,
-                orderbys_after_projection_desc,
-                orderbys_after_projection_nulls_first,
-            )?;
+        if let Some(OrderByExprs {
+            exprs,
+            descending,
+            nulls_first,
+        }) = order_by
+        {
+            self.update_plan(|plan| plan.sort(exprs, descending, nulls_first))?;
         }
+
+        self.update_plan(|plan| plan.select(projections))?;
 
         Ok(())
     }
@@ -755,12 +504,12 @@ impl<'a> SQLPlanner<'a> {
     fn plan_order_by_exprs(
         &self,
         expr: &[sqlparser::ast::OrderByExpr],
-    ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<bool>, Vec<bool>)> {
+    ) -> SQLPlannerResult<OrderByExprs> {
         if expr.is_empty() {
             unsupported_sql_err!("ORDER BY []");
         }
         let mut exprs = Vec::with_capacity(expr.len());
-        let mut desc = Vec::with_capacity(expr.len());
+        let mut descending = Vec::with_capacity(expr.len());
         let mut nulls_first = Vec::with_capacity(expr.len());
         for order_by_expr in expr {
             match (order_by_expr.asc, order_by_expr.nulls_first) {
@@ -776,7 +525,7 @@ impl<'a> SQLPlanner<'a> {
                 // ORDER BY expr ASC NULLS LAST
                 (Some(true), Some(false)) => {
                    nulls_first.push(false);
-                   desc.push(false);
+                   descending.push(false);
                },
                 // ---------------------------
 
@@ -787,7 +536,7 @@ impl<'a> SQLPlanner<'a> {
                 // ORDER BY expr ASC NULLS FIRST
                 (Some(true), Some(true)) => {
                     nulls_first.push(true);
-                    desc.push(false);
+                    descending.push(false);
                 }
                 // ---------------------------
 
@@ -796,12 +545,12 @@ impl<'a> SQLPlanner<'a> {
                 // ORDER BY expr DESC NULLS FIRST
                 (Some(false), Some(true)) => {
                     nulls_first.push(true);
-                    desc.push(true);
+                    descending.push(true);
                 },
                 // ORDER BY expr DESC NULLS LAST
                 (Some(false), Some(false)) => {
                     nulls_first.push(false);
-                    desc.push(true);
+                    descending.push(true);
                 }
 
             };
@@ -812,42 +561,16 @@ impl<'a> SQLPlanner<'a> {
 
             exprs.push(expr);
         }
-        Ok((exprs, desc, nulls_first))
+
+        Ok(OrderByExprs {
+            exprs,
+            descending,
+            nulls_first,
+        })
     }
 
-    /// Plans the FROM clause of a query and populates self.current_relation and self.table_map
-    /// Should only be called once per query.
-    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<()> {
-        if from.len() > 1 {
-            let mut from_iter = from.iter();
-
-            let first = from_iter.next().unwrap();
-            let mut rel = self.plan_relation(&first.relation)?;
-            self.bound_tables.insert(rel.get_name(), rel.clone());
-            for tbl in from_iter {
-                let right = self.plan_relation(&tbl.relation)?;
-                self.bound_tables.insert(right.get_name(), right.clone());
-                let right_join_prefix = format!("{}.", right.get_name());
-
-                rel.inner = rel.inner.cross_join(
-                    right.inner,
-                    JoinOptions::default().prefix(right_join_prefix),
-                )?;
-            }
-            self.current_relation = Some(rel);
-            return Ok(());
-        }
-
-        if from.is_empty() {
-            self.current_relation = Some(singleton_relation()?);
-            return Ok(());
-        }
-
-        let from = from
-            .iter()
-            .next()
-            .expect("expected at least one from source");
-
+    /// Plans a single set of table and joins in a FROM clause.
+    fn plan_single_from(&self, from: &TableWithJoins) -> SQLPlannerResult<LogicalPlanBuilder> {
         macro_rules! return_non_ident_errors {
             ($e:expr) => {
                 if !matches!(
@@ -961,25 +684,26 @@ impl<'a> SQLPlanner<'a> {
         }
 
         let relation = from.relation.clone();
-        let left_rel = self.plan_relation(&relation)?;
-        self.current_relation = Some(left_rel.clone());
-        self.bound_tables.insert(left_rel.get_name(), left_rel);
+        let left_plan = self.plan_relation(&relation)?;
+        let mut left_planner = self.new_with_context();
+        left_planner.set_plan(left_plan);
 
         for join in &from.joins {
             use sqlparser::ast::{
                 JoinConstraint,
                 JoinOperator::{FullOuter, Inner, LeftAnti, LeftOuter, LeftSemi, RightOuter},
             };
-            let right_rel = self.plan_relation(&join.relation)?;
-            let right_rel_name = right_rel.get_name();
-            let right_join_prefix = format!("{right_rel_name}.");
+
+            let right_plan = self.plan_relation(&join.relation)?;
+
+            let mut join_options = JoinOptions::default();
+            if let [id] = right_plan.plan.clone().get_aliases().as_slice() {
+                join_options = join_options.prefix(format!("{id}."));
+            }
 
             // construct a planner with the right table to use for expr planning
             let mut right_planner = self.new_with_context();
-            right_planner.current_relation = Some(right_rel.clone());
-            right_planner
-                .bound_tables
-                .insert(right_rel.get_name(), right_rel.clone());
+            right_planner.set_plan(right_plan);
 
             let (join_type, constraint) = match &join.join_operator {
                 Inner(constraint) => (JoinType::Inner, constraint),
@@ -1003,7 +727,7 @@ impl<'a> SQLPlanner<'a> {
 
                     process_join_on(
                         expr,
-                        self,
+                        &left_planner,
                         &right_planner,
                         &mut left_on,
                         &mut right_on,
@@ -1017,7 +741,7 @@ impl<'a> SQLPlanner<'a> {
                 JoinConstraint::Using(idents) => {
                     left_on = idents
                         .iter()
-                        .map(|i| col(i.value.clone()))
+                        .map(|i| unresolved_col(i.value.clone()))
                         .collect::<Vec<_>>();
                     right_on.clone_from(&left_on);
 
@@ -1027,35 +751,65 @@ impl<'a> SQLPlanner<'a> {
                 JoinConstraint::None => unsupported_sql_err!("JOIN without ON/USING not supported"),
             };
 
-            let mut left_plan = self.current_relation.as_ref().unwrap().inner.clone();
             if let Some(left_predicate) = combine_conjunction(left_filters) {
-                left_plan = left_plan.filter(left_predicate)?;
+                left_planner.update_plan(|plan| plan.filter(left_predicate))?;
             }
 
-            let mut right_plan = right_rel.inner.clone();
             if let Some(right_predicate) = combine_conjunction(right_filters) {
-                right_plan = right_plan.filter(right_predicate)?;
+                right_planner.update_plan(|plan| plan.filter(right_predicate))?;
             }
 
-            self.relation_mut().inner = left_plan.join_with_null_safe_equal(
-                right_plan,
-                left_on,
-                right_on,
-                null_eq_nulls,
-                join_type,
-                None,
-                JoinOptions::default()
-                    .prefix(right_join_prefix)
-                    .merge_matching_join_keys(merge_matching_join_keys),
-            )?;
-            self.bound_tables.insert(right_rel_name, right_rel);
+            left_planner.update_plan(|plan| {
+                plan.join_with_null_safe_equal(
+                    right_planner.current_plan.unwrap(),
+                    left_on,
+                    right_on,
+                    null_eq_nulls,
+                    join_type,
+                    None,
+                    join_options.merge_matching_join_keys(merge_matching_join_keys),
+                )
+            })?;
         }
+
+        Ok(left_planner.current_plan.unwrap())
+    }
+
+    /// Plans the FROM clause of a query and populates `self.current_relation`.
+    /// Should only be called once per query.
+    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<()> {
+        let plan = if let Some(plan) = from
+            .iter()
+            .map(|f| self.plan_single_from(f))
+            .reduce(|left, right| {
+                let left = left?;
+                let right = right?;
+
+                let mut join_options = JoinOptions::default();
+                if let [id] = right.plan.clone().get_aliases().as_slice() {
+                    join_options = join_options.prefix(format!("{id}."));
+                }
+
+                Ok(left.cross_join(right, join_options)?)
+            })
+            .transpose()?
+        {
+            plan
+        } else {
+            // singleton plan for SELECT without FROM
+            singleton_plan()?
+        };
+
+        self.set_plan(plan);
 
         Ok(())
     }
 
-    fn plan_relation(&self, rel: &sqlparser::ast::TableFactor) -> SQLPlannerResult<Relation> {
-        let (rel, alias) = match rel {
+    fn plan_relation(
+        &self,
+        rel: &sqlparser::ast::TableFactor,
+    ) -> SQLPlannerResult<LogicalPlanBuilder> {
+        let (plan, alias) = match rel {
             sqlparser::ast::TableFactor::Table {
                 name,
                 args: Some(args),
@@ -1063,7 +817,7 @@ impl<'a> SQLPlanner<'a> {
                 ..
             } => {
                 let tbl_fn = name.0.first().unwrap().value.as_str();
-                (self.plan_table_function(tbl_fn, args)?, alias.clone())
+                (self.plan_table_function(tbl_fn, args)?, alias)
             }
             sqlparser::ast::TableFactor::Table {
                 name,
@@ -1071,26 +825,24 @@ impl<'a> SQLPlanner<'a> {
                 alias,
                 ..
             } => {
-                let rel = if is_table_path(name) {
+                let plan = if is_table_path(name) {
                     self.plan_relation_path(name.0[0].value.as_str())?
                 } else {
                     self.plan_relation_table(name)?
                 };
-                (rel, alias.clone())
+
+                (plan, alias)
             }
             sqlparser::ast::TableFactor::Derived {
                 lateral,
                 subquery,
-                alias: Some(alias),
+                alias,
             } => {
                 if *lateral {
                     unsupported_sql_err!("LATERAL");
                 }
                 let subquery = self.new_with_context().plan_query(subquery)?;
-                let rel_name = ident_to_str(&alias.name);
-                let rel = Relation::new(subquery, rel_name);
-
-                (rel, Some(alias.clone()))
+                (subquery, alias)
             }
             sqlparser::ast::TableFactor::TableFunction { .. } => {
                 unsupported_sql_err!("Unsupported table factor: TableFunction")
@@ -1116,17 +868,16 @@ impl<'a> SQLPlanner<'a> {
             sqlparser::ast::TableFactor::MatchRecognize { .. } => {
                 unsupported_sql_err!("Unsupported table factor: MatchRecognize")
             }
-            _ => unsupported_sql_err!("Unsupported table factor"),
         };
         if let Some(alias) = alias {
-            Ok(rel.with_alias(alias))
+            apply_table_alias(plan, alias)
         } else {
-            Ok(rel)
+            Ok(plan)
         }
     }
 
     /// Plan a `FROM <path>` table factor by rewriting to relevant table-value function.
-    fn plan_relation_path(&self, path: &str) -> SQLPlannerResult<Relation> {
+    fn plan_relation_path(&self, path: &str) -> SQLPlannerResult<LogicalPlanBuilder> {
         let func = match Path::new(path).extension() {
             Some(ext) if ext.eq_ignore_ascii_case("csv") => "read_csv",
             Some(ext) if ext.eq_ignore_ascii_case("json") => "read_json",
@@ -1145,118 +896,109 @@ impl<'a> SQLPlanner<'a> {
     }
 
     /// Plan a `FROM <table>` table factor.
-    pub(crate) fn plan_relation_table(&self, name: &ObjectName) -> SQLPlannerResult<Relation> {
+    ///
+    /// All plans returned by plan_relation_table should have a SubqueryAlias with the table's name.
+    pub(crate) fn plan_relation_table(
+        &self,
+        name: &ObjectName,
+    ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let ident = normalize(name);
-        let table = if ident.has_namespace() {
-            // qualified search of sesison metadata
-            self.get_table(&ident)
+        let table = if ident.has_qualifier() {
+            // qualified search of session metadata
+            self.get_table(&ident).ok()
         } else {
             // search bindings then session metadata
-            self.bound_tables
+            self.bound_ctes()
                 .get(&ident.name)
                 .cloned()
-                .or_else(|| self.bound_ctes().get(&ident.name).cloned())
-                .or_else(|| self.get_table(&ident))
+                .or_else(|| self.get_table(&ident).ok())
         };
         table.ok_or_else(|| PlannerError::table_not_found(ident.to_string()))
     }
 
     fn plan_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<ExprRef> {
-        // if the current relation is not resolved (e.g. in a `sql_expr` call, simply wrap identifier in a col)
-        if self.current_relation.is_none() {
-            return Ok(col(idents_to_str(idents)));
-        }
+        fn expr_from_idents(
+            schema: SchemaRef,
+            bound_columns: &Bindings<ExprRef>,
+            idents: &[Ident],
+            plan_ref: PlanRef,
+        ) -> Option<ExprRef> {
+            let full_name = compound_ident_to_str(idents);
 
-        /// Helper function that produces either a column or outer reference column
-        /// depending on the depth
-        fn maybe_outer_col(field: Field, depth: u64) -> ExprRef {
-            if depth == 0 {
-                Arc::new(Expr::Column(field.name.into()))
-            } else {
-                Arc::new(Expr::OuterReferenceColumn(OuterReferenceColumn {
-                    field,
-                    depth,
-                }))
+            // TODO: remove this once we do not do join column renaming
+            if schema.has_field(&full_name) {
+                return Some(Arc::new(Expr::Column(Column::Unresolved(
+                    UnresolvedColumn {
+                        name: full_name.into(),
+                        plan_ref,
+                        plan_schema: Some(schema),
+                    },
+                ))));
             }
+
+            let [first, rest @ ..] = idents else {
+                unreachable!("identifier slice must have at least one value")
+            };
+
+            let root_expr = if schema.has_field(&first.value) {
+                Arc::new(Expr::Column(Column::Unresolved(UnresolvedColumn {
+                    name: first.value.clone().into(),
+                    plan_ref,
+                    plan_schema: Some(schema),
+                })))
+            } else if let Some(expr) = bound_columns.get(&first.value) {
+                expr.clone()
+            } else {
+                return None;
+            };
+
+            let expr_with_struct_gets = rest.iter().fold(root_expr, |acc, i| {
+                daft_dsl::functions::struct_::get(acc, &i.value)
+            });
+
+            Some(expr_with_struct_gets)
         }
 
-        let full_str = idents_to_str(idents);
+        let full_name = compound_ident_to_str(idents);
 
-        let [root, rest @ ..] = idents else {
-            return Err(PlannerError::ParseError {
-                message: "empty identifier".to_string(),
-            });
+        // if the current relation is not resolved (e.g. in a `sql_expr` call, simply wrap identifier in a unresolved_col)
+        let Some(current_plan) = &self.current_plan else {
+            return Ok(unresolved_col(full_name));
         };
 
-        let current_relation_name = self.relation_opt().unwrap().get_name();
+        let schema = current_plan.plan.schema();
 
-        let root_str = ident_to_str(root);
-        let rest_str = idents_to_str(rest);
-
-        let mut depth = 0;
-
-        let mut curr_planner = Some(self);
-
-        // loop through parent plans until we find the identifier in the schema
-        while let Some(planner) = curr_planner {
-            let plan_relation = planner.relation_opt().unwrap();
-
-            // Try to find in schema at current depth
-            // This also covers duplicate columns from joins, which are added to the table with a prefix (df.column_name)
-            if let Ok(field) = plan_relation.schema().get_field(&full_str) {
-                return Ok(maybe_outer_col(field.clone(), depth));
-            }
-            // The identifier could also be in the alias map but not the schema
-            // for expressions in WHERE, GROUP BY, and HAVING, which are done before project
-            if let Some(expr) = planner.bound_columns.get(&full_str) {
-                // transform expression alias map by incrementing thee depths of every column by `depth`
-                let transformed_expr = expr
-                    .clone()
-                    .transform(|e| match e.as_ref() {
-                        Expr::Column(name) => {
-                            let field = plan_relation.schema().get_field(name)?.clone();
-                            Ok(Transformed::yes(maybe_outer_col(field, depth)))
-                        }
-                        Expr::OuterReferenceColumn(c) => Ok(Transformed::yes(maybe_outer_col(
-                            c.field.clone(),
-                            c.depth + depth,
-                        ))),
-                        _ => Ok(Transformed::no(e)),
-                    })?
-                    .data;
-
-                return Ok(transformed_expr);
-            }
-
-            // If compound identifier, try to find in tables at current depth
-            if !rest.is_empty()
-                && let Some(relation) = planner.bound_tables.get(&root_str)
-            {
-                let relation_schema = relation.schema();
-
-                if let Ok(field) = relation_schema.get_field(&rest_str) {
-                    return Ok(maybe_outer_col(field.clone(), depth));
-                } else {
-                    column_not_found_err!(&full_str, current_relation_name)
-                }
-            }
-
-            curr_planner = planner.parent;
-            depth += 1;
+        if let Some(expr) =
+            expr_from_idents(schema, &self.bound_columns, idents, PlanRef::Unqualified)
+        {
+            return Ok(expr);
         }
 
-        if rest.is_empty() {
-            column_not_found_err!(&full_str, current_relation_name)
+        if idents.len() > 1 {
+            let alias = &idents[0].value;
+
+            if let Some(schema) = current_plan.plan.clone().get_schema_for_alias(alias)? {
+                if let Some(expr) = expr_from_idents(
+                    schema,
+                    &self.bound_columns,
+                    &idents[1..],
+                    PlanRef::Alias(alias.clone().into()),
+                ) {
+                    return Ok(expr);
+                } else {
+                    column_not_found_err!(compound_ident_to_str(&idents[1..]), alias);
+                }
+            }
+        }
+
+        if let Some(parent) = self.parent {
+            parent.plan_identifier(idents)
         } else {
-            table_not_found_err!(root_str)
+            column_not_found_err!(full_name, "current scope")
         }
     }
 
-    fn select_item_to_expr(
-        &mut self,
-        item: &SelectItem,
-        schema: &Schema,
-    ) -> SQLPlannerResult<Vec<ExprRef>> {
+    fn select_item_to_expr(&mut self, item: &SelectItem) -> SQLPlannerResult<Vec<ExprRef>> {
         fn wildcard_exclude(
             schema: SchemaRef,
             exclusion: &ExcludeSelectItem,
@@ -1287,72 +1029,70 @@ impl<'a> SQLPlanner<'a> {
                 check_wildcard_options(wildcard_opts)?;
 
                 if let Some(exclude) = &wildcard_opts.opt_exclude {
-                    let current_relation = match &self.current_relation {
-                        Some(rel) => rel,
-                        None => {
-                            return Err(PlannerError::TableNotFound {
-                                message: "No table found to exclude columns from".to_string(),
-                            })
-                        }
-                    };
-                    let schema = current_relation.inner.schema();
+                    let schema = self.current_plan_ref().schema();
                     wildcard_exclude(schema, exclude)
-                        .map(|schema| {
-                            schema
+                        .map(|excluded| {
+                            excluded
                                 .names()
                                 .iter()
-                                .map(|n| col(n.as_ref()))
+                                .map(|n| unresolved_col(n.as_ref()))
                                 .collect::<Vec<_>>()
                         })
                         .map_err(std::convert::Into::into)
-                } else if schema.is_empty() {
-                    Ok(vec![col("*")])
-                } else {
-                    Ok(schema
+                } else if let Some(current_plan) = &self.current_plan {
+                    Ok(current_plan
+                        .schema()
                         .names()
                         .iter()
-                        .map(|n| col(n.as_ref()))
-                        .collect::<Vec<_>>())
+                        .map(|n| unresolved_col(n.clone()))
+                        .collect())
+                } else {
+                    Ok(vec![unresolved_col("*")])
                 }
             }
+            // TODO: support wildcard struct gets
             SelectItem::QualifiedWildcard(object_name, wildcard_opts) => {
                 check_wildcard_options(wildcard_opts)?;
-                let table_name = idents_to_str(&object_name.0);
-                let Some(rel) = self.relation_opt() else {
-                    table_not_found_err!(table_name);
+                let ident = normalize(object_name);
+                let ident_name = ident.to_string();
+                let Some(current_plan) = self.current_plan.as_ref() else {
+                    table_not_found_err!(ident_name);
                 };
-                let Some(table_rel) = self.bound_tables.get(&table_name) else {
-                    table_not_found_err!(table_name);
+                let Some(subquery_schema) = current_plan
+                    .plan
+                    .clone()
+                    .get_schema_for_alias(&ident_name)?
+                else {
+                    table_not_found_err!(ident_name);
                 };
-                let right_schema = table_rel.inner.schema();
-                let keys = schema.fields.keys();
 
-                let right_schema = if let Some(exclude) = &wildcard_opts.opt_exclude {
-                    Arc::new(wildcard_exclude(right_schema, exclude)?)
+                let columns = if let Some(exclude) = &wildcard_opts.opt_exclude {
+                    Arc::new(wildcard_exclude(subquery_schema.clone(), exclude)?)
                 } else {
-                    right_schema
+                    // I believe clippy is wrong here. It does not compile without this clone - kevin
+                    #[allow(clippy::redundant_clone)]
+                    subquery_schema.clone()
                 };
 
-                let columns = right_schema
-                    .fields
-                    .keys()
-                    .map(|field| {
-                        if keys
-                            .clone()
-                            .any(|s| s.starts_with(&table_name) && s.ends_with(field))
-                        {
-                            if table_name == rel.get_name() {
-                                col(field.clone())
-                            } else {
-                                col(format!("{}.{}", &table_name, field)).alias(field.as_ref())
-                            }
+                let plan_schema = current_plan.plan.schema();
+
+                Ok(columns
+                    .names()
+                    .iter()
+                    .map(|n| {
+                        let full_name = format!("{ident_name}.{n}");
+                        if plan_schema.has_field(&full_name) {
+                            // TODO: remove this once we do not do join column renaming
+                            unresolved_col(full_name).alias(n.clone())
                         } else {
-                            col(field.clone())
+                            Arc::new(Expr::Column(Column::Unresolved(UnresolvedColumn {
+                                name: n.clone().into(),
+                                plan_ref: PlanRef::Alias(ident_name.clone().into()),
+                                plan_schema: Some(subquery_schema.clone()),
+                            })))
                         }
                     })
-                    .collect::<Vec<_>>();
-
-                Ok(columns)
+                    .collect())
             }
         }
     }
@@ -1373,10 +1113,9 @@ impl<'a> SQLPlanner<'a> {
             unsupported_sql_err!("unsupported options: {options:?}")
         }
 
-        let name = ident_to_str(name);
-        let data_type = self.sql_dtype_to_dtype(data_type)?;
+        let data_type = sql_dtype_to_dtype(data_type)?;
 
-        Ok(Field::new(name, data_type))
+        Ok(Field::new(name.value.clone(), data_type))
     }
 
     fn value_to_lit(&self, value: &Value) -> SQLPlannerResult<LiteralValue> {
@@ -1418,7 +1157,7 @@ impl<'a> SQLPlanner<'a> {
                 data_type,
                 format: None,
             } => {
-                let dtype = self.sql_dtype_to_dtype(data_type)?;
+                let dtype = sql_dtype_to_dtype(data_type)?;
                 let expr = self.plan_expr(expr)?;
                 Ok(expr.cast(&dtype))
             }
@@ -1909,227 +1648,6 @@ impl<'a> SQLPlanner<'a> {
             other => unsupported_sql_err!("Unsupported operator: '{other}'"),
         }
     }
-    fn sql_dtype_to_dtype(&self, dtype: &sqlparser::ast::DataType) -> SQLPlannerResult<DataType> {
-        use sqlparser::ast::DataType as SQLDataType;
-        macro_rules! use_instead {
-            ($dtype:expr, $($expected:expr),*) => {
-                unsupported_sql_err!(
-                    "`{dtype}` is not supported, instead try using {expected}",
-                    dtype = $dtype,
-                    expected = format!($($expected),*)
-                )
-            };
-        }
-
-        Ok(match dtype {
-            // ---------------------------------
-            // array/list
-            // ---------------------------------
-            SQLDataType::Array(ArrayElemTypeDef::AngleBracket(_)) => use_instead!(dtype, "array[..]"),
-            SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, None)) => {
-                DataType::List(Box::new(self.sql_dtype_to_dtype(inner_type)?))
-            }
-            SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, Some(size))) => {
-                DataType::FixedSizeList(
-                    Box::new(self.sql_dtype_to_dtype(inner_type)?),
-                    *size as usize,
-                )
-            }
-
-            // ---------------------------------
-            // binary
-            // ---------------------------------
-            SQLDataType::Bytea
-            | SQLDataType::Blob(_)
-            | SQLDataType::Varbinary(_) => use_instead!(dtype, "`binary` or `bytes`"),
-            SQLDataType::Binary(None) | SQLDataType::Bytes(None) => DataType::Binary,
-            SQLDataType::Binary(Some(n_bytes)) | SQLDataType::Bytes(Some(n_bytes)) => DataType::FixedSizeBinary(*n_bytes as usize),
-
-            // ---------------------------------
-            // boolean
-            // ---------------------------------
-            SQLDataType::Boolean | SQLDataType::Bool => DataType::Boolean,
-            // ---------------------------------
-            // signed integer
-            // ---------------------------------
-            SQLDataType::Int2(_) => use_instead!(dtype, "`int16` or `smallint`"),
-            SQLDataType::Int4(_) | SQLDataType::MediumInt(_)  => use_instead!(dtype, "`int32`, `integer`, or `int`"),
-            SQLDataType::Int8(_) => use_instead!(dtype, "`int64` or `bigint` for 64-bit integer, or `tinyint` for 8-bit integer"),
-            SQLDataType::TinyInt(_) => DataType::Int8,
-            SQLDataType::SmallInt(_) | SQLDataType::Int16 => DataType::Int16,
-            SQLDataType::Int(_) | SQLDataType::Integer(_) | SQLDataType::Int32  => DataType::Int32,
-            SQLDataType::BigInt(_) | SQLDataType::Int64 => DataType::Int64,
-
-            // ---------------------------------
-            // unsigned integer
-            // ---------------------------------
-            SQLDataType::UnsignedInt2(_) => use_instead!(dtype, "`smallint unsigned` or `uint16`"),
-            SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => use_instead!(dtype, "`int unsigned` or `uint32`"),
-            SQLDataType::UnsignedInt8(_) => use_instead!(dtype, "`bigint unsigned` or `uint64` for 64-bit unsigned integer, or `unsigned tinyint` for 8-bit unsigned integer"),
-            SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
-            SQLDataType::UnsignedSmallInt(_) | SQLDataType::UInt16 => DataType::UInt16,
-            SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) | SQLDataType::UInt32 => DataType::UInt32,
-            SQLDataType::UnsignedBigInt(_) | SQLDataType::UInt64 => DataType::UInt64,
-            // ---------------------------------
-            // float
-            // ---------------------------------
-            SQLDataType::Float4 => use_instead!(dtype, "`float32` or `real`"),
-            SQLDataType::Float8 => use_instead!(dtype, "`float64` or `double`"),
-            SQLDataType::Double | SQLDataType::DoublePrecision | SQLDataType::Float64 => {
-                DataType::Float64
-            }
-            SQLDataType::Float(n_bytes) => match n_bytes {
-                Some(n) if (1u64..=24u64).contains(n) => DataType::Float32,
-                Some(n) if (25u64..=53u64).contains(n) => DataType::Float64,
-                Some(n) => {
-                    unsupported_sql_err!(
-                        "unsupported `float` size (expected a value between 1 and 53, found {})",
-                        n
-                    )
-                }
-                None => DataType::Float64,
-            },
-            SQLDataType::Real | SQLDataType::Float32 => DataType::Float32,
-
-            // ---------------------------------
-            // decimal
-            // ---------------------------------
-            SQLDataType::Dec(info) | SQLDataType::Numeric(info) |SQLDataType::Decimal(info) => match *info {
-                ExactNumberInfo::PrecisionAndScale(p, s) => {
-                    DataType::Decimal128(p as usize, s as usize)
-                }
-                ExactNumberInfo::Precision(p) => DataType::Decimal128(p as usize, 0),
-                ExactNumberInfo::None => DataType::Decimal128(38, 9),
-            },
-            // ---------------------------------
-            // temporal
-            // ---------------------------------
-            SQLDataType::Date => DataType::Date,
-            SQLDataType::Interval => DataType::Interval,
-            SQLDataType::Time(precision, tz) => match tz {
-                TimezoneInfo::None => DataType::Time(self.timeunit_from_precision(precision)?),
-                _ => unsupported_sql_err!("`time` with timezone is; found tz={}", tz),
-            },
-            SQLDataType::Datetime(_) => unsupported_sql_err!("`datetime` is not supported"),
-            SQLDataType::Timestamp(prec, tz) => match tz {
-                TimezoneInfo::None => {
-                    DataType::Timestamp(self.timeunit_from_precision(prec)?, None)
-                }
-                _ => unsupported_sql_err!("`timestamp` with timezone"),
-            },
-            // ---------------------------------
-            // string
-            // ---------------------------------
-            SQLDataType::Char(_)
-            | SQLDataType::CharVarying(_)
-            | SQLDataType::Character(_)
-            | SQLDataType::CharacterVarying(_)
-            | SQLDataType::Clob(_) => use_instead!(dtype, "`string`, `text`, or `varchar`"),
-            SQLDataType::String(_) | SQLDataType::Text | SQLDataType::Varchar(_) => DataType::Utf8,
-            // ---------------------------------
-            // struct
-            // ---------------------------------
-            SQLDataType::Struct(fields, _) => {
-                let fields = fields
-                    .iter()
-                    .enumerate()
-                    .map(
-                        |(
-                            idx,
-                            StructField {
-                                field_name,
-                                field_type,
-                            },
-                        )| {
-                            let dtype = self.sql_dtype_to_dtype(field_type)?;
-                            let name = match field_name {
-                                Some(name) => name.to_string(),
-                                None => format!("col_{idx}"),
-                            };
-
-                            Ok(Field::new(name, dtype))
-                        },
-                    )
-                    .collect::<SQLPlannerResult<Vec<_>>>()?;
-                DataType::Struct(fields)
-            }
-            SQLDataType::Custom(name, properties) => match name.to_string().to_lowercase().as_str() {
-                "tensor" => match properties.as_slice() {
-                    [] => invalid_operation_err!("must specify inner datatype with 'tensor'. ex: `tensor(int)` or `tensor(int, 10, 10, 10)`"),
-                    [inner_dtype] => {
-                        let inner_dtype = sql_datatype(inner_dtype)?;
-                        DataType::Tensor(Box::new(inner_dtype))
-                    }
-                    [inner_dtype, rest @ ..] => {
-                        let inner_dtype = sql_datatype(inner_dtype)?;
-                        let rest = rest
-                            .iter()
-                            .map(|p| {
-                                p.parse().map_err(|_| {
-                                    PlannerError::invalid_operation(
-                                        "invalid tensor shape".to_string(),
-                                    )
-                                })
-                            })
-                            .collect::<SQLPlannerResult<Vec<_>>>()?;
-                        DataType::FixedShapeTensor(Box::new(inner_dtype), rest)
-                    }
-                },
-                "image" => match properties.as_slice() {
-                    [] => DataType::Image(None),
-                    [mode] => {
-                        let mode = mode.parse().map_err(|_| {
-                            PlannerError::invalid_operation("invalid image mode".to_string())
-                        })?;
-                        DataType::Image(Some(mode))
-
-                    },
-                    [mode, height, width] => {
-                        let mode = mode.parse().map_err(|_| {
-                            PlannerError::invalid_operation("invalid image mode".to_string())
-                        })?;
-                        let height = height.parse().map_err(|_| {
-                            PlannerError::invalid_operation("invalid image height".to_string())
-                        })?;
-                        let width = width.parse().map_err(|_| {
-                            PlannerError::invalid_operation("invalid image width".to_string())
-                        })?;
-                        DataType::FixedShapeImage(mode, height, width)
-                    }
-                    _ => invalid_operation_err!("invalid image properties"),
-                },
-                "embedding" => match properties.as_slice() {
-                    [inner_dtype, size] => {
-                        let inner_dtype = sql_datatype(inner_dtype)?;
-                        let Ok(size) = size.parse() else {
-                            invalid_operation_err!("invalid embedding size, expected an integer")
-                        };
-                        DataType::Embedding(Box::new(inner_dtype), size)
-                    }
-                    _ => invalid_operation_err!(
-                        "embedding must have datatype and size: ex: `embedding(int, 10)`"
-                    ),
-                },
-                other => unsupported_sql_err!("custom data type: {other}"),
-            },
-            other => unsupported_sql_err!("data type: {:?}", other),
-        })
-    }
-
-    fn timeunit_from_precision(&self, prec: &Option<u64>) -> SQLPlannerResult<TimeUnit> {
-        Ok(match prec {
-            None => TimeUnit::Microseconds,
-            Some(n) if (1u64..=3u64).contains(n) => TimeUnit::Milliseconds,
-            Some(n) if (4u64..=6u64).contains(n) => TimeUnit::Microseconds,
-            Some(n) if (7u64..=9u64).contains(n) => TimeUnit::Nanoseconds,
-            Some(n) => {
-                unsupported_sql_err!(
-                    "invalid temporal type precision (expected 1-9, found {})",
-                    n
-                )
-            }
-        })
-    }
 
     /// Visit a SQL unary operator.
     ///
@@ -2163,12 +1681,12 @@ impl<'a> SQLPlanner<'a> {
                 let expr = self.plan_expr(expr)?;
                 let index = self.plan_expr(index)?;
                 let schema = self
-                    .current_relation
+                    .current_plan
                     .as_ref()
                     .ok_or_else(|| {
                         PlannerError::invalid_operation("subscript without a current relation")
-                    })
-                    .map(Relation::schema)?;
+                    })?
+                    .schema();
                 let expr_field = expr.to_field(schema.as_ref())?;
                 match expr_field.dtype {
                     DataType::List(_) | DataType::FixedSizeList(_, _) => {
@@ -2351,60 +1869,32 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
         .with_tokens(tokens);
 
     let expr = parser.parse_select_item()?;
-    let empty_schema = Schema::empty();
-    let exprs = planner.select_item_to_expr(&expr, &empty_schema)?;
+    let exprs = planner.select_item_to_expr(&expr)?;
     if exprs.len() != 1 {
         invalid_operation_err!("expected a single expression, found {}", exprs.len())
     }
     Ok(exprs.into_iter().next().unwrap())
 }
 
-pub fn sql_datatype<S: AsRef<str>>(s: S) -> SQLPlannerResult<DataType> {
-    let planner = SQLPlanner::default();
-
-    let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
-
-    let mut parser = Parser::new(&GenericDialect {})
-        .with_options(ParserOptions {
-            trailing_commas: true,
-            ..Default::default()
-        })
-        .with_tokens(tokens);
-
-    let dtype = parser.parse_data_type()?;
-    planner.sql_dtype_to_dtype(&dtype)
-}
-
 // ----------------
 // Helper functions
 // ----------------
 
-/// TODO replace with daft identifiers in subsequent PR.
-/// TODO proper handling of other quote styles like backticks
-/// # Examples
-/// ```
-/// // Quoted identifier "MyCol" -> "MyCol"
-/// // Unquoted identifier MyCol -> "MyCol"
-/// ```
-fn ident_to_str(ident: &Ident) -> String {
-    if ident.quote_style == Some('"') {
-        ident.value.to_string()
-    } else {
-        ident.to_string()
-    }
-}
-
-/// TODO replace with daft identifiers in subsequent PR.
-fn idents_to_str(idents: &[Ident]) -> String {
+/// Join identifiers on "." to form a string.
+///
+/// Generally, this should only be used for displaying
+/// or when there is no better way to represent the compound identifier,
+/// since this will include quotes and escapes.
+fn compound_ident_to_str(idents: &[Ident]) -> String {
     idents
         .iter()
-        .map(ident_to_str)
+        .map(<_>::to_string)
         .collect::<Vec<_>>()
         .join(".")
 }
 
 /// Returns a normalized daft identifier from an sqlparser ObjectName
-fn normalize(name: &ObjectName) -> Identifier {
+pub(crate) fn normalize(name: &ObjectName) -> Identifier {
     // TODO case-normalization of regular identifiers
     let mut names: Vec<String> = name.0.iter().map(|i| i.value.to_string()).collect();
     let name = names.pop().unwrap();
@@ -2428,46 +1918,38 @@ fn is_table_path(name: &ObjectName) -> bool {
     matches!(name.0[0].quote_style, Some('\''))
 }
 
-/// unresolves an alias in a projection
-/// Example:
-/// ```sql
-/// SELECT a as b, c FROM t group by b
-/// ```
-/// in this case if you tried to unresolve the expr `b` using the projections [`a as b`, `c`] you would get `a`
-///
-/// Since sql allows you to use the alias in the group by or the order by clause, we need to unresolve the alias to the original expression
-/// ex:
-/// All of the following are valid sql queries
-/// `select a as b, c from t group by b`
-/// `select a as b, c from t group by a`
-/// `select a as b, c from t group by a order by a`
-/// `select a as b, c from t group by a order by b`
-/// `select a as b, c from t group by b order by a`
-/// `select a as b, c from t group by b order by b`
-///
-/// In all of the above cases, the group by and order by clauses are resolved to the original expression `a`
-///
-/// This is needed for resolving group by and order by clauses
-fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
-    projection
-        .iter()
-        .find_map(|p| {
-            if let Expr::Alias(e, alias) = &p.as_ref() {
-                if expr.name() == alias.as_ref() {
-                    Some(e.clone())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| PlannerError::column_not_found(expr.name(), "projection"))
+/// Add the relevant projection and alias plan nodes to reflect the TableAlias
+fn apply_table_alias(
+    mut plan: LogicalPlanBuilder,
+    alias: &TableAlias,
+) -> SQLPlannerResult<LogicalPlanBuilder> {
+    if !alias.columns.is_empty() {
+        let columns = plan.schema().names();
+        if columns.len() != alias.columns.len() {
+            invalid_operation_err!(
+                "Column count mismatch: expected {} columns, found {}",
+                alias.columns.len(),
+                columns.len()
+            );
+        }
+
+        let projection = columns
+            .into_iter()
+            .zip(&alias.columns)
+            .map(|(name, ident)| unresolved_col(name).alias(ident.value.clone()))
+            .collect::<Vec<_>>();
+
+        plan = plan.select(projection)?;
+    }
+
+    plan = plan.alias(alias.name.value.clone());
+
+    Ok(plan)
 }
 
-/// Helper to do create a singleton relation for SELECT without FROM.
+/// Helper to do create a singleton plan for SELECT without FROM.
 #[cfg(feature = "python")]
-fn singleton_relation() -> DaftResult<Relation> {
+fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
     use daft_logical_plan::PyLogicalPlanBuilder;
     use pyo3::{
         intern,
@@ -2489,14 +1971,14 @@ fn singleton_relation() -> DaftResult<Relation> {
             .getattr(intern!(py, "_builder"))?
             .extract()?;
         // done.
-        Ok(Relation::new(builder.builder, "singleton".to_string()))
+        Ok(builder.builder)
     })
 }
 
-/// Helper to do create a singleton relation for SELECT without FROM.
+/// Helper to do create a singleton plan for SELECT without FROM.
 #[cfg(not(feature = "python"))]
-fn singleton_relation() -> DaftResult<Relation> {
-    Err(DaftError::InternalError(
+fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
+    Err(common_error::DaftError::InternalError(
         "SELECT without FROM requires 'python' feature".to_string(),
     ))
 }
@@ -2504,7 +1986,6 @@ fn singleton_relation() -> DaftResult<Relation> {
 #[cfg(test)]
 mod tests {
     use daft_core::prelude::*;
-    use rstest::rstest;
     use sqlparser::ast::{Ident, ObjectName};
 
     use crate::{planner::is_table_path, sql_schema};
@@ -2572,141 +2053,5 @@ mod tests {
         assert!(!is_table_path(&ObjectName(vec![Ident::new(
             "path/to/file.ext"
         )])));
-    }
-
-    #[rstest]
-    #[case("bool", DataType::Boolean)]
-    #[case("Bool", DataType::Boolean)] // case insensitive
-    #[case("BOOL", DataType::Boolean)] // case insensitive
-    #[case("boolean", DataType::Boolean)]
-    #[case("BOOLEAN", DataType::Boolean)] // case insensitive
-    #[case("int16", DataType::Int16)]
-    #[case("int", DataType::Int32)]
-    #[case("integer", DataType::Int32)]
-    #[case("int32", DataType::Int32)]
-    #[case("int64", DataType::Int64)]
-    #[case("uint16", DataType::UInt16)]
-    #[case("integer unsigned", DataType::UInt32)]
-    #[case("int unsigned", DataType::UInt32)]
-    #[case("uint32", DataType::UInt32)]
-    #[case("uint64", DataType::UInt64)]
-    #[case("float32", DataType::Float32)]
-    #[case("real", DataType::Float32)]
-    #[case("float64", DataType::Float64)]
-    #[case("double", DataType::Float64)]
-    #[case("double precision", DataType::Float64)]
-    #[case("float", DataType::Float64)]
-    #[case("float(1)", DataType::Float32)]
-    #[case("float(24)", DataType::Float32)]
-    #[case("float(25)", DataType::Float64)]
-    #[case("float(53)", DataType::Float64)]
-    #[case("dec", DataType::Decimal128(38, 9))]
-    #[case("decimal", DataType::Decimal128(38, 9))]
-    #[case("decimal(10)", DataType::Decimal128(10, 0))]
-    #[case("decimal(10, 2)", DataType::Decimal128(10, 2))]
-    #[case("decimal(38, 9)", DataType::Decimal128(38, 9))]
-    #[case("numeric", DataType::Decimal128(38, 9))]
-    #[case("numeric(10)", DataType::Decimal128(10, 0))]
-    #[case("numeric(10, 2)", DataType::Decimal128(10, 2))]
-    #[case("numeric(38, 9)", DataType::Decimal128(38, 9))]
-    #[case("date", DataType::Date)]
-    #[case("tensor(float)", DataType::Tensor(Box::new(DataType::Float64)))]
-    #[case("tensor(float, 10, 10, 10)", DataType::FixedShapeTensor(Box::new(DataType::Float64), vec![10, 10, 10]))]
-    #[case("image", DataType::Image(None))]
-    #[case("image(RGB)", DataType::Image(Some(ImageMode::RGB)))]
-    #[case("image(RGBA)", DataType::Image(Some(ImageMode::RGBA)))]
-    #[case("image(L)", DataType::Image(Some(ImageMode::L)))]
-    #[case("imAgE(L, 10, 10)", DataType::FixedShapeImage(ImageMode::L, 10, 10))]
-    #[case(
-        "embedding(int, 10)",
-        DataType::Embedding(Box::new(DataType::Int32), 10)
-    )]
-    #[case(
-        "EMBEDDING(iNt, 10)", // case insensitive
-        DataType::Embedding(Box::new(DataType::Int32), 10)
-    )]
-    #[case(
-        "tensor(int, 10, 10, 10)[10]",
-        DataType::FixedSizeList(Box::new(DataType::FixedShapeTensor(
-            Box::new(DataType::Int32),
-            vec![10, 10, 10]
-        )), 10)
-    )]
-    #[case("int[]", DataType::List(Box::new(DataType::Int32)))]
-    #[case("int[10]", DataType::FixedSizeList(Box::new(DataType::Int32), 10))]
-    #[case(
-        "int[10][10]",
-        DataType::FixedSizeList(
-            Box::new(DataType::FixedSizeList(Box::new(DataType::Int32), 10)),
-            10
-        )
-    )]
-    fn test_sql_datatype(#[case] sql: &str, #[case] expected: DataType) {
-        let result = super::sql_datatype(sql).unwrap();
-        assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    #[case(
-        "tensor",
-        "must specify inner datatype with 'tensor'. ex: `tensor(int)` or `tensor(int, 10, 10, 10)`"
-    )]
-    #[case(
-        "tensor()",
-        "must specify inner datatype with 'tensor'. ex: `tensor(int)` or `tensor(int, 10, 10, 10)`"
-    )]
-    #[case("tensor(int, int)", "invalid tensor shape")]
-    #[case("image(RGB, 10)", "invalid image properties")]
-    #[case("image(RGB, 10, 10, 10)", "invalid image properties")]
-    #[case("image(10)", "invalid image mode")]
-    #[case("image(RGBBB)", "invalid image mode")]
-    #[case(
-        "embedding(int)",
-        "embedding must have datatype and size: ex: `embedding(int, 10)`"
-    )]
-    #[case(
-        "embedding()",
-        "embedding must have datatype and size: ex: `embedding(int, 10)`"
-    )]
-    #[case(
-        "embedding",
-        "embedding must have datatype and size: ex: `embedding(int, 10)`"
-    )]
-    #[case("embedding(int, 1.11)", "invalid embedding size, expected an integer")]
-    fn test_custom_datatype_err(#[case] sql: &str, #[case] expected: &str) {
-        let result = super::sql_datatype(sql).unwrap_err().to_string();
-        let e = format!("Invalid operation: {}", expected);
-        assert_eq!(result, e);
-    }
-
-    #[rstest]
-    #[case("array<int>", "array[..]")]
-    #[case("bytea", "`binary` or `bytes`")]
-    #[case("blob", "`binary` or `bytes`")]
-    #[case("varbinary", "`binary` or `bytes`")]
-    #[case("int2", "`int16` or `smallint`")]
-    #[case("int4", "`int32`, `integer`, or `int`")]
-    #[case("mediumint", "`int32`, `integer`, or `int`")]
-    #[case(
-        "int8",
-        "`int64` or `bigint` for 64-bit integer, or `tinyint` for 8-bit integer"
-    )]
-    #[case("int2 unsigned", "`smallint unsigned` or `uint16`")]
-    #[case("int4 unsigned", "`int unsigned` or `uint32`")]
-    #[case("mediumint unsigned", "`int unsigned` or `uint32`")]
-    #[case("int8 unsigned", "`bigint unsigned` or `uint64` for 64-bit unsigned integer, or `unsigned tinyint` for 8-bit unsigned integer")]
-    #[case("float4", "`float32` or `real`")]
-    #[case("char", "`string`, `text`, or `varchar`")]
-    #[case("char varying", "`string`, `text`, or `varchar`")]
-    #[case("character", "`string`, `text`, or `varchar`")]
-    #[case("character varying", "`string`, `text`, or `varchar`")]
-    #[case("clob", "`string`, `text`, or `varchar`")]
-    fn test_sql_datatype_use_instead(#[case] sql: &str, #[case] expected: &str) {
-        let result = super::sql_datatype(sql).unwrap_err().to_string();
-        let e = format!(
-            "Unsupported SQL: '`{}` is not supported, instead try using {expected}'",
-            sql.to_ascii_uppercase()
-        );
-        assert_eq!(result, e);
     }
 }

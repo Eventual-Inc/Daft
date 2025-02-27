@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::{count_mode::CountMode, join::JoinType, utils::supertype::get_supertype};
-use daft_dsl::{col, lit, null_lit, ExprRef};
+use daft_dsl::{lit, null_lit, resolved_col, ExprRef};
 use daft_functions::list::{explode, list_fill};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use snafu::ResultExt;
@@ -30,14 +30,14 @@ fn intersect_or_except_plan(
         .schema()
         .fields
         .keys()
-        .map(|k| col(k.clone()))
+        .map(|k| resolved_col(k.clone()))
         .collect::<Vec<ExprRef>>();
     let left_on_size = left_on.len();
     let right_on = rhs
         .schema()
         .fields
         .keys()
-        .map(|k| col(k.clone()))
+        .map(|k| resolved_col(k.clone()))
         .collect::<Vec<ExprRef>>();
     let join = logical_plan::Join::try_new(
         lhs,
@@ -94,6 +94,7 @@ const V_MIN_COUNT: &str = "__min_count";
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Intersect {
+    pub plan_id: Option<usize>,
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
@@ -109,7 +110,17 @@ impl Intersect {
         let lhs_schema = lhs.schema();
         let rhs_schema = rhs.schema();
         check_structurally_equal(lhs_schema, rhs_schema, "intersect")?;
-        Ok(Self { lhs, rhs, is_all })
+        Ok(Self {
+            plan_id: None,
+            lhs,
+            rhs,
+            is_all,
+        })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     /// intersect operations could be represented by other logical plans
@@ -155,7 +166,7 @@ impl Intersect {
                 .schema()
                 .fields
                 .keys()
-                .map(|k| col(k.clone()))
+                .map(|k| resolved_col(k.clone()))
                 .collect::<Vec<ExprRef>>();
             // project the right cols to have the same name as the left cols
             let right_cols = self
@@ -163,7 +174,7 @@ impl Intersect {
                 .schema()
                 .fields
                 .keys()
-                .map(|k| col(k.clone()))
+                .map(|k| resolved_col(k.clone()))
                 .zip(left_cols.iter())
                 .map(|(r, l)| r.alias(l.name()))
                 .collect::<Vec<ExprRef>>();
@@ -184,11 +195,11 @@ impl Intersect {
                 right_v_cols,
             )?;
             let one_lit = lit(1);
-            let left_v_cnt = col(V_COL_L).count(CountMode::Valid).alias(V_L_CNT);
-            let right_v_cnt = col(V_COL_R).count(CountMode::Valid).alias(V_R_CNT);
-            let min_count = col(V_L_CNT)
-                .gt(col(V_R_CNT))
-                .if_else(col(V_R_CNT), col(V_L_CNT))
+            let left_v_cnt = resolved_col(V_COL_L).count(CountMode::Valid).alias(V_L_CNT);
+            let right_v_cnt = resolved_col(V_COL_R).count(CountMode::Valid).alias(V_R_CNT);
+            let min_count = resolved_col(V_L_CNT)
+                .gt(resolved_col(V_R_CNT))
+                .if_else(resolved_col(V_R_CNT), resolved_col(V_L_CNT))
                 .alias(V_MIN_COUNT);
             let aggregate_plan = Aggregate::try_new(
                 union_all.into(),
@@ -197,9 +208,9 @@ impl Intersect {
             )?;
             let filter_plan = Filter::try_new(
                 aggregate_plan.into(),
-                col(V_L_CNT)
+                resolved_col(V_L_CNT)
                     .gt_eq(one_lit.clone())
-                    .and(col(V_R_CNT).gt_eq(one_lit)),
+                    .and(resolved_col(V_R_CNT).gt_eq(one_lit)),
             )?;
             let min_count_plan = Project::try_new(
                 filter_plan.into(),
@@ -208,7 +219,8 @@ impl Intersect {
             let fill_and_explodes = left_cols
                 .iter()
                 .map(|column| {
-                    explode(list_fill(col(V_MIN_COUNT), column.clone())).alias(column.name())
+                    explode(list_fill(resolved_col(V_MIN_COUNT), column.clone()))
+                        .alias(column.name())
                 })
                 .collect::<Vec<_>>();
             let project_plan = Project::try_new(min_count_plan.into(), fill_and_explodes)?;
@@ -231,6 +243,7 @@ impl Intersect {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Union {
+    pub plan_id: Option<usize>,
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
@@ -262,7 +275,17 @@ impl Union {
             )))
             .context(CreationSnafu);
         }
-        Ok(Self { lhs, rhs, is_all })
+        Ok(Self {
+            plan_id: None,
+            lhs,
+            rhs,
+            is_all,
+        })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     /// union could be represented as a concat + distinct
@@ -292,7 +315,7 @@ impl Union {
                 .collect::<Result<Vec<_>, _>>()?;
             let projection_fields = coerced_fields
                 .into_iter()
-                .map(|f| col(f.name.clone()).cast(&f.dtype))
+                .map(|f| resolved_col(f.name.clone()).cast(&f.dtype))
                 .collect::<Vec<_>>();
             let lhs = Project::try_new(self.lhs.clone(), projection_fields.clone())?.into();
             let rhs = Project::try_new(self.rhs.clone(), projection_fields)?.into();
@@ -320,6 +343,7 @@ impl Union {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Except {
+    pub plan_id: Option<usize>,
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
@@ -334,7 +358,17 @@ impl Except {
         let lhs_schema = lhs.schema();
         let rhs_schema = rhs.schema();
         check_structurally_equal(lhs_schema, rhs_schema, "except")?;
-        Ok(Self { lhs, rhs, is_all })
+        Ok(Self {
+            plan_id: None,
+            lhs,
+            rhs,
+            is_all,
+        })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     /// except could be represented by other logical plans
@@ -377,7 +411,7 @@ impl Except {
                 .schema()
                 .fields
                 .keys()
-                .map(|k| col(k.clone()))
+                .map(|k| resolved_col(k.clone()))
                 .collect::<Vec<ExprRef>>();
             // project the right cols to have the same name as the left cols
             let right_cols = self
@@ -385,7 +419,7 @@ impl Except {
                 .schema()
                 .fields
                 .keys()
-                .map(|k| col(k.clone()))
+                .map(|k| resolved_col(k.clone()))
                 .zip(left_cols.iter())
                 .map(|(r, l)| r.alias(l.name()))
                 .collect::<Vec<ExprRef>>();
@@ -401,14 +435,16 @@ impl Except {
                 left_v_cols,
                 right_v_cols,
             )?;
-            let sum = col(virtual_col).sum().alias(virtual_sum);
+            let sum = resolved_col(virtual_col).sum().alias(virtual_sum);
             let aggregate_plan =
                 Aggregate::try_new(union_all.into(), vec![sum], left_cols.clone())?;
-            let filter_plan = Filter::try_new(aggregate_plan.into(), col(virtual_sum).gt(lit(0)))?;
+            let filter_plan =
+                Filter::try_new(aggregate_plan.into(), resolved_col(virtual_sum).gt(lit(0)))?;
             let fill_and_explodes = left_cols
                 .iter()
                 .map(|column| {
-                    explode(list_fill(col(virtual_sum), column.clone())).alias(column.name())
+                    explode(list_fill(resolved_col(virtual_sum), column.clone()))
+                        .alias(column.name())
                 })
                 .collect::<Vec<_>>();
             let project_plan = Project::try_new(filter_plan.into(), fill_and_explodes)?;

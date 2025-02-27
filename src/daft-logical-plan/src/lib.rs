@@ -44,10 +44,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<FileInfos>()?;
     parent.add_class::<FileInfo>()?;
     parent.add_class::<JoinOptions>()?;
-    parent.add_function(wrap_pyfunction!(
-        builder::py_check_column_name_validity,
-        parent
-    )?)?;
 
     Ok(())
 }

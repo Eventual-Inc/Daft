@@ -3,11 +3,11 @@ use daft_functions::{coalesce::Coalesce, float::IsNan};
 use daft_sql::sql_expr;
 use spark_connect::Expression;
 
-use super::{FunctionModule, SparkFunction, UnaryFunction, TODO_FUNCTION};
+use super::{BinaryFunction, FunctionModule, SparkFunction, UnaryFunction, TODO_FUNCTION};
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
-    spark_analyzer::SparkAnalyzer,
+    spark_analyzer::expr_analyzer::analyze_expr,
 };
 
 // Core functions are the most basic functions such as `+`, `-`, `*`, `/`, not, notnull, etc.
@@ -58,20 +58,17 @@ impl FunctionModule for CoreFunctions {
         parent.add_fn("isnotnull", UnaryFunction(|arg| arg.not_null()));
         parent.add_fn("isnull", UnaryFunction(|arg| arg.is_null()));
         parent.add_fn("not", UnaryFunction(|arg| arg.not()));
+        parent.add_fn("and", BinaryFunction(|arg1, arg2| arg1.and(arg2)));
     }
 }
 
 pub struct BinaryOpFunction(Operator);
 
 impl SparkFunction for BinaryOpFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| analyzer.to_daft_expr(arg))
+            .map(analyze_expr)
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [lhs, rhs] = args.try_into().map_err(|args| {
@@ -87,14 +84,10 @@ impl SparkFunction for BinaryOpFunction {
 
 struct SqlExpr;
 impl SparkFunction for SqlExpr {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| analyzer.to_daft_expr(arg))
+            .map(analyze_expr)
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [sql] = args.as_slice() else {

@@ -10,6 +10,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sample {
+    pub plan_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub fraction: f64,
@@ -44,12 +45,18 @@ impl Sample {
         seed: Option<u64>,
     ) -> Self {
         Self {
+            plan_id: None,
             input,
             fraction,
             with_replacement,
             seed,
             stats_state: StatsState::NotMaterialized,
         }
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {

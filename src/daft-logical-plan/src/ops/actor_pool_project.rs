@@ -18,6 +18,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ActorPoolProject {
+    pub plan_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
@@ -35,11 +36,17 @@ impl ActorPoolProject {
         let projected_schema = exprs_to_schema(&projection, input.schema())?;
 
         Ok(Self {
+            plan_id: None,
             input,
             projection,
             projected_schema,
             stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {

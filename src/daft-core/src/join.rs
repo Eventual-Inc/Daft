@@ -128,11 +128,20 @@ impl FromStr for JoinStrategy {
     }
 }
 
-#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
 pub enum JoinSide {
     Left,
     Right,
+}
+
+impl Display for JoinSide {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Left => write!(f, "left"),
+            Self::Right => write!(f, "right"),
+        }
+    }
 }
 
 impl_bincode_py_state_serialization!(JoinSide);

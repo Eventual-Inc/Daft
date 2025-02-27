@@ -6,7 +6,8 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::{
-    col, join::infer_join_schema, optimization::replace_columns_with_expressions, Expr, ExprRef,
+    join::infer_join_schema, optimization::replace_columns_with_expressions, resolved_col, Column,
+    Expr, ExprRef, ResolvedColumn,
 };
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -23,6 +24,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Join {
+    pub plan_id: Option<usize>,
     // Upstream nodes.
     pub left: Arc<LogicalPlan>,
     pub right: Arc<LogicalPlan>,
@@ -84,6 +86,7 @@ impl Join {
         let output_schema = infer_join_schema(&left.schema(), &right.schema(), join_type)?;
 
         Ok(Self {
+            plan_id: None,
             left,
             right,
             left_on,
@@ -94,6 +97,11 @@ impl Join {
             output_schema,
             stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     /// Add a project under the right side plan when necessary in order to resolve naming conflicts
@@ -120,9 +128,10 @@ impl Join {
                     .iter()
                     .zip(right_on.iter())
                     .filter_map(|(l, r)| match (l.as_ref(), r.as_ref()) {
-                        (Expr::Column(l_name), Expr::Column(r_name)) if l_name == r_name => {
-                            Some(l_name.to_string())
-                        }
+                        (
+                            Expr::Column(Column::Resolved(ResolvedColumn::Basic(l_name))),
+                            Expr::Column(Column::Resolved(ResolvedColumn::Basic(r_name))),
+                        ) if l_name == r_name => Some(l_name.to_string()),
                         _ => None,
                     })
                     .collect()
@@ -176,9 +185,9 @@ impl Join {
                     .iter()
                     .map(|name| {
                         if let Some(new_name) = right_rename_mapping.get(name) {
-                            Expr::Alias(col(name.clone()), new_name.clone().into()).into()
+                            Expr::Alias(resolved_col(name.clone()), new_name.clone().into()).into()
                         } else {
-                            col(name.clone())
+                            resolved_col(name.clone())
                         }
                     })
                     .collect();
@@ -187,7 +196,7 @@ impl Join {
 
                 let right_on_replace_map = right_rename_mapping
                     .iter()
-                    .map(|(old_name, new_name)| (old_name.clone(), col(new_name.clone())))
+                    .map(|(old_name, new_name)| (old_name.clone(), resolved_col(new_name.clone())))
                     .collect::<HashMap<_, _>>();
 
                 // change any column references in the right_on expressions to the new column names

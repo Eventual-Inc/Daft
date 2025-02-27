@@ -156,6 +156,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::InMemoryScan(..) |
                 PhysicalPlan::TabularScan(..) |
                 PhysicalPlan::EmptyScan(..) |
+                PhysicalPlan::PreviousStageScan(..) |
                 PhysicalPlan::Concat(..) |
                 PhysicalPlan::HashJoin(..) |
                 PhysicalPlan::SortMergeJoin(..) |
@@ -177,7 +178,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{col, ExprRef};
+    use daft_dsl::{resolved_col, ExprRef};
     use daft_logical_plan::partitioning::{ClusteringSpec, UnknownClusteringConfig};
 
     use crate::{
@@ -220,15 +221,16 @@ mod tests {
             ])?),
             1,
         );
-        let plan = add_repartition(base.clone(), 1, vec![col("a"), col("b")]);
-        let plan = add_repartition(plan, 1, vec![col("b"), col("a")]);
+        let plan = add_repartition(base.clone(), 1, vec![resolved_col("a"), resolved_col("b")]);
+        let plan = add_repartition(plan, 1, vec![resolved_col("b"), resolved_col("a")]);
         let rule = ReorderPartitionKeys {};
         let res = rule.rewrite(plan)?;
         assert!(res.transformed);
 
         // expected is two repartitions by b, a
-        let expected_plan = add_repartition(base, 1, vec![col("b"), col("a")]);
-        let expected_plan = add_repartition(expected_plan, 1, vec![col("b"), col("a")]);
+        let expected_plan = add_repartition(base, 1, vec![resolved_col("b"), resolved_col("a")]);
+        let expected_plan =
+            add_repartition(expected_plan, 1, vec![resolved_col("b"), resolved_col("a")]);
         assert_eq!(res.data, expected_plan);
         Ok(())
     }
@@ -244,10 +246,14 @@ mod tests {
             ])?),
             1,
         );
-        let plan = add_repartition(plan, 1, vec![col("a"), col("b")]);
-        let plan = add_repartition(plan, 1, vec![col("a"), col("c")]);
-        let plan = add_repartition(plan, 1, vec![col("a"), col("c"), col("b")]);
-        let plan = add_repartition(plan, 1, vec![col("b")]);
+        let plan = add_repartition(plan, 1, vec![resolved_col("a"), resolved_col("b")]);
+        let plan = add_repartition(plan, 1, vec![resolved_col("a"), resolved_col("c")]);
+        let plan = add_repartition(
+            plan,
+            1,
+            vec![resolved_col("a"), resolved_col("c"), resolved_col("b")],
+        );
+        let plan = add_repartition(plan, 1, vec![resolved_col("b")]);
         let rule = ReorderPartitionKeys {};
         let res = rule.rewrite(plan.clone())?;
         assert!(!res.transformed);
@@ -266,7 +272,7 @@ mod tests {
             ])?),
             1,
         );
-        let plan1 = add_repartition(base1.clone(), 1, vec![col("a"), col("b")]);
+        let plan1 = add_repartition(base1.clone(), 1, vec![resolved_col("a"), resolved_col("b")]);
 
         let base2 = create_dummy_plan(
             Arc::new(Schema::new(vec![
@@ -276,13 +282,13 @@ mod tests {
             ])?),
             1,
         );
-        let plan2 = add_repartition(base2.clone(), 1, vec![col("x"), col("y")]);
+        let plan2 = add_repartition(base2.clone(), 1, vec![resolved_col("x"), resolved_col("y")]);
 
         let plan = PhysicalPlan::HashJoin(HashJoin::new(
             plan1,
             plan2,
-            vec![col("b"), col("a")],
-            vec![col("x"), col("y")],
+            vec![resolved_col("b"), resolved_col("a")],
+            vec![resolved_col("x"), resolved_col("y")],
             None,
             JoinType::Inner,
         ))
@@ -293,10 +299,10 @@ mod tests {
         assert!(res.transformed);
 
         let expected_plan = PhysicalPlan::HashJoin(HashJoin::new(
-            add_repartition(base1, 1, vec![col("b"), col("a")]),
-            add_repartition(base2, 1, vec![col("x"), col("y")]),
-            vec![col("b"), col("a")],
-            vec![col("x"), col("y")],
+            add_repartition(base1, 1, vec![resolved_col("b"), resolved_col("a")]),
+            add_repartition(base2, 1, vec![resolved_col("x"), resolved_col("y")]),
+            vec![resolved_col("b"), resolved_col("a")],
+            vec![resolved_col("x"), resolved_col("y")],
             None,
             JoinType::Inner,
         ))

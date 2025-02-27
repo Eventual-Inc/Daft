@@ -1,211 +1,172 @@
-use std::{
-    cmp::Ordering,
-    collections::{BinaryHeap, HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use common_treenode::{Transformed, TransformedResult, TreeNode};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
-#[cfg(feature = "python")]
-use daft_core::python::PySchema;
-use daft_dsl::{col, functions::FunctionExpr, has_agg, is_actor_pool_udf, AggExpr, Expr, ExprRef};
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
+use daft_dsl::{
+    functions::{struct_::StructExpr, FunctionExpr},
+    has_agg, is_actor_pool_udf, resolved_col, AggExpr, Column, Expr, ExprRef, PlanRef,
+    ResolvedColumn, UnresolvedColumn,
+};
 use typed_builder::TypedBuilder;
 
-// Calculates all the possible struct get expressions in a schema.
-// For each sugared string, calculates all possible corresponding expressions, in order of priority.
-pub fn calculate_struct_expr_map(schema: &Schema) -> HashMap<String, Vec<ExprRef>> {
-    #[derive(PartialEq, Eq)]
-    struct BfsState<'a> {
-        name: String,
-        expr: ExprRef,
-        field: &'a Field,
-    }
+use crate::LogicalPlanRef;
 
-    impl Ord for BfsState<'_> {
-        fn cmp(&self, other: &Self) -> Ordering {
-            self.name.cmp(&other.name)
-        }
-    }
+/// Duplicate an expression tree for each wildcard match in a column or struct get.
+fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
+    let mut wildcard_expansion = None;
 
-    impl PartialOrd for BfsState<'_> {
-        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            Some(self.cmp(other))
-        }
-    }
-
-    let mut pq: BinaryHeap<BfsState> = BinaryHeap::new();
-
-    for field in schema.fields.values() {
-        pq.push(BfsState {
-            name: field.name.clone(),
-            expr: Arc::new(Expr::Column(field.name.clone().into())),
-            field,
-        });
-    }
-
-    let mut str_to_get_expr: HashMap<String, Vec<ExprRef>> = HashMap::new();
-
-    while let Some(BfsState { name, expr, field }) = pq.pop() {
-        if let Some(expr_vec) = str_to_get_expr.get_mut(&name) {
-            expr_vec.push(expr.clone());
+    fn set_wildcard_expansion(
+        wildcard_expansion: &mut Option<Vec<String>>,
+        expr: &Expr,
+        names: impl Iterator<Item = String>,
+    ) -> DaftResult<()> {
+        if wildcard_expansion.is_some() {
+            Err(DaftError::ValueError(format!(
+                "Error resolving expression {expr}: cannot have multiple wildcard columns in one expression tree.")))
         } else {
-            str_to_get_expr.insert(name.clone(), vec![expr.clone()]);
-        }
+            *wildcard_expansion = Some(names.collect());
 
-        if let DataType::Struct(children) = &field.dtype {
-            for child in children {
-                pq.push(BfsState {
-                    name: format!("{}.{}", name, child.name),
-                    expr: daft_dsl::functions::struct_::get(expr.clone(), &child.name),
-                    field: child,
-                });
-            }
+            Ok(())
         }
     }
 
-    str_to_get_expr
-}
+    expr.apply(|e| {
+        match e.as_ref() {
+            Expr::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref,
+                plan_schema
+            })) if *name == "*".into() => {
+                match plan_ref {
+                    PlanRef::Alias(alias) => {
+                        match (&plan.clone().get_schema_for_alias(alias)?, plan_schema) {
+                            (None, None) => {
+                                return Err(DaftError::ValueError(format!("Plan alias {alias} in unresolved column is not in current scope, must have schema specified.")));
+                            }
+                            (Some(schema), _) | (None, Some(schema)) => {
+                                set_wildcard_expansion(&mut wildcard_expansion, &expr, schema.fields.keys().cloned())?;
+                            },
+                        }
+                    }
+                    PlanRef::Id(id) => {
+                        match (&plan.clone().get_schema_for_id(*id)?, plan_schema) {
+                            (None, None) => {
+                                return Err(DaftError::ValueError(format!("Plan id {id} in unresolved column is not in current scope, must have schema specified.")));
+                            }
+                            (Some(schema), _) | (None, Some(schema)) => {
+                                set_wildcard_expansion(&mut wildcard_expansion, &expr, schema.fields.keys().cloned())?;
+                            },
+                        }
 
-/// Converts an expression with syntactic sugar into struct gets.
-/// Does left-associative parsing to to resolve ambiguity.
-///
-/// For example, if col("a.b.c") could be interpreted as either col("a.b").struct.get("c")
-/// or col("a").struct.get("b.c"), this function will resolve it to col("a.b").struct.get("c").
-pub fn transform_struct_gets(
-    expr: ExprRef,
-    struct_expr_map: &HashMap<String, Vec<ExprRef>>,
-) -> DaftResult<ExprRef> {
-    expr.transform(|e| match e.as_ref() {
-        Expr::Column(name) => struct_expr_map
-            .get(name.as_ref())
-            .ok_or(DaftError::ValueError(format!(
-                "Column not found in schema: {name}"
-            )))
-            .map(|expr_vec| {
-                let get_expr = expr_vec.first().unwrap();
-                if expr_vec.len() > 1 {
-                    log::warn!("Warning: Multiple matches found for col({name}), choosing left-associatively");
+                    }
+                    PlanRef::Unqualified => set_wildcard_expansion(&mut wildcard_expansion, &expr, plan.schema().fields.keys().cloned())?,
                 }
-                match get_expr.as_ref() {
-                    Expr::Column(_) => Transformed::no(e.clone()),
-                    _ => Transformed::yes(get_expr.clone()),
-                }
-            }),
-        _ => Ok(Transformed::no(e)),
-    })
-        .data()
-}
-
-// Finds the names of all the wildcard expressions in an expression tree.
-// Needs the schema because column names with stars must not count as wildcards
-pub fn find_wildcards(
-    expr: ExprRef,
-    struct_expr_map: &HashMap<String, Vec<ExprRef>>,
-) -> Vec<Arc<str>> {
-    match expr.as_ref() {
-        Expr::Column(name) => {
-            if name.contains('*') {
-                if struct_expr_map.contains_key(name.as_ref()) {
-                    log::warn!(
-                        "Warning: Column '{name}' contains *, preventing potential wildcard match"
-                    );
-                    Vec::new()
-                } else {
-                    vec![name.clone()]
-                }
-            } else {
-                Vec::new()
             }
+            Expr::Function { func: FunctionExpr::Struct(StructExpr::Get(name)), inputs } if name == "*" => {
+                let [input] = inputs.as_slice() else {
+                    return Err(DaftError::SchemaMismatch(format!(
+                        "Expected 1 input arg, got {}",
+                        inputs.len()
+                    )));
+                };
+
+                let DataType::Struct(struct_fields) = input.to_field(&plan.schema())?.dtype else {
+                    return Err(DaftError::SchemaMismatch(format!(
+                        "Wildcard struct get on a non-struct type: {input}"
+                    )));
+                };
+
+                set_wildcard_expansion(&mut wildcard_expansion, &expr, struct_fields.iter().map(|f| f.name.clone()))?;
+            }
+            _ => {}
         }
-        _ => expr
-            .children()
+
+        Ok(TreeNodeRecursion::Continue)
+    })?;
+
+    if let Some(expansion) = wildcard_expansion {
+        expansion
             .into_iter()
-            .flat_map(|e| find_wildcards(e, struct_expr_map))
-            .collect(),
+            .map(|new_name| {
+                Ok(expr
+                    .clone()
+                    .transform(|e| match e.as_ref() {
+                        Expr::Column(Column::Unresolved(UnresolvedColumn {
+                            name,
+                            plan_ref,
+                            plan_schema,
+                        })) if *name == "*".into() => Ok(Transformed::yes(Arc::new(Expr::Column(
+                            Column::Unresolved(UnresolvedColumn {
+                                name: new_name.clone().into(),
+                                plan_ref: plan_ref.clone(),
+                                plan_schema: plan_schema.clone(),
+                            }),
+                        )))),
+                        Expr::Function {
+                            func: FunctionExpr::Struct(StructExpr::Get(name)),
+                            inputs,
+                        } if name == "*" => Ok(Transformed::yes(
+                            daft_dsl::functions::struct_::get(inputs[0].clone(), &new_name),
+                        )),
+                        _ => Ok(Transformed::no(e)),
+                    })?
+                    .data)
+            })
+            .collect()
+    } else {
+        Ok(vec![expr])
     }
 }
 
-// Calculates a list of all wildcard matches against a schema.
-fn get_wildcard_matches(
-    pattern: &str,
-    schema: &Schema,
-    struct_expr_map: &HashMap<String, Vec<ExprRef>>,
-) -> DaftResult<Vec<String>> {
-    if pattern == "*" {
-        // return all top-level columns
-        return Ok(schema.fields.keys().cloned().collect());
-    }
+fn resolve_unresolved_columns(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<ExprRef> {
+    Ok(expr.transform(|e| {
+        if let Expr::Column(Column::Unresolved(UnresolvedColumn {
+            name,
+            plan_ref,
+            plan_schema
+        })) = e.as_ref() {
+            match plan_ref {
+                PlanRef::Alias(alias) => {
+                    if let Some(schema) = plan.clone().get_schema_for_alias(alias)? {
+                        // make sure column exists in schema
+                        schema.get_field(name)?;
 
-    if !pattern.ends_with(".*") {
-        return Err(DaftError::ValueError(format!(
-            "Unsupported wildcard format: {pattern}"
-        )));
-    }
+                        Ok(Transformed::yes(resolved_col(name.clone())))
+                    } else if let Some(schema) = plan_schema {
+                        Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(schema.get_field(name)?.clone()))))))
+                    } else {
+                        Err(DaftError::FieldNotFound(format!("Column {alias}.{name} is an outer column but does not have an associated schema.")))
+                    }
+                }
+                PlanRef::Id(id) => {
+                    if let Some(schema) = plan.clone().get_schema_for_id(*id)? {
+                        // make sure column exists in schema
+                        schema.get_field(name)?;
 
-    // remove last two characters (should always be ".*")
-    let struct_name = &pattern[..pattern.len() - 2];
-
-    let Some(struct_expr_vec) = struct_expr_map.get(struct_name) else {
-        return Err(DaftError::ValueError(format!(
-            "Error matching wildcard {pattern}: struct {struct_name} not found"
-        )));
-    };
-
-    // find any field that is a struct
-    let mut possible_structs =
-        struct_expr_vec
-            .iter()
-            .filter_map(|e| match e.to_field(schema).map(|f| f.dtype) {
-                Ok(DataType::Struct(subfields)) => Some(subfields),
-                _ => None,
-            });
-    let Some(subfields) = possible_structs.next() else {
-        return Err(DaftError::ValueError(format!(
-            "Error matching wildcard {pattern}: no column matching {struct_name} is a struct"
-        )));
-    };
-
-    if possible_structs.next().is_some() {
-        log::warn!(
-            "Warning: Multiple matches found for col({pattern}), choosing left-associatively"
-        );
-    }
-
-    Ok(subfields
-        .into_iter()
-        .map(|f| format!("{}.{}", struct_name, f.name))
-        .collect())
-}
-
-fn replace_column_name(expr: ExprRef, old_name: &str, new_name: &str) -> DaftResult<ExprRef> {
-    expr.transform(|e| match e.as_ref() {
-        Expr::Column(name) if name.as_ref() == old_name => Ok(Transformed::yes(col(new_name))),
-        _ => Ok(Transformed::no(e)),
-    })
-    .data()
-}
-
-// Duplicate an expression tree for each wildcard match.
-fn expand_wildcards(
-    expr: ExprRef,
-    schema: &Schema,
-    struct_expr_map: &HashMap<String, Vec<ExprRef>>,
-) -> DaftResult<Vec<ExprRef>> {
-    let wildcards = find_wildcards(expr.clone(), struct_expr_map);
-    match wildcards.as_slice() {
-        [] => Ok(vec![expr]),
-        [pattern] => {
-            get_wildcard_matches(pattern, schema, struct_expr_map)?
-                .into_iter()
-                .map(|s| replace_column_name(expr.clone(), pattern, &s))
-                .collect()
+                        Ok(Transformed::yes(resolved_col(name.clone())))
+                    } else if let Some(schema) = plan_schema {
+                        Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(schema.get_field(name)?.clone()))))))
+                    } else {
+                        Err(DaftError::FieldNotFound(format!("Column {id}.{name} is an outer column but does not have an associated schema.")))
+                    }
+                }
+                PlanRef::Unqualified => {
+                    if plan.schema().has_field(name) {
+                        Ok(Transformed::yes(resolved_col(name.clone())))
+                    } else if let Some(schema) = plan_schema {
+                        Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(schema.get_field(name)?.clone()))))))
+                    } else {
+                        Err(DaftError::FieldNotFound(format!(
+                            "Column {name} is an outer column but does not have an associated schema."
+                        )))
+                    }
+                },
+            }
+        } else {
+            Ok(Transformed::no(e))
         }
-        _ => Err(DaftError::ValueError(format!(
-            "Error resolving expression {expr}: cannot have multiple wildcard columns in one expression tree (found {wildcards:?})")))
-    }
+    })?.data)
 }
 
 fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
@@ -247,48 +208,41 @@ pub struct ExprResolver<'a> {
 }
 
 impl<'a> ExprResolver<'a> {
-    fn resolve_helper(&self, expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
+    fn resolve_helper(&self, expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
         if !self.allow_actor_pool_udf && expr.exists(is_actor_pool_udf) {
             return Err(DaftError::ValueError(format!(
                 "UDFs with concurrency set are only allowed in projections: {expr}"
             )));
         }
 
-        let validated_expr = if self.in_agg_context {
-            self.validate_expr_in_agg(expr)
-        } else {
-            self.validate_expr(expr)
-        }?;
-
-        let struct_expr_map = calculate_struct_expr_map(schema);
-        expand_wildcards(validated_expr, schema, &struct_expr_map)?
+        expand_wildcard(expr, plan.clone())?
             .into_iter()
-            .map(|e| transform_struct_gets(e, &struct_expr_map))
+            .map(|e| resolve_unresolved_columns(e, plan.clone()))
+            .map(|e| {
+                if self.in_agg_context {
+                    self.validate_expr_in_agg(e?)
+                } else {
+                    self.validate_expr(e?)
+                }
+            })
             .collect()
     }
 
     /// Resolve multiple expressions. Due to wildcards, output vec may contain more expressions than input.
-    pub fn resolve(
-        &self,
-        exprs: Vec<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<(Vec<ExprRef>, Vec<Field>)> {
+    pub fn resolve(&self, exprs: Vec<ExprRef>, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
         // can't flat map because we need to deal with errors
         let resolved_exprs: DaftResult<Vec<Vec<ExprRef>>> = exprs
             .into_iter()
-            .map(|e| self.resolve_helper(e, schema))
+            .map(|e| self.resolve_helper(e, plan.clone()))
             .collect();
-        let resolved_exprs: Vec<ExprRef> = resolved_exprs?.into_iter().flatten().collect();
-        let resolved_fields: DaftResult<Vec<Field>> =
-            resolved_exprs.iter().map(|e| e.to_field(schema)).collect();
-        Ok((resolved_exprs, resolved_fields?))
+        Ok(resolved_exprs?.into_iter().flatten().collect())
     }
 
     /// Resolve a single expression, ensuring that the output is also a single expression.
-    pub fn resolve_single(&self, expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Field)> {
-        let resolved_exprs = self.resolve_helper(expr.clone(), schema)?;
+    pub fn resolve_single(&self, expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<ExprRef> {
+        let resolved_exprs = self.resolve_helper(expr.clone(), plan)?;
         match resolved_exprs.as_slice() {
-            [resolved_expr] => Ok((resolved_expr.clone(), resolved_expr.to_field(schema)?)),
+            [resolved_expr] => Ok(resolved_expr.clone()),
             _ => Err(DaftError::ValueError(format!(
                 "Error resolving expression {}: expanded into {} expressions when 1 was expected",
                 expr,
@@ -345,36 +299,4 @@ impl<'a> ExprResolver<'a> {
                 _ => expr.children().iter().all(|e| self.is_valid_expr_in_agg(e)),
             }
     }
-}
-
-fn check_column_name_validity(name: &str, schema: &Schema) -> DaftResult<()> {
-    let struct_expr_map = calculate_struct_expr_map(schema);
-
-    let names = if name == "*" || name.ends_with(".*") {
-        if let Ok(names) = get_wildcard_matches(name, schema, &struct_expr_map) {
-            names
-        } else {
-            return Err(DaftError::ValueError(format!(
-                "Error matching wildcard `{name}` in schema: {schema}"
-            )));
-        }
-    } else {
-        vec![name.into()]
-    };
-
-    for n in names {
-        if !struct_expr_map.contains_key(&n) {
-            return Err(DaftError::ValueError(format!(
-                "Column `{n}` not found in schema: {schema}"
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "python")]
-#[pyfunction(name = "check_column_name_validity")]
-pub fn py_check_column_name_validity(name: &str, schema: &PySchema) -> PyResult<()> {
-    Ok(check_column_name_validity(name, &schema.schema)?)
 }

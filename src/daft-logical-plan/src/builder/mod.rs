@@ -1,6 +1,4 @@
 mod resolve_expr;
-#[cfg(test)]
-mod tests;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -15,11 +13,9 @@ use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use daft_core::join::{JoinStrategy, JoinType};
-use daft_dsl::{col, ExprRef};
+use daft_dsl::{resolved_col, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
-#[cfg(feature = "python")]
-pub use resolve_expr::py_check_column_name_validity;
 use resolve_expr::ExprResolver;
 #[cfg(feature = "python")]
 use {
@@ -33,7 +29,7 @@ use {
 };
 
 use crate::{
-    logical_plan::LogicalPlan,
+    logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{self, join::JoinOptions},
     optimization::OptimizerBuilder,
     partitioning::{
@@ -49,7 +45,7 @@ use crate::{
 ///
 /// This builder holds the current root (sink) of the logical plan, and the building methods return
 /// a brand new builder holding a new plan; i.e., this is an immutable builder.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
@@ -123,6 +119,18 @@ impl LogicalPlanBuilder {
         Self::new(self.plan.clone(), Some(config))
     }
 
+    pub fn alias(&self, id: impl Into<Arc<str>>) -> Self {
+        self.with_new_plan(LogicalPlan::SubqueryAlias(SubqueryAlias {
+            plan_id: None,
+            input: self.plan.clone(),
+            name: id.into(),
+        }))
+    }
+
+    pub fn with_plan_id(&self, id: usize) -> Self {
+        self.with_new_plan(self.plan.clone().with_plan_id(id))
+    }
+
     pub fn in_memory_scan(
         partition_key: &str,
         cache_entry: common_partitioning::PartitionCacheEntry,
@@ -134,11 +142,12 @@ impl LogicalPlanBuilder {
         let source_info = SourceInfo::InMemory(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
-            cache_entry,
+            Some(cache_entry),
             num_partitions,
             size_bytes,
             num_rows,
             None, // TODO(sammy) thread through clustering spec to Python
+            None,
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
@@ -201,7 +210,7 @@ impl LogicalPlanBuilder {
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
 
-        let (to_select, _) = expr_resolver.resolve(to_select, &self.schema())?;
+        let to_select = expr_resolver.resolve(to_select, self.plan.clone())?;
 
         let logical_plan: LogicalPlan = ops::Project::try_new(self.plan.clone(), to_select)?.into();
         Ok(self.with_new_plan(logical_plan))
@@ -210,7 +219,7 @@ impl LogicalPlanBuilder {
     pub fn with_columns(&self, columns: Vec<ExprRef>) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
 
-        let (columns, _) = expr_resolver.resolve(columns, &self.schema())?;
+        let columns = expr_resolver.resolve(columns, self.plan.clone())?;
 
         let fields = &self.schema().fields;
         let current_col_names = fields
@@ -228,7 +237,7 @@ impl LogicalPlanBuilder {
                 new_col_name_and_exprs
                     .get(name.as_str())
                     .cloned()
-                    .unwrap_or_else(|| col(name.clone()))
+                    .unwrap_or_else(|| resolved_col(name.clone()))
             })
             .collect::<Vec<_>>();
 
@@ -251,10 +260,10 @@ impl LogicalPlanBuilder {
             .map(|(name, _)| {
                 if let Some(new_name) = cols_map.get(name) {
                     // If the column is in the rename map, create an alias expression
-                    col(name.as_str()).alias(new_name.as_str())
+                    resolved_col(name.as_str()).alias(new_name.as_str())
                 } else {
                     // Otherwise keep the original column reference
-                    col(name.as_str())
+                    resolved_col(name.as_str())
                 }
             })
             .collect::<Vec<_>>();
@@ -268,7 +277,7 @@ impl LogicalPlanBuilder {
         self.schema()
             .fields
             .iter()
-            .map(|(name, _)| col(name.clone()))
+            .map(|(name, _)| resolved_col(name.clone()))
             .collect()
     }
 
@@ -283,7 +292,7 @@ impl LogicalPlanBuilder {
                 if to_exclude.contains(name) {
                     None
                 } else {
-                    Some(col(name.clone()))
+                    Some(resolved_col(name.clone()))
                 }
             })
             .collect::<Vec<_>>();
@@ -295,7 +304,7 @@ impl LogicalPlanBuilder {
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::default();
 
-        let (predicate, _) = expr_resolver.resolve_single(predicate, &self.schema())?;
+        let predicate = expr_resolver.resolve_single(predicate, self.plan.clone())?;
 
         let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(self.with_new_plan(logical_plan))
@@ -309,7 +318,7 @@ impl LogicalPlanBuilder {
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::default();
 
-        let (to_explode, _) = expr_resolver.resolve(to_explode, &self.schema())?;
+        let to_explode = expr_resolver.resolve(to_explode, self.plan.clone())?;
 
         let logical_plan: LogicalPlan =
             ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
@@ -324,8 +333,8 @@ impl LogicalPlanBuilder {
         value_name: String,
     ) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::default();
-        let (values, _) = expr_resolver.resolve(values, &self.schema())?;
-        let (ids, _) = expr_resolver.resolve(ids, &self.schema())?;
+        let values = expr_resolver.resolve(values, self.plan.clone())?;
+        let ids = expr_resolver.resolve(ids, self.plan.clone())?;
 
         let values = if values.is_empty() {
             let ids_set = IndexSet::<_>::from_iter(ids.iter().cloned());
@@ -334,7 +343,7 @@ impl LogicalPlanBuilder {
                 .schema()
                 .fields
                 .keys()
-                .map(|name| col(name.clone()))
+                .map(|name| resolved_col(name.clone()))
                 .collect::<IndexSet<_>>();
 
             columns_set.difference(&ids_set).cloned().collect()
@@ -356,7 +365,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::default();
 
-        let (sort_by, _) = expr_resolver.resolve(sort_by, &self.schema())?;
+        let sort_by = expr_resolver.resolve(sort_by, self.plan.clone())?;
 
         let logical_plan: LogicalPlan =
             ops::Sort::try_new(self.plan.clone(), sort_by, descending, nulls_first)?.into();
@@ -370,7 +379,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::default();
 
-        let (partition_by, _) = expr_resolver.resolve(partition_by, &self.schema())?;
+        let partition_by = expr_resolver.resolve(partition_by, self.plan.clone())?;
 
         let logical_plan: LogicalPlan = ops::Repartition::new(
             self.plan.clone(),
@@ -459,10 +468,10 @@ impl LogicalPlanBuilder {
         groupby_exprs: Vec<ExprRef>,
     ) -> DaftResult<Self> {
         let groupby_resolver = ExprResolver::default();
-        let (groupby_exprs, _) = groupby_resolver.resolve(groupby_exprs, &self.schema())?;
+        let groupby_exprs = groupby_resolver.resolve(groupby_exprs, self.plan.clone())?;
 
         let agg_resolver = ExprResolver::builder().groupby(&groupby_exprs).build();
-        let (agg_exprs, _) = agg_resolver.resolve(agg_exprs, &self.schema())?;
+        let agg_exprs = agg_resolver.resolve(agg_exprs, self.plan.clone())?;
 
         let logical_plan: LogicalPlan =
             ops::Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
@@ -478,12 +487,12 @@ impl LogicalPlanBuilder {
         names: Vec<String>,
     ) -> DaftResult<Self> {
         let agg_resolver = ExprResolver::builder().groupby(&group_by).build();
-        let (agg_expr, _) = agg_resolver.resolve_single(agg_expr, &self.schema())?;
+        let agg_expr = agg_resolver.resolve_single(agg_expr, self.plan.clone())?;
 
         let expr_resolver = ExprResolver::default();
-        let (group_by, _) = expr_resolver.resolve(group_by, &self.schema())?;
-        let (pivot_column, _) = expr_resolver.resolve_single(pivot_column, &self.schema())?;
-        let (value_column, _) = expr_resolver.resolve_single(value_column, &self.schema())?;
+        let group_by = expr_resolver.resolve(group_by, self.plan.clone())?;
+        let pivot_column = expr_resolver.resolve_single(pivot_column, self.plan.clone())?;
+        let value_column = expr_resolver.resolve_single(value_column, self.plan.clone())?;
 
         let pivot_logical_plan: LogicalPlan = ops::Pivot::try_new(
             self.plan.clone(),
@@ -551,8 +560,8 @@ impl LogicalPlanBuilder {
 
         let expr_resolver = ExprResolver::default();
 
-        let (left_on, _) = expr_resolver.resolve(left_on, &left_plan.schema())?;
-        let (right_on, _) = expr_resolver.resolve(right_on, &right_plan.schema())?;
+        let left_on = expr_resolver.resolve(left_on, left_plan.clone())?;
+        let right_on = expr_resolver.resolve(right_on, right_plan.clone())?;
 
         let (left_plan, right_plan, left_on, right_on) = ops::join::Join::deduplicate_join_columns(
             left_plan, right_plan, left_on, right_on, join_type, options,
@@ -620,14 +629,10 @@ impl LogicalPlanBuilder {
         compression: Option<String>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
-        let partition_cols = partition_cols
-            .map(|cols| {
-                let expr_resolver = ExprResolver::default();
+        let expr_resolver = ExprResolver::default();
 
-                expr_resolver
-                    .resolve(cols, &self.schema())
-                    .map(|(resolved_cols, _)| resolved_cols)
-            })
+        let partition_cols = partition_cols
+            .map(|cols| expr_resolver.resolve(cols, self.plan.clone()))
             .transpose()?;
 
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(

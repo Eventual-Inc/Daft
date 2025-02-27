@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use common_error::DaftError;
 use daft_sql::error::PlannerError;
 use snafu::Snafu;
@@ -32,6 +34,14 @@ pub enum ConnectError {
         #[snafu(source(from(Box<dyn std::error::Error + 'static + Send + Sync>, Some)))]
         source: Option<Box<dyn std::error::Error + 'static + Send + Sync>>,
     },
+}
+
+impl ConnectError {
+    pub fn not_yet_implemented<S: Display>(msg: S) -> Self {
+        Self::NotYetImplemented {
+            msg: msg.to_string(),
+        }
+    }
 }
 
 impl From<daft_micropartition::Error> for ConnectError {

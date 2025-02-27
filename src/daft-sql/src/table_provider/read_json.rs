@@ -1,7 +1,12 @@
+use std::sync::Arc;
+
 use daft_scan::builder::JsonScanBuilder;
 
-use super::{expr_to_iocfg, SQLTableFunction};
-use crate::{error::PlannerError, functions::SQLFunctionArguments};
+use super::{expr_to_iocfg, try_coerce_list, SQLTableFunction};
+use crate::{
+    error::PlannerError, functions::SQLFunctionArguments, invalid_operation_err,
+    schema::try_parse_schema,
+};
 
 pub(super) struct ReadJsonFunction;
 
@@ -16,7 +21,7 @@ impl SQLTableFunction for ReadJsonFunction {
             &[
                 "path",
                 "infer_schema",
-                // "schema"
+                "schema",
                 "io_config",
                 "file_path_column",
                 "hive_partitioning",
@@ -40,24 +45,32 @@ impl TryFrom<SQLFunctionArguments> for JsonScanBuilder {
         // - schema_hints is deprecated
         // - ensure infer_schema is true if schema is None.
 
-        let glob_paths: String = args
-            .try_get_positional(0)?
-            .ok_or_else(|| PlannerError::invalid_operation("path is required for `read_json`"))?;
+        let glob_paths: Vec<String> = if let Some(arg) = args.get_positional(0) {
+            try_coerce_list(arg.clone())?
+        } else if let Some(arg) = args.get_named("path") {
+            try_coerce_list(arg.clone())?
+        } else {
+            invalid_operation_err!("path is required for `read_json`")
+        };
 
         let infer_schema = args.try_get_named("infer_schema")?.unwrap_or(true);
         let chunk_size = args.try_get_named("chunk_size")?;
         let buffer_size = args.try_get_named("buffer_size")?;
         let file_path_column = args.try_get_named("file_path_column")?;
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
-        let schema = None; // TODO
+        let schema = args
+            .try_get_named("schema")?
+            .map(try_parse_schema)
+            .transpose()?
+            .map(Arc::new);
         let schema_hints = None; // TODO
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
 
         Ok(Self {
-            glob_paths: vec![glob_paths],
+            glob_paths,
             infer_schema,
-            schema,
             io_config,
+            schema,
             file_path_column,
             hive_partitioning,
             schema_hints,

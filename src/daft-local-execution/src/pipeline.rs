@@ -10,7 +10,7 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
-use daft_dsl::{col, join::get_common_join_cols};
+use daft_dsl::{join::get_common_join_cols, resolved_col};
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
@@ -628,7 +628,7 @@ pub fn physical_plan_to_pipeline(
                     {
                         let partition_col_exprs = partition_cols
                             .iter()
-                            .map(|name| col(name.as_str()))
+                            .map(|name| resolved_col(name.as_str()))
                             .collect::<Vec<_>>();
                         (Some(partition_col_exprs), WriteFormat::PartitionedDeltalake)
                     } else {

@@ -105,7 +105,7 @@ mod tests {
         prelude::{DataType, Field, FullNull, Int8Array, Schema, Utf8Array},
         series::{IntoSeries, Series},
     };
-    use daft_dsl::{col, functions::ScalarUDF, lit, null_lit};
+    use daft_dsl::{functions::ScalarUDF, lit, null_lit, resolved_col};
 
     #[test]
     fn test_coalesce_0() {
@@ -253,8 +253,8 @@ mod tests {
 
     #[test]
     fn test_to_field_with_mismatched_types() {
-        let col_0 = col("s0");
-        let col_1 = col("s1");
+        let col_0 = resolved_col("s0");
+        let col_1 = resolved_col("s1");
         let fallback = lit("not found");
 
         let schema = Schema::new(vec![
@@ -274,8 +274,8 @@ mod tests {
 
     #[test]
     fn test_to_field_with_incompatible_types() {
-        let col_0 = col("s0");
-        let col_1 = col("s1");
+        let col_0 = resolved_col("s0");
+        let col_1 = resolved_col("s1");
         let col_2 = lit(1u32);
 
         let schema = Schema::new(vec![

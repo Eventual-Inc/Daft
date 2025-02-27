@@ -34,7 +34,7 @@ mod test {
     use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit};
+    use daft_dsl::{lit, resolved_col};
     use daft_functions::utf8::{endswith, startswith};
     use pretty_assertions::assert_eq;
 
@@ -56,7 +56,6 @@ mod test {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -76,7 +75,6 @@ mod test {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -86,30 +84,31 @@ mod test {
     // create a random, complex plan and check if it can be displayed as expected
     fn test_mermaid_display() -> DaftResult<()> {
         let subplan = LogicalPlanBuilder::from(plan_1())
-            .filter(col("id").eq(lit(1)))?
+            .filter(resolved_col("id").eq(lit(1)))?
             .build();
 
         let subplan2 = LogicalPlanBuilder::from(plan_2())
             .filter(
-                startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
+                startswith(resolved_col("last_name"), lit("S"))
+                    .and(endswith(resolved_col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
             .add_monotonically_increasing_id(Some("id2"))?
             .distinct()?
-            .sort(vec![col("last_name")], vec![false], vec![false])?
+            .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 
         let plan = LogicalPlanBuilder::from(subplan)
             .join(
                 subplan2,
-                vec![col("id")],
-                vec![col("id")],
+                vec![resolved_col("id")],
+                vec![resolved_col("id")],
                 JoinType::Inner,
                 None,
                 JoinOptions::default().merge_matching_join_keys(true),
             )?
-            .filter(col("first_name").eq(lit("hello")))?
-            .select(vec![col("first_name")])?
+            .filter(resolved_col("first_name").eq(lit("hello")))?
+            .select(vec![resolved_col("first_name")])?
             .limit(10, false)?
             .build();
 
@@ -125,7 +124,6 @@ On = col(id)
 Output schema = id#Int32, text#Utf8, id2#UInt64, first_name#Utf8, last_name#Utf8"]
 Filter4["Filter: col(id) == lit(1)"]
 Source5["PlaceHolder:
-Source ID = 0
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
 Source5 --> Filter4
@@ -137,7 +135,6 @@ Limit9["Limit: 1000"]
 Filter10["Filter: startswith(col(last_name), lit('S')) & endswith(col(last_name),
 lit('n'))"]
 Source11["PlaceHolder:
-Source ID = 0
 Num partitions = 0
 Output schema = first_name#Utf8, last_name#Utf8, id#Int32"]
 Source11 --> Filter10
@@ -158,31 +155,32 @@ Project1 --> Limit0
     // create a random, complex plan and check if it can be displayed as expected
     fn test_mermaid_display_simple() -> DaftResult<()> {
         let subplan = LogicalPlanBuilder::from(plan_1())
-            .filter(col("id").eq(lit(1)))?
+            .filter(resolved_col("id").eq(lit(1)))?
             .build();
 
         let subplan2 = LogicalPlanBuilder::from(plan_2())
             .filter(
-                startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
+                startswith(resolved_col("last_name"), lit("S"))
+                    .and(endswith(resolved_col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
             .add_monotonically_increasing_id(Some("id2"))?
             .distinct()?
-            .sort(vec![col("last_name")], vec![false], vec![false])?
+            .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 
         let plan = LogicalPlanBuilder::from(subplan)
             .join_with_null_safe_equal(
                 subplan2,
-                vec![col("id")],
-                vec![col("id")],
+                vec![resolved_col("id")],
+                vec![resolved_col("id")],
                 Some(vec![true]),
                 JoinType::Inner,
                 None,
                 JoinOptions::default().merge_matching_join_keys(true),
             )?
-            .filter(col("first_name").eq(lit("hello")))?
-            .select(vec![col("first_name")])?
+            .filter(resolved_col("first_name").eq(lit("hello")))?
+            .select(vec![resolved_col("first_name")])?
             .limit(10, false)?
             .build();
 
@@ -229,13 +227,14 @@ Project1 --> Limit0
             subgraph_options: Some(SubgraphOptions {
                 name: "Optimized Logical Plan".to_string(),
                 subgraph_id: "optimized".to_string(),
+                metadata: None,
             }),
         };
 
         let mermaid_repr = plan.repr_mermaid(opts);
         let expected = r#"subgraph optimized["Optimized Logical Plan"]
+direction TB
 optimizedSource0["PlaceHolder:
-Source ID = 0
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
 end

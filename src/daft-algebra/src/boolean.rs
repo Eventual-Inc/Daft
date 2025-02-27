@@ -130,15 +130,17 @@ fn apply_de_morgans(expr: ExprRef) -> Transformed<ExprRef> {
 
 #[cfg(test)]
 mod tests {
-    use daft_dsl::col;
+    use daft_dsl::resolved_col;
 
     use crate::boolean::{to_cnf, to_dnf};
 
     #[test]
     fn dnf_simple() {
         // a & (b | c) -> (a & b) | (a & c)
-        let expr = col("a").and(col("b").or(col("c")));
-        let expected = col("a").and(col("b")).or(col("a").and(col("c")));
+        let expr = resolved_col("a").and(resolved_col("b").or(resolved_col("c")));
+        let expected = resolved_col("a")
+            .and(resolved_col("b"))
+            .or(resolved_col("a").and(resolved_col("c")));
 
         assert_eq!(expected, to_dnf(expr));
     }
@@ -146,8 +148,10 @@ mod tests {
     #[test]
     fn cnf_simple() {
         // a | (b & c) -> (a | b) & (a | c)
-        let expr = col("a").or(col("b").and(col("c")));
-        let expected = col("a").or(col("b")).and(col("a").or(col("c")));
+        let expr = resolved_col("a").or(resolved_col("b").and(resolved_col("c")));
+        let expected = resolved_col("a")
+            .or(resolved_col("b"))
+            .and(resolved_col("a").or(resolved_col("c")));
 
         assert_eq!(expected, to_cnf(expr));
     }
@@ -155,8 +159,12 @@ mod tests {
     #[test]
     fn dnf_neg() {
         // !(a & ((!b) | c)) -> (!a) | (b & (!c))
-        let expr = col("a").and(col("b").not().or(col("c"))).not();
-        let expected = col("a").not().or(col("b").and(col("c").not()));
+        let expr = resolved_col("a")
+            .and(resolved_col("b").not().or(resolved_col("c")))
+            .not();
+        let expected = resolved_col("a")
+            .not()
+            .or(resolved_col("b").and(resolved_col("c").not()));
 
         assert_eq!(expected, to_dnf(expr));
     }
@@ -164,8 +172,12 @@ mod tests {
     #[test]
     fn cnf_neg() {
         // !(a | ((!b) & c)) -> (!a) & (b | (!c))
-        let expr = col("a").or(col("b").not().and(col("c"))).not();
-        let expected = col("a").not().and(col("b").or(col("c").not()));
+        let expr = resolved_col("a")
+            .or(resolved_col("b").not().and(resolved_col("c")))
+            .not();
+        let expected = resolved_col("a")
+            .not()
+            .and(resolved_col("b").or(resolved_col("c").not()));
 
         assert_eq!(expected, to_cnf(expr));
     }
@@ -173,11 +185,15 @@ mod tests {
     #[test]
     fn dnf_nested() {
         // a & b & ((c & d) | (e & f)) -> (a & b & c & d) | (a & b & e & f)
-        let expr = col("a")
-            .and(col("b"))
-            .and((col("c").and(col("d"))).or(col("e").and(col("f"))));
-        let expected = (col("a").and(col("b")).and(col("c").and(col("d"))))
-            .or(col("a").and(col("b")).and(col("e").and(col("f"))));
+        let expr = resolved_col("a").and(resolved_col("b")).and(
+            (resolved_col("c").and(resolved_col("d"))).or(resolved_col("e").and(resolved_col("f"))),
+        );
+        let expected = (resolved_col("a")
+            .and(resolved_col("b"))
+            .and(resolved_col("c").and(resolved_col("d"))))
+        .or(resolved_col("a")
+            .and(resolved_col("b"))
+            .and(resolved_col("e").and(resolved_col("f"))));
 
         assert_eq!(expected, to_dnf(expr));
     }
@@ -185,14 +201,14 @@ mod tests {
     #[test]
     fn cnf_nested() {
         // a & b & ((c & d) | (e & f)) -> a & b & (c | e) & (c | f) & (d | e) & (d | f)
-        let expr = col("a")
-            .and(col("b"))
-            .and((col("c").and(col("d"))).or(col("e").and(col("f"))));
-        let expected = col("a").and(col("b")).and(
-            (col("c").or(col("e")))
-                .and(col("c").or(col("f")))
-                .and(col("d").or(col("e")))
-                .and(col("d").or(col("f"))),
+        let expr = resolved_col("a").and(resolved_col("b")).and(
+            (resolved_col("c").and(resolved_col("d"))).or(resolved_col("e").and(resolved_col("f"))),
+        );
+        let expected = resolved_col("a").and(resolved_col("b")).and(
+            (resolved_col("c").or(resolved_col("e")))
+                .and(resolved_col("c").or(resolved_col("f")))
+                .and(resolved_col("d").or(resolved_col("e")))
+                .and(resolved_col("d").or(resolved_col("f"))),
         );
 
         assert_eq!(expected, to_cnf(expr));

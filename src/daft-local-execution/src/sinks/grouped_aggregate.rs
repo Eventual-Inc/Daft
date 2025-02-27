@@ -6,7 +6,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::{col, Expr, ExprRef};
+use daft_dsl::{resolved_col, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
 use itertools::Itertools;
@@ -273,7 +273,10 @@ impl GroupedAggregateSink {
             .map(|e| Arc::new(Expr::Agg(e)))
             .collect::<Vec<_>>();
         let final_group_by = if !partial_agg_exprs.is_empty() {
-            group_by.iter().map(|e| col(e.name())).collect::<Vec<_>>()
+            group_by
+                .iter()
+                .map(|e| resolved_col(e.name()))
+                .collect::<Vec<_>>()
         } else {
             group_by.to_vec()
         };

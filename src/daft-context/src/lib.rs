@@ -45,6 +45,15 @@ pub struct Config {
     pub planning: Arc<DaftPlanningConfig>,
 }
 
+impl Config {
+    pub fn from_env() -> Self {
+        Self {
+            execution: Arc::new(DaftExecutionConfig::from_env()),
+            planning: Arc::new(DaftPlanningConfig::from_env()),
+        }
+    }
+}
+
 #[cfg(feature = "python")]
 impl ContextState {
     /// Retrieves the runner.
@@ -170,7 +179,7 @@ pub fn get_context() -> DaftContext {
         Some(ctx) => ctx.clone(),
         None => {
             let state = ContextState {
-                config: Default::default(),
+                config: Config::from_env(),
                 runner: None,
             };
             let state = RwLock::new(state);

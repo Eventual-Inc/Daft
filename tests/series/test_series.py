@@ -202,3 +202,52 @@ def test_series_bincode_serdes_on_null_types() -> None:
     assert s.name() == copied_s.name()
     assert s.datatype() == copied_s.datatype()
     assert s.to_pylist() == copied_s.to_pylist()
+
+
+def test_series_numpy_datetime64_datetime():
+    from datetime import datetime
+
+    py_datetimes = [
+        datetime(2020, 10, 1, 12, 30, 45),
+        datetime(2021, 10, 2, 13, 31, 46),
+        datetime(2022, 10, 3, 14, 32, 47),
+        datetime(2023, 10, 4, 15, 33, 48),
+        datetime(2024, 10, 5, 16, 34, 49),
+        datetime(2025, 10, 6, 17, 35, 50),
+    ]
+    for format_ in ["s", "ms", "us", "ns"]:
+        list_from_datetimes = [np.datetime64(dt, format_) for dt in py_datetimes]
+        # test from_pylist
+        s1 = Series.from_pylist(list_from_datetimes)
+        assert s1.to_pylist() == py_datetimes
+        # test from_numpy
+        s2 = Series.from_numpy(np.array(list_from_datetimes))
+        assert s2.to_pylist() == py_datetimes
+
+
+def test_series_numpy_datetime64_date():
+    from datetime import datetime
+
+    py_datetimes = [
+        datetime(2020, 10, 1, 12, 30, 45),
+        datetime(2021, 10, 2, 13, 31, 46),
+        datetime(2022, 10, 3, 14, 32, 47),
+        datetime(2023, 10, 4, 15, 33, 48),
+        datetime(2024, 10, 5, 16, 34, 49),
+        datetime(2025, 10, 6, 17, 35, 50),
+    ]
+    py_dates = [dt.date() for dt in py_datetimes]
+    for format_ in ["D"]:
+        # make list of numpy datetime64
+        list_from_datetimes = [np.datetime64(dt, format_) for dt in py_datetimes]
+        list_from_dates = [np.datetime64(d, format_) for d in py_dates]
+        # test from_pylist
+        s1 = Series.from_pylist(list_from_datetimes)
+        s2 = Series.from_pylist(list_from_dates)
+        assert s1.to_pylist() == py_dates
+        assert s2.to_pylist() == py_dates
+        # test from_numpy
+        s3 = Series.from_numpy(np.array(list_from_datetimes))
+        s4 = Series.from_numpy(np.array(list_from_dates))
+        assert s3.to_pylist() == py_dates
+        assert s4.to_pylist() == py_dates

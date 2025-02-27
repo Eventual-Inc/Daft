@@ -76,7 +76,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit};
+    use daft_dsl::{lit, unresolved_col};
 
     use crate::{
         optimization::logical_plan_tracker::LogicalPlanDigest,
@@ -95,7 +95,7 @@ mod tests {
             LogicalPlanDigest::new(builder1.plan.as_ref(), &mut Default::default()).node_count,
             1usize.try_into().unwrap()
         );
-        let builder1 = builder1.select(vec![col("a")])?;
+        let builder1 = builder1.select(vec![unresolved_col("a")])?;
         assert_eq!(
             LogicalPlanDigest::new(builder1.plan.as_ref(), &mut Default::default()).node_count,
             2usize.try_into().unwrap()
@@ -108,7 +108,7 @@ mod tests {
             LogicalPlanDigest::new(builder2.plan.as_ref(), &mut Default::default()).node_count,
             1usize.try_into().unwrap()
         );
-        let builder2 = builder2.select(vec![col("a")])?;
+        let builder2 = builder2.select(vec![unresolved_col("a")])?;
         assert_eq!(
             LogicalPlanDigest::new(builder2.plan.as_ref(), &mut Default::default()).node_count,
             2usize.try_into().unwrap()
@@ -118,7 +118,7 @@ mod tests {
             LogicalPlanDigest::new(builder.plan.as_ref(), &mut Default::default()).node_count,
             5usize.try_into().unwrap()
         );
-        let plan = builder.filter(col("a").lt(lit(2)))?.build();
+        let plan = builder.filter(unresolved_col("a").lt(lit(2)))?.build();
         assert_eq!(
             LogicalPlanDigest::new(plan.as_ref(), &mut Default::default()).node_count,
             6usize.try_into().unwrap()
@@ -133,8 +133,8 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .select(vec![col("a")])?
-        .filter(col("a").lt(lit(2)))?
+        .select(vec![unresolved_col("a")])?
+        .filter(unresolved_col("a").lt(lit(2)))?
         .build();
         let plan2 = Arc::new(plan1.as_ref().clone());
         // Double-check that logical plans are equal.
@@ -159,15 +159,15 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .filter(col("a").lt(lit(2)))?
-        .select(vec![col("a")])?
+        .filter(unresolved_col("a").lt(lit(2)))?
+        .select(vec![unresolved_col("a")])?
         .build();
         let plan2 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .select(vec![col("a")])?
-        .filter(col("a").lt(lit(2)))?
+        .select(vec![unresolved_col("a")])?
+        .filter(unresolved_col("a").lt(lit(2)))?
         .build();
         // Double-check that logical plans are NOT equal.
         assert_ne!(plan1, plan2);
@@ -191,15 +191,15 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .select(vec![col("a")])?
-        .filter(col("a").lt(lit(2)))?
+        .select(vec![unresolved_col("a")])?
+        .filter(unresolved_col("a").lt(lit(2)))?
         .build();
         let plan2 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .select(vec![col("a")])?
-        .filter(col("a").lt(lit(4)))?
+        .select(vec![unresolved_col("a")])?
+        .filter(unresolved_col("a").lt(lit(4)))?
         .build();
         // Double-check that logical plans are NOT equal.
         assert_ne!(plan1, plan2);

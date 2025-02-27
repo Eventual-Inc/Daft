@@ -44,7 +44,7 @@ mod test {
     use std::sync::Arc;
 
     use daft_core::prelude::Schema;
-    use daft_dsl::{col, lit};
+    use daft_dsl::{lit, resolved_col, unresolved_col};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::SimplifyExpressionsRule;
@@ -66,11 +66,11 @@ mod test {
         );
         LogicalPlanBuilder::from(
             LogicalPlan::Source(Source {
+                plan_id: None,
                 output_schema: schema.clone(),
                 source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                     source_schema: schema,
                     clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                    source_id: 0,
                 })),
                 stats_state: StatsState::NotMaterialized,
             })
@@ -81,9 +81,9 @@ mod test {
     #[test]
     fn test_nested_plan() {
         let source = make_source()
-            .filter(col("int").between(lit(1), lit(10)))
+            .filter(unresolved_col("int").between(lit(1), lit(10)))
             .unwrap()
-            .select(vec![col("int").add(lit(0))])
+            .select(vec![unresolved_col("int").add(lit(0))])
             .unwrap()
             .build();
         let optimizer = SimplifyExpressionsRule::new();
@@ -105,12 +105,14 @@ mod test {
         // make sure the expression is simplified
         assert!(optimized.transformed);
 
-        assert_eq!(projection, &col("int"));
+        assert_eq!(projection, &resolved_col("int"));
 
         // make sure the predicate is simplified
         assert_eq!(
             predicate,
-            &col("int").lt_eq(lit(10)).and(col("int").gt_eq(lit(1)))
+            &resolved_col("int")
+                .lt_eq(lit(10))
+                .and(resolved_col("int").gt_eq(lit(1)))
         );
     }
 }

@@ -13,6 +13,6 @@ mod test;
 
 pub use physical_planner::{
     extract_agg_expr, logical_to_physical, populate_aggregation_stages, AdaptivePlanner,
-    MaterializedResults, QueryStageOutput,
+    MaterializedResults, QueryStageOutput, StageStats,
 };
 pub use plan::{PhysicalPlan, PhysicalPlanRef};

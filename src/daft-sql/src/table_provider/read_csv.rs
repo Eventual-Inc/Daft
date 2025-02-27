@@ -1,13 +1,17 @@
+use std::sync::Arc;
+
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_scan::builder::CsvScanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 
-use super::SQLTableFunction;
+use super::{try_coerce_list, SQLTableFunction};
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::SQLFunctionArguments,
+    invalid_operation_err,
     modules::config::expr_to_iocfg,
     planner::SQLPlanner,
+    schema::try_parse_schema,
 };
 
 pub(super) struct ReadCsvFunction;
@@ -20,6 +24,14 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
         // - schema_hints is deprecated
         // - ensure infer_schema is true if schema is None.
 
+        let glob_paths: Vec<String> = if let Some(arg) = args.get_positional(0) {
+            try_coerce_list(arg.clone())?
+        } else if let Some(arg) = args.get_named("path") {
+            try_coerce_list(arg.clone())?
+        } else {
+            invalid_operation_err!("path is required for `read_csv`")
+        };
+
         let delimiter = args.try_get_named("delimiter")?;
         let has_headers: bool = args.try_get_named("has_headers")?.unwrap_or(true);
         let double_quote: bool = args.try_get_named("double_quote")?.unwrap_or(true);
@@ -29,48 +41,36 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
         let allow_variable_columns = args
             .try_get_named("allow_variable_columns")?
             .unwrap_or(false);
-        let glob_paths: String = match args.try_get_positional(0) {
-            Ok(Some(path)) => path,
-            Ok(None) => {
-                // If the positional argument is not found, try to get the path from the named argument
-                match args.try_get_named("path") {
-                    Ok(Some(path)) => path,
-                    Ok(None) => {
-                        return Err(PlannerError::invalid_operation(
-                            "path is required for `read_csv`",
-                        ));
-                    }
-                    Err(err) => return Err(err),
-                }
-            }
-            Err(err) => return Err(err),
-        };
         let infer_schema = args.try_get_named("infer_schema")?.unwrap_or(true);
         let chunk_size = args.try_get_named("chunk_size")?;
         let buffer_size = args.try_get_named("buffer_size")?;
         let file_path_column = args.try_get_named("file_path_column")?;
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
-        let schema = None; // TODO
+        let schema = args
+            .try_get_named("schema")?
+            .map(try_parse_schema)
+            .transpose()?
+            .map(Arc::new);
         let schema_hints = None; // TODO
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
 
         Ok(Self {
-            glob_paths: vec![glob_paths],
+            glob_paths,
             infer_schema,
+            io_config,
             schema,
-            has_headers,
+            file_path_column,
+            hive_partitioning,
             delimiter,
+            has_headers,
             double_quote,
             quote,
             escape_char,
             comment,
             allow_variable_columns,
-            io_config,
-            file_path_column,
-            hive_partitioning,
-            schema_hints,
             buffer_size,
             chunk_size,
+            schema_hints,
         })
     }
 }
@@ -86,7 +86,7 @@ impl SQLTableFunction for ReadCsvFunction {
             &[
                 "path",
                 "infer_schema",
-                // "schema",
+                "schema",
                 "has_headers",
                 "delimiter",
                 "double_quote",
