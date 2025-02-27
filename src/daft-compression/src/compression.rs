@@ -23,7 +23,6 @@ impl CompressionCodec {
     #[must_use]
     pub fn from_uri(uri: &str) -> Option<Self> {
         let url = Url::parse(uri);
-        println!("URL: {:?}", url);
         let path = if uri.starts_with("file://") {
             // Handle file URLs properly by stripping the scheme
             &uri[7..]
@@ -33,12 +32,10 @@ impl CompressionCodec {
                 _ => uri,
             }
         };
-        println!("Path: {}", path);
         let extension = PathBuf::from(path)
             .extension()?
             .to_string_lossy()
             .to_string();
-        println!("Extension: {}", extension);
         Self::from_extension(extension.as_ref())
     }
     #[must_use]
@@ -67,7 +64,15 @@ impl CompressionCodec {
             Brotli => Box::pin(BrotliDecoder::new(reader)),
             Bz => Box::pin(BzDecoder::new(reader)),
             Deflate => Box::pin(DeflateDecoder::new(reader)),
-            Gzip => Box::pin(GzipDecoder::new(reader)),
+            Gzip => {
+                // With async-compression, compressed files with multiple concatenated members
+                // might be incorrectly read as an early EOF. Setting multiple_members(true)
+                // ensures that the reader will continue to read until the end of the file.
+                // See: https://github.com/Nullus157/async-compression/issues/153 for more details.
+                let mut decoder = GzipDecoder::new(reader);
+                decoder.multiple_members(true);
+                Box::pin(decoder)
+            }
             Lzma => Box::pin(LzmaDecoder::new(reader)),
             Xz => Box::pin(XzDecoder::new(reader)),
             Zlib => Box::pin(ZlibDecoder::new(reader)),
