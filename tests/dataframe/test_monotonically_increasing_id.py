@@ -441,12 +441,7 @@ def test_monotonic_id_in_filter(make_df) -> None:
     df0 = make_df(data)._add_monotonically_increasing_id().filter(col("id") > 2).collect()
 
     # Filter using monotonically_increasing_id
-    df1 = (
-        make_df(data)
-        .with_column("id", monotonically_increasing_id())
-        .filter(monotonically_increasing_id() > 2)
-        .collect()
-    )
+    df1 = make_df(data).with_column("id", monotonically_increasing_id()).filter(col("id") > 2).collect()
 
     # Verify that filtering works correctly
     assert len(df1) == 2  # Should only keep last 2 rows
@@ -473,21 +468,8 @@ def test_monotonic_id_in_aggregation(make_df) -> None:
         .collect()
     )
 
-    # Use monotonically_increasing_id in aggregation
+    # Use monotonically_increasing_id in projection before aggregation
     df1 = (
-        make_df(data)
-        .with_column("id", monotonically_increasing_id())
-        .groupby("key")
-        .agg(
-            (monotonically_increasing_id() + col("value")).sum().alias("sum_id_plus_value"),
-            monotonically_increasing_id().max().alias("max_id"),
-        )
-        .sort("key")
-        .collect()
-    )
-
-    # Compare with explicit aggregation
-    df2 = (
         make_df(data)
         .with_column("id", monotonically_increasing_id())
         .groupby("key")
@@ -497,7 +479,6 @@ def test_monotonic_id_in_aggregation(make_df) -> None:
     )
 
     assert df0.to_pydict() == df1.to_pydict()
-    assert df0.to_pydict() == df2.to_pydict()
 
 
 def test_monotonic_id_in_join_condition(make_df) -> None:
@@ -513,15 +494,8 @@ def test_monotonic_id_in_join_condition(make_df) -> None:
         .collect()
     )
 
-    # Use monotonically_increasing_id in join condition
+    # Use monotonically_increasing_id in projection before join
     df1 = (
-        make_df(left_data)
-        .join(make_df(right_data), on=monotonically_increasing_id() == monotonically_increasing_id(), how="inner")
-        .collect()
-    )
-
-    # Compare with explicit join
-    df2 = (
         make_df(left_data)
         .with_column("id", monotonically_increasing_id())
         .join(make_df(right_data).with_column("id", monotonically_increasing_id()), on="id", how="inner")
@@ -529,4 +503,3 @@ def test_monotonic_id_in_join_condition(make_df) -> None:
     )
 
     assert df0.to_pydict() == df1.to_pydict()
-    assert df0.to_pydict() == df2.to_pydict()

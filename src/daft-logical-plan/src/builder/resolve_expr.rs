@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{struct_::StructExpr, FunctionExpr},
@@ -11,6 +11,45 @@ use daft_dsl::{
 use typed_builder::TypedBuilder;
 
 use crate::LogicalPlanRef;
+
+pub struct ReplaceMonotonicIdExpressionWithColumnRef {
+    column_name: String,
+}
+
+impl ReplaceMonotonicIdExpressionWithColumnRef {
+    pub fn new(column_name: String) -> Self {
+        Self { column_name }
+    }
+}
+
+impl TreeNodeRewriter for ReplaceMonotonicIdExpressionWithColumnRef {
+    type Node = ExprRef;
+
+    fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+        Ok(Transformed::no(node))
+    }
+
+    fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+        match node.as_ref() {
+            Expr::ScalarFunction(func) if func.name() == "monotonically_increasing_id" => {
+                Ok(Transformed::yes(
+                    Expr::Column(Column::Resolved(ResolvedColumn::Basic(Arc::from(
+                        self.column_name.as_str(),
+                    ))))
+                    .into(),
+                ))
+            }
+            _ => Ok(Transformed::no(node)),
+        }
+    }
+}
+
+fn contains_monotonic_id(expr: &ExprRef) -> bool {
+    expr.exists(|e| match e.as_ref() {
+        Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
+        _ => false,
+    })
+}
 
 /// Duplicate an expression tree for each wildcard match in a column or struct get.
 fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
@@ -168,6 +207,8 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
 pub struct ExprResolver<'a> {
     #[builder(default)]
     allow_actor_pool_udf: bool,
+    #[builder(default)]
+    allow_monotonic_id: bool,
     #[builder(via_mutators, mutators(
         pub fn in_agg_context(&mut self, in_agg_context: bool) {
             // workaround since typed_builder can't have defaults for mutator requirements
@@ -190,6 +231,12 @@ impl<'a> ExprResolver<'a> {
             return Err(DaftError::ValueError(format!(
                 "UDFs with concurrency set are only allowed in projections: {expr}"
             )));
+        }
+
+        if !self.allow_monotonic_id && contains_monotonic_id(&expr) {
+            return Err(DaftError::ValueError(
+                "monotonically_increasing_id() is only allowed in projections".to_string(),
+            ));
         }
 
         expand_wildcard(expr, plan.clone())?

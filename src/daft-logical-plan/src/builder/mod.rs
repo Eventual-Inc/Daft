@@ -211,7 +211,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn with_columns(&self, columns: Vec<ExprRef>) -> DaftResult<Self> {
-        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
+        let expr_resolver = ExprResolver::builder()
+            .allow_actor_pool_udf(true)
+            .allow_monotonic_id(true)
+            .build();
 
         let columns = expr_resolver.resolve(columns, self.plan.clone())?;
 
