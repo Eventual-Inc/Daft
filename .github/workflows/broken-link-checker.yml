@@ -22,7 +22,7 @@ jobs:
         retry_wait_seconds: 60
         max_attempts: 3
         retry_on: error
-        command: blc https://www.getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daft_dataframe --exclude https://www.linkedin.com/company/eventualcomputing/ --exclude https://x.com/daft_dataframe --exclude https://www.linkedin.com/showcase/daft-dataframe/ --exclude https://scarf.sh/ --exclude https://static.scarf.sh/*
+        command: blc https://www.getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daft_dataframe --exclude https://www.linkedin.com/company/eventualcomputing/ --exclude https://x.com/daft_dataframe --exclude https://www.linkedin.com/showcase/daft-dataframe/ --exclude https://scarf.sh/ --exclude https://static.scarf.sh/* --exclude https://www.tpc.org/*
   notify_on_failure:
     runs-on: self-hosted
     if: failure()
