@@ -1596,6 +1596,127 @@ class DataFrame:
         builder = self._builder.filter(predicate)
         return DataFrame(builder)
 
+    def with_column_llm(
+        self,
+        result_column: str,
+        prompt: str,
+    ) -> "DataFrame":
+        """Runs an LLM to produce a new column.
+
+        Your prompt can be parametrized by column names with Python f-string syntax. For instance:
+
+        ```
+        df = daft.from_pydict({"ingredient": ["chicken", "fish", "veggies"]})
+        df = df.llm(
+            "recipes",
+            "Please generate cooking recipes containing {ingredient}",
+        )
+        ```
+
+        Args:
+            result_column (str): Name of the column to store LLM results in.
+            prompt (str): Prompt template with optional column references using f-string syntax.
+
+        Returns:
+            DataFrame: DataFrame with new column containing LLM results.
+
+        ## Specifying what model to run
+
+        ### Remote Models
+
+        Daft supports running remote models (e.g. OpenAI, Anthropic etc). Options are also available to support rate-limiting the
+        requests being sent to these endpoints by tokens-per-second.
+
+        ### (TODO) Remote Models - Batch Mode
+
+        Daft supports running "batch mode" for certain model providers (e.g. OpenAI). Note that this potentially may take hours to
+        run depending on the provider's availabilities.
+
+        ### (TODO) Local Models
+
+        Daft supports Ollama and vLLM as runtimes for running local models.
+
+        ## (TODO) Structured Output
+
+        To specify structured output, you can pass in either a Pydantic BaseModel class. By default if no Pydantic class is provided,
+        the model's outputs will simple be a string column.
+
+        Pydantic classes will be parsed and translated into Daft `struct` fields.
+
+        For example:
+
+        ```python
+        import daft
+        from pydantic import BaseModel
+        from typing import List
+
+        class Recipe(BaseModel):
+            title: str
+            ingredients: List[str]
+            steps: List[str]
+            cook_time_mins: int
+
+        df = daft.from_pydict({"ingredient": ["chicken", "fish", "veggies"]})
+        df = df.llm(
+            "recipe_info", 
+            "Generate a recipe containing {ingredient}",
+            response_schema=Recipe
+        )
+        df.show()
+        ```
+
+        ## (TODO) Caching
+
+        Prompts are cached by default so that re-runs on the same data do not incur additional API calls.
+
+        To turn off this behavior, simply specify `cache=False`.
+
+        ## (TODO) Multimodality
+
+        Prompts can also include multimodal columns such as images, either as URLs or actual image columns:
+
+        ```python
+        df = daft.from_pydict({
+            "ingredient": ["chicken", "fish", "veggies"],
+            "image_urls": [
+                "https://goodeggs4.imgix.net/30e5c50f-4243-452f-ac4a-87952eb60ca3.jpg",
+                "https://goodeggs4.imgix.net/649eff92-704e-42a2-85b5-3e258ba85375.jpg",
+                "https://goodeggs4.imgix.net/d76083bb-d8ca-411c-ad2e-9a773ced477a.jpg",
+            ],
+        })
+        df = df.with_column("img", df["image_urls"].url.download().image.decode().image.resize(128, 128))
+        df = df.llm(
+            "recipes",
+            # This also works, but will pass the full image without the pre-processing to the LLM
+            # "Please generate cooking recipes containing {ingredient} which looks like this: {image_urls:img_url}",
+            "Please generate cooking recipes containing {ingredient} which looks like this: {img}",
+        )
+        ```
+
+        Note that depending on your LLM backend, it may or may not support multi-modality!
+        """
+
+        model = "openai/gpt-4o-mini"
+        from ..llm import run_curator
+
+        # Parse prompt string for template variables and replace with column references
+        import re
+        template_vars = re.findall(r"\{([^}]+)\}", prompt)
+        
+        # Build up the prompt expression by concatenating text and column refs
+        parts = re.split(r"\{([^}]+)\}", prompt)
+        prompt_expr = lit(parts[0])
+        for i in range(1, len(parts), 2):
+            var = parts[i]
+            text = parts[i+1]
+            prompt_expr = prompt_expr + col(var) + lit(text)
+
+        return self.with_column(
+            result_column,
+            run_curator(prompt_expr)
+        )
+        
+
     @DataframePublicAPI
     def with_column(
         self,
