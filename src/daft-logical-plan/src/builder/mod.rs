@@ -1085,8 +1085,8 @@ impl PyLogicalPlanBuilder {
         let quantifier = match quantifier.map(|s| s.to_lowercase()).as_deref() {
             Some("all") => SetQuantifier::All,
             Some("all_by_name") => SetQuantifier::AllByName,
-            Some("distinct_by_name") => SetQuantifier::DistinctByName,
-            Some("distinct") | None => SetQuantifier::Distinct,
+            Some("by_name") => SetQuantifier::DistinctByName,
+            None => SetQuantifier::Distinct,
             _ => {
                 return Err(DaftError::InternalError(
                     "Invalid set quantifier".to_string(),

@@ -293,7 +293,7 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def union(
-        self, other: LogicalPlanBuilder, quantifier: Literal["all", "by_name", "distinct_by_name"] | None
+        self, other: LogicalPlanBuilder, quantifier: Literal["all", "by_name", "all_by_name"] | None
     ) -> LogicalPlanBuilder:
         builder = self._builder.union(other._builder, quantifier)
         return LogicalPlanBuilder(builder)

@@ -2818,7 +2818,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        builder = self._builder.union(other._builder, "distinct_by_name")
+        builder = self._builder.union(other._builder, "by_name")
         return DataFrame(builder)
 
     @DataframePublicAPI
