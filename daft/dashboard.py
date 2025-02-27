@@ -81,13 +81,13 @@ def _broadcast_query_plan(
 
 try:
     dashboard = dashboard_module()
-    from dashboard import cli, launch, shutdown
+    launch = dashboard.launch
+    shutdown = dashboard.shutdown
 
-    # re-export all of the symbols defined inside of `daft_dashboard`
+    # re-export some symbols defined inside of `daft_dashboard`
     __all__ = [
-        "cli",
         "launch",
         "shutdown",
     ]
 except Exception:
-    ...
+    pass

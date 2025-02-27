@@ -9,7 +9,7 @@ requires-python = ">=3.9"
 version = "0.1.0"
 
 [project.scripts]
-daft-dashboard = "daft_dashboard:cli"
+daft-dashboard = "daft_dashboard:_cli"
 
 [tool.maturin]
 features = ["python"]

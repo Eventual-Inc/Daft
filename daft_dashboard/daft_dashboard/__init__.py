@@ -57,7 +57,7 @@ def shutdown(noop_if_shutdown: bool = False):
     native.shutdown(noop_if_shutdown=noop_if_shutdown)
 
 
-def cli():
+def _cli():
     """Runs the Daft dashboard CLI."""
     import sys
 
