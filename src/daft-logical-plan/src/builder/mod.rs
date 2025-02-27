@@ -142,11 +142,12 @@ impl LogicalPlanBuilder {
         let source_info = SourceInfo::InMemory(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
-            cache_entry,
+            Some(cache_entry),
             num_partitions,
             size_bytes,
             num_rows,
             None, // TODO(sammy) thread through clustering spec to Python
+            None,
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
@@ -305,7 +306,6 @@ impl LogicalPlanBuilder {
 
         let predicate = expr_resolver.resolve_single(predicate, self.plan.clone())?;
 
-        println!("resolved predicate: {predicate:?}");
         let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(self.with_new_plan(logical_plan))
     }

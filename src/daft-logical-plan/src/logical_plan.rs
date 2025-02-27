@@ -460,16 +460,16 @@ impl LogicalPlan {
         let mut schema = None;
 
         self.apply(|node| {
-            if let Self::SubqueryAlias(SubqueryAlias { name, .. }) = node.as_ref()
-                && name.as_ref() == alias
-            {
-                if schema.is_some() {
-                    return Err(DaftError::ValueError(format!(
-                        "Plan must not have duplicate aliases in the same scope, found: {alias}"
-                    )));
-                }
+            if let Self::SubqueryAlias(SubqueryAlias { name, .. }) = node.as_ref() {
+                if name.as_ref() == alias {
+                    if schema.is_some() {
+                        return Err(DaftError::ValueError(format!(
+                            "Plan must not have duplicate aliases in the same scope, found: {alias}"
+                        )));
+                    }
 
-                schema = Some(node.schema());
+                    schema = Some(node.schema());
+                }
 
                 Ok(TreeNodeRecursion::Jump)
             } else {

@@ -19,6 +19,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyCatalog>()?;
+    parent.add_function(wrap_pyfunction!(python::plan_sql, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_expr, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::list_sql_functions, parent)?)?;
@@ -29,7 +30,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use daft_catalog::Identifier;
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col, Expr, Subquery};
     use daft_logical_plan::{
@@ -41,7 +41,7 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::planner::SQLPlanner;
+    use crate::{error::PlannerError, planner::SQLPlanner};
 
     #[fixture]
     fn tbl_1() -> LogicalPlanRef {
@@ -65,7 +65,6 @@ mod tests {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -86,7 +85,6 @@ mod tests {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -107,7 +105,6 @@ mod tests {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -117,9 +114,10 @@ mod tests {
     fn planner() -> SQLPlanner<'static> {
         let session = Session::default();
 
-        _ = session.create_table(Identifier::simple("tbl1"), tbl_1());
-        _ = session.create_table(Identifier::simple("tbl2"), tbl_2());
-        _ = session.create_table(Identifier::simple("tbl3"), tbl_3());
+        // construct views from the tables and attach to the session
+        _ = session.create_temp_table("tbl1", &tbl_1().into(), false);
+        _ = session.create_temp_table("tbl2", &tbl_2().into(), false);
+        _ = session.create_temp_table("tbl3", &tbl_3().into(), false);
 
         SQLPlanner::new(session.into())
     }
@@ -175,6 +173,8 @@ mod tests {
     #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
     #[case::globalagg("select max(i32) from tbl1")]
     #[case::cte("with cte as (select * from tbl1) select * from cte")]
+    #[case::double_alias("select * from tbl1 as tbl2, tbl2 as tbl1")]
+    #[case::double_alias_qualified("select tbl1.val from tbl1 as tbl2, tbl2 as tbl1")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
@@ -472,6 +472,65 @@ mod tests {
             .build();
 
         assert_eq!(plan, expected);
+
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_multiple_from_with_join(
+        mut planner: SQLPlanner,
+        tbl_1: LogicalPlanRef,
+        tbl_2: LogicalPlanRef,
+        tbl_3: LogicalPlanRef,
+    ) -> SQLPlannerResult<()> {
+        let sql = "select tbl2.val from tbl1 left join tbl2 on tbl1.utf8 = tbl2.text, (tbl1 as tbl4) right join tbl3 on tbl4.i32 = tbl3.id";
+        let plan = planner.plan_sql(sql)?;
+
+        let first_from = LogicalPlanBuilder::from(tbl_1.clone())
+            .alias("tbl1")
+            .join_with_null_safe_equal(
+                LogicalPlanBuilder::from(tbl_2).alias("tbl2"),
+                vec![unresolved_col("utf8")],
+                vec![unresolved_col("text")],
+                Some(vec![false]),
+                JoinType::Left,
+                None,
+                JoinOptions::default().prefix("tbl2."),
+            )?;
+
+        let second_from = LogicalPlanBuilder::from(tbl_1)
+            .alias("tbl1")
+            .alias("tbl4")
+            .join_with_null_safe_equal(
+                LogicalPlanBuilder::from(tbl_3).alias("tbl3"),
+                vec![unresolved_col("i32")],
+                vec![unresolved_col("id")],
+                Some(vec![false]),
+                JoinType::Right,
+                None,
+                JoinOptions::default().prefix("tbl3."),
+            )?;
+
+        let expected = first_from
+            .cross_join(second_from, JoinOptions::default())?
+            .select(vec![unresolved_col("val")])?
+            .build();
+
+        assert_eq!(plan, expected);
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::basic("select tbl1.test from tbl1 as tbl2")]
+    #[case::subquery("select tbl1.test from (select * from tbl1) as tbl2")]
+    fn test_subquery_alias_bad_scope(
+        mut planner: SQLPlanner,
+        #[case] query: &str,
+    ) -> SQLPlannerResult<()> {
+        let result = planner.plan_sql(query);
+
+        assert!(result.is_err_and(|e| { matches!(e, PlannerError::ColumnNotFound { .. }) }));
 
         Ok(())
     }

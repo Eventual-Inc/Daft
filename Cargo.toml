@@ -12,7 +12,6 @@ common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
-daft-catalog-python-catalog = {path = "src/daft-catalog/python-catalog", optional = true}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-connect = {path = "src/daft-connect", optional = true}
 daft-context = {path = "src/daft-context", default-features = false}
@@ -50,6 +49,8 @@ sysinfo = {workspace = true}
 [features]
 # maturin will turn this on
 python = [
+  "dep:pyo3",
+  "dep:pyo3-log",
   "common-daft-config/python",
   "common-display/python",
   "common-partitioning/python",
@@ -57,8 +58,8 @@ python = [
   "common-file-formats/python",
   "common-scan-info/python",
   "common-system-info/python",
-  "daft-catalog-python-catalog/python",
   "daft-catalog/python",
+  "daft-connect/python",
   "daft-context/python",
   "daft-core/python",
   "daft-csv/python",
@@ -80,12 +81,7 @@ python = [
   "daft-session/python",
   "daft-stats/python",
   "daft-recordbatch/python",
-  "daft-writers/python",
-  "dep:daft-catalog-python-catalog",
-  "dep:daft-connect",
-  "daft-connect/python",
-  "dep:pyo3",
-  "dep:pyo3-log"
+  "daft-writers/python"
 ]
 
 [lib]

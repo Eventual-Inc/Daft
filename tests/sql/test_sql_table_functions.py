@@ -157,3 +157,9 @@ def test_read_csv_other_options(
         f"SELECT * FROM read_csv('{sample_csv_path}', delimiter {op} '{delimiter}', escape_char {op} '{escape_char}', comment {op} '{comment}', allow_variable_columns {op} {str(allow_variable_columns).lower()}, file_path_column {op} '{file_path_column}', hive_partitioning {op} {str(hive_partitioning).lower()})"
     )
     assert_eq(df2, df1)
+
+
+def test_sql_read_path_no_alias(sample_csv_path):
+    # don't allow using paths as table names
+    with pytest.raises(Exception, match="Table not found"):
+        daft.sql(f""" SELECT "{sample_csv_path}".* FROM '{sample_csv_path}' """)

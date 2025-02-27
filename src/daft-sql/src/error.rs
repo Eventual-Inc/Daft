@@ -1,6 +1,8 @@
 use common_error::DaftError;
+use daft_catalog::error::Error as CatalogError;
 use snafu::Snafu;
 use sqlparser::{parser::ParserError, tokenizer::TokenizerError};
+
 #[derive(Debug, Snafu)]
 pub enum PlannerError {
     #[snafu(display("Tokenization error: {source}"))]
@@ -41,6 +43,18 @@ impl From<TokenizerError> for PlannerError {
 impl From<ParserError> for PlannerError {
     fn from(value: ParserError) -> Self {
         Self::SQLParserError { source: value }
+    }
+}
+
+impl From<CatalogError> for PlannerError {
+    fn from(value: CatalogError) -> Self {
+        match value {
+            CatalogError::TableNotFound {
+                catalog_name,
+                table_id,
+            } => Self::table_not_found(format!("{}.{}", catalog_name, table_id)),
+            _ => Self::invalid_operation(value.to_string()),
+        }
     }
 }
 

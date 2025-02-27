@@ -2,7 +2,7 @@ use std::{future::ready, rc::Rc, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
-use daft_catalog::Identifier;
+use daft_catalog::TableSource;
 use daft_context::get_context;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
@@ -234,16 +234,11 @@ impl ConnectSession {
                 )
             })?;
 
-        {
-            // TODO session should handle the pre-existence error
-            if !replace && self.session().has_table(&name.clone().into()) {
-                return Err(Status::internal("Dataframe view already exists"));
-            }
-        }
-
         let session = self.session_mut();
+        let source = TableSource::from(input);
+
         session
-            .create_table(Identifier::simple(name), input)
+            .create_temp_table(name, &source, replace)
             .map_err(|e| {
                 Status::internal(
                     textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),

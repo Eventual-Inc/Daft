@@ -3,7 +3,7 @@
 mod datatype;
 pub(crate) mod expr_analyzer;
 
-use std::{io::Cursor, rc::Rc, sync::Arc};
+use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::{join::JoinSide, series::Series};
@@ -11,7 +11,7 @@ use daft_dsl::{unresolved_col, Column, Expr, ExprRef, Operator, PlanRef, Unresol
 use daft_logical_plan::{JoinOptions, JoinType, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
-use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
+use daft_scan::builder::{delta_scan, CsvScanBuilder, JsonScanBuilder, ParquetScanBuilder};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
 use datatype::to_daft_datatype;
@@ -280,11 +280,10 @@ impl SparkAnalyzer<'_> {
         let spark_connect::read::DataSource {
             format,
             schema,
-            options,
+            mut options,
             paths,
-            predicates,
+            predicates: _,
         } = data_source;
-
         let format = format.required("format")?;
 
         ensure!(!paths.is_empty(), "Paths are required");
@@ -297,22 +296,134 @@ impl SparkAnalyzer<'_> {
             debug!("Ignoring options: {options:?}; not yet implemented");
         }
 
-        if !predicates.is_empty() {
-            debug!("Ignoring predicates: {predicates:?}; not yet implemented");
+        // TODO: allow user to set handling for unused options. either ignore or error.
+        fn check_unused_options(
+            format: &str,
+            options: &HashMap<String, String>,
+        ) -> ConnectResult<()> {
+            if options.is_empty() {
+                Ok(())
+            } else {
+                let unimplemented_options = options.keys().cloned().collect::<Vec<_>>();
+                Err(ConnectError::not_yet_implemented(format!(
+                    "[{unimplemented_options}] options for {format}",
+                    unimplemented_options = unimplemented_options.join(", ")
+                )))
+            }
         }
 
-        Ok(match &*format {
-            "parquet" => ParquetScanBuilder::new(paths).finish().await?,
-            "csv" => CsvScanBuilder::new(paths).finish().await?,
+        let format = &*format;
+        Ok(match format {
+            "parquet" => {
+                let chunk_size = options
+                    .remove("chunk_size")
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid chunk_size option")?;
+
+                let hive_partitioning = options
+                    .remove("hive_partitioning")
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid hive_partitioning option")?;
+
+                let mut builder = ParquetScanBuilder::new(paths);
+                builder.chunk_size = chunk_size;
+
+                if let Some(hive_partitioning) = hive_partitioning {
+                    builder.hive_partitioning = hive_partitioning;
+                }
+                check_unused_options(format, &options)?;
+
+                builder.finish().await?
+            }
+            "csv" => {
+                // reference for csv options:
+                // https://spark.apache.org/docs/latest/sql-data-sources-csv.html
+                let mut builder = CsvScanBuilder::new(paths);
+
+                if let Some(sep) = options.remove("sep").and_then(|s| s.chars().next()) {
+                    builder = builder.delimiter(sep);
+                }
+
+                // spark sets this to false by default, so we'll do the same
+                let header = options
+                    .remove("header")
+                    .map(|v| v.to_lowercase().parse())
+                    .transpose()
+                    .wrap_err("invalid header value")?
+                    .unwrap_or(false);
+
+                builder = builder.has_headers(header);
+
+                let infer_schema = options
+                    .remove("inferSchema")
+                    .map(|v| v.to_lowercase().parse())
+                    .transpose()
+                    .wrap_err("invalid inferSchema value")?
+                    .unwrap_or(true);
+
+                builder = builder.infer_schema(infer_schema);
+
+                if let Some(quote) = options.remove("quote").and_then(|s| s.chars().next()) {
+                    builder = builder.quote(quote);
+                }
+
+                if let Some(comment) = options.remove("comment").and_then(|s| s.chars().next()) {
+                    builder = builder.comment(comment);
+                }
+
+                if let Some(escape_char) = options.remove("escape").and_then(|s| s.chars().next()) {
+                    builder = builder.escape_char(escape_char);
+                }
+
+                if let Some(hive_partitioning) = options
+                    .remove("hive_partitioning")
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid hive_partitioning option")?
+                {
+                    builder = builder.hive_partitioning(hive_partitioning);
+                }
+                if let Some(chunk_size) = options
+                    .remove("chunk_size")
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid chunk_size option")?
+                {
+                    builder = builder.chunk_size(chunk_size);
+                }
+
+                if let Some(buffer_size) = options
+                    .remove("buffer_size")
+                    .map(|v| v.parse())
+                    .transpose()
+                    .wrap_err("invalid buffer_size option")?
+                {
+                    builder = builder.buffer_size(buffer_size);
+                }
+
+                check_unused_options(format, &options)?;
+
+                builder.finish().await?
+            }
             "json" => {
-                // todo(completeness): implement json reading
-                not_yet_implemented!("read json")
+                check_unused_options(format, &options)?;
+                JsonScanBuilder::new(paths).finish().await?
             }
-            other => {
-                invalid_argument_err!(
-                    "Unsupported format: {other}; only parquet and csv are supported"
-                );
+            "delta" => {
+                if paths.len() != 1 {
+                    invalid_argument_err!(
+                        "Delta format only supports a single path; got {paths:?}"
+                    );
+                }
+                let path = paths.first().unwrap();
+                check_unused_options(format, &options)?;
+
+                delta_scan(path, None, true)?
             }
+
+            other => invalid_argument_err!("Unsupported format: {other};"),
         })
     }
 

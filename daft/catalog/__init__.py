@@ -8,11 +8,15 @@ Examples of Catalogs include AWS Glue, Hive Metastore, Apache Iceberg REST and U
 
 **Catalog**
 
-Daft recognizes a default catalog which it will attempt to use when no specific catalog name is provided.
-
 ```python
-# This will hit the default catalog
-daft.read_table("my_db.my_namespace.my_table")
+# without any qualifiers, the default catalog and namespace are used.
+daft.read_table("my_table")
+
+# with a qualified identifier (uses default catalog)
+daft.read_table("my_namespace.my_table")
+
+# with a fully qualified identifier
+daft.read_table("my_catalog.my_namespace.my_table")
 ```
 
 **Named Tables**
@@ -24,11 +28,8 @@ Note that temporary tables take precedence over catalog tables when resolving un
 ```python
 df = daft.from_pydict({"foo": [1, 2, 3]})
 
-# TODO deprecated catalog APIs #3819
-daft.catalog.register_table(
-    "my_table",
-    df,
-)
+# Attach the DataFrame for use across other APIs.
+daft.attach_table(df, "my_table")
 
 # Your table is now accessible from Daft-SQL, or Daft's `read_table`
 df1 = daft.read_table("my_table")
@@ -42,13 +43,13 @@ import warnings
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from daft.daft import catalog as native_catalog
-from daft.daft import PyIdentifier
-from daft.logical.builder import LogicalPlanBuilder
+from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
 from typing import TYPE_CHECKING
+
+from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import ColumnInputType
@@ -65,13 +66,45 @@ __all__ = [
     "unregister_catalog",
 ]
 
+
 # TODO deprecated catalog APIs #3819
-unregister_catalog = native_catalog.unregister_catalog
+def unregister_catalog(catalog_name: str | None) -> bool:
+    """Unregisters a catalog from the Daft catalog system.
+
+    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.detach_catalog`.
+
+    This function removes a previously registered catalog from the Daft catalog system.
+
+    Args:
+        catalog_name (Optional[str]): The name of the catalog to unregister. If None, the default catalog will be unregistered.
+
+    Returns:
+        bool: True if a catalog was successfully unregistered, False otherwise.
+
+    Example:
+        >>> import daft
+        >>> daft.unregister_catalog("my_catalog")
+        True
+    """
+    from daft.session import detach_catalog
+
+    warnings.warn(
+        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.detach_catalog`.",
+        category=DeprecationWarning,
+    )
+    try:
+        alias = catalog_name if catalog_name else "default"
+        detach_catalog(alias)
+        return True
+    except Exception:
+        return False
 
 
 # TODO deprecated catalog APIs #3819
 def read_table(name: str) -> DataFrame:
     """Finds a table with the specified name and reads it as a DataFrame.
+
+    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.read_table`.
 
     The provided name can be any of the following, and Daft will return them with the following order of priority:
 
@@ -85,13 +118,20 @@ def read_table(name: str) -> DataFrame:
     Returns:
         A DataFrame containing the data from the specified table.
     """
-    native_logical_plan_builder = native_catalog.read_table(name)
-    return DataFrame(LogicalPlanBuilder(native_logical_plan_builder))
+    from daft.session import read_table
+
+    warnings.warn(
+        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.read_table`.",
+        category=DeprecationWarning,
+    )
+    return read_table(name)
 
 
 # TODO deprecated catalog APIs #3819
 def register_table(name: str, dataframe: DataFrame) -> str:
     """Register a DataFrame as a named table.
+
+    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_table`.
 
     This function registers a DataFrame as a named table, making it accessible
     via Daft-SQL or Daft's `read_table` function.
@@ -108,12 +148,21 @@ def register_table(name: str, dataframe: DataFrame) -> str:
         >>> daft.catalog.register_table("my_table", df)
         >>> daft.read_table("my_table")
     """
-    return native_catalog.register_table(name, dataframe._builder._builder)
+    from daft.session import create_temp_table
+
+    warnings.warn(
+        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.create_temp_table`.",
+        category=DeprecationWarning,
+    )
+    _ = create_temp_table(name, dataframe)
+    return name
 
 
 # TODO deprecated catalog APIs #3819
 def register_python_catalog(catalog: object, name: str | None = None) -> str:
     """Registers a Python catalog with Daft.
+
+    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_catalog`.
 
     Currently supports:
 
@@ -136,15 +185,27 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
 
     """
-    return native_catalog.register_python_catalog(Catalog._from_obj(catalog), name)
+    from daft.session import attach_catalog
+
+    warnings.warn(
+        "This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_catalog`.",
+        category=DeprecationWarning,
+    )
+    if name is None:
+        name = "default"
+    _ = attach_catalog(catalog, name)
+    return name
 
 
 class Catalog(ABC):
     """Interface for python catalog implementations."""
 
-    @property
-    def inner(self) -> object | None:
-        """Returns the inner catalog object if this is an adapter."""
+    @staticmethod
+    def from_pydict(tables: dict[str, Table]) -> Catalog:
+        """Returns an in-memory catalog from the dictionary."""
+        from daft.catalog.__memory import MemoryCatalog
+
+        return MemoryCatalog(tables)
 
     @staticmethod
     def from_iceberg(obj: object) -> Catalog:
@@ -192,7 +253,7 @@ class Catalog(ABC):
     ###
 
     @abstractmethod
-    def get_table(self, name: str) -> Table: ...
+    def get_table(self, identifier: Identifier | str) -> Table: ...
 
     # TODO deprecated catalog APIs #3819
     def load_table(self, name: str) -> Table:
@@ -212,7 +273,7 @@ class Identifier(Sequence):
     >>> assert len(id) == 2
     """
 
-    _identifier: PyIdentifier
+    _ident: PyIdentifier
 
     def __init__(self, *parts: str):
         """Creates an Identifier from its parts.
@@ -225,7 +286,13 @@ class Identifier(Sequence):
         """
         if len(parts) < 1:
             raise ValueError("Identifier requires at least one part.")
-        self._identifier = PyIdentifier(parts[:-1], parts[-1])
+        self._ident = PyIdentifier(parts[:-1], parts[-1])
+
+    @staticmethod
+    def _from_pyidentifier(ident: PyIdentifier) -> Identifier:
+        i = Identifier.__new__(Identifier)
+        i._ident = ident
+        return i
 
     @staticmethod
     def from_sql(input: str, normalize: bool = False) -> Identifier:
@@ -240,33 +307,85 @@ class Identifier(Sequence):
             Identifier: A new identifier.
         """
         i = Identifier.__new__(Identifier)
-        i._identifier = PyIdentifier.from_sql(input, normalize)
+        i._ident = PyIdentifier.from_sql(input, normalize)
         return i
+
+    @staticmethod
+    def from_str(input: str) -> Identifier:
+        """Parses an Identifier from a dot-delimited Python string without normalization."""
+        return Identifier(*input.split("."))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Identifier):
             return False
-        return self._identifier.eq(other._identifier)
+        return self._ident.eq(other._ident)
 
     def __getitem__(self, index: int | slice) -> str | Sequence[str]:
         if isinstance(index, slice):
             raise IndexError("slicing not supported")
         if isinstance(index, int):
-            return self._identifier.getitem(index)
+            return self._ident.getitem(index)
 
     def __len__(self) -> int:
-        return self._identifier.__len__()
+        return self._ident.__len__()
 
     def __repr__(self) -> str:
-        return f"Identifier('{self._identifier.__repr__()}')"
+        return f"Identifier('{self._ident.__repr__()}')"
+
+    def __str__(self) -> str:
+        return ".".join(self)
 
 
 class Table(ABC):
     """Interface for python table implementations."""
 
-    @property
-    def inner(self) -> object | None:
-        """Returns the inner table object if this is an adapter."""
+    @staticmethod
+    def from_df(name: str, dataframe: DataFrame) -> Table:
+        """Returns a read-only table backed by the DataFrame."""
+        from daft.catalog.__memory import MemoryTable
+
+        return MemoryTable(name, dataframe)
+
+    @staticmethod
+    def from_iceberg(obj: object) -> Table:
+        """Returns a Daft Table instance from an Iceberg table."""
+        try:
+            from daft.catalog.__iceberg import IcebergTable
+
+            return IcebergTable._from_obj(obj)
+        except ImportError:
+            raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
+
+    @staticmethod
+    def from_unity(obj: object) -> Table:
+        """Returns a Daft Table instance from a Unity table."""
+        try:
+            from daft.catalog.__unity import UnityTable
+
+            return UnityTable._from_obj(obj)
+        except ImportError:
+            raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
+
+    @staticmethod
+    def _from_obj(obj: object) -> Table:
+        """Returns a Daft Table from a supported object type or raises an error."""
+        raise ValueError(f"Unsupported table type: {type(obj)}")
+
+    # TODO catalog APIs part 3
+    # @property
+    # @abstractmethod
+    # def name(self) -> str:
+    #     """Returns the table name."""
+
+    # TODO catalog APIs part 3
+    # @property
+    # @abstractmethod
+    # def inner(self) -> object | None:
+    #     """Returns the inner table object if this is an adapter."""
+
+    @abstractmethod
+    def read(self) -> DataFrame:
+        """Returns a DataFrame from this table."""
 
     # TODO deprecated catalog APIs #3819
     def to_dataframe(self) -> DataFrame:
@@ -277,10 +396,6 @@ class Table(ABC):
         )
         return self.read()
 
-    @abstractmethod
-    def read(self) -> DataFrame:
-        """Returns a DataFrame from this table."""
-
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Returns a DataFrame from this table with the selected columns."""
         return self.read().select(*columns)
@@ -288,3 +403,55 @@ class Table(ABC):
     def show(self, n: int = 8) -> None:
         """Shows the first n rows from this table."""
         return self.read().show(n)
+
+
+class TableSource:
+    """A TableSource is used to create a new table; this could be a Schema or DataFrame."""
+
+    _source: PyTableSource
+
+    def __init__(self) -> None:
+        raise ValueError("We do not support creating a TableSource via __init__")
+
+    @staticmethod
+    def from_df(df: DataFrame) -> TableSource:
+        s = TableSource.__new__(TableSource)
+        s._source = PyTableSource.from_builder(df._builder._builder)
+        return s
+
+    @staticmethod
+    def _from_obj(obj: object = None) -> TableSource:
+        # TODO for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
+        if obj is None:
+            return TableSource._from_none()
+        elif isinstance(obj, DataFrame):
+            return TableSource.from_df(obj)
+        elif isinstance(obj, str):
+            return TableSource._from_path(obj)
+        elif isinstance(obj, Schema):
+            return TableSource._from_schema(obj)
+        else:
+            raise Exception(f"Unknown table source: {obj}")
+
+    @staticmethod
+    def _from_none() -> TableSource:
+        # for creating temp mutable tables, but we don't have those yet
+        # s = TableSource.__new__(TableSource)
+        # s._source = PyTableSource.empty()
+        # return s
+        # todo temp workaround just use an empty schema
+        return TableSource._from_schema(Schema._from_fields([]))
+
+    @staticmethod
+    def _from_schema(schema: Schema) -> TableSource:
+        # we don't have mutable temp tables, so just make an empty view
+        # s = TableSource.__new__(TableSource)
+        # s._source = PyTableSource.from_schema(schema._schema)
+        # return s
+        # todo temp workaround until create_table is wired
+        return TableSource.from_df(DataFrame._from_pylist([]))
+
+    @staticmethod
+    def _from_path(path: str) -> TableSource:
+        # for supporting daft.create_table("t", "/path/to/data") <-> CREATE TABLE t AS '/path/to/my.data'
+        raise NotImplementedError("creating a table source from a path is not yet supported.")

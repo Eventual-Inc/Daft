@@ -144,6 +144,13 @@ impl<'a> SQLPlanner<'a> {
         }
     }
 
+    /// Set `self.current_plan`. Should only be called once per query.
+    fn set_plan(&mut self, plan: LogicalPlanBuilder) {
+        debug_assert!(self.current_plan.is_none());
+
+        self.current_plan = Some(plan);
+    }
+
     fn update_plan<E>(
         &mut self,
         f: impl FnOnce(&LogicalPlanBuilder) -> Result<LogicalPlanBuilder, E>,
@@ -166,6 +173,13 @@ impl<'a> SQLPlanner<'a> {
 
     fn bound_ctes(&self) -> Ref<'_, Bindings<LogicalPlanBuilder>> {
         Ref::map(self.context.borrow(), |i| &i.bound_ctes)
+    }
+
+    /// Get the table associated with the name from the session and wrap in a SubqueryAlias.
+    fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
+        let table = self.session().get_table(name)?;
+        let plan = table.get_logical_plan()?;
+        Ok(LogicalPlanBuilder::from(plan).alias(name.name.clone()))
     }
 
     /// Borrow the planning session
@@ -555,38 +569,8 @@ impl<'a> SQLPlanner<'a> {
         })
     }
 
-    /// Plans the FROM clause of a query and populates self.current_relation and self.table_map
-    /// Should only be called once per query.
-    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<()> {
-        if from.len() > 1 {
-            let mut from_iter = from.iter();
-
-            let first = from_iter.next().unwrap();
-            let mut plan = self.plan_relation(&first.relation)?;
-            for tbl in from_iter {
-                let right = self.plan_relation(&tbl.relation)?;
-
-                let mut join_options = JoinOptions::default();
-                if let [id] = right.plan.clone().get_aliases().as_slice() {
-                    join_options = join_options.prefix(format!("{id}."));
-                }
-
-                plan = plan.cross_join(right, join_options)?;
-            }
-            self.current_plan = Some(plan);
-            return Ok(());
-        }
-
-        if from.is_empty() {
-            self.current_plan = Some(singleton_plan()?);
-            return Ok(());
-        }
-
-        let from = from
-            .iter()
-            .next()
-            .expect("expected at least one from source");
-
+    /// Plans a single set of table and joins in a FROM clause.
+    fn plan_single_from(&self, from: &TableWithJoins) -> SQLPlannerResult<LogicalPlanBuilder> {
         macro_rules! return_non_ident_errors {
             ($e:expr) => {
                 if !matches!(
@@ -701,7 +685,8 @@ impl<'a> SQLPlanner<'a> {
 
         let relation = from.relation.clone();
         let left_plan = self.plan_relation(&relation)?;
-        self.current_plan = Some(left_plan);
+        let mut left_planner = self.new_with_context();
+        left_planner.set_plan(left_plan);
 
         for join in &from.joins {
             use sqlparser::ast::{
@@ -718,7 +703,7 @@ impl<'a> SQLPlanner<'a> {
 
             // construct a planner with the right table to use for expr planning
             let mut right_planner = self.new_with_context();
-            right_planner.current_plan = Some(right_plan);
+            right_planner.set_plan(right_plan);
 
             let (join_type, constraint) = match &join.join_operator {
                 Inner(constraint) => (JoinType::Inner, constraint),
@@ -742,7 +727,7 @@ impl<'a> SQLPlanner<'a> {
 
                     process_join_on(
                         expr,
-                        self,
+                        &left_planner,
                         &right_planner,
                         &mut left_on,
                         &mut right_on,
@@ -767,14 +752,14 @@ impl<'a> SQLPlanner<'a> {
             };
 
             if let Some(left_predicate) = combine_conjunction(left_filters) {
-                self.update_plan(|plan| plan.filter(left_predicate))?;
+                left_planner.update_plan(|plan| plan.filter(left_predicate))?;
             }
 
             if let Some(right_predicate) = combine_conjunction(right_filters) {
                 right_planner.update_plan(|plan| plan.filter(right_predicate))?;
             }
 
-            self.update_plan(|plan| {
+            left_planner.update_plan(|plan| {
                 plan.join_with_null_safe_equal(
                     right_planner.current_plan.unwrap(),
                     left_on,
@@ -786,6 +771,36 @@ impl<'a> SQLPlanner<'a> {
                 )
             })?;
         }
+
+        Ok(left_planner.current_plan.unwrap())
+    }
+
+    /// Plans the FROM clause of a query and populates `self.current_relation`.
+    /// Should only be called once per query.
+    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<()> {
+        let plan = if let Some(plan) = from
+            .iter()
+            .map(|f| self.plan_single_from(f))
+            .reduce(|left, right| {
+                let left = left?;
+                let right = right?;
+
+                let mut join_options = JoinOptions::default();
+                if let [id] = right.plan.clone().get_aliases().as_slice() {
+                    join_options = join_options.prefix(format!("{id}."));
+                }
+
+                Ok(left.cross_join(right, join_options)?)
+            })
+            .transpose()?
+        {
+            plan
+        } else {
+            // singleton plan for SELECT without FROM
+            singleton_plan()?
+        };
+
+        self.set_plan(plan);
 
         Ok(())
     }
@@ -815,6 +830,7 @@ impl<'a> SQLPlanner<'a> {
                 } else {
                     self.plan_relation_table(name)?
                 };
+
                 (plan, alias)
             }
             sqlparser::ast::TableFactor::Derived {
@@ -880,20 +896,22 @@ impl<'a> SQLPlanner<'a> {
     }
 
     /// Plan a `FROM <table>` table factor.
+    ///
+    /// All plans returned by plan_relation_table should have a SubqueryAlias with the table's name.
     pub(crate) fn plan_relation_table(
         &self,
         name: &ObjectName,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let ident = normalize(name);
-        let table = if ident.has_namespace() {
-            // qualified search of sesison metadata
-            self.session().get_table(&ident).ok()
+        let table = if ident.has_qualifier() {
+            // qualified search of session metadata
+            self.get_table(&ident).ok()
         } else {
             // search bindings then session metadata
             self.bound_ctes()
                 .get(&ident.name)
                 .cloned()
-                .or_else(|| self.session().get_table(&ident).ok())
+                .or_else(|| self.get_table(&ident).ok())
         };
         table.ok_or_else(|| PlannerError::table_not_found(ident.to_string()))
     }
@@ -976,7 +994,7 @@ impl<'a> SQLPlanner<'a> {
         if let Some(parent) = self.parent {
             parent.plan_identifier(idents)
         } else {
-            column_not_found_err!(full_name, "")
+            column_not_found_err!(full_name, "current scope")
         }
     }
 

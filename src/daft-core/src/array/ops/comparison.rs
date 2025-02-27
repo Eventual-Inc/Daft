@@ -2110,8 +2110,6 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
     }
 
     fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
-        println!("Starting eq_null_safe for DaftCompare<&Self> for FixedSizeBinaryArray");
-
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let l_validity = self.as_arrow().validity();

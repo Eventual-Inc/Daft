@@ -269,6 +269,9 @@ fn physical_plan_to_partition_tasks(
     use daft_dsl::Expr;
     use daft_physical_plan::ops::{CrossJoin, ShuffleExchange, ShuffleExchangeStrategy};
     match physical_plan {
+        PhysicalPlan::PreviousStageScan(..) => {
+            panic!("PreviousStageScan should be optimized away before reaching the scheduler")
+        }
         PhysicalPlan::InMemoryScan(InMemoryScan {
             in_memory_info: InMemoryInfo { cache_key, .. },
             ..
