@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow2::compute::cast::cast;
+use arrow2::{array::Array, compute::cast::cast};
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -9,6 +9,7 @@ use crate::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
         FieldRef,
     },
+    prelude::*,
     series::Series,
 };
 
@@ -23,24 +24,6 @@ where
 impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         Self::try_from((field, arrow_arr))
-    }
-}
-
-impl<L: DaftLogicalType> FromArrow for LogicalArray<L>
-where
-    <L::PhysicalType as DaftDataType>::ArrayType: FromArrow,
-{
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
-        let target_convert = field.to_physical();
-        let target_convert_arrow = target_convert.dtype.to_arrow()?;
-
-        let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
-
-        let physical = <L::PhysicalType as DaftDataType>::ArrayType::from_arrow(
-            Arc::new(target_convert),
-            physical_arrow_array,
-        )?;
-        Ok(Self::new(field, physical))
     }
 }
 
@@ -145,3 +128,85 @@ impl FromArrow for StructArray {
         }
     }
 }
+
+impl FromArrow for MapArray {
+    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+        // we need to handle map type separately because the physical type of map in arrow2 is map but in Daft is list
+
+        println!("map");
+        match (&field.dtype, arrow_arr.data_type()) {
+            (DataType::Map { key, value }, arrow2::datatypes::DataType::Map(map_field, _)) => {
+                let arrow_arr = arrow_arr
+                    .as_any()
+                    .downcast_ref::<arrow2::array::MapArray>()
+                    .unwrap();
+                let arrow_child_array = arrow_arr.field();
+
+                let child_field = Field::new(
+                    map_field.name.clone(),
+                    DataType::Struct(vec![
+                        Field::new("key", *key.clone()),
+                        Field::new("value", *value.clone()),
+                    ]),
+                );
+                let physical_field = Field::new(
+                    field.name.clone(),
+                    DataType::List(Box::new(child_field.dtype.clone())),
+                );
+
+                let child_series =
+                    Series::from_arrow(child_field.into(), arrow_child_array.clone())?;
+                println!("start");
+
+                let physical = ListArray::new(
+                    physical_field,
+                    child_series,
+                    arrow_arr.offsets().into(),
+                    arrow_arr.validity().cloned(),
+                );
+                println!("end");
+
+                Ok(Self::new(field, physical))
+            }
+            (d, a) => Err(DaftError::TypeError(format!(
+                "Attempting to create Daft MapArray with type {} from arrow array with type {:?}",
+                d, a
+            ))),
+        }
+    }
+}
+
+macro_rules! impl_logical_from_arrow {
+    ($logical_type:ident) => {
+        impl FromArrow for LogicalArray<$logical_type> {
+            fn from_arrow(
+                field: FieldRef,
+                arrow_arr: Box<dyn arrow2::array::Array>,
+            ) -> DaftResult<Self> {
+                let target_convert = field.to_physical();
+                let target_convert_arrow = target_convert.dtype.to_arrow()?;
+
+                let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
+
+                let physical =
+                    <<$logical_type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+                        Arc::new(target_convert),
+                        physical_arrow_array,
+                    )?;
+                Ok(Self::new(field, physical))
+            }
+        }
+    };
+}
+
+impl_logical_from_arrow!(DateType);
+impl_logical_from_arrow!(TimeType);
+impl_logical_from_arrow!(DurationType);
+impl_logical_from_arrow!(ImageType);
+impl_logical_from_arrow!(TimestampType);
+impl_logical_from_arrow!(TensorType);
+impl_logical_from_arrow!(EmbeddingType);
+impl_logical_from_arrow!(FixedShapeTensorType);
+impl_logical_from_arrow!(SparseTensorType);
+impl_logical_from_arrow!(FixedShapeSparseTensorType);
+impl_logical_from_arrow!(FixedShapeImageType);

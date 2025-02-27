@@ -106,33 +106,15 @@ pub fn cast_array_for_daft_if_needed(
     arrow_array: Box<dyn arrow2::array::Array>,
 ) -> Box<dyn arrow2::array::Array> {
     match coerce_to_daft_compatible_type(arrow_array.data_type()) {
-        Some(coerced_dtype) => match coerced_dtype {
-            // TODO: Consolidate Map to use the same cast::cast method as other datatypes.
-            // Currently, Map is not supported in Arrow2::compute::cast, so this workaround is necessary.
-            // A known limitation of this workaround is that it does not handle nested maps.
-            arrow2::datatypes::DataType::Map(to_field, sorted) => {
-                let map_array = arrow_array
-                    .as_any()
-                    .downcast_ref::<arrow2::array::MapArray>()
-                    .unwrap();
-                let casted = cast_array_for_daft_if_needed(map_array.field().clone());
-                Box::new(arrow2::array::MapArray::new(
-                    arrow2::datatypes::DataType::Map(to_field, sorted),
-                    map_array.offsets().clone(),
-                    casted,
-                    arrow_array.validity().cloned(),
-                ))
-            }
-            _ => cast::cast(
-                arrow_array.as_ref(),
-                &coerced_dtype,
-                cast::CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )
-            .unwrap(),
-        },
+        Some(coerced_dtype) => cast::cast(
+            arrow_array.as_ref(),
+            &coerced_dtype,
+            cast::CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )
+        .unwrap(),
         None => arrow_array,
     }
 }
