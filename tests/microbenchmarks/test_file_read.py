@@ -11,7 +11,7 @@ from daft import DataFrame
 from tests.conftest import get_tests_daft_runner_name
 
 
-@pytest.fixture(scope="module", params=[(1, 64), (8, 8), (64, 1)], ids=["1x64mib", "8x8mib", "64x1mib"])
+@pytest.fixture(scope="function", params=[(1, 64), (8, 8), (64, 1)], ids=["1x64mib", "8x8mib", "64x1mib"])
 def gen_simple_csvs(request) -> str:
     print(f"request: {request}")
     """Creates some CSVs in a directory. Returns the name of the directory."""
