@@ -66,13 +66,19 @@ def test_s3_parquet_read_1x64mb(benchmark, prune):
     expected_rows = 1500000
 
     def bench() -> DataFrame:
+        print("reading parquet")
         df = daft.read_parquet(parquet_glob)
         if prune:
             df = df.select(df["O_SHIPPRIORITY"])  # rightmost int64 column
-        return df.collect()
+        print("collecting")
+        res = df.collect()
+        print(f"len(res): {len(res)}")
+        return res
 
     df = benchmark(bench)
+    print("benchmark done")
     assert len(df.to_pandas()) == expected_rows
+    print("assert ok")
 
 
 @pytest.mark.benchmark(group="file_read")
@@ -83,10 +89,16 @@ def test_s3_parquet_read_32x2mb(benchmark, prune):
     expected_rows = 2000000
 
     def bench() -> DataFrame:
+        print("reading parquet")
         df = daft.read_parquet(parquet_glob)
         if prune:
             df = df.select(df["P_SIZE"])  # rightmost int64 column
-        return df.collect()
+        print("collecting")
+        res = df.collect()
+        print(f"len(res): {len(res)}")
+        return res
 
     df = benchmark(bench)
+    print("benchmark done")
     assert len(df.to_pandas()) == expected_rows
+    print("assert ok")
