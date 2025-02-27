@@ -703,7 +703,16 @@ impl SparkAnalyzer<'_> {
         match set_op_type {
             SetOpType::Except => left.except(&right, is_all),
             SetOpType::Intersect => left.intersect(&right, is_all),
-            SetOpType::Union => left.union(&right, SetQuantifier::All),
+            SetOpType::Union => {
+                let set_quantifier = match (is_all, set_op.by_name) {
+                    (true, Some(true)) => SetQuantifier::AllByName,
+                    (true, Some(false)) | (true, None) => SetQuantifier::All,
+                    (false, Some(true)) => SetQuantifier::DistinctByName,
+                    (false, Some(false)) | (false, None) => SetQuantifier::Distinct,
+                };
+
+                left.union(&right, set_quantifier)
+            }
             SetOpType::Unspecified => {
                 invalid_argument_err!("SetOpType must be specified; got Unspecified")
             }
