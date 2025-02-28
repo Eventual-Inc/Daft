@@ -9,7 +9,9 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 futures = {workspace = true}
+rayon = {workspace = true}
 serde_json = {workspace = true}
+snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tokio-util = {workspace = true}

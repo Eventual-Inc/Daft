@@ -24,6 +24,7 @@ use daft_parquet::read::{
 use daft_recordbatch::RecordBatch;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use daft_warc::WarcConvertOptions;
 use futures::{Future, Stream};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
@@ -274,7 +275,26 @@ fn materialize_scan_task(
         // Native Warc Reads
         // ****************
         FileFormatConfig::Warc(_) => {
-            todo!()
+            let schema_of_file = scan_task.schema.clone();
+            let convert_options = WarcConvertOptions {
+                limit: scan_task.pushdowns.limit,
+                include_columns: file_column_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
+                schema: schema_of_file,
+                predicate: scan_task.pushdowns.filters.clone(),
+            };
+            let uris = urls.collect::<Vec<_>>();
+            daft_warc::read_warc_bulk(
+                uris.as_slice(),
+                convert_options,
+                io_client,
+                io_stats,
+                scan_task.storage_config.multithreaded_io,
+                None,
+                8,
+            )
+            .context(DaftCoreComputeSnafu)?
         }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {

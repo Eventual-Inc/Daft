@@ -1,14 +1,18 @@
-use std::{future::Future, sync::Arc};
+#![feature(let_chains)]
+use std::{future::Future, num::NonZeroUsize, sync::Arc};
 
 use arrow2::array::{MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array};
 use chrono::{DateTime, Utc};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+use common_runtime::{get_compute_runtime, get_io_runtime};
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::ExprRef;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use snafu::{futures::try_future::TryFutureExt, Snafu};
 use tokio::{
     fs::File,
     io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
@@ -16,6 +20,21 @@ use tokio::{
 use tokio_util::io::StreamReader;
 use uuid::Uuid;
 
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("Error joining spawned task: {}", source))]
+    JoinError { source: tokio::task::JoinError },
+}
+
+impl From<Error> for DaftError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::JoinError { source } => Self::External(Box::new(source)),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct WarcConvertOptions {
     pub limit: Option<usize>,
     pub include_columns: Option<Vec<String>>,
@@ -296,15 +315,120 @@ fn create_record_batch(
     RecordBatch::new_with_size(schema, series_vec, num_records)
 }
 
+pub fn read_warc_bulk(
+    uris: &[&str],
+    convert_options: WarcConvertOptions,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    multithreaded_io: bool,
+    max_chunks_in_flight: Option<usize>,
+    num_parallel_tasks: usize,
+) -> DaftResult<Vec<RecordBatch>> {
+    let runtime_handle = get_io_runtime(multithreaded_io);
+    let tables = runtime_handle.block_on_current_thread(async move {
+        // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
+        let task_stream = futures::stream::iter(uris.iter().map(|uri| {
+            let (uri, convert_options, io_client, io_stats) = (
+                (*uri).to_string(),
+                convert_options.clone(),
+                io_client.clone(),
+                io_stats.clone(),
+            );
+            tokio::task::spawn(async move {
+                read_warc_single_into_table(
+                    uri.as_str(),
+                    convert_options,
+                    io_client,
+                    io_stats,
+                    max_chunks_in_flight,
+                )
+                .await
+            })
+            .context(JoinSnafu {})
+        }));
+        let mut remaining_rows = convert_options.limit.map(|limit| limit as i64);
+        task_stream
+            // Limit the number of file reads we have in flight at any given time.
+            .buffered(num_parallel_tasks)
+            // Terminate the stream if we have already reached the row limit. With the upstream buffering, we will still read up to
+            // num_parallel_tasks redundant files.
+            .try_take_while(|result| {
+                match (result, remaining_rows) {
+                    // Limit has been met, early-terminate.
+                    (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                    // Limit has not yet been met, update remaining limit slack and continue.
+                    (Ok(table), Some(rows_left)) => {
+                        remaining_rows = Some(rows_left - table.len() as i64);
+                        futures::future::ready(Ok(true))
+                    }
+                    // (1) No limit, never early-terminate.
+                    // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                    (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+                }
+            })
+            .try_collect::<Vec<_>>()
+            .await
+    })?;
+
+    tables.into_iter().collect::<DaftResult<Vec<_>>>()
+}
+
+async fn read_warc_single_into_table(
+    uri: &str,
+    convert_options: WarcConvertOptions,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    max_chunks_in_flight: Option<usize>,
+) -> DaftResult<RecordBatch> {
+    let limit = convert_options.limit;
+    let schema = convert_options.schema.clone();
+    let record_batch_stream = stream_warc(
+        uri,
+        io_client,
+        io_stats,
+        convert_options,
+        max_chunks_in_flight,
+    )
+    .await?;
+    let tables = Box::pin(record_batch_stream);
+    let collected_tables = tables
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .collect::<Vec<_>>();
+    if collected_tables.is_empty() {
+        RecordBatch::empty(Some(schema))
+    } else {
+        let concated_table = tables_concat(collected_tables)?;
+        if let Some(limit) = limit
+            && concated_table.len() > limit
+        {
+            concated_table.head(limit)
+        } else {
+            Ok(concated_table)
+        }
+    }
+}
+
 pub async fn stream_warc(
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     convert_options: WarcConvertOptions,
+    max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let predicate = convert_options.predicate.clone();
     let limit = convert_options.limit;
     let include_columns = convert_options.include_columns.clone();
+    // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
+    // with the parsing of chunks on the rayon threadpool.
+    let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .unwrap_or(NonZeroUsize::new(2).unwrap())
+            .checked_mul(2.try_into().unwrap())
+            .unwrap()
+            .into()
+    });
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
@@ -345,8 +469,8 @@ pub async fn stream_warc(
         }
     });
 
-    let (tx, rx) = tokio::sync::mpsc::channel(64);
-    let compute_runtime = common_runtime::get_compute_runtime();
+    let (tx, rx) = tokio::sync::mpsc::channel(max_chunks_in_flight);
+    let compute_runtime = get_compute_runtime();
     let warc_stream_task = compute_runtime.spawn(async move {
         let filtered_stream = stream.map(move |table| {
             if let Some(predicate) = &predicate {
@@ -409,4 +533,43 @@ fn combine_stream<T, E>(
             },
         }
     })
+}
+
+// TODO(desmond): This can be deduped for all the different file format readers.
+fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBatch> {
+    if tables.is_empty() {
+        return Err(DaftError::ValueError(
+            "Need at least 1 Table to perform concat".to_string(),
+        ));
+    }
+    if tables.len() == 1 {
+        return Ok(tables.pop().unwrap());
+    }
+    let first_table = tables.as_slice().first().unwrap();
+
+    let first_schema = &first_table.schema;
+    for tab in tables.iter().skip(1) {
+        if tab.schema.as_ref() != first_schema.as_ref() {
+            return Err(DaftError::SchemaMismatch(format!(
+                "Table concat requires all schemas to match, {} vs {}",
+                first_schema, tab.schema
+            )));
+        }
+    }
+    let num_columns = first_table.num_columns();
+    let new_series = (0..num_columns)
+        .into_par_iter()
+        .map(|i| {
+            let series_to_cat: Vec<&Series> = tables
+                .iter()
+                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
+                .collect();
+            Series::concat(series_to_cat.as_slice())
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+    RecordBatch::new_with_size(
+        first_table.schema.clone(),
+        new_series,
+        tables.iter().map(daft_recordbatch::RecordBatch::len).sum(),
+    )
 }
