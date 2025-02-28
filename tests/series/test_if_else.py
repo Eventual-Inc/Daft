@@ -251,20 +251,18 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
             ),
             [[("a", 1), ("b", 2)], [("c", 10)], None, [("a", 5), ("c", 7)]],
         ),
-        # TODO(Colin): Uncomment this case when StructArrays are supported.
         # Same length, different super-castable data type
-        # (
-        #     pa.array(
-        #         [[("a", 1), ("b", 2)], [("b", 3), ("c", 4)], None, [("a", 5), ("c", 7)]],
-        #         type=pa.map_(pa.string(), pa.int64()),
-        #     ),
-        #     pa.array(
-        #         [[("a", 8), ("b", 9)], [("c", 10)], None, [("a", 12), ("b", 13)]],
-        #         type=pa.map_(pa.string(), pa.int64()),
-        #     ),
-        #     [[("a", 1), ("b", 2)], [("c", 10)], None, [("a", 5), ("c", 7)]],
-        # ),
-        # ),
+        (
+            pa.array(
+                [[("a", 1), ("b", 2)], [("b", 3), ("c", 4)], None, [("a", 5), ("c", 7)]],
+                type=pa.map_(pa.string(), pa.int64()),
+            ),
+            pa.array(
+                [[("a", 8), ("b", 9)], [("c", 10)], None, [("a", 12), ("b", 13)]],
+                type=pa.map_(pa.string(), pa.int64()),
+            ),
+            [[("a", 1), ("b", 2)], [("c", 10)], None, [("a", 5), ("c", 7)]],
+        ),
         # Broadcast left
         (
             pa.array([[("a", 1), ("b", 2)]], type=pa.map_(pa.string(), pa.int64())),
