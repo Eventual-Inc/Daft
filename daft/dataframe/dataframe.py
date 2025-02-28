@@ -95,6 +95,10 @@ def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
     )
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class DataFrame:
     """A Daft DataFrame is a table of data.
 
@@ -160,24 +164,24 @@ class DataFrame:
         else:
             return self._result_cache.value
 
-    def _broadcast_query_plan(self):
+    def _broadcast_query_plan(self, plan_time_start: datetime, plan_time_end: datetime):
         from daft.dataframe.display import MermaidFormatter
 
-        if not dashboard._should_run():
+        if not dashboard.should_run():
             return
 
         is_cached = self._result_cache is not None
-        plan_time_start = datetime.now(timezone.utc)
         mermaid_plan: str = MermaidFormatter(
-            builder=self.__builder, show_all=True, simple=False, is_cached=is_cached
+            builder=self.__builder,
+            show_all=True,
+            simple=False,
+            is_cached=is_cached,
         )._repr_markdown_()
-        plan_time_end = datetime.now(timezone.utc)
 
         dashboard.broadcast_query_information(
             mermaid_plan=mermaid_plan,
             plan_time_start=plan_time_start,
             plan_time_end=plan_time_end,
-            logs=dashboard.nlb.buffer,
         )
 
     @DataframePublicAPI
@@ -2868,8 +2872,11 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with materialized results.
         """
+        plan_time_start = _utc_now()
         self._materialize_results()
-        self._broadcast_query_plan()
+        plan_time_end = _utc_now()
+
+        self._broadcast_query_plan(plan_time_start, plan_time_end)
 
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -2940,8 +2947,11 @@ class DataFrame:
         Args:
             n: number of rows to show. Defaults to 8.
         """
+        plan_time_start = _utc_now()
         dataframe_display = self._construct_show_display(n)
-        self._broadcast_query_plan()
+        plan_time_end = _utc_now()
+
+        self._broadcast_query_plan(plan_time_start, plan_time_end)
 
         try:
             from IPython.display import display

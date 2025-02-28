@@ -1,16 +1,17 @@
-"""The Daft Dashboard module.
-
-The primary functionality of this module is just to load the `daft_dashboard` python library and re-export some of the APIs that it exposes.
-"""
-
 from __future__ import annotations
 
 import os
 import sys
 import warnings
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+from daft.context import get_context
 
 
-def dashboard_module():
+def _dashboard_module():
     try:
         import daft_dashboard
     except ImportError:
@@ -27,9 +28,9 @@ def dashboard_module():
     return daft_dashboard
 
 
-def _should_run() -> bool:
+def should_run() -> bool:
     try:
-        dashboard = dashboard_module()
+        dashboard = _dashboard_module()
     except ImportError:
         return False
 
@@ -63,20 +64,51 @@ class NativeLogBroadcaster:
         self.original_stdout.close()
 
 
+def broadcast_query_information(
+    mermaid_plan: str,
+    plan_time_start: datetime,
+    plan_time_end: datetime,
+):
+    dashboard = _dashboard_module()
+
+    dashboard.broadcast_query_information(
+        mermaid_plan=mermaid_plan,
+        plan_time_start=plan_time_start,
+        plan_time_end=plan_time_end,
+        logs=_get_logs(),
+    )
+
+
+log_capturer = None
+
+
+def _get_logs():
+    if not log_capturer:
+        return ""
+
+    return log_capturer.buffer
+
+
 try:
-    dashboard = dashboard_module()
-    broadcast_query_information = dashboard.broadcast_query_information
+    dashboard = _dashboard_module()
     launch = dashboard.launch
     shutdown = dashboard.shutdown
 
-    nlb = NativeLogBroadcaster()
-    sys.stdout = nlb
+    runner = get_context().get_or_create_runner()
+
+    if runner.name == "ray":
+        pass
+    elif runner.name == "py":
+        pass
+    elif runner.name == "native":
+        log_capturer = NativeLogBroadcaster()
+
+    if log_capturer:
+        sys.stdout = log_capturer
 
     # re-export some symbols defined inside of `daft_dashboard`
     __all__ = [
-        "broadcast_query_information",
         "launch",
-        "nlb",
         "shutdown",
     ]
 except Exception:
