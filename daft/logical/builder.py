@@ -292,6 +292,10 @@ class LogicalPlanBuilder:
         builder = self._builder.concat(other._builder)
         return LogicalPlanBuilder(builder)
 
+    def union(self, other: LogicalPlanBuilder, is_all: bool = False, is_by_name: bool = False) -> LogicalPlanBuilder:
+        builder = self._builder.union(other._builder, is_all, is_by_name)
+        return LogicalPlanBuilder(builder)
+
     def intersect(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
         builder = self._builder.intersect(other._builder, False)
         return LogicalPlanBuilder(builder)

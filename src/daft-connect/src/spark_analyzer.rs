@@ -8,7 +8,10 @@ use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
 use daft_core::{join::JoinSide, series::Series};
 use daft_dsl::{unresolved_col, Column, Expr, ExprRef, Operator, PlanRef, UnresolvedColumn};
-use daft_logical_plan::{JoinOptions, JoinType, LogicalPlanBuilder, PyLogicalPlanBuilder};
+use daft_logical_plan::{
+    ops::{SetQuantifier, UnionStrategy},
+    JoinOptions, JoinType, LogicalPlanBuilder, PyLogicalPlanBuilder,
+};
 use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
 use daft_scan::builder::{delta_scan, CsvScanBuilder, JsonScanBuilder, ParquetScanBuilder};
@@ -701,7 +704,20 @@ impl SparkAnalyzer<'_> {
         match set_op_type {
             SetOpType::Except => left.except(&right, is_all),
             SetOpType::Intersect => left.intersect(&right, is_all),
-            SetOpType::Union => left.union(&right, is_all),
+            SetOpType::Union => {
+                let set_quantifier = if is_all {
+                    SetQuantifier::All
+                } else {
+                    SetQuantifier::Distinct
+                };
+                let strategy = if set_op.by_name.unwrap_or(false) {
+                    UnionStrategy::ByName
+                } else {
+                    UnionStrategy::Positional
+                };
+
+                left.union(&right, set_quantifier, strategy)
+            }
             SetOpType::Unspecified => {
                 invalid_argument_err!("SetOpType must be specified; got Unspecified")
             }
