@@ -2758,7 +2758,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 5 of 5 rows)
         """
-        builder = self._builder.union(other._builder, None)
+        builder = self._builder.union(other._builder)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2790,7 +2790,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        builder = self._builder.union(other._builder, "all")
+        builder = self._builder.union(other._builder, is_all=True)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2818,7 +2818,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        builder = self._builder.union(other._builder, "by_name")
+        builder = self._builder.union(other._builder, is_all=False, is_by_name=True)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2850,7 +2850,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        builder = self._builder.union(other._builder, "all_by_name")
+        builder = self._builder.union(other._builder, is_all=True, is_by_name=True)
         return DataFrame(builder)
 
     @DataframePublicAPI

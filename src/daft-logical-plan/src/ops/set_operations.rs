@@ -15,8 +15,13 @@ use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 pub enum SetQuantifier {
     All,
     Distinct,
-    AllByName,
-    DistinctByName,
+}
+
+// todo: rename this to something else if we add support for by name for non-union set operations
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum UnionStrategy {
+    Positional, // e.g. `select * from t1 union select * from t2`
+    ByName,     // e.g. `select a1 from t1 union by name select a1 from t2`
 }
 
 fn build_union_all_internal(
@@ -31,6 +36,7 @@ fn build_union_all_internal(
         left_with_v_col.into(),
         right_with_v_col.into(),
         SetQuantifier::All,
+        UnionStrategy::Positional,
     )?
     .to_logical_plan()
 }
@@ -262,6 +268,7 @@ pub struct Union {
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
     pub quantifier: SetQuantifier,
+    pub strategy: UnionStrategy,
 }
 
 impl Union {
@@ -277,9 +284,9 @@ impl Union {
         lhs: Arc<LogicalPlan>,
         rhs: Arc<LogicalPlan>,
         quantifier: SetQuantifier,
+        strategy: UnionStrategy,
     ) -> logical_plan::Result<Self> {
-        if matches!(quantifier, SetQuantifier::All | SetQuantifier::Distinct)
-            && lhs.schema().len() != rhs.schema().len()
+        if matches!(strategy, UnionStrategy::Positional) && lhs.schema().len() != rhs.schema().len()
         {
             return Err(DaftError::SchemaMismatch(format!(
                 "Both plans must have the same num of fields to union, \
@@ -296,6 +303,7 @@ impl Union {
             lhs,
             rhs,
             quantifier,
+            strategy,
         })
     }
 
@@ -309,8 +317,8 @@ impl Union {
     pub(crate) fn to_logical_plan(&self) -> logical_plan::Result<LogicalPlan> {
         let lhs_schema = self.lhs.schema();
         let rhs_schema = self.rhs.schema();
-        match self.quantifier {
-            SetQuantifier::All | SetQuantifier::Distinct => {
+        match self.strategy {
+            UnionStrategy::Positional => {
                 let (lhs, rhs) = if lhs_schema != rhs_schema {
                     // we need to try to do a type coercion
                     let coerced_fields = lhs_schema
@@ -345,10 +353,9 @@ impl Union {
                 match self.quantifier {
                     SetQuantifier::All => Ok(concat),
                     SetQuantifier::Distinct => Ok(Distinct::new(concat.arced()).into()),
-                    _ => unreachable!(),
                 }
             }
-            SetQuantifier::AllByName | SetQuantifier::DistinctByName => {
+            UnionStrategy::ByName => {
                 let lhs_fields = lhs_schema.fields.values().cloned().collect::<IndexSet<_>>();
                 let rhs_fields = rhs_schema.fields.values().cloned().collect::<IndexSet<_>>();
                 let all_fields = lhs_fields
@@ -380,20 +387,21 @@ impl Union {
                 let concat = LogicalPlan::Concat(Concat::try_new(lhs.into(), rhs.into())?);
 
                 match self.quantifier {
-                    SetQuantifier::AllByName => Ok(concat),
-                    SetQuantifier::DistinctByName => Ok(Distinct::new(concat.arced()).into()),
-                    _ => unreachable!(),
+                    SetQuantifier::All => Ok(concat),
+                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced()).into()),
                 }
             }
         }
     }
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        match self.quantifier {
-            SetQuantifier::Distinct => res.push("Union:".to_string()),
-            SetQuantifier::All => res.push("Union All:".to_string()),
-            SetQuantifier::AllByName => res.push("Union All By Name:".to_string()),
-            SetQuantifier::DistinctByName => res.push("Union By Name:".to_string()),
+        use SetQuantifier::{All, Distinct};
+        use UnionStrategy::{ByName, Positional};
+        match (self.quantifier, self.strategy) {
+            (Distinct, Positional) => res.push("Union:".to_string()),
+            (All, Positional) => res.push("Union All:".to_string()),
+            (Distinct, ByName) => res.push("Union By Name:".to_string()),
+            (All, ByName) => res.push("Union All By Name:".to_string()),
         }
         res
     }

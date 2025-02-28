@@ -18,7 +18,10 @@ use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
     utf8::{ilike, like, to_date, to_datetime},
 };
-use daft_logical_plan::{ops::SetQuantifier, JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
+use daft_logical_plan::{
+    ops::{SetQuantifier, UnionStrategy},
+    JoinOptions, LogicalPlanBuilder, LogicalPlanRef,
+};
 use daft_session::Session;
 use itertools::Itertools;
 use sqlparser::{
@@ -282,17 +285,22 @@ impl<'a> SQLPlanner<'a> {
 
                 return match (op, set_quantifier) {
                     (Union, set_quantifier) => {
-                        let set_quantifier = match set_quantifier {
-                            SQLSetQuantifier::All => SetQuantifier::All,
+                        let (set_quantifier, strategy) = match set_quantifier {
+                            SQLSetQuantifier::All => {
+                                (SetQuantifier::All, UnionStrategy::Positional)
+                            }
                             SQLSetQuantifier::None | SQLSetQuantifier::Distinct => {
-                                SetQuantifier::Distinct
+                                (SetQuantifier::Distinct, UnionStrategy::Positional)
                             }
                             SQLSetQuantifier::ByName | SQLSetQuantifier::DistinctByName => {
-                                SetQuantifier::DistinctByName
+                                (SetQuantifier::Distinct, UnionStrategy::ByName)
                             }
-                            SQLSetQuantifier::AllByName => SetQuantifier::AllByName,
+                            SQLSetQuantifier::AllByName => {
+                                (SetQuantifier::All, UnionStrategy::ByName)
+                            }
                         };
-                        left.union(&right, set_quantifier).map_err(|e| e.into())
+                        left.union(&right, set_quantifier, strategy)
+                            .map_err(|e| e.into())
                     }
 
                     (Intersect, SQLSetQuantifier::All) => {

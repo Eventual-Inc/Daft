@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Callable
 
 from daft.context import get_context
 from daft.daft import (
@@ -292,10 +292,8 @@ class LogicalPlanBuilder:
         builder = self._builder.concat(other._builder)
         return LogicalPlanBuilder(builder)
 
-    def union(
-        self, other: LogicalPlanBuilder, quantifier: Literal["all", "by_name", "all_by_name"] | None
-    ) -> LogicalPlanBuilder:
-        builder = self._builder.union(other._builder, quantifier)
+    def union(self, other: LogicalPlanBuilder, is_all: bool = False, is_by_name: bool = False) -> LogicalPlanBuilder:
+        builder = self._builder.union(other._builder, is_all, is_by_name)
         return LogicalPlanBuilder(builder)
 
     def intersect(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
