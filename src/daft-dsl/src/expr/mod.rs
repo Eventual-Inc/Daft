@@ -1586,10 +1586,10 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
             let right_selectivity = estimated_selectivity(right, schema);
             match op {
                 // Fixed selectivity for all common comparisons
-                Operator::Eq => 0.1,
-                Operator::EqNullSafe => 0.1,
-                Operator::NotEq => 0.9,
-                Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.2,
+                Operator::Eq => 0.05,
+                Operator::EqNullSafe => 0.05,
+                Operator::NotEq => 0.95,
+                Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.5,
 
                 // Logical operators with fixed estimates
                 // P(A and B) = P(A) * P(B)
@@ -1619,8 +1619,8 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::Not(expr) => 1.0 - estimated_selectivity(expr, schema),
 
         // Fixed selectivity for IS NULL and IS NOT NULL, assume not many nulls
-        Expr::IsNull(_) => 0.1,
-        Expr::NotNull(_) => 0.9,
+        Expr::IsNull(_) => 0.05,
+        Expr::NotNull(_) => 0.95,
 
         // All membership operations use same selectivity
         Expr::IsIn(_, _) | Expr::Between(_, _, _) | Expr::InSubquery(_, _) | Expr::Exists(_) => 0.2,
