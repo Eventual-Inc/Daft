@@ -15,9 +15,6 @@ tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
 uuid = {version = "1.10.0", features = ["v4"]}
 
-[dev-dependencies]
-rstest = {workspace = true}
-
 [features]
 python = [
   "common-error/python",

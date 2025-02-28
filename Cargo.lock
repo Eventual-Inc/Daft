@@ -2677,7 +2677,6 @@ dependencies = [
  "daft-io",
  "daft-recordbatch",
  "futures",
- "rstest",
  "serde_json",
  "tokio",
  "tokio-stream",
