@@ -34,7 +34,7 @@ pub struct ScanTaskSource {
 }
 
 impl ScanTaskSource {
-    const MAX_PARALLEL_SCAN_TASKS: usize = 8;
+    const MAX_PARALLEL_SCAN_TASKS: usize = 10;
 
     pub fn new(
         scan_tasks: Vec<Arc<ScanTask>>,
