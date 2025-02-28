@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import warnings
+from urllib import request
+from urllib.error import URLError
+import uuid
+import json
+from datetime import datetime
 import os
 from pathlib import Path
 from . import daft_dashboard as native
@@ -7,8 +13,11 @@ from importlib import resources
 
 
 DAFT_DASHBOARD_ENV_NAME = "DAFT_DASHBOARD"
-DAFT_DASHBOARD_QUERIES_URL = "http://localhost:3238/api/queries"
-DAFT_DASHBOARD_URL_SHUTDOWN = "http://localhost:3238/api/shutdown"
+DAFT_DASHBOARD_URL = "http://localhost:3238"
+
+
+def _queries_url() -> str:
+    return f"{DAFT_DASHBOARD_URL}/api/queries"
 
 
 def _static_assets_path() -> Path:
@@ -55,6 +64,32 @@ def shutdown(noop_if_shutdown: bool = False):
     """
     os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
     native.shutdown(noop_if_shutdown=noop_if_shutdown)
+
+
+def broadcast_query_information(
+    mermaid_plan: str,
+    plan_time_start: datetime,
+    plan_time_end: datetime,
+    logs: str,
+):
+    headers = {
+        "Content-Type": "application/json",
+    }
+    data = json.dumps(
+        {
+            "id": str(uuid.uuid4()),
+            "mermaid_plan": mermaid_plan,
+            "plan_time_start": str(plan_time_start),
+            "plan_time_end": str(plan_time_end),
+            "logs": logs,
+        }
+    ).encode("utf-8")
+    req = request.Request(_queries_url(), headers=headers, data=data)
+
+    try:
+        request.urlopen(req, timeout=1)
+    except URLError as e:
+        warnings.warn(f"Failed to broadcast metrics over {_queries_url()}: {e}")
 
 
 def _cli():

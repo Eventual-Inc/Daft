@@ -20,6 +20,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, spawn, sync::mpsc::Sender};
 
+type StrRef = Arc<str>;
 type Req<T = Incoming> = Request<T>;
 type Res = Response<BoxBody<Bytes, std::io::Error>>;
 type ServerResult<T> = Result<T, (StatusCode, anyhow::Error)>;
@@ -44,11 +45,12 @@ impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-struct QueryMetadata {
-    id: String,
-    mermaid_plan: String,
+struct QueryInformation {
+    id: StrRef,
+    mermaid_plan: StrRef,
     plan_time_start: DateTime<Utc>,
     plan_time_end: DateTime<Utc>,
+    logs: StrRef,
 }
 
 async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req<T>> {
@@ -68,13 +70,13 @@ async fn http_server_application(req: Req, state: DashboardState) -> ServerResul
 
     Ok(match (req.method(), paths.as_slice()) {
         (&Method::POST, ["api", "queries"]) => {
-            let req = deserialize::<QueryMetadata>(req).await?;
+            let req = deserialize::<QueryInformation>(req).await?;
             state.add_query(req.into_body());
             response::empty(StatusCode::OK)
         }
         (&Method::GET, ["api", "queries"]) => {
-            let query_metadatas = state.queries();
-            response::with_body(StatusCode::OK, query_metadatas.as_slice())
+            let query_informations = state.queries();
+            response::with_body(StatusCode::OK, query_informations.as_slice())
         }
         (&Method::POST, ["api", "shutdown"]) => {
             state.shutdown_signal.send(()).await.unwrap();
@@ -147,7 +149,7 @@ fn handle_stream(stream: TcpStream, state: DashboardState) {
 #[derive(Clone)]
 struct DashboardState {
     resolver: Option<Resolver>,
-    queries: Arc<RwLock<Vec<QueryMetadata>>>,
+    queries: Arc<RwLock<Vec<QueryInformation>>>,
     shutdown_signal: Sender<()>,
 }
 
@@ -160,13 +162,13 @@ impl DashboardState {
         }
     }
 
-    fn queries(&self) -> Vec<QueryMetadata> {
+    fn queries(&self) -> Vec<QueryInformation> {
         // TODO: The cloning here is a little ugly.
-        // The reason the list is cloned is because returning a `&[QueryMetadata]` will not work due to borrowing rules.
+        // The reason the list is cloned is because returning a `&[QueryInformation]` will not work due to borrowing rules.
         self.queries.read().clone()
     }
 
-    fn add_query(&self, query_metadata: QueryMetadata) {
-        self.queries.write().push(query_metadata);
+    fn add_query(&self, query_information: QueryInformation) {
+        self.queries.write().push(query_information);
     }
 }
