@@ -8,7 +8,8 @@ use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::ExprRef;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use std::future::Future;
 use tokio::{
     fs::File,
     io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
@@ -347,7 +348,7 @@ pub async fn stream_warc(
 
     let (tx, rx) = tokio::sync::mpsc::channel(64);
     let compute_runtime = common_runtime::get_compute_runtime();
-    compute_runtime.runtime.spawn(async move {
+    let warc_stream_task = compute_runtime.spawn(async move {
         let filtered_stream = stream.map(move |table| {
             if let Some(predicate) = &predicate {
                 let filtered = table?.filter(&[predicate.clone()])?;
@@ -384,7 +385,29 @@ pub async fn stream_warc(
             }
         }
     });
-
     let receiver_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-    Ok(receiver_stream.boxed())
+    let combined_stream = combine_stream(receiver_stream, warc_stream_task);
+
+    Ok(combined_stream.boxed())
+}
+
+fn combine_stream<T, E>(
+    stream: impl Stream<Item = Result<T, E>> + Unpin,
+    future: impl Future<Output = Result<(), E>>,
+) -> impl Stream<Item = Result<T, E>> {
+    use futures::stream::unfold;
+
+    let initial_state = (Some(future), stream);
+
+    unfold(initial_state, |(future, mut stream)| async move {
+        future.as_ref()?;
+
+        match stream.next().await {
+            Some(item) => Some((item, (future, stream))),
+            None => match future.unwrap().await {
+                Err(error) => Some((Err(error), (None, stream))),
+                Ok(()) => None,
+            },
+        }
+    })
 }
