@@ -1047,6 +1047,7 @@ def _build_partitions(
             *task.inputs,
         )
 
+    task.inputs.clear()
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result(
         [
