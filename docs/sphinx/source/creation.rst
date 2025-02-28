@@ -72,6 +72,15 @@ JSON
 
     read_json
 
+WARC
+~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    read_warc
+
 File Paths
 ~~~~~~~~~~
 
