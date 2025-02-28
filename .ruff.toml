@@ -1,4 +1,3 @@
-exclude = ["tests/assets/example.warc"]
 fix = true
 indent-width = 4
 line-length = 120
