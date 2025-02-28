@@ -22,7 +22,7 @@ def read_warc(
     file_path_column: Optional[str] = None,
     _multithreaded_io: Optional[bool] = None,
 ) -> DataFrame:
-    """Creates a DataFrame from WARC or gzipped WARC file(s).
+    """Creates a DataFrame from WARC or gzipped WARC file(s). This is an experimental feature and the API may change in the future.
 
     Example:
         >>> df = daft.read_warc("/path/to/file.warc")
