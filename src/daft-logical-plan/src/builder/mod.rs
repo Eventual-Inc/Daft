@@ -202,7 +202,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
-        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
+        let expr_resolver = ExprResolver::builder()
+            .allow_actor_pool_udf(true)
+            .allow_monotonic_id(true)
+            .build();
 
         let to_select = expr_resolver.resolve(to_select, self.plan.clone())?;
 

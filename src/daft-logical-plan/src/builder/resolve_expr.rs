@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{struct_::StructExpr, FunctionExpr},
@@ -11,38 +11,6 @@ use daft_dsl::{
 use typed_builder::TypedBuilder;
 
 use crate::LogicalPlanRef;
-
-pub struct ReplaceMonotonicIdExpressionWithColumnRef {
-    column_name: String,
-}
-
-impl ReplaceMonotonicIdExpressionWithColumnRef {
-    pub fn new(column_name: String) -> Self {
-        Self { column_name }
-    }
-}
-
-impl TreeNodeRewriter for ReplaceMonotonicIdExpressionWithColumnRef {
-    type Node = ExprRef;
-
-    fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-        Ok(Transformed::no(node))
-    }
-
-    fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-        match node.as_ref() {
-            Expr::ScalarFunction(func) if func.name() == "monotonically_increasing_id" => {
-                Ok(Transformed::yes(
-                    Expr::Column(Column::Resolved(ResolvedColumn::Basic(Arc::from(
-                        self.column_name.as_str(),
-                    ))))
-                    .into(),
-                ))
-            }
-            _ => Ok(Transformed::no(node)),
-        }
-    }
-}
 
 fn contains_monotonic_id(expr: &ExprRef) -> bool {
     expr.exists(|e| match e.as_ref() {

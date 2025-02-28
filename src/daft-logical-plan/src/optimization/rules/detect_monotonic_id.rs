@@ -31,7 +31,6 @@ impl DetectMonotonicId {
     fn is_monotonic_id_expr(expr: &ExprRef) -> bool {
         match expr.as_ref() {
             Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
-            Expr::Alias(inner, _) => Self::is_monotonic_id_expr(inner),
             _ => expr.children().iter().any(Self::is_monotonic_id_expr),
         }
     }
