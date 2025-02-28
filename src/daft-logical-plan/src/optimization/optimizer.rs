@@ -6,9 +6,9 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule, EnrichWithStats,
-        FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownFilter,
-        PushDownLimit, PushDownProjection, ReorderJoins, SimplifyExpressionsRule,
+        DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
+        EnrichWithStats, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
+        PushDownFilter, PushDownLimit, PushDownProjection, ReorderJoins, SimplifyExpressionsRule,
         SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
@@ -99,6 +99,7 @@ impl Default for OptimizerBuilder {
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
                         Box::new(SplitActorPoolProjects::new()),
+                        Box::new(DetectMonotonicId::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
