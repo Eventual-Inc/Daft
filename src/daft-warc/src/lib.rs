@@ -345,35 +345,46 @@ pub async fn stream_warc(
         }
     });
 
-    let filtered_stream = stream.map(move |table| {
-        if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
-            if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())
+    let (tx, rx) = tokio::sync::mpsc::channel(1);
+    let compute_runtime = common_runtime::get_compute_runtime();
+    compute_runtime.runtime.spawn(async move {
+        let filtered_stream = stream.map(move |table| {
+            if let Some(predicate) = &predicate {
+                let filtered = table?.filter(&[predicate.clone()])?;
+                if let Some(include_columns) = &include_columns {
+                    filtered.get_columns(include_columns.as_slice())
+                } else {
+                    Ok(filtered)
+                }
             } else {
-                Ok(filtered)
+                table
             }
-        } else {
-            table
+        });
+
+        let mut remaining_rows = limit.map(|limit| limit as i64);
+        let mut limited_stream = filtered_stream
+            .try_take_while(move |recordbatch| {
+                match (recordbatch, remaining_rows) {
+                    // Limit has been met, early-terminate.
+                    (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                    // Limit has not yet been met, update remaining limit slack and continue
+                    (table, Some(rows_left)) => {
+                        remaining_rows = Some(rows_left - table.len() as i64);
+                        futures::future::ready(Ok(true))
+                    }
+                    // No limit, never early-terminate
+                    (_, None) => futures::future::ready(Ok(true)),
+                }
+            })
+            .boxed();
+        while let Some(batch) = limited_stream.next().await {
+            if let Err(e) = tx.send(batch).await {
+                eprintln!("Error sending batch to channel: {}", e);
+                break;
+            }
         }
     });
 
-    let mut remaining_rows = limit.map(|limit| limit as i64);
-    let limited_stream = filtered_stream
-        .try_take_while(move |recordbatch| {
-            match (recordbatch, remaining_rows) {
-                // Limit has been met, early-terminate.
-                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
-                // Limit has not yet been met, update remaining limit slack and continue
-                (table, Some(rows_left)) => {
-                    remaining_rows = Some(rows_left - table.len() as i64);
-                    futures::future::ready(Ok(true))
-                }
-                // No limit, never early-terminate
-                (_, None) => futures::future::ready(Ok(true)),
-            }
-        })
-        .boxed();
-
-    Ok(limited_stream)
+    let receiver_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+    Ok(receiver_stream.boxed())
 }

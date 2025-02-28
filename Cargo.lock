@@ -2670,6 +2670,7 @@ dependencies = [
  "arrow2",
  "chrono",
  "common-error",
+ "common-runtime",
  "daft-compression",
  "daft-core",
  "daft-dsl",
@@ -2679,6 +2680,7 @@ dependencies = [
  "rstest",
  "serde_json",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "uuid 1.13.2",
 ]
