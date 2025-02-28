@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 
 use arrow2::array::{MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array};
 use chrono::{DateTime, Utc};
@@ -9,7 +9,6 @@ use daft_dsl::ExprRef;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
-use std::future::Future;
 use tokio::{
     fs::File,
     io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
