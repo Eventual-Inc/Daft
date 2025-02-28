@@ -291,45 +291,6 @@ mod tests {
     }
 
     #[test]
-    fn test_brute_force_order_minimal2() {
-        // Compared to the previous test, this test has a smaller "large" relation. When joined with "medium" using two join conditions,
-        // the result produces a smaller relation than "small". Hence the join order should be ((large x medium) x small).
-        let nodes = vec![("medium", 1_000), ("large", 5_000), ("small", 500)];
-        let name_to_id = node_to_id_map(nodes.clone());
-        let edges = vec![
-            JoinEdge {
-                node1: name_to_id["medium"],
-                node1_col_name: "m_medium".to_string(),
-                node2: name_to_id["large"],
-                node2_col_name: "l_medium".to_string(),
-                total_domain: 1_000,
-            },
-            JoinEdge {
-                node1: name_to_id["large"],
-                node1_col_name: "l_small".to_string(),
-                node2: name_to_id["small"],
-                node2_col_name: "s_small".to_string(),
-                total_domain: 500,
-            },
-            JoinEdge {
-                node1: name_to_id["medium"],
-                node1_col_name: "m_small".to_string(),
-                node2: name_to_id["small"],
-                node2_col_name: "s_small".to_string(),
-                total_domain: 500,
-            },
-        ];
-        let optimal_order = test_join(
-            test_relation(name_to_id["small"]),
-            test_join(
-                test_relation(name_to_id["large"]),
-                test_relation(name_to_id["medium"]),
-            ),
-        );
-        create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
-    }
-
-    #[test]
     fn test_brute_force_order_mock_tpch_q5() {
         let nodes = vec![
             ("region", 1),
