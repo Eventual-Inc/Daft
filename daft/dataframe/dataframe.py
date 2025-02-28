@@ -30,6 +30,7 @@ from typing import (
     Union,
 )
 
+from daft import dashboard
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
@@ -160,7 +161,6 @@ class DataFrame:
             return self._result_cache.value
 
     def _broadcast_query_plan(self):
-        from daft import dashboard
         from daft.dataframe.display import MermaidFormatter
 
         if not dashboard._should_run():
@@ -173,10 +173,11 @@ class DataFrame:
         )._repr_markdown_()
         plan_time_end = datetime.now(timezone.utc)
 
-        dashboard._broadcast_query_plan(
-            mermaid_plan,
-            plan_time_start,
-            plan_time_end,
+        dashboard.broadcast_query_information(
+            mermaid_plan=mermaid_plan,
+            plan_time_start=plan_time_start,
+            plan_time_end=plan_time_end,
+            logs=dashboard.nlb.buffer,
         )
 
     @DataframePublicAPI

@@ -1,15 +1,13 @@
+"""The Daft Dashboard module.
+
+The primary functionality of this module is just to load the `daft_dashboard` python library and re-export some of the APIs that it exposes.
+"""
+
 from __future__ import annotations
 
-import json
 import os
-import uuid
+import sys
 import warnings
-from typing import TYPE_CHECKING
-from urllib import request
-from urllib.error import URLError
-
-if TYPE_CHECKING:
-    from datetime import datetime
 
 
 def dashboard_module():
@@ -49,44 +47,36 @@ def _should_run() -> bool:
     return True
 
 
-def _broadcast_query_plan(
-    mermaid_plan: str,
-    plan_time_start: datetime,
-    plan_time_end: datetime,
-):
-    dashboard = dashboard_module()
+class NativeLogBroadcaster:
+    def __init__(self):
+        self.original_stdout = sys.stdout
+        self.buffer = ""
 
-    # try launching the dashboard
-    # if dashboard is already launched, this will do nothing
-    dashboard.launch(detach=True, noop_if_initialized=True)
+    def write(self, text: str):
+        self.original_stdout.write(text)
+        self.buffer += text
 
-    headers = {
-        "Content-Type": "application/json",
-    }
-    data = json.dumps(
-        {
-            "id": str(uuid.uuid4()),
-            "mermaid_plan": mermaid_plan,
-            "plan_time_start": str(plan_time_start),
-            "plan_time_end": str(plan_time_end),
-        }
-    ).encode("utf-8")
-    req = request.Request(dashboard.DAFT_DASHBOARD_QUERIES_URL, headers=headers, data=data)
+    def flush(self):
+        self.original_stdout.flush()
 
-    try:
-        request.urlopen(req, timeout=1)
-    except URLError as e:
-        warnings.warn(f"Failed to broadcast metrics over {dashboard.DAFT_DASHBOARD_QUERIES_URL}: {e}")
+    def close(self):
+        self.original_stdout.close()
 
 
 try:
     dashboard = dashboard_module()
+    broadcast_query_information = dashboard.broadcast_query_information
     launch = dashboard.launch
     shutdown = dashboard.shutdown
 
+    nlb = NativeLogBroadcaster()
+    sys.stdout = nlb
+
     # re-export some symbols defined inside of `daft_dashboard`
     __all__ = [
+        "broadcast_query_information",
         "launch",
+        "nlb",
         "shutdown",
     ]
 except Exception:
