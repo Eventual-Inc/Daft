@@ -82,10 +82,7 @@ log_capturer = None
 
 
 def _get_logs():
-    if not log_capturer:
-        return ""
-
-    return log_capturer.buffer
+    return log_capturer.buffer if log_capturer else ""
 
 
 try:
