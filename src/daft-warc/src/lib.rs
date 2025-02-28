@@ -345,7 +345,7 @@ pub async fn stream_warc(
         }
     });
 
-    let (tx, rx) = tokio::sync::mpsc::channel(1);
+    let (tx, rx) = tokio::sync::mpsc::channel(64);
     let compute_runtime = common_runtime::get_compute_runtime();
     compute_runtime.runtime.spawn(async move {
         let filtered_stream = stream.map(move |table| {
