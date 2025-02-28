@@ -70,7 +70,6 @@ def broadcast_query_information(
     plan_time_end: datetime,
 ):
     dashboard = _dashboard_module()
-
     dashboard.broadcast_query_information(
         mermaid_plan=mermaid_plan,
         plan_time_start=plan_time_start,
