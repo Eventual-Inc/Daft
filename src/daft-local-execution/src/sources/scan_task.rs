@@ -458,7 +458,7 @@ async fn stream_scan_task(
             let convert_options = WarcConvertOptions {
                 limit: scan_task.pushdowns.limit,
                 include_columns: None,
-                schema: Some(scan_task.schema.clone()),
+                schema: scan_task.schema.clone(),
                 predicate: scan_task.pushdowns.filters.clone(),
             };
             daft_warc::stream_warc(url, io_client, Some(io_stats), convert_options).await?

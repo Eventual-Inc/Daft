@@ -2340,7 +2340,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "warc",
 ]
 
 [[package]]
@@ -2671,27 +2670,15 @@ dependencies = [
  "arrow2",
  "chrono",
  "common-error",
- "common-py-serde",
- "common-runtime",
  "daft-compression",
  "daft-core",
- "daft-decoding",
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
  "futures",
- "indexmap 2.7.1",
- "memchr",
- "memmap2",
- "num-traits",
- "pyo3",
- "rayon",
  "rstest",
- "serde",
  "serde_json",
- "snafu",
  "tokio",
- "tokio-stream",
  "tokio-util",
  "uuid 1.13.2",
 ]
@@ -4593,12 +4580,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "minimal-lexical"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
-
-[[package]]
 name = "miniz_oxide"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4677,16 +4658,6 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
-]
-
-[[package]]
-name = "nom"
-version = "7.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
-dependencies = [
- "memchr",
- "minimal-lexical",
 ]
 
 [[package]]
@@ -7436,19 +7407,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfa7760aed19e106de2c7c0b581b509f2f25d3dacaf737cb82ac61bc6d760b0e"
 dependencies = [
  "try-lock",
-]
-
-[[package]]
-name = "warc"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3afd4100d197bbba734febd5eb3b854ebe6e5d42bde935f603a6732b9dedcc0d"
-dependencies = [
- "chrono",
- "libflate",
- "nom",
- "url",
- "uuid 0.8.2",
 ]
 
 [[package]]

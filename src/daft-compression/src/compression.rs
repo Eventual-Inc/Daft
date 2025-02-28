@@ -24,7 +24,7 @@ impl CompressionCodec {
     pub fn from_uri(uri: &str) -> Option<Self> {
         let url = Url::parse(uri);
         let path = if let Some(stripped) = uri.strip_prefix("file://") {
-            // Handle file URLs properly by stripping the scheme
+            // Handle file URLs properly by stripping the scheme.
             stripped
         } else {
             match &url {
@@ -68,7 +68,7 @@ impl CompressionCodec {
                 // With async-compression, compressed files with multiple concatenated members
                 // might be incorrectly read as an early EOF. Setting multiple_members(true)
                 // ensures that the reader will continue to read until the end of the file.
-                // See: https://github.com/Nullus157/async-compression/issues/153 for more details.
+                // For more details, see: https://github.com/Nullus157/async-compression/issues/153
                 let mut decoder = GzipDecoder::new(reader);
                 decoder.multiple_members(true);
                 Box::pin(decoder)

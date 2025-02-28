@@ -1,16 +1,10 @@
 use std::sync::Arc;
 
-use arrow2::{
-    self,
-    array::{MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array},
-};
+use arrow2::array::{MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array};
 use chrono::{DateTime, Utc};
 use common_error::DaftResult;
 use daft_compression::CompressionCodec;
-use daft_core::{
-    prelude::{DataType, Field, Schema, SchemaRef, TimeUnit},
-    series::Series,
-};
+use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::ExprRef;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
@@ -25,9 +19,10 @@ use uuid::Uuid;
 pub struct WarcConvertOptions {
     pub limit: Option<usize>,
     pub include_columns: Option<Vec<String>>,
-    pub schema: Option<SchemaRef>,
+    pub schema: SchemaRef,
     pub predicate: Option<ExprRef>,
 }
+
 #[derive(Debug, Clone)]
 pub enum WarcType {
     Warcinfo,
@@ -91,14 +86,12 @@ impl WarcHeaderState {
     }
 }
 
-use arrow2::array::MutableArray;
-
 struct WarcRecordBatchIterator {
     reader: Box<dyn AsyncBufRead + Unpin + Send>,
     schema: SchemaRef,
     chunk_size: usize,
     bytes_read: usize,
-    complete_record: bool,
+    unprocessed_record: bool,
     header_state: WarcHeaderState,
     record_id_array: MutableUtf8Array<i64>,
     warc_type_array: MutableUtf8Array<i64>,
@@ -119,7 +112,7 @@ impl WarcRecordBatchIterator {
             schema,
             chunk_size,
             bytes_read: 0,
-            complete_record: false,
+            unprocessed_record: false,
             header_state: WarcHeaderState {
                 content_length: None,
                 record_id: None,
@@ -140,16 +133,16 @@ impl WarcRecordBatchIterator {
         let mut line_buf = Vec::with_capacity(4096);
 
         loop {
-            if self.complete_record {
-                return Ok(Some(self.create_batch()?));
+            if self.unprocessed_record {
+                return Ok(Some(self.process_arrays()?));
             }
 
             line_buf.clear();
             match self.reader.read_until(b'\n', &mut line_buf).await {
                 Ok(0) => {
-                    return if self.complete_record {
-                        self.complete_record = false;
-                        Ok(Some(self.create_batch()?))
+                    return if self.unprocessed_record {
+                        self.unprocessed_record = false;
+                        Ok(Some(self.process_arrays()?))
                     } else {
                         Ok(None)
                     };
@@ -199,11 +192,11 @@ impl WarcRecordBatchIterator {
                     self.warc_content_length_array
                         .push(self.header_state.content_length.map(|len| len as i64));
 
-                    self.complete_record = true;
+                    self.unprocessed_record = true;
                     self.header_state.reset();
                     if self.bytes_read >= self.chunk_size {
-                        self.complete_record = false;
-                        return Ok(Some(self.create_batch()?));
+                        self.unprocessed_record = false;
+                        return Ok(Some(self.process_arrays()?));
                     }
                 }
                 Ok(n) => {
@@ -251,9 +244,9 @@ impl WarcRecordBatchIterator {
                 }
                 Err(e) => {
                     eprintln!("Error reading line: {}", e);
-                    return if self.complete_record {
-                        self.complete_record = false;
-                        Ok(Some(self.create_batch()?))
+                    return if self.unprocessed_record {
+                        self.unprocessed_record = false;
+                        Ok(Some(self.process_arrays()?))
                     } else {
                         Ok(None)
                     };
@@ -262,10 +255,10 @@ impl WarcRecordBatchIterator {
         }
     }
 
-    fn create_batch(&mut self) -> DaftResult<RecordBatch> {
+    fn process_arrays(&mut self) -> DaftResult<RecordBatch> {
         let num_records = self.content_array.len();
 
-        let batch = create_record_batch(
+        let record_batch = create_record_batch(
             self.schema.clone(),
             vec![
                 self.record_id_array.as_box(),
@@ -286,8 +279,21 @@ impl WarcRecordBatchIterator {
         self.content_array = MutableBinaryArray::new();
         self.header_array = MutableUtf8Array::new();
 
-        Ok(batch)
+        Ok(record_batch)
     }
+}
+
+fn create_record_batch(
+    schema: SchemaRef,
+    arrays: Vec<Box<dyn arrow2::array::Array>>,
+    num_records: usize,
+) -> DaftResult<RecordBatch> {
+    let mut series_vec = Vec::with_capacity(schema.fields.len());
+    for ((_, field), array) in schema.fields.iter().zip(arrays.into_iter()) {
+        let series = Series::from_arrow(Arc::new(field.clone()), array)?;
+        series_vec.push(series);
+    }
+    RecordBatch::new_with_size(schema, series_vec, num_records)
 }
 
 pub async fn stream_warc(
@@ -328,17 +334,7 @@ pub async fn stream_warc(
         reader
     };
 
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("warc_record_id", DataType::Utf8),
-        Field::new("warc_type", DataType::Utf8),
-        Field::new(
-            "warc_date",
-            DataType::Timestamp(TimeUnit::Nanoseconds, Some("Etc/UTC".to_string())),
-        ),
-        Field::new("warc_content_length", DataType::Int64),
-        Field::new("warc_content", DataType::Binary),
-        Field::new("warc_header", DataType::Utf8),
-    ])?);
+    let schema = convert_options.schema.clone();
 
     let warc_record_batch_iter = WarcRecordBatchIterator::new(reader, schema, chunk_size);
     let stream = futures::stream::unfold(warc_record_batch_iter, |mut reader| async move {
@@ -380,20 +376,4 @@ pub async fn stream_warc(
         .boxed();
 
     Ok(limited_stream)
-}
-
-fn create_record_batch(
-    schema: SchemaRef,
-    arrays: Vec<Box<dyn arrow2::array::Array>>,
-    num_records: usize,
-) -> DaftResult<RecordBatch> {
-    let mut series_vec = Vec::with_capacity(schema.fields.len());
-
-    // Create series from the provided arrow arrays
-    for ((_, field), array) in schema.fields.iter().zip(arrays.into_iter()) {
-        let series = Series::from_arrow(Arc::new(field.clone()), array)?;
-        series_vec.push(series);
-    }
-
-    RecordBatch::new_with_size(schema, series_vec, num_records)
 }

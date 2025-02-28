@@ -37,7 +37,6 @@ snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
-warc = "0.4.0"
 
 [features]
 python = [
