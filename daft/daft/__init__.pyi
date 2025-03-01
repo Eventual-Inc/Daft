@@ -237,6 +237,10 @@ class JsonSourceConfig:
         chunk_size: int | None = None,
     ): ...
 
+class WarcSourceConfig:
+    """Configuration of a Warc data source."""
+    def __init__(self): ...
+
 class DatabaseSourceConfig:
     """Configuration of a database data source."""
 
@@ -248,7 +252,7 @@ class DatabaseSourceConfig:
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig
+    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig | WarcSourceConfig
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -263,6 +267,11 @@ class FileFormatConfig:
     @staticmethod
     def from_json_config(config: JsonSourceConfig) -> FileFormatConfig:
         """Create a JSON file format config."""
+        ...
+
+    @staticmethod
+    def from_warc_config(config: WarcSourceConfig) -> FileFormatConfig:
+        """Create a WARC file format config."""
         ...
 
     @staticmethod

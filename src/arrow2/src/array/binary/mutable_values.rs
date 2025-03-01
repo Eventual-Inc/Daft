@@ -140,6 +140,14 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
         self.try_push(value).unwrap()
     }
 
+    #[inline]
+    pub fn allocate_slice(&mut self, num_bytes: usize) -> &mut [u8] {
+        self.offsets.try_push_usize(num_bytes).expect("this should work");
+        let curr_size = self.values.len();
+        self.values.resize(curr_size + num_bytes, 0);
+        &mut self.values[curr_size..curr_size + num_bytes]
+    }
+
     /// Pop the last entry from [`MutableBinaryValuesArray`].
     /// This function returns `None` iff this array is empty.
     pub fn pop(&mut self) -> Option<Vec<u8>> {

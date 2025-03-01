@@ -17,6 +17,7 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
 use daft_scan::{ChunkSpec, ScanTask};
+use daft_warc::WarcConvertOptions;
 use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
@@ -452,6 +453,15 @@ async fn stream_scan_task(
                 // maintain_order, TODO: Implement maintain_order for JSON
             )
             .await?
+        }
+        FileFormatConfig::Warc(_) => {
+            let convert_options = WarcConvertOptions {
+                limit: scan_task.pushdowns.limit,
+                include_columns: None,
+                schema: scan_task.schema.clone(),
+                predicate: scan_task.pushdowns.filters.clone(),
+            };
+            daft_warc::stream_warc(url, io_client, Some(io_stats), convert_options, None).await?
         }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {
