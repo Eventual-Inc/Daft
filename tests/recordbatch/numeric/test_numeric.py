@@ -184,25 +184,34 @@ def test_table_sign_bad_input() -> None:
 
 
 @pytest.mark.parametrize(
-    ("fun", "is_arc"),
+    ("fun", "is_arc", "is_co"),
     [
-        ("sin", False),
-        ("cos", False),
-        ("tan", False),
-        ("arcsin", True),
-        ("arccos", True),
-        ("arctan", True),
-        ("radians", False),
-        ("degrees", False),
+        ("sin", False, False),
+        ("cos", False, False),
+        ("tan", False, False),
+        ("arcsin", True, False),
+        ("arccos", True, False),
+        ("arctan", True, False),
+        ("radians", False, False),
+        ("degrees", False, False),
+        ("csc", False, True),
+        ("sec", False, True),
+        ("cot", False, True),
     ],
 )
-def test_table_numeric_trigonometry(fun: str, is_arc: bool) -> None:
+def test_table_numeric_trigonometry(fun: str, is_arc: bool, is_co: bool) -> None:
+    np_fun = fun
     if not is_arc:
         table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
+        if is_co:
+            reciprocal = {"cot": "tan", "csc": "sin", "sec": "cos"}
+            np_fun = reciprocal[fun]
     else:
         table = MicroPartition.from_pydict({"a": [0.0, 1, 0.5, math.nan]})
     s = table.to_pandas()["a"]
-    np_result = getattr(np, fun)(s)
+    np_result = getattr(np, np_fun)(s)
+    if is_co:
+        np_result = 1 / np_result
 
     trigonometry_table = table.eval_expression_list([getattr(col("a"), fun)()])
     assert (
