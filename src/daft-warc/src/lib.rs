@@ -114,6 +114,11 @@ struct WarcRecordBatchBuilder {
     warc_content_length_array: MutablePrimitiveArray<i64>,
     content_array: MutableBinaryArray<i64>,
     header_array: MutableUtf8Array<i64>,
+    rows_processed: usize,
+    record_id_elements_so_far: usize,
+    warc_type_elements_so_far: usize,
+    content_bytes_so_far: usize,
+    header_elements_so_far: usize,
 }
 
 impl WarcRecordBatchBuilder {
@@ -142,6 +147,11 @@ impl WarcRecordBatchBuilder {
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
             ),
+            rows_processed: 0,
+            record_id_elements_so_far: 0,
+            warc_type_elements_so_far: 0,
+            content_bytes_so_far: 0,
+            header_elements_so_far: 0,
         }
     }
 
@@ -160,6 +170,12 @@ impl WarcRecordBatchBuilder {
         self.warc_content_length_array.push(warc_content_length);
         self.content_array.push(content);
         self.header_array.push(header);
+        // book keeping
+        self.rows_processed += 1;
+        self.record_id_elements_so_far += record_id.map(|s| s.len()).unwrap_or(0);
+        self.warc_type_elements_so_far += warc_type.map(|s| s.len()).unwrap_or(0);
+        self.content_bytes_so_far += warc_content_length.map(|l| l as usize).unwrap_or(0);
+        self.header_elements_so_far += header.map(|h| h.len()).unwrap_or(0);
     }
 
     fn len(&self) -> usize {
@@ -171,9 +187,6 @@ impl WarcRecordBatchBuilder {
         if num_records == 0 {
             Ok(None)
         } else {
-            // let total_content_len = self.content_array.values().len();
-            // println!("{total_content_len}, {}", total_content_len / num_records);
-
             let record_batch = create_record_batch(
                 self.schema.clone(),
                 vec![
@@ -187,25 +200,28 @@ impl WarcRecordBatchBuilder {
                 num_records,
             )?;
             let chunk_size = self.chunk_size;
+            let rows_processed = self.rows_processed;
+            let avg_record_id_size = self.record_id_elements_so_far / rows_processed;
             // Reset arrays.
-            self.record_id_array = MutableUtf8Array::with_capacities(
-                chunk_size,
-                Self::DEFAULT_STRING_LENGTH * chunk_size,
-            );
-            self.warc_type_array = MutableUtf8Array::with_capacities(
-                chunk_size,
-                Self::DEFAULT_STRING_LENGTH * chunk_size,
-            );
+            self.record_id_array =
+                MutableUtf8Array::with_capacities(chunk_size, avg_record_id_size * chunk_size);
+
+            let avg_warc_type_size = self.warc_type_elements_so_far / rows_processed;
+
+            self.warc_type_array =
+                MutableUtf8Array::with_capacities(chunk_size, avg_warc_type_size * chunk_size);
             self.warc_date_array = MutablePrimitiveArray::with_capacity(chunk_size);
             self.warc_content_length_array = MutablePrimitiveArray::with_capacity(chunk_size);
-            self.content_array = MutableBinaryArray::with_capacities(
-                chunk_size,
-                Self::DEFAULT_CONTENT_LENGTH * chunk_size,
-            );
-            self.header_array = MutableUtf8Array::with_capacities(
-                chunk_size,
-                Self::DEFAULT_STRING_LENGTH * chunk_size,
-            );
+
+            let avg_content_size = self.content_bytes_so_far / rows_processed;
+
+            self.content_array =
+                MutableBinaryArray::with_capacities(chunk_size, avg_content_size * chunk_size);
+
+            let avg_header_size = self.header_elements_so_far / rows_processed;
+
+            self.header_array =
+                MutableUtf8Array::with_capacities(chunk_size, avg_header_size * chunk_size);
             Ok(Some(record_batch))
         }
     }
@@ -215,9 +231,9 @@ struct WarcRecordBatchIterator {
     reader: Box<dyn AsyncBufRead + Unpin + Send>,
     chunk_size: usize,
     bytes_read: usize,
-    unprocessed_record: bool,
     header_state: WarcHeaderState,
     rb_builder: WarcRecordBatchBuilder,
+    content_buffer: Vec<u8>,
 }
 
 impl WarcRecordBatchIterator {
@@ -230,7 +246,6 @@ impl WarcRecordBatchIterator {
             reader,
             chunk_size,
             bytes_read: 0,
-            unprocessed_record: false,
             header_state: WarcHeaderState {
                 content_length: None,
                 record_id: None,
@@ -239,6 +254,7 @@ impl WarcRecordBatchIterator {
                 header_lines: Vec::new(),
             },
             rb_builder: WarcRecordBatchBuilder::new(chunk_size, schema),
+            content_buffer: Vec::new(),
         }
     }
 
@@ -246,21 +262,10 @@ impl WarcRecordBatchIterator {
         let mut line_buf = Vec::with_capacity(4096);
 
         loop {
-            if self.unprocessed_record {
-                return self.rb_builder.process_arrays();
-            }
-
             line_buf.clear();
-            let bytes_read: Result<usize, std::io::Error> =
-                self.reader.read_until(b'\n', &mut line_buf).await;
-            match bytes_read {
+            match self.reader.read_until(b'\n', &mut line_buf).await {
                 Ok(0) => {
-                    // return if self.unprocessed_record {
-                    //     self.unprocessed_record = false;
-                    return self.rb_builder.process_arrays();
-                    // } else {
-                    //     Ok(None)
-                    // };
+                    break;
                 }
                 Ok(2)
                     if line_buf[0] == b'\r'
@@ -285,14 +290,13 @@ impl WarcRecordBatchIterator {
                         .content_length
                         .expect("Content length is required");
 
-                    let mut content_vec = vec![0; len];
-
                     let content = if len == 0 {
                         None
                     } else {
-                        self.reader.read_exact(&mut content_vec).await?;
+                        self.content_buffer.resize(len, 0);
+                        self.reader.read_exact(&mut self.content_buffer).await?;
                         self.bytes_read += len;
-                        Some(content_vec.as_slice())
+                        Some(self.content_buffer.as_slice())
                     };
 
                     self.rb_builder.push(
@@ -313,12 +317,10 @@ impl WarcRecordBatchIterator {
                         Some(&header_json),
                     );
 
-                    self.unprocessed_record = true;
                     self.header_state.reset();
-                    self.unprocessed_record = false;
 
                     if self.rb_builder.len() >= self.chunk_size {
-                        return self.rb_builder.process_arrays();
+                        break;
                     }
                 }
                 Ok(n) => {
@@ -366,10 +368,11 @@ impl WarcRecordBatchIterator {
                 }
                 Err(e) => {
                     eprintln!("Error reading line: {}", e);
-                    return self.rb_builder.process_arrays();
+                    break;
                 }
             }
         }
+        self.rb_builder.process_arrays()
     }
 }
 
