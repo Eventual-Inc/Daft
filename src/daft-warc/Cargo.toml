@@ -8,6 +8,7 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+flate2 = {version = "1.1", features = ["zlib-rs"], default-features = false}
 futures = {workspace = true}
 rayon = {workspace = true}
 serde_json = {workspace = true}
@@ -33,3 +34,6 @@ workspace = true
 edition = {workspace = true}
 name = "daft-warc"
 version = {workspace = true}
+
+[package.metadata.cargo-machete]
+ignored = ["flate2"]
