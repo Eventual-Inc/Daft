@@ -144,12 +144,12 @@ pub enum DataType {
     FixedShapeTensor(Box<DataType>, Vec<u64>),
 
     /// A logical type for sparse tensors with variable shapes.
-    #[display("SparseTensor({_0})")]
-    SparseTensor(Box<DataType>),
+    #[display("SparseTensor[{_0}; indices_offset: {_1}]")]
+    SparseTensor(Box<DataType>, bool),
 
     /// A logical type for sparse tensors with the same shape.
-    #[display("FixedShapeSparseTensor[{_0}; {_1:?}]")]
-    FixedShapeSparseTensor(Box<DataType>, Vec<u64>),
+    #[display("FixedShapeSparseTensor[{_0}; {_1:?}; indices_offset: {_2}]")]
+    FixedShapeSparseTensor(Box<DataType>, Vec<u64>, bool),
 
     #[cfg(feature = "python")]
     Python,
@@ -339,12 +339,12 @@ impl DataType {
                 Box::new(*dtype.clone()),
                 usize::try_from(shape.iter().product::<u64>()).unwrap(),
             ),
-            SparseTensor(dtype) => Struct(vec![
+            SparseTensor(dtype, _) => Struct(vec![
                 Field::new("values", List(Box::new(*dtype.clone()))),
                 Field::new("indices", List(Box::new(Self::UInt64))),
                 Field::new("shape", List(Box::new(Self::UInt64))),
             ]),
-            FixedShapeSparseTensor(dtype, shape) => Struct(vec![
+            FixedShapeSparseTensor(dtype, shape, _) => Struct(vec![
                 Field::new("values", List(Box::new(*dtype.clone()))),
                 {
                     let largest_index = std::cmp::max(shape.iter().product::<u64>(), 1) - 1;

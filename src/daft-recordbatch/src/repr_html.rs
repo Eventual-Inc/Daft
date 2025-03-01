@@ -127,11 +127,11 @@ pub fn html_value(s: &Series, idx: usize) -> String {
             let arr = s.fixed_shape_tensor().unwrap();
             arr.html_value(idx)
         }
-        DataType::SparseTensor(_) => {
+        DataType::SparseTensor(_, _) => {
             let arr = s.sparse_tensor().unwrap();
             arr.html_value(idx)
         }
-        DataType::FixedShapeSparseTensor(_, _) => {
+        DataType::FixedShapeSparseTensor(_, _, _) => {
             let arr = s.fixed_shape_sparse_tensor().unwrap();
             arr.html_value(idx)
         }
