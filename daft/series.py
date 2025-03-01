@@ -85,7 +85,7 @@ class Series:
         # Workaround: wrap list of np.datetime64 in an np.array
         #   - https://github.com/apache/arrow/issues/40580
         #   - https://github.com/Eventual-Inc/Daft/issues/3826
-        if data and isinstance(data[0], np.datetime64):
+        if data and hasattr(np, "datetime64") and isinstance(data[0], np.datetime64):
             data = np.array(data)
 
         try:
