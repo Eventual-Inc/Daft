@@ -161,14 +161,12 @@ impl WarcRecordBatchBuilder {
         warc_type: Option<&str>,
         warc_date: Option<i64>,
         warc_content_length: Option<i64>,
-        // content: Option<&[u8]>,
         header: Option<&str>,
     ) {
         self.record_id_array.push(record_id);
         self.warc_type_array.push(warc_type);
         self.warc_date_array.push(warc_date);
         self.warc_content_length_array.push(warc_content_length);
-        // self.content_array.push(content);
         self.header_array.push(header);
         // book keeping
         self.rows_processed += 1;
