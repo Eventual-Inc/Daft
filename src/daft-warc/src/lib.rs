@@ -161,14 +161,14 @@ impl WarcRecordBatchBuilder {
         warc_type: Option<&str>,
         warc_date: Option<i64>,
         warc_content_length: Option<i64>,
-        content: Option<&[u8]>,
+        // content: Option<&[u8]>,
         header: Option<&str>,
     ) {
         self.record_id_array.push(record_id);
         self.warc_type_array.push(warc_type);
         self.warc_date_array.push(warc_date);
         self.warc_content_length_array.push(warc_content_length);
-        self.content_array.push(content);
+        // self.content_array.push(content);
         self.header_array.push(header);
         // book keeping
         self.rows_processed += 1;
@@ -233,7 +233,6 @@ struct WarcRecordBatchIterator {
     bytes_read: usize,
     header_state: WarcHeaderState,
     rb_builder: WarcRecordBatchBuilder,
-    content_buffer: Vec<u8>,
 }
 
 impl WarcRecordBatchIterator {
@@ -254,7 +253,6 @@ impl WarcRecordBatchIterator {
                 header_lines: Vec::new(),
             },
             rb_builder: WarcRecordBatchBuilder::new(chunk_size, schema),
-            content_buffer: Vec::new(),
         }
     }
 
@@ -290,15 +288,6 @@ impl WarcRecordBatchIterator {
                         .content_length
                         .expect("Content length is required");
 
-                    let content = if len == 0 {
-                        None
-                    } else {
-                        self.content_buffer.resize(len, 0);
-                        self.reader.read_exact(&mut self.content_buffer).await?;
-                        self.bytes_read += len;
-                        Some(self.content_buffer.as_slice())
-                    };
-
                     self.rb_builder.push(
                         self.header_state
                             .record_id
@@ -313,9 +302,17 @@ impl WarcRecordBatchIterator {
                             .warc_date
                             .and_then(|d| d.timestamp_nanos_opt()),
                         self.header_state.content_length.map(|len| len as i64),
-                        content,
                         Some(&header_json),
                     );
+
+                    // Handle content array separately to avoid an intermediate copy
+                    if len == 0 {
+                        self.rb_builder.content_array.push_null();
+                    } else {
+                        let slice = self.rb_builder.content_array.allocate_slice(len);
+                        self.reader.read_exact(slice).await?;
+                        self.bytes_read += len;
+                    }
 
                     self.header_state.reset();
 
