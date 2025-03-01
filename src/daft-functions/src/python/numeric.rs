@@ -16,6 +16,8 @@ simple_python_wrapper!(ln, crate::numeric::log::ln, [expr: PyExpr]);
 simple_python_wrapper!(sin, crate::numeric::trigonometry::sin, [expr: PyExpr]);
 simple_python_wrapper!(cos, crate::numeric::trigonometry::cos, [expr: PyExpr]);
 simple_python_wrapper!(tan, crate::numeric::trigonometry::tan, [expr: PyExpr]);
+simple_python_wrapper!(csc, crate::numeric::trigonometry::csc, [expr: PyExpr]);
+simple_python_wrapper!(sec, crate::numeric::trigonometry::sec, [expr: PyExpr]);
 simple_python_wrapper!(cot, crate::numeric::trigonometry::cot, [expr: PyExpr]);
 simple_python_wrapper!(arcsin, crate::numeric::trigonometry::arcsin, [expr: PyExpr]);
 simple_python_wrapper!(arccos, crate::numeric::trigonometry::arccos, [expr: PyExpr]);

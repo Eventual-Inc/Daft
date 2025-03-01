@@ -10,8 +10,8 @@ use daft_functions::numeric::{
     sign::sign,
     sqrt::sqrt,
     trigonometry::{
-        arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cot, degrees, radians, sin,
-        tan,
+        arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cot, csc, degrees, radians,
+        sec, sin, tan,
     },
 };
 
@@ -37,6 +37,8 @@ impl SQLModule for SQLModuleNumeric {
         parent.add_fn("sin", SQLNumericExpr::Sin);
         parent.add_fn("cos", SQLNumericExpr::Cos);
         parent.add_fn("tan", SQLNumericExpr::Tan);
+        parent.add_fn("csc", SQLNumericExpr::Csc);
+        parent.add_fn("sec", SQLNumericExpr::Sec);
         parent.add_fn("cot", SQLNumericExpr::Cot);
         parent.add_fn("asin", SQLNumericExpr::ArcSin);
         parent.add_fn("acos", SQLNumericExpr::ArcCos);
@@ -66,6 +68,8 @@ enum SQLNumericExpr {
     Sin,
     Cos,
     Tan,
+    Csc,
+    Sec,
     Cot,
     ArcSin,
     ArcCos,
@@ -105,6 +109,8 @@ impl SQLFunction for SQLNumericExpr {
             Self::Sin => "Calculates the sine of an angle in radians.",
             Self::Cos => "Calculates the cosine of an angle in radians.",
             Self::Tan => "Calculates the tangent of an angle in radians.",
+            Self::Csc => "Calculates the cosecant of an angle in radians.",
+            Self::Sec => "Calculates the secant of an angle in radians.",
             Self::Cot => "Calculates the cotangent of an angle in radians.",
             Self::ArcSin => "Calculates the inverse sine (arc sine) of a number.",
             Self::ArcCos => "Calculates the inverse cosine (arc cosine) of a number.",
@@ -135,6 +141,8 @@ impl SQLFunction for SQLNumericExpr {
             | Self::Sin
             | Self::Cos
             | Self::Tan
+            | Self::Csc
+            | Self::Sec
             | Self::Cot
             | Self::ArcSin
             | Self::ArcCos
@@ -212,6 +220,14 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
         SQLNumericExpr::Tan => {
             ensure!(args.len() == 1, "tan takes exactly one argument");
             Ok(tan(args[0].clone()))
+        }
+        SQLNumericExpr::Csc => {
+            ensure!(args.len() == 1, "csc takes exactly one argument");
+            Ok(csc(args[0].clone()))
+        }
+        SQLNumericExpr::Sec => {
+            ensure!(args.len() == 1, "sec takes exactly one argument");
+            Ok(sec(args[0].clone()))
         }
         SQLNumericExpr::Cot => {
             ensure!(args.len() == 1, "cot takes exactly one argument");
