@@ -200,6 +200,8 @@ def test_repr_functions_shift_right() -> None:
         "sin",
         "cos",
         "tan",
+        "csc",
+        "sec",
         "cot",
         "arcsin",
         "arccos",

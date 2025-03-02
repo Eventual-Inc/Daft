@@ -194,6 +194,20 @@ impl PySeries {
             .into())
     }
 
+    pub fn csc(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Csc)?
+            .into())
+    }
+
+    pub fn sec(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Sec)?
+            .into())
+    }
+
     pub fn cot(&self) -> PyResult<Self> {
         Ok(self
             .series

@@ -334,6 +334,14 @@ class Series:
         """The elementwise tangent of a numeric series."""
         return Series._from_pyseries(self._series.tan())
 
+    def csc(self) -> Series:
+        """The elementwise cosecant of a numeric series."""
+        return Series._from_pyseries(self._series.csc())
+
+    def sec(self) -> Series:
+        """The elementwise secant of a numeric series."""
+        return Series._from_pyseries(self._series.sec())
+
     def cot(self) -> Series:
         """The elementwise cotangent of a numeric series."""
         return Series._from_pyseries(self._series.cot())

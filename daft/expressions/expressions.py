@@ -773,6 +773,16 @@ class Expression:
         expr = native.tan(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def csc(self) -> Expression:
+        """The elementwise cosecant of a numeric expression."""
+        expr = native.csc(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def sec(self) -> Expression:
+        """The elementwise secant of a numeric expression."""
+        expr = native.sec(self._expr)
+        return Expression._from_pyexpr(expr)
+
     def cot(self) -> Expression:
         """The elementwise cotangent of a numeric expression."""
         expr = native.cot(self._expr)

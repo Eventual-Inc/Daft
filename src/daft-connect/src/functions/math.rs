@@ -9,8 +9,8 @@ use daft_functions::numeric::{
     round::round,
     sqrt::Sqrt,
     trigonometry::{
-        ArcCos, ArcCosh, ArcSin, ArcSinh, ArcTan, ArcTanh, Atan2, Cos, Cot, Degrees, Radians, Sin,
-        Tan,
+        ArcCos, ArcCosh, ArcSin, ArcSinh, ArcTan, ArcTanh, Atan2, Cos, Cot, Csc, Degrees, Radians,
+        Sec, Sin, Tan,
     },
 };
 use spark_connect::Expression;
@@ -44,7 +44,7 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("cos", Cos {});
         parent.add_fn("cosh", TODO_FUNCTION);
         parent.add_fn("cot", Cot {});
-        parent.add_fn("csc", TODO_FUNCTION);
+        parent.add_fn("csc", Csc {});
         parent.add_fn("e", TODO_FUNCTION);
         parent.add_fn("exp", Exp {});
         parent.add_fn("expm1", TODO_FUNCTION);
@@ -68,7 +68,7 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("rint", TODO_FUNCTION);
         parent.add_fn("round", RoundFunction);
         parent.add_fn("bround", TODO_FUNCTION);
-        parent.add_fn("sec", TODO_FUNCTION);
+        parent.add_fn("sec", Sec {});
         parent.add_fn("shiftleft", TODO_FUNCTION);
         parent.add_fn("shiftright", TODO_FUNCTION);
         parent.add_fn("sign", TODO_FUNCTION);
