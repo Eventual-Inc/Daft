@@ -144,12 +144,12 @@ impl SQLFunction for SQLNumericExpr {
             | Self::Log2
             | Self::Log10
             | Self::Ln
+            | Self::Exp
             | Self::ArcTanh
             | Self::ArcCosh
             | Self::ArcSinh => &["input"],
             Self::Log => &["input", "base"],
             Self::Round => &["input", "precision"],
-            Self::Exp => &["input", "exponent"],
             Self::ArcTan2 => &["y", "x"],
             Self::Clip => &["input", "min", "max"],
         }
