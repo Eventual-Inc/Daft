@@ -182,6 +182,8 @@ def test_ln(unary_data_fixture):
         "sin",
         "cos",
         "tan",
+        "csc",
+        "sec",
         "cot",
         "arcsin",
         "arccos",
