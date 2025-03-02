@@ -9,6 +9,7 @@ from pyiceberg.catalog import Catalog as InnerCatalog
 from pyiceberg.table import Table as InnerTable
 
 from daft.catalog import Catalog, Identifier, Table
+from daft.io._iceberg import read_iceberg
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
@@ -87,7 +88,11 @@ class IcebergTable(Table):
             return IcebergTable(obj)
         return None
 
-    def read(self) -> DataFrame:
-        import daft
+    def read(self, **options) -> DataFrame:
+        return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
 
-        return daft.read_iceberg(self._inner)
+    def append(self, df: DataFrame, **options) -> None:
+        df.write_iceberg(self._inner, mode="append")
+
+    def overwrite(self, df: DataFrame, **options) -> None:
+        df.write_iceberg(self._inner, mode="overwrite")

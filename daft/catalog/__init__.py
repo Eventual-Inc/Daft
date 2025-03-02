@@ -547,11 +547,39 @@ class Table(ABC):
 
         Args:
             n (int): number of rows to show
-
+        
         Returns:
             None
         """
         return self.read().show(n)
+
+    ###
+    # write methods
+    ###
+
+    @abstractmethod
+    def append(self, df: DataFrame, **options) -> None:
+        """Appends the DataFrame to this table.
+
+        Args:
+            df (DataFrame): dataframe to append
+            **options: additional format-dependent write options
+
+        Returns:
+            None
+        """
+
+    @abstractmethod
+    def overwrite(self, df: DataFrame, **options) -> None:
+        """Overwrites this table with the given DataFrame.
+
+        Args:
+            df (DataFrame): dataframe to overwrite this table with
+            **options: additional format-dependent write options
+
+        Returns:
+            None
+        """
 
     ###
     # TODO deprecated catalog APIs #3819
