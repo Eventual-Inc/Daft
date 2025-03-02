@@ -30,7 +30,6 @@ from typing import (
     Union,
 )
 
-from daft import dashboard
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
@@ -163,26 +162,6 @@ class DataFrame:
             return None
         else:
             return self._result_cache.value
-
-    def _broadcast_query_plan(self, plan_time_start: datetime, plan_time_end: datetime):
-        from daft.dataframe.display import MermaidFormatter
-
-        if not dashboard.should_run():
-            return
-
-        is_cached = self._result_cache is not None
-        mermaid_plan: str = MermaidFormatter(
-            builder=self.__builder,
-            show_all=True,
-            simple=False,
-            is_cached=is_cached,
-        )._repr_markdown_()
-
-        dashboard.broadcast_query_information(
-            mermaid_plan=mermaid_plan,
-            plan_time_start=plan_time_start,
-            plan_time_end=plan_time_end,
-        )
 
     @DataframePublicAPI
     def explain(
@@ -2998,11 +2977,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with materialized results.
         """
-        plan_time_start = _utc_now()
         self._materialize_results()
-        plan_time_end = _utc_now()
-
-        self._broadcast_query_plan(plan_time_start, plan_time_end)
 
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -3073,11 +3048,7 @@ class DataFrame:
         Args:
             n: number of rows to show. Defaults to 8.
         """
-        plan_time_start = _utc_now()
         dataframe_display = self._construct_show_display(n)
-        plan_time_end = _utc_now()
-
-        self._broadcast_query_plan(plan_time_start, plan_time_end)
 
         try:
             from IPython.display import display
