@@ -54,9 +54,9 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("unhex", TODO_FUNCTION);
         parent.add_fn("hypot", TODO_FUNCTION);
         parent.add_fn("ln", Ln {});
-        parent.add_fn("log", LogFunction);
+        parent.add_fn("log", LogFunction {});
         parent.add_fn("log10", Log10 {});
-        parent.add_fn("log1p", Log1p);
+        parent.add_fn("log1p", Log1p {});
         parent.add_fn("log2", Log2 {});
         parent.add_fn("negate", TODO_FUNCTION);
         parent.add_fn("negative", TODO_FUNCTION);
