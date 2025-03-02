@@ -371,30 +371,13 @@ class Table(ABC):
         """Returns a Daft Table from a supported object type or raises an error."""
         raise ValueError(f"Unsupported table type: {type(obj)}")
 
-    # TODO catalog APIs part 3
-    # @property
-    # @abstractmethod
-    # def name(self) -> str:
-    #     """Returns the table name."""
-
-    # TODO catalog APIs part 3
-    # @property
-    # @abstractmethod
-    # def inner(self) -> object | None:
-    #     """Returns the inner table object if this is an adapter."""
+    ###
+    # read methods
+    ###
 
     @abstractmethod
-    def read(self) -> DataFrame:
+    def read(self, **options) -> DataFrame:
         """Returns a DataFrame from this table."""
-
-    # TODO deprecated catalog APIs #3819
-    def to_dataframe(self) -> DataFrame:
-        """DEPRECATED: Please use `read` instead; version 0.5.0!"""
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.5.0, please use `read` instead.",
-            category=DeprecationWarning,
-        )
-        return self.read()
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Returns a DataFrame from this table with the selected columns."""
@@ -403,6 +386,46 @@ class Table(ABC):
     def show(self, n: int = 8) -> None:
         """Shows the first n rows from this table."""
         return self.read().show(n)
+
+    ###
+    # write methods
+    ###
+
+    @abstractmethod
+    def append(self, df: DataFrame, **options) -> None:
+        """Appends the DataFrame to this table.
+
+        Args:
+            df (DataFrame): dataframe to append
+            **options: additional format-dependent write options
+
+        Returns:
+            None
+        """
+
+    @abstractmethod
+    def overwrite(self, df: DataFrame, **options) -> None:
+        """Overwrites this table with the given DataFrame.
+
+        Args:
+            df (DataFrame): dataframe to overwrite this table with
+            **options: additional format-dependent write options
+
+        Returns:
+            None
+        """
+
+    ###
+    # TODO deprecated catalog APIs #3819
+    ###
+
+    def to_dataframe(self) -> DataFrame:
+        """DEPRECATED: Please use `read` instead; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please use `read` instead.",
+            category=DeprecationWarning,
+        )
+        return self.read()
 
 
 class TableSource:
