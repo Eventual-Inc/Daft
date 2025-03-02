@@ -579,6 +579,39 @@ def test_table_ln_bad_input() -> None:
         table.eval_expression_list([col("a").ln()])
 
 
+def test_table_numeric_log1p() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
+    log1p_table = table.eval_expression_list([col("a").log1p(), col("b").log1p()])
+    assert lists_close_with_nones(
+        [math.log1p(v) if v is not None else v for v in table.get_column("a").to_pylist()],
+        log1p_table.get_column("a").to_pylist(),
+    )
+    assert lists_close_with_nones(
+        [math.log1p(v) if v is not None else v for v in table.get_column("b").to_pylist()],
+        log1p_table.get_column("b").to_pylist(),
+    )
+
+
+def test_table_log1p_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to log to be numeric"):
+        table.eval_expression_list([col("a").log1p()])
+
+
+def test_table_expm1() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, None], "b": [1, 10, None]})
+    expm1_table = table.eval_expression_list([col("a").expm1(), col("b").expm1()])
+    assert lists_close_with_nones(
+        [0.10517091807564763, 0.010050167084168058, None],
+        expm1_table.get_column("a").to_pylist(),
+    )
+    assert lists_close_with_nones(
+        [1.718281828459045, 22025.465794806718, None],
+        expm1_table.get_column("b").to_pylist(),
+    )
+
+
 def test_table_exp() -> None:
     table = MicroPartition.from_pydict({"a": [0.1, 0.01, None], "b": [1, 10, None]})
     exp_table = table.eval_expression_list([col("a").exp(), col("b").exp()])
