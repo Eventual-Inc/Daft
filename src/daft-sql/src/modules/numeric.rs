@@ -114,7 +114,7 @@ impl SQLFunction for SQLNumericExpr {
             }
             Self::Radians => "Converts an angle from degrees to radians.",
             Self::Degrees => "Converts an angle from radians to degrees.",
-            Self::Log => "Calculates the natural logarithm of a number.",
+            Self::Log => "Calculates the first argument-based logarithm of the second argument log_x(y).",
             Self::Log2 => "Calculates the base-2 logarithm of a number.",
             Self::Log10 => "Calculates the base-10 logarithm of a number.",
             Self::Ln => "Calculates the natural logarithm of a number.",
