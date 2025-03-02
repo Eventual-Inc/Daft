@@ -17,4 +17,16 @@ impl Series {
             ))),
         }
     }
+
+    pub fn expm1(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Float32 => Ok(self.f32().unwrap().expm1()?.into_series()),
+            DataType::Float64 => Ok(self.f64().unwrap().expm1()?.into_series()),
+            dt if dt.is_integer() => self.cast(&DataType::Float64).unwrap().expm1(),
+            dt => Err(DaftError::TypeError(format!(
+                "expm1 not implemented for {}",
+                dt
+            ))),
+        }
+    }
 }

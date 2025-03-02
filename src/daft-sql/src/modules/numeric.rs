@@ -3,9 +3,9 @@ use daft_functions::numeric::{
     abs::abs,
     ceil::ceil,
     clip::clip,
-    exp::exp,
+    exp::{exp, expm1},
     floor::floor,
-    log::{ln, log, log10, log2},
+    log::{ln, log, log10, log1p, log2},
     round::round,
     sign::sign,
     sqrt::sqrt,
@@ -48,7 +48,9 @@ impl SQLModule for SQLModuleNumeric {
         parent.add_fn("log10", SQLNumericExpr::Log10);
         parent.add_fn("log", SQLNumericExpr::Log);
         parent.add_fn("ln", SQLNumericExpr::Ln);
+        parent.add_fn("log1p", SQLNumericExpr::Log1p);
         parent.add_fn("exp", SQLNumericExpr::Exp);
+        parent.add_fn("expm1", SQLNumericExpr::Expm1);
         parent.add_fn("atanh", SQLNumericExpr::ArcTanh);
         parent.add_fn("acosh", SQLNumericExpr::ArcCosh);
         parent.add_fn("asinh", SQLNumericExpr::ArcSinh);
@@ -58,6 +60,7 @@ enum SQLNumericExpr {
     Abs,
     Ceil,
     Exp,
+    Expm1,
     Floor,
     Round,
     Clip,
@@ -77,6 +80,7 @@ enum SQLNumericExpr {
     Log2,
     Log10,
     Ln,
+    Log1p,
     ArcTanh,
     ArcCosh,
     ArcSinh,
@@ -97,6 +101,7 @@ impl SQLFunction for SQLNumericExpr {
             Self::Abs => "Gets the absolute value of a number.",
             Self::Ceil => "Rounds a number up to the nearest integer.",
             Self::Exp => "Calculates the exponential of a number (e^x).",
+            Self::Expm1 => "Calculates the exponential of a number minus one (e^x - 1).",
             Self::Floor => "Rounds a number down to the nearest integer.",
             Self::Round => "Rounds a number to a specified number of decimal places.",
             Self::Clip => "Clips a number to a specified range. If left bound is None, no lower clipping is applied. If right bound is None, no upper clipping is applied. Panics if right bound < left bound.",
@@ -118,6 +123,7 @@ impl SQLFunction for SQLNumericExpr {
             Self::Log2 => "Calculates the base-2 logarithm of a number.",
             Self::Log10 => "Calculates the base-10 logarithm of a number.",
             Self::Ln => "Calculates the natural logarithm of a number.",
+            Self::Log1p => "Calculates the natural logarithm of a number plus one (ln(x + 1)).",
             Self::ArcTanh => "Calculates the inverse hyperbolic tangent of a number.",
             Self::ArcCosh => "Calculates the inverse hyperbolic cosine of a number.",
             Self::ArcSinh => "Calculates the inverse hyperbolic sine of a number.",
@@ -144,7 +150,9 @@ impl SQLFunction for SQLNumericExpr {
             | Self::Log2
             | Self::Log10
             | Self::Ln
+            | Self::Log1p
             | Self::Exp
+            | Self::Expm1
             | Self::ArcTanh
             | Self::ArcCosh
             | Self::ArcSinh => &["input"],
@@ -253,6 +261,10 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
             ensure!(args.len() == 1, "ln takes exactly one argument");
             Ok(ln(args[0].clone()))
         }
+        SQLNumericExpr::Log1p => {
+            ensure!(args.len() == 1, "log1p takes exactly one argument");
+            Ok(log1p(args[0].clone()))
+        }
         SQLNumericExpr::Log => {
             ensure!(args.len() == 2, "log takes exactly two arguments");
             let base = args[1]
@@ -278,6 +290,10 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
         SQLNumericExpr::Exp => {
             ensure!(args.len() == 1, "exp takes exactly one argument");
             Ok(exp(args[0].clone()))
+        }
+        SQLNumericExpr::Expm1 => {
+            ensure!(args.len() == 1, "expm1 takes exactly one argument");
+            Ok(expm1(args[0].clone()))
         }
         SQLNumericExpr::ArcTanh => {
             ensure!(args.len() == 1, "atanh takes exactly one argument");

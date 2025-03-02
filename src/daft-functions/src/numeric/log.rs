@@ -64,6 +64,7 @@ macro_rules! log {
 log!(log2, Log2);
 log!(log10, Log10);
 log!(ln, Ln);
+log!(log1p, Log1p);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Log(FloatWrapper<f64>);

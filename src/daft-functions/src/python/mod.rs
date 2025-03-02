@@ -82,6 +82,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::ceil);
     add!(numeric::clip);
     add!(numeric::exp);
+    add!(numeric::expm1);
     add!(numeric::floor);
     add!(numeric::sign);
     add!(numeric::sqrt);
@@ -89,6 +90,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::log10);
     add!(numeric::log);
     add!(numeric::ln);
+    add!(numeric::log1p);
     add!(numeric::sin);
     add!(numeric::cos);
     add!(numeric::tan);

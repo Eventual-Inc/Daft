@@ -854,9 +854,19 @@ class Expression:
         expr = native.ln(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def log1p(self) -> Expression:
+        """The ln(self + 1) of a numeric expression."""
+        expr = native.log1p(self._expr)
+        return Expression._from_pyexpr(expr)
+
     def exp(self) -> Expression:
         """The e^self of a numeric expression."""
         expr = native.exp(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def expm1(self) -> Expression:
+        """The e^self - 1 of a numeric expression."""
+        expr = native.expm1(self._expr)
         return Expression._from_pyexpr(expr)
 
     def bitwise_and(self, other: Expression) -> Expression:

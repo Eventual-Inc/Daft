@@ -396,9 +396,17 @@ class Series:
         """The elementwise ln of a numeric series."""
         return Series._from_pyseries(self._series.ln())
 
+    def log1p(self) -> Series:
+        """The ln(self + 1) of a numeric series."""
+        return Series._from_pyseries(self._series.log1p())
+
     def exp(self) -> Series:
         """The e^self of a numeric series."""
         return Series._from_pyseries(self._series.exp())
+
+    def expm1(self) -> Series:
+        """The e^self - 1 of a numeric series."""
+        return Series._from_pyseries(self._series.expm1())
 
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
