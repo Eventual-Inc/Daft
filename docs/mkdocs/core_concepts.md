@@ -1401,6 +1401,116 @@ The [`.dt.truncate()`]({{ api_path }}/expression_methods/daft.Expression.dt.trun
 
 Daft can read data from a variety of sources, and write data to many destinations.
 
+## Built-in Functions
+
+Daft provides built-in functions for common data operations. One such function is [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique IDs to rows in a DataFrame, especially useful in distributed settings.
+
+---
+
+### `monotonically_increasing_id()`
+
+This function generates unique, increasing IDs by:
+- Using the **upper 28 bits** for the partition number.
+- Using the **lower 36 bits** for the row number within each partition.
+
+This allows for:
+- Up to **268 million partitions**.
+- Up to **68 billion rows per partition**.
+
+---
+
+#### Example: Assigning Unique IDs
+
+To use `monotonically_increasing_id()` effectively, ensure you're using the **RayRunner**, as the NativeRunner does not support repartitioning.
+
+```python
+import daft
+from daft.functions import monotonically_increasing_id
+
+# Initialize the RayRunner
+daft.context.set_runner_ray()
+
+# Create a DataFrame and repartition it into 2 partitions
+df = daft.from_pydict({"A": [1, 2, 3, 4]}).into_partitions(2)
+
+# Add unique IDs
+df = df.with_column("id", monotonically_increasing_id())
+df.show()
+```
+
+``` {title="Output"}
+
+╭───────┬─────────────╮
+│ A     ┆ id          │
+│ ---   ┆ ---         │
+│ Int64 ┆ UInt64      │
+╞═══════╪═════════════╡
+│ 1     ┆ 0           │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2     ┆ 1           │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 3     ┆ 68719476736 │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4     ┆ 68719476737 │
+╰───────┴─────────────╯
+```
+
+**What Happened?**
+- Rows in the first partition get IDs `0` and `1`.
+- Rows in the second partition start at `2^36` (`68719476736`).
+
+---
+
+#### Example: Filtering by ID
+
+You can combine this function with other expressions. For example, filter rows where the ID is greater than `1`:
+
+```python
+df = df.filter(df["id"] > 1)
+df.show()
+```
+
+``` {title="Output"}
+
+╭───────┬─────────────╮
+│ A     ┆ id          │
+│ ---   ┆ ---         │
+│ Int64 ┆ UInt64      │
+╞═══════╪═════════════╡
+│ 3     ┆ 68719476736 │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4     ┆ 68719476737 │
+╰───────┴─────────────╯
+```
+
+---
+
+### Use Cases
+1. **Unique IDs in Distributed DataFrames**:
+   - Ensures unique IDs across partitions without coordination.
+
+2. **Tracking Row Order**:
+   - Useful after sorting or joining to track original row positions.
+
+3. **Ensuring Uniqueness**:
+   - Guarantees unique IDs even in large, distributed datasets.
+
+---
+
+### Important Note: NativeRunner Limitation
+
+The **NativeRunner** does not support repartitioning. If you attempt to use `monotonically_increasing_id()` with the NativeRunner, it will assign sequential IDs without considering partitions. For distributed workloads, always use the **RayRunner**:
+
+```python
+daft.context.set_runner_ray()
+```
+
+---
+
+### Summary
+
+The [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) function is a simple yet powerful tool for generating unique IDs in distributed DataFrames. Use it to track row order, ensure uniqueness, or combine with other expressions for advanced transformations. **Remember to use the RayRunner for distributed workloads.**
+
 ## Reading Data
 
 ### From Files
@@ -2188,7 +2298,7 @@ UDFs can also be parametrized with new resource requests after being initialized
 
 ### Example: UDFs in ML Workloads
 
-We’ll define a function that uses a pre-trained PyTorch model: [ResNet50](https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html) to classify the dog pictures. We’ll pass the contents of the image `urls` column and send the classification predictions to a new column `classify_breed`.
+We'll define a function that uses a pre-trained PyTorch model: [ResNet50](https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html) to classify the dog pictures. We'll pass the contents of the image `urls` column and send the classification predictions to a new column `classify_breed`.
 
 Working with PyTorch adds some complexity but you can just run the cells below to perform the classification.
 
@@ -2244,7 +2354,7 @@ Now you're ready to call this function on the `urls` column and store the output
 
 ## Multimodal Data
 
-Daft is built to work comfortably with multimodal data types, including URLs and images. You can use the [`url.download()`]({{ api_path }}/expression_methods/daft.Expression.url.download.html) expression to download the bytes from a URL. Let’s store them in a new column using the `with_column` method:
+Daft is built to work comfortably with multimodal data types, including URLs and images. You can use the [`url.download()`]({{ api_path }}/expression_methods/daft.Expression.url.download.html) expression to download the bytes from a URL. Let's store them in a new column using the `with_column` method:
 
 === "🐍 Python"
 
