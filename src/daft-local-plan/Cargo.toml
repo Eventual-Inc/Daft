@@ -4,6 +4,7 @@ common-resource-request = {path = "../common/resource-request", default-features
 common-scan-info = {path = "../common/scan-info", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-llm-plan = {path = "../daft-llm-plan"}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 log = {workspace = true}
 strum = {version = "0.26", features = ["derive"]}

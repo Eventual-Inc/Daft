@@ -1596,7 +1596,7 @@ class DataFrame:
         builder = self._builder.filter(predicate)
         return DataFrame(builder)
 
-    def with_column_llm(
+    def llm(
         self,
         result_column: str,
         prompt: str,
@@ -1650,18 +1650,16 @@ class DataFrame:
         from pydantic import BaseModel
         from typing import List
 
+
         class Recipe(BaseModel):
             title: str
             ingredients: List[str]
             steps: List[str]
             cook_time_mins: int
 
+
         df = daft.from_pydict({"ingredient": ["chicken", "fish", "veggies"]})
-        df = df.llm(
-            "recipe_info", 
-            "Generate a recipe containing {ingredient}",
-            response_schema=Recipe
-        )
+        df = df.llm("recipe_info", "Generate a recipe containing {ingredient}", response_schema=Recipe)
         df.show()
         ```
 
@@ -1676,14 +1674,16 @@ class DataFrame:
         Prompts can also include multimodal columns such as images, either as URLs or actual image columns:
 
         ```python
-        df = daft.from_pydict({
-            "ingredient": ["chicken", "fish", "veggies"],
-            "image_urls": [
-                "https://goodeggs4.imgix.net/30e5c50f-4243-452f-ac4a-87952eb60ca3.jpg",
-                "https://goodeggs4.imgix.net/649eff92-704e-42a2-85b5-3e258ba85375.jpg",
-                "https://goodeggs4.imgix.net/d76083bb-d8ca-411c-ad2e-9a773ced477a.jpg",
-            ],
-        })
+        df = daft.from_pydict(
+            {
+                "ingredient": ["chicken", "fish", "veggies"],
+                "image_urls": [
+                    "https://goodeggs4.imgix.net/30e5c50f-4243-452f-ac4a-87952eb60ca3.jpg",
+                    "https://goodeggs4.imgix.net/649eff92-704e-42a2-85b5-3e258ba85375.jpg",
+                    "https://goodeggs4.imgix.net/d76083bb-d8ca-411c-ad2e-9a773ced477a.jpg",
+                ],
+            }
+        )
         df = df.with_column("img", df["image_urls"].url.download().image.decode().image.resize(128, 128))
         df = df.llm(
             "recipes",
@@ -1695,27 +1695,8 @@ class DataFrame:
 
         Note that depending on your LLM backend, it may or may not support multi-modality!
         """
-
-        model = "openai/gpt-4o-mini"
-        from ..llm import run_curator
-
-        # Parse prompt string for template variables and replace with column references
-        import re
-        template_vars = re.findall(r"\{([^}]+)\}", prompt)
-        
-        # Build up the prompt expression by concatenating text and column refs
-        parts = re.split(r"\{([^}]+)\}", prompt)
-        prompt_expr = lit(parts[0])
-        for i in range(1, len(parts), 2):
-            var = parts[i]
-            text = parts[i+1]
-            prompt_expr = prompt_expr + col(var) + lit(text)
-
-        return self.with_column(
-            result_column,
-            run_curator(prompt_expr)
-        )
-        
+        builder = self._builder.llm(result_column, prompt)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def with_column(

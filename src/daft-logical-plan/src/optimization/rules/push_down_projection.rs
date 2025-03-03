@@ -344,6 +344,9 @@ impl PushDownProjection {
                     Ok(Transformed::no(plan))
                 }
             }
+            LogicalPlan::LLM(..) => {
+                todo!("implement projection pushdown past LLM op")
+            }
             LogicalPlan::Sort(..)
             | LogicalPlan::Repartition(..)
             | LogicalPlan::Limit(..)

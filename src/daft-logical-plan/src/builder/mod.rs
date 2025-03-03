@@ -731,6 +731,17 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn llm(&self, result_column: &str, prompt: &str) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::LLM::new(
+            self.plan.clone(),
+            prompt,
+            result_column,
+            &daft_schema::dtype::DataType::Utf8,
+        )
+        .into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     /// Async equivalent of `optimize`
     /// This is safe to call from a tokio runtime
     pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
@@ -1217,6 +1228,14 @@ impl PyLogicalPlanBuilder {
                 kwargs,
             )?
             .into())
+    }
+
+    #[pyo3(signature = (
+        result_column,
+        prompt,
+    ))]
+    pub fn llm(&self, result_column: &str, prompt: &str) -> PyResult<Self> {
+        Ok(self.builder.llm(result_column, prompt)?.into())
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {

@@ -1,0 +1,4 @@
+[package]
+edition = {workspace = true}
+name = "daft-llm-plan"
+version = {workspace = true}

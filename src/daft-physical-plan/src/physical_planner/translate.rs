@@ -514,6 +514,9 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
             "Alias should already be optimized away".to_string(),
         )),
+        LogicalPlan::LLM(_) => Err(DaftError::not_implemented(
+            "LLM functionality not implemented for non-native runner yet.",
+        )),
     }?;
     // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
     // different size estimations depending on when the approximation is computed. Once we fix

@@ -39,6 +39,7 @@ pub enum LogicalPlan {
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     SubqueryAlias(SubqueryAlias),
+    LLM(LLM),
 }
 
 pub type LogicalPlanRef = Arc<LogicalPlan>;
@@ -97,6 +98,7 @@ impl LogicalPlan {
                 schema.clone()
             }
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.schema(),
+            Self::LLM(LLM { output_schema, .. }) => output_schema.clone(),
         }
     }
 
@@ -200,6 +202,7 @@ impl LogicalPlan {
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
+            Self::LLM(llm) => llm.required_columns(),
         }
     }
 
@@ -225,6 +228,7 @@ impl LogicalPlan {
             Self::Sample(..) => "Sample",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
             Self::SubqueryAlias(..) => "Alias",
+            Self::LLM(..) => "LLM",
         }
     }
 
@@ -246,9 +250,8 @@ impl LogicalPlan {
             | Self::Join(Join { stats_state, .. })
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
-            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. }) => {
-                stats_state
-            }
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
+            | Self::LLM(LLM { stats_state, .. }) => stats_state,
             Self::Intersect(_) => {
                 panic!("Intersect nodes should be optimized away before stats are materialized")
             }
@@ -282,6 +285,7 @@ impl LogicalPlan {
             Self::Aggregate(plan) => Self::Aggregate(plan.with_materialized_stats()),
             Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
             Self::Concat(plan) => Self::Concat(plan.with_materialized_stats()),
+            Self::LLM(plan) => Self::LLM(plan.with_materialized_stats()),
             Self::Intersect(_) => {
                 panic!("Intersect should be optimized away before stats are derived")
             }
@@ -323,6 +327,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
+            Self::LLM(llm) => llm.multiline_display(),
             Self::SubqueryAlias(alias) => alias.multiline_display(),
         }
     }
@@ -350,6 +355,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
             }
+            Self::LLM(LLM { input, .. }) => vec![input],
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => vec![input],
         }
     }
@@ -376,6 +382,7 @@ impl LogicalPlan {
                     Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
                 Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone())),
+                Self::LLM(llm) => Self::LLM(LLM::new(input.clone(), llm.prompt(), llm.output_field_name.as_str(), &llm.output_schema.get_field(&llm.output_field_name).unwrap().dtype)),
                 Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
                 Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
                 Self::Union(_) => panic!("Union ops should never have only one input, but got one"),
@@ -573,3 +580,4 @@ impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
+impl_from_data_struct_for_logical_plan!(LLM);

@@ -46,6 +46,7 @@ pub enum LocalPhysicalPlan {
     CatalogWrite(CatalogWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
+    LLM(LLM),
 }
 
 impl LocalPhysicalPlan {
@@ -80,7 +81,8 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { stats_state, .. })
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
-            | Self::PhysicalWrite(PhysicalWrite { stats_state, .. }) => stats_state,
+            | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
+            | Self::LLM(LLM { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
@@ -397,6 +399,45 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn llm(
+        input: LocalPhysicalPlanRef,
+        prompt: &str,
+        output_field_name: &str,
+        output_field_dtype: &DataType,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        let output_schema = Arc::new(
+            Schema::new(
+                input
+                    .schema()
+                    .fields
+                    .iter()
+                    .filter_map(|(_, f)| {
+                        if f.name == output_field_name {
+                            None
+                        } else {
+                            Some(f)
+                        }
+                    })
+                    .cloned()
+                    .chain(std::iter::once(Field::new(
+                        output_field_name,
+                        output_field_dtype.clone(),
+                    )))
+                    .collect(),
+            )
+            .unwrap(),
+        );
+        Self::LLM(LLM {
+            input,
+            prompt_fragments: daft_llm_plan::LLMParameterizedPromptFragment::new_from_str(prompt),
+            output_field_name: output_field_name.to_string(),
+            output_schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     #[cfg(feature = "python")]
     pub(crate) fn catalog_write(
         input: LocalPhysicalPlanRef,
@@ -458,6 +499,7 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
+            Self::LLM(LLM { output_schema, .. }) => output_schema,
         }
     }
 }
@@ -644,5 +686,14 @@ pub struct LanceWrite {
     pub lance_info: daft_logical_plan::LanceCatalogInfo,
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug)]
+pub struct LLM {
+    pub input: LocalPhysicalPlanRef,
+    pub output_field_name: String,
+    pub output_schema: SchemaRef,
+    pub prompt_fragments: Vec<daft_llm_plan::LLMParameterizedPromptFragment>,
     pub stats_state: StatsState,
 }

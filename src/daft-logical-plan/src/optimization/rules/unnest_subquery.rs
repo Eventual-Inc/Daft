@@ -460,6 +460,7 @@ fn pull_up_correlated_cols(
                 Ok((new_plan, new_subquery_on, outer_on))
             }
         }
+        LogicalPlan::LLM(_) => todo!("(jay): figure out how to do this for LLM node"),
         LogicalPlan::Aggregate(Aggregate {
             input,
             aggregations,

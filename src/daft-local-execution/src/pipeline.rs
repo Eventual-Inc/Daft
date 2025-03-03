@@ -665,6 +665,10 @@ pub fn physical_plan_to_pipeline(
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
         }
+        LocalPhysicalPlan::LLM(daft_local_plan::LLM { input, .. }) => {
+            let _child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            todo!("Implement pipeline node for LLMs");
+        }
     };
 
     Ok(out)

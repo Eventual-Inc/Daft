@@ -384,3 +384,11 @@ class LogicalPlanBuilder:
             kwargs,
         )
         return LogicalPlanBuilder(builder)
+
+    def llm(
+        self,
+        result_column: str,
+        prompt: str,
+    ) -> LogicalPlanBuilder:
+        builder = self._builder.llm(result_column, prompt)
+        return LogicalPlanBuilder(builder)

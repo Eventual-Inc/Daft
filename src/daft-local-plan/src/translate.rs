@@ -258,6 +258,19 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 explode.stats_state.clone(),
             ))
         }
+        LogicalPlan::LLM(llm) => {
+            let input = translate(&llm.input)?;
+            Ok(LocalPhysicalPlan::llm(
+                input,
+                llm.prompt(),
+                &llm.output_field_name,
+                &llm.output_schema
+                    .get_field(&llm.output_field_name)
+                    .unwrap()
+                    .dtype,
+                llm.stats_state.clone(),
+            ))
+        }
         LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
             "Intersect should already be optimized away".to_string(),
         )),
