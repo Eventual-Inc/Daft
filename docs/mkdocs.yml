@@ -166,7 +166,7 @@ plugins:
 - mkdocs-simple-hooks:
     hooks:
       on_pre_build: "docs.hooks:make_api_docs"
-- social:
-    cards_layout_options:
-      background_color: "#532687"
-    cards_dir: social
+# - social:
+#     cards_layout_options:
+#       background_color: "#532687"
+#     cards_dir: social
