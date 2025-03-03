@@ -13,10 +13,20 @@ if TYPE_CHECKING:
 class MemoryCatalog(Catalog):
     """An in-memory catalog is backed by a dictionary."""
 
+    _name: str
     _tables: dict[str, Table]
 
-    def __init__(self, tables: dict[str, Table]):
-        self._tables = tables
+    def __init__(self, name: str, tables: list[Table]):
+        self._name = name
+        self._tables = {t.name: t for t in tables}
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @staticmethod
+    def _from_pydict(name: str, tables: dict[str, object]) -> MemoryCatalog:
+        return MemoryCatalog(name, [Table._from_obj(name, source) for name, source in tables.items()])
 
     ###
     # list_*
@@ -47,6 +57,10 @@ class MemoryTable(Table):
     def __init__(self, name: str, inner: DataFrame):
         self._name = name
         self._inner = inner
+
+    @property
+    def name(self) -> str:
+        return self._name
 
     ###
     # DataFrame Methods

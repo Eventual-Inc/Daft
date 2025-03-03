@@ -53,6 +53,7 @@ from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import ColumnInputType
+    from daft.convert import InputListType
 
 
 __all__ = [
@@ -200,28 +201,30 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
 class Catalog(ABC):
     """Interface for python catalog implementations."""
 
-    @staticmethod
-    def from_pydict(tables: dict[str, Table]) -> Catalog:
-        """Returns an in-memory catalog from the dictionary.
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Returns the catalog's name."""
 
-        Example:
+    @staticmethod
+    def from_pydict(tables: dict[str, object], name: str = "default") -> Catalog:
+        """Returns an in-memory catalog from a dictionary of table-like objects.
+
+        The table-like objects can be pydicts, dataframes, or a Table implementation.
+
+        Examples:
             >>> import daft
-            >>> from daft.catalog import Catalog, Table
-            >>>
-            >>> tbl = Table.from_df("my_table", daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]}))
-            >>> cat = Catalog.from_pydict({"my_table": tbl})
-            >>> cat.list_tables()
-            ['my_table']
+            >>> from daft.catalog import Catalog
 
         Args:
-            tables (dict[str,Table]): a python dictionary of table names to the table instance.
+            tables (dict[str,object]): a dictionary of table-like objects (pydicts, dataframes, and tables)
 
         Returns:
-            Catalog: new daft catalog instance from the dictionary.
+            Catalog: new catalog instance with name 'default'
         """
         from daft.catalog.__memory import MemoryCatalog
 
-        return MemoryCatalog(tables)
+        return MemoryCatalog._from_pydict(name, tables)
 
     @staticmethod
     def from_iceberg(catalog: object) -> Catalog:
@@ -403,6 +406,42 @@ class Identifier(Sequence):
 class Table(ABC):
     """Interface for python table implementations."""
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Returns the table's name."""
+
+    @staticmethod
+    def from_pydict(name: str, data: dict[str, InputListType]) -> Table:
+        """Returns a read-only table backed by the given data.
+
+        Example:
+            >>> from daft.catalog import Table
+            >>> table = Table.from_pydict({"foo": [1, 2]})
+            >>> table.show()
+            ╭───────╮
+            │ foo   │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Args:
+            name (str): table table
+            data dict[str,object]: keys are column names and the values are python lists, numpy arrays, or arrow arrays.
+
+        Returns:
+            DataFrame: new read-only table instance
+        """
+        from daft.catalog.__memory import MemoryTable
+
+        return MemoryTable(name, DataFrame._from_pydict(data))
+
     @staticmethod
     def from_df(name: str, dataframe: DataFrame) -> Table:
         """Returns a read-only table backed by the DataFrame.
@@ -455,13 +494,17 @@ class Table(ABC):
             raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
 
     @staticmethod
-    def _from_obj(obj: object) -> Table:
+    def _from_obj(name: str, source: object) -> Table:
         """Returns a Daft Table from a supported object type or raises an error."""
-        raise ValueError(f"Unsupported table type: {type(obj)}")
-
-    ###
-    # read methods
-    ###
+        if isinstance(source, Table):
+            # we want to rename and create an immutable view from this external table
+            return Table.from_df(name, source.read())
+        elif isinstance(source, DataFrame):
+            return Table.from_df(name, source)
+        elif isinstance(source, dict):
+            return Table.from_df(name, DataFrame._from_pydict(source))
+        else:
+            raise ValueError(f"Unsupported table source {type(source)}")
 
     @abstractmethod
     def read(self) -> DataFrame:

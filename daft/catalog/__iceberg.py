@@ -34,6 +34,10 @@ class IcebergCatalog(Catalog):
             return c
         raise ValueError(f"Unsupported iceberg catalog type: {type(obj)}")
 
+    @property
+    def name(self) -> str:
+        return self._inner.name
+
     ###
     # get_*
     ###
@@ -62,6 +66,10 @@ class IcebergTable(Table):
             category=DeprecationWarning,
         )
         self._inner = inner
+
+    @property
+    def name(self) -> str:
+        return self._inner.name[-1]
 
     @staticmethod
     def _from_obj(obj: object) -> IcebergTable | None:
