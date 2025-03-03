@@ -5,9 +5,10 @@ on:
   workflow_call:
     inputs:
       daft_index_url:
-        description: The index URL of the Daft build to benchmark
+        description: The index URL of the Daft build to benchmark. If not provided, builds Daft off of the provided branch.
         type: string
         default: ''
+        required: false
 
 env:
   DAFT_INDEX_URL: ${{ inputs.daft_index_url != '' && inputs.daft_index_url || format('https://d1p3klp2t5517h.cloudfront.net/builds/dev/{0}', github.sha) }}
@@ -26,7 +27,7 @@ jobs:
   benchmark:
     needs: build
     if: ${{ !failure() && !cancelled() }}
-    runs-on: [self-hosted, linux, arm64, benchmark-local-tpch]
+    runs-on: [self-hosted, linux, arm64, bench-tpch]
     permissions:
       id-token: write
       contents: read

@@ -56,9 +56,10 @@ def run_benchmark():
     return results
 
 
-def gather_metadata():
+def get_run_metadata():
     return {
         "started at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f"),
+        "daft version": daft.__version__,
         "github ref": os.getenv("GITHUB_REF"),
         "github sha": os.getenv("GITHUB_SHA"),
     }
@@ -77,7 +78,7 @@ def upload_to_google_sheets(data):
 def main():
     daft.context.set_runner_native()
 
-    metadata = gather_metadata()
+    metadata = get_run_metadata()
 
     results = run_benchmark()
 
