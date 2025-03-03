@@ -1,5 +1,5 @@
 Data Types
-=========
+==========
 
 .. currentmodule:: daft
 

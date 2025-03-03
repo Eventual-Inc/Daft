@@ -59,7 +59,14 @@ class Session:
     ###
 
     def sql(self, sql: str) -> DataFrame:
-        """Executes the SQL statement using this session."""
+        """Executes the SQL statement using this session.
+
+        Args:
+            sql (str): input SQL statement
+
+        Returns:
+            DataFrame: new DataFrame instance from the query
+        """
         py_sess = self._session
         py_config = get_context().daft_planning_config
         py_builder = plan_sql(sql, py_sess, py_config)
@@ -69,34 +76,97 @@ class Session:
     # attach & detach
     ###
 
+    def attach(self, object: Catalog | Table, alias: str | None = None) -> None:
+        """Attaches a known attachable object like a Catalog or Table.
+
+        Args:
+            object (Catalog|Table): object which is attachable to a session
+
+        Returns:
+            None
+        """
+        if isinstance(object, Catalog):
+            self.attach_catalog(object, alias)
+        elif isinstance(object, Table):
+            self.attach_table(object, alias)
+        else:
+            raise ValueError(f"Cannot attach object with type {type(object)}")
+
     def attach_catalog(self, catalog: object | Catalog, alias: str | None = None) -> Catalog:
-        """Attaches an external catalog to this session."""
+        """Attaches an external catalog to this session.
+
+        Args:
+            catalog (object): catalog instance or supported catalog object
+            alias (str|None): optional alias for name resolution
+
+        Returns:
+            Catalog: new daft catalog instance
+        """
         if alias is None:
             raise ValueError("implicit catalog aliases are not yet supported")
         c = catalog if isinstance(catalog, Catalog) else Catalog._from_obj(catalog)
         return self._session.attach_catalog(c, alias)
 
-    def attach_table(self, table: object | Table, alias: str | None = None) -> Table:
-        """Attaches an external table to this session."""
+    def attach_table(self, table: Table | object, alias: str | None = None) -> Table:
+        """Attaches an external table instance to this session.
+
+        Args:
+            table (Table | object): table instance or supported table object
+            alias (str | None): optional alias for name resolution
+
+        Returns:
+            Table: new daft table instance
+        """
         if alias is None:
             raise ValueError("implicit table aliases are not yet supported")
         t = table if isinstance(table, Table) else Table._from_obj(table)
         return self._session.attach_table(t, alias)
 
     def detach_catalog(self, alias: str):
-        """Detaches the catalog from this session."""
+        """Detaches the catalog from this session or raises if the catalog does not exist.
+
+        Args:
+            alias (str): catalog alias to detach
+
+        Returns:
+            None
+        """
         return self._session.detach_catalog(alias)
 
     def detach_table(self, alias: str):
-        """Detaches the table from this session."""
+        """Detaches the table from this session or raises if the table does not exist.
+
+        Args:
+            alias (str): catalog alias to detach
+
+        Returns:
+            None
+        """
         return self._session.detach_table(alias)
 
     ###
     # create_*
     ###
 
-    def create_temp_table(self, identifier: str, source: object | TableSource = None) -> Table:
-        """Creates a temp table scoped to this session's lifetime."""
+    def create_temp_table(self, identifier: str, source: TableSource | object = None) -> Table:
+        """Creates a temp table scoped to this session's lifetime.
+
+        Example:
+            >>> import daft
+            >>> from daft.session import Session
+            >>> sess = Session()
+            >>> sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
+            >>> sess.create_temp_table("S", daft.from_pydict({"y": [4, 5, 6]}))
+            >>> sess.list_tables()
+            [Identifier(''T''), Identifier(''S'')]
+
+        Args:
+            identifier (str): table identifier (name)
+            source (TableSource|object): table source like a schema or dataframe
+
+        Returns:
+            Table: new table instance
+        """
         s = source if isinstance(source, TableSource) else TableSource._from_obj(source)
         return self._session.create_temp_table(identifier, s._source, replace=True)
 
@@ -105,11 +175,25 @@ class Session:
     ###
 
     def current_catalog(self) -> Catalog | None:
-        """Returns the session's current catalog or None."""
+        """Get the session's current catalog or None.
+
+        Args:
+            None
+
+        Returns:
+            Catalog: current catalog or None if one is not set
+        """
         return self._session.current_catalog()
 
     def current_namespace(self) -> Identifier | None:
-        """Returns the session's current namespace or None."""
+        """Get the session's current namespace or None.
+
+        Args:
+            None
+
+        Returns:
+            Identifier: current namespace or none if one is not set
+        """
         n = self._session.current_namespace()
         return n._ident if n else None
 
@@ -118,11 +202,31 @@ class Session:
     ###
 
     def get_catalog(self, identifier: str) -> Catalog:
-        """Returns the catalog or raises an exception if it does not exist."""
+        """Returns the catalog or raises an exception if it does not exist.
+
+        Args:
+            identifier (str): catalog identifier (name)
+
+        Returns:
+            Catalog: The catalog object.
+
+        Raises:
+            ValueError: If the catalog does not exist.
+        """
         return self._session.get_catalog(identifier)
 
     def get_table(self, identifier: Identifier | str) -> Table:
-        """Returns the table or raises an exception if it does not exist."""
+        """Returns the table or raises an exception if it does not exist.
+
+        Args:
+            identifier (Identifier|str): table identifier or identifier string
+
+        Returns:
+            Table: The table object.
+
+        Raises:
+            ValueError: If the table does not exist.
+        """
         if isinstance(identifier, str):
             identifier = Identifier(*identifier.split("."))
         return self._session.get_table(identifier._ident)
@@ -146,11 +250,28 @@ class Session:
     ###
 
     def list_catalogs(self, pattern: str | None = None) -> list[str]:
-        """Returns a list of available catalogs."""
+        """Returns a list of available catalogs matching the pattern.
+
+        This API currently returns a list of catalog names for backwards compatibility.
+        In 0.5.0 this API will return a list of Catalog objects.
+
+        Args:
+            pattern (str): catalog name pattern
+
+        Returns:
+            list[str]: list of available catalog names
+        """
         return self._session.list_catalogs(pattern)
 
     def list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        """Returns a list of available tables."""
+        """Returns a list of available tables.
+
+        Args:
+            pattern (str): table name pattern
+
+        Returns:
+            list[Identifier]: list of available tables
+        """
         return [Identifier._from_pyidentifier(i) for i in self._session.list_tables(pattern)]
 
     ###
@@ -158,7 +279,17 @@ class Session:
     ###
 
     def read_table(self, identifier: Identifier | str) -> DataFrame:
-        """Returns the table as a DataFrame or raises an exception if it does not exist."""
+        """Returns the table as a DataFrame or raises an exception if it does not exist.
+
+        Args:
+            identifier (Identifier|str): table identifier
+
+        Returns:
+            DataFrame:
+
+        Raises:
+            ValueError: If the tables odes not exist.
+        """
         return self.get_table(identifier).read()
 
     ###
@@ -166,11 +297,25 @@ class Session:
     ###
 
     def set_catalog(self, identifier: str | None):
-        """Set the given catalog as current_catalog or raises an err if it does not exist."""
+        """Set the given catalog as current_catalog or raises an err if it does not exist.
+
+        Args:
+            identifier (str): sets the current catalog
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If the catalog does not exist.
+        """
         self._session.set_catalog(identifier)
 
     def set_namespace(self, identifier: Identifier | str | None):
-        """Set the given namespace as current_namespace for table resolution."""
+        """Set the given namespace as current_namespace for table resolution.
+
+        Args:
+            identifier (Identifier | str): namespace identifier
+        """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident)
