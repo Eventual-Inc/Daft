@@ -191,7 +191,6 @@ def test_table_sign_bad_input() -> None:
         ("tan", False, False),
         ("sinh", False, False),
         ("cosh", False, False),
-        # ("tanh", False, False),
         ("arcsin", True, False),
         ("arccos", True, False),
         ("arctan", True, False),
