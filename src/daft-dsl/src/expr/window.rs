@@ -121,8 +121,14 @@ impl WindowFunction {
     }
 
     pub fn data_type(&self) -> DaftResult<DataType> {
-        // TODO: Implement data type inference for window functions
-        todo!("Implement data type inference for window functions")
+        // For basic window functions like sum, the data type is the same as the input expression
+        // TODO: For more complex window functions (rank, dense_rank, etc.), implement specific type inference
+        // based on the window function type
+
+        // Get the data type from the input expression by using to_field with an empty schema
+        let schema = Schema::empty();
+        let field = self.expr.to_field(&schema)?;
+        Ok(field.dtype)
     }
 }
 
