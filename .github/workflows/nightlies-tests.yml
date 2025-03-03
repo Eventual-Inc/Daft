@@ -1,13 +1,8 @@
-name: Verify platforms nightly wheels
+name: Test and benchmark suite on nightly build
 
 on:
-  schedule:
-  - cron: 0 13 * * *
   workflow_dispatch:
-  workflow_run:
-    workflows: [daft-publish]
-    types:
-    - completed
+  workflow_call:
 
 env:
   DAFT_ANALYTICS_ENABLED: '0'
@@ -44,7 +39,7 @@ jobs:
 
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple --force-reinstall
+        uv pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
         rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -114,7 +109,7 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple --force-reinstall
+        uv pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
         rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -155,3 +150,32 @@ jobs:
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  benchmark-local-tpch:
+    uses: ./.github/workflows/benchmark-local-tpch.yml
+    with:
+      daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly
+
+  on-local-tpch-failure:
+    name: Send Slack notification on failure
+    runs-on: ubuntu-latest
+    needs: benchmark-local-tpch
+    if: ${{ failure() }}
+
+    steps:
+    - uses: slackapi/slack-github-action@v2.0.0
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Local TPC-H benchmarks on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
