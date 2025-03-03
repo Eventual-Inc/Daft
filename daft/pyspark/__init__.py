@@ -48,8 +48,7 @@ class Builder:
             if url.startswith("ray://localhost") or url.startswith("ray://127.0.0.1"):
                 daft.context.set_runner_ray(noop_if_initialized=True)
             else:
-                address = url.split("ray://")[1]
-                daft.context.set_runner_ray(address=address, noop_if_initialized=True)
+                daft.context.set_runner_ray(address=url, noop_if_initialized=True)
             self._connection = connect_start()
             url = f"sc://0.0.0.0:{self._connection.port()}"
             self._builder = PySparkSession.builder.remote(url)
