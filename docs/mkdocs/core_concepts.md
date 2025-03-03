@@ -1403,25 +1403,36 @@ Daft can read data from a variety of sources, and write data to many destination
 
 ## Built-in Functions
 
-Daft provides built-in functions for common data operations. One such function is [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique IDs to rows in a DataFrame, especially useful in distributed settings.
+Daft provides built-in functions for common data operations. One such function is [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
 
----
-
-### `monotonically_increasing_id()`
-
-This function generates unique, increasing IDs by:
-- Using the **upper 28 bits** for the partition number.
-- Using the **lower 36 bits** for the row number within each partition.
+- Using the **upper 28 bits** for the partition number
+- Using the **lower 36 bits** for the row number within each partition
 
 This allows for:
-- Up to **268 million partitions**.
-- Up to **68 billion rows per partition**.
 
----
+- Up to **268 million partitions**
+- Up to **68 billion rows per partition**
+
+
+### Use Cases
+
+1. **Unique IDs in Distributed DataFrames**: Ensures unique IDs across partitions without coordination.
+
+2. **Tracking Row Order**: Useful after sorting or joining to track original row positions.
+
+3. **Ensuring Uniqueness**: Guarantees unique IDs even in large, distributed datasets.
+
+!!! note "Note"
+
+    The `NativeRunner` does not support repartitioning. If you attempt to use [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) with the `NativeRunner`, it will assign sequential IDs without considering partitions. For distributed workloads, always use the `RayRunner`:
+
+    ```python
+    daft.context.set_runner_ray()
+    ```
 
 #### Example: Assigning Unique IDs
 
-To use `monotonically_increasing_id()` effectively, ensure you're using the **RayRunner**, as the NativeRunner does not support repartitioning.
+To use [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) effectively, ensure you're using the `RayRunner`, as the `NativeRunner` does not support repartitioning.
 
 ```python
 import daft
@@ -1456,10 +1467,9 @@ df.show()
 ```
 
 **What Happened?**
-- Rows in the first partition get IDs `0` and `1`.
-- Rows in the second partition start at `2^36` (`68719476736`).
 
----
+- Rows in the first partition get IDs `0` and `1`
+- Rows in the second partition start at `2^36` (`68719476736`)
 
 #### Example: Filtering by ID
 
@@ -1482,34 +1492,6 @@ df.show()
 │ 4     ┆ 68719476737 │
 ╰───────┴─────────────╯
 ```
-
----
-
-### Use Cases
-1. **Unique IDs in Distributed DataFrames**:
-   - Ensures unique IDs across partitions without coordination.
-
-2. **Tracking Row Order**:
-   - Useful after sorting or joining to track original row positions.
-
-3. **Ensuring Uniqueness**:
-   - Guarantees unique IDs even in large, distributed datasets.
-
----
-
-### Important Note: NativeRunner Limitation
-
-The **NativeRunner** does not support repartitioning. If you attempt to use `monotonically_increasing_id()` with the NativeRunner, it will assign sequential IDs without considering partitions. For distributed workloads, always use the **RayRunner**:
-
-```python
-daft.context.set_runner_ray()
-```
-
----
-
-### Summary
-
-The [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) function is a simple yet powerful tool for generating unique IDs in distributed DataFrames. Use it to track row order, ensure uniqueness, or combine with other expressions for advanced transformations. **Remember to use the RayRunner for distributed workloads.**
 
 ## Reading Data
 
