@@ -3,9 +3,9 @@ use daft_functions::numeric::{
     abs::Abs,
     cbrt::Cbrt,
     ceil::Ceil,
-    exp::Exp,
+    exp::{Exp, Expm1},
     floor::Floor,
-    log::{log, Ln, Log10, Log2},
+    log::{log, Ln, Log10, Log1p, Log2},
     round::round,
     sqrt::Sqrt,
     trigonometry::{
@@ -47,16 +47,16 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("csc", Csc {});
         parent.add_fn("e", TODO_FUNCTION);
         parent.add_fn("exp", Exp {});
-        parent.add_fn("expm1", TODO_FUNCTION);
+        parent.add_fn("expm1", Expm1 {});
         parent.add_fn("factorial", TODO_FUNCTION);
         parent.add_fn("floor", Floor {});
         parent.add_fn("hex", TODO_FUNCTION);
         parent.add_fn("unhex", TODO_FUNCTION);
         parent.add_fn("hypot", TODO_FUNCTION);
         parent.add_fn("ln", Ln {});
-        parent.add_fn("log", LogFunction);
+        parent.add_fn("log", LogFunction {});
         parent.add_fn("log10", Log10 {});
-        parent.add_fn("log1p", TODO_FUNCTION);
+        parent.add_fn("log1p", Log1p {});
         parent.add_fn("log2", Log2 {});
         parent.add_fn("negate", TODO_FUNCTION);
         parent.add_fn("negative", TODO_FUNCTION);

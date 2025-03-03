@@ -291,8 +291,16 @@ impl PySeries {
         Ok(self.series.ln()?.into())
     }
 
+    pub fn log1p(&self) -> PyResult<Self> {
+        Ok(self.series.log1p()?.into())
+    }
+
     pub fn exp(&self) -> PyResult<Self> {
         Ok(self.series.exp()?.into())
+    }
+
+    pub fn expm1(&self) -> PyResult<Self> {
+        Ok(self.series.expm1()?.into())
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {

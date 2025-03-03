@@ -62,6 +62,8 @@ Numeric
     Expression.sin
     Expression.cos
     Expression.tan
+    Expression.csc
+    Expression.sec
     Expression.cot
     Expression.arcsin
     Expression.arccos
@@ -76,7 +78,9 @@ Numeric
     Expression.log10
     Expression.log
     Expression.ln
+    Expression.log1p
     Expression.exp
+    Expression.expm1
     Expression.shift_left
     Expression.shift_right
 
