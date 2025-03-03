@@ -1403,7 +1403,7 @@ Daft can read data from a variety of sources, and write data to many destination
 
 ## Built-in Functions
 
-Daft provides built-in functions for common data operations. One such function is [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
+Daft provides built-in functions for common data operations. Currently, we support [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
 
 - Using the **upper 28 bits** for the partition number
 - Using the **lower 36 bits** for the row number within each partition
