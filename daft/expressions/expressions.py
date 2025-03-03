@@ -788,6 +788,21 @@ class Expression:
         expr = native.cot(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def sinh(self) -> Expression:
+        """The elementwise hyperbolic sine of a numeric expression."""
+        expr = native.sinh(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def cosh(self) -> Expression:
+        """The elementwise hyperbolic cosine of a numeric expression."""
+        expr = native.cosh(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def tanh(self) -> Expression:
+        """The elementwise hyperbolic tangent of a numeric expression."""
+        expr = native.tanh(self._expr)
+        return Expression._from_pyexpr(expr)
+
     def arcsin(self) -> Expression:
         """The elementwise arc sine of a numeric expression."""
         expr = native.arcsin(self._expr)

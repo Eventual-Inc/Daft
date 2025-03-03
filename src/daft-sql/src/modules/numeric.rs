@@ -10,8 +10,8 @@ use daft_functions::numeric::{
     sign::sign,
     sqrt::sqrt,
     trigonometry::{
-        arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cot, csc, degrees, radians,
-        sec, sin, tan,
+        arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cosh, cot, csc, degrees,
+        radians, sec, sin, sinh, tan, tanh,
     },
 };
 
@@ -40,6 +40,9 @@ impl SQLModule for SQLModuleNumeric {
         parent.add_fn("csc", SQLNumericExpr::Csc);
         parent.add_fn("sec", SQLNumericExpr::Sec);
         parent.add_fn("cot", SQLNumericExpr::Cot);
+        parent.add_fn("sinh", SQLNumericExpr::Sinh);
+        parent.add_fn("cosh", SQLNumericExpr::Cosh);
+        parent.add_fn("tanh", SQLNumericExpr::Tanh);
         parent.add_fn("asin", SQLNumericExpr::ArcSin);
         parent.add_fn("acos", SQLNumericExpr::ArcCos);
         parent.add_fn("atan", SQLNumericExpr::ArcTan);
@@ -71,6 +74,9 @@ enum SQLNumericExpr {
     Csc,
     Sec,
     Cot,
+    Sinh,
+    Cosh,
+    Tanh,
     ArcSin,
     ArcCos,
     ArcTan,
@@ -112,6 +118,9 @@ impl SQLFunction for SQLNumericExpr {
             Self::Csc => "Calculates the cosecant of an angle in radians.",
             Self::Sec => "Calculates the secant of an angle in radians.",
             Self::Cot => "Calculates the cotangent of an angle in radians.",
+            Self::Sinh => "Calculates the hyperbolic sine of an angle in radians.",
+            Self::Cosh => "Calculates the hyperbolic cosine of an angle in radians.",
+            Self::Tanh => "Calculates the hyperbolic tangent of an angle in radians.",
             Self::ArcSin => "Calculates the inverse sine (arc sine) of a number.",
             Self::ArcCos => "Calculates the inverse cosine (arc cosine) of a number.",
             Self::ArcTan => "Calculates the inverse tangent (arc tangent) of a number.",
@@ -144,6 +153,9 @@ impl SQLFunction for SQLNumericExpr {
             | Self::Csc
             | Self::Sec
             | Self::Cot
+            | Self::Sinh
+            | Self::Cosh
+            | Self::Tanh
             | Self::ArcSin
             | Self::ArcCos
             | Self::ArcTan
@@ -232,6 +244,18 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
         SQLNumericExpr::Cot => {
             ensure!(args.len() == 1, "cot takes exactly one argument");
             Ok(cot(args[0].clone()))
+        }
+        SQLNumericExpr::Sinh => {
+            ensure!(args.len() == 1, "sinh takes exactly one argument");
+            Ok(sinh(args[0].clone()))
+        }
+        SQLNumericExpr::Cosh => {
+            ensure!(args.len() == 1, "cosh takes exactly one argument");
+            Ok(cosh(args[0].clone()))
+        }
+        SQLNumericExpr::Tanh => {
+            ensure!(args.len() == 1, "tanh takes exactly one argument");
+            Ok(tanh(args[0].clone()))
         }
         SQLNumericExpr::ArcSin => {
             ensure!(args.len() == 1, "asin takes exactly one argument");

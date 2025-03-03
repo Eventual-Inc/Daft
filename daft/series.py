@@ -346,6 +346,18 @@ class Series:
         """The elementwise cotangent of a numeric series."""
         return Series._from_pyseries(self._series.cot())
 
+    def sinh(self) -> Series:
+        """The elementwise hyperbolic sine of a numeric series."""
+        return Series._from_pyseries(self._series.sinh())
+
+    def cosh(self) -> Series:
+        """The elementwise hyperbolic cosine of a numeric series."""
+        return Series._from_pyseries(self._series.cosh())
+
+    def tanh(self) -> Series:
+        """The elementwise hyperbolic tangent of a numeric series."""
+        return Series._from_pyseries(self._series.tanh())
+
     def arcsin(self) -> Series:
         """The elementwise arc sine of a numeric series."""
         return Series._from_pyseries(self._series.arcsin())
