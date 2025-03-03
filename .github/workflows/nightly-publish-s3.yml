@@ -108,3 +108,4 @@ jobs:
     name: Run tests on nightly build
     needs: publish
     uses: ./.github/workflows/nightlies-tests.yml
+    secrets: inherit

@@ -155,6 +155,7 @@ jobs:
     uses: ./.github/workflows/benchmark-local-tpch.yml
     with:
       daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly
+    secrets: inherit
 
   on-local-tpch-failure:
     name: Send Slack notification on failure
