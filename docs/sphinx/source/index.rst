@@ -10,6 +10,7 @@ Welcome to Daft API Documentation. For Daft User Guide, head to `User Guide <../
    dataframe
    sql
    expressions
+   functions
    schema
    datatype
    groupby
