@@ -115,8 +115,5 @@ class UnityTable(Table):
     # write methods
     ###
 
-    def append(self, df: DataFrame, **options) -> None:
-        return df.write_deltalake(self._inner, mode="append")
-
-    def overwrite(self, df: DataFrame, **options) -> None:
-        return df.write_deltalake(self._inner, mode="overwrite")
+    def write(self, df: DataFrame | object, mode: str = "append", **options):
+        return df.write_deltalake(self._inner, mode=mode)

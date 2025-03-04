@@ -226,7 +226,7 @@ class Session:
             ValueError: If the table does not exist.
         """
         if isinstance(identifier, str):
-            identifier = Identifier(*identifier.split("."))
+            identifier = Identifier.from_str(identifier)
         return self._session.get_table(identifier._ident)
 
     ###
@@ -317,6 +317,15 @@ class Session:
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident)
+
+    ###
+    # write_*
+    ###
+
+    def write_table(self, identifier: Identifier | str, df: DataFrame | object, mode: str = "append", **options):
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+        self._session.get_table(identifier._ident).write(df, mode=mode, **options)
 
 
 ###
@@ -445,9 +454,21 @@ def list_tables(pattern: None | str = None) -> list[Identifier]:
 ###
 
 
-def read_table(identifier: Identifier | str) -> DataFrame:
+def read_table(identifier: Identifier | str, **options) -> DataFrame:
     """Returns the table as a DataFrame or raises an exception if it does not exist."""
-    return _session().get_table(identifier).read()
+    return _session().get_table(identifier).read(**options)
+
+
+###
+# write_*
+###
+
+
+def write_table(identifier: Identifier | str, df: DataFrame | object, mode: str = "append", **options):
+    """Writes the DataFrame to the table specified with the identifier."""
+    if isinstance(identifier, str):
+        identifier = Identifier.from_str(identifier)
+    _session().get_table(identifier._ident).write(df, mode=mode, **options)
 
 
 ###

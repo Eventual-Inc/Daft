@@ -91,8 +91,5 @@ class IcebergTable(Table):
     def read(self, **options) -> DataFrame:
         return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
 
-    def append(self, df: DataFrame, **options) -> None:
-        df.write_iceberg(self._inner, mode="append")
-
-    def overwrite(self, df: DataFrame, **options) -> None:
-        df.write_iceberg(self._inner, mode="overwrite")
+    def write(self, df: DataFrame | object, mode: str = "append", **options):
+        df.write_iceberg(self._inner, mode=mode)

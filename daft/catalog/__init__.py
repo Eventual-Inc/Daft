@@ -319,7 +319,25 @@ class Catalog(ABC):
             Table: matched table or raises if the table does not exist.
         """
 
+    ###
+    # read_*
+    ###
+
+    def read_table(self, identifier: Identifier | str, **options) -> DataFrame:
+        """Returns the table as a DataFrame or raises an exception if it does not exist."""
+        return self.get_table(identifier).read(**options)
+
+    ###
+    # write_*
+    ###
+
+    def write_table(self, identifier: Identifier | str, df: DataFrame | object, mode: str = "append", **options):
+        return self.get_table(identifier).write(df, mode=mode, **options)
+
+    ###
     # TODO deprecated catalog APIs #3819
+    ###
+
     def load_table(self, name: str) -> Table:
         """DEPRECATED: Please use `get_table` instead; version=0.5.0!"""
         warnings.warn(
@@ -558,16 +576,23 @@ class Table(ABC):
     ###
 
     @abstractmethod
+    def write(self, df: DataFrame, mode: str = "append", **options) -> None:
+        """Writes the DataFrame to this table.
+
+        Args:
+            df (DataFrame): datafram to write
+            mode (str): write mode such as 'append' or 'overwrite'
+            **options: additional format-dependent write options
+        """
+
     def append(self, df: DataFrame, **options) -> None:
         """Appends the DataFrame to this table.
 
         Args:
             df (DataFrame): dataframe to append
             **options: additional format-dependent write options
-
-        Returns:
-            None
         """
+        self.write(df, mode="append", **options)
 
     @abstractmethod
     def overwrite(self, df: DataFrame, **options) -> None:
@@ -576,10 +601,8 @@ class Table(ABC):
         Args:
             df (DataFrame): dataframe to overwrite this table with
             **options: additional format-dependent write options
-
-        Returns:
-            None
         """
+        self.write(df, mode="overwrite", **options)
 
     ###
     # TODO deprecated catalog APIs #3819

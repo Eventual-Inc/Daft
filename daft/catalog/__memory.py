@@ -73,8 +73,5 @@ class MemoryTable(Table):
     # write methods
     ###
 
-    def append(self, df: DataFrame, **options) -> None:
-        raise ValueError("Writes to in-memory tables are not yet supported.")
-
-    def overwrite(self, df: DataFrame, **options) -> None:
+    def write(self, df: DataFrame | object, mode: str = "append", **options):
         raise ValueError("Writes to in-memory tables are not yet supported.")
