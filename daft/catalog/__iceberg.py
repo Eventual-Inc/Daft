@@ -53,8 +53,9 @@ class IcebergCatalog(Catalog):
             raise Exception(f"Unknown table source: {source}")
 
     def _create_table_from_df(self, ident: Identifier | str, source: DataFrame) -> Table:
-        t = self._create_table_from_schema(ident, source.schema())
-        t.append(source)
+        # t = self._create_table_from_schema(ident, source.schema())
+        # t.append(source)
+        raise ValueError("create table from source not yet supported")
 
     def _create_table_from_path(self, ident: Identifier | str, source: str) -> Table:
         raise ValueError("table from path not yet supported")
@@ -123,6 +124,3 @@ class IcebergTable(Table):
 
     def read(self) -> DataFrame:
         return read_iceberg(self._inner)
-
-    def write(self, df: DataFrame | object, mode: str = "append"):
-        return df.write_iceberg(self._inner, mode=mode)

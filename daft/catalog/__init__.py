@@ -286,7 +286,10 @@ class Catalog(ABC):
         """Returns the table as a DataFrame or raises an exception if it does not exist."""
         return self.get_table(identifier).read()
 
+    ###
     # TODO deprecated catalog APIs #3819
+    ###
+
     def load_table(self, name: str) -> Table:
         """DEPRECATED: Please use `get_table` instead; version=0.5.0!"""
         warnings.warn(
@@ -294,13 +297,6 @@ class Catalog(ABC):
             category=DeprecationWarning,
         )
         return self.get_table(name)
-
-    ###
-    # write_*
-    ###
-
-    def write_table(self, identifier: Identifier | str, df: DataFrame | object, mode: str = "append"):
-        return self.get_table(identifier).write(df, mode=mode)
 
 
 class Identifier(Sequence):

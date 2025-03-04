@@ -113,6 +113,3 @@ class UnityTable(Table):
 
     def read(self) -> DataFrame:
         return read_deltalake(self._inner)
-
-    def write(self, df: DataFrame | object, mode: str = "append"):
-        return df.write_deltalake(self._inner, mode=mode)

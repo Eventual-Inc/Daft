@@ -192,15 +192,6 @@ class Session:
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident)
 
-    ###
-    # write_*
-    ###
-
-    def write_table(self, identifier: Identifier | str, df: DataFrame | object, mode: str = "append"):
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
-        self._session.get_table(identifier._ident).write(df, mode=mode)
-
 
 ###
 # global active session
@@ -373,14 +364,3 @@ def set_session(session: Session):
     # ```
     global _SESSION
     _SESSION = session
-
-
-###
-# write_*
-###
-
-
-def write_table(identifier: Identifier | str, df: DataFrame | object, mode: str = "append"):
-    if isinstance(identifier, str):
-        identifier = Identifier.from_str(identifier)
-    _session().get_table(identifier._ident).write(df, mode=mode)
