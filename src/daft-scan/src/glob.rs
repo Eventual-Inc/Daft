@@ -271,6 +271,11 @@ impl GlobScanOperator {
                         .await?;
                         (schema, None)
                     }
+                    FileFormatConfig::Warc(_) => {
+                        return Err(DaftError::ValueError(
+                            "Warc schemas do not need to be inferred".to_string(),
+                        ))
+                    }
                     #[cfg(feature = "python")]
                     FileFormatConfig::Database(_) => {
                         return Err(DaftError::ValueError(

@@ -94,4 +94,27 @@ impl Series {
             ))),
         }
     }
+
+    pub fn log1p(&self) -> DaftResult<Self> {
+        use crate::series::array_impl::IntoSeries;
+        match self.data_type() {
+            DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64 => {
+                let s = self.cast(&DataType::Float64)?;
+                Ok(s.f64()?.log1p()?.into_series())
+            }
+            DataType::Float32 => Ok(self.f32()?.log1p()?.into_series()),
+            DataType::Float64 => Ok(self.f64()?.log1p()?.into_series()),
+            dt => Err(DaftError::TypeError(format!(
+                "log1p not implemented for {}",
+                dt
+            ))),
+        }
+    }
 }

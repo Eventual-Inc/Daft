@@ -103,3 +103,8 @@ jobs:
           }
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
+
+  tests:
+    name: Run tests on nightly build
+    needs: publish
+    uses: ./.github/workflows/nightlies-tests.yml

@@ -66,7 +66,12 @@ macro_rules! trigonometry {
 trigonometry!(sin, Sin);
 trigonometry!(cos, Cos);
 trigonometry!(tan, Tan);
+trigonometry!(csc, Csc);
+trigonometry!(sec, Sec);
 trigonometry!(cot, Cot);
+trigonometry!(sinh, Sinh);
+trigonometry!(cosh, Cosh);
+trigonometry!(tanh, Tanh);
 trigonometry!(arcsin, ArcSin);
 trigonometry!(arccos, ArcCos);
 trigonometry!(arctan, ArcTan);

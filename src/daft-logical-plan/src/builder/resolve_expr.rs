@@ -12,6 +12,13 @@ use typed_builder::TypedBuilder;
 
 use crate::LogicalPlanRef;
 
+fn contains_monotonic_id(expr: &ExprRef) -> bool {
+    expr.exists(|e| match e.as_ref() {
+        Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
+        _ => false,
+    })
+}
+
 /// Duplicate an expression tree for each wildcard match in a column or struct get.
 fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
     let mut wildcard_expansion = None;
@@ -191,6 +198,8 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
 pub struct ExprResolver<'a> {
     #[builder(default)]
     allow_actor_pool_udf: bool,
+    #[builder(default)]
+    allow_monotonic_id: bool,
     #[builder(via_mutators, mutators(
         pub fn in_agg_context(&mut self, in_agg_context: bool) {
             // workaround since typed_builder can't have defaults for mutator requirements
@@ -213,6 +222,12 @@ impl<'a> ExprResolver<'a> {
             return Err(DaftError::ValueError(format!(
                 "UDFs with concurrency set are only allowed in projections: {expr}"
             )));
+        }
+
+        if !self.allow_monotonic_id && contains_monotonic_id(&expr) {
+            return Err(DaftError::ValueError(
+                "monotonically_increasing_id() is only allowed in projections".to_string(),
+            ));
         }
 
         expand_wildcard(expr, plan.clone())?

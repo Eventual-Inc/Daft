@@ -3,15 +3,15 @@ use daft_functions::numeric::{
     abs::abs,
     ceil::ceil,
     clip::clip,
-    exp::exp,
+    exp::{exp, expm1},
     floor::floor,
-    log::{ln, log, log10, log2},
+    log::{ln, log, log10, log1p, log2},
     round::round,
     sign::sign,
     sqrt::sqrt,
     trigonometry::{
-        arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cot, degrees, radians, sin,
-        tan,
+        arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cosh, cot, csc, degrees,
+        radians, sec, sin, sinh, tan, tanh,
     },
 };
 
@@ -37,7 +37,12 @@ impl SQLModule for SQLModuleNumeric {
         parent.add_fn("sin", SQLNumericExpr::Sin);
         parent.add_fn("cos", SQLNumericExpr::Cos);
         parent.add_fn("tan", SQLNumericExpr::Tan);
+        parent.add_fn("csc", SQLNumericExpr::Csc);
+        parent.add_fn("sec", SQLNumericExpr::Sec);
         parent.add_fn("cot", SQLNumericExpr::Cot);
+        parent.add_fn("sinh", SQLNumericExpr::Sinh);
+        parent.add_fn("cosh", SQLNumericExpr::Cosh);
+        parent.add_fn("tanh", SQLNumericExpr::Tanh);
         parent.add_fn("asin", SQLNumericExpr::ArcSin);
         parent.add_fn("acos", SQLNumericExpr::ArcCos);
         parent.add_fn("atan", SQLNumericExpr::ArcTan);
@@ -48,7 +53,9 @@ impl SQLModule for SQLModuleNumeric {
         parent.add_fn("log10", SQLNumericExpr::Log10);
         parent.add_fn("log", SQLNumericExpr::Log);
         parent.add_fn("ln", SQLNumericExpr::Ln);
+        parent.add_fn("log1p", SQLNumericExpr::Log1p);
         parent.add_fn("exp", SQLNumericExpr::Exp);
+        parent.add_fn("expm1", SQLNumericExpr::Expm1);
         parent.add_fn("atanh", SQLNumericExpr::ArcTanh);
         parent.add_fn("acosh", SQLNumericExpr::ArcCosh);
         parent.add_fn("asinh", SQLNumericExpr::ArcSinh);
@@ -58,6 +65,7 @@ enum SQLNumericExpr {
     Abs,
     Ceil,
     Exp,
+    Expm1,
     Floor,
     Round,
     Clip,
@@ -66,7 +74,12 @@ enum SQLNumericExpr {
     Sin,
     Cos,
     Tan,
+    Csc,
+    Sec,
     Cot,
+    Sinh,
+    Cosh,
+    Tanh,
     ArcSin,
     ArcCos,
     ArcTan,
@@ -77,6 +90,7 @@ enum SQLNumericExpr {
     Log2,
     Log10,
     Ln,
+    Log1p,
     ArcTanh,
     ArcCosh,
     ArcSinh,
@@ -97,6 +111,7 @@ impl SQLFunction for SQLNumericExpr {
             Self::Abs => "Gets the absolute value of a number.",
             Self::Ceil => "Rounds a number up to the nearest integer.",
             Self::Exp => "Calculates the exponential of a number (e^x).",
+            Self::Expm1 => "Calculates the exponential of a number minus one (e^x - 1).",
             Self::Floor => "Rounds a number down to the nearest integer.",
             Self::Round => "Rounds a number to a specified number of decimal places.",
             Self::Clip => "Clips a number to a specified range. If left bound is None, no lower clipping is applied. If right bound is None, no upper clipping is applied. Panics if right bound < left bound.",
@@ -105,7 +120,12 @@ impl SQLFunction for SQLNumericExpr {
             Self::Sin => "Calculates the sine of an angle in radians.",
             Self::Cos => "Calculates the cosine of an angle in radians.",
             Self::Tan => "Calculates the tangent of an angle in radians.",
+            Self::Csc => "Calculates the cosecant of an angle in radians.",
+            Self::Sec => "Calculates the secant of an angle in radians.",
             Self::Cot => "Calculates the cotangent of an angle in radians.",
+            Self::Sinh => "Calculates the hyperbolic sine of an angle in radians.",
+            Self::Cosh => "Calculates the hyperbolic cosine of an angle in radians.",
+            Self::Tanh => "Calculates the hyperbolic tangent of an angle in radians.",
             Self::ArcSin => "Calculates the inverse sine (arc sine) of a number.",
             Self::ArcCos => "Calculates the inverse cosine (arc cosine) of a number.",
             Self::ArcTan => "Calculates the inverse tangent (arc tangent) of a number.",
@@ -114,10 +134,11 @@ impl SQLFunction for SQLNumericExpr {
             }
             Self::Radians => "Converts an angle from degrees to radians.",
             Self::Degrees => "Converts an angle from radians to degrees.",
-            Self::Log => "Calculates the natural logarithm of a number.",
+            Self::Log => "Calculates the first argument-based logarithm of the second argument log_x(y).",
             Self::Log2 => "Calculates the base-2 logarithm of a number.",
             Self::Log10 => "Calculates the base-10 logarithm of a number.",
             Self::Ln => "Calculates the natural logarithm of a number.",
+            Self::Log1p => "Calculates the natural logarithm of a number plus one (ln(x + 1)).",
             Self::ArcTanh => "Calculates the inverse hyperbolic tangent of a number.",
             Self::ArcCosh => "Calculates the inverse hyperbolic cosine of a number.",
             Self::ArcSinh => "Calculates the inverse hyperbolic sine of a number.",
@@ -135,7 +156,12 @@ impl SQLFunction for SQLNumericExpr {
             | Self::Sin
             | Self::Cos
             | Self::Tan
+            | Self::Csc
+            | Self::Sec
             | Self::Cot
+            | Self::Sinh
+            | Self::Cosh
+            | Self::Tanh
             | Self::ArcSin
             | Self::ArcCos
             | Self::ArcTan
@@ -144,12 +170,14 @@ impl SQLFunction for SQLNumericExpr {
             | Self::Log2
             | Self::Log10
             | Self::Ln
+            | Self::Log1p
+            | Self::Exp
+            | Self::Expm1
             | Self::ArcTanh
             | Self::ArcCosh
             | Self::ArcSinh => &["input"],
             Self::Log => &["input", "base"],
             Self::Round => &["input", "precision"],
-            Self::Exp => &["input", "exponent"],
             Self::ArcTan2 => &["y", "x"],
             Self::Clip => &["input", "min", "max"],
         }
@@ -213,9 +241,29 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
             ensure!(args.len() == 1, "tan takes exactly one argument");
             Ok(tan(args[0].clone()))
         }
+        SQLNumericExpr::Csc => {
+            ensure!(args.len() == 1, "csc takes exactly one argument");
+            Ok(csc(args[0].clone()))
+        }
+        SQLNumericExpr::Sec => {
+            ensure!(args.len() == 1, "sec takes exactly one argument");
+            Ok(sec(args[0].clone()))
+        }
         SQLNumericExpr::Cot => {
             ensure!(args.len() == 1, "cot takes exactly one argument");
             Ok(cot(args[0].clone()))
+        }
+        SQLNumericExpr::Sinh => {
+            ensure!(args.len() == 1, "sinh takes exactly one argument");
+            Ok(sinh(args[0].clone()))
+        }
+        SQLNumericExpr::Cosh => {
+            ensure!(args.len() == 1, "cosh takes exactly one argument");
+            Ok(cosh(args[0].clone()))
+        }
+        SQLNumericExpr::Tanh => {
+            ensure!(args.len() == 1, "tanh takes exactly one argument");
+            Ok(tanh(args[0].clone()))
         }
         SQLNumericExpr::ArcSin => {
             ensure!(args.len() == 1, "asin takes exactly one argument");
@@ -253,6 +301,10 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
             ensure!(args.len() == 1, "ln takes exactly one argument");
             Ok(ln(args[0].clone()))
         }
+        SQLNumericExpr::Log1p => {
+            ensure!(args.len() == 1, "log1p takes exactly one argument");
+            Ok(log1p(args[0].clone()))
+        }
         SQLNumericExpr::Log => {
             ensure!(args.len() == 2, "log takes exactly two arguments");
             let base = args[1]
@@ -278,6 +330,10 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
         SQLNumericExpr::Exp => {
             ensure!(args.len() == 1, "exp takes exactly one argument");
             Ok(exp(args[0].clone()))
+        }
+        SQLNumericExpr::Expm1 => {
+            ensure!(args.len() == 1, "expm1 takes exactly one argument");
+            Ok(expm1(args[0].clone()))
         }
         SQLNumericExpr::ArcTanh => {
             ensure!(args.len() == 1, "atanh takes exactly one argument");

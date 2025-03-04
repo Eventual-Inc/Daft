@@ -311,6 +311,7 @@ impl DataType {
             FixedSizeList(child_dtype, size) => {
                 FixedSizeList(Box::new(child_dtype.to_physical()), *size)
             }
+            Struct(fields) => Struct(fields.iter().map(|field| field.to_physical()).collect()),
             Map { key, value } => List(Box::new(Struct(vec![
                 Field::new("key", key.to_physical()),
                 Field::new("value", value.to_physical()),

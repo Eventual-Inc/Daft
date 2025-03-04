@@ -85,7 +85,7 @@ class Series:
         # Workaround: wrap list of np.datetime64 in an np.array
         #   - https://github.com/apache/arrow/issues/40580
         #   - https://github.com/Eventual-Inc/Daft/issues/3826
-        if data and isinstance(data[0], np.datetime64):
+        if data and np.module_available() and isinstance(data[0], np.datetime64):
             data = np.array(data)
 
         try:
@@ -334,9 +334,29 @@ class Series:
         """The elementwise tangent of a numeric series."""
         return Series._from_pyseries(self._series.tan())
 
+    def csc(self) -> Series:
+        """The elementwise cosecant of a numeric series."""
+        return Series._from_pyseries(self._series.csc())
+
+    def sec(self) -> Series:
+        """The elementwise secant of a numeric series."""
+        return Series._from_pyseries(self._series.sec())
+
     def cot(self) -> Series:
         """The elementwise cotangent of a numeric series."""
         return Series._from_pyseries(self._series.cot())
+
+    def sinh(self) -> Series:
+        """The elementwise hyperbolic sine of a numeric series."""
+        return Series._from_pyseries(self._series.sinh())
+
+    def cosh(self) -> Series:
+        """The elementwise hyperbolic cosine of a numeric series."""
+        return Series._from_pyseries(self._series.cosh())
+
+    def tanh(self) -> Series:
+        """The elementwise hyperbolic tangent of a numeric series."""
+        return Series._from_pyseries(self._series.tanh())
 
     def arcsin(self) -> Series:
         """The elementwise arc sine of a numeric series."""
@@ -396,9 +416,17 @@ class Series:
         """The elementwise ln of a numeric series."""
         return Series._from_pyseries(self._series.ln())
 
+    def log1p(self) -> Series:
+        """The ln(self + 1) of a numeric series."""
+        return Series._from_pyseries(self._series.log1p())
+
     def exp(self) -> Series:
         """The e^self of a numeric series."""
         return Series._from_pyseries(self._series.exp())
+
+    def expm1(self) -> Series:
+        """The e^self - 1 of a numeric series."""
+        return Series._from_pyseries(self._series.expm1())
 
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):

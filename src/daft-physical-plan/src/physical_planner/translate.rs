@@ -466,6 +466,9 @@ pub(super) fn translate_single_logical_node(
                         FileFormat::Python => Err(common_error::DaftError::ValueError(
                             "Cannot write to PythonFunction file format".to_string(),
                         )),
+                        FileFormat::Warc => Err(common_error::DaftError::ValueError(
+                            "Warc sink not yet implemented".to_string(),
+                        )),
                     }
                 }
                 #[cfg(feature = "python")]

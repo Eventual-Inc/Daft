@@ -194,10 +194,45 @@ impl PySeries {
             .into())
     }
 
+    pub fn csc(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Csc)?
+            .into())
+    }
+
+    pub fn sec(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Sec)?
+            .into())
+    }
+
     pub fn cot(&self) -> PyResult<Self> {
         Ok(self
             .series
             .trigonometry(&TrigonometricFunction::Cot)?
+            .into())
+    }
+
+    pub fn sinh(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Sinh)?
+            .into())
+    }
+
+    pub fn cosh(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Cosh)?
+            .into())
+    }
+
+    pub fn tanh(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Tanh)?
             .into())
     }
 
@@ -277,8 +312,16 @@ impl PySeries {
         Ok(self.series.ln()?.into())
     }
 
+    pub fn log1p(&self) -> PyResult<Self> {
+        Ok(self.series.log1p()?.into())
+    }
+
     pub fn exp(&self) -> PyResult<Self> {
         Ok(self.series.exp()?.into())
+    }
+
+    pub fn expm1(&self) -> PyResult<Self> {
+        Ok(self.series.expm1()?.into())
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {

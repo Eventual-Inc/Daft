@@ -1047,6 +1047,7 @@ def _build_partitions(
             *task.inputs,
         )
 
+    task.inputs.clear()
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result(
         [
@@ -1177,6 +1178,11 @@ class RayRunner(Runner[ray.ObjectRef]):
         force_client_mode: bool = False,
     ) -> None:
         super().__init__()
+
+        # ray.init does not accept "ray://" prefix for some reason.
+        # We remove it here to avoid issues.
+        if address is not None and address.startswith("ray://"):
+            address = address.replace("ray://", "")
 
         self.ray_address = address
 

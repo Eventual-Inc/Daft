@@ -174,6 +174,15 @@ def test_repr_functions_ln() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_log1p() -> None:
+    a = col("a")
+    y = a.log1p()
+    repr_out = repr(y)
+    assert repr_out == "log1p(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_shift_left() -> None:
     a = col("a")
     b = col("b")
@@ -200,7 +209,12 @@ def test_repr_functions_shift_right() -> None:
         "sin",
         "cos",
         "tan",
+        "csc",
+        "sec",
         "cot",
+        "sinh",
+        "cosh",
+        "tanh",
         "arcsin",
         "arccos",
         "arctan",
@@ -295,6 +309,15 @@ def test_repr_functions_exp() -> None:
     y = a.exp()
     repr_out = repr(y)
     assert repr_out == "exp(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_expm1() -> None:
+    a = col("a")
+    y = a.expm1()
+    repr_out = repr(y)
+    assert repr_out == "expm1(col(a))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 

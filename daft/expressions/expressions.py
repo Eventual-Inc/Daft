@@ -773,9 +773,34 @@ class Expression:
         expr = native.tan(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def csc(self) -> Expression:
+        """The elementwise cosecant of a numeric expression."""
+        expr = native.csc(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def sec(self) -> Expression:
+        """The elementwise secant of a numeric expression."""
+        expr = native.sec(self._expr)
+        return Expression._from_pyexpr(expr)
+
     def cot(self) -> Expression:
         """The elementwise cotangent of a numeric expression."""
         expr = native.cot(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def sinh(self) -> Expression:
+        """The elementwise hyperbolic sine of a numeric expression."""
+        expr = native.sinh(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def cosh(self) -> Expression:
+        """The elementwise hyperbolic cosine of a numeric expression."""
+        expr = native.cosh(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def tanh(self) -> Expression:
+        """The elementwise hyperbolic tangent of a numeric expression."""
+        expr = native.tanh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arcsin(self) -> Expression:
@@ -854,9 +879,19 @@ class Expression:
         expr = native.ln(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def log1p(self) -> Expression:
+        """The ln(self + 1) of a numeric expression."""
+        expr = native.log1p(self._expr)
+        return Expression._from_pyexpr(expr)
+
     def exp(self) -> Expression:
         """The e^self of a numeric expression."""
         expr = native.exp(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def expm1(self) -> Expression:
+        """The e^self - 1 of a numeric expression."""
+        expr = native.expm1(self._expr)
         return Expression._from_pyexpr(expr)
 
     def bitwise_and(self, other: Expression) -> Expression:

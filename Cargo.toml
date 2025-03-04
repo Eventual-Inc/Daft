@@ -38,6 +38,7 @@ daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-session = {path = "src/daft-session", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
+daft-warc = {path = "src/daft-warc", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
 lazy_static = {workspace = true}
 log = {workspace = true}
@@ -172,6 +173,7 @@ members = [
   "src/daft-sketch",
   "src/daft-sql",
   "src/daft-recordbatch",
+  "src/daft-warc",
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",

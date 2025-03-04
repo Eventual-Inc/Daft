@@ -22,10 +22,9 @@ readme = "README.rst"
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity, dashboard]"]
+all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
 aws = ["boto3"]
 azure = []
-dashboard = ["daft_dashboard"]
 deltalake = ["deltalake"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
@@ -56,7 +55,7 @@ check-hidden = true
 ignore-words-list = "crate,arithmetics,ser"
 # Feel free to un-skip examples, and experimental, you will just need to
 # work through many typos (--write-changes and --interactive will help)
-skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken,*.sql,tests/table/utf8/*,tests/table/binary/*"
+skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken,*.sql,tests/table/utf8/*,tests/table/binary/*,*.warc"
 
 [tool.maturin]
 # "python" tells pyo3 we want to build an extension module (skips linking against libpython.so)
