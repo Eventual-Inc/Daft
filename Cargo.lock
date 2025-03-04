@@ -2160,6 +2160,7 @@ dependencies = [
  "daft-hash",
  "daft-image",
  "daft-io",
+ "flate2",
  "futures",
  "paste",
  "pyo3",

@@ -197,6 +197,9 @@ The following methods are available under the ``expr.binary`` attribute.
    Expression.binary.concat
    Expression.binary.length
    Expression.binary.slice
+   Expression.encode
+   Expression.decode
+
 
 .. _api-float-expression-operations:
 

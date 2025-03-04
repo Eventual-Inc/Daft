@@ -1422,6 +1422,19 @@ impl Utf8Array {
             .with_validity(self_arrow.validity().cloned());
         Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
+
+    pub fn encode<Encoder>(&self, encoder: Encoder) -> DaftResult<BinaryArray>
+    where
+        Encoder: Fn(&str) -> DaftResult<Cow<'_, [u8]>>,
+    {
+        let arr = self.as_arrow();
+        let res = arr
+            .iter()
+            .map(|val| val.map_or(Ok(None), |s| encoder(s).map(Some)))
+            .collect::<DaftResult<arrow2::array::BinaryArray<i64>>>()?
+            .with_validity(arr.validity().cloned());
+        Ok(BinaryArray::from((self.name(), Box::new(res))))
+    }
 }
 
 #[cfg(test)]
