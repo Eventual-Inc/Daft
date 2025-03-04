@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next build --no-optimize && touch out/.gitkeep",
+    "dev": "next dev --turbopack",
     "build": "next build  && touch out/.gitkeep",
     "start": "next start",
     "lint": "next lint --fix"
