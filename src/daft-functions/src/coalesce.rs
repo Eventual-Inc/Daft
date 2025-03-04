@@ -1,8 +1,8 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{BooleanArray, DaftLogical, Field, Schema},
+    prelude::{BooleanArray, DaftLogical, DataType, Field, Schema},
     series::{IntoSeries, Series},
-    utils::supertype::try_get_supertype,
+    utils::supertype::try_get_collection_supertype,
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
@@ -33,49 +33,53 @@ impl ScalarUDF for Coalesce {
                 Ok(input_field)
             }
             _ => {
-                let first_field = inputs[0].to_field(schema)?;
-                let mut output_dtype = first_field.dtype.clone();
-
-                for input in inputs {
-                    let lhs = input.to_field(schema)?.dtype;
-                    let rhs = &first_field.dtype;
-                    output_dtype = try_get_supertype(&lhs, rhs)?;
-
-                    if try_get_supertype(&lhs, rhs).is_err() {
-                        return Err(DaftError::SchemaMismatch(format!(
-                            "All input fields must have the same data type. Got {lhs} and {rhs}"
-                        )));
-                    }
-                }
-                Ok(Field::new(first_field.name, output_dtype))
+                let field_name = inputs[0].to_field(schema)?.name;
+                let field_types = inputs
+                    .iter()
+                    .map(|e| e.get_type(schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let field_type = try_get_collection_supertype(&field_types)?;
+                Ok(Field::new(field_name, field_type))
             }
         }
     }
 
+    /// Coalesce is a special case of the case-when expression.
+    ///
+    /// SQL-2023 - 6.12 General Rules 2.a
+    ///  > If the value of the <search condition> of some <searched when clause> in a <case
+    ///  > specification> is True, then the value of the <case expression> is the value of
+    ///  > the <result> of the first (leftmost) <searched when clause> whose <search
+    ///  > condition> evaluates to True, cast as the declared type of the <case
+    ///  > specification>.
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs.len() {
             0 => Err(DaftError::ComputeError("No inputs provided".to_string())),
             1 => Ok(inputs[0].clone()),
             _ => {
-                let name = inputs[0].name();
-                let dtype = inputs[0].data_type();
-                let len = inputs[0].len();
+                // need to re-compute the type from the inputs
+                let first = &inputs[0];
+                let name = first.name();
+                let dtypes = inputs.iter().map(|s| s.data_type());
+                let dtype = try_get_collection_supertype(dtypes)?;
+                let len = inputs.iter().map(|s| s.len()).max().unwrap_or(0);
+
                 // the first input is not null, so no work to do
-                if inputs[0].validity().is_none() {
-                    return Ok(inputs[0].clone());
+                if first.validity().is_none() && first.data_type() != &DataType::Null {
+                    return inputs[0].cast(&dtype);
                 }
 
-                let mut current_value = Series::full_null(name, dtype, len);
+                // coalesce output uses the computed type
+                let mut current_value = Series::full_null(name, &dtype, len);
                 let remainder = BooleanArray::from_values(name, vec![true; len].into_iter());
                 let all_false = BooleanArray::from_values(name, vec![false; len].into_iter());
                 let mut remainder = remainder.into_series();
 
                 for input in inputs {
                     let to_apply = remainder.and(&input.not_null()?)?;
-                    current_value = input.if_else(&current_value, &to_apply)?;
-
+                    // apply explicit cast
+                    current_value = input.if_else(&current_value, &to_apply)?.cast(&dtype)?;
                     remainder = remainder.and(&input.is_null()?)?;
-
                     // exit early if all values are filled
                     if remainder.bool().unwrap() == &all_false {
                         break;
