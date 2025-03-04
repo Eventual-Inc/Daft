@@ -1,8 +1,6 @@
 #[cfg(feature = "python")]
 mod python;
 mod response;
-#[cfg(not(feature = "python"))]
-pub mod rust;
 
 use std::{io::Cursor, net::Ipv4Addr, sync::Arc};
 
