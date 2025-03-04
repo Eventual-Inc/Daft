@@ -5,7 +5,8 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Table
+from daft.catalog import Catalog, Identifier, Table, TableSource
+from daft.io._deltalake import read_deltalake
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
@@ -34,6 +35,26 @@ class UnityCatalog(Catalog):
         raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
 
     ###
+    # create_*
+    ###
+
+    def create_namespace(self, identifier: Identifier | str):
+        raise ValueError("Unity create_namespace not yet supported.")
+
+    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
+        raise ValueError("Unity create_table not yet supported.")
+
+    ###
+    # drop_*
+    ###
+
+    def drop_namespace(self, identifier: Identifier | str):
+        raise ValueError("Unity drop_namespace not yet supported.")
+
+    def drop_table(self, identifier: Identifier | str):
+        raise ValueError("Unity drop_table not yet supported.")
+
+    ###
     # get_*
     ###
 
@@ -45,6 +66,9 @@ class UnityCatalog(Catalog):
     ###
     # list_.*
     ###
+
+    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        raise ValueError("Unity list_namespaces not yet supported.")
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         if pattern is None or pattern == "":
@@ -87,19 +111,8 @@ class UnityTable(Table):
             return t
         raise ValueError(f"Unsupported unity table type: {type(obj)}")
 
-    @staticmethod
-    def _try_from(obj: object) -> UnityTable | None:
-        """Returns an UnityTable if the given object can be adapted so."""
-        if isinstance(obj, InnerTable):
-            return UnityTable(obj)
-        return None
-
-    @property
-    def inner(self) -> InnerTable:
-        """Returns the inner unity table."""
-        return self._inner
-
     def read(self) -> DataFrame:
-        import daft
+        return read_deltalake(self._inner)
 
-        return daft.read_deltalake(self._inner)
+    def write(self, df: DataFrame | object, mode: str = "append"):
+        return df.write_deltalake(self._inner, mode=mode)

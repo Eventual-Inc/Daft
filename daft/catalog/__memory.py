@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Table
+from daft.catalog import Catalog, Identifier, Table, TableSource
 
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import DataFrame
@@ -19,8 +19,31 @@ class MemoryCatalog(Catalog):
         self._tables = tables
 
     ###
+    # create_*
+    ###
+
+    def create_namespace(self, identifier: Identifier | str):
+        raise ValueError("Memory create_namespace not yet supported.")
+
+    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
+        raise ValueError("Memory create_table not yet supported.")
+
+    ###
+    # drop_*
+    ###
+
+    def drop_namespace(self, identifier: Identifier | str):
+        raise ValueError("Memory drop_namespace not yet supported.")
+
+    def drop_table(self, identifier: Identifier | str):
+        raise ValueError("Memory drop_table not yet supported.")
+
+    ###
     # list_*
     ###
+
+    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        raise ValueError("Memory list_namespaces not yet supported.")
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         if pattern is None:

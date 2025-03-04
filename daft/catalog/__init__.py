@@ -242,11 +242,24 @@ class Catalog(ABC):
         )
 
     ###
-    # list_*
+    # create_*
     ###
 
     @abstractmethod
-    def list_tables(self, pattern: str | None = None) -> list[str]: ...
+    def create_namespace(self, identifier: Identifier | str): ...
+
+    @abstractmethod
+    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table: ...
+
+    ###
+    # drop_*
+    ###
+
+    @abstractmethod
+    def drop_namespace(self, identifier: Identifier | str): ...
+
+    @abstractmethod
+    def drop_table(self, identifier: Identifier | str): ...
 
     ###
     # get_*
@@ -254,6 +267,24 @@ class Catalog(ABC):
 
     @abstractmethod
     def get_table(self, identifier: Identifier | str) -> Table: ...
+
+    ###
+    # list_*
+    ###
+
+    @abstractmethod
+    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]: ...
+
+    @abstractmethod
+    def list_tables(self, pattern: str | None = None) -> list[str]: ...
+
+    ###
+    # read_*
+    ###
+
+    def read_table(self, identifier: Identifier | str) -> DataFrame:
+        """Returns the table as a DataFrame or raises an exception if it does not exist."""
+        return self.get_table(identifier).read()
 
     # TODO deprecated catalog APIs #3819
     def load_table(self, name: str) -> Table:
@@ -263,6 +294,13 @@ class Catalog(ABC):
             category=DeprecationWarning,
         )
         return self.get_table(name)
+
+    ###
+    # write_*
+    ###
+
+    def write_table(self, identifier: Identifier | str, df: DataFrame | object, mode: str = "append"):
+        return self.get_table(identifier).write(df, mode=mode)
 
 
 class Identifier(Sequence):
@@ -371,30 +409,13 @@ class Table(ABC):
         """Returns a Daft Table from a supported object type or raises an error."""
         raise ValueError(f"Unsupported table type: {type(obj)}")
 
-    # TODO catalog APIs part 3
-    # @property
-    # @abstractmethod
-    # def name(self) -> str:
-    #     """Returns the table name."""
-
-    # TODO catalog APIs part 3
-    # @property
-    # @abstractmethod
-    # def inner(self) -> object | None:
-    #     """Returns the inner table object if this is an adapter."""
+    ###
+    # read methods
+    ###
 
     @abstractmethod
     def read(self) -> DataFrame:
         """Returns a DataFrame from this table."""
-
-    # TODO deprecated catalog APIs #3819
-    def to_dataframe(self) -> DataFrame:
-        """DEPRECATED: Please use `read` instead; version 0.5.0!"""
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.5.0, please use `read` instead.",
-            category=DeprecationWarning,
-        )
-        return self.read()
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Returns a DataFrame from this table with the selected columns."""
@@ -403,6 +424,18 @@ class Table(ABC):
     def show(self, n: int = 8) -> None:
         """Shows the first n rows from this table."""
         return self.read().show(n)
+
+    ###
+    # TODO deprecated catalog APIs #3819
+    ###
+
+    def to_dataframe(self) -> DataFrame:
+        """DEPRECATED: Please use `read` instead; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please use `read` instead.",
+            category=DeprecationWarning,
+        )
+        return self.read()
 
 
 class TableSource:
