@@ -594,7 +594,6 @@ class Table(ABC):
         """
         self.write(df, mode="append", **options)
 
-    @abstractmethod
     def overwrite(self, df: DataFrame, **options) -> None:
         """Overwrites this table with the given DataFrame.
 

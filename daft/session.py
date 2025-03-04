@@ -456,7 +456,7 @@ def list_tables(pattern: None | str = None) -> list[Identifier]:
 
 def read_table(identifier: Identifier | str, **options) -> DataFrame:
     """Returns the table as a DataFrame or raises an exception if it does not exist."""
-    return _session().get_table(identifier).read(**options)
+    return _session().read_table(identifier, **options)
 
 
 ###
@@ -466,9 +466,7 @@ def read_table(identifier: Identifier | str, **options) -> DataFrame:
 
 def write_table(identifier: Identifier | str, df: DataFrame | object, mode: str = "append", **options):
     """Writes the DataFrame to the table specified with the identifier."""
-    if isinstance(identifier, str):
-        identifier = Identifier.from_str(identifier)
-    _session().get_table(identifier._ident).write(df, mode=mode, **options)
+    _session().write_table(identifier, df, mode, **options)
 
 
 ###
