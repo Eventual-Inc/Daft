@@ -364,11 +364,9 @@ unreadable_literal = "allow"
 # todo: remove this at some point
 unsafe_derive_deserialize = "allow"
 unused_async = "allow"
-# used_underscore_items = "allow" # REMOVE
 unused_self = "allow"
 use-self = "deny"
 used_underscore_binding = "allow"  # REMOVE REMOVE
-# used_underscore_items = "allow"
 wildcard_imports = "allow"
 zero_sized_map_values = "allow"
 
