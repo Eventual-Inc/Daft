@@ -1479,6 +1479,40 @@ class Expression:
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
+    def encode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+        """Encodes the expression using the specified codec.
+
+        Codecs:
+            * deflate
+            * gzip
+            * zlib
+
+        Args:
+            codec (str): encoding codec
+
+        Returns:
+            Expression: A new expression with the encoded values.
+        """
+        expr = native.encode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
+
+    def decode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+        """Decodes the expression using the specified codec.
+
+        Codecs:
+            * deflate
+            * gzip
+            * zlib
+
+        Args:
+            codec (str): decoding codec
+
+        Returns:
+            Expression: A new expression with the decoded values.
+        """
+        expr = native.decode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
+
     def name(self) -> builtins.str:
         return self._expr.name()
 

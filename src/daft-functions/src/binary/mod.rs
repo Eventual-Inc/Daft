@@ -1,4 +1,7 @@
+pub mod codecs;
 pub mod concat;
+pub mod decode;
+pub mod encode;
 pub mod length;
 pub mod slice;
 

@@ -1,4 +1,4 @@
-use std::iter;
+use std::{borrow::Cow, iter};
 
 use arrow2::bitmap::utils::{BitmapIter, ZipValidity};
 use common_error::{DaftError, DaftResult};
@@ -8,6 +8,7 @@ use crate::{
     datatypes::{
         BinaryArray, DaftIntegerType, DaftNumericType, DataArray, FixedSizeBinaryArray, UInt64Array,
     },
+    prelude::Utf8Array,
 };
 
 enum BroadcastedBinaryIter<'a> {
@@ -249,6 +250,19 @@ impl BinaryArray {
 
         Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
+
+    pub fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
+    where
+        Decoder: Fn(&[u8]) -> DaftResult<Cow<'_, str>>,
+    {
+        let arr = self.as_arrow();
+        let res = arr
+            .iter()
+            .map(|val| val.map_or(Ok(None), |s| decoder(s).map(Some)))
+            .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?
+            .with_validity(arr.validity().cloned());
+        Ok(Utf8Array::from((self.name(), Box::new(res))))
+    }
 }
 
 impl FixedSizeBinaryArray {
@@ -304,5 +318,18 @@ impl FixedSizeBinaryArray {
         )?;
 
         Ok(Self::from((self.name(), Box::new(result))))
+    }
+
+    pub fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
+    where
+        Decoder: Fn(&[u8]) -> DaftResult<Cow<'_, str>>,
+    {
+        let arr = self.as_arrow();
+        let res = arr
+            .iter()
+            .map(|val| val.map_or(Ok(None), |s| decoder(s).map(Some)))
+            .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?
+            .with_validity(arr.validity().cloned());
+        Ok(Utf8Array::from((self.name(), Box::new(res))))
     }
 }
