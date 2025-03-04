@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from typing import Callable, Literal
+from typing import TYPE_CHECKING, Callable, Literal
 from urllib.parse import urlparse
 
 import unitycatalog
 
 from daft.io import AzureConfig, IOConfig, S3Config
 
+if TYPE_CHECKING:
+    from unitycatalog.types import TableInfo
+
 
 @dataclasses.dataclass(frozen=True)
 class UnityCatalogTable:
+    table_info: TableInfo
     table_uri: str
     io_config: IOConfig | None
 
@@ -172,6 +176,7 @@ class UnityCatalog:
             io_config = None
 
         return UnityCatalogTable(
+            table_info=table_info,
             table_uri=storage_location,
             io_config=io_config,
         )
