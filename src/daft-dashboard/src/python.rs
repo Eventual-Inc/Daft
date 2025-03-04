@@ -24,7 +24,7 @@ use crate::DashboardState;
 const NUMBER_OF_WORKER_THREADS: usize = 3;
 
 #[pyfunction(signature = (detach = false, noop_if_initialized = false))]
-fn launch(detach: bool, noop_if_initialized: bool) -> PyResult<()> {
+pub(crate) fn launch(detach: bool, noop_if_initialized: bool) -> PyResult<()> {
     if detach {
         launch_detached(noop_if_initialized)
     } else {
@@ -34,7 +34,7 @@ fn launch(detach: bool, noop_if_initialized: bool) -> PyResult<()> {
 }
 
 #[pyfunction(signature = (noop_if_shutdown = false))]
-fn shutdown(noop_if_shutdown: bool) -> PyResult<()> {
+pub(crate) fn shutdown(noop_if_shutdown: bool) -> PyResult<()> {
     tokio_runtime(false)
         .block_on(async {
             let stream = match TcpStream::connect((super::SERVER_ADDR, super::SERVER_PORT)).await {
@@ -95,7 +95,7 @@ enum Cli {
 }
 
 #[pyfunction(signature = (args))]
-fn cli(args: Vec<String>) -> PyResult<()> {
+pub(crate) fn cli(args: Vec<String>) -> PyResult<()> {
     match Cli::parse_from(args) {
         Cli::Launch {
             noop_if_initialized,

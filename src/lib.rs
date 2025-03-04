@@ -134,6 +134,8 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
         daft_image::python::register_modules(m)?;
+
+        daft_dashboard::register_modules(m)?;
         Ok(())
     }
 }

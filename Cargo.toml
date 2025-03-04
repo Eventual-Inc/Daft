@@ -17,6 +17,7 @@ daft-connect = {path = "src/daft-connect", optional = true}
 daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
+daft-dashboard = {path = "src/daft-dashboard", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
@@ -64,6 +65,7 @@ python = [
   "daft-context/python",
   "daft-core/python",
   "daft-csv/python",
+  "daft-dashboard/python",
   "daft-dsl/python",
   "daft-functions-json/python",
   "daft-functions/python",
@@ -153,6 +155,7 @@ members = [
   "src/daft-context",
   "src/daft-core",
   "src/daft-csv",
+  "src/daft-dashboard",
   "src/daft-dsl",
   "src/daft-functions",
   "src/daft-functions-json",
@@ -177,8 +180,7 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
-  "src/generated/spark-connect",
-  "daft_dashboard"
+  "src/generated/spark-connect"
 ]
 
 [workspace.dependencies]

@@ -15,6 +15,8 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 use include_dir::{include_dir, Dir};
 use parking_lot::RwLock;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, spawn, sync::mpsc::Sender};
 
@@ -25,7 +27,28 @@ type ServerResult<T> = Result<T, (StatusCode, anyhow::Error)>;
 
 const SERVER_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const SERVER_PORT: u16 = 3238;
+
 static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/out");
+
+#[cfg(feature = "python")]
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    const DAFT_DASHBOARD_ENV_ENABLED: &str = "DAFT_DASHBOARD_ENABLED";
+    const DAFT_DASHBOARD_ENV_NAME: &str = "DAFT_DASHBOARD";
+    const DAFT_DASHBOARD_URL: &str = "http://localhost:3238";
+    const DAFT_DASHBOARD_QUERIES_URL: &str = "http://localhost:3238/api/queries";
+
+    let module = PyModule::new(parent.py(), "dashboard")?;
+    module.add_wrapped(wrap_pyfunction!(python::launch))?;
+    module.add_wrapped(wrap_pyfunction!(python::shutdown))?;
+    module.add_wrapped(wrap_pyfunction!(python::cli))?;
+    module.add("DAFT_DASHBOARD_ENV_NAME", DAFT_DASHBOARD_ENV_NAME)?;
+    module.add("DAFT_DASHBOARD_URL", DAFT_DASHBOARD_URL)?;
+    module.add("DAFT_DASHBOARD_QUERIES_URL", DAFT_DASHBOARD_QUERIES_URL)?;
+    module.add("DAFT_DASHBOARD_ENV_ENABLED", DAFT_DASHBOARD_ENV_ENABLED)?;
+    parent.add_submodule(&module)?;
+
+    Ok(())
+}
 
 trait ResultExt<T, E: Into<anyhow::Error>>: Sized {
     fn with_status_code(self, status_code: StatusCode) -> ServerResult<T>;
