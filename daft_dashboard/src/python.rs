@@ -94,8 +94,8 @@ enum Cli {
     },
 }
 
-#[pyfunction(signature = (args, static_assets_path))]
-fn cli(args: Vec<String>, static_assets_path: String) -> PyResult<()> {
+#[pyfunction(signature = (args))]
+fn cli(args: Vec<String>) -> PyResult<()> {
     match Cli::parse_from(args) {
         Cli::Launch {
             noop_if_initialized,
