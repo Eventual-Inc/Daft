@@ -122,6 +122,10 @@ pub fn physical_plan_to_pipeline(
                 ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
             SourceNode::new(scan_task_source.arced(), stats_state.clone()).boxed()
         }
+        LocalPhysicalPlan::WindowPartitionOnly(_) => {
+            // TODO: Implement Window partition only pipeline when the window_partition sink is available
+            todo!("Window partition only pipeline not yet implemented")
+        }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, stats_state }) => {
             let cache_key: Arc<str> = info.cache_key.clone().into();
 

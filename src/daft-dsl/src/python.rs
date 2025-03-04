@@ -21,7 +21,11 @@ use pyo3::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{Expr, ExprRef, LiteralValue};
+use crate::{
+    expr::window::{WindowFrameBoundary, WindowFunction},
+    functions::FunctionExpr,
+    Expr, ExprRef, LiteralValue,
+};
 
 #[pyfunction]
 pub fn unresolved_col(name: &str) -> PyExpr {
@@ -526,6 +530,18 @@ impl PyExpr {
         use crate::functions::partitioning::iceberg_truncate;
         Ok(iceberg_truncate(self.into(), w).into())
     }
+
+    pub fn over(&self, window_spec: &WindowSpec) -> PyResult<Self> {
+        Ok(Self {
+            expr: Arc::new(Expr::Function {
+                func: FunctionExpr::Window(WindowFunction::new(
+                    (*self.expr).clone(),
+                    window_spec.spec.clone(),
+                )),
+                inputs: vec![],
+            }),
+        })
+    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);
@@ -553,5 +569,136 @@ impl From<PyExpr> for crate::ExprRef {
 impl From<&PyExpr> for crate::ExprRef {
     fn from(item: &PyExpr) -> Self {
         item.expr.clone()
+    }
+}
+
+#[pyclass(module = "daft.daft")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum WindowBoundary {
+    UnboundedPreceding(),
+    UnboundedFollowing(),
+    CurrentRow(),
+    Preceding(i64),
+    Following(i64),
+}
+
+impl From<WindowFrameBoundary> for WindowBoundary {
+    fn from(value: WindowFrameBoundary) -> Self {
+        match value {
+            WindowFrameBoundary::UnboundedPreceding => Self::UnboundedPreceding(),
+            WindowFrameBoundary::UnboundedFollowing => Self::UnboundedFollowing(),
+            WindowFrameBoundary::CurrentRow => Self::CurrentRow(),
+            WindowFrameBoundary::Preceding(n) => Self::Preceding(n),
+            WindowFrameBoundary::Following(n) => Self::Following(n),
+        }
+    }
+}
+
+#[pyclass(module = "daft.daft")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum WindowFrameType {
+    Rows(),
+    Range(),
+}
+
+impl From<crate::expr::window::WindowFrameType> for WindowFrameType {
+    fn from(value: crate::expr::window::WindowFrameType) -> Self {
+        match value {
+            crate::expr::window::WindowFrameType::Rows => Self::Rows(),
+            crate::expr::window::WindowFrameType::Range => Self::Range(),
+        }
+    }
+}
+
+impl From<WindowFrameType> for crate::expr::window::WindowFrameType {
+    fn from(value: WindowFrameType) -> Self {
+        match value {
+            WindowFrameType::Rows() => Self::Rows,
+            WindowFrameType::Range() => Self::Range,
+        }
+    }
+}
+
+#[pyclass(module = "daft.daft")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowFrame {
+    frame: crate::expr::window::WindowFrame,
+}
+
+#[pymethods]
+impl WindowFrame {
+    #[new]
+    pub fn new(frame_type: WindowFrameType, start: WindowBoundary, end: WindowBoundary) -> Self {
+        Self {
+            frame: crate::expr::window::WindowFrame {
+                frame_type: frame_type.into(),
+                start: match start {
+                    WindowBoundary::UnboundedPreceding() => WindowFrameBoundary::UnboundedPreceding,
+                    WindowBoundary::UnboundedFollowing() => WindowFrameBoundary::UnboundedFollowing,
+                    WindowBoundary::CurrentRow() => WindowFrameBoundary::CurrentRow,
+                    WindowBoundary::Preceding(n) => WindowFrameBoundary::Preceding(n),
+                    WindowBoundary::Following(n) => WindowFrameBoundary::Following(n),
+                },
+                end: match end {
+                    WindowBoundary::UnboundedPreceding() => WindowFrameBoundary::UnboundedPreceding,
+                    WindowBoundary::UnboundedFollowing() => WindowFrameBoundary::UnboundedFollowing,
+                    WindowBoundary::CurrentRow() => WindowFrameBoundary::CurrentRow,
+                    WindowBoundary::Preceding(n) => WindowFrameBoundary::Preceding(n),
+                    WindowBoundary::Following(n) => WindowFrameBoundary::Following(n),
+                },
+            },
+        }
+    }
+}
+
+#[pyclass(module = "daft.daft")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowSpec {
+    spec: crate::expr::window::WindowSpec,
+}
+
+impl Default for WindowSpec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[pymethods]
+impl WindowSpec {
+    #[staticmethod]
+    pub fn new() -> Self {
+        Self {
+            spec: crate::expr::window::WindowSpec::new(),
+        }
+    }
+
+    pub fn with_partition_by(&self, exprs: Vec<PyExpr>) -> PyResult<Self> {
+        Ok(Self {
+            spec: self
+                .spec
+                .clone()
+                .with_partition_by(exprs.into_iter().map(|e| e.into()).collect()),
+        })
+    }
+
+    pub fn with_order_by(&self, exprs: Vec<PyExpr>, ascending: Vec<bool>) -> PyResult<Self> {
+        Ok(Self {
+            spec: self
+                .spec
+                .clone()
+                .with_order_by(exprs.into_iter().map(|e| e.into()).collect(), ascending),
+        })
+    }
+
+    pub fn with_frame(&self, frame: WindowFrame) -> PyResult<Self> {
+        Ok(Self {
+            spec: self.spec.clone().with_frame(frame.frame),
+        })
+    }
+
+    pub fn with_min_periods(&self, min_periods: i64) -> PyResult<Self> {
+        Ok(Self {
+            spec: self.spec.clone().with_min_periods(min_periods),
+        })
     }
 }

@@ -517,6 +517,11 @@ fn pull_up_correlated_cols(
                 )))
             }
         }
+        LogicalPlan::Window(window) => Ok((
+            window.input.clone(),
+            window.partition_by.clone(),
+            window.order_by.clone(),
+        )),
     }
 }
 

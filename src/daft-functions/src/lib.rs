@@ -17,6 +17,7 @@ pub mod to_struct;
 pub mod tokenize;
 pub mod uri;
 pub mod utf8;
+pub mod window;
 
 use common_error::DaftError;
 #[cfg(feature = "python")]

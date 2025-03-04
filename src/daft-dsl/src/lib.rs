@@ -2,7 +2,7 @@
 #![feature(if_let_guard)]
 
 mod arithmetic;
-mod expr;
+pub mod expr;
 pub mod functions;
 pub mod join;
 mod lit;
@@ -26,6 +26,11 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyExpr>()?;
+
+    parent.add_class::<python::WindowBoundary>()?;
+    parent.add_class::<python::WindowFrameType>()?;
+    parent.add_class::<python::WindowFrame>()?;
+    parent.add_class::<python::WindowSpec>()?;
 
     parent.add_function(wrap_pyfunction!(python::unresolved_col, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::resolved_col, parent)?)?;

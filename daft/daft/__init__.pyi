@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
 from daft.catalog import Catalog, Table
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
+from daft.expressions import Window
 from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 from daft.runners.partitioning import PartitionCacheEntry
@@ -66,6 +67,106 @@ class ImageMode(Enum):
             mode: String representation of the mode. This is the same as the enum
                 attribute name, e.g. ``ImageMode.from_mode_string("RGB")`` would
                 return ``ImageMode.RGB``.
+        """
+        ...
+
+class WindowBoundary:
+    """Represents a window frame boundary in window functions."""
+
+    @staticmethod
+    def UnboundedPreceding() -> WindowBoundary:
+        """Represents UNBOUNDED PRECEDING boundary."""
+        ...
+
+    @staticmethod
+    def UnboundedFollowing() -> WindowBoundary:
+        """Represents UNBOUNDED FOLLOWING boundary."""
+        ...
+
+    @staticmethod
+    def CurrentRow() -> WindowBoundary:
+        """Represents CURRENT ROW boundary."""
+        ...
+
+    @staticmethod
+    def Preceding(n: int) -> WindowBoundary:
+        """Represents N PRECEDING boundary."""
+        ...
+
+    @staticmethod
+    def Following(n: int) -> WindowBoundary:
+        """Represents N FOLLOWING boundary."""
+        ...
+
+class WindowFrameType:
+    """Represents the type of window frame (ROWS or RANGE)."""
+
+    @staticmethod
+    def Rows() -> WindowFrameType:
+        """Row-based window frame."""
+        ...
+
+    @staticmethod
+    def Range() -> WindowFrameType:
+        """Range-based window frame."""
+        ...
+
+class WindowFrame:
+    """Represents a window frame specification."""
+
+    def __init__(
+        self,
+        frame_type: WindowFrameType,
+        start: WindowBoundary,
+        end: WindowBoundary,
+    ) -> None:
+        """Create a new window frame specification.
+
+        Args:
+            frame_type: Type of window frame (ROWS or RANGE)
+            start: Start boundary of window frame
+            end: End boundary of window frame
+        """
+        ...
+
+class WindowSpec:
+    """Represents a window specification for window functions."""
+
+    @staticmethod
+    def new() -> WindowSpec:
+        """Create a new empty window specification."""
+        ...
+
+    def with_partition_by(self, exprs: list[PyExpr]) -> WindowSpec:
+        """Set the partition by expressions.
+
+        Args:
+            exprs: List of expressions to partition by
+        """
+        ...
+
+    def with_order_by(self, exprs: list[PyExpr], ascending: list[bool]) -> WindowSpec:
+        """Set the order by expressions.
+
+        Args:
+            exprs: List of expressions to order by
+            ascending: List of booleans indicating sort order for each expression
+        """
+        ...
+
+    def with_frame(self, frame: WindowFrame) -> WindowSpec:
+        """Set the window frame specification.
+
+        Args:
+            frame: Window frame specification
+        """
+        ...
+
+    def with_min_periods(self, min_periods: int) -> WindowSpec:
+        """Set the minimum number of rows required to compute a result.
+
+        Args:
+            min_periods: Minimum number of rows required
         """
         ...
 
@@ -954,6 +1055,7 @@ class PyExpr:
     def agg_list(self) -> PyExpr: ...
     def agg_set(self) -> PyExpr: ...
     def agg_concat(self) -> PyExpr: ...
+    def over(self, window_spec: Window) -> PyExpr: ...
     def __add__(self, other: PyExpr) -> PyExpr: ...
     def __sub__(self, other: PyExpr) -> PyExpr: ...
     def __mul__(self, other: PyExpr) -> PyExpr: ...

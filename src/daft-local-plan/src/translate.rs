@@ -103,6 +103,24 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 ))
             }
         }
+        LogicalPlan::Window(window) => {
+            let input = translate(&window.input)?;
+            if !window.partition_by.is_empty()
+                && window.order_by.is_empty()
+                && window.frame.is_none()
+            {
+                Ok(LocalPhysicalPlan::window_partition_only(
+                    input,
+                    window.partition_by.clone(),
+                    window.schema.clone(),
+                    window.stats_state.clone(),
+                ))
+            } else {
+                Err(DaftError::not_implemented(
+                    "Window with order by or frame not yet implemented",
+                ))
+            }
+        }
         LogicalPlan::Unpivot(unpivot) => {
             let input = translate(&unpivot.input)?;
             Ok(LocalPhysicalPlan::unpivot(

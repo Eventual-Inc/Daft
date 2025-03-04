@@ -46,6 +46,7 @@ pub enum LocalPhysicalPlan {
     CatalogWrite(CatalogWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
+    WindowPartitionOnly(WindowPartitionOnly),
 }
 
 impl LocalPhysicalPlan {
@@ -84,6 +85,7 @@ impl LocalPhysicalPlan {
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
+            Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. }) => stats_state,
         }
     }
 
@@ -222,6 +224,21 @@ impl LocalPhysicalPlan {
             input,
             aggregations,
             group_by,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub(crate) fn window_partition_only(
+        input: LocalPhysicalPlanRef,
+        partition_by: Vec<ExprRef>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::WindowPartitionOnly(WindowPartitionOnly {
+            input,
+            partition_by,
             schema,
             stats_state,
         })
@@ -458,6 +475,7 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
+            Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
         }
     }
 }
@@ -644,5 +662,13 @@ pub struct LanceWrite {
     pub lance_info: daft_logical_plan::LanceCatalogInfo,
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug)]
+pub struct WindowPartitionOnly {
+    pub input: LocalPhysicalPlanRef,
+    pub partition_by: Vec<ExprRef>,
+    pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

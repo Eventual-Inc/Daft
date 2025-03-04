@@ -28,7 +28,7 @@ impl PushDownProjection {
 
     fn try_optimize_project(
         &self,
-        projection: &Project,
+        projection: Project,
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         let upstream_plan = &projection.input;
@@ -544,6 +544,10 @@ impl PushDownProjection {
                 // Cannot push down past a Pivot/MonotonicallyIncreasingId because it changes the schema.
                 Ok(Transformed::no(plan))
             }
+            LogicalPlan::Window(_) => {
+                // Cannot push down past a Window because it changes the window calculation results
+                Ok(Transformed::no(plan))
+            }
             LogicalPlan::Sink(_) => {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
@@ -553,7 +557,7 @@ impl PushDownProjection {
 
     fn try_optimize_actor_pool_project(
         &self,
-        actor_pool_project: &ActorPoolProject,
+        actor_pool_project: ActorPoolProject,
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // If this ActorPoolPorject prunes columns from its upstream,
@@ -581,7 +585,7 @@ impl PushDownProjection {
 
     fn try_optimize_aggregation(
         &self,
-        aggregation: &Aggregate,
+        aggregation: Aggregate,
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // If this aggregation prunes columns from its upstream,
@@ -609,7 +613,7 @@ impl PushDownProjection {
 
     fn try_optimize_join(
         &self,
-        join: &Join,
+        join: Join,
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // If this join prunes columns from its upstream,
@@ -634,7 +638,7 @@ impl PushDownProjection {
                 };
 
                 let new_join = plan
-                    .with_new_children(&[(join.left).clone(), new_subprojection.into()])
+                    .with_new_children(&[join.left, new_subprojection.into()])
                     .arced();
 
                 Ok(self
@@ -650,7 +654,7 @@ impl PushDownProjection {
 
     fn try_optimize_pivot(
         &self,
-        pivot: &Pivot,
+        pivot: Pivot,
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // If this pivot prunes columns from its upstream,
@@ -681,19 +685,21 @@ impl PushDownProjection {
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match plan.as_ref() {
-            LogicalPlan::Project(projection) => self.try_optimize_project(projection, plan.clone()),
+            LogicalPlan::Project(projection) => {
+                self.try_optimize_project(projection.clone(), plan.clone())
+            }
             // ActorPoolProjects also do column projection
             LogicalPlan::ActorPoolProject(actor_pool_project) => {
-                self.try_optimize_actor_pool_project(actor_pool_project, plan.clone())
+                self.try_optimize_actor_pool_project(actor_pool_project.clone(), plan.clone())
             }
             // Aggregations also do column projection
             LogicalPlan::Aggregate(aggregation) => {
-                self.try_optimize_aggregation(aggregation, plan.clone())
+                self.try_optimize_aggregation(aggregation.clone(), plan.clone())
             }
             // Joins also do column projection
-            LogicalPlan::Join(join) => self.try_optimize_join(join, plan.clone()),
+            LogicalPlan::Join(join) => self.try_optimize_join(join.clone(), plan.clone()),
             // Pivots also do column projection
-            LogicalPlan::Pivot(pivot) => self.try_optimize_pivot(pivot, plan.clone()),
+            LogicalPlan::Pivot(pivot) => self.try_optimize_pivot(pivot.clone(), plan.clone()),
             _ => Ok(Transformed::no(plan)),
         }
     }
