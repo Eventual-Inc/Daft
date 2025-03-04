@@ -1510,6 +1510,8 @@ class Expression:
         """Decodes the expression using the specified codec.
 
         Example:
+            >>> import daft
+            >>> from daft import col
             >>> df = daft.from_pydict({"bytes": [zlib.compress(b"hello, world!")]})
             >>> df.select(col("bytes").decode("zlib")).show()
             ╭───────────────╮
