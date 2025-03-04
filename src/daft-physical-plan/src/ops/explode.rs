@@ -15,17 +15,11 @@ pub struct Explode {
     // Upstream node.
     pub input: PhysicalPlanRef,
     pub to_explode: Vec<ExprRef>,
-    pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl Explode {
-    pub(crate) fn try_new(input: PhysicalPlanRef, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
-        let clustering_spec = Self::translate_clustering_spec(input.clustering_spec(), &to_explode);
-        Ok(Self {
-            input,
-            to_explode,
-            clustering_spec,
-        })
+    pub(crate) fn new(input: PhysicalPlanRef, to_explode: Vec<ExprRef>) -> Self {
+        Self { input, to_explode }
     }
 
     fn translate_clustering_spec(
@@ -62,10 +56,6 @@ impl Explode {
         res.push(format!(
             "Explode: {}",
             self.to_explode.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!(
-            "Clustering spec = {{ {} }}",
-            self.clustering_spec.multiline_display().join(", ")
         ));
         res
     }

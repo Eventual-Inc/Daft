@@ -1,9 +1,11 @@
 use std::{cmp::max, collections::HashSet, sync::Arc};
 
 use common_display::ascii::AsciiTreeDisplay;
+use daft_core::join::JoinSide;
 use daft_logical_plan::{
     partitioning::{
-        ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
+        translate_clustering_spec, ClusteringSpec, HashClusteringConfig, RangeClusteringConfig,
+        UnknownClusteringConfig,
     },
     stats::ApproxStats,
 };
@@ -68,20 +70,20 @@ impl PhysicalPlan {
             Self::PreviousStageScan(PreviousStageScan {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
-            Self::Project(Project {
-                clustering_spec, ..
-            }) => clustering_spec.clone(),
-            Self::ActorPoolProject(ActorPoolProject {
-                clustering_spec, ..
-            }) => clustering_spec.clone(),
+            Self::Project(Project { input, projection }) => {
+                translate_clustering_spec(input.clustering_spec(), &projection)
+            }
+            Self::ActorPoolProject(ActorPoolProject { input, projection }) => {
+                translate_clustering_spec(input.clustering_spec(), &projection)
+            }
             Self::Filter(Filter { input, .. }) => input.clustering_spec(),
             Self::Limit(Limit { input, .. }) => input.clustering_spec(),
-            Self::Explode(Explode {
-                clustering_spec, ..
-            }) => clustering_spec.clone(),
-            Self::Unpivot(Unpivot {
-                clustering_spec, ..
-            }) => clustering_spec.clone(),
+            Self::Explode(Explode { input, to_explode }) => {
+                translate_clustering_spec(input.clustering_spec(), &to_explode)
+            }
+            Self::Unpivot(Unpivot { input, values, .. }) => {
+                translate_clustering_spec(input.clustering_spec(), &values)
+            }
             Self::Sample(Sample { input, .. }) => input.clustering_spec(),
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 input.clustering_spec()
@@ -176,8 +178,44 @@ impl PhysicalPlan {
             ))
             .into(),
             Self::CrossJoin(CrossJoin {
-                clustering_spec, ..
-            }) => clustering_spec.clone(),
+                left,
+                right,
+                outer_loop_side,
+                ..
+            }) => {
+                let left_spec = left.clustering_spec();
+                let right_spec = right.clustering_spec();
+
+                let num_partitions = left_spec.num_partitions() * right_spec.num_partitions();
+
+                let (outer_spec, inner_spec) = match outer_loop_side {
+                    JoinSide::Left => (left_spec, right_spec),
+                    JoinSide::Right => (right_spec, left_spec),
+                };
+
+                let clustering_spec = if inner_spec.num_partitions() == 1 {
+                    match outer_spec.as_ref() {
+                        ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
+                            ClusteringSpec::Hash(HashClusteringConfig::new(
+                                num_partitions,
+                                by.clone(),
+                            ))
+                        }
+                        ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) => {
+                            ClusteringSpec::Range(RangeClusteringConfig::new(
+                                num_partitions,
+                                by.clone(),
+                                descending.clone(),
+                            ))
+                        }
+                        _ => ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
+                    }
+                } else {
+                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions))
+                };
+
+                Arc::new(clustering_spec)
+            }
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
@@ -419,20 +457,20 @@ impl PhysicalPlan {
                 Self::TabularScan(..)
                 | Self::EmptyScan(..)
                 | Self::PreviousStageScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::Project(Project { projection, clustering_spec, .. }) =>
-                    Self::Project(Project::new_with_clustering_spec(
-                    input.clone(), projection.clone(), clustering_spec.clone(),
-                ).unwrap()),
+                Self::Project(Project { projection, .. }) =>
+                    Self::Project(Project::new(
+                    input.clone(), projection.clone(),
+                )),
 
-                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
+                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
-                Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
+                Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::new(input.clone(), to_explode.clone())),
                 Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, names, .. }) => Self::Pivot(Pivot::new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), names.clone())),
                 Self::Sample(Sample { fraction, with_replacement, seed, .. }) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::Sort(Sort { sort_by, descending, nulls_first,  num_partitions, .. }) => Self::Sort(Sort::new(input.clone(), sort_by.clone(), descending.clone(),nulls_first.clone(), *num_partitions)),
-                Self::ShuffleExchange(ShuffleExchange { strategy, .. }) => Self::ShuffleExchange(ShuffleExchange { input: input.clone(), strategy: strategy.clone() }),
+                Self::ShuffleExchange(ShuffleExchange { strategy, can_adapt, .. }) => Self::ShuffleExchange(ShuffleExchange { input: input.clone(), strategy: strategy.clone(), can_adapt: *can_adapt }),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::new(input.clone(), aggregations.clone(), groupby.clone())),
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),

@@ -107,14 +107,11 @@ pub(super) fn translate_single_logical_node(
         },
         LogicalPlan::Project(LogicalProject { projection, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(
-                PhysicalPlan::Project(Project::try_new(input_physical, projection.clone())?)
-                    .arced(),
-            )
+            Ok(PhysicalPlan::Project(Project::new(input_physical, projection.clone())).arced())
         }
         LogicalPlan::ActorPoolProject(LogicalActorPoolProject { projection, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::new(
                 input_physical,
                 projection.clone(),
             )?)
@@ -142,10 +139,7 @@ pub(super) fn translate_single_logical_node(
         }
         LogicalPlan::Explode(LogicalExplode { to_explode, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(
-                PhysicalPlan::Explode(Explode::try_new(input_physical, to_explode.clone())?)
-                    .arced(),
-            )
+            Ok(PhysicalPlan::Explode(Explode::new(input_physical, to_explode.clone())).arced())
         }
         LogicalPlan::Unpivot(LogicalUnpivot {
             ids,
@@ -172,13 +166,12 @@ pub(super) fn translate_single_logical_node(
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            let num_partitions = input_physical.clustering_spec().num_partitions();
             Ok(PhysicalPlan::Sort(Sort::new(
                 input_physical,
                 sort_by.clone(),
                 descending.clone(),
                 nulls_first.clone(),
-                num_partitions,
+                None,
             ))
             .arced())
         }
@@ -209,13 +202,16 @@ pub(super) fn translate_single_logical_node(
                             }
                             _ => PhysicalPlan::ShuffleExchange(
                                 ShuffleExchangeFactory::new(input_physical)
-                                    .get_split_or_coalesce(num_partitions),
+                                    .get_split_or_coalesce(num_partitions, false),
                             ),
                         }
                     }
                     ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
-                        ShuffleExchangeFactory::new(input_physical)
-                            .get_random_partitioning(num_partitions, Some(cfg)),
+                        ShuffleExchangeFactory::new(input_physical).get_random_partitioning(
+                            num_partitions,
+                            Some(cfg),
+                            false,
+                        ),
                     ),
                     ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
                         PhysicalPlan::ShuffleExchange(
@@ -223,6 +219,7 @@ pub(super) fn translate_single_logical_node(
                                 by,
                                 num_partitions,
                                 Some(cfg),
+                                false,
                             ),
                         )
                     }
@@ -244,12 +241,15 @@ pub(super) fn translate_single_logical_node(
             let agg_op =
                 PhysicalPlan::Aggregate(Aggregate::new(input_physical, vec![], col_exprs.clone()));
             let num_partitions = agg_op.clustering_spec().num_partitions();
-            if num_partitions > 1 {
+            let is_partition_compatible =
+                is_partition_compatible(&agg_op.clustering_spec().partition_by(), &col_exprs);
+            if num_partitions > 1 || !is_partition_compatible {
                 let shuffle_op = PhysicalPlan::ShuffleExchange(
                     ShuffleExchangeFactory::new(agg_op.into()).get_hash_partitioning(
                         col_exprs.clone(),
                         num_partitions,
                         Some(cfg),
+                        true,
                     ),
                 );
                 Ok(
@@ -289,13 +289,15 @@ pub(super) fn translate_single_logical_node(
                 .map(extract_agg_expr)
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            let result_plan = match num_input_partitions {
-                1 => PhysicalPlan::Aggregate(Aggregate::new(
+            let is_partition_compatible =
+                is_partition_compatible(&input_physical.clustering_spec().partition_by(), &groupby);
+            let result_plan = match (num_input_partitions, is_partition_compatible) {
+                (1, true) => PhysicalPlan::Aggregate(Aggregate::new(
                     input_physical,
                     aggregations,
                     groupby.clone(),
                 )),
-                _ => {
+                (_, _) => {
                     let schema = logical_plan.schema();
 
                     let (first_stage_aggs, second_stage_aggs, final_exprs) =
@@ -316,7 +318,8 @@ pub(super) fn translate_single_logical_node(
                     };
                     let gather_plan = if groupby.is_empty() {
                         PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(first_stage_agg).get_split_or_coalesce(1),
+                            ShuffleExchangeFactory::new(first_stage_agg)
+                                .get_split_or_coalesce(1, false),
                         )
                         .into()
                     } else {
@@ -328,6 +331,7 @@ pub(super) fn translate_single_logical_node(
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
                                 Some(cfg),
+                                true,
                             ),
                         )
                         .into()
@@ -339,7 +343,7 @@ pub(super) fn translate_single_logical_node(
                         groupby,
                     ));
 
-                    PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
+                    PhysicalPlan::Project(Project::new(second_stage_agg.into(), final_exprs))
                 }
             };
             Ok(result_plan.arced())
@@ -360,13 +364,17 @@ pub(super) fn translate_single_logical_node(
             let group_by_with_pivot = [group_by.clone(), vec![pivot_column.clone()]].concat();
             let aggregations = vec![aggregation.clone()];
 
-            let aggregation_plan = match num_input_partitions {
-                1 => PhysicalPlan::Aggregate(Aggregate::new(
+            let is_partition_compatible = is_partition_compatible(
+                &input_physical.clustering_spec().partition_by(),
+                &group_by_with_pivot,
+            );
+            let aggregation_plan = match (num_input_partitions, is_partition_compatible) {
+                (1, true) => PhysicalPlan::Aggregate(Aggregate::new(
                     input_physical,
                     aggregations,
                     group_by_with_pivot,
                 )),
-                _ => {
+                (_, _) => {
                     let schema = logical_plan.schema();
 
                     let (first_stage_aggs, second_stage_aggs, final_exprs) =
@@ -384,7 +392,8 @@ pub(super) fn translate_single_logical_node(
                     };
                     let gather_plan = if group_by_with_pivot.is_empty() {
                         PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(first_stage_agg).get_split_or_coalesce(1),
+                            ShuffleExchangeFactory::new(first_stage_agg)
+                                .get_split_or_coalesce(1, false),
                         )
                         .into()
                     } else {
@@ -398,6 +407,7 @@ pub(super) fn translate_single_logical_node(
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
                                 Some(cfg),
+                                true,
                             ),
                         )
                         .into()
@@ -409,7 +419,7 @@ pub(super) fn translate_single_logical_node(
                         group_by_with_pivot,
                     ));
 
-                    PhysicalPlan::Project(Project::try_new(second_stage_agg.into(), final_exprs)?)
+                    PhysicalPlan::Project(Project::new(second_stage_agg.into(), final_exprs))
                 }
             };
 
@@ -1016,10 +1026,6 @@ fn translate_join(
 
     let left_clustering_spec = left_physical.clustering_spec();
     let right_clustering_spec = right_physical.clustering_spec();
-    let num_partitions = max(
-        left_clustering_spec.num_partitions(),
-        right_clustering_spec.num_partitions(),
-    );
 
     let is_left_hash_partitioned =
         matches!(left_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
@@ -1236,6 +1242,10 @@ fn translate_join(
             }
         }
         JoinStrategy::SortMerge => {
+            let num_partitions = max(
+                left_clustering_spec.num_partitions(),
+                right_clustering_spec.num_partitions(),
+            );
             if *join_type != JoinType::Inner {
                 return Err(common_error::DaftError::ValueError(
                     "Sort-merge join currently only supports inner joins".to_string(),
@@ -1261,7 +1271,7 @@ fn translate_join(
                         left_on.clone(),
                         std::iter::repeat(false).take(left_on.len()).collect(),
                         std::iter::repeat(false).take(left_on.len()).collect(),
-                        num_partitions,
+                        Some(num_partitions),
                     ))
                     .arced();
                 }
@@ -1271,7 +1281,7 @@ fn translate_join(
                         right_on.clone(),
                         std::iter::repeat(false).take(right_on.len()).collect(),
                         std::iter::repeat(false).take(right_on.len()).collect(),
-                        num_partitions,
+                        Some(num_partitions),
                     ))
                     .arced();
                 }
@@ -1303,7 +1313,7 @@ fn translate_join(
                 num_left_partitions,
                 num_right_partitions,
             ) {
-                (true, true, a, b) | (false, false, a, b) => max(a, b),
+                (true, true, a, b) => max(a, b),
                 (_, _, 1, x) | (_, _, x, 1) => x,
                 (true, false, a, b)
                     if (a as f64) >= (b as f64) * cfg.hash_join_partition_size_leniency =>
@@ -1315,7 +1325,11 @@ fn translate_join(
                 {
                     b
                 }
-                (_, _, a, b) => max(a, b),
+                (_, _, _, _) => {
+                    let bigger_size_bytes = max(left_stats.size_bytes, right_stats.size_bytes);
+                    let partition_size_bytes = cfg.shuffle_partition_size_bytes;
+                    bigger_size_bytes.div_ceil(partition_size_bytes)
+                }
             };
             if num_left_partitions != num_partitions
                 || (num_partitions > 1 && !is_left_hash_partitioned)
@@ -1325,6 +1339,7 @@ fn translate_join(
                         left_on.clone(),
                         num_partitions,
                         Some(cfg),
+                        false,
                     ),
                 )
                 .into();
@@ -1337,6 +1352,7 @@ fn translate_join(
                         right_on.clone(),
                         num_partitions,
                         Some(cfg),
+                        false,
                     ),
                 )
                 .into();

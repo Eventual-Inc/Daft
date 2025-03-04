@@ -26,7 +26,11 @@ use super::{
     translate::{adaptively_translate_single_logical_node, translate_single_logical_node},
 };
 use crate::{
-    ops::{InMemoryScan, PreviousStageScan},
+    adaptive_optimization::{
+        optimizer::{AdaptiveOptimizer, AdaptiveOptimizerConfig},
+        rules::{AdaptRepartition, AdaptiveOptimizerRuleBatch, AdaptiveRuleExecutionStrategy},
+    },
+    ops::{InMemoryScan, PreviousStageScan, ShuffleExchange, Sort},
     PhysicalPlan, PhysicalPlanRef,
 };
 
@@ -139,46 +143,64 @@ impl TreeNodeRewriter for PhysicalStageTranslator {
 
     fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         // If not a shuffle exchange, don't transform
-        let shuffle_exchange = match node.as_ref() {
-            PhysicalPlan::ShuffleExchange(se) => se,
-            _ => return Ok(Transformed::no(node)),
-        };
+        match node.as_ref() {
+            PhysicalPlan::ShuffleExchange(ShuffleExchange { input, .. }) => {
+                // If child is not an in memory scan, emit the child
+                if !matches!(input.as_ref(), PhysicalPlan::InMemoryScan(..)) {
+                    let child = input.clone();
+                    self.partial_physical_plan = Some(child.clone());
 
-        // If child is not an in memory scan, emit the child
-        if !matches!(
-            shuffle_exchange.input.as_ref(),
-            PhysicalPlan::InMemoryScan(..)
-        ) {
-            let child = shuffle_exchange.input.clone();
-            self.partial_physical_plan = Some(child.clone());
+                    let placeholder = PhysicalPlan::PreviousStageScan(PreviousStageScan::new(
+                        child.clustering_spec(),
+                    ));
 
-            let placeholder =
-                PhysicalPlan::PreviousStageScan(PreviousStageScan::new(child.clustering_spec()));
+                    return Ok(Transformed::new(
+                        node.with_new_children(&[placeholder.arced()]).arced(),
+                        true,
+                        TreeNodeRecursion::Stop,
+                    ));
+                }
 
-            return Ok(Transformed::new(
-                node.with_new_children(&[placeholder.arced()]).arced(),
-                true,
-                TreeNodeRecursion::Stop,
-            ));
+                // If it's a root node with in memory scan child, don't transform
+                let is_root = Arc::ptr_eq(&node, &self.root);
+                if is_root {
+                    return Ok(Transformed::no(node));
+                }
+
+                // Otherwise emit the shuffle exchange and return transformed placeholder
+                self.partial_physical_plan = Some(node.clone());
+
+                let placeholder =
+                    PhysicalPlan::PreviousStageScan(PreviousStageScan::new(node.clustering_spec()));
+
+                return Ok(Transformed::new(
+                    placeholder.arced(),
+                    true,
+                    TreeNodeRecursion::Stop,
+                ));
+            }
+            PhysicalPlan::Sort(Sort {
+                input,
+                num_partitions,
+                ..
+            }) if !matches!(input.as_ref(), PhysicalPlan::InMemoryScan(..))
+                && num_partitions.map_or(false, |np| np == 1) =>
+            {
+                let child = input.clone();
+                self.partial_physical_plan = Some(child.clone());
+
+                let placeholder = PhysicalPlan::PreviousStageScan(PreviousStageScan::new(
+                    child.clustering_spec(),
+                ));
+
+                return Ok(Transformed::new(
+                    node.with_new_children(&[placeholder.arced()]).arced(),
+                    true,
+                    TreeNodeRecursion::Stop,
+                ));
+            }
+            _ => Ok(Transformed::no(node)),
         }
-
-        // If it's a root node with in memory scan child, don't transform
-        let is_root = Arc::ptr_eq(&node, &self.root);
-        if is_root {
-            return Ok(Transformed::no(node));
-        }
-
-        // Otherwise emit the shuffle exchange and return transformed placeholder
-        self.partial_physical_plan = Some(node.clone());
-
-        let placeholder =
-            PhysicalPlan::PreviousStageScan(PreviousStageScan::new(node.clustering_spec()));
-
-        Ok(Transformed::new(
-            placeholder.arced(),
-            true,
-            TreeNodeRecursion::Stop,
-        ))
     }
 }
 
@@ -582,7 +604,17 @@ impl AdaptivePlanner {
 
             assert!(result.transformed);
 
-            self.remaining_physical_plan = Some(result.data);
+            let optimizer = AdaptiveOptimizer::new(
+                vec![AdaptiveOptimizerRuleBatch::new(
+                    vec![Box::new(AdaptRepartition::new(self.cfg.clone()))],
+                    AdaptiveRuleExecutionStrategy::Once,
+                )],
+                AdaptiveOptimizerConfig::default(),
+            );
+
+            let optimized_physical_plan = optimizer.optimize(result.data)?;
+
+            self.remaining_physical_plan = Some(optimized_physical_plan);
         }
         // Otherwise, we need to replace the logical placeholder with the materialized results
         else {

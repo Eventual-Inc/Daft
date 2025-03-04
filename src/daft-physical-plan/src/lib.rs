@@ -1,6 +1,7 @@
 #![feature(assert_matches)]
 #![feature(let_chains)]
 
+mod adaptive_optimization;
 mod display;
 pub mod ops;
 mod optimization;

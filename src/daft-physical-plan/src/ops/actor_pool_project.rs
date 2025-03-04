@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
@@ -11,7 +9,6 @@ use daft_dsl::{
     },
     Expr, ExprRef,
 };
-use daft_logical_plan::partitioning::{translate_clustering_spec, ClusteringSpec};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -21,23 +18,16 @@ use crate::{impl_default_tree_display, PhysicalPlanRef};
 pub struct ActorPoolProject {
     pub input: PhysicalPlanRef,
     pub projection: Vec<ExprRef>,
-    pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl ActorPoolProject {
-    pub(crate) fn try_new(input: PhysicalPlanRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
-        let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
-
+    pub(crate) fn new(input: PhysicalPlanRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
         let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
         if !num_actor_pool_udfs == 1 {
             return Err(DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 actor pool UDF expression but found: {num_actor_pool_udfs}")));
         }
 
-        Ok(Self {
-            input,
-            projection,
-            clustering_spec,
-        })
+        Ok(Self { input, projection })
     }
 
     pub fn resource_request(&self) -> Option<ResourceRequest> {
@@ -83,10 +73,6 @@ impl ActorPoolProject {
                 .join(", ")
         ));
         res.push(format!("Concurrency = {}", self.concurrency()));
-        res.push(format!(
-            "Clustering spec = {{ {} }}",
-            self.clustering_spec.multiline_display().join(", ")
-        ));
         let resource_request = self.resource_request().map(|rr| rr.multiline_display());
         if let Some(resource_request) = resource_request
             && !resource_request.is_empty()

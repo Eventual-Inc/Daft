@@ -77,6 +77,7 @@ mod tests {
             partition_by,
             num_partitions,
             None,
+            false,
         ))
         .into()
     }

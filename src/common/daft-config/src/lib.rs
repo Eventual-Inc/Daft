@@ -53,6 +53,7 @@ pub struct DaftExecutionConfig {
     pub csv_target_filesize: usize,
     pub csv_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
+    pub shuffle_partition_size_bytes: usize,
     pub partial_aggregation_threshold: usize,
     pub high_cardinality_aggregation_threshold: f64,
     pub read_sql_partition_size_bytes: usize,
@@ -83,6 +84,7 @@ impl Default for DaftExecutionConfig {
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
             shuffle_aggregation_default_partitions: 200,
+            shuffle_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB

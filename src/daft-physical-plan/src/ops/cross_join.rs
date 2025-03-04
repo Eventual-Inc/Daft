@@ -17,7 +17,6 @@ pub struct CrossJoin {
     pub left: PhysicalPlanRef,
     pub right: PhysicalPlanRef,
     pub outer_loop_side: JoinSide,
-    pub clustering_spec: ClusteringSpecRef,
 }
 
 impl CrossJoin {
@@ -26,39 +25,10 @@ impl CrossJoin {
         right: PhysicalPlanRef,
         outer_loop_side: JoinSide,
     ) -> Self {
-        let left_spec = left.clustering_spec();
-        let right_spec = right.clustering_spec();
-
-        let num_partitions = left_spec.num_partitions() * right_spec.num_partitions();
-
-        let (outer_spec, inner_spec) = match outer_loop_side {
-            JoinSide::Left => (left_spec, right_spec),
-            JoinSide::Right => (right_spec, left_spec),
-        };
-
-        let clustering_spec = if inner_spec.num_partitions() == 1 {
-            match outer_spec.as_ref() {
-                ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
-                    ClusteringSpec::Hash(HashClusteringConfig::new(num_partitions, by.clone()))
-                }
-                ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) => {
-                    ClusteringSpec::Range(RangeClusteringConfig::new(
-                        num_partitions,
-                        by.clone(),
-                        descending.clone(),
-                    ))
-                }
-                _ => ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
-            }
-        } else {
-            ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions))
-        };
-
         Self {
             left,
             right,
             outer_loop_side,
-            clustering_spec: Arc::new(clustering_spec),
         }
     }
 

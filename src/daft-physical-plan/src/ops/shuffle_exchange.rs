@@ -14,6 +14,7 @@ use crate::{impl_default_tree_display, PhysicalPlanRef};
 pub struct ShuffleExchange {
     pub input: PhysicalPlanRef,
     pub strategy: ShuffleExchangeStrategy,
+    pub can_adapt: bool,
 }
 
 impl ShuffleExchange {
@@ -31,6 +32,7 @@ impl ShuffleExchange {
             ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
                 target_spec.clone()
             }
+            ShuffleExchangeStrategy::ActorBasedShuffle { target_spec } => target_spec.clone(),
         }
     }
 }
@@ -38,13 +40,21 @@ impl ShuffleExchange {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShuffleExchangeStrategy {
     /// Fully materialize the data after the Map, and then pull results from the Reduce.
-    NaiveFullyMaterializingMapReduce { target_spec: Arc<ClusteringSpec> },
+    NaiveFullyMaterializingMapReduce {
+        target_spec: Arc<ClusteringSpec>,
+    },
 
     /// Sequentially splits/coalesce partitions in order to meet a target number of partitions
-    SplitOrCoalesceToTargetNum { target_num_partitions: usize },
+    SplitOrCoalesceToTargetNum {
+        target_num_partitions: usize,
+    },
 
     MapReduceWithPreShuffleMerge {
         pre_shuffle_merge_threshold: usize,
+        target_spec: Arc<ClusteringSpec>,
+    },
+
+    ActorBasedShuffle {
         target_spec: Arc<ClusteringSpec>,
     },
 }
@@ -95,6 +105,10 @@ impl ShuffleExchange {
                     pre_shuffle_merge_threshold
                 ));
             }
+            ShuffleExchangeStrategy::ActorBasedShuffle { target_spec } => {
+                res.push("Strategy: ActorBasedShuffle".to_string());
+                res.push(format!("Target Spec: {:?}", target_spec));
+            }
         }
         res
     }
@@ -144,6 +158,11 @@ impl ShuffleExchangeFactory {
                     target_spec: clustering_spec,
                 }
             }
+            Some(cfg) if cfg.shuffle_algorithm == "actor_based_shuffle" => {
+                ShuffleExchangeStrategy::ActorBasedShuffle {
+                    target_spec: clustering_spec,
+                }
+            }
             Some(cfg) if cfg.shuffle_algorithm == "auto" => {
                 if self.should_use_pre_shuffle_merge(
                     self.input.clustering_spec().num_partitions(),
@@ -184,6 +203,7 @@ impl ShuffleExchangeFactory {
         by: Vec<ExprRef>,
         num_partitions: usize,
         cfg: Option<&DaftExecutionConfig>,
+        can_adapt: bool,
     ) -> ShuffleExchange {
         let clustering_spec = Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
             num_partitions,
@@ -195,6 +215,7 @@ impl ShuffleExchangeFactory {
         ShuffleExchange {
             input: self.input.clone(),
             strategy,
+            can_adapt,
         }
     }
 
@@ -204,6 +225,7 @@ impl ShuffleExchangeFactory {
         descending: Vec<bool>,
         num_partitions: usize,
         cfg: Option<&DaftExecutionConfig>,
+        can_adapt: bool,
     ) -> ShuffleExchange {
         let clustering_spec = Arc::new(ClusteringSpec::Range(RangeClusteringConfig::new(
             num_partitions,
@@ -216,6 +238,7 @@ impl ShuffleExchangeFactory {
         ShuffleExchange {
             input: self.input.clone(),
             strategy,
+            can_adapt,
         }
     }
 
@@ -223,6 +246,7 @@ impl ShuffleExchangeFactory {
         &self,
         num_partitions: usize,
         cfg: Option<&DaftExecutionConfig>,
+        can_adapt: bool,
     ) -> ShuffleExchange {
         let clustering_spec = Arc::new(ClusteringSpec::Random(RandomClusteringConfig::new(
             num_partitions,
@@ -233,16 +257,18 @@ impl ShuffleExchangeFactory {
         ShuffleExchange {
             input: self.input.clone(),
             strategy,
+            can_adapt,
         }
     }
 
-    pub fn get_split_or_coalesce(&self, num_partitions: usize) -> ShuffleExchange {
+    pub fn get_split_or_coalesce(&self, num_partitions: usize, can_adapt: bool) -> ShuffleExchange {
         let strategy = ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
             target_num_partitions: num_partitions,
         };
         ShuffleExchange {
             input: self.input.clone(),
             strategy,
+            can_adapt,
         }
     }
 }

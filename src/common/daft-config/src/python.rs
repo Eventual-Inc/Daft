@@ -91,6 +91,7 @@ impl PyDaftExecutionConfig {
         csv_target_filesize=None,
         csv_inflation_factor=None,
         shuffle_aggregation_default_partitions=None,
+        shuffle_partition_size_bytes=None,
         partial_aggregation_threshold=None,
         high_cardinality_aggregation_threshold=None,
         read_sql_partition_size_bytes=None,
@@ -119,6 +120,7 @@ impl PyDaftExecutionConfig {
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
+        shuffle_partition_size_bytes: Option<usize>,
         partial_aggregation_threshold: Option<usize>,
         high_cardinality_aggregation_threshold: Option<f64>,
         read_sql_partition_size_bytes: Option<usize>,
@@ -181,6 +183,9 @@ impl PyDaftExecutionConfig {
         {
             config.shuffle_aggregation_default_partitions = shuffle_aggregation_default_partitions;
         }
+        if let Some(shuffle_partition_size_bytes) = shuffle_partition_size_bytes {
+            config.shuffle_partition_size_bytes = shuffle_partition_size_bytes;
+        }
         if let Some(partial_aggregation_threshold) = partial_aggregation_threshold {
             config.partial_aggregation_threshold = partial_aggregation_threshold;
         }
@@ -204,7 +209,7 @@ impl PyDaftExecutionConfig {
         if let Some(shuffle_algorithm) = shuffle_algorithm {
             if !matches!(
                 shuffle_algorithm,
-                "map_reduce" | "pre_shuffle_merge" | "auto"
+                "map_reduce" | "pre_shuffle_merge" | "auto" | "actor_based_shuffle"
             ) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                     "shuffle_algorithm must be 'auto', 'map_reduce' or 'pre_shuffle_merge'",
@@ -302,6 +307,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_shuffle_aggregation_default_partitions(&self) -> PyResult<usize> {
         Ok(self.config.shuffle_aggregation_default_partitions)
+    }
+
+    #[getter]
+    fn get_shuffle_partition_size_bytes(&self) -> PyResult<usize> {
+        Ok(self.config.shuffle_partition_size_bytes)
     }
 
     #[getter]

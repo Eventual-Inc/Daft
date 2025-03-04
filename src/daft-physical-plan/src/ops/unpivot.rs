@@ -14,7 +14,6 @@ pub struct Unpivot {
     pub values: Vec<ExprRef>,
     pub variable_name: String,
     pub value_name: String,
-    pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl Unpivot {
@@ -25,15 +24,12 @@ impl Unpivot {
         variable_name: &str,
         value_name: &str,
     ) -> Self {
-        let clustering_spec = translate_clustering_spec(input.clustering_spec(), &values);
-
         Self {
             input,
             ids,
             values,
             variable_name: variable_name.to_string(),
             value_name: value_name.to_string(),
-            clustering_spec,
         }
     }
 
