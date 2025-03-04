@@ -214,7 +214,21 @@ class Catalog(ABC):
 
         Examples:
             >>> import daft
-            >>> from daft.catalog import Catalog
+            >>> from daft.catalog import Catalog, Table
+            >>>
+            >>> dictionary = {"x": [1, 2, 3]}
+            >>> dataframe = daft.from_pydict(dictionary)
+            >>> table = Table.from_df("temp", dataframe)
+            >>>
+            >>> catalog = Catalog.from_pydict(
+            ...     {
+            ...         "R": dictionary,
+            ...         "S": dataframe,
+            ...         "T": table,
+            ...     }
+            ... )
+            >>> catalog.list_tables()
+            ['R', 'S', 'T']
 
         Args:
             tables (dict[str,object]): a dictionary of table-like objects (pydicts, dataframes, and tables)
