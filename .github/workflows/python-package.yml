@@ -27,7 +27,7 @@ jobs:
         python-version: ['3.9', '3.10']
         daft-runner: [py, ray, native]
         pyarrow-version: [8.0.0, 16.0.0]
-        os: [ubuntu-20.04, windows-latest]
+        os: [ubuntu-22.04, windows-latest]
         enable-aqe: [1, 0]
         exclude:
         - daft-runner: py
@@ -36,15 +36,15 @@ jobs:
           enable-aqe: 1
         - daft-runner: ray
           pyarrow-version: 8.0.0
-          os: ubuntu-20.04
+          os: ubuntu-22.04
         - daft-runner: py
           python-version: '3.10'
           pyarrow-version: 8.0.0
-          os: ubuntu-20.04
+          os: ubuntu-22.04
         - daft-runner: native
           python-version: '3.10'
           pyarrow-version: 8.0.0
-          os: ubuntu-20.04
+          os: ubuntu-22.04
         - python-version: '3.9'
           pyarrow-version: 16.0.0
         - os: windows-latest
