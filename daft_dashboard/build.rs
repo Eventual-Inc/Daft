@@ -12,8 +12,12 @@ fn main() {
         .unwrap_or(false);
 
     if !bun_available {
-        println!("cargo:warning=Bun not found, please install via `curl -X-fsSL https://bun.sh/install | bash`");
-        return;
+        if cfg!(debug_assertions) {
+            println!("cargo:warning=Bun not found, skipping dashboard frontend assets");
+            return;
+        } else {
+            panic!("Bun is required for release builds");
+        }
     }
 
     // Install dependencies
