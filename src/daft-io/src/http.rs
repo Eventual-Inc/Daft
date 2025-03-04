@@ -84,7 +84,7 @@ enum Error {
 ///
 /// This function will look for `<a href=***>` tags and return all the links that it finds as
 /// absolute URLs
-fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<FileMetadata>> {
+fn get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<FileMetadata>> {
     let path_url = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
     let metas = HTML_A_TAG_HREF_RE
         .captures_iter(text)
@@ -327,7 +327,7 @@ impl ObjectSource for HttpSource {
                     .with_context(|_| UnableToParseUtf8BodySnafu {
                         path: path.to_string(),
                     })?;
-                let file_metadatas = _get_file_metadata_from_html(path.as_str(), text.as_str())?;
+                let file_metadatas = get_file_metadata_from_html(path.as_str(), text.as_str())?;
                 Ok(LSResult {
                     files: file_metadatas,
                     continuation_token: None,

@@ -59,7 +59,7 @@ impl SQLTableFunctions {
     }
 }
 
-impl<'a> SQLPlanner<'a> {
+impl SQLPlanner<'_> {
     pub(crate) fn plan_table_function(
         &self,
         fn_name: &str,

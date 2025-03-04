@@ -300,7 +300,7 @@ async fn ls_with_prefix_fallback(
 }
 
 /// Helper to filter FileMetadata entries that should not be returned by globbing
-fn _should_return(fm: &FileMetadata) -> bool {
+fn should_return(fm: &FileMetadata) -> bool {
     let file_path = fm.filepath.to_lowercase();
     let file_name = Path::new(&file_path).file_name().and_then(|f| f.to_str());
     match fm.filetype {
@@ -413,7 +413,7 @@ pub async fn glob(
                 while let Some(result) = results.next().await && remaining_results.map_or(true, |rr| rr > 0) {
                     match result {
                         Ok(fm) => {
-                            if _should_return(&fm) {
+                            if should_return(&fm) {
                                 remaining_results = remaining_results.map(|rr| rr - 1);
                                 yield Ok(fm)
                             }
@@ -686,7 +686,7 @@ pub async fn glob(
         let mut remaining_results = limit;
         while remaining_results.map_or(true, |rr| rr > 0) && let Some(v) = to_rtn_rx.recv().await {
 
-            if v.as_ref().is_ok_and(|v| !_should_return(v)) {
+            if v.as_ref().is_ok_and(|v| !should_return(v)) {
                 continue
             }
 

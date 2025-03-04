@@ -280,6 +280,7 @@ impl<R> Drop for CountingReader<R> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
 pub fn local_parquet_read_into_column_iters(
     uri: &str,
     columns: Option<&[String]>,

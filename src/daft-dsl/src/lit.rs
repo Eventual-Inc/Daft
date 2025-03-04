@@ -454,7 +454,7 @@ impl Literal for String {
     }
 }
 
-impl<'a> Literal for &'a str {
+impl Literal for &'_ str {
     fn literal_value(self) -> LiteralValue {
         LiteralValue::Utf8(self.to_owned())
     }
@@ -470,7 +470,7 @@ macro_rules! make_literal {
     };
 }
 
-impl<'a> Literal for &'a [u8] {
+impl Literal for &'_ [u8] {
     fn literal_value(self) -> LiteralValue {
         LiteralValue::Binary(self.to_vec())
     }

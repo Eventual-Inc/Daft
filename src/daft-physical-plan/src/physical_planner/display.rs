@@ -15,7 +15,7 @@ impl<'a, W> StageDisplayMermaidVisitor<'a, W> {
     }
 }
 
-impl<'a, W> StageDisplayMermaidVisitor<'a, W>
+impl<W> StageDisplayMermaidVisitor<'_, W>
 where
     W: fmt::Write,
 {

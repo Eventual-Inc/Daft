@@ -105,6 +105,7 @@ impl PlannerContext {
 }
 
 /// An SQLPlanner is created for each scope to bind names and translate to logical plans.
+///
 /// TODO flip SQLPlanner to pass scoped state objects rather than being stateful itself.
 /// This gives us control on state management without coupling our scopes to the call stack.
 /// It also eliminates extra references on the shared context and we can remove interior mutability.

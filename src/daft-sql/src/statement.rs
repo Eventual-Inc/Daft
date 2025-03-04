@@ -4,7 +4,7 @@ use sqlparser::ast;
 use crate::{error::SQLPlannerResult, unsupported_sql_err, SQLPlanner};
 
 /// Daft-SQL statement planning.
-impl<'a> SQLPlanner<'a> {
+impl SQLPlanner<'_> {
     /// Generates a logical plan for an ast statement.
     pub(crate) fn plan_statement(
         &mut self,
@@ -18,7 +18,7 @@ impl<'a> SQLPlanner<'a> {
                 verbose,
                 statement,
                 format,
-            } => self.plan_describe(describe_alias, *analyze, *verbose, statement, format),
+            } => self.plan_describe(describe_alias, *analyze, *verbose, statement, *format),
             ast::Statement::ExplainTable {
                 describe_alias,
                 hive_format,
@@ -26,7 +26,7 @@ impl<'a> SQLPlanner<'a> {
                 table_name,
             } => self.plan_describe_table(
                 describe_alias,
-                hive_format,
+                *hive_format,
                 *has_table_keyword,
                 table_name,
             ),
@@ -46,7 +46,7 @@ impl<'a> SQLPlanner<'a> {
         analyze: bool,
         verbose: bool,
         statement: &ast::Statement,
-        format: &Option<ast::AnalyzeFormat>,
+        format: Option<ast::AnalyzeFormat>,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         // err on `DESC | EXPLAIN`
         if *describe_alias != ast::DescribeAlias::Describe {
@@ -67,7 +67,7 @@ impl<'a> SQLPlanner<'a> {
     fn plan_describe_table(
         &self,
         describe_alias: &ast::DescribeAlias,
-        hive_format: &Option<ast::HiveDescribeFormat>,
+        hive_format: Option<ast::HiveDescribeFormat>,
         has_table_keyword: bool,
         table_name: &ast::ObjectName,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {

@@ -206,7 +206,7 @@ pub fn url_upload(
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Series> {
     #[allow(clippy::too_many_arguments)]
-    fn _upload_bytes_to_folder(
+    fn upload_bytes_to_folder(
         folder_path_iter: Vec<String>,
         // TODO: We can further optimize this for larger rows by using instead an Iterator<Item = bytes::Bytes>
         // This would allow us to iteratively copy smaller chunks of data and feed it to the AWS SDKs, instead
@@ -288,7 +288,7 @@ pub fn url_upload(
                 .into_iter()
                 .map(|v| v.map(|b| bytes::Bytes::from(b.to_vec())))
                 .collect();
-            _upload_bytes_to_folder(
+            upload_bytes_to_folder(
                 folder_path_arr,
                 bytes_array,
                 max_connections,
@@ -307,7 +307,7 @@ pub fn url_upload(
                 .into_iter()
                 .map(|v| v.map(|b| bytes::Bytes::from(b.to_vec())))
                 .collect();
-            _upload_bytes_to_folder(
+            upload_bytes_to_folder(
                 folder_path_arr,
                 bytes_array,
                 max_connections,
@@ -326,7 +326,7 @@ pub fn url_upload(
                 .into_iter()
                 .map(|utf8_slice| utf8_slice.map(|s| bytes::Bytes::from(s.as_bytes().to_vec())))
                 .collect();
-            _upload_bytes_to_folder(
+            upload_bytes_to_folder(
                 folder_path_arr,
                 bytes_array,
                 max_connections,

@@ -43,7 +43,7 @@ pub trait ImageOps {
 pub(crate) fn image_array_from_img_buffers(
     name: &str,
     inputs: &[Option<DaftImageBuffer<'_>>],
-    image_mode: &Option<ImageMode>,
+    image_mode: Option<ImageMode>,
 ) -> DaftResult<ImageArray> {
     use DaftImageBuffer::{L, LA, RGB, RGBA};
     let is_all_u8 = inputs
@@ -82,7 +82,7 @@ pub(crate) fn image_array_from_img_buffers(
     };
     ImageArray::from_vecs(
         name,
-        DataType::Image(*image_mode),
+        DataType::Image(image_mode),
         data,
         offsets,
         ImageArraySidecarData {
@@ -192,7 +192,7 @@ impl ImageOps for ImageArray {
         let buffers: Vec<Option<DaftImageBuffer>> = ImageBufferIter::new(self)
             .map(|img| img.map(|img| img.into_mode(mode)))
             .collect();
-        image_array_from_img_buffers(self.name(), &buffers, &Some(mode))
+        image_array_from_img_buffers(self.name(), &buffers, Some(mode))
     }
 }
 
@@ -227,7 +227,7 @@ impl ImageOps for FixedShapeImageArray {
         };
         let result = crop_images(self, &mut bboxes_iterator);
 
-        image_array_from_img_buffers(self.name(), result.as_slice(), &Some(*self.image_mode()))
+        image_array_from_img_buffers(self.name(), result.as_slice(), Some(*self.image_mode()))
     }
 
     fn resize_to_fixed_shape_image_array(

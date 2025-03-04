@@ -67,7 +67,7 @@ where
     }
 }
 
-impl<'a> IntoIterator for &'a NullArray {
+impl IntoIterator for &'_ NullArray {
     type IntoIter = Take<Repeat<Option<()>>>;
     type Item = <Self::IntoIter as IntoIterator>::Item;
 

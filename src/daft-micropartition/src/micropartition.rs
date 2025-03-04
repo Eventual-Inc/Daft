@@ -106,7 +106,7 @@ fn materialize_scan_task(
             .collect::<Vec<&str>>()
     });
     let file_column_names =
-        _get_file_column_names(pushdown_columns.as_deref(), scan_task.partition_spec());
+        get_file_column_names(pushdown_columns.as_deref(), scan_task.partition_spec());
 
     let urls = scan_task
         .sources
@@ -152,7 +152,7 @@ fn materialize_scan_task(
                 .into_iter()
                 .collect::<Vec<_>>();
 
-            let delete_map = _read_delete_files(
+            let delete_map = read_delete_files(
                 iceberg_delete_files.as_slice(),
                 urls.as_slice(),
                 io_client.clone(),
@@ -794,7 +794,7 @@ pub fn read_json_into_micropartition(
     }
 }
 
-fn _get_file_column_names<'a>(
+fn get_file_column_names<'a>(
     columns: Option<&'a [&'a str]>,
     partition_spec: Option<&PartitionSpec>,
 ) -> Option<Vec<&'a str>> {
@@ -819,7 +819,7 @@ fn _get_file_column_names<'a>(
     }
 }
 
-fn _read_delete_files(
+fn read_delete_files(
     delete_files: &[&str],
     uris: &[&str],
     io_client: Arc<IOClient>,
@@ -876,7 +876,7 @@ fn _read_delete_files(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
+fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
     io_client: Arc<IOClient>,
     multithreaded_io: bool,
     uris: &[&str],
@@ -896,7 +896,7 @@ fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
 ) -> DaftResult<MicroPartition> {
     let delete_map = iceberg_delete_files
         .map(|files| {
-            _read_delete_files(
+            read_delete_files(
                 files.as_slice(),
                 uris,
                 io_client.clone(),
@@ -914,7 +914,7 @@ fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
             .collect::<Vec<&str>>()
     });
 
-    let file_column_names = _get_file_column_names(columns.as_deref(), partition_spec);
+    let file_column_names = get_file_column_names(columns.as_deref(), partition_spec);
     let all_tables = read_parquet_bulk(
         uris,
         file_column_names.as_deref(),
@@ -1000,7 +1000,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         .map_or(false, |files| !files.is_empty())
         || predicate.is_some()
     {
-        return _read_parquet_into_loaded_micropartition(
+        return read_parquet_into_loaded_micropartition(
             io_client,
             multithreaded_io,
             uris,
@@ -1175,7 +1175,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         ))
     } else {
         // If no TableStatistics are available, we perform an eager read
-        _read_parquet_into_loaded_micropartition(
+        read_parquet_into_loaded_micropartition(
             io_client,
             multithreaded_io,
             uris,

@@ -281,7 +281,7 @@ impl AzureBlobSource {
             .flat_map(move |(response, protocol)| match response {
                 Ok(response) => {
                     let containers = response.containers.into_iter().map(move |container| {
-                        Ok(self._container_to_file_metadata(protocol.as_str(), &container))
+                        Ok(self.container_to_file_metadata(protocol.as_str(), &container))
                     });
                     futures::stream::iter(containers).boxed()
                 }
@@ -325,7 +325,7 @@ impl AzureBlobSource {
         );
 
         let mut unchecked_results = self
-            ._list_directory_delimiter_stream(
+            .list_directory_delimiter_stream(
                 &container_client,
                 &protocol,
                 &container_name,
@@ -376,7 +376,7 @@ impl AzureBlobSource {
                                 .trim_end_matches(&AZURE_DELIMITER) // "/upper/blah"
                                 .trim_end_matches(|c: char| c.to_string() != AZURE_DELIMITER); // "/upper/"
 
-                            let upper_results_stream = self._list_directory_delimiter_stream(
+                            let upper_results_stream = self.list_directory_delimiter_stream(
                                 &container_client,
                                 &protocol,
                                 &container_name,
@@ -423,7 +423,7 @@ impl AzureBlobSource {
         }
     }
 
-    async fn _list_directory_delimiter_stream(
+    async fn list_directory_delimiter_stream(
         &self,
         container_client: &ContainerClient,
         protocol: &str,
@@ -460,14 +460,9 @@ impl AzureBlobSource {
             })
             .flat_map(move |(response, protocol, container_name)| match response {
                 Ok(response) => {
-                    let paths_data =
-                        response.blobs.items.into_iter().map(move |blob_item| {
-                            Ok(self._blob_item_to_file_metadata(
-                                &protocol,
-                                &container_name,
-                                &blob_item,
-                            ))
-                        });
+                    let paths_data = response.blobs.items.into_iter().map(move |blob_item| {
+                        Ok(self.blob_item_to_file_metadata(&protocol, &container_name, &blob_item))
+                    });
                     futures::stream::iter(paths_data).boxed()
                 }
                 Err(error) => {
@@ -482,7 +477,7 @@ impl AzureBlobSource {
             .boxed()
     }
 
-    fn _container_to_file_metadata(&self, protocol: &str, container: &Container) -> FileMetadata {
+    fn container_to_file_metadata(&self, protocol: &str, container: &Container) -> FileMetadata {
         // NB: Cannot pass through to Azure client's .url() methods here
         // because they return URIs of a very different format (https://.../container/path).
         FileMetadata {
@@ -492,7 +487,7 @@ impl AzureBlobSource {
         }
     }
 
-    fn _blob_item_to_file_metadata(
+    fn blob_item_to_file_metadata(
         &self,
         protocol: &str,
         container_name: &str,

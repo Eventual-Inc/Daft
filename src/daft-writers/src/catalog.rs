@@ -61,7 +61,7 @@ pub fn create_pyarrow_catalog_writer(
                 *version,
                 *large_dtypes,
                 partition_values,
-                io_config,
+                io_config.as_ref(),
             )?;
             Ok(Box::new(writer))
         }
@@ -80,7 +80,7 @@ pub fn create_pyarrow_catalog_writer(
                 iceberg_properties,
                 *partition_spec_id,
                 partition_values,
-                io_config,
+                io_config.as_ref(),
             )?;
             Ok(Box::new(writer))
         }

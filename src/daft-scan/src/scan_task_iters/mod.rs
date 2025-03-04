@@ -91,7 +91,7 @@ struct MergeByFileSize<'a> {
     max_source_count: usize,
 }
 
-impl<'a> MergeByFileSize<'a> {
+impl MergeByFileSize<'_> {
     /// Returns whether or not the current accumulator is "ready" to be emitted as a finalized merged ScanTask
     ///
     /// "Readiness" is determined by a combination of factors based on how large the accumulated ScanTask is
@@ -135,7 +135,7 @@ impl<'a> MergeByFileSize<'a> {
     }
 }
 
-impl<'a> Iterator for MergeByFileSize<'a> {
+impl Iterator for MergeByFileSize<'_> {
     type Item = DaftResult<ScanTaskRef>;
 
     fn next(&mut self) -> Option<Self::Item> {

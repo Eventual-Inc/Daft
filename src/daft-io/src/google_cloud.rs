@@ -252,7 +252,7 @@ impl GCSClientWrapper {
         Ok(response.size as usize)
     }
     #[allow(clippy::too_many_arguments)]
-    async fn _ls_impl(
+    async fn ls_impl(
         &self,
         client: &Client,
         bucket: &str,
@@ -328,7 +328,7 @@ impl GCSClientWrapper {
                 format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
             };
             let forced_directory_ls_result = self
-                ._ls_impl(
+                .ls_impl(
                     client,
                     bucket,
                     forced_directory_key.as_str(),
@@ -343,7 +343,7 @@ impl GCSClientWrapper {
             // details as the one-and-only-one entry
             if forced_directory_ls_result.files.is_empty() {
                 let mut file_result = self
-                    ._ls_impl(
+                    .ls_impl(
                         client,
                         bucket,
                         key,
@@ -371,7 +371,7 @@ impl GCSClientWrapper {
                 Ok(forced_directory_ls_result)
             }
         } else {
-            self._ls_impl(
+            self.ls_impl(
                 client,
                 bucket,
                 key,

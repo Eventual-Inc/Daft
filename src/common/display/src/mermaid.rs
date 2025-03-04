@@ -87,7 +87,7 @@ impl<'a, W> MermaidDisplayVisitor<'a, W> {
     }
 }
 
-impl<'a, W> MermaidDisplayVisitor<'a, W>
+impl<W> MermaidDisplayVisitor<'_, W>
 where
     W: fmt::Write,
 {

@@ -60,7 +60,7 @@ impl<'a> ListGrowable<'a> {
     }
 }
 
-impl<'a> Growable for ListGrowable<'a> {
+impl Growable for ListGrowable<'_> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let offsets = self.child_arrays_offsets.get(index).unwrap();
         let start_offset = &offsets.buffer()[start];

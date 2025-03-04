@@ -610,7 +610,7 @@ impl S3LikeSource {
     }
 
     #[async_recursion]
-    async fn _get_impl(
+    async fn get_impl(
         &self,
         permit: OwnedSemaphorePermit,
         uri: &str,
@@ -709,7 +709,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
-                            self._get_impl(permit, uri, range, &new_region).await
+                            self.get_impl(permit, uri, range, &new_region).await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -722,7 +722,7 @@ impl S3LikeSource {
     }
 
     #[async_recursion]
-    async fn _head_impl(
+    async fn head_impl(
         &self,
         permit: SemaphorePermit<'async_recursion>,
         uri: &str,
@@ -792,7 +792,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client", new_region, region);
-                            self._head_impl(permit, uri, &new_region).await
+                            self.head_impl(permit, uri, &new_region).await
                         }
                         _ => Err(UnableToHeadFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -806,7 +806,7 @@ impl S3LikeSource {
 
     #[allow(clippy::too_many_arguments)]
     #[async_recursion]
-    async fn _list_impl(
+    async fn list_impl(
         &self,
         permit: SemaphorePermit<'async_recursion>,
         scheme: &str,
@@ -933,7 +933,7 @@ impl S3LikeSource {
 
                         let new_region = Region::new(region_name);
                         log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
-                        self._list_impl(
+                        self.list_impl(
                             permit,
                             scheme,
                             bucket,
@@ -957,7 +957,7 @@ impl S3LikeSource {
     }
 
     #[async_recursion]
-    async fn _put_impl(
+    async fn put_impl(
         &self,
         _permit: OwnedSemaphorePermit,
         uri: &str,
@@ -1017,7 +1017,7 @@ impl ObjectSource for S3LikeSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
         let get_result = self
-            ._get_impl(permit, uri, range, &self.default_region)
+            .get_impl(permit, uri, range, &self.default_region)
             .await?;
 
         if io_stats.is_some() {
@@ -1052,7 +1052,7 @@ impl ObjectSource for S3LikeSource {
             .acquire_owned()
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
-        self._put_impl(permit, uri, data, &self.default_region)
+        self.put_impl(permit, uri, data, &self.default_region)
             .await?;
 
         if let Some(io_stats) = io_stats {
@@ -1069,7 +1069,7 @@ impl ObjectSource for S3LikeSource {
             .acquire()
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
-        let head_result = self._head_impl(permit, uri, &self.default_region).await?;
+        let head_result = self.head_impl(permit, uri, &self.default_region).await?;
         if let Some(is) = io_stats.as_ref() {
             is.mark_head_requests(1);
         }
@@ -1126,7 +1126,7 @@ impl ObjectSource for S3LikeSource {
                     .await
                     .context(UnableToGrabSemaphoreSnafu)?;
 
-                self._list_impl(
+                self.list_impl(
                     permit,
                     scheme.as_str(),
                     bucket.as_str(),
@@ -1151,7 +1151,7 @@ impl ObjectSource for S3LikeSource {
                 // Might be a File
                 let key = key.trim_end_matches(S3_DELIMITER);
                 let mut lsr = self
-                    ._list_impl(
+                    .list_impl(
                         permit,
                         scheme.as_str(),
                         bucket.as_str(),
@@ -1185,7 +1185,7 @@ impl ObjectSource for S3LikeSource {
                     .await
                     .context(UnableToGrabSemaphoreSnafu)?;
 
-                self._list_impl(
+                self.list_impl(
                     permit,
                     scheme.as_str(),
                     bucket.as_str(),

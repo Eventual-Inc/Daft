@@ -44,7 +44,7 @@ struct BoxStreamIterator<'a, T> {
     runtime_handle: RuntimeRef,
 }
 
-impl<'a, T> Iterator for BoxStreamIterator<'a, T> {
+impl<T> Iterator for BoxStreamIterator<'_, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {

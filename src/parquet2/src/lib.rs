@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-/// Unofficial implementation of parquet IO in Rust.
+#![allow(clippy::needless_lifetimes)]
+#![allow(clippy::too_long_first_doc_paragraph)]
+//! Unofficial implementation of parquet IO in Rust.
 
 #[macro_use]
 pub mod error;

@@ -268,7 +268,7 @@ impl Default for SQLFunctions {
     }
 }
 
-impl<'a> SQLPlanner<'a> {
+impl SQLPlanner<'_> {
     pub(crate) fn plan_function(&self, func: &Function) -> SQLPlannerResult<ExprRef> {
         // assert using only supported features
         check_features(func)?;
