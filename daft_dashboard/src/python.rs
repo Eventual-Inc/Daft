@@ -23,12 +23,12 @@ use crate::DashboardState;
 
 const NUMBER_OF_WORKER_THREADS: usize = 3;
 
-#[pyfunction(signature = (static_assets_path, detach = false, noop_if_initialized = false))]
-fn launch(static_assets_path: String, detach: bool, noop_if_initialized: bool) -> PyResult<()> {
+#[pyfunction(signature = (detach = false, noop_if_initialized = false))]
+fn launch(detach: bool, noop_if_initialized: bool) -> PyResult<()> {
     if detach {
-        launch_detached(&static_assets_path, noop_if_initialized)
+        launch_detached(noop_if_initialized)
     } else {
-        launch_attached(&static_assets_path, noop_if_initialized)
+        launch_attached(noop_if_initialized)
     }
     .map_err(|error| PyErr::new::<exceptions::PyRuntimeError, _>(error.to_string()))
 }
@@ -99,7 +99,7 @@ fn cli(args: Vec<String>, static_assets_path: String) -> PyResult<()> {
     match Cli::parse_from(args) {
         Cli::Launch {
             noop_if_initialized,
-        } => launch(static_assets_path, true, noop_if_initialized),
+        } => launch(true, noop_if_initialized),
         Cli::Shutdown { noop_if_shutdown } => shutdown(noop_if_shutdown),
     }
 }
@@ -119,8 +119,8 @@ enum BreakReason {
     ApiShutdownSignal,
 }
 
-fn launch_attached(static_assets_path: &str, noop_if_initialized: bool) -> anyhow::Result<()> {
-    let break_reason = tokio_runtime(true).block_on(run(static_assets_path))?;
+fn launch_attached(noop_if_initialized: bool) -> anyhow::Result<()> {
+    let break_reason = tokio_runtime(true).block_on(run())?;
 
     if break_reason == BreakReason::PortAlreadyBound && !noop_if_initialized {
         Err(already_bound_error())
@@ -129,7 +129,7 @@ fn launch_attached(static_assets_path: &str, noop_if_initialized: bool) -> anyho
     }
 }
 
-fn launch_detached(static_assets_path: &str, noop_if_initialized: bool) -> anyhow::Result<()> {
+fn launch_detached(noop_if_initialized: bool) -> anyhow::Result<()> {
     #[cfg(not(unix))]
     {
         Err(PyErr::new::<exceptions::PyRuntimeError, _>("Daft dashboard's detaching feature is not available on this platform; unable to fork on Windows"))
@@ -140,7 +140,7 @@ fn launch_detached(static_assets_path: &str, noop_if_initialized: bool) -> anyho
         match fork::fork().unwrap() {
             fork::Fork::Parent(..) => Ok(()),
             fork::Fork::Child => {
-                let break_reason = tokio_runtime(true).block_on(run(static_assets_path))?;
+                let break_reason = tokio_runtime(true).block_on(run())?;
                 exit(match break_reason {
                     BreakReason::PortAlreadyBound if noop_if_initialized => 0,
                     BreakReason::PortAlreadyBound => {
@@ -159,7 +159,7 @@ fn launch_detached(static_assets_path: &str, noop_if_initialized: bool) -> anyho
     }
 }
 
-async fn run(static_assets_path: &str) -> anyhow::Result<BreakReason> {
+async fn run() -> anyhow::Result<BreakReason> {
     let listener = match TcpListener::bind((super::SERVER_ADDR, super::SERVER_PORT)).await {
         Ok(listener) => listener,
         Err(error) if error.kind() == ErrorKind::AddrInUse => {
@@ -171,7 +171,7 @@ async fn run(static_assets_path: &str) -> anyhow::Result<BreakReason> {
     let mut python_signal = pin!(interrupt_handler());
     let (send, mut recv) = mpsc::channel::<()>(1);
     let mut api_signal = pin!(async { recv.recv().await.unwrap() });
-    let state = DashboardState::new(Some(static_assets_path), send);
+    let state = DashboardState::new(send);
 
     Ok(loop {
         tokio::select! {
