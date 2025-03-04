@@ -42,7 +42,9 @@ impl MapArray {
                 self.data_type()
             )));
         };
-
+        if self.is_empty() {
+            return Ok(Series::empty("value", value_type.as_ref()));
+        }
         match key_to_get.len() {
             1 => self.get_single_key(key_to_get, value_type),
             len if len == self.len() => self.get_multiple_keys(key_to_get, value_type),
@@ -64,7 +66,6 @@ impl MapArray {
             .try_collect()?;
 
         let result: Vec<_> = result.iter().collect();
-
         Series::concat(&result)
     }
 

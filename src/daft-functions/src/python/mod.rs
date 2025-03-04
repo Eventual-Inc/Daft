@@ -97,6 +97,9 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::csc);
     add!(numeric::sec);
     add!(numeric::cot);
+    add!(numeric::sinh);
+    add!(numeric::cosh);
+    add!(numeric::tanh);
     add!(numeric::arcsin);
     add!(numeric::arccos);
     add!(numeric::arctan);

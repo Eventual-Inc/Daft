@@ -65,6 +65,9 @@ Numeric
     Expression.csc
     Expression.sec
     Expression.cot
+    Expression.sinh
+    Expression.cosh
+    Expression.tanh
     Expression.arcsin
     Expression.arccos
     Expression.arctan
