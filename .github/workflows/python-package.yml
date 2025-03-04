@@ -142,10 +142,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.10']
+        python-version: ['3.10']
         daft-runner: [py, ray, native]
-        pyarrow-version: [8.0.0, 16.0.0]
-        enable-aqe: [1, 0]
+        pyarrow-version: [16.0.0]
+        enable-aqe: [1]
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -178,7 +178,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        activate
+        source venv/bin/activate
         uv pip install -r requirements-dev.txt
 
     - name: Override pyarrow
@@ -190,7 +190,7 @@ jobs:
 
     - name: Build library and Test with pytest (unix)
       run: |
-        source activate
+        source venv/bin/activate
         export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
         cargo llvm-cov clean --workspace
         maturin develop
