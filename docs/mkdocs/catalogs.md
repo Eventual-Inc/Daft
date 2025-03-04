@@ -2,7 +2,7 @@
 
 Catalogs are a centralized place to organize and govern your data. It is often responsible for creating objects such as tables and namespaces, managing transactions, and access control. Most importantly, the catalog abstracts away physical storage details, letting you focus on the logical structure of your data without worrying about file formats, partitioning schemes, or storage locations.
 
-Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs which make it easy to manage catalog objects (tables and namespaces), while also making it easy to leverage daft's great I/O support for reading and writing open table formats like [Iceberg](https://www.getdaft.io/projects/docs/en/stable/integrations/iceberg/) and [DeltaLake](https://www.getdaft.io/projects/docs/en/stable/integrations/unity_catalog/).
+Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs which make it easy to manage catalog objects (tables and namespaces), while also making it easy to leverage daft's great I/O support for reading and writing open table formats like [Iceberg](integrations/iceberg.md) and [Delta Lake](integrations/delta_lake.md).
 
 Our latest release ([0.4.5](https://github.com/Eventual-Inc/Daft/releases/tag/v0.4.5)) covers the basics for connecting to catalogs and reading tables, our next release will include write support and additional catalog integrations 🤘
 
