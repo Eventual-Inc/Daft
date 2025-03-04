@@ -31,6 +31,7 @@ impl ShuffleExchange {
             ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
                 target_spec.clone()
             }
+            ShuffleExchangeStrategy::FlightShuffle { target_spec, .. } => target_spec.clone(),
         }
     }
 }
@@ -44,6 +45,11 @@ pub enum ShuffleExchangeStrategy {
     SplitOrCoalesceToTargetNum { target_num_partitions: usize },
 
     MapReduceWithPreShuffleMerge {
+        pre_shuffle_merge_threshold: usize,
+        target_spec: Arc<ClusteringSpec>,
+    },
+
+    FlightShuffle {
         pre_shuffle_merge_threshold: usize,
         target_spec: Arc<ClusteringSpec>,
     },
@@ -90,6 +96,17 @@ impl ShuffleExchange {
                     self.input.clustering_spec().num_partitions(),
                     target_spec.num_partitions(),
                 ));
+                res.push(format!(
+                    "Pre-Shuffle Merge Threshold: {}",
+                    pre_shuffle_merge_threshold
+                ));
+            }
+            ShuffleExchangeStrategy::FlightShuffle {
+                target_spec,
+                pre_shuffle_merge_threshold,
+            } => {
+                res.push("Strategy: FlightShuffle".to_string());
+                res.push(format!("Target Spec: {:?}", target_spec));
                 res.push(format!(
                     "Pre-Shuffle Merge Threshold: {}",
                     pre_shuffle_merge_threshold
@@ -142,6 +159,12 @@ impl ShuffleExchangeFactory {
             Some(cfg) if cfg.shuffle_algorithm == "map_reduce" => {
                 ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
                     target_spec: clustering_spec,
+                }
+            }
+            Some(cfg) if cfg.shuffle_algorithm == "flight_shuffle" => {
+                ShuffleExchangeStrategy::FlightShuffle {
+                    target_spec: clustering_spec,
+                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
                 }
             }
             Some(cfg) if cfg.shuffle_algorithm == "auto" => {
