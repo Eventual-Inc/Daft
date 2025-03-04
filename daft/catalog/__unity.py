@@ -6,6 +6,7 @@ import warnings
 from typing import TYPE_CHECKING
 
 from daft.catalog import Catalog, Identifier, Table
+from daft.io._deltalake import read_deltalake
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
@@ -94,12 +95,16 @@ class UnityTable(Table):
             return UnityTable(obj)
         return None
 
-    @property
-    def inner(self) -> InnerTable:
-        """Returns the inner unity table."""
-        return self._inner
+    ###
+    # read methods
+    ###
 
-    def read(self) -> DataFrame:
-        import daft
+    def read(self, **options) -> DataFrame:
+        return read_deltalake(self._inner, version=options.get("version"))
 
-        return daft.read_deltalake(self._inner)
+    ###
+    # write methods
+    ###
+
+    def write(self, df: DataFrame | object, mode: str = "append", **options):
+        return df.write_deltalake(self._inner, mode=mode)
