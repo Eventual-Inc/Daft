@@ -15,8 +15,9 @@ from pyspark.sql.functions import col
 spark = SparkSession.builder.local().getOrCreate()
 
 # alternatively, connect to a ray cluster
-spark = SparkSession.builder.remote("ray://<ray-ip>:10001").getOrCreate()
 
+spark = SparkSession.builder.remote("ray://<HEAD_IP>:6379").getOrCreate()
+# you can use `ray get-head-ip <cluster_config.yaml>` to get the head ip!
 # use spark as you would with the native spark library, but with a daft backend!
 
 spark.createDataFrame([{"hello": "world"}]).select(col("hello")).show()
@@ -44,7 +45,7 @@ class Builder:
         if url.startswith("ray://"):
             import daft
 
-            if url.startswith("ray://localhost"):
+            if url.startswith("ray://localhost") or url.startswith("ray://127.0.0.1"):
                 daft.context.set_runner_ray(noop_if_initialized=True)
             else:
                 daft.context.set_runner_ray(address=url, noop_if_initialized=True)
