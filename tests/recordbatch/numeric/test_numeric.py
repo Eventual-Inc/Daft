@@ -189,6 +189,8 @@ def test_table_sign_bad_input() -> None:
         ("sin", False, False),
         ("cos", False, False),
         ("tan", False, False),
+        ("sinh", False, False),
+        ("cosh", False, False),
         ("arcsin", True, False),
         ("arccos", True, False),
         ("arctan", True, False),
@@ -218,6 +220,22 @@ def test_table_numeric_trigonometry(fun: str, is_arc: bool, is_co: bool) -> None
         all(
             x == y or (math.isnan(x) and math.isnan(y))
             for x, y in zip(trigonometry_table.get_column("a").to_pylist(), np_result.to_list())
+        )
+        is True
+    )
+
+
+def test_table_numeric_tanh() -> None:
+    table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
+    s = table.to_pandas()["a"]
+    np_result = np.tanh(s)
+    arct = table.eval_expression_list([col("a").tanh()])
+    assert (
+        all(
+            x - y < 1.0e-10
+            or (x is None and y is None)
+            or (math.isnan(x) and math.isnan(y) or math.isinf(x) and math.isinf(y))
+            for x, y in zip(arct.get_column("a").to_pylist(), np_result.to_list())
         )
         is True
     )

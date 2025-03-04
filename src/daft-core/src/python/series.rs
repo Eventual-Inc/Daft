@@ -215,6 +215,27 @@ impl PySeries {
             .into())
     }
 
+    pub fn sinh(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Sinh)?
+            .into())
+    }
+
+    pub fn cosh(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Cosh)?
+            .into())
+    }
+
+    pub fn tanh(&self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .trigonometry(&TrigonometricFunction::Tanh)?
+            .into())
+    }
+
     pub fn arcsin(&self) -> PyResult<Self> {
         Ok(self
             .series
