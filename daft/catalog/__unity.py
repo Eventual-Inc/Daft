@@ -24,6 +24,11 @@ class UnityCatalog(Catalog):
         )
         self._inner = unity_catalog
 
+    @property
+    def name(self) -> str:
+        # TODO feat: add names to unity catalogs
+        return "unity"
+
     @staticmethod
     def _from_obj(obj: object) -> UnityCatalog:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
@@ -77,6 +82,10 @@ class UnityTable(Table):
             category=DeprecationWarning,
         )
         self._inner = unity_table
+
+    @property
+    def name(self) -> str:
+        return self._inner.table_info.name
 
     @staticmethod
     def _from_obj(obj: object) -> UnityTable | None:
