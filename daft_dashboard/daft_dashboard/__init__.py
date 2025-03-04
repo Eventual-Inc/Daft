@@ -20,19 +20,6 @@ def _queries_url() -> str:
     return f"{DAFT_DASHBOARD_URL}/api/queries"
 
 
-def _static_assets_path() -> Path:
-    path = Path(str(resources.files("daft_dashboard"))) / "static-dashboard-assets"
-
-    if not path.exists():
-        raise ImportError(
-            "Unable to serve daft-dashboard's static assets because they couldn't be found"
-            "Consider re-installing Daft with the 'dashboard' feature installed, e.g.:"
-            'pip install "getdaft[dashboard]"'
-        )
-
-    return path
-
-
 def launch(detach: bool = False, noop_if_initialized: bool = False):
     """Launches the Daft dashboard server on port 3238.
 
@@ -47,8 +34,7 @@ def launch(detach: bool = False, noop_if_initialized: bool = False):
             Otherwise, an exception will be thrown.
     """
     os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
-    path = _static_assets_path()
-    native.launch(static_assets_path=str(path), detach=detach, noop_if_initialized=noop_if_initialized)
+    native.launch(detach=detach, noop_if_initialized=noop_if_initialized)
 
 
 def shutdown(noop_if_shutdown: bool = False):
@@ -97,5 +83,4 @@ def _cli():
     import sys
 
     os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
-    path = _static_assets_path()
-    native.cli(sys.argv, static_assets_path=str(path))
+    native.cli(sys.argv)

@@ -1,21 +1,19 @@
 #[cfg(feature = "python")]
 mod python;
 mod response;
-#[cfg(not(feature = "python"))]
-pub mod rust;
 
-use std::{io::Cursor, net::Ipv4Addr, path::Path, sync::Arc};
+use std::{io::Cursor, net::Ipv4Addr, sync::Arc};
 
 use chrono::{DateTime, Utc};
-use http_body_util::{combinators::BoxBody, BodyExt};
+use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{
     body::{Bytes, Incoming},
     server::conn::http1,
     service::service_fn,
     Method, Request, Response, StatusCode,
 };
-use hyper_staticfile::{AcceptEncoding, ResolveResult, Resolver, ResponseBuilder};
 use hyper_util::rt::TokioIo;
+use include_dir::{include_dir, Dir};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, spawn, sync::mpsc::Sender};
@@ -27,6 +25,7 @@ type ServerResult<T> = Result<T, (StatusCode, anyhow::Error)>;
 
 const SERVER_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const SERVER_PORT: u16 = 3238;
+static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/out");
 
 trait ResultExt<T, E: Into<anyhow::Error>>: Sized {
     fn with_status_code(self, status_code: StatusCode) -> ServerResult<T>;
@@ -86,35 +85,49 @@ async fn http_server_application(req: Req, state: DashboardState) -> ServerResul
 
         // All other paths (that don't start with "api") will be treated as web-server requests.
         (&Method::GET, _) => {
-            let Some(resolver) = state.resolver else {
-                return Ok(response::empty(StatusCode::NOT_FOUND));
-            };
-
             let request_path = req.uri().path();
-            let result = resolver
-                .resolve_path(request_path, AcceptEncoding::all())
-                .await
-                .with_internal_error()?;
+            let path = request_path.trim_start_matches('/');
 
-            let result = if matches!(
-                result,
-                ResolveResult::NotFound | ResolveResult::IsDirectory { .. }
-            ) {
-                let request_path = request_path.strip_suffix('/').unwrap_or(request_path);
-                let request_path = format!("{}.html", request_path);
-                resolver
-                    .resolve_path(&request_path, AcceptEncoding::all())
-                    .await
-                    .with_internal_error()?
-            } else {
-                result
-            };
+            let path = if path.is_empty() { "index.html" } else { path };
 
-            ResponseBuilder::new()
-                .request(&req)
-                .build(result)
-                .with_internal_error()?
-                .map(|body| body.boxed())
+            // Try to get the file directly
+            let file = ASSETS_DIR.get_file(path).or_else(|| {
+                // If not found and doesn't end with .html, try with .html extension
+                if !std::path::Path::new(path)
+                    .extension()
+                    .map_or(false, |ext| ext.eq_ignore_ascii_case("html"))
+                {
+                    ASSETS_DIR.get_file(format!("{}.html", path))
+                } else {
+                    None
+                }
+            });
+
+            match file {
+                Some(file) => {
+                    let content_type = match file.path().extension().and_then(|ext| ext.to_str()) {
+                        Some("html") => "text/html",
+                        Some("css") => "text/css",
+                        Some("js") => "application/javascript",
+                        Some("png") => "image/png",
+                        Some("jpg") | Some("jpeg") => "image/jpeg",
+                        _ => "application/octet-stream",
+                    };
+
+                    let bytes = Bytes::copy_from_slice(file.contents());
+
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .header("Content-Type", content_type)
+                        .body(
+                            Full::new(bytes)
+                                .map_err(|infallible| match infallible {})
+                                .boxed(),
+                        )
+                        .unwrap()
+                }
+                None => response::empty(StatusCode::NOT_FOUND),
+            }
         }
 
         _ => response::empty(StatusCode::NOT_FOUND),
@@ -148,15 +161,13 @@ fn handle_stream(stream: TcpStream, state: DashboardState) {
 
 #[derive(Clone)]
 struct DashboardState {
-    resolver: Option<Resolver>,
     queries: Arc<RwLock<Vec<QueryInformation>>>,
     shutdown_signal: Sender<()>,
 }
 
 impl DashboardState {
-    fn new(static_assets_path: Option<impl AsRef<Path>>, shutdown_signal: Sender<()>) -> Self {
+    fn new(shutdown_signal: Sender<()>) -> Self {
         Self {
-            resolver: static_assets_path.map(|path| Resolver::new(path.as_ref())),
             shutdown_signal,
             queries: Arc::default(),
         }

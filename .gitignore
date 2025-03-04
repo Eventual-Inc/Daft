@@ -49,7 +49,10 @@ node_modules
 
 # next.js
 .next
-out
+
+out/**
+!out/
+!out/.gitkeep
 
 # production
 /build
