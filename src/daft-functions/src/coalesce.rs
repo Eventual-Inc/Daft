@@ -287,7 +287,7 @@ mod tests {
             Field::new("s1", DataType::Boolean),
             Field::new("s2", DataType::UInt32),
         ]);
-        let expected = "could not determine supertype of Boolean and Date".to_string();
+        let expected = "could not determine supertype of Date and Boolean".to_string();
         let coalesce = super::Coalesce {};
         let DaftError::TypeError(e) = coalesce
             .to_field(&[col_0, col_1, col_2], &schema.unwrap())
