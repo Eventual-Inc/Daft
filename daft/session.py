@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.context import get_context
 from daft.daft import PySession, plan_sql
@@ -322,7 +324,13 @@ class Session:
     # write_*
     ###
 
-    def write_table(self, identifier: Identifier | str, df: DataFrame | object, mode: str = "append", **options):
+    def write_table(
+        self,
+        identifier: Identifier | str,
+        df: DataFrame | object,
+        mode: Literal["append", "overwrite"] = "append",
+        **options,
+    ):
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         self._session.get_table(identifier._ident).write(df, mode=mode, **options)
@@ -464,7 +472,9 @@ def read_table(identifier: Identifier | str, **options) -> DataFrame:
 ###
 
 
-def write_table(identifier: Identifier | str, df: DataFrame | object, mode: str = "append", **options):
+def write_table(
+    identifier: Identifier | str, df: DataFrame | object, mode: Literal["append", "overwrite"] = "append", **options
+):
     """Writes the DataFrame to the table specified with the identifier."""
     _session().write_table(identifier, df, mode, **options)
 

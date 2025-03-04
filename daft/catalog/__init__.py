@@ -47,7 +47,7 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from daft.logical.schema import Schema
 
@@ -331,7 +331,13 @@ class Catalog(ABC):
     # write_*
     ###
 
-    def write_table(self, identifier: Identifier | str, df: DataFrame | object, mode: str = "append", **options):
+    def write_table(
+        self,
+        identifier: Identifier | str,
+        df: DataFrame | object,
+        mode: Literal["append", "overwrite"] = "append",
+        **options,
+    ):
         return self.get_table(identifier).write(df, mode=mode, **options)
 
     ###
@@ -565,7 +571,7 @@ class Table(ABC):
 
         Args:
             n (int): number of rows to show
-        
+
         Returns:
             None
         """
@@ -576,7 +582,7 @@ class Table(ABC):
     ###
 
     @abstractmethod
-    def write(self, df: DataFrame, mode: str = "append", **options) -> None:
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
         """Writes the DataFrame to this table.
 
         Args:
