@@ -4,18 +4,18 @@ mod response;
 #[cfg(not(feature = "python"))]
 pub mod rust;
 
-use std::{io::Cursor, net::Ipv4Addr, path::Path, sync::Arc};
+use std::{io::Cursor, net::Ipv4Addr, sync::Arc};
 
 use chrono::{DateTime, Utc};
-use http_body_util::{combinators::BoxBody, BodyExt};
+use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{
     body::{Bytes, Incoming},
     server::conn::http1,
     service::service_fn,
     Method, Request, Response, StatusCode,
 };
-use hyper_staticfile::{AcceptEncoding, ResolveResult, Resolver, ResponseBuilder};
 use hyper_util::rt::TokioIo;
+use include_dir::{include_dir, Dir};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, spawn, sync::mpsc::Sender};
@@ -27,6 +27,7 @@ type ServerResult<T> = Result<T, (StatusCode, anyhow::Error)>;
 
 const SERVER_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const SERVER_PORT: u16 = 3238;
+static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/out");
 
 trait ResultExt<T, E: Into<anyhow::Error>>: Sized {
     fn with_status_code(self, status_code: StatusCode) -> ServerResult<T>;
