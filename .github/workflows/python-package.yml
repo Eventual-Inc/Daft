@@ -17,8 +17,7 @@ env:
   UV_SYSTEM_PYTHON: 1
 
 jobs:
-
-  unit-tests-with-coverage:
+  unit-tests-no-coverage:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -60,11 +59,6 @@ jobs:
       with:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
-
-    - name: install llvm tools
-      run: rustup component add llvm-tools-preview
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
@@ -105,6 +99,98 @@ jobs:
       if: ${{ (runner.os != 'Windows') }}
       run: |
         source activate
+        maturin develop
+        pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
+        pytest --ignore tests/integration --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+
+    - name: Build library and Test with pytest (Windows)
+      if: ${{ (runner.os == 'Windows') }}
+      run: |
+        .\venv\Scripts\activate
+        maturin develop
+        pytest --ignore tests\integration --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Pytest Unit Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  unit-tests-with-coverage:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.10']
+        daft-runner: [py, ray, native]
+        pyarrow-version: [8.0.0, 16.0.0]
+        enable-aqe: [1, 0]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-build
+        cache-all-crates: 'true'
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+
+    - name: install llvm tools
+      run: rustup component add llvm-tools-preview
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: |
+          pyproject.toml
+          requirements-dev.txt
+
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
+
+    - name: Install dependencies
+      run: |
+        activate
+        uv pip install -r requirements-dev.txt
+
+    - name: Override pyarrow
+      run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
+
+    - name: Override deltalake for pyarrow
+      if: ${{ (matrix.pyarrow-version == '8.0.0') }}
+      run: uv pip install deltalake==0.10.0
+
+    - name: Build library and Test with pytest (unix)
+      run: |
+        source activate
         export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
         cargo llvm-cov clean --workspace
         maturin develop
@@ -123,23 +209,6 @@ jobs:
         CARGO_LLVM_COV_TARGET_DIR: ./target
         CARGO_TARGET_DIR: ./target
 
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
-
-    - name: Build library and Test with pytest (Windows)
-      if: ${{ (runner.os == 'Windows') }}
-      run: |
-        .\venv\Scripts\activate
-        # source <(cargo llvm-cov show-env --export-prefix)
-        # export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
-        # export CARGO_INCREMENTAL=1
-        # cargo llvm-cov clean --workspace
-        maturin develop
-        mkdir -p report-output && pytest --cov=daft --ignore tests\integration --durations=50
-        coverage combine -a --data-file='.coverage' || true
-        coverage xml -o .\report-output\coverage-${{ join(matrix.*, '-') }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output\rust-coverage-${{ join(matrix.*, '-') }}.lcov
-      env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
 
@@ -171,7 +240,9 @@ jobs:
 
   unit-tests:
     runs-on: ubuntu-latest
-    needs: unit-tests-with-coverage
+    needs:
+    - unit-tests-with-coverage
+    - unit-tests-no-coverage
     if: always()
     steps:
     - name: All tests ok
