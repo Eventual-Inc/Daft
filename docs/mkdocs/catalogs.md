@@ -225,11 +225,11 @@ from daft import Session
 sess = Session()
 
 # create a temporary table from a dataframe
-sess.create_temp_table("T", )
+sess.create_temp_table("T", df.read_csv("/path/to/file.csv"))
 
 # attaching an existing external table
 sess.attach_table(my_iceberg_table, alias="S")
 
 # joining against a temp table and an iceberg table
-sess.sql("SELECT * T, S")
+sess.sql("SELECT * FROM T, S")
 ```
