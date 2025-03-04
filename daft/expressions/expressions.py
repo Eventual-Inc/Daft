@@ -1480,15 +1480,25 @@ class Expression:
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
     def encode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
-        """Encodes the expression using the specified codec.
+        r"""Encodes the expression using the specified codec.
 
-        Codecs:
-            * deflate
-            * gzip
-            * zlib
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"text": ["hello, world!"]})
+            >>> df.select(col("text").encode("zlib")).show()
+            ╭────────────────────────────────╮
+            │ text                           │
+            │ ---                            │
+            │ Binary                         │
+            ╞════════════════════════════════╡
+            │ b"x\x9c\xcbH\xcd\xc9\xc9\xd7Q… │
+            ╰────────────────────────────────╯
+
+            (Showing first 1 of 1 rows)
 
         Args:
-            codec (str): encoding codec
+            codec (str): encoding codec (deflate, gzip, zlib)
 
         Returns:
             Expression: A new expression with the encoded values.
@@ -1499,13 +1509,21 @@ class Expression:
     def decode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
         """Decodes the expression using the specified codec.
 
-        Codecs:
-            * deflate
-            * gzip
-            * zlib
+        Example:
+            >>> df = daft.from_pydict({"bytes": [zlib.compress(b"hello, world!")]})
+            >>> df.select(col("bytes").decode("zlib")).show()
+            ╭───────────────╮
+            │ bytes         │
+            │ ---           │
+            │ Utf8          │
+            ╞═══════════════╡
+            │ hello, world! │
+            ╰───────────────╯
+
+            (Showing first 1 of 1 rows)
 
         Args:
-            codec (str): decoding codec
+            codec (str): decoding codec (deflate, gzip, zlib)
 
         Returns:
             Expression: A new expression with the decoded values.

@@ -129,8 +129,8 @@ mod tests {
 
     #[test]
     fn test_codec_from_str() {
-        assert_eq!(Codec::try_from("DEFLATE").unwrap(), Codec::Gzip);
-        assert_eq!(Codec::try_from("deflate").unwrap(), Codec::Gzip);
+        assert_eq!(Codec::try_from("DEFLATE").unwrap(), Codec::Deflate);
+        assert_eq!(Codec::try_from("deflate").unwrap(), Codec::Deflate);
         assert_eq!(Codec::try_from("gzip").unwrap(), Codec::Gzip);
         assert_eq!(Codec::try_from("GZIP").unwrap(), Codec::Gzip);
         assert_eq!(Codec::try_from("GzIp").unwrap(), Codec::Gzip);
