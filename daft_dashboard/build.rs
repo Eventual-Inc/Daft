@@ -12,7 +12,7 @@ fn main() {
         .unwrap_or(false);
 
     if !bun_available {
-        println!("cargo:warning=Bun not found, skipping frontend build");
+        println!("cargo:warning=Bun not found, please install via `curl -X-fsSL https://bun.sh/install | bash`");
         return;
     }
 
