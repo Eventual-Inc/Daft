@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib.metadata import packages_distributions
 import os
 
 ###
@@ -52,6 +53,16 @@ from daft.analytics import init_analytics
 user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
 analytics_client = init_analytics(get_version(), get_build_type(), user_opted_out)
 analytics_client.track_import()
+
+###
+# Warn if using the old package name
+###
+if "getdaft" in packages_distributions()["daft"]:
+    import warnings
+
+    warnings.warn(
+        "The 'getdaft' PyPI package is deprecated and will no longer will receive updates from Daft v0.5.0 onwards.\nPlease install Daft via 'pip install daft' instead."
+    )
 
 ###
 # Daft top-level imports
