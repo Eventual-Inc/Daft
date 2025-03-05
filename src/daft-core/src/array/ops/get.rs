@@ -30,7 +30,7 @@ where
         let arrow_array = self.as_arrow();
         let is_valid = arrow_array
             .validity()
-            .map_or(true, |validity| validity.get_bit(idx));
+            .is_none_or(|validity| validity.get_bit(idx));
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
@@ -51,7 +51,7 @@ macro_rules! impl_array_arrow_get {
                 let arrow_array = self.as_arrow();
                 let is_valid = arrow_array
                     .validity()
-                    .map_or(true, |validity| validity.get_bit(idx));
+                    .is_none_or(|validity| validity.get_bit(idx));
                 if is_valid {
                     Some(unsafe { arrow_array.value_unchecked(idx) })
                 } else {
@@ -104,7 +104,7 @@ impl ExtensionArray {
         let is_valid = self
             .data
             .validity()
-            .map_or(true, |validity| validity.get_bit(idx));
+            .is_none_or(|validity| validity.get_bit(idx));
         if is_valid {
             Some(arrow2::scalar::new_scalar(self.data(), idx))
         } else {

@@ -47,7 +47,7 @@ where
 pub type ArrowNullGrowable<'a> =
     ArrowBackedDataArrayGrowable<'a, NullType, arrow2::array::growable::GrowableNull>;
 
-impl<'a> ArrowNullGrowable<'a> {
+impl ArrowNullGrowable<'_> {
     pub fn new(name: &str, dtype: &DataType) -> Self {
         let arrow2_growable = arrow2::array::growable::GrowableNull::new(dtype.to_arrow().unwrap());
         Self {
@@ -199,7 +199,7 @@ impl<'a> ArrowExtensionGrowable<'a> {
     }
 }
 
-impl<'a> Growable for ArrowExtensionGrowable<'a> {
+impl Growable for ArrowExtensionGrowable<'_> {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         self.child_growable.extend(index, start, len);

@@ -130,7 +130,7 @@ pub fn hash(array: &dyn Array) -> Result<PrimitiveArray<u64>> {
 ///
 /// let data_type = DataType::Int8;
 /// assert_eq!(can_hash(&data_type), true);
-
+///
 /// let data_type = DataType::Null;
 /// assert_eq!(can_hash(&data_type), false);
 /// ```

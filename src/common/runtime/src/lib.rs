@@ -4,25 +4,23 @@ use std::{
     pin::Pin,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, OnceLock,
+        Arc, LazyLock, OnceLock,
     },
     task::{Context, Poll},
 };
 
 use common_error::{DaftError, DaftResult};
 use futures::FutureExt;
-use lazy_static::lazy_static;
 use tokio::{
     runtime::{Handle, RuntimeFlavor},
     task::JoinSet,
 };
 
-lazy_static! {
-    static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
-    static ref THREADED_IO_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
-    static ref COMPUTE_RUNTIME_NUM_WORKER_THREADS: usize = *NUM_CPUS;
-    static ref COMPUTE_RUNTIME_MAX_BLOCKING_THREADS: usize = 1; // Compute thread should not use blocking threads, limit this to the minimum, i.e. 1
-}
+static NUM_CPUS: LazyLock<usize> =
+    LazyLock::new(|| std::thread::available_parallelism().unwrap().get());
+static THREADED_IO_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| 8.min(*NUM_CPUS));
+static COMPUTE_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| *NUM_CPUS);
+static COMPUTE_RUNTIME_MAX_BLOCKING_THREADS: LazyLock<usize> = LazyLock::new(|| 1); // Compute thread should not use blocking threads, limit this to the minimum, i.e. 1
 
 static THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 static SINGLE_THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();

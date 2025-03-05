@@ -32,7 +32,7 @@ impl AnonymousScanOperator {
 }
 
 impl ScanOperator for AnonymousScanOperator {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "AnonymousScanOperator"
     }
     fn schema(&self) -> SchemaRef {
@@ -85,7 +85,7 @@ impl ScanOperator for AnonymousScanOperator {
         {
             row_groups.clone()
         } else {
-            std::iter::repeat(None).take(files.len()).collect()
+            std::iter::repeat_n(None, files.len()).collect()
         };
 
         // Create one ScanTask per file.

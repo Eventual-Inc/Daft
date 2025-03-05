@@ -211,10 +211,10 @@ fn tokio_runtime(multithreaded: bool) -> Runtime {
 
 fn already_bound_error() -> anyhow::Error {
     anyhow::anyhow!(
-        r#"There's another process already bound to {}:{}.
+        r"There's another process already bound to {}:{}.
 If this is the `daft-dashboard-client` (i.e., if you already ran `dashboard.launch()` inside of a python script previously), then you don't have to do anything else.
 
-However, if this is another process, then kill that other server (by running `kill -9 $(lsof -t -i :3238)` inside of your shell) and then rerun `dashboard.launch()`."#,
+However, if this is another process, then kill that other server (by running `kill -9 $(lsof -t -i :3238)` inside of your shell) and then rerun `dashboard.launch()`.",
         super::SERVER_ADDR,
         super::SERVER_PORT,
     )

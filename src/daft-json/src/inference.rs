@@ -138,7 +138,7 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
         let fields = datatypes.into_iter().fold(vec![], |mut acc, dt| {
             if let DataType::Struct(new_fields) = dt {
                 acc.extend(new_fields);
-            };
+            }
             acc
         });
         // Group fields by unique names.

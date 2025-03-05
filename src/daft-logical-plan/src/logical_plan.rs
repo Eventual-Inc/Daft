@@ -588,7 +588,7 @@ impl SubqueryPlan for LogicalPlan {
         other
             .as_any()
             .downcast_ref::<Self>()
-            .map_or(false, |other| self == other)
+            .is_some_and(|other| self == other)
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {

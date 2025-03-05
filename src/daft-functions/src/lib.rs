@@ -1,4 +1,3 @@
-#![feature(async_closure)]
 pub mod binary;
 pub mod coalesce;
 pub mod count_matches;
@@ -31,7 +30,7 @@ pub enum Error {
 
 impl From<Error> for std::io::Error {
     fn from(err: Error) -> Self {
-        Self::new(std::io::ErrorKind::Other, err)
+        Self::other(err)
     }
 }
 

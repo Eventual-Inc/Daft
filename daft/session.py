@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.context import get_context
 from daft.daft import PySession, plan_sql
@@ -92,7 +94,7 @@ class Session:
         else:
             raise ValueError(f"Cannot attach object with type {type(object)}")
 
-    def attach_catalog(self, catalog: object | Catalog, alias: str | None = None) -> Catalog:
+    def attach_catalog(self, catalog: Catalog | object, alias: str | None = None) -> Catalog:
         """Attaches an external catalog to this session.
 
         Args:
@@ -102,10 +104,9 @@ class Session:
         Returns:
             Catalog: new daft catalog instance
         """
-        if alias is None:
-            raise ValueError("implicit catalog aliases are not yet supported")
         c = catalog if isinstance(catalog, Catalog) else Catalog._from_obj(catalog)
-        return self._session.attach_catalog(c, alias)
+        a = alias if alias else c.name
+        return self._session.attach_catalog(c, a)
 
     def attach_table(self, table: Table | object, alias: str | None = None) -> Table:
         """Attaches an external table instance to this session.
@@ -117,10 +118,9 @@ class Session:
         Returns:
             Table: new daft table instance
         """
-        if alias is None:
-            raise ValueError("implicit table aliases are not yet supported")
         t = table if isinstance(table, Table) else Table._from_obj(table)
-        return self._session.attach_table(t, alias)
+        a = alias if alias else t.name
+        return self._session.attach_table(t, a)
 
     def detach_catalog(self, alias: str):
         """Detaches the catalog from this session or raises if the catalog does not exist.
@@ -228,7 +228,7 @@ class Session:
             ValueError: If the table does not exist.
         """
         if isinstance(identifier, str):
-            identifier = Identifier(*identifier.split("."))
+            identifier = Identifier.from_str(identifier)
         return self._session.get_table(identifier._ident)
 
     ###
@@ -278,7 +278,7 @@ class Session:
     # read_*
     ###
 
-    def read_table(self, identifier: Identifier | str) -> DataFrame:
+    def read_table(self, identifier: Identifier | str, **options) -> DataFrame:
         """Returns the table as a DataFrame or raises an exception if it does not exist.
 
         Args:
@@ -290,7 +290,7 @@ class Session:
         Raises:
             ValueError: If the tables odes not exist.
         """
-        return self.get_table(identifier).read()
+        return self.get_table(identifier).read(**options)
 
     ###
     # set_*
@@ -319,6 +319,21 @@ class Session:
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident)
+
+    ###
+    # write_*
+    ###
+
+    def write_table(
+        self,
+        identifier: Identifier | str,
+        df: DataFrame | object,
+        mode: Literal["append", "overwrite"] = "append",
+        **options,
+    ):
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+        self._session.get_table(identifier._ident).write(df, mode=mode, **options)
 
 
 ###
@@ -447,9 +462,21 @@ def list_tables(pattern: None | str = None) -> list[Identifier]:
 ###
 
 
-def read_table(identifier: Identifier | str) -> DataFrame:
+def read_table(identifier: Identifier | str, **options) -> DataFrame:
     """Returns the table as a DataFrame or raises an exception if it does not exist."""
-    return _session().get_table(identifier).read()
+    return _session().read_table(identifier, **options)
+
+
+###
+# write_*
+###
+
+
+def write_table(
+    identifier: Identifier | str, df: DataFrame | object, mode: Literal["append", "overwrite"] = "append", **options
+):
+    """Writes the DataFrame to the table specified with the identifier."""
+    _session().write_table(identifier, df, mode, **options)
 
 
 ###

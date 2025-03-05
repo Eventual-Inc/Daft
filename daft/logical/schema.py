@@ -105,6 +105,10 @@ class Schema:
         s._schema = _PySchema.from_fields([f._field for f in fields])
         return s
 
+    @classmethod
+    def _from_pydict(fields: dict[str, DataType]) -> Schema:
+        return Schema._from_fields([Field.create(k, v) for k, v in fields.items()])
+
     def __getitem__(self, key: str) -> Field:
         assert isinstance(key, str), f"Expected str for key, but received: {type(key)}"
         if key not in self._schema.names():

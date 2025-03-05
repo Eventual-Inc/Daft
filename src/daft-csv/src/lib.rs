@@ -1,6 +1,4 @@
-#![feature(async_closure)]
 #![feature(let_chains)]
-#![feature(new_uninit)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
 #![feature(test)]

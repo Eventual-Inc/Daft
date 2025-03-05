@@ -31,6 +31,7 @@ type ExecutePlanStream = std::pin::Pin<
 >;
 
 impl DaftSparkConnectService {
+    #[allow(clippy::result_large_err)]
     fn get_session(
         &self,
         session_id: &str,
@@ -177,7 +178,7 @@ impl DaftSparkConnectService {
 
                 if let Some(level) = level {
                     debug!("ignoring tree string level: {level:?}");
-                };
+                }
 
                 let OpType::Root(input) = plan.op_type.required("op_type")? else {
                     invalid_argument_err!("op_type must be Root");
@@ -207,7 +208,7 @@ impl DaftSparkConnectService {
                     ExplainMode::Unspecified | ExplainMode::Simple => {}
                     ExplainMode::Extended => {}
                     _ => not_yet_implemented!("ExplainMode '{explain_mode:?}'"),
-                };
+                }
 
                 let OpType::Root(input) = plan.op_type.required("op_type")? else {
                     invalid_argument_err!("op_type must be Root");

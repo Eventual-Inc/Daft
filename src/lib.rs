@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![allow(clippy::useless_conversion)]
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -46,12 +47,12 @@ fn should_enable_chrome_trace() -> bool {
 
 #[cfg(feature = "python")]
 pub mod pylib {
+    use std::sync::LazyLock;
+
     use common_tracing::init_tracing;
-    use lazy_static::lazy_static;
     use pyo3::prelude::*;
-    lazy_static! {
-        static ref LOG_RESET_HANDLE: pyo3_log::ResetHandle = pyo3_log::init();
-    }
+
+    static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(pyo3_log::init);
 
     #[pyfunction]
     pub fn version() -> &'static str {

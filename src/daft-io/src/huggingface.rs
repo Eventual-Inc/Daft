@@ -67,13 +67,13 @@ enum Error {
     #[snafu(display("Invalid path: {}", path))]
     InvalidPath { path: String },
 
-    #[snafu(display(r#"
+    #[snafu(display(r"
 Implicit Parquet conversion not supported for private datasets.
 You can use glob patterns, or request a specific file to access your dataset instead.
 Example:
     instead of `hf://datasets/username/dataset_name`, use `hf://datasets/username/dataset_name/file_name.parquet`
     or `hf://datasets/username/dataset_name/*.parquet
-"#))]
+"))]
     PrivateDataset,
     #[snafu(display("Unauthorized access to dataset, please check your credentials."))]
     Unauthorized,

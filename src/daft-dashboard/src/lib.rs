@@ -118,7 +118,7 @@ async fn http_server_application(req: Req, state: DashboardState) -> ServerResul
                 // If not found and doesn't end with .html, try with .html extension
                 if !std::path::Path::new(path)
                     .extension()
-                    .map_or(false, |ext| ext.eq_ignore_ascii_case("html"))
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("html"))
                 {
                     ASSETS_DIR.get_file(format!("{}.html", path))
                 } else {

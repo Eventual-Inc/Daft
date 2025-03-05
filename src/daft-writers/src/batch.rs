@@ -69,7 +69,7 @@ impl SizeBasedBuffer {
                 let avg_row_bytes = max(size / rows, 1);
                 let remaining_to_min = min_bytes - bytes_taken;
                 let rows_to_take = min(
-                    (remaining_to_min + avg_row_bytes - 1) / avg_row_bytes, // Round up to ensure we hit min_bytes
+                    remaining_to_min.div_ceil(avg_row_bytes), // Round up to ensure we hit min_bytes
                     rows,
                 );
 

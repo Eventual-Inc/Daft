@@ -13,7 +13,6 @@ daft-logical-plan = {path = "../daft-logical-plan"}
 daft-scan = {path = "../daft-scan"}
 daft-session = {path = "../daft-session"}
 itertools = {workspace = true}
-once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
 regex.workspace = true

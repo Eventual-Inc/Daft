@@ -47,12 +47,13 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import ColumnInputType
+    from daft.convert import InputListType
 
 
 __all__ = [
@@ -200,28 +201,44 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
 class Catalog(ABC):
     """Interface for python catalog implementations."""
 
-    @staticmethod
-    def from_pydict(tables: dict[str, Table]) -> Catalog:
-        """Returns an in-memory catalog from the dictionary.
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Returns the catalog's name."""
 
-        Example:
+    @staticmethod
+    def from_pydict(tables: dict[str, object], name: str = "default") -> Catalog:
+        """Returns an in-memory catalog from a dictionary of table-like objects.
+
+        The table-like objects can be pydicts, dataframes, or a Table implementation.
+
+        Examples:
             >>> import daft
             >>> from daft.catalog import Catalog, Table
             >>>
-            >>> tbl = Table.from_df("my_table", daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]}))
-            >>> cat = Catalog.from_pydict({"my_table": tbl})
-            >>> cat.list_tables()
-            ['my_table']
+            >>> dictionary = {"x": [1, 2, 3]}
+            >>> dataframe = daft.from_pydict(dictionary)
+            >>> table = Table.from_df("temp", dataframe)
+            >>>
+            >>> catalog = Catalog.from_pydict(
+            ...     {
+            ...         "R": dictionary,
+            ...         "S": dataframe,
+            ...         "T": table,
+            ...     }
+            ... )
+            >>> catalog.list_tables()
+            ['R', 'S', 'T']
 
         Args:
-            tables (dict[str,Table]): a python dictionary of table names to the table instance.
+            tables (dict[str,object]): a dictionary of table-like objects (pydicts, dataframes, and tables)
 
         Returns:
-            Catalog: new daft catalog instance from the dictionary.
+            Catalog: new catalog instance with name 'default'
         """
         from daft.catalog.__memory import MemoryCatalog
 
-        return MemoryCatalog(tables)
+        return MemoryCatalog._from_pydict(name, tables)
 
     @staticmethod
     def from_iceberg(catalog: object) -> Catalog:
@@ -302,7 +319,31 @@ class Catalog(ABC):
             Table: matched table or raises if the table does not exist.
         """
 
+    ###
+    # read_*
+    ###
+
+    def read_table(self, identifier: Identifier | str, **options) -> DataFrame:
+        """Returns the table as a DataFrame or raises an exception if it does not exist."""
+        return self.get_table(identifier).read(**options)
+
+    ###
+    # write_*
+    ###
+
+    def write_table(
+        self,
+        identifier: Identifier | str,
+        df: DataFrame | object,
+        mode: Literal["append", "overwrite"] = "append",
+        **options,
+    ):
+        return self.get_table(identifier).write(df, mode=mode, **options)
+
+    ###
     # TODO deprecated catalog APIs #3819
+    ###
+
     def load_table(self, name: str) -> Table:
         """DEPRECATED: Please use `get_table` instead; version=0.5.0!"""
         warnings.warn(
@@ -403,6 +444,42 @@ class Identifier(Sequence):
 class Table(ABC):
     """Interface for python table implementations."""
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Returns the table's name."""
+
+    @staticmethod
+    def from_pydict(name: str, data: dict[str, InputListType]) -> Table:
+        """Returns a read-only table backed by the given data.
+
+        Example:
+            >>> from daft.catalog import Table
+            >>> table = Table.from_pydict({"foo": [1, 2]})
+            >>> table.show()
+            ╭───────╮
+            │ foo   │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Args:
+            name (str): table table
+            data dict[str,object]: keys are column names and the values are python lists, numpy arrays, or arrow arrays.
+
+        Returns:
+            DataFrame: new read-only table instance
+        """
+        from daft.catalog.__memory import MemoryTable
+
+        return MemoryTable(name, DataFrame._from_pydict(data))
+
     @staticmethod
     def from_df(name: str, dataframe: DataFrame) -> Table:
         """Returns a read-only table backed by the DataFrame.
@@ -455,20 +532,44 @@ class Table(ABC):
             raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
 
     @staticmethod
-    def _from_obj(obj: object) -> Table:
+    def _from_obj(name: str, source: object) -> Table:
         """Returns a Daft Table from a supported object type or raises an error."""
-        raise ValueError(f"Unsupported table type: {type(obj)}")
+        if isinstance(source, Table):
+            # we want to rename and create an immutable view from this external table
+            return Table.from_df(name, source.read())
+        elif isinstance(source, DataFrame):
+            return Table.from_df(name, source)
+        elif isinstance(source, dict):
+            return Table.from_df(name, DataFrame._from_pydict(source))
+        else:
+            raise ValueError(f"Unsupported table source {type(source)}")
+
+    @staticmethod
+    def _validate_options(method: str, input: dict[str, any], valid: set[str]):
+        """Validates input options against a set of valid options.
+
+        Args:
+            method (str): The method name to include in the error message
+            input (dict[str, any]): The input options dictionary
+            valid (set[str]): Set of valid option keys
+
+        Raises:
+            ValueError: If any input options are not in the valid set
+        """
+        invalid_options = set(input.keys()) - valid
+        if invalid_options:
+            raise ValueError(f"Unsupported option(s) for {method}, found {invalid_options!s} not in {valid!s}")
 
     ###
     # read methods
     ###
 
     @abstractmethod
-    def read(self) -> DataFrame:
+    def read(self, **options) -> DataFrame:
         """Creates a new DataFrame from this table.
 
         Args:
-            None
+            **options: additional format-dependent read options
 
         Returns:
             DataFrame: new DataFrame instance
@@ -495,6 +596,38 @@ class Table(ABC):
             None
         """
         return self.read().show(n)
+
+    ###
+    # write methods
+    ###
+
+    @abstractmethod
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+        """Writes the DataFrame to this table.
+
+        Args:
+            df (DataFrame): datafram to write
+            mode (str): write mode such as 'append' or 'overwrite'
+            **options: additional format-dependent write options
+        """
+
+    def append(self, df: DataFrame, **options) -> None:
+        """Appends the DataFrame to this table.
+
+        Args:
+            df (DataFrame): dataframe to append
+            **options: additional format-dependent write options
+        """
+        self.write(df, mode="append", **options)
+
+    def overwrite(self, df: DataFrame, **options) -> None:
+        """Overwrites this table with the given DataFrame.
+
+        Args:
+            df (DataFrame): dataframe to overwrite this table with
+            **options: additional format-dependent write options
+        """
+        self.write(df, mode="overwrite", **options)
 
     ###
     # TODO deprecated catalog APIs #3819

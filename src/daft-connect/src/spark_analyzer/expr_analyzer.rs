@@ -26,7 +26,7 @@ pub(crate) fn analyze_expr(expression: &Expression) -> ConnectResult<daft_dsl::E
         if common.origin.is_some() {
             debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
         }
-    };
+    }
 
     let Some(expr) = &expression.expr_type else {
         not_yet_implemented!("Expression is required");

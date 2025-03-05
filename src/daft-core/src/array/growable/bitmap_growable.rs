@@ -32,7 +32,7 @@ impl<'a> ArrowBitmapGrowable<'a> {
     }
 }
 
-impl<'a> Default for ArrowBitmapGrowable<'a> {
+impl Default for ArrowBitmapGrowable<'_> {
     fn default() -> Self {
         ArrowBitmapGrowable::new(vec![], 0)
     }

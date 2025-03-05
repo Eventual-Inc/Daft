@@ -12,6 +12,7 @@ fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
     }
 }
 
+/// Computes the supertype of two types.
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     match get_supertype(l, r) {
         Some(dt) => Ok(dt),
@@ -19,6 +20,18 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
             "could not determine supertype of {l:?} and {r:?}"
         ))),
     }
+}
+
+/// Computes the supertype of a collection.
+pub fn try_get_collection_supertype<'a, I>(types: I) -> DaftResult<DataType>
+where
+    I: IntoIterator<Item = &'a DataType>,
+{
+    let mut dtype = DataType::Null;
+    for type_ in types {
+        dtype = try_get_supertype(&dtype, type_)?;
+    }
+    Ok(dtype)
 }
 
 #[must_use]

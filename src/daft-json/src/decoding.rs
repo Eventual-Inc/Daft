@@ -419,7 +419,7 @@ fn deserialize_struct_into<'a, A: Borrow<BorrowedValue<'a>>>(
                     .for_each(|(_, inner)| inner.push(&JSON_NULL_VALUE));
                 target.push(false);
             }
-        };
+        }
     }
     // Then deserialize each field's JSON values buffer to the appropriate Arrow2 array.
     //

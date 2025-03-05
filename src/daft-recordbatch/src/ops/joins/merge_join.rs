@@ -90,7 +90,7 @@ pub fn merge_inner_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(
     let combined_comparator = |a_idx: usize, b_idx: usize| -> Option<Ordering> {
         for comparator in &cmp_list {
             match comparator(a_idx, b_idx) {
-                Some(Ordering::Equal) => continue,
+                Some(Ordering::Equal) => {}
                 other => return other,
             }
         }
@@ -166,16 +166,18 @@ pub fn merge_inner_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(
                     // new right-side row, so we add all such pairs to the output indices without any extra comparisons.
                     MergeJoinState::StagedLeftEqualRun(start_left_idx) => {
                         left_indices.extend((start_left_idx..left_idx).map(|i| i as u64));
-                        right_indices.extend(
-                            std::iter::repeat(right_idx as u64).take(left_idx - start_left_idx),
-                        );
+                        right_indices.extend(std::iter::repeat_n(
+                            right_idx as u64,
+                            left_idx - start_left_idx,
+                        ));
                     }
                     // If there was a staged right-side run, then we know that all rows in the run is equal to this
                     // new left-side row, so we add all such pairs to the output indices without any extra comparisons.
                     MergeJoinState::StagedRightEqualRun(start_right_idx) => {
-                        left_indices.extend(
-                            std::iter::repeat(left_idx as u64).take(right_idx - start_right_idx),
-                        );
+                        left_indices.extend(std::iter::repeat_n(
+                            left_idx as u64,
+                            right_idx - start_right_idx,
+                        ));
                         right_indices.extend((start_right_idx..right_idx).map(|i| i as u64));
                     }
                     _ => {}
