@@ -38,6 +38,13 @@ To set up your development environment:
 3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests
 4. `make docs`: build and serve docs
 
+#### Note about Developing `daft-dashboard`
+
+If you wish to enable, or work on the daft-dashboard functionality, it does have an additional dependency of [bun.sh](https://bun.sh/).
+
+You simply need to install bun,  and everything else should work out of the box!
+
+
 ### Developing with Ray
 
 Running a development version of Daft on a local Ray cluster is as simple as including `daft.context.set_runner_ray()` in your Python script and then building and executing it as usual.
