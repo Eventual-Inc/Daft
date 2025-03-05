@@ -22,7 +22,7 @@ use daft_core::{
     },
     join::JoinSide,
     prelude::*,
-    utils::supertype::try_get_supertype,
+    utils::supertype::{try_get_collection_supertype, try_get_supertype},
 };
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
@@ -1134,7 +1134,11 @@ impl Expr {
             Self::List(items) => {
                 // Use "list" as the field name, and infer list type from items.
                 let field_name = "list";
-                let field_type = try_compute_collection_supertype(items, schema)?;
+                let field_types = items
+                    .iter()
+                    .map(|e| e.get_type(schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let field_type = try_get_collection_supertype(&field_types)?;
                 Ok(Field::new(field_name, DataType::new_list(field_type)))
             }
             Self::Between(value, lower, upper) => {
@@ -1711,17 +1715,6 @@ fn try_compute_is_in_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Opti
         if dtype.as_ref() != Some(&other_dtype) {
             return Err(DaftError::TypeError(format!("Expected all arguments to be of the same type {}, but found element with type {other_dtype}", dtype.unwrap())));
         }
-    }
-    Ok(dtype)
-}
-
-/// Tries to get the supertype of all exprs in the collection.
-fn try_compute_collection_supertype(exprs: &[ExprRef], schema: &Schema) -> DaftResult<DataType> {
-    let mut dtype = DataType::Null;
-    for expr in exprs {
-        let other_dtype = expr.get_type(schema)?;
-        let super_dtype = try_get_supertype(&dtype, &other_dtype)?;
-        dtype = super_dtype;
     }
     Ok(dtype)
 }

@@ -92,7 +92,7 @@ class Session:
         else:
             raise ValueError(f"Cannot attach object with type {type(object)}")
 
-    def attach_catalog(self, catalog: object | Catalog, alias: str | None = None) -> Catalog:
+    def attach_catalog(self, catalog: Catalog | object, alias: str | None = None) -> Catalog:
         """Attaches an external catalog to this session.
 
         Args:
@@ -102,10 +102,9 @@ class Session:
         Returns:
             Catalog: new daft catalog instance
         """
-        if alias is None:
-            raise ValueError("implicit catalog aliases are not yet supported")
         c = catalog if isinstance(catalog, Catalog) else Catalog._from_obj(catalog)
-        return self._session.attach_catalog(c, alias)
+        a = alias if alias else c.name
+        return self._session.attach_catalog(c, a)
 
     def attach_table(self, table: Table | object, alias: str | None = None) -> Table:
         """Attaches an external table instance to this session.
@@ -117,10 +116,9 @@ class Session:
         Returns:
             Table: new daft table instance
         """
-        if alias is None:
-            raise ValueError("implicit table aliases are not yet supported")
         t = table if isinstance(table, Table) else Table._from_obj(table)
-        return self._session.attach_table(t, alias)
+        a = alias if alias else t.name
+        return self._session.attach_table(t, a)
 
     def detach_catalog(self, alias: str):
         """Detaches the catalog from this session or raises if the catalog does not exist.

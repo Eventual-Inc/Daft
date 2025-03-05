@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "next build  && touch out/.gitkeep",
     "start": "next start",
     "lint": "next lint --fix",
     "move": "mv out ../../html"
