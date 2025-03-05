@@ -64,7 +64,7 @@ try:
         import warnings
 
         warnings.warn(
-            "The 'getdaft' PyPI package is deprecated and will no longer will receive updates from Daft v0.5.0 onwards.\nPlease install Daft via 'pip install daft' instead."
+            "The 'getdaft' PyPI package is migrating to `daft` and will no longer will receive updates v0.5.0 onwards.\nPlease install Daft via\n\t'pip install daft'"
         )
 except Exception:
     pass
