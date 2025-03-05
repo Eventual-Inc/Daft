@@ -8,7 +8,8 @@ dependencies = [
   "pyarrow >= 8.0.0",
   "fsspec",
   "tqdm",
-  "typing-extensions >= 4.0.0; python_version < '3.10'"
+  "typing-extensions >= 4.0.0; python_version < '3.10'",
+  "importlib-metadata"
 ]
 description = "Distributed Dataframes for Multimodal Data"
 dynamic = ["version"]

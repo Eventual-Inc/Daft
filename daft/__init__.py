@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.metadata
 import os
 
 ###
@@ -57,13 +56,18 @@ analytics_client.track_import()
 ###
 # Warn if using the old package name
 ###
-package_map = importlib.metadata.packages_distributions()
-if "getdaft" in package_map["daft"]:
-    import warnings
+try:
+    from importlib_metadata import packages_distributions
 
-    warnings.warn(
-        "The 'getdaft' PyPI package is deprecated and will no longer will receive updates from Daft v0.5.0 onwards.\nPlease install Daft via 'pip install daft' instead."
-    )
+    package_map = packages_distributions()
+    if "getdaft" in package_map["daft"]:
+        import warnings
+
+        warnings.warn(
+            "The 'getdaft' PyPI package is deprecated and will no longer will receive updates from Daft v0.5.0 onwards.\nPlease install Daft via 'pip install daft' instead."
+        )
+except Exception:
+    pass
 
 ###
 # Daft top-level imports
