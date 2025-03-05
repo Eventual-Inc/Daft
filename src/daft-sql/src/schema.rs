@@ -135,13 +135,13 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         SQLDataType::Date => DataType::Date,
         SQLDataType::Interval => DataType::Interval,
         SQLDataType::Time(precision, tz) => match tz {
-            TimezoneInfo::None => DataType::Time(timeunit_from_precision(precision)?),
+            TimezoneInfo::None => DataType::Time(timeunit_from_precision(*precision)?),
             _ => unsupported_sql_err!("`time` with timezone is; found tz={}", tz),
         },
         SQLDataType::Datetime(_) => unsupported_sql_err!("`datetime` is not supported"),
         SQLDataType::Timestamp(prec, tz) => match tz {
             TimezoneInfo::None => {
-                DataType::Timestamp(timeunit_from_precision(prec)?, None)
+                DataType::Timestamp(timeunit_from_precision(*prec)?, None)
             }
             _ => unsupported_sql_err!("`timestamp` with timezone"),
         },
@@ -244,12 +244,12 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
     })
 }
 
-pub(crate) fn timeunit_from_precision(prec: &Option<u64>) -> SQLPlannerResult<TimeUnit> {
+pub(crate) fn timeunit_from_precision(prec: Option<u64>) -> SQLPlannerResult<TimeUnit> {
     Ok(match prec {
         None => TimeUnit::Microseconds,
-        Some(n) if (1u64..=3u64).contains(n) => TimeUnit::Milliseconds,
-        Some(n) if (4u64..=6u64).contains(n) => TimeUnit::Microseconds,
-        Some(n) if (7u64..=9u64).contains(n) => TimeUnit::Nanoseconds,
+        Some(n) if (1u64..=3u64).contains(&n) => TimeUnit::Milliseconds,
+        Some(n) if (4u64..=6u64).contains(&n) => TimeUnit::Microseconds,
+        Some(n) if (7u64..=9u64).contains(&n) => TimeUnit::Nanoseconds,
         Some(n) => {
             unsupported_sql_err!(
                 "invalid temporal type precision (expected 1-9, found {})",

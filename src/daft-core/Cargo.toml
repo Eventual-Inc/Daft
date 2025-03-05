@@ -35,7 +35,6 @@ html-escape = {workspace = true}
 hyperloglog = {path = "../hyperloglog"}
 indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
-lazy_static = {workspace = true}
 log = {workspace = true}
 mur3 = "0.1.0"
 ndarray = "0.16.1"

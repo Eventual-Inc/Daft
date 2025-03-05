@@ -538,7 +538,7 @@ pub fn search_sorted_multi_array(
     let combined_comparator = |a_idx: usize, b_idx: usize| -> Ordering {
         for comparator in &cmp_list {
             match comparator(a_idx, b_idx) {
-                Ordering::Equal => continue,
+                Ordering::Equal => {}
                 other => return other,
             }
         }

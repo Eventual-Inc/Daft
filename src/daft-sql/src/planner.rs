@@ -105,6 +105,7 @@ impl PlannerContext {
 }
 
 /// An SQLPlanner is created for each scope to bind names and translate to logical plans.
+///
 /// TODO flip SQLPlanner to pass scoped state objects rather than being stateful itself.
 /// This gives us control on state management without coupling our scopes to the call stack.
 /// It also eliminates extra references on the shared context and we can remove interior mutability.
@@ -569,7 +570,7 @@ impl<'a> SQLPlanner<'a> {
                     descending.push(true);
                 }
 
-            };
+            }
             if order_by_expr.with_fill.is_some() {
                 unsupported_sql_err!("WITH FILL");
             }
@@ -1150,7 +1151,7 @@ impl<'a> SQLPlanner<'a> {
             Value::Null => LiteralValue::Null,
             _ => {
                 return Err(PlannerError::invalid_operation(
-                    "Only string, number, boolean and null literals are supported. Instead found: `{value}`",
+                    format!("Only string, number, boolean and null literals are supported. Instead found: `{value}`"),
                 ))
             }
         })

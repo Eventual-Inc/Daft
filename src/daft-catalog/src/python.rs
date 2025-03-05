@@ -1,3 +1,5 @@
+#![allow(clippy::useless_conversion)]
+
 use std::sync::Arc;
 
 use daft_core::{prelude::SchemaRef, python::PySchema};

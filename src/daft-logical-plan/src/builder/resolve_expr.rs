@@ -216,7 +216,7 @@ pub struct ExprResolver<'a> {
     groupby: HashSet<&'a ExprRef>,
 }
 
-impl<'a> ExprResolver<'a> {
+impl ExprResolver<'_> {
     fn resolve_helper(&self, expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
         if !self.allow_actor_pool_udf && expr.exists(is_actor_pool_udf) {
             return Err(DaftError::ValueError(format!(

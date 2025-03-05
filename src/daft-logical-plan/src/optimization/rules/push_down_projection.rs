@@ -96,7 +96,7 @@ impl PushDownProjection {
                         {
                             okay_to_merge = okay_to_merge
                                 && upstream_computations_used.insert(name.to_string());
-                        };
+                        }
                         if okay_to_merge {
                             expr.children()
                         } else {

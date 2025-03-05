@@ -1,14 +1,14 @@
 use std::sync::{atomic::AtomicBool, Mutex};
 
-use lazy_static::lazy_static;
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::layer::SubscriberExt;
 
 static TRACING_INIT: AtomicBool = AtomicBool::new(false);
 
-lazy_static! {
-    static ref CHROME_GUARD_HANDLE: Mutex<Option<tracing_chrome::FlushGuard>> = Mutex::new(None);
-}
+use std::sync::LazyLock;
+
+static CHROME_GUARD_HANDLE: LazyLock<Mutex<Option<tracing_chrome::FlushGuard>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 pub fn init_tracing(enable_chrome_trace: bool) {
     use std::sync::atomic::Ordering;

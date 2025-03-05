@@ -649,7 +649,7 @@ impl<'a> MultiSliceReader<'a> {
     }
 }
 
-impl<'a> Read for MultiSliceReader<'a> {
+impl Read for MultiSliceReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let buf_len = buf.len();
         let mut position = 0;

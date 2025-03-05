@@ -158,7 +158,7 @@ impl<'a> JsonReader<'a> {
             if tbl.len() > limit {
                 return tbl.head(limit);
             }
-        };
+        }
         Ok(tbl)
     }
 
@@ -207,7 +207,7 @@ impl<'a> JsonReader<'a> {
                                     string: "Field not found in schema".to_string(),
                                 })?;
                             }
-                        };
+                        }
                     }
                 }
                 _ => {

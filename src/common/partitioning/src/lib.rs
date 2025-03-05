@@ -10,6 +10,7 @@ use {
 };
 
 /// Common trait interface for dataset partitioning, defined in this shared crate to avoid circular dependencies.
+///
 /// Acts as a forward declaration for concrete partition implementations. _(Specifically the `MicroPartition` type defined in `daft-micropartition`)_
 pub trait Partition: std::fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
@@ -43,6 +44,7 @@ pub struct PartitionMetadata {
 }
 
 /// A partition set is a collection of partitions.
+///
 /// It is up to the implementation to decide how to store and manage the partition batches.
 /// For example, an in memory partition set could likely be stored as `HashMap<PartitionId, PartitionBatchRef<T>>`.
 ///

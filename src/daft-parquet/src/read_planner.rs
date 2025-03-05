@@ -242,7 +242,7 @@ impl RangesContainer {
                 current_pos += end_offset - start_offset;
                 curr_index = index + 1;
             }
-        };
+        }
         while current_pos < range.end && curr_index < self.ranges.len() {
             let entry = self.ranges[curr_index].clone();
             let start = entry.start;

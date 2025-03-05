@@ -149,7 +149,7 @@ impl<'a> ExprPair<'a> {
     }
 }
 
-impl<'a> Equivalent<(ExprRef, ExprRef)> for ExprPair<'a> {
+impl Equivalent<(ExprRef, ExprRef)> for ExprPair<'_> {
     fn equivalent(&self, other: &(ExprRef, ExprRef)) -> bool {
         self.0 == other.0.as_ref() && self.1 == other.1.as_ref()
     }

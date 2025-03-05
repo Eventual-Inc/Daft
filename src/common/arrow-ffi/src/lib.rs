@@ -14,8 +14,8 @@ pub fn array_to_rust(py: Python, arrow_array: Bound<PyAny>) -> PyResult<ArrayRef
     let array = Box::new(ffi::ArrowArray::empty());
     let schema = Box::new(ffi::ArrowSchema::empty());
 
-    let array_ptr = &*array as *const ffi::ArrowArray;
-    let schema_ptr = &*schema as *const ffi::ArrowSchema;
+    let array_ptr = &raw const *array;
+    let schema_ptr = &raw const *schema;
 
     // make the conversion through PyArrow's private API
     // this changes the pointer's memory and is thus unsafe. In particular, `_export_to_c` can go out of bounds

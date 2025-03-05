@@ -15,7 +15,7 @@ impl<'a, W> StageDisplayMermaidVisitor<'a, W> {
     }
 }
 
-impl<'a, W> StageDisplayMermaidVisitor<'a, W>
+impl<W> StageDisplayMermaidVisitor<'_, W>
 where
     W: fmt::Write,
 {
@@ -61,7 +61,7 @@ where
     }
 
     fn add_edge(&mut self, parent: String, child: String) -> fmt::Result {
-        writeln!(self.output, r#"{child} --> {parent}"#)
+        writeln!(self.output, r"{child} --> {parent}")
     }
 
     fn fmt_node(&mut self, node: &EmittedStage) -> fmt::Result {
@@ -86,9 +86,9 @@ where
         {
             writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
             if self.options.bottom_up {
-                writeln!(self.output, r#"direction BT"#)?;
+                writeln!(self.output, r"direction BT")?;
             } else {
-                writeln!(self.output, r#"direction TB"#)?;
+                writeln!(self.output, r"direction TB")?;
             }
             self.fmt_node(node)?;
             writeln!(self.output, "end")?;

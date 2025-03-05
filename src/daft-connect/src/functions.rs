@@ -1,10 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
-use once_cell::sync::Lazy;
 use spark_connect::Expression;
 
 use crate::{
@@ -18,7 +20,7 @@ mod math;
 mod partition_transform;
 mod string;
 
-pub(crate) static CONNECT_FUNCTIONS: Lazy<SparkFunctions> = Lazy::new(|| {
+pub(crate) static CONNECT_FUNCTIONS: LazyLock<SparkFunctions> = LazyLock::new(|| {
     let mut functions = SparkFunctions::new();
     functions.register::<aggregate::AggregateFunctions>();
     functions.register::<core::CoreFunctions>();
