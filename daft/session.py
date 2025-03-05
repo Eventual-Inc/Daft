@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.context import get_context
 from daft.daft import PySession, plan_sql
@@ -226,7 +228,7 @@ class Session:
             ValueError: If the table does not exist.
         """
         if isinstance(identifier, str):
-            identifier = Identifier(*identifier.split("."))
+            identifier = Identifier.from_str(identifier)
         return self._session.get_table(identifier._ident)
 
     ###
@@ -276,7 +278,7 @@ class Session:
     # read_*
     ###
 
-    def read_table(self, identifier: Identifier | str) -> DataFrame:
+    def read_table(self, identifier: Identifier | str, **options) -> DataFrame:
         """Returns the table as a DataFrame or raises an exception if it does not exist.
 
         Args:
@@ -288,7 +290,7 @@ class Session:
         Raises:
             ValueError: If the tables odes not exist.
         """
-        return self.get_table(identifier).read()
+        return self.get_table(identifier).read(**options)
 
     ###
     # set_*
@@ -317,6 +319,21 @@ class Session:
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident)
+
+    ###
+    # write_*
+    ###
+
+    def write_table(
+        self,
+        identifier: Identifier | str,
+        df: DataFrame | object,
+        mode: Literal["append", "overwrite"] = "append",
+        **options,
+    ):
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+        self._session.get_table(identifier._ident).write(df, mode=mode, **options)
 
 
 ###
@@ -445,9 +462,21 @@ def list_tables(pattern: None | str = None) -> list[Identifier]:
 ###
 
 
-def read_table(identifier: Identifier | str) -> DataFrame:
+def read_table(identifier: Identifier | str, **options) -> DataFrame:
     """Returns the table as a DataFrame or raises an exception if it does not exist."""
-    return _session().get_table(identifier).read()
+    return _session().read_table(identifier, **options)
+
+
+###
+# write_*
+###
+
+
+def write_table(
+    identifier: Identifier | str, df: DataFrame | object, mode: Literal["append", "overwrite"] = "append", **options
+):
+    """Writes the DataFrame to the table specified with the identifier."""
+    _session().write_table(identifier, df, mode, **options)
 
 
 ###

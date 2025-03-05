@@ -47,7 +47,7 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from daft.logical.schema import Schema
 
@@ -319,7 +319,31 @@ class Catalog(ABC):
             Table: matched table or raises if the table does not exist.
         """
 
+    ###
+    # read_*
+    ###
+
+    def read_table(self, identifier: Identifier | str, **options) -> DataFrame:
+        """Returns the table as a DataFrame or raises an exception if it does not exist."""
+        return self.get_table(identifier).read(**options)
+
+    ###
+    # write_*
+    ###
+
+    def write_table(
+        self,
+        identifier: Identifier | str,
+        df: DataFrame | object,
+        mode: Literal["append", "overwrite"] = "append",
+        **options,
+    ):
+        return self.get_table(identifier).write(df, mode=mode, **options)
+
+    ###
     # TODO deprecated catalog APIs #3819
+    ###
+
     def load_table(self, name: str) -> Table:
         """DEPRECATED: Please use `get_table` instead; version=0.5.0!"""
         warnings.warn(
@@ -520,12 +544,32 @@ class Table(ABC):
         else:
             raise ValueError(f"Unsupported table source {type(source)}")
 
+    @staticmethod
+    def _validate_options(method: str, input: dict[str, any], valid: set[str]):
+        """Validates input options against a set of valid options.
+
+        Args:
+            method (str): The method name to include in the error message
+            input (dict[str, any]): The input options dictionary
+            valid (set[str]): Set of valid option keys
+
+        Raises:
+            ValueError: If any input options are not in the valid set
+        """
+        invalid_options = set(input.keys()) - valid
+        if invalid_options:
+            raise ValueError(f"Unsupported option(s) for {method}, found {invalid_options!s} not in {valid!s}")
+
+    ###
+    # read methods
+    ###
+
     @abstractmethod
-    def read(self) -> DataFrame:
+    def read(self, **options) -> DataFrame:
         """Creates a new DataFrame from this table.
 
         Args:
-            None
+            **options: additional format-dependent read options
 
         Returns:
             DataFrame: new DataFrame instance
@@ -552,6 +596,38 @@ class Table(ABC):
             None
         """
         return self.read().show(n)
+
+    ###
+    # write methods
+    ###
+
+    @abstractmethod
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+        """Writes the DataFrame to this table.
+
+        Args:
+            df (DataFrame): datafram to write
+            mode (str): write mode such as 'append' or 'overwrite'
+            **options: additional format-dependent write options
+        """
+
+    def append(self, df: DataFrame, **options) -> None:
+        """Appends the DataFrame to this table.
+
+        Args:
+            df (DataFrame): dataframe to append
+            **options: additional format-dependent write options
+        """
+        self.write(df, mode="append", **options)
+
+    def overwrite(self, df: DataFrame, **options) -> None:
+        """Overwrites this table with the given DataFrame.
+
+        Args:
+            df (DataFrame): dataframe to overwrite this table with
+            **options: additional format-dependent write options
+        """
+        self.write(df, mode="overwrite", **options)
 
     ###
     # TODO deprecated catalog APIs #3819

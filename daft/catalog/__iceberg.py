@@ -9,6 +9,7 @@ from pyiceberg.catalog import Catalog as InnerCatalog
 from pyiceberg.table import Table as InnerTable
 
 from daft.catalog import Catalog, Identifier, Table
+from daft.io._iceberg import read_iceberg
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
@@ -59,6 +60,9 @@ class IcebergCatalog(Catalog):
 class IcebergTable(Table):
     _inner: InnerTable
 
+    _read_options = {"snapshot_id"}
+    _write_options = set()
+
     def __init__(self, inner: InnerTable):
         """DEPRECATED: Please use `Table.from_iceberg`; version 0.5.0!"""
         warnings.warn(
@@ -87,7 +91,12 @@ class IcebergTable(Table):
             return IcebergTable(obj)
         return None
 
-    def read(self) -> DataFrame:
-        import daft
+    def read(self, **options) -> DataFrame:
+        Table._validate_options("Iceberg read", options, IcebergTable._read_options)
 
-        return daft.read_iceberg(self._inner)
+        return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
+
+    def write(self, df: DataFrame | object, mode: str = "append", **options):
+        self._validate_options("Iceberg write", options, IcebergTable._write_options)
+
+        df.write_iceberg(self._inner, mode=mode)

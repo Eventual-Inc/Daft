@@ -63,8 +63,15 @@ class MemoryTable(Table):
         return self._name
 
     ###
-    # DataFrame Methods
+    # read methods
     ###
 
-    def read(self) -> DataFrame:
+    def read(self, **options) -> DataFrame:
         return self._inner
+
+    ###
+    # write methods
+    ###
+
+    def write(self, df: DataFrame | object, mode: str = "append", **options):
+        raise ValueError("Writes to in-memory tables are not yet supported.")
