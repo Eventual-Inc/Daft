@@ -1485,7 +1485,7 @@ class Expression:
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df = daft.from_pydict({"text": [b"hello, world!"]})  # DataType Binary
+            >>> df = daft.from_pydict({"text": [b"hello, world!"]})  # binary
             >>> df.select(col("text").encode("zlib")).show()
             ╭────────────────────────────────╮
             │ text                           │
@@ -1494,13 +1494,13 @@ class Expression:
             ╞════════════════════════════════╡
             │ b"x\x9c\xcbH\xcd\xc9\xc9\xd7Q… │
             ╰────────────────────────────────╯
-
+            <BLANKLINE>
             (Showing first 1 of 1 rows)
 
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df = daft.from_pydict({"text": ["hello, world!"]})  # DataType String
+            >>> df = daft.from_pydict({"text": ["hello, world!"]})  # string
             >>> df.select(col("text").encode("zlib")).show()
             ╭────────────────────────────────╮
             │ text                           │
@@ -1509,7 +1509,7 @@ class Expression:
             ╞════════════════════════════════╡
             │ b"x\x9c\xcbH\xcd\xc9\xc9\xd7Q… │
             ╰────────────────────────────────╯
-
+            <BLANKLINE>
             (Showing first 1 of 1 rows)
 
         Args:
@@ -1526,17 +1526,18 @@ class Expression:
 
         Example:
             >>> import daft
+            >>> import zlib
             >>> from daft import col
             >>> df = daft.from_pydict({"bytes": [zlib.compress(b"hello, world!")]})
             >>> df.select(col("bytes").decode("zlib")).show()
-            ╭───────────────╮
-            │ bytes         │
-            │ ---           │
-            │ Utf8          │
-            ╞═══════════════╡
-            │ hello, world! │
-            ╰───────────────╯
-
+            ╭──────────────────╮
+            │ bytes            │
+            │ ---              │
+            │ Binary           │
+            ╞══════════════════╡
+            │ b"hello, world!" │
+            ╰──────────────────╯
+            <BLANKLINE>
             (Showing first 1 of 1 rows)
 
         Args:
