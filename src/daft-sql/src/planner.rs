@@ -570,7 +570,7 @@ impl<'a> SQLPlanner<'a> {
                     descending.push(true);
                 }
 
-            };
+            }
             if order_by_expr.with_fill.is_some() {
                 unsupported_sql_err!("WITH FILL");
             }
@@ -1151,7 +1151,7 @@ impl<'a> SQLPlanner<'a> {
             Value::Null => LiteralValue::Null,
             _ => {
                 return Err(PlannerError::invalid_operation(
-                    "Only string, number, boolean and null literals are supported. Instead found: `{value}`",
+                    format!("Only string, number, boolean and null literals are supported. Instead found: `{value}`"),
                 ))
             }
         })

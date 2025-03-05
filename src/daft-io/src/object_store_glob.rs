@@ -1,10 +1,13 @@
-use std::{collections::HashSet, path::Path, sync::Arc};
+use std::{
+    collections::HashSet,
+    path::Path,
+    sync::{Arc, LazyLock},
+};
 
 use async_stream::stream;
 use futures::stream::{BoxStream, StreamExt};
 use globset::{GlobBuilder, GlobMatcher};
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use tokio::sync::mpsc::Sender;
 
 use crate::{
@@ -12,12 +15,11 @@ use crate::{
     stats::IOStatsRef,
 };
 
-lazy_static! {
-    /// Check if a given char is considered a special glob character
-    /// NOTE: we use the `globset` crate which defines the following glob behavior:
-    /// https://docs.rs/globset/latest/globset/index.html#syntax
-    static ref GLOB_SPECIAL_CHARACTERS: HashSet<char> = HashSet::from(['*', '?', '{', '}', '[', ']']);
-}
+/// Check if a given char is considered a special glob character
+/// NOTE: we use the `globset` crate which defines the following glob behavior:
+/// https://docs.rs/globset/latest/globset/index.html#syntax
+static GLOB_SPECIAL_CHARACTERS: LazyLock<HashSet<char>> =
+    LazyLock::new(|| HashSet::from(['*', '?', '{', '}', '[', ']']));
 
 const SCHEME_SUFFIX_LEN: usize = "://".len();
 
@@ -227,7 +229,7 @@ pub fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
 ///
 /// * First attempts to non-recursively list all Files and Directories under the current `uri`
 /// * If during iteration we detect the number of Directories being returned exceeds `max_dirs`, we
-///     fall back onto a prefix list of all Files with the current `uri` as the prefix
+///   fall back onto a prefix list of all Files with the current `uri` as the prefix
 ///
 /// Returns a tuple `(file_metadata_stream: BoxStream<...>, dir_count: usize)` where the second element
 /// indicates the number of Directory entries contained within the stream
@@ -317,8 +319,7 @@ fn should_return(fm: &FileMetadata) -> bool {
             if MARKER_SUFFIXES
                 .iter()
                 .any(|suffix| file_path.ends_with(suffix))
-                || file_name
-                    .is_some_and(|file| MARKER_FILES.iter().any(|m_file| file == *m_file))
+                || file_name.is_some_and(|file| MARKER_FILES.contains(&file))
                 || file_name.is_some_and(|file| {
                     MARKER_PREFIXES
                         .iter()
@@ -378,10 +379,10 @@ fn verify_glob(glob: &str) -> super::Result<()> {
 /// * source: the ObjectSource to use for file listing
 /// * glob: the string to glob
 /// * fanout_limit: number of directories at which to fallback onto prefix listing, or None to never fall back.
-///     A reasonable number here for a remote object store is something like 1024, which saturates the number of
-///     parallel connections (usually defaulting to 64).
+///   A reasonable number here for a remote object store is something like 1024, which saturates the number of
+///   parallel connections (usually defaulting to 64).
 /// * page_size: control the returned results page size, or None to use the ObjectSource's defaults. Usually only used for testing
-///     but may yield some performance improvements depending on the workload.
+///   but may yield some performance improvements depending on the workload.
 pub async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
@@ -410,7 +411,7 @@ pub async fn glob(
             }
             if attempt_as_dir {
                 let mut results = source.iter_dir(glob.as_str(), true, page_size, io_stats).await?;
-                while let Some(result) = results.next().await && remaining_results.map_or(true, |rr| rr > 0) {
+                while let Some(result) = results.next().await && remaining_results.is_none_or(|rr| rr > 0) {
                     match result {
                         Ok(fm) => {
                             if should_return(&fm) {
@@ -582,7 +583,7 @@ pub async fn glob(
                                 log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
                             }
                         }
-                    };
+                    }
                 }
 
             // RECURSIVE CASE: current_fragment contains a special character (e.g. *)
@@ -684,7 +685,7 @@ pub async fn glob(
 
     let to_rtn_stream = stream! {
         let mut remaining_results = limit;
-        while remaining_results.map_or(true, |rr| rr > 0) && let Some(v) = to_rtn_rx.recv().await {
+        while remaining_results.is_none_or(|rr| rr > 0) && let Some(v) = to_rtn_rx.recv().await {
 
             if v.as_ref().is_ok_and(|v| !should_return(v)) {
                 continue

@@ -28,7 +28,7 @@ where
             let l = *l.unwrap();
             for (j, r) in other.as_arrow().iter().enumerate() {
                 match r {
-                    None => continue,
+                    None => {}
                     Some(r) => {
                         if func(l, *r) {
                             left_idx.push(i as u64);
@@ -63,7 +63,7 @@ impl Utf8Array {
             let l = l.unwrap();
             for (j, r) in other.as_arrow().iter().enumerate() {
                 match r {
-                    None => continue,
+                    None => {}
                     Some(r) => {
                         if func(l, r) {
                             left_idx.push(i as u64);
@@ -98,7 +98,7 @@ impl BooleanArray {
             let l = l.unwrap();
             for (j, r) in other.as_arrow().iter().enumerate() {
                 match r {
-                    None => continue,
+                    None => {}
                     Some(r) => {
                         if func(l, r) {
                             left_idx.push(i as u64);

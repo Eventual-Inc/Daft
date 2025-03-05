@@ -1,10 +1,14 @@
-use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
+use std::{
+    num::ParseIntError,
+    ops::Range,
+    string::FromUtf8Error,
+    sync::{Arc, LazyLock},
+};
 
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{stream::BoxStream, TryStreamExt};
 use hyper::header;
-use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
@@ -20,11 +24,9 @@ use crate::{
 
 const HTTP_DELIMITER: &str = "/";
 
-lazy_static! {
-    // Taken from: https://stackoverflow.com/a/15926317/3821154
-    static ref HTML_A_TAG_HREF_RE: Regex =
-        Regex::new(r#"<(a|A)\s+(?:[^>]*?\s+)?(href|HREF)=["'](?P<url>[^"']+)"#).unwrap();
-}
+static HTML_A_TAG_HREF_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"<(a|A)\s+(?:[^>]*?\s+)?(href|HREF)=["'](?P<url>[^"']+)"#).unwrap()
+});
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -118,7 +120,7 @@ fn get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<File
                     return Ok(None);
                 }
                 _ => (),
-            };
+            }
 
             let filetype = if matched_url.ends_with(HTTP_DELIMITER) {
                 FileType::Directory
@@ -320,7 +322,7 @@ impl ObjectSource for HttpSource {
 
         match response.headers().get("content-type") {
             // If the content-type is text/html, we treat the data on this path as a traversable "directory"
-            Some(header_value) if header_value.to_str().map_or(false, |v| v == "text/html") => {
+            Some(header_value) if header_value.to_str().is_ok_and(|v| v == "text/html") => {
                 let text = response
                     .text()
                     .await

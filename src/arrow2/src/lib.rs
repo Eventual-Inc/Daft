@@ -10,10 +10,16 @@
 #![allow(clippy::borrowed_box)]
 // Allow type complexity warning to avoid API break.
 #![allow(clippy::type_complexity)]
-// New lints in 1.83.0
+// New lints
 #![allow(clippy::too_long_first_doc_paragraph)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::single_match)]
+#![allow(clippy::unnecessary_map_or)]
+#![allow(clippy::manual_repeat_n)]
+#![allow(clippy::manual_div_ceil)]
+#![allow(clippy::map_all_any_identity)]
+#![allow(clippy::doc_overindented_list_items)]
+#![allow(clippy::io_other_error)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 

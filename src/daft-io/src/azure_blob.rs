@@ -226,10 +226,8 @@ impl AzureBlobSource {
         };
         let endpoint_url = if let Some(endpoint_url) = &config.endpoint_url {
             Some(endpoint_url.clone())
-        } else if let Ok(endpoint_url) = std::env::var("AZURE_ENDPOINT_URL") {
-            Some(endpoint_url)
         } else {
-            None
+            std::env::var("AZURE_ENDPOINT_URL").ok()
         };
         let blob_client = if let Some(endpoint_url) = endpoint_url {
             ClientBuilder::with_location(

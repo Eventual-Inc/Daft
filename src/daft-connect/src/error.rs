@@ -13,7 +13,7 @@ pub enum ConnectError {
     UnsupportedOperation { op: String },
     #[snafu(display("Invalid argument: {arg}"))]
     InvalidArgument { arg: String },
-    #[snafu(display(r#"Feature: {msg} is not yet implemented, please open an issue at https://github.com/Eventual-Inc/Daft/issues/new?assignees=&labels=enhancement%2Cneeds+triage&projects=&template=feature_request.yaml"#))]
+    #[snafu(display(r"Feature: {msg} is not yet implemented, please open an issue at https://github.com/Eventual-Inc/Daft/issues/new?assignees=&labels=enhancement%2Cneeds+triage&projects=&template=feature_request.yaml"))]
     NotYetImplemented { msg: String },
 
     #[snafu(display("Daft error: {source}"))]

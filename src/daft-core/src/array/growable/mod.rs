@@ -32,11 +32,11 @@ use crate::datatypes::PythonArray;
 /// * `dtype` - [`DataType`] of the built [`Series`]. **NOTE: This must match the dtype of each Series**
 /// * `series` - A vector of `&Series` references to the [`Series`] that this [`Growable`] copies data from
 /// * `use_validity` - Whether or not the [`Growable`] will need to grow a validity mask. Setting this to `false` will
-///     lead to performance gains, but give bad answers if you try to call [`Growable::add_nulls`].
+///   lead to performance gains, but give bad answers if you try to call [`Growable::add_nulls`].
 /// * `capacity` - Helps pre-allocate memory to the [`Growable`] by providing a capacity up-front. Note that variable-length types
-///     such as [`ListArray`] only understands this as the "top-level" capacity, but the capacity of nested children arrays cannot be specified
-///     through this [`make_growable`] API. Instead, you may wish to instantiate and use the [`nested_growable::ListGrowable`] directly if
-///     this is important to your use-case.
+///   such as [`ListArray`] only understands this as the "top-level" capacity, but the capacity of nested children arrays cannot be specified
+///   through this [`make_growable`] API. Instead, you may wish to instantiate and use the [`nested_growable::ListGrowable`] directly if
+///   this is important to your use-case.
 pub fn make_growable<'a>(
     name: &str,
     dtype: &DataType,

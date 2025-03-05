@@ -84,7 +84,7 @@ impl S3CredentialsProviderWrapper {
         let mut cached_creds = self.cached_creds.lock().unwrap();
 
         if let Some(creds) = cached_creds.clone()
-            && creds.expiry.map_or(true, |expiry| expiry > Utc::now())
+            && creds.expiry.is_none_or(|expiry| expiry > Utc::now())
         {
             Ok(creds)
         } else {

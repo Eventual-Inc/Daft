@@ -1,4 +1,4 @@
-use std::{iter::repeat, sync::Arc};
+use std::{iter::repeat_n, sync::Arc};
 
 use common_error::DaftResult;
 
@@ -25,7 +25,7 @@ fn grouped_count_arrow_bitmap(
                 .collect(),
         },
         CountMode::Null => match arrow_bitmap {
-            None => repeat(0).take(groups.len()).collect(), // None of the values are Null
+            None => repeat_n(0, groups.len()).collect(), // None of the values are Null
             Some(validity) => groups
                 .iter()
                 .map(|g| {
@@ -83,7 +83,7 @@ where
         let counts_per_group: Vec<u64> = if self.data_type() == &DataType::Null {
             match &mode {
                 CountMode::All => groups.iter().map(|g| g.len() as u64).collect(),
-                CountMode::Valid => repeat(0).take(groups.len()).collect(),
+                CountMode::Valid => repeat_n(0, groups.len()).collect(),
                 CountMode::Null => groups.iter().map(|g| g.len() as u64).collect(),
             }
         } else {

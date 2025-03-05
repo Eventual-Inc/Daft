@@ -102,7 +102,7 @@ impl MergeByFileSize<'_> {
             acc.sources.len() >= self.max_source_count
                 || acc
                     .estimate_in_memory_size_bytes(Some(self.cfg))
-                    .map_or(false, |bytes| bytes >= self.target_lower_bound_size_bytes)
+                    .is_some_and(|bytes| bytes >= self.target_lower_bound_size_bytes)
         } else {
             false
         }
@@ -222,10 +222,10 @@ fn split_by_row_groups(
                         t.pushdowns.limit,
                     ) && source
                         .get_size_bytes()
-                        .map_or(true, |s| s > max_size_bytes as u64)
+                        .is_none_or(|s| s > max_size_bytes as u64)
                       && source
                         .get_iceberg_delete_files()
-                        .map_or(true, std::vec::Vec::is_empty)
+                        .is_none_or(std::vec::Vec::is_empty)
                     {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;

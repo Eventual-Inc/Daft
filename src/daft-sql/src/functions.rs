@@ -1,7 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
 use daft_dsl::{Expr, ExprRef};
-use once_cell::sync::Lazy;
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
     FunctionArguments,
@@ -20,7 +22,7 @@ use crate::{
 };
 
 /// [SQL_FUNCTIONS] is a singleton that holds all the registered SQL functions.
-pub(crate) static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
+pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
     functions.register::<SQLModuleFloat>();

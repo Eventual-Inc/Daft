@@ -1,4 +1,4 @@
-use std::{cmp, iter::repeat, ops::Not, sync::Arc};
+use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
 use arrow2::{bitmap::MutableBitmap, types::IndexRange};
 use common_error::DaftResult;
@@ -287,10 +287,9 @@ pub(super) fn hash_outer_join(
     {
         let l_iter = IndexRange::new(0, lkeys.len() as u64)
             .map(Some)
-            .chain(repeat(None).take(rkeys.len()));
-        let r_iter = repeat(None)
-            .take(lkeys.len())
-            .chain(IndexRange::new(0, rkeys.len() as u64).map(Some));
+            .chain(repeat_n(None, rkeys.len()));
+        let r_iter =
+            repeat_n(None, lkeys.len()).chain(IndexRange::new(0, rkeys.len() as u64).map(Some));
 
         let l_arrow = Box::new(arrow2::array::PrimitiveArray::<u64>::from_trusted_len_iter(
             l_iter,

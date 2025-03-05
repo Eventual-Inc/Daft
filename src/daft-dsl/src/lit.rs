@@ -282,10 +282,7 @@ impl LiteralValue {
     }
 
     pub fn display_sql<W: Write>(&self, buffer: &mut W) -> io::Result<()> {
-        let display_sql_err = Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Unsupported literal for SQL translation",
-        ));
+        let display_sql_err = Err(io::Error::other("Unsupported literal for SQL translation"));
         match self {
             Self::Null => write!(buffer, "NULL"),
             Self::Boolean(val) => write!(buffer, "{}", val),

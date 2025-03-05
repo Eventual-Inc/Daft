@@ -1,5 +1,5 @@
 use std::{
-    iter::{repeat, Repeat, Take},
+    iter::{repeat_n, RepeatN},
     slice::{ChunksExact, Iter},
 };
 
@@ -68,11 +68,11 @@ where
 }
 
 impl IntoIterator for &'_ NullArray {
-    type IntoIter = Take<Repeat<Option<()>>>;
+    type IntoIter = RepeatN<Option<()>>;
     type Item = <Self::IntoIter as IntoIterator>::Item;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        repeat(None).take(self.len())
+        repeat_n(None, self.len())
     }
 }

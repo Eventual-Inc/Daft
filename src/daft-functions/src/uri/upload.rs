@@ -1,4 +1,4 @@
-use std::{collections::HashSet, iter::repeat, path::Path, sync::Arc};
+use std::{collections::HashSet, iter::repeat_n, path::Path, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
@@ -173,7 +173,7 @@ fn prepare_folder_paths(
         let folder_path = arr.get(0).unwrap();
         let folder_path =
             instantiate_and_trim_path(folder_path, true, &mut instantiated_folder_paths)?;
-        Ok(repeat(folder_path).take(len).collect())
+        Ok(repeat_n(folder_path, len).collect())
     } else {
         debug_assert_eq!(arr.len(), len);
         Ok(arr

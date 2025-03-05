@@ -598,7 +598,7 @@ impl MicroPartition {
             let new_table = RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
                 .context(DaftCoreComputeSnafu)?;
             *guard = TableState::Loaded(Arc::new(vec![new_table]));
-        };
+        }
         if let TableState::Loaded(tables) = &*guard {
             assert_eq!(tables.len(), 1);
             Ok(tables.clone())
@@ -997,7 +997,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     // on the MicroPartition (e.g. its length). Hence we need to perform an eager read.
     if iceberg_delete_files
         .as_ref()
-        .map_or(false, |files| !files.is_empty())
+        .is_some_and(|files| !files.is_empty())
         || predicate.is_some()
     {
         return read_parquet_into_loaded_micropartition(
@@ -1127,7 +1127,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 .zip(
                     row_groups
                         .clone()
-                        .unwrap_or_else(|| std::iter::repeat(None).take(uris.len()).collect()),
+                        .unwrap_or_else(|| std::iter::repeat_n(None, uris.len()).collect()),
                 )
                 .map(|((url, metadata), rgs)| DataSource::File {
                     path: url,
@@ -1207,12 +1207,12 @@ impl Display for MicroPartition {
                 writeln!(f, "{}\n{}", self.schema, guard)?;
             }
             TableState::Loaded(tables) => {
-                if tables.len() == 0 {
+                if tables.is_empty() {
                     writeln!(f, "{}", self.schema)?;
                 }
                 writeln!(f, "{guard}")?;
             }
-        };
+        }
 
         match &self.statistics {
             Some(t) => writeln!(f, "Statistics\n{t}")?,

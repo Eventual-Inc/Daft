@@ -172,7 +172,7 @@ impl PhysicalPlan {
                 ),
                 left_on.clone(),
                 // TODO(Clark): Propagate descending vec once sort-merge join supports descending sort orders.
-                std::iter::repeat(false).take(left_on.len()).collect(),
+                std::iter::repeat_n(false, left_on.len()).collect(),
             ))
             .into(),
             Self::CrossJoin(CrossJoin {
@@ -205,7 +205,7 @@ impl PhysicalPlan {
                     }
                     approx_stats.size_bytes += st.estimate_in_memory_size_bytes(None).unwrap_or(0);
                 }
-                approx_stats.acc_selectivity = if scan_tasks.len() == 0 {
+                approx_stats.acc_selectivity = if scan_tasks.is_empty() {
                     0.0
                 } else {
                     let st = scan_tasks.first().unwrap();

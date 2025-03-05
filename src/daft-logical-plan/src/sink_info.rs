@@ -77,7 +77,7 @@ impl IcebergCatalogInfo {
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
-        };
+        }
         res
     }
 }
@@ -110,7 +110,7 @@ impl DeltaLakeCatalogInfo {
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
-        };
+        }
         res
     }
 }
@@ -140,7 +140,7 @@ impl LanceCatalogInfo {
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
-        };
+        }
         res
     }
 }

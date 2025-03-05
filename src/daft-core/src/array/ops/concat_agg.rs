@@ -216,7 +216,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
 
 #[cfg(test)]
 mod test {
-    use std::{iter, iter::repeat};
+    use std::iter::{self, repeat_n};
 
     use common_error::DaftResult;
 
@@ -239,7 +239,7 @@ mod test {
             ))
             .into_series(),
             arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 0, 0, 0])?,
-            Some(arrow2::bitmap::Bitmap::from_iter(repeat(false).take(3))),
+            Some(arrow2::bitmap::Bitmap::from_iter(repeat_n(false, 3))),
         );
 
         // Expected: [None]
@@ -247,7 +247,7 @@ mod test {
         assert_eq!(concatted.len(), 1);
         assert_eq!(
             concatted.validity(),
-            Some(&arrow2::bitmap::Bitmap::from_iter(repeat(false).take(1)))
+            Some(&arrow2::bitmap::Bitmap::from_iter(repeat_n(false, 1)))
         );
         Ok(())
     }

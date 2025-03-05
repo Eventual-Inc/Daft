@@ -1,6 +1,4 @@
-#![feature(async_closure)]
 #![feature(let_chains)]
-#![feature(trait_upcasting)]
 use common_error::DaftError;
 use futures::stream::TryChunksError;
 use snafu::Snafu;

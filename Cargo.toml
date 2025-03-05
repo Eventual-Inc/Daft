@@ -40,7 +40,6 @@ daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-warc = {path = "src/daft-warc", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
-lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
 pyo3 = {workspace = true, optional = true}
@@ -276,9 +275,6 @@ version = "1.3.3"
 features = ["display", "from", "constructor"]
 version = "1.0.0"
 
-[workspace.dependencies.lazy_static]
-version = "1.4.0"
-
 [workspace.dependencies.log]
 features = ["std"]
 version = "0.4.19"
@@ -367,6 +363,8 @@ unused_async = "allow"
 unused_self = "allow"
 use-self = "deny"
 used_underscore_binding = "allow"  # REMOVE REMOVE
+# pyo3 does an extra .into() for pyfunctions which clippy doesn't like
+useless_conversion = "allow"
 wildcard_imports = "allow"
 zero_sized_map_values = "allow"
 

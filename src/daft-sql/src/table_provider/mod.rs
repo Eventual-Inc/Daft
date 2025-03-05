@@ -4,11 +4,13 @@ mod read_iceberg;
 mod read_json;
 mod read_parquet;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
 use daft_dsl::{Expr, ExprRef};
 use daft_logical_plan::LogicalPlanBuilder;
-use once_cell::sync::Lazy;
 use read_csv::ReadCsvFunction;
 use read_deltalake::ReadDeltalakeFunction;
 use read_iceberg::SqlReadIceberg;
@@ -25,7 +27,7 @@ use crate::{
     unsupported_sql_err,
 };
 
-pub(crate) static SQL_TABLE_FUNCTIONS: Lazy<SQLTableFunctions> = Lazy::new(|| {
+pub(crate) static SQL_TABLE_FUNCTIONS: LazyLock<SQLTableFunctions> = LazyLock::new(|| {
     let mut functions = SQLTableFunctions::new();
     functions.add_fn("read_csv", ReadCsvFunction);
     functions.add_fn("read_deltalake", ReadDeltalakeFunction);

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io, ops::Range, string::FromUtf8Error, sync::Arc, time::Duration};
+use std::{collections::HashMap, ops::Range, string::FromUtf8Error, sync::Arc, time::Duration};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -272,9 +272,9 @@ impl From<Error> for super::Error {
                 let io_error = if let Some(source) = source.source() {
                     // if we have a source, lets extract out the error as a string rather than rely on the aws-sdk fmt.
                     let source_as_string = source.to_string();
-                    std::io::Error::new(io::ErrorKind::Other, source_as_string)
+                    std::io::Error::other(source_as_string)
                 } else {
-                    std::io::Error::new(io::ErrorKind::Other, source)
+                    std::io::Error::other(source)
                 };
                 Self::UnableToReadBytes {
                     path,
@@ -539,7 +539,7 @@ async fn build_s3_conf(
 
     if !config.anonymous {
         anonymous = check_creds().await?;
-    };
+    }
 
     let s3_conf = if s3_conf.region().is_none() {
         builder_copy.region(DEFAULT_REGION).build()

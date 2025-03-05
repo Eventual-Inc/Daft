@@ -131,7 +131,7 @@ impl BlockingSink for HashJoinBuildSink {
                 "Null equals Nulls = [{}]",
                 null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
             ));
-        };
+        }
         display
     }
 
