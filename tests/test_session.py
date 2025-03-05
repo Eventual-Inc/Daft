@@ -180,3 +180,23 @@ def test_use():
     sess.use("cat2.a.b")
     assert sess.current_catalog() == cat2
     assert sess.current_namespace() == Identifier("a", "b")
+
+
+def test_sql():
+    sess = Session()
+    #
+    # create some catalogs to use
+    cat1 = Catalog.from_pydict(name="cat1", tables={})
+    cat2 = Catalog.from_pydict(name="cat2", tables={})
+    sess.attach(cat1)
+    sess.attach(cat2)
+    #
+    # test use <catalog>
+    sess.sql("USE cat2")
+    assert sess.current_catalog() == cat2
+    assert sess.current_namespace() is None
+    #
+    #  test use <catalog>.<namespace>
+    sess.sql("USE cat2.a.b")
+    assert sess.current_catalog() == cat2
+    assert sess.current_namespace() == Identifier("a", "b")
