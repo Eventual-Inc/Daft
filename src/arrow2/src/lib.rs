@@ -17,8 +17,6 @@
 #![allow(clippy::unnecessary_map_or)]
 #![allow(clippy::manual_div_ceil)]
 #![allow(clippy::map_all_any_identity)]
-#![allow(clippy::doc_overindented_list_items)]
-#![allow(clippy::io_other_error)]
 #![allow(unexpected_cfgs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
