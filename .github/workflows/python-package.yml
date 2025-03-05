@@ -207,6 +207,10 @@ jobs:
         key: ${{ runner.os }}-integration-build
         cache-all-crates: 'true'
 
+    - uses: oven-sh/setup-bun@v1
+      with:
+        bun-version: latest
+
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
       run: maturin build --release --compatibility linux --out dist
