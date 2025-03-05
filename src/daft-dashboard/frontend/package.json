@@ -6,8 +6,7 @@
     "dev": "next dev --turbopack",
     "build": "next build  && touch out/.gitkeep",
     "start": "next start",
-    "lint": "next lint --fix",
-    "move": "mv out ../../html"
+    "lint": "next lint --fix"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.3",
