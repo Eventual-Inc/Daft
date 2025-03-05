@@ -235,12 +235,14 @@ impl LocalPhysicalPlan {
         partition_by: Vec<ExprRef>,
         schema: SchemaRef,
         stats_state: StatsState,
+        window_functions: Vec<ExprRef>,
     ) -> LocalPhysicalPlanRef {
         Self::WindowPartitionOnly(WindowPartitionOnly {
             input,
             partition_by,
             schema,
             stats_state,
+            window_functions,
         })
         .arced()
     }
@@ -671,4 +673,5 @@ pub struct WindowPartitionOnly {
     pub partition_by: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+    pub window_functions: Vec<ExprRef>,
 }

@@ -401,7 +401,14 @@ impl LogicalPlan {
                 Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
                 Self::Union(_) => panic!("Union ops should never have only one input, but got one"),
                 Self::Join(_) => panic!("Join ops should never have only one input, but got one"),
-                Self::Window(Window { partition_by, order_by, frame, .. }) => Self::Window(Window::try_new(input.clone(), partition_by.clone(), order_by.clone(), frame.clone()).unwrap()),
+                Self::Window(Window { window_functions, partition_by, order_by, ascending, frame, .. }) => Self::Window(Window::try_new(
+                    input.clone(),
+                    window_functions.clone(),
+                    partition_by.clone(),
+                    order_by.clone(),
+                    ascending.clone(),
+                    frame.clone()
+                ).unwrap()),
             },
             [input1, input2] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
@@ -579,7 +586,7 @@ impl LogicalPlan {
                 )
             }
             Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.clone().with_plan_id(plan_id)),
-            Self::Window(window) => Self::Window(window.clone().with_plan_id(plan_id)),
+            Self::Window(window) => window.with_plan_id(Some(plan_id)),
         }
     }
 }

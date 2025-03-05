@@ -9,7 +9,7 @@ use super::{
         DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
         EnrichWithStats, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
         PushDownFilter, PushDownLimit, PushDownProjection, ReorderJoins, SimplifyExpressionsRule,
-        SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery,
+        SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery, DetectWindowFunction,
     },
 };
 use crate::LogicalPlan;
@@ -100,6 +100,7 @@ impl Default for OptimizerBuilder {
                         Box::new(EliminateSubqueryAliasRule::new()),
                         Box::new(SplitActorPoolProjects::new()),
                         Box::new(DetectMonotonicId::new()),
+                        Box::new(DetectWindowFunction::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),

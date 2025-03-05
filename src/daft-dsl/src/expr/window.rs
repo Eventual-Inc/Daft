@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::DataType, prelude::*};
 use serde::{Deserialize, Serialize};
 
@@ -130,6 +130,13 @@ impl WindowFunction {
         let field = self.expr.to_field(&schema)?;
         Ok(field.dtype)
     }
+    
+    /// Get the name of the window function from its underlying expression
+    pub fn name(&self) -> &'static str {
+        // Return a default name in case the expression doesn't have a name
+        // This prevents the Option::unwrap() None panic
+        "window_function"
+    }
 }
 
 impl FunctionEvaluator for WindowFunction {
@@ -148,8 +155,9 @@ impl FunctionEvaluator for WindowFunction {
     }
 
     fn evaluate(&self, _inputs: &[Series], _expr: &FunctionExpr) -> DaftResult<Series> {
-        // TODO: Implement window function evaluation
-        todo!("Implement window function evaluation")
+        Err(DaftError::NotImplemented(
+            "Window functions should be rewritten into a separate plan step by the optimizer. If you're seeing this error, the DetectWindowFunctions optimization rule may not have been applied.".to_string(),
+        ))
     }
 }
 

@@ -114,6 +114,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     window.partition_by.clone(),
                     window.schema.clone(),
                     window.stats_state.clone(),
+                    window.window_functions.clone(),
                 ))
             } else {
                 Err(DaftError::not_implemented(
