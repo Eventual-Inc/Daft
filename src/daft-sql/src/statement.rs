@@ -80,7 +80,7 @@ impl SQLPlanner<'_> {
         verbose: bool,
         statement: &ast::Statement,
         format: Option<ast::AnalyzeFormat>,
-    ) -> SQLPlannerResult<LogicalPlanBuilder> {
+    ) -> SQLPlannerResult<Statement> {
         // err on `DESC | EXPLAIN`
         if *describe_alias != ast::DescribeAlias::Describe {
             unsupported_sql_err!(
@@ -133,7 +133,7 @@ impl SQLPlanner<'_> {
 
     #[allow(dead_code)]
     fn plan_set(&self, _: &ast::SetConfigValue) -> SQLPlannerResult<Statement> {
-        todo!("plan_set")
+        unsupported_sql_err!("SET statement is not yet supported.")
     }
 
     fn plan_use(&self, use_: &ast::Use) -> SQLPlannerResult<Statement> {
