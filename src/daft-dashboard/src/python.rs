@@ -134,7 +134,7 @@ fn launch_attached(noop_if_initialized: bool) -> anyhow::Result<()> {
 fn launch_detached(noop_if_initialized: bool) -> anyhow::Result<()> {
     #[cfg(not(unix))]
     {
-        anyhow::anyhow!("Daft dashboard's detaching feature is not available on this platform; unable to fork on Windows")
+        Err(anyhow::anyhow!("Daft dashboard's detaching feature is not available on this platform; unable to fork on Windows"))
     }
 
     #[cfg(unix)]
