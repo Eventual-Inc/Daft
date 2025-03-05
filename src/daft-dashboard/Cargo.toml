@@ -1,7 +1,6 @@
 [dependencies]
 anyhow = "1.0"
 chrono = {workspace = true, features = ["serde"]}
-clap = {version = "4.5.28", features = ["derive"]}
 http-body-util = "0.1"
 hyper = {features = ["full"], version = "1.6"}
 hyper-util = {features = ["tokio"], version = "0.1"}
@@ -24,6 +23,3 @@ workspace = true
 name = "daft-dashboard"
 edition.workspace = true
 version.workspace = true
-
-[target.'cfg(unix)'.dependencies]
-fork = "0.2"
