@@ -49,12 +49,14 @@ jobs:
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       build_type: release
+      use_new_name: ${{ matrix.use_new_name }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu]
         arch: [x86_64, aarch64]
         lts: [false]
+        use_new_name: [false, true]
 
   publish:
     name: Publish wheels to S3

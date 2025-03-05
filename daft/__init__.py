@@ -54,6 +54,22 @@ analytics_client = init_analytics(get_version(), get_build_type(), user_opted_ou
 analytics_client.track_import()
 
 ###
+# Warn if using the old package name
+###
+try:
+    from importlib_metadata import packages_distributions
+
+    package_map = packages_distributions()
+    if "getdaft" in package_map["daft"]:
+        import warnings
+
+        warnings.warn(
+            "The 'getdaft' PyPI package is migrating to `daft` and will no longer will receive updates v0.5.0 onwards.\nPlease install Daft via\n\t'pip install daft'"
+        )
+except Exception:
+    pass
+
+###
 # Daft top-level imports
 ###
 
