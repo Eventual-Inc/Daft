@@ -130,7 +130,7 @@ impl WindowFunction {
         let field = self.expr.to_field(&schema)?;
         Ok(field.dtype)
     }
-    
+
     /// Get the name of the window function from its underlying expression
     pub fn name(&self) -> &'static str {
         // Return a default name in case the expression doesn't have a name

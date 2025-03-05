@@ -517,20 +517,28 @@ pub(super) fn translate_single_logical_node(
         // Window functions are handled in the local and distributed runners
         LogicalPlan::Window(window) => {
             // Check if this is a partition-only window
-            if !window.partition_by.is_empty() && window.order_by.is_empty() && window.frame.is_none() {
+            if !window.partition_by.is_empty()
+                && window.order_by.is_empty()
+                && window.frame.is_none()
+            {
                 // Window with only partitioning is supported in the local execution engine
                 // We'll convert it to a local physical plan with LocalPhysicalPlan::WindowPartitionOnly
-                
+
                 // First, translate the input
                 let input_physical = physical_children.pop().expect("Window requires 1 input");
-                
+
                 // We'll return this physical plan for further processing
                 // The actual translation to WindowPartitionOnly will be done in daft-local-plan's translate
                 let physical_plan = PhysicalPlan::Project(Project::try_new(
                     input_physical,
-                    window.schema.fields.values().map(|f| resolved_col(f.name.as_str()).into()).collect(),
+                    window
+                        .schema
+                        .fields
+                        .values()
+                        .map(|f| resolved_col(f.name.as_str()))
+                        .collect(),
                 )?);
-                
+
                 Ok(physical_plan.arced())
             } else {
                 // Window with ordering or frame is not implemented yet

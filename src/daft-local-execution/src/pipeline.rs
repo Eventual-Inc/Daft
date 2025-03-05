@@ -125,20 +125,20 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::WindowPartitionOnly(WindowPartitionOnly {
             input,
             partition_by,
-            schema,
-            stats_state,
+            schema: _,
+            stats_state: _,
             window_functions,
         }) => {
             // Implement a simple placeholder until we complete more of the implementation
             // First, ensure the input is processed
-            let input_node = physical_plan_to_pipeline(&input, psets, cfg)?;
-            
+            let input_node = physical_plan_to_pipeline(input, psets, cfg)?;
+
             // Create a project node that just passes through for now
             // We'll replace this with actual window function implementation later
             println!("TODO: Implement window partition only processing");
             println!("  Partition by: {:?}", partition_by);
             println!("  Window functions: {:?}", window_functions);
-            
+
             // For now, just pass through the input since we'll implement the proper handling later
             input_node
         }

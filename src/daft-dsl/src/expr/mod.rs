@@ -1088,7 +1088,7 @@ impl Expr {
             })) => plan_schema.get_field(name).cloned(),
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
-                plan_schema: None,
+                plan_schema: _none,
                 ..
             })) => schema.get_field(name).cloned(),
 
