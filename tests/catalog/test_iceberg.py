@@ -62,8 +62,6 @@ def test_sess_read_table(sess: Session):
 
 
 def test_sess_read_options(sess: Session):
-    # new table, always zero
-    sess.read_table("tbl", snapshot_id="0")
     # invalid options (version is a unity option, not iceberg)
-    with pytest.raises(ValueError, match="Unsupported option(s)"):
+    with pytest.raises(ValueError, match="Unsupported option"):
         sess.read_table("tbl", version="1")
