@@ -5,7 +5,12 @@ use std::{
 };
 
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
-use arrow2::{array::Array, temporal_conversions};
+use arrow2::{
+    array::{Array, BinaryArray as ArrowBinaryArray},
+    datatypes::DataType as ArrowType,
+    offset::Offsets,
+    temporal_conversions,
+};
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
@@ -1425,15 +1430,31 @@ impl Utf8Array {
 
     pub fn encode<Encoder>(&self, encoder: Encoder) -> DaftResult<BinaryArray>
     where
-        Encoder: Fn(&str) -> DaftResult<Cow<'_, [u8]>>,
+        Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let arr = self.as_arrow();
-        let res = arr
-            .iter()
-            .map(|val| val.map_or(Ok(None), |s| encoder(s).map(Some)))
-            .collect::<DaftResult<arrow2::array::BinaryArray<i64>>>()?
-            .with_validity(arr.validity().cloned());
-        Ok(BinaryArray::from((self.name(), Box::new(res))))
+        let input = self.as_arrow();
+        let buffer = input.values();
+        let validity = input.validity().cloned();
+        //
+        let mut values = Vec::<u8>::new();
+        let mut offsets = Offsets::<i64>::new();
+        for span in input.offsets().windows(2) {
+            let s = span[0] as usize;
+            let e = span[1] as usize;
+            let bytes = encoder(&buffer[s..e])?;
+            //
+            offsets.try_push(bytes.len() as i64)?;
+            values.extend(bytes);
+        }
+        //
+        let array = ArrowBinaryArray::new(
+            ArrowType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            validity,
+        );
+        let array = Box::new(array);
+        Ok(BinaryArray::from((self.name(), array)))
     }
 }
 

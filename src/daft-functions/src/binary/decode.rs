@@ -36,7 +36,7 @@ impl ScalarUDF for Decode {
                 arg.dtype
             )
         }
-        Ok(Field::new(arg.name, DataType::Utf8))
+        Ok(Field::new(arg.name, DataType::Binary))
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {

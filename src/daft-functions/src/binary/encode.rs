@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::{
     datatypes::{DataType, Field},
-    prelude::{Schema, Utf8Array},
+    prelude::{BinaryArray, FixedSizeBinaryArray, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -30,9 +30,12 @@ impl ScalarUDF for Encode {
             invalid_argument_err!("Expected 1 argument, found {}", inputs.len())
         }
         let arg = inputs[0].to_field(schema)?;
-        if !matches!(arg.dtype, DataType::Utf8) {
+        if !matches!(
+            arg.dtype,
+            DataType::Utf8 | DataType::Binary | DataType::FixedSizeBinary(_)
+        ) {
             invalid_argument_err!(
-                "Expected argument to be a String, but received {}",
+                "Expected argument to be Utf8, Binary or FixedSizeBinary, but received {}",
                 arg.dtype
             )
         }
@@ -40,9 +43,24 @@ impl ScalarUDF for Encode {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let arg = inputs[0].downcast::<Utf8Array>()?;
-        let res = arg.encode(self.0.encoder())?;
-        Ok(res.into_series())
+        match inputs[0].data_type() {
+            DataType::Binary => {
+                let arg = inputs[0].downcast::<BinaryArray>()?;
+                let res = arg.encode(self.0.encoder())?;
+                Ok(res.into_series())
+            }
+            DataType::FixedSizeBinary(_) => {
+                let arg = inputs[0].downcast::<FixedSizeBinaryArray>()?;
+                let res = arg.encode(self.0.encoder())?;
+                Ok(res.into_series())
+            }
+            DataType::Utf8 => {
+                let arg = inputs[0].downcast::<Utf8Array>()?;
+                let res = arg.encode(self.0.encoder())?;
+                Ok(res.into_series())
+            }
+            _ => unreachable!("type checking handled in to_field"),
+        }
     }
 }
 

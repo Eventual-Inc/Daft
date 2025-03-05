@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
@@ -12,10 +10,10 @@ pub enum Codec {
 }
 
 /// Function type for encoding a string to bytes
-pub(crate) type Encoder = fn(input: &str) -> DaftResult<Cow<'_, [u8]>>;
+pub(crate) type Encoder = fn(input: &[u8]) -> DaftResult<Vec<u8>>;
 
 /// Function type for decoding bytes to a string
-pub(crate) type Decoder = fn(input: &[u8]) -> DaftResult<Cow<'_, str>>;
+pub(crate) type Decoder = fn(input: &[u8]) -> DaftResult<Vec<u8>>;
 
 /// Each codec should have an encode/decode pair.
 impl Codec {
@@ -57,33 +55,33 @@ impl TryFrom<&str> for Codec {
 //
 
 #[inline]
-fn deflate_encoder(input: &str) -> DaftResult<Cow<'_, [u8]>> {
+fn deflate_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Write;
 
     use flate2::{write::DeflateEncoder, Compression};
     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(input.as_bytes())?;
-    Ok(encoder.finish()?.into())
+    encoder.write_all(input)?;
+    Ok(encoder.finish()?)
 }
 
 #[inline]
-fn gzip_encoder(input: &str) -> DaftResult<Cow<'_, [u8]>> {
+fn gzip_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Write;
 
     use flate2::{write::GzEncoder, Compression};
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(input.as_bytes())?;
-    Ok(encoder.finish()?.into())
+    encoder.write_all(input)?;
+    Ok(encoder.finish()?)
 }
 
 #[inline]
-fn zlib_encoder(input: &str) -> DaftResult<Cow<'_, [u8]>> {
+fn zlib_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Write;
 
     use flate2::{write::ZlibEncoder, Compression};
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(input.as_bytes())?;
-    Ok(encoder.finish()?.into())
+    encoder.write_all(input)?;
+    Ok(encoder.finish()?)
 }
 
 //
@@ -91,36 +89,36 @@ fn zlib_encoder(input: &str) -> DaftResult<Cow<'_, [u8]>> {
 //
 
 #[inline]
-fn deflate_decoder(input: &[u8]) -> DaftResult<Cow<'_, str>> {
+fn deflate_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Read;
 
     use flate2::read::DeflateDecoder;
     let mut decoder = DeflateDecoder::new(input);
-    let mut decoded = String::new();
-    decoder.read_to_string(&mut decoded)?;
-    Ok(decoded.into())
+    let mut decoded = Vec::new();
+    decoder.read_to_end(&mut decoded)?;
+    Ok(decoded)
 }
 
 #[inline]
-fn gzip_decoder(input: &[u8]) -> DaftResult<Cow<'_, str>> {
+fn gzip_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Read;
 
     use flate2::read::GzDecoder;
     let mut decoder = GzDecoder::new(input);
-    let mut decoded = String::new();
-    decoder.read_to_string(&mut decoded)?;
-    Ok(decoded.into())
+    let mut decoded = Vec::new();
+    decoder.read_to_end(&mut decoded)?;
+    Ok(decoded)
 }
 
 #[inline]
-fn zlib_decoder(input: &[u8]) -> DaftResult<Cow<'_, str>> {
+fn zlib_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Read;
 
     use flate2::read::ZlibDecoder;
     let mut decoder = ZlibDecoder::new(input);
-    let mut decoded = String::new();
-    decoder.read_to_string(&mut decoded)?;
-    Ok(decoded.into())
+    let mut decoded = Vec::new();
+    decoder.read_to_end(&mut decoded)?;
+    Ok(decoded)
 }
 
 #[cfg(test)]
