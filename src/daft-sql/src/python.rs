@@ -7,7 +7,7 @@ use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_session::{python::PySession, Session};
 use pyo3::prelude::*;
 
-use crate::{functions::SQL_FUNCTIONS, planner::SQLPlanner};
+use crate::{functions::SQL_FUNCTIONS, planner::SQLPlanner, statement::Statement};
 
 #[pyclass]
 pub struct SQLFunctionStub {
@@ -35,14 +35,29 @@ impl SQLFunctionStub {
 }
 
 #[pyfunction]
-pub fn plan_sql(
+pub fn sql_exec(
     sql: &str,
     session: &PySession,
     config: PyDaftPlanningConfig,
-) -> PyResult<PyLogicalPlanBuilder> {
-    let sess = Rc::new(session.into());
-    let plan = SQLPlanner::new(sess).plan_sql(sql)?;
-    Ok(LogicalPlanBuilder::new(plan, Some(config.config)).into())
+) -> PyResult<Option<PyLogicalPlanBuilder>> {
+    let sess: Rc<Session> = Rc::new(session.into());
+    let stmt = SQLPlanner::new(sess.clone()).plan(sql)?;
+
+    // execute session statements, otherwise return the lazy-frame
+
+    match stmt {
+        Statement::Select(select) => {
+            let builder = LogicalPlanBuilder::new(select, Some(config.config));
+            let builder = PyLogicalPlanBuilder::from(builder);
+            Ok(Some(builder))
+        }
+        Statement::Set(_) => Ok(None),
+        Statement::Use(use_) => {
+            sess.set_catalog(Some(&use_.catalog))?;
+            sess.set_namespace(use_.namespace.as_ref())?;
+            Ok(None)
+        }
+    }
 }
 
 #[pyfunction]

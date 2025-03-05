@@ -4,7 +4,7 @@ from typing import Literal
 
 from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.context import get_context
-from daft.daft import PySession, plan_sql
+from daft.daft import PySession, sql_exec
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 
@@ -60,18 +60,20 @@ class Session:
     # exec
     ###
 
-    def sql(self, sql: str) -> DataFrame:
+    def sql(self, sql: str) -> DataFrame | None:
         """Executes the SQL statement using this session.
 
         Args:
             sql (str): input SQL statement
 
         Returns:
-            DataFrame: new DataFrame instance from the query
+            DataFrame: dataframe instance if this was a data statement (DQL, DDL, DML).
         """
         py_sess = self._session
         py_config = get_context().daft_planning_config
-        py_builder = plan_sql(sql, py_sess, py_config)
+        py_builder = sql_exec(sql, py_sess, py_config)
+        if py_builder is None:
+            return None
         return DataFrame(LogicalPlanBuilder(py_builder))
 
     ###
