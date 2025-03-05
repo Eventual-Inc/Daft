@@ -20,3 +20,4 @@ Welcome to Daft API Documentation. For Daft User Guide, head to `User Guide <../
    series
    configs
    misc
+   pyspark
