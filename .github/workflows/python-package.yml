@@ -207,7 +207,7 @@ jobs:
         key: ${{ runner.os }}-integration-build
         cache-all-crates: 'true'
 
-    - uses: oven-sh/setup-bun@v1
+    - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
 
@@ -691,6 +691,9 @@ jobs:
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
         cache-provider: buildjet
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12' # Codspeed requires Python 3.12
