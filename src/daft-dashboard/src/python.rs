@@ -1,4 +1,6 @@
-use std::{io::ErrorKind, pin::pin, process::exit, time::Duration};
+#[cfg(unix)]
+use std::process::exit;
+use std::{io::ErrorKind, pin::pin, time::Duration};
 
 use clap::Parser;
 use http_body_util::Empty;
@@ -132,7 +134,7 @@ fn launch_attached(noop_if_initialized: bool) -> anyhow::Result<()> {
 fn launch_detached(noop_if_initialized: bool) -> anyhow::Result<()> {
     #[cfg(not(unix))]
     {
-        Err(PyErr::new::<exceptions::PyRuntimeError, _>("Daft dashboard's detaching feature is not available on this platform; unable to fork on Windows"))
+        anyhow::anyhow!("Daft dashboard's detaching feature is not available on this platform; unable to fork on Windows")
     }
 
     #[cfg(unix)]
