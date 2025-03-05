@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from importlib.metadata import packages_distributions
+import importlib.metadata
 import os
 
 ###
@@ -57,7 +57,8 @@ analytics_client.track_import()
 ###
 # Warn if using the old package name
 ###
-if "getdaft" in packages_distributions()["daft"]:
+package_map = importlib.metadata.packages_distributions()
+if "getdaft" in package_map["daft"]:
     import warnings
 
     warnings.warn(
