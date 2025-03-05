@@ -2016,7 +2016,6 @@ dependencies = [
  "dashmap",
  "futures",
  "itertools 0.11.0",
- "once_cell",
  "pyo3",
  "snafu",
  "spark-connect",
@@ -2035,7 +2034,6 @@ dependencies = [
  "common-error",
  "daft-py-runners",
  "log",
- "once_cell",
  "pyo3",
 ]
 
@@ -2635,7 +2633,6 @@ dependencies = [
  "daft-scan",
  "daft-session",
  "itertools 0.11.0",
- "once_cell",
  "pyo3",
  "regex",
  "rstest",
