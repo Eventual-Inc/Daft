@@ -57,7 +57,10 @@ analytics_client.track_import()
 # Warn if using the old package name
 ###
 try:
-    from importlib_metadata import packages_distributions
+    if sys.version_info < (3, 10):
+        from importlib_metadata import packages_distributions
+    else:
+        from importlib.metadata import packages_distributions
 
     package_map = packages_distributions()
     if "getdaft" in package_map["daft"]:
