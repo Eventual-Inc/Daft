@@ -278,7 +278,7 @@ class Session:
     # read_*
     ###
 
-    def read_table(self, identifier: Identifier | str) -> DataFrame:
+    def read_table(self, identifier: Identifier | str, **options) -> DataFrame:
         """Returns the table as a DataFrame or raises an exception if it does not exist.
 
         Args:
@@ -290,7 +290,7 @@ class Session:
         Raises:
             ValueError: If the tables odes not exist.
         """
-        return self.get_table(identifier).read()
+        return self.get_table(identifier).read(**options)
 
     ###
     # set_*

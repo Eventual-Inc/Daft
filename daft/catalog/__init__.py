@@ -544,12 +544,32 @@ class Table(ABC):
         else:
             raise ValueError(f"Unsupported table source {type(source)}")
 
+    @staticmethod
+    def _validate_options(method: str, input: dict[str, any], valid: set[str]):
+        """Validates input options against a set of valid options.
+
+        Args:
+            method (str): The method name to include in the error message
+            input (dict[str, any]): The input options dictionary
+            valid (set[str]): Set of valid option keys
+
+        Raises:
+            ValueError: If any input options are not in the valid set
+        """
+        invalid_options = set(input.keys()) - valid
+        if invalid_options:
+            raise ValueError(f"Unsupported option(s) for {method}, found {invalid_options!s} not in {valid!s}")
+
+    ###
+    # read methods
+    ###
+
     @abstractmethod
-    def read(self) -> DataFrame:
+    def read(self, **options) -> DataFrame:
         """Creates a new DataFrame from this table.
 
         Args:
-            None
+            **options: additional format-dependent read options
 
         Returns:
             DataFrame: new DataFrame instance

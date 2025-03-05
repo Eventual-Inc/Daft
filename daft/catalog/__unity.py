@@ -76,6 +76,17 @@ class UnityCatalog(Catalog):
 class UnityTable(Table):
     _inner: InnerTable
 
+    _read_options = {"version"}
+    _write_options = {
+        "schema_mode",
+        "partition_col",
+        "description",
+        "configuration",
+        "custom_metadata",
+        "dynamo_table_name",
+        "allow_unsafe_rename",
+    }
+
     def __init__(self, unity_table: InnerTable):
         """DEPRECATED: Please use `Table.from_unity`; version 0.5.0!"""
         warnings.warn(
@@ -109,6 +120,8 @@ class UnityTable(Table):
     ###
 
     def read(self, **options) -> DataFrame:
+        Table._validate_options("Unity read", options, UnityTable._read_options)
+
         return read_deltalake(self._inner, version=options.get("version"))
 
     ###
@@ -116,4 +129,16 @@ class UnityTable(Table):
     ###
 
     def write(self, df: DataFrame | object, mode: str = "append", **options):
-        return df.write_deltalake(self._inner, mode=mode)
+        self._validate_options("Unity write", options, UnityTable._write_options)
+
+        return df.write_deltalake(
+            self._inner,
+            mode=mode,
+            schema_mode=options.get("schema_mode"),
+            partition_cols=options.get("partition_cols"),
+            description=options.get("description"),
+            configuration=options.get("configuration"),
+            custom_metadata=options.get("custom_metadata"),
+            dynamo_table_name=options.get("dynamo_table_name"),
+            allow_unsafe_rename=options.get("allow_unsafe_rename", False),
+        )

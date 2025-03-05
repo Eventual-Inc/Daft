@@ -59,3 +59,11 @@ def test_sess_read_table(sess: Session):
     # unqualified
     sess.set_namespace("default")
     assert sess.read_table("tbl") is not None
+
+
+def test_sess_read_options(sess: Session):
+    # new table, always zero
+    sess.read_table("tbl", snapshot_id="0")
+    # invalid options (version is a unity option, not iceberg)
+    with pytest.raises(ValueError, match="Unsupported option(s)"):
+        sess.read_table("tbl", version="1")
