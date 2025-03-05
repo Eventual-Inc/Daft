@@ -15,7 +15,6 @@
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::single_match)]
 #![allow(clippy::unnecessary_map_or)]
-#![allow(clippy::manual_repeat_n)]
 #![allow(clippy::manual_div_ceil)]
 #![allow(clippy::map_all_any_identity)]
 #![allow(clippy::doc_overindented_list_items)]

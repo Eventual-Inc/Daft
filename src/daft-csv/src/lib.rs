@@ -1,5 +1,6 @@
 #![feature(let_chains)]
 #![feature(trait_alias)]
+#![feature(trait_upcasting)]
 #![feature(test)]
 extern crate test;
 use common_error::DaftError;
