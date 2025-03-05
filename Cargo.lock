@@ -1927,6 +1927,7 @@ dependencies = [
  "daft-context",
  "daft-core",
  "daft-csv",
+ "daft-dashboard",
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
@@ -2105,6 +2106,26 @@ dependencies = [
  "snafu",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "daft-dashboard"
+version = "0.3.0-dev0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap 4.5.31",
+ "fork",
+ "http-body-util",
+ "hyper 1.6.0",
+ "hyper-util",
+ "include_dir",
+ "log",
+ "parking_lot 0.12.3",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -2691,26 +2712,6 @@ dependencies = [
  "daft-micropartition",
  "daft-recordbatch",
  "pyo3",
-]
-
-[[package]]
-name = "daft_dashboard"
-version = "0.3.0-dev0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap 4.5.31",
- "fork",
- "http-body-util",
- "hyper 1.6.0",
- "hyper-util",
- "include_dir",
- "log",
- "parking_lot 0.12.3",
- "pyo3",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

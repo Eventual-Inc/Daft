@@ -5,19 +5,29 @@ from urllib import request
 from urllib.error import URLError
 import uuid
 import json
-from datetime import datetime
 import os
 from pathlib import Path
-from . import daft_dashboard as native
+from daft.daft import dashboard as native
 from importlib import resources
+import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
-DAFT_DASHBOARD_ENV_NAME = "DAFT_DASHBOARD"
-DAFT_DASHBOARD_URL = "http://localhost:3238"
+def should_run() -> bool:
+    enable_dashboard_str = os.environ.get(native.DAFT_DASHBOARD_ENV_ENABLED)
+    if not enable_dashboard_str:
+        return False
+    try:
+        enable_dashboard = int(enable_dashboard_str)
+    except ValueError:
+        return False
+    if not enable_dashboard:
+        return False
 
-
-def _queries_url() -> str:
-    return f"{DAFT_DASHBOARD_URL}/api/queries"
+    return True
 
 
 def launch(detach: bool = False, noop_if_initialized: bool = False):
@@ -33,7 +43,7 @@ def launch(detach: bool = False, noop_if_initialized: bool = False):
             Will not throw an exception a Daft dashboard server process is already launched and running.
             Otherwise, an exception will be thrown.
     """
-    os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
+    os.environ[native.DAFT_DASHBOARD_ENV_ENABLED] = "1"
     native.launch(detach=detach, noop_if_initialized=noop_if_initialized)
 
 
@@ -48,7 +58,7 @@ def shutdown(noop_if_shutdown: bool = False):
     # Exceptions
         Will raise a runtime error if the Daft dashboard server responds with an error code after being requested to shutdown.
     """
-    os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
+    os.environ[native.DAFT_DASHBOARD_ENV_ENABLED] = "1"
     native.shutdown(noop_if_shutdown=noop_if_shutdown)
 
 
@@ -56,7 +66,6 @@ def broadcast_query_information(
     mermaid_plan: str,
     plan_time_start: datetime,
     plan_time_end: datetime,
-    logs: str,
 ):
     headers = {
         "Content-Type": "application/json",
@@ -67,20 +76,28 @@ def broadcast_query_information(
             "mermaid_plan": mermaid_plan,
             "plan_time_start": str(plan_time_start),
             "plan_time_end": str(plan_time_end),
-            "logs": logs,
+            "logs": "",  # todo: implement logs
         }
     ).encode("utf-8")
-    req = request.Request(_queries_url(), headers=headers, data=data)
+
+    req = request.Request(native.DAFT_DASHBOARD_QUERIES_URL, headers=headers, data=data)
 
     try:
         request.urlopen(req, timeout=1)
     except URLError as e:
-        warnings.warn(f"Failed to broadcast metrics over {_queries_url()}: {e}")
+        warnings.warn(f"Failed to broadcast metrics over {native.DAFT_DASHBOARD_QUERIES_URL}: {e}")
 
 
 def _cli():
     """Runs the Daft dashboard CLI."""
-    import sys
-
-    os.environ[DAFT_DASHBOARD_ENV_NAME] = "1"
+    os.environ[native.DAFT_DASHBOARD_ENV_ENABLED] = "1"
     native.cli(sys.argv)
+
+
+__all__ = [
+    "_cli",
+    "broadcast_query_information",
+    "launch",
+    "should_run",
+    "shutdown",
+]

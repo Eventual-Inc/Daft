@@ -14,17 +14,14 @@ serde.workspace = true
 tokio.workspace = true
 
 [features]
+default = ["python"]
 python = ["dep:pyo3"]
-
-[lib]
-crate-type = ["cdylib", "lib"]
-name = "daft_dashboard"
 
 [lints]
 workspace = true
 
 [package]
-name = "daft_dashboard"
+name = "daft-dashboard"
 edition.workspace = true
 version.workspace = true
 
