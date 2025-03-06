@@ -113,10 +113,13 @@ from daft.io import (
 from daft.series import Series
 from daft.session import (
     Session,
+    attach,
     attach_catalog,
     attach_table,
     detach_catalog,
     detach_table,
+    drop_namespace,
+    drop_table,
     create_temp_table,
     current_catalog,
     current_namespace,
@@ -131,6 +134,7 @@ from daft.session import (
     set_catalog,
     set_namespace,
     set_session,
+    write_table,
 )
 from daft.sql import sql, sql_expr
 from daft.udf import udf
@@ -164,6 +168,8 @@ __all__ = [
     "current_session",
     "detach_catalog",
     "detach_table",
+    "drop_namespace",
+    "drop_table",
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
@@ -205,4 +211,5 @@ __all__ = [
     "struct",
     "to_struct",
     "udf",
+    "write_table",
 ]

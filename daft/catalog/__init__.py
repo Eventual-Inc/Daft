@@ -371,6 +371,13 @@ class Catalog(ABC):
         return self.get_table(identifier).write(df, mode=mode, **options)
 
     ###
+    # python methods
+    ###
+
+    def __repr__(self):
+        return f"Catalog('{self.name}')"
+
+    ###
     # TODO deprecated catalog APIs #3819
     ###
 
