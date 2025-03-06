@@ -39,15 +39,25 @@ jobs:
       contents: read
 
     steps:
-    - name: Mount local SSD to /tmp
-      run: |
-        findmnt /tmp 1> /dev/null
-        code=$?
-        if [ $code -ne 0 ]; then
-            sudo mkfs.ext4 /dev/nvme1n1
-            sudo mount -t ext4 /dev/nvme1n1 /tmp
-            sudo chmod 777 /tmp
-        fi
+    - name: list drives
+      run: lsblk
+    - name: findmnt /tmp 1> /dev/null
+      run: findmnt /tmp 1> /dev/null
+    - name: sudo mkfs.ext4 /dev/nvme1n1
+      run: sudo mkfs.ext4 /dev/nvme1n1
+    - name: sudo mount -t ext4 /dev/nvme1n1 /tmp
+      run: sudo mount -t ext4 /dev/nvme1n1 /tmp
+    - name: sudo chmod 777 /tmp
+      run: sudo chmod 777 /tmp
+    # - name: Mount local SSD to /tmp
+    #   run: |
+    #     findmnt /tmp 1> /dev/null
+    #     code=$?
+    #     if [ $code -ne 0 ]; then
+    #         sudo mkfs.ext4 /dev/nvme1n1
+    #         sudo mount -t ext4 /dev/nvme1n1 /tmp
+    #         sudo chmod 777 /tmp
+    #     fi
     - uses: actions/checkout@v4
       with:
         submodules: true
