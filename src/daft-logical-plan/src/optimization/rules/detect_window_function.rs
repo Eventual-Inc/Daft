@@ -136,21 +136,28 @@ impl OptimizerRule for DetectWindowFunction {
             match node.as_ref() {
                 LogicalPlan::Project(project) => {
                     println!("DetectWindowFunction: Inspecting Project operation: {:?}", project);
+                    println!("DetectWindowFunction: Input schema: {:?}", project.input.schema());
+                    println!("DetectWindowFunction: Project schema: {:?}", project.projected_schema);
                     // Check if any expression contains window functions
                     #[allow(clippy::needless_borrow)]
                     if Self::contains_window_function(&project) {
                         // Extract window functions and their specs
                         let window_funcs = Self::extract_window_functions(&project.projection);
 
-                        // Group window functions by their window specs
-                        // This would allow us to create a single Window operation for each unique window spec
-
-                        // For simplicity in this implementation, assume all window functions share the same spec
-                        // In a real implementation, we would group by window spec
+                        println!("DetectWindowFunction: Extracted {} window functions", window_funcs.len());
+                        for (i, (expr, spec)) in window_funcs.iter().enumerate() {
+                            println!("DetectWindowFunction: Window function {}: {:?} with spec {:?}", i, expr, spec);
+                            println!("DetectWindowFunction: Partition by columns: {:?}", spec.partition_by);
+                        }
 
                         if !window_funcs.is_empty() {
                             let sample_window_spec = &window_funcs[0].1;
                             println!("DetectWindowFunction: Using window spec: {:?}", sample_window_spec);
+                            println!("DetectWindowFunction: Partition columns = {:?}", sample_window_spec.partition_by);
+                            println!("DetectWindowFunction: Partition column types = {:?}",
+                                     sample_window_spec.partition_by.iter()
+                                     .map(|e| format!("{:?}", e))
+                                     .collect::<Vec<_>>());
 
                             // Extract the window function expressions
                             let window_function_exprs = window_funcs.iter()
