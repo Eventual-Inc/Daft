@@ -61,3 +61,15 @@ def test_map_get_bad_field():
 
     with pytest.raises(ValueError):
         table.eval_expression_list([col("map_col").map.get("foo")])
+
+
+def test_map_get_empty():
+    data = pa.array([[("a", 1)], [("a", 2)]], type=pa.map_(pa.string(), pa.int64()))
+    table = pa.table({"map_col": data})
+    table = MicroPartition.from_arrow(table)
+
+    expr = col("map_col").map.get("a") == 3
+    table = table.filter([expr])
+    result = table.eval_expression_list([col("map_col").map.get("a")])
+
+    assert result.to_pydict() == {"value": []}

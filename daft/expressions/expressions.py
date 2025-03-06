@@ -788,6 +788,21 @@ class Expression:
         expr = native.cot(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def sinh(self) -> Expression:
+        """The elementwise hyperbolic sine of a numeric expression."""
+        expr = native.sinh(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def cosh(self) -> Expression:
+        """The elementwise hyperbolic cosine of a numeric expression."""
+        expr = native.cosh(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def tanh(self) -> Expression:
+        """The elementwise hyperbolic tangent of a numeric expression."""
+        expr = native.tanh(self._expr)
+        return Expression._from_pyexpr(expr)
+
     def arcsin(self) -> Expression:
         """The elementwise arc sine of a numeric expression."""
         expr = native.arcsin(self._expr)
@@ -989,7 +1004,7 @@ class Expression:
             │ ---                 ┆ ---                            │
             │ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═════════════════════╪════════════════════════════════╡
-            │ 2.9742334234767163  ┆ [1.993661701417351, 2.9742334… │
+            │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
             ╰─────────────────────┴────────────────────────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)

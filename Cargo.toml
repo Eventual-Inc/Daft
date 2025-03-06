@@ -17,6 +17,7 @@ daft-connect = {path = "src/daft-connect", optional = true}
 daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
+daft-dashboard = {path = "src/daft-dashboard", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
@@ -40,7 +41,6 @@ daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-warc = {path = "src/daft-warc", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
-lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
 pyo3 = {workspace = true, optional = true}
@@ -64,6 +64,7 @@ python = [
   "daft-context/python",
   "daft-core/python",
   "daft-csv/python",
+  "daft-dashboard/python",
   "daft-dsl/python",
   "daft-functions-json/python",
   "daft-functions/python",
@@ -153,6 +154,7 @@ members = [
   "src/daft-context",
   "src/daft-core",
   "src/daft-csv",
+  "src/daft-dashboard",
   "src/daft-dsl",
   "src/daft-functions",
   "src/daft-functions-json",
@@ -177,8 +179,7 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
-  "src/generated/spark-connect",
-  "daft_dashboard"
+  "src/generated/spark-connect"
 ]
 
 [workspace.dependencies]
@@ -229,7 +230,6 @@ mur3 = "0.1.0"
 num-derive = "0.3.3"
 num-format = "0.4.4"
 num-traits = "0.2"
-once_cell = "1.19.0"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.5.0"
@@ -275,9 +275,6 @@ version = "1.3.3"
 [workspace.dependencies.derive_more]
 features = ["display", "from", "constructor"]
 version = "1.0.0"
-
-[workspace.dependencies.lazy_static]
-version = "1.4.0"
 
 [workspace.dependencies.log]
 features = ["std"]
@@ -364,10 +361,11 @@ unreadable_literal = "allow"
 # todo: remove this at some point
 unsafe_derive_deserialize = "allow"
 unused_async = "allow"
-# used_underscore_items = "allow" # REMOVE
 unused_self = "allow"
 use-self = "deny"
 used_underscore_binding = "allow"  # REMOVE REMOVE
+# pyo3 does an extra .into() for pyfunctions which clippy doesn't like
+useless_conversion = "allow"
 wildcard_imports = "allow"
 zero_sized_map_values = "allow"
 

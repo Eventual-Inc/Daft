@@ -3,6 +3,7 @@ ipdb
 maturin
 pre-commit
 docker
+importlib-metadata
 
 # Pinned requests due to docker-py issue: https://github.com/docker/docker-py/issues/3256
 requests<2.32.0

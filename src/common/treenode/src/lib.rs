@@ -823,7 +823,7 @@ impl<I: Iterator> TreeNodeIterator for I {
 /// Ok(Transformed<(data0, ..., dataN)>) such that:
 /// 1. `transformed` is true if any of the transformations had transformed true
 /// 2. `(data0, ..., dataN)`, where `data0` is the `Transformed.data` from `F0` and
-///     `data1` ... `dataN` are from either `EXPR` or the `Transformed.data` of `F`
+///    `data1` ... `dataN` are from either `EXPR` or the `Transformed.data` of `F`
 /// 3. `tnr` from `F0` or the last invocation of `F`
 #[macro_export]
 macro_rules! map_until_stop_and_collect {

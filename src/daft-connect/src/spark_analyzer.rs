@@ -452,7 +452,7 @@ impl SparkAnalyzer<'_> {
                 GroupType::GroupingSets => {
                     not_yet_implemented!("GroupType.GroupingSets");
                 }
-            };
+            }
             Ok(())
         }
 
@@ -972,7 +972,7 @@ impl SparkAnalyzer<'_> {
                 _ => {
                     not_yet_implemented!("join condition");
                 }
-            };
+            }
             Ok(())
         }
 
@@ -992,7 +992,7 @@ impl SparkAnalyzer<'_> {
                 using_columns.into_iter().map(unresolved_col).collect();
             left_on.clone_from(&using_columns);
             right_on.clone_from(&using_columns);
-        };
+        }
 
         let plan = left_plan.join(
             right_plan,

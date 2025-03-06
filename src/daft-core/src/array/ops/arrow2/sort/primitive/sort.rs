@@ -54,7 +54,7 @@ where
         values.sort_unstable_by(|x, y| cmp(y, x));
     } else {
         values.sort_unstable_by(cmp);
-    };
+    }
 }
 
 fn sort_nullable<T, F>(
@@ -71,12 +71,12 @@ where
     assert!(limit <= values.len());
     if options.nulls_first && limit < validity.unset_bits() {
         let buffer = vec![T::default(); limit];
-        let bitmap = MutableBitmap::from_trusted_len_iter(std::iter::repeat(false).take(limit));
+        let bitmap = MutableBitmap::from_trusted_len_iter(std::iter::repeat_n(false, limit));
         return (buffer.into(), bitmap.into());
     }
 
-    let nulls = std::iter::repeat(false).take(validity.unset_bits());
-    let valids = std::iter::repeat(true).take(values.len() - validity.unset_bits());
+    let nulls = std::iter::repeat_n(false, validity.unset_bits());
+    let valids = std::iter::repeat_n(true, values.len() - validity.unset_bits());
 
     let mut buffer = Vec::<T>::with_capacity(values.len());
     let mut new_validity = MutableBitmap::with_capacity(values.len());
@@ -120,7 +120,7 @@ where
             // extend remaining with nulls
             buffer.resize(buffer.len() + validity.unset_bits(), T::default());
         }
-    };
+    }
     // values are sorted, we can now truncate the remaining.
     buffer.truncate(limit);
     buffer.shrink_to_fit();

@@ -228,7 +228,7 @@ impl TimestampArray {
         ))
     }
 
-    pub fn truncate(&self, interval: &str, relative_to: &Option<i64>) -> DaftResult<Self> {
+    pub fn truncate(&self, interval: &str, relative_to: Option<i64>) -> DaftResult<Self> {
         let physical = self.physical.as_arrow();
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
@@ -240,7 +240,7 @@ impl TimestampArray {
             tu: TimeUnit,
             tz: Option<T>,
             duration: i64,
-            relative_to: &Option<i64>,
+            relative_to: Option<i64>,
         ) -> DaftResult<i64>
         where
             T: chrono::TimeZone,
@@ -272,7 +272,7 @@ impl TimestampArray {
                     let mut truncate_by_amount = match relative_to {
                         Some(rt) => {
                             let rt_dt = arrow2::temporal_conversions::timestamp_to_datetime(
-                                *rt, tu_arrow, &tz,
+                                rt, tu_arrow, &tz,
                             );
                             let naive_rt_ts = match tu {
                                 TimeUnit::Seconds => rt_dt.naive_local().and_utc().timestamp(),

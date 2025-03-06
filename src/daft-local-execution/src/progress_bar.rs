@@ -147,6 +147,7 @@ impl ProgressBarManager for IndicatifProgressBarManager {
         color: ProgressBarColor,
         prefix: &str,
     ) -> DaftResult<Box<dyn ProgressBar>> {
+        #[allow(clippy::literal_string_with_formatting_args)]
         let template_str = format!(
             "🗡️ 🐟 {{spinner:.green}} {{prefix:.{color}/bold}} | [{{elapsed_precise}}] {{msg}}",
             color = color.to_str(),

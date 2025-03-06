@@ -47,12 +47,13 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import ColumnInputType
+    from daft.convert import InputListType
 
 
 __all__ = [
@@ -200,30 +201,76 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
 class Catalog(ABC):
     """Interface for python catalog implementations."""
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Returns the catalog's name."""
+
     @staticmethod
-    def from_pydict(tables: dict[str, Table]) -> Catalog:
-        """Returns an in-memory catalog from the dictionary."""
+    def from_pydict(tables: dict[str, object], name: str = "default") -> Catalog:
+        """Returns an in-memory catalog from a dictionary of table-like objects.
+
+        The table-like objects can be pydicts, dataframes, or a Table implementation.
+
+        Examples:
+            >>> import daft
+            >>> from daft.catalog import Catalog, Table
+            >>>
+            >>> dictionary = {"x": [1, 2, 3]}
+            >>> dataframe = daft.from_pydict(dictionary)
+            >>> table = Table.from_df("temp", dataframe)
+            >>>
+            >>> catalog = Catalog.from_pydict(
+            ...     {
+            ...         "R": dictionary,
+            ...         "S": dataframe,
+            ...         "T": table,
+            ...     }
+            ... )
+            >>> catalog.list_tables()
+            ['R', 'S', 'T']
+
+        Args:
+            tables (dict[str,object]): a dictionary of table-like objects (pydicts, dataframes, and tables)
+
+        Returns:
+            Catalog: new catalog instance with name 'default'
+        """
         from daft.catalog.__memory import MemoryCatalog
 
-        return MemoryCatalog(tables)
+        return MemoryCatalog._from_pydict(name, tables)
 
     @staticmethod
-    def from_iceberg(obj: object) -> Catalog:
-        """Returns a Daft Catalog instance from an Iceberg catalog."""
+    def from_iceberg(catalog: object) -> Catalog:
+        """Creates a Daft Catalog instance from an Iceberg catalog.
+
+        Args:
+            catalog (object): pyiceberg catalog object
+
+        Returns:
+            Catalog: new daft catalog instance from the pyiceberg catalog object.
+        """
         try:
             from daft.catalog.__iceberg import IcebergCatalog
 
-            return IcebergCatalog._from_obj(obj)
+            return IcebergCatalog._from_obj(catalog)
         except ImportError:
             raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
 
     @staticmethod
-    def from_unity(obj: object) -> Catalog:
-        """Returns a Daft Catalog instance from a Unity catalog."""
+    def from_unity(catalog: object) -> Catalog:
+        """Creates a Daft Catalog instance from a Unity catalog.
+
+        Args:
+            catalog (object): unity catalog object
+
+        Returns:
+            Catalog: new daft catalog instance from the unity catalog object.
+        """
         try:
             from daft.catalog.__unity import UnityCatalog
 
-            return UnityCatalog._from_obj(obj)
+            return UnityCatalog._from_obj(catalog)
         except ImportError:
             raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
 
@@ -266,25 +313,62 @@ class Catalog(ABC):
     ###
 
     @abstractmethod
-    def get_table(self, identifier: Identifier | str) -> Table: ...
+    def get_table(self, identifier: Identifier | str) -> Table:
+        """Get a table by its identifier or raises if the table does not exist.
+
+        Args:
+            identifier (Identifier|str): table identifier
+
+        Returns:
+            Table: matched table or raises if the table does not exist.
+        """
 
     ###
     # list_*
     ###
 
     @abstractmethod
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]: ...
+    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        """List namespaces in the catalog which match the given pattern.
+
+        Args:
+            pattern (str): pattern to match such as a namespace prefix
+
+        Returns:
+            list[Identifier]: list of namespace identifiers matching the pattern.
+        """
 
     @abstractmethod
-    def list_tables(self, pattern: str | None = None) -> list[str]: ...
+    def list_tables(self, pattern: str | None = None) -> list[str]:
+        """List tables in the catalog which match the given pattern.
+
+        Args:
+            pattern (str): pattern to match such as a namespace prefix
+
+        Returns:
+            list[str]: list of table identifiers matching the pattern.
+        """
 
     ###
     # read_*
     ###
 
-    def read_table(self, identifier: Identifier | str) -> DataFrame:
+    def read_table(self, identifier: Identifier | str, **options) -> DataFrame:
         """Returns the table as a DataFrame or raises an exception if it does not exist."""
-        return self.get_table(identifier).read()
+        return self.get_table(identifier).read(**options)
+
+    ###
+    # write_*
+    ###
+
+    def write_table(
+        self,
+        identifier: Identifier | str,
+        df: DataFrame | object,
+        mode: Literal["append", "overwrite"] = "append",
+        **options,
+    ):
+        return self.get_table(identifier).write(df, mode=mode, **options)
 
     ###
     # TODO deprecated catalog APIs #3819
@@ -303,8 +387,8 @@ class Identifier(Sequence):
     """A reference (path) to a catalog object.
 
     Example:
-    >>> id = Identifier("a", "b")
-    >>> assert len(id) == 2
+        >>> id = Identifier("a", "b")
+        >>> assert len(id) == 2
     """
 
     _ident: PyIdentifier
@@ -313,7 +397,8 @@ class Identifier(Sequence):
         """Creates an Identifier from its parts.
 
         Example:
-        >>> Identifier("namespace", "table")
+            >>> from daft.catalog import Identifier
+            >>> Identifier("namespace", "table")
 
         Returns:
             Identifier: A new identifier.
@@ -333,12 +418,17 @@ class Identifier(Sequence):
         """Parses an Identifier from an SQL string, normalizing to lowercase if specified.
 
         Example:
-        >>> Identifier.from_sql("namespace.table") == Identifier("namespace", "table")
-        >>> Identifier.from_sql('"a.b"') == Identifier('"a.b."')
-        >>> Identifier.from_sql('ABC."xYz"', normalize=True) == Identifier("abc", "xYz")
+            >>> from daft.catalog import Identifier
+            >>> Identifier.from_sql("namespace.table") == Identifier("namespace", "table")
+            >>> Identifier.from_sql('"a.b"') == Identifier('"a.b."')
+            >>> Identifier.from_sql('ABC."xYz"', normalize=True) == Identifier("abc", "xYz")
+
+        Args:
+            input (str): input sql string
+            normalize (bool): flag to case-normalize the identifier text
 
         Returns:
-            Identifier: A new identifier.
+            Identifier: new identifier instance
         """
         i = Identifier.__new__(Identifier)
         i._ident = PyIdentifier.from_sql(input, normalize)
@@ -346,7 +436,18 @@ class Identifier(Sequence):
 
     @staticmethod
     def from_str(input: str) -> Identifier:
-        """Parses an Identifier from a dot-delimited Python string without normalization."""
+        """Parses an Identifier from a dot-delimited Python string without normalization.
+
+        Example:
+            >>> from daft.catalog import Identifier
+            >>> Identifier.from_str("namespace.table") == Identifier("namespace", "table")
+
+        Args:
+            input (str): input identifier string
+
+        Returns:
+            Identifier: new identifier instance
+        """
         return Identifier(*input.split("."))
 
     def __eq__(self, other: object) -> bool:
@@ -373,53 +474,190 @@ class Identifier(Sequence):
 class Table(ABC):
     """Interface for python table implementations."""
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Returns the table's name."""
+
+    @staticmethod
+    def from_pydict(name: str, data: dict[str, InputListType]) -> Table:
+        """Returns a read-only table backed by the given data.
+
+        Example:
+            >>> from daft.catalog import Table
+            >>> table = Table.from_pydict({"foo": [1, 2]})
+            >>> table.show()
+            ╭───────╮
+            │ foo   │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Args:
+            name (str): table table
+            data dict[str,object]: keys are column names and the values are python lists, numpy arrays, or arrow arrays.
+
+        Returns:
+            DataFrame: new read-only table instance
+        """
+        from daft.catalog.__memory import MemoryTable
+
+        return MemoryTable(name, DataFrame._from_pydict(data))
+
     @staticmethod
     def from_df(name: str, dataframe: DataFrame) -> Table:
-        """Returns a read-only table backed by the DataFrame."""
+        """Returns a read-only table backed by the DataFrame.
+
+        Example:
+            >>> import daft
+            >>> from daft.catalog import Table
+            >>> Table.from_df("my_table", daft.from_pydict({"x": [1, 2, 3]}))
+
+        Args:
+            name (str): table name
+            dataframe (DataFrame): table source dataframe
+
+        Returns:
+            Table: new table instance
+        """
         from daft.catalog.__memory import MemoryTable
 
         return MemoryTable(name, dataframe)
 
     @staticmethod
-    def from_iceberg(obj: object) -> Table:
-        """Returns a Daft Table instance from an Iceberg table."""
+    def from_iceberg(table: object) -> Table:
+        """Creates a Daft Table instance from an Iceberg table.
+
+        Args:
+            table (object): a pyiceberg table
+
+        Returns:
+            Table: new daft table instance
+        """
         try:
             from daft.catalog.__iceberg import IcebergTable
 
-            return IcebergTable._from_obj(obj)
+            return IcebergTable._from_obj(table)
         except ImportError:
             raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
 
     @staticmethod
-    def from_unity(obj: object) -> Table:
-        """Returns a Daft Table instance from a Unity table."""
+    def from_unity(table: object) -> Table:
+        """Returns a Daft Table instance from a Unity table.
+
+        Args:
+            table
+        """
         try:
             from daft.catalog.__unity import UnityTable
 
-            return UnityTable._from_obj(obj)
+            return UnityTable._from_obj(table)
         except ImportError:
             raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
 
     @staticmethod
-    def _from_obj(obj: object) -> Table:
+    def _from_obj(name: str, source: object) -> Table:
         """Returns a Daft Table from a supported object type or raises an error."""
-        raise ValueError(f"Unsupported table type: {type(obj)}")
+        if isinstance(source, Table):
+            # we want to rename and create an immutable view from this external table
+            return Table.from_df(name, source.read())
+        elif isinstance(source, DataFrame):
+            return Table.from_df(name, source)
+        elif isinstance(source, dict):
+            return Table.from_df(name, DataFrame._from_pydict(source))
+        else:
+            raise ValueError(f"Unsupported table source {type(source)}")
+
+    @staticmethod
+    def _validate_options(method: str, input: dict[str, any], valid: set[str]):
+        """Validates input options against a set of valid options.
+
+        Args:
+            method (str): The method name to include in the error message
+            input (dict[str, any]): The input options dictionary
+            valid (set[str]): Set of valid option keys
+
+        Raises:
+            ValueError: If any input options are not in the valid set
+        """
+        invalid_options = set(input.keys()) - valid
+        if invalid_options:
+            raise ValueError(f"Unsupported option(s) for {method}, found {invalid_options!s} not in {valid!s}")
 
     ###
     # read methods
     ###
 
     @abstractmethod
-    def read(self) -> DataFrame:
-        """Returns a DataFrame from this table."""
+    def read(self, **options) -> DataFrame:
+        """Creates a new DataFrame from this table.
+
+        Args:
+            **options: additional format-dependent read options
+
+        Returns:
+            DataFrame: new DataFrame instance
+        """
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
-        """Returns a DataFrame from this table with the selected columns."""
+        """Creates a new DataFrame from the table applying the provided expressions.
+
+        Args:
+            *columns (Expression|str): columns to select from the current DataFrame
+
+        Returns:
+            DataFrame: new DataFrame instance with the select columns
+        """
         return self.read().select(*columns)
 
     def show(self, n: int = 8) -> None:
-        """Shows the first n rows from this table."""
+        """Shows the first n rows from this table.
+
+        Args:
+            n (int): number of rows to show
+
+        Returns:
+            None
+        """
         return self.read().show(n)
+
+    ###
+    # write methods
+    ###
+
+    @abstractmethod
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+        """Writes the DataFrame to this table.
+
+        Args:
+            df (DataFrame): datafram to write
+            mode (str): write mode such as 'append' or 'overwrite'
+            **options: additional format-dependent write options
+        """
+
+    def append(self, df: DataFrame, **options) -> None:
+        """Appends the DataFrame to this table.
+
+        Args:
+            df (DataFrame): dataframe to append
+            **options: additional format-dependent write options
+        """
+        self.write(df, mode="append", **options)
+
+    def overwrite(self, df: DataFrame, **options) -> None:
+        """Overwrites this table with the given DataFrame.
+
+        Args:
+            df (DataFrame): dataframe to overwrite this table with
+            **options: additional format-dependent write options
+        """
+        self.write(df, mode="overwrite", **options)
 
     ###
     # TODO deprecated catalog APIs #3819
@@ -444,6 +682,14 @@ class TableSource:
 
     @staticmethod
     def from_df(df: DataFrame) -> TableSource:
+        """Creates a TableSource from a DataFrame.
+
+        Args:
+            df (DataFrame): source dataframe
+
+        Returns:
+            TableSource: new table source instance
+        """
         s = TableSource.__new__(TableSource)
         s._source = PyTableSource.from_builder(df._builder._builder)
         return s

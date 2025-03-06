@@ -93,6 +93,11 @@ jobs:
         .\venv\Scripts\activate
         uv pip install -r requirements-dev.txt
 
+    - name: Install zlib (only ubuntu)
+      if: ${{ (runner.os == 'ubuntu-20.04') }}
+      run: |
+        sudo apt-get install zlib1g-dev
+
     - name: Override pyarrow
       if: ${{ (matrix.pyarrow-version) && (runner.os != 'Windows') }}
       run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
@@ -206,6 +211,10 @@ jobs:
       with:
         key: ${{ runner.os }}-integration-build
         cache-all-crates: 'true'
+
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
 
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
@@ -687,6 +696,9 @@ jobs:
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
         cache-provider: buildjet
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12' # Codspeed requires Python 3.12

@@ -54,7 +54,7 @@ impl<'a> FixedSizeListGrowable<'a> {
     }
 }
 
-impl<'a> Growable for FixedSizeListGrowable<'a> {
+impl Growable for FixedSizeListGrowable<'_> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         self.child_growable.extend(
             index,

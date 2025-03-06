@@ -61,7 +61,7 @@ impl Series {
         // Therefore, exit early with an empty hashmap.
         if matches!(self.data_type(), DataType::Null) {
             return Ok(IndexMap::default());
-        };
+        }
 
         const DEFAULT_SIZE: usize = 20;
         let hashed_series = self.hash_with_validity(None)?;

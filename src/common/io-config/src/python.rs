@@ -684,10 +684,7 @@ impl S3CredentialsProvider for PyS3CredentialsProvider {
     }
 
     fn dyn_eq(&self, other: &dyn S3CredentialsProvider) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |other| self == other)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {

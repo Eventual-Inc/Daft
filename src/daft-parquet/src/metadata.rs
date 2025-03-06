@@ -108,12 +108,12 @@ fn rewrite_parquet_type_with_field_id_mapping(
                                 .is_some_and(|field_id| field_id_mapping.contains_key(&field_id))
                         });
                     }
-                };
+                }
 
                 return Ok(Transformed::yes(pq_type));
             }
         }
-    };
+    }
     Ok(Transformed::no(pq_type))
 }
 
@@ -258,20 +258,18 @@ pub(crate) async fn read_parquet_metadata(
         });
     }
 
-    let remaining;
-    if footer_len < buffer.len() {
+    let remaining = if footer_len < buffer.len() {
         // the whole metadata is in the bytes we already read
-        remaining = buffer.len() - footer_len;
+        buffer.len() - footer_len
     } else {
         // the end of file read by default is not long enough, read again including the metadata.
-
         let start = size.saturating_sub(footer_len);
         data = io_client
             .single_url_get(uri.into(), Some(start..size), io_stats)
             .await?
             .bytes()
             .await?;
-        remaining = data.len() - footer_len;
+        data.len() - footer_len
     };
 
     let buffer = data.as_ref();

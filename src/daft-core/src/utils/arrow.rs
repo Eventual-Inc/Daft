@@ -1,13 +1,13 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex},
+};
 
 use arrow2::compute::cast;
-use lazy_static::lazy_static;
 
 // TODO(Clark): Refactor to GILOnceCell in order to avoid deadlock between the below mutex and the Python GIL.
-lazy_static! {
-    static ref REGISTRY: Mutex<HashMap<std::string::String, arrow2::datatypes::DataType>> =
-        Mutex::new(HashMap::new());
-}
+static REGISTRY: LazyLock<Mutex<HashMap<std::string::String, arrow2::datatypes::DataType>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn coerce_to_daft_compatible_type(
     dtype: &arrow2::datatypes::DataType,

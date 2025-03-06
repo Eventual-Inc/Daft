@@ -23,16 +23,16 @@ impl Series {
         // It's possible that we pass in something like .clamp(None, 2) on the Python binding side,
         // in which case we need to cast the None to the output type.
         let create_null_series = |name: &str| Self::full_null(name, &output_type, 1);
-        let min = min
-            .data_type()
-            .is_null()
-            .then(|| create_null_series(min.name()))
-            .unwrap_or_else(|| min.clone());
-        let max = max
-            .data_type()
-            .is_null()
-            .then(|| create_null_series(max.name()))
-            .unwrap_or_else(|| max.clone());
+        let min = if min.data_type().is_null() {
+            create_null_series(min.name())
+        } else {
+            min.clone()
+        };
+        let max = if max.data_type().is_null() {
+            create_null_series(max.name())
+        } else {
+            max.clone()
+        };
 
         match &output_type {
             output_type if output_type.is_numeric() => {

@@ -665,7 +665,6 @@ impl ParquetFileReader {
                                         if (curr_index + arr.len()) < row_range.start {
                                             // throw arrays less than what we need
                                             curr_index += arr.len();
-                                            continue;
                                         } else if curr_index < row_range.start {
                                             let offset = row_range.start.saturating_sub(curr_index);
                                             all_arrays.push(arr.sliced(offset, arr.len() - offset));
@@ -848,7 +847,6 @@ impl ParquetFileReader {
                                         if (curr_index + arr.len()) < row_range.start {
                                             // throw arrays less than what we need
                                             curr_index += arr.len();
-                                            continue;
                                         } else if curr_index < row_range.start {
                                             let offset = row_range.start.saturating_sub(curr_index);
                                             all_arrays.push(arr.sliced(offset, arr.len() - offset));

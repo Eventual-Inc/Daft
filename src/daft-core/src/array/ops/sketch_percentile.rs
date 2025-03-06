@@ -25,9 +25,10 @@ impl StructArray {
             .iter()
             .for_each(|sketch| match sketch {
                 None => {
-                    flat_child.extend_trusted_len(
-                        std::iter::repeat::<Option<f64>>(None).take(percentiles.len()),
-                    );
+                    flat_child.extend_trusted_len(std::iter::repeat_n::<Option<f64>>(
+                        None,
+                        percentiles.len(),
+                    ));
                 }
                 Some(sketch) => flat_child
                     .extend_trusted_len(percentiles.iter().map(|&p| sketch.quantile(p).unwrap())),

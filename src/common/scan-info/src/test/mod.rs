@@ -38,10 +38,7 @@ impl ScanTaskLike for DummyScanTask {
     }
 
     fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |a| a == self)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {

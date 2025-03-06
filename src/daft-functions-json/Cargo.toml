@@ -6,7 +6,6 @@ jaq-core = {workspace = true}
 jaq-interpret = {workspace = true}
 jaq-parse = {workspace = true}
 jaq-std = {workspace = true}
-lazy_static = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 serde_json = {workspace = true}

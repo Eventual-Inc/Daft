@@ -33,6 +33,10 @@ class IcebergCatalog(Catalog):
             return c
         raise ValueError(f"Unsupported iceberg catalog type: {type(obj)}")
 
+    @property
+    def name(self) -> str:
+        return self._inner.name
+
     ###
     # create_*
     ###
@@ -105,6 +109,9 @@ class IcebergCatalog(Catalog):
 class IcebergTable(Table):
     _inner: InnerTable
 
+    _read_options = {"snapshot_id"}
+    _write_options = set()
+
     def __init__(self, inner: InnerTable):
         """DEPRECATED: Please use `Table.from_iceberg`; version 0.5.0!"""
         warnings.warn(
@@ -112,6 +119,10 @@ class IcebergTable(Table):
             category=DeprecationWarning,
         )
         self._inner = inner
+
+    @property
+    def name(self) -> str:
+        return self._inner.name[-1]
 
     @staticmethod
     def _from_obj(obj: object) -> IcebergTable | None:
@@ -122,5 +133,12 @@ class IcebergTable(Table):
             return t
         raise ValueError(f"Unsupported iceberg table type: {type(obj)}")
 
-    def read(self) -> DataFrame:
-        return read_iceberg(self._inner)
+    def read(self, **options) -> DataFrame:
+        Table._validate_options("Iceberg read", options, IcebergTable._read_options)
+
+        return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
+
+    def write(self, df: DataFrame | object, mode: str = "append", **options):
+        self._validate_options("Iceberg write", options, IcebergTable._write_options)
+
+        df.write_iceberg(self._inner, mode=mode)

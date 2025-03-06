@@ -9,8 +9,8 @@ use daft_functions::numeric::{
     round::round,
     sqrt::Sqrt,
     trigonometry::{
-        ArcCos, ArcCosh, ArcSin, ArcSinh, ArcTan, ArcTanh, Atan2, Cos, Cot, Csc, Degrees, Radians,
-        Sec, Sin, Tan,
+        ArcCos, ArcCosh, ArcSin, ArcSinh, ArcTan, ArcTanh, Atan2, Cos, Cosh, Cot, Csc, Degrees,
+        Radians, Sec, Sin, Sinh, Tan, Tanh,
     },
 };
 use spark_connect::Expression;
@@ -42,7 +42,7 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("ceiling", Ceil {});
         parent.add_fn("conv", TODO_FUNCTION);
         parent.add_fn("cos", Cos {});
-        parent.add_fn("cosh", TODO_FUNCTION);
+        parent.add_fn("cosh", Cosh {});
         parent.add_fn("cot", Cot {});
         parent.add_fn("csc", Csc {});
         parent.add_fn("e", TODO_FUNCTION);
@@ -74,9 +74,9 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("sign", TODO_FUNCTION);
         parent.add_fn("signum", TODO_FUNCTION);
         parent.add_fn("sin", Sin {});
-        parent.add_fn("sinh", TODO_FUNCTION);
+        parent.add_fn("sinh", Sinh {});
         parent.add_fn("tan", Tan {});
-        parent.add_fn("tanh", TODO_FUNCTION);
+        parent.add_fn("tanh", Tanh {});
         parent.add_fn("toDegrees", TODO_FUNCTION);
         parent.add_fn("try_add", TODO_FUNCTION);
         parent.add_fn("try_avg", TODO_FUNCTION);

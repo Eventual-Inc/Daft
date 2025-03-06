@@ -22,6 +22,7 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
+  - Catalogs: catalogs.md
   - Distributed Computing: distributed.md
   - Advanced:
     - Managing Memory Usage: advanced/memory.md

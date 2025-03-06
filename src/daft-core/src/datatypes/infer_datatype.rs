@@ -13,7 +13,7 @@ use crate::utils::supertype::try_get_supertype;
 // Once we convert daft-dsl to a root level crate, this logic should move there
 pub struct InferDataType<'a>(&'a DataType);
 
-impl<'a> Display for InferDataType<'a> {
+impl Display for InferDataType<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -24,13 +24,13 @@ impl<'a> From<&'a DataType> for InferDataType<'a> {
     }
 }
 
-impl<'a> AsRef<DataType> for InferDataType<'a> {
+impl AsRef<DataType> for InferDataType<'_> {
     fn as_ref(&self) -> &DataType {
         self.0
     }
 }
 
-impl<'a> InferDataType<'a> {
+impl InferDataType<'_> {
     pub fn logical_op(&self, other: &Self) -> DaftResult<DataType> {
         // Whether a logical op (and, or, xor) is supported between the two types.
         let left = self.0;
@@ -212,7 +212,7 @@ impl<'a> InferDataType<'a> {
     }
 }
 
-impl<'a> Add for InferDataType<'a> {
+impl Add for InferDataType<'_> {
     type Output = DaftResult<DataType>;
 
     fn add(self, other: Self) -> Self::Output {
@@ -309,7 +309,7 @@ impl<'a> Add for InferDataType<'a> {
     }
 }
 
-impl<'a> Sub for InferDataType<'a> {
+impl Sub for InferDataType<'_> {
     type Output = DaftResult<DataType>;
 
     fn sub(self, other: Self) -> Self::Output {
@@ -366,7 +366,7 @@ impl<'a> Sub for InferDataType<'a> {
     }
 }
 
-impl<'a> Div for InferDataType<'a> {
+impl Div for InferDataType<'_> {
     type Output = DaftResult<DataType>;
 
     fn div(self, other: Self) -> Self::Output {
@@ -412,7 +412,7 @@ impl<'a> Div for InferDataType<'a> {
     }
 }
 
-impl<'a> Mul for InferDataType<'a> {
+impl Mul for InferDataType<'_> {
     type Output = DaftResult<DataType>;
 
     fn mul(self, other: Self) -> Self::Output {
@@ -456,7 +456,7 @@ impl<'a> Mul for InferDataType<'a> {
     }
 }
 
-impl<'a> Rem for InferDataType<'a> {
+impl Rem for InferDataType<'_> {
     type Output = DaftResult<DataType>;
 
     fn rem(self, other: Self) -> Self::Output {
@@ -477,7 +477,7 @@ impl<'a> Rem for InferDataType<'a> {
     }
 }
 
-impl<'a> Shl for InferDataType<'a> {
+impl Shl for InferDataType<'_> {
     type Output = DaftResult<DataType>;
 
     fn shl(self, rhs: Self) -> Self::Output {
@@ -491,7 +491,7 @@ impl<'a> Shl for InferDataType<'a> {
     }
 }
 
-impl<'a> Shr for InferDataType<'a> {
+impl Shr for InferDataType<'_> {
     type Output = DaftResult<DataType>;
 
     fn shr(self, rhs: Self) -> Self::Output {

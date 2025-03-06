@@ -20,7 +20,7 @@ impl<'cfg> DecideSplitIterator<'cfg> {
 
 pub(super) struct Decision {}
 
-impl<'cfg> Iterator for DecideSplitIterator<'cfg> {
+impl Iterator for DecideSplitIterator<'_> {
     type Item = Decision;
 
     fn next(&mut self) -> Option<Self::Item> {
