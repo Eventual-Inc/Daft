@@ -39,15 +39,13 @@ jobs:
       contents: read
 
     steps:
-    - name: Setup upterm session
-      uses: lhotari/action-upterm@v1
     - name: Mount local SSD to /tmp
       run: |
         findmnt /tmp 1> /dev/null
         code=$?
         if [ $code -ne 0 ]; then
-            sudo mkfs.ext4 /dev/nvme0n1
-            sudo mount -t ext4 /dev/nvme0n1 /tmp
+            sudo mkfs.ext4 /dev/nvme1n1
+            sudo mount -t ext4 /dev/nvme1n1 /tmp
             sudo chmod 777 /tmp
         fi
     - uses: actions/checkout@v4
