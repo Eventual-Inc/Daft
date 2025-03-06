@@ -1183,7 +1183,6 @@ class DataFrame:
             raise ImportError("lance is not installed. Please install lance using `pip install getdaft[lance]`")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        storage_options = io_config_to_storage_options(io_config, table_uri)
 
         if isinstance(uri, (str, pathlib.Path)):
             if isinstance(uri, str):
@@ -1193,6 +1192,8 @@ class DataFrame:
             else:
                 table_uri = uri
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
+
+        storage_options = io_config_to_storage_options(io_config, table_uri)
 
         try:
             table = lance.dataset(table_uri, storage_options=storage_options)
