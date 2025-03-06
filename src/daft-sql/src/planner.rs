@@ -37,7 +37,7 @@ use sqlparser::{
 
 use crate::{
     column_not_found_err, error::*, invalid_operation_err, schema::sql_dtype_to_dtype,
-    table_not_found_err, unsupported_sql_err,
+    statement::Statement, table_not_found_err, unsupported_sql_err,
 };
 
 /// Bindings are used to lookup in-scope tables, views, and columns (targets T).
@@ -223,8 +223,8 @@ impl<'a> SQLPlanner<'a> {
         Ok(())
     }
 
-    pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
-        let tokens = Tokenizer::new(&GenericDialect {}, sql).tokenize()?;
+    pub fn plan(&mut self, input: &str) -> SQLPlannerResult<Statement> {
+        let tokens = Tokenizer::new(&GenericDialect {}, input).tokenize()?;
 
         let mut parser = Parser::new(&GenericDialect {})
             .with_options(ParserOptions {
@@ -244,10 +244,17 @@ impl<'a> SQLPlanner<'a> {
 
         // plan single statement
         let stmt = &statements[0];
-        let plan = self.plan_statement(stmt)?.build();
+        let stmt = self.plan_statement(stmt)?;
         self.clear_context();
+        Ok(stmt)
+    }
 
-        Ok(plan)
+    pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
+        if let Statement::Select(plan) = self.plan(sql)? {
+            Ok(plan)
+        } else {
+            unsupported_sql_err!("plan_sql does not support non-query statements")
+        }
     }
 
     pub(crate) fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {

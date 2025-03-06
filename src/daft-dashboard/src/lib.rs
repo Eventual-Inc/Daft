@@ -18,7 +18,7 @@ use parking_lot::RwLock;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-use tokio::{net::TcpStream, spawn, sync::mpsc::Sender};
+use tokio::{net::TcpStream, spawn};
 
 type StrRef = Arc<str>;
 type Req<T = Incoming> = Request<T>;
@@ -29,26 +29,6 @@ const SERVER_ADDR: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const SERVER_PORT: u16 = 3238;
 
 static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/out");
-
-#[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    const DAFT_DASHBOARD_ENV_ENABLED: &str = "DAFT_DASHBOARD_ENABLED";
-    const DAFT_DASHBOARD_ENV_NAME: &str = "DAFT_DASHBOARD";
-    const DAFT_DASHBOARD_URL: &str = "http://localhost:3238";
-    const DAFT_DASHBOARD_QUERIES_URL: &str = "http://localhost:3238/api/queries";
-
-    let module = PyModule::new(parent.py(), "dashboard")?;
-    module.add_wrapped(wrap_pyfunction!(python::launch))?;
-    module.add_wrapped(wrap_pyfunction!(python::shutdown))?;
-    module.add_wrapped(wrap_pyfunction!(python::cli))?;
-    module.add("DAFT_DASHBOARD_ENV_NAME", DAFT_DASHBOARD_ENV_NAME)?;
-    module.add("DAFT_DASHBOARD_URL", DAFT_DASHBOARD_URL)?;
-    module.add("DAFT_DASHBOARD_QUERIES_URL", DAFT_DASHBOARD_QUERIES_URL)?;
-    module.add("DAFT_DASHBOARD_ENV_ENABLED", DAFT_DASHBOARD_ENV_ENABLED)?;
-    parent.add_submodule(&module)?;
-
-    Ok(())
-}
 
 trait ResultExt<T, E: Into<anyhow::Error>>: Sized {
     fn with_status_code(self, status_code: StatusCode) -> ServerResult<T>;
@@ -75,6 +55,29 @@ struct QueryInformation {
     logs: StrRef,
 }
 
+#[derive(Clone, Debug)]
+struct DashboardState {
+    queries: Arc<RwLock<Vec<QueryInformation>>>,
+}
+
+impl DashboardState {
+    fn new() -> Self {
+        Self {
+            queries: Arc::default(),
+        }
+    }
+
+    fn queries(&self) -> Vec<QueryInformation> {
+        // TODO: The cloning here is a little ugly.
+        // The reason the list is cloned is because returning a `&[QueryInformation]` will not work due to borrowing rules.
+        self.queries.read().clone()
+    }
+
+    fn add_query(&self, query_information: QueryInformation) {
+        self.queries.write().push(query_information);
+    }
+}
+
 async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req<T>> {
     let (parts, body) = req.into_parts();
     let bytes = body.collect().await.with_internal_error()?.to_bytes();
@@ -99,10 +102,6 @@ async fn http_server_application(req: Req, state: DashboardState) -> ServerResul
         (&Method::GET, ["api", "queries"]) => {
             let query_informations = state.queries();
             response::with_body(StatusCode::OK, query_informations.as_slice())
-        }
-        (&Method::POST, ["api", "shutdown"]) => {
-            state.shutdown_signal.send(()).await.unwrap();
-            response::empty(StatusCode::OK)
         }
         (_, ["api", ..]) => response::empty(StatusCode::NOT_FOUND),
 
@@ -182,27 +181,22 @@ fn handle_stream(stream: TcpStream, state: DashboardState) {
     });
 }
 
-#[derive(Clone)]
-struct DashboardState {
-    queries: Arc<RwLock<Vec<QueryInformation>>>,
-    shutdown_signal: Sender<()>,
-}
+#[cfg(feature = "python")]
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    const DAFT_DASHBOARD_ENV_ENABLED: &str = "DAFT_DASHBOARD_ENABLED";
+    const DAFT_DASHBOARD_ENV_NAME: &str = "DAFT_DASHBOARD";
+    const DAFT_DASHBOARD_URL: &str = "http://localhost:3238";
+    const DAFT_DASHBOARD_QUERIES_URL: &str = "http://localhost:3238/api/queries";
 
-impl DashboardState {
-    fn new(shutdown_signal: Sender<()>) -> Self {
-        Self {
-            shutdown_signal,
-            queries: Arc::default(),
-        }
-    }
+    let module = PyModule::new(parent.py(), "dashboard")?;
+    module.add_wrapped(wrap_pyfunction!(python::launch))?;
+    // module.add_wrapped(wrap_pyfunction!(python::shutdown))?;
+    // module.add_wrapped(wrap_pyfunction!(python::cli))?;
+    module.add("DAFT_DASHBOARD_ENV_NAME", DAFT_DASHBOARD_ENV_NAME)?;
+    module.add("DAFT_DASHBOARD_URL", DAFT_DASHBOARD_URL)?;
+    module.add("DAFT_DASHBOARD_QUERIES_URL", DAFT_DASHBOARD_QUERIES_URL)?;
+    module.add("DAFT_DASHBOARD_ENV_ENABLED", DAFT_DASHBOARD_ENV_ENABLED)?;
+    parent.add_submodule(&module)?;
 
-    fn queries(&self) -> Vec<QueryInformation> {
-        // TODO: The cloning here is a little ugly.
-        // The reason the list is cloned is because returning a `&[QueryInformation]` will not work due to borrowing rules.
-        self.queries.read().clone()
-    }
-
-    fn add_query(&self, query_information: QueryInformation) {
-        self.queries.write().push(query_information);
-    }
+    Ok(())
 }

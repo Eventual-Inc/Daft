@@ -5,7 +5,12 @@ use std::{
 };
 
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
-use arrow2::{array::Array, temporal_conversions};
+use arrow2::{
+    array::{Array, BinaryArray as ArrowBinaryArray},
+    datatypes::DataType as ArrowType,
+    offset::Offsets,
+    temporal_conversions,
+};
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
@@ -1421,6 +1426,35 @@ impl Utf8Array {
             .collect::<arrow2::array::Utf8Array<i64>>()
             .with_validity(self_arrow.validity().cloned());
         Ok(Self::from((self.name(), Box::new(arrow_result))))
+    }
+
+    pub fn encode<Encoder>(&self, encoder: Encoder) -> DaftResult<BinaryArray>
+    where
+        Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
+    {
+        let input = self.as_arrow();
+        let buffer = input.values();
+        let validity = input.validity().cloned();
+        //
+        let mut values = Vec::<u8>::new();
+        let mut offsets = Offsets::<i64>::new();
+        for span in input.offsets().windows(2) {
+            let s = span[0] as usize;
+            let e = span[1] as usize;
+            let bytes = encoder(&buffer[s..e])?;
+            //
+            offsets.try_push(bytes.len() as i64)?;
+            values.extend(bytes);
+        }
+        //
+        let array = ArrowBinaryArray::new(
+            ArrowType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            validity,
+        );
+        let array = Box::new(array);
+        Ok(BinaryArray::from((self.name(), array)))
     }
 }
 

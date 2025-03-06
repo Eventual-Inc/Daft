@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
 
 from pyiceberg.catalog import Catalog as InnerCatalog
 from pyiceberg.table import Table as InnerTable
 
-from daft.catalog import Catalog, Identifier, Table
+from daft.catalog import Catalog, Identifier, Table, TableSource
+from daft.dataframe import DataFrame
 from daft.io._iceberg import read_iceberg
-
-if TYPE_CHECKING:
-    from daft.dataframe import DataFrame
+from daft.logical.schema import Schema
 
 
 class IcebergCatalog(Catalog):
@@ -40,17 +38,68 @@ class IcebergCatalog(Catalog):
         return self._inner.name
 
     ###
+    # create_*
+    ###
+
+    def create_namespace(self, identifier: Identifier | str):
+        if isinstance(identifier, Identifier):
+            identifier = tuple(identifier)  # type: ignore
+        self._inner.create_namespace(identifier)
+
+    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+        if isinstance(source, DataFrame):
+            return self._create_table_from_df(identifier, source)
+        elif isinstance(source, str):
+            return self._create_table_from_path(identifier, source)
+        elif isinstance(source, Schema):
+            return self._create_table_from_schema(identifier, source)
+        else:
+            raise Exception(f"Unknown table source: {source}")
+
+    def _create_table_from_df(self, ident: Identifier | str, source: DataFrame) -> Table:
+        # t = self._create_table_from_schema(ident, source.schema())
+        # t.append(source)
+        raise ValueError("create table from source not yet supported")
+
+    def _create_table_from_path(self, ident: Identifier | str, source: str) -> Table:
+        raise ValueError("table from path not yet supported")
+
+    def _create_table_from_schema(self, ident: Identifier | str, source: Schema) -> Table:
+        if isinstance(ident, Identifier):
+            ident = tuple(ident)  # type: ignore
+        obj = self._inner.create_table(ident, schema=source.to_pyarrow_schema())
+        return IcebergTable._from_obj(obj)
+
+    ###
+    # drop_*
+    ###
+
+    def drop_namespace(self, identifier: Identifier | str):
+        if isinstance(identifier, Identifier):
+            identifier = tuple(identifier)  # type: ignore
+        self._inner.drop_namespace(identifier)
+
+    def drop_table(self, identifier: Identifier | str):
+        if isinstance(identifier, Identifier):
+            identifier = tuple(identifier)  # type: ignore
+        self._inner.drop_table(identifier)
+
+    ###
     # get_*
     ###
 
-    def get_table(self, ident: Identifier | str) -> IcebergTable:
-        if isinstance(ident, Identifier):
-            ident = tuple(ident)  # type: ignore
-        return IcebergTable._from_obj(self._inner.load_table(ident))
+    def get_table(self, identifier: Identifier | str) -> IcebergTable:
+        if isinstance(identifier, Identifier):
+            identifier = tuple(identifier)  # type: ignore
+        return IcebergTable._from_obj(self._inner.load_table(identifier))
 
     ###
     # list_*
     ###
+
+    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        """List namespaces under the given namespace (pattern) in the catalog, or all namespaces if no namespace is provided."""
+        return [Identifier(*tup) for tup in self._inner.list_namespaces(pattern)]
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         """List tables under the given namespace (pattern) in the catalog, or all tables if no namespace is provided."""
@@ -83,13 +132,6 @@ class IcebergTable(Table):
             t._inner = obj
             return t
         raise ValueError(f"Unsupported iceberg table type: {type(obj)}")
-
-    @staticmethod
-    def _try_from(obj: object) -> IcebergTable | None:
-        """Returns an IcebergTable if the given object can be adapted so."""
-        if isinstance(obj, InnerTable):
-            return IcebergTable(obj)
-        return None
 
     def read(self, **options) -> DataFrame:
         Table._validate_options("Iceberg read", options, IcebergTable._read_options)

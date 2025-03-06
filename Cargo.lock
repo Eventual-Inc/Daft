@@ -2114,8 +2114,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "anyhow",
  "chrono",
- "clap 4.5.31",
- "fork",
  "http-body-util",
  "hyper 1.6.0",
  "hyper-util",
@@ -2175,6 +2173,7 @@ dependencies = [
  "daft-hash",
  "daft-image",
  "daft-io",
+ "flate2",
  "futures",
  "paste",
  "pyo3",
@@ -3116,15 +3115,6 @@ name = "foreign_vec"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee1b05cbd864bcaecbd3455d6d967862d446e4ebfc3c2e5e5b9841e53cba6673"
-
-[[package]]
-name = "fork"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05dc8b302e04a1c27f4fe694439ef0f29779ca4edc205b7b58f00db04e29656d"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "form_urlencoded"

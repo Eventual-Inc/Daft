@@ -39,3 +39,12 @@ impl From<Error> for DaftError {
         Self::External(err.into())
     }
 }
+
+/// TODO chore: cleanup function implementations using error macros
+#[macro_export]
+macro_rules! invalid_argument_err {
+    ($($arg:tt)*)  => {{
+        let msg = format!($($arg)*);
+        return Err(common_error::DaftError::TypeError(msg).into());
+    }};
+}
