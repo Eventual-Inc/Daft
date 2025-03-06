@@ -6,6 +6,7 @@ common-file-formats = {workspace = true, optional = true, features = [
   "python"
 ]}
 common-runtime = {workspace = true}
+daft-algebra = {workspace = true}
 daft-catalog = {path = "../daft-catalog", optional = true, features = ["python"]}
 daft-context = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}

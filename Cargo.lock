@@ -2002,6 +2002,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-runtime",
+ "daft-algebra",
  "daft-catalog",
  "daft-context",
  "daft-core",

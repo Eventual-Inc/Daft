@@ -31,7 +31,7 @@ mod tests {
     use std::sync::Arc;
 
     use daft_core::prelude::*;
-    use daft_dsl::{lit, unresolved_col, Expr, Subquery};
+    use daft_dsl::{lit, unresolved_col, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn};
     use daft_logical_plan::{
         logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
         LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
@@ -272,13 +272,32 @@ mod tests {
             if null_equals_null { "<=>" } else { "=" }
         );
         let plan = planner.plan_sql(&sql)?;
+
+        let left_on: ExprRef = UnresolvedColumn {
+            name: "id".into(),
+            plan_ref: PlanRef::Alias("tbl2".into()),
+            plan_schema: None,
+        }
+        .into();
+        let right_on: ExprRef = UnresolvedColumn {
+            name: "id".into(),
+            plan_ref: PlanRef::Alias("tbl3".into()),
+            plan_schema: None,
+        }
+        .into();
+
+        let on = if null_equals_null {
+            left_on.eq_null_safe(right_on)
+        } else {
+            left_on.eq(right_on)
+        };
+
         let expected = LogicalPlanBuilder::from(tbl_2)
             .alias("tbl2")
-            .join_with_null_safe_equal(
+            .join(
                 LogicalPlanBuilder::from(tbl_3).alias("tbl3"),
-                vec![unresolved_col("id")],
-                vec![unresolved_col("id")],
-                Some(vec![null_equals_null]),
+                on.into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 JoinOptions::default().prefix("tbl3."),
@@ -298,14 +317,31 @@ mod tests {
         let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id and tbl2.val > 0";
         let plan = planner.plan_sql(sql)?;
 
+        let tbl2_id: ExprRef = UnresolvedColumn {
+            name: "id".into(),
+            plan_ref: PlanRef::Alias("tbl2".into()),
+            plan_schema: None,
+        }
+        .into();
+        let tbl3_id: ExprRef = UnresolvedColumn {
+            name: "id".into(),
+            plan_ref: PlanRef::Alias("tbl3".into()),
+            plan_schema: None,
+        }
+        .into();
+        let tbl2_val: ExprRef = UnresolvedColumn {
+            name: "val".into(),
+            plan_ref: PlanRef::Alias("tbl2".into()),
+            plan_schema: None,
+        }
+        .into();
+
         let expected = LogicalPlanBuilder::from(tbl_2)
             .alias("tbl2")
-            .filter(unresolved_col("val").gt(lit(0_i64)))?
-            .join_with_null_safe_equal(
+            .join(
                 LogicalPlanBuilder::from(tbl_3).alias("tbl3"),
-                vec![unresolved_col("id")],
-                vec![unresolved_col("id")],
-                Some(vec![false]),
+                (tbl2_id.eq(tbl3_id)).and(tbl2_val.gt(lit(0 as i64))).into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 JoinOptions::default().prefix("tbl3."),
@@ -486,26 +522,22 @@ mod tests {
         let sql = "select tbl2.val from tbl1 left join tbl2 on tbl1.utf8 = tbl2.text, (tbl1 as tbl4) right join tbl3 on tbl4.i32 = tbl3.id";
         let plan = planner.plan_sql(sql)?;
 
-        let first_from = LogicalPlanBuilder::from(tbl_1.clone())
-            .alias("tbl1")
-            .join_with_null_safe_equal(
-                LogicalPlanBuilder::from(tbl_2).alias("tbl2"),
-                vec![unresolved_col("utf8")],
-                vec![unresolved_col("text")],
-                Some(vec![false]),
-                JoinType::Left,
-                None,
-                JoinOptions::default().prefix("tbl2."),
-            )?;
+        let first_from = LogicalPlanBuilder::from(tbl_1.clone()).alias("tbl1").join(
+            LogicalPlanBuilder::from(tbl_2).alias("tbl2"),
+            unresolved_col("utf8").eq(unresolved_col("text")).into(),
+            vec![],
+            JoinType::Left,
+            None,
+            JoinOptions::default().prefix("tbl2."),
+        )?;
 
         let second_from = LogicalPlanBuilder::from(tbl_1)
             .alias("tbl1")
             .alias("tbl4")
-            .join_with_null_safe_equal(
+            .join(
                 LogicalPlanBuilder::from(tbl_3).alias("tbl3"),
-                vec![unresolved_col("i32")],
-                vec![unresolved_col("id")],
-                Some(vec![false]),
+                unresolved_col("i32").eq(unresolved_col("id")).into(),
+                vec![],
                 JoinType::Right,
                 None,
                 JoinOptions::default().prefix("tbl3."),

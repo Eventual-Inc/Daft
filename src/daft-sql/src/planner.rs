@@ -6,8 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
-use daft_algebra::boolean::combine_conjunction;
+use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
@@ -117,6 +116,8 @@ pub struct SQLPlanner<'a> {
     parent: Option<&'a SQLPlanner<'a>>,
     /// In-scope bindings introduced by the current relation's schema
     pub(crate) current_plan: Option<LogicalPlanBuilder>,
+    /// Plan that will be used as the right side of the join, used for planning join predicates
+    right_side_plan: Option<LogicalPlanBuilder>,
     /// Aliases from selection that can be used in other clauses
     /// but may not yet be in the schema of `current_relation`.
     bound_columns: Bindings<ExprRef>,
@@ -588,118 +589,6 @@ impl<'a> SQLPlanner<'a> {
 
     /// Plans a single set of table and joins in a FROM clause.
     fn plan_single_from(&self, from: &TableWithJoins) -> SQLPlannerResult<LogicalPlanBuilder> {
-        macro_rules! return_non_ident_errors {
-            ($e:expr) => {
-                if !matches!(
-                    $e,
-                    PlannerError::ColumnNotFound { .. } | PlannerError::TableNotFound { .. }
-                ) {
-                    return Err($e);
-                }
-            };
-        }
-
-        #[allow(clippy::too_many_arguments)]
-        fn process_join_on(
-            sql_expr: &sqlparser::ast::Expr,
-            left_planner: &SQLPlanner,
-            right_planner: &SQLPlanner,
-            left_on: &mut Vec<ExprRef>,
-            right_on: &mut Vec<ExprRef>,
-            null_eq_nulls: &mut Vec<bool>,
-            left_filters: &mut Vec<ExprRef>,
-            right_filters: &mut Vec<ExprRef>,
-        ) -> SQLPlannerResult<()> {
-            // check if join expression is actually a filter on one of the tables
-            match (
-                left_planner.plan_expr(sql_expr),
-                right_planner.plan_expr(sql_expr),
-            ) {
-                (Ok(_), Ok(_)) => {
-                    return Err(PlannerError::invalid_operation(format!(
-                        "Ambiguous reference to column name in join: {}",
-                        sql_expr
-                    )));
-                }
-                (Ok(expr), _) => {
-                    left_filters.push(expr);
-                    return Ok(());
-                }
-                (_, Ok(expr)) => {
-                    right_filters.push(expr);
-                    return Ok(());
-                }
-                (Err(left_err), Err(right_err)) => {
-                    return_non_ident_errors!(left_err);
-                    return_non_ident_errors!(right_err);
-                }
-            }
-
-            match sql_expr {
-                // join key
-                sqlparser::ast::Expr::BinaryOp {
-                    left,
-                    right,
-                    op: op @ BinaryOperator::Eq,
-                }
-                | sqlparser::ast::Expr::BinaryOp {
-                    left,
-                    right,
-                    op: op @ BinaryOperator::Spaceship,
-                } => {
-                    let null_equals_null = *op == BinaryOperator::Spaceship;
-
-                    let mut last_error = None;
-
-                    for (left, right) in [(left, right), (right, left)] {
-                        let left_expr = left_planner.plan_expr(left);
-                        let right_expr = right_planner.plan_expr(right);
-
-                        if let Ok(left_expr) = &left_expr && let Ok(right_expr) = &right_expr {
-                            left_on.push(left_expr.clone());
-                            right_on.push(right_expr.clone());
-                            null_eq_nulls.push(null_equals_null);
-
-                            return Ok(())
-                        }
-
-                        for expr_result in [left_expr, right_expr] {
-                            if let Err(e) = expr_result {
-                                return_non_ident_errors!(e);
-
-                                last_error = Some(e);
-                            }
-                        }
-                    }
-
-                    Err(last_error.unwrap())
-                }
-                // multiple expressions
-                sqlparser::ast::Expr::BinaryOp {
-                    left,
-                    right,
-                    op: BinaryOperator::And,
-                } => {
-                    process_join_on(left, left_planner, right_planner, left_on, right_on, null_eq_nulls, left_filters, right_filters)?;
-                    process_join_on(right, left_planner, right_planner, left_on, right_on, null_eq_nulls, left_filters, right_filters)?;
-
-                    Ok(())
-                }
-                // nested expression
-                sqlparser::ast::Expr::Nested(expr) => process_join_on(
-                    expr,
-                    left_planner,
-                    right_planner,
-                    left_on,
-                    right_on,
-                    null_eq_nulls,
-                    left_filters,
-                    right_filters,
-                ),
-                _ => unsupported_sql_err!("JOIN clauses support '=' constraints and filter predicates combined with 'AND'; found expression = {:?}", sql_expr)
-            }
-        }
-
         let relation = from.relation.clone();
         let left_plan = self.plan_relation(&relation)?;
         let mut left_planner = self.new_with_context();
@@ -718,10 +607,6 @@ impl<'a> SQLPlanner<'a> {
                 join_options = join_options.prefix(format!("{id}."));
             }
 
-            // construct a planner with the right table to use for expr planning
-            let mut right_planner = self.new_with_context();
-            right_planner.set_plan(right_plan);
-
             let (join_type, constraint) = match &join.join_operator {
                 Inner(constraint) => (JoinType::Inner, constraint),
                 LeftOuter(constraint) => (JoinType::Left, constraint),
@@ -733,60 +618,43 @@ impl<'a> SQLPlanner<'a> {
                 _ => unsupported_sql_err!("Unsupported join type: {:?}", join.join_operator),
             };
 
-            let mut left_on = Vec::new();
-            let mut right_on = Vec::new();
-            let mut left_filters = Vec::new();
-            let mut right_filters = Vec::new();
-
-            let (merge_matching_join_keys, null_eq_nulls) = match &constraint {
+            let (on, using) = match &constraint {
                 JoinConstraint::On(expr) => {
-                    let mut null_eq_nulls = Vec::new();
+                    left_planner.right_side_plan = Some(right_plan.clone());
+                    let on_expr = left_planner.plan_expr(expr)?;
+                    left_planner.right_side_plan = None;
 
-                    process_join_on(
-                        expr,
-                        &left_planner,
-                        &right_planner,
-                        &mut left_on,
-                        &mut right_on,
-                        &mut null_eq_nulls,
-                        &mut left_filters,
-                        &mut right_filters,
-                    )?;
-
-                    (false, Some(null_eq_nulls))
+                    (Some(on_expr), vec![])
                 }
                 JoinConstraint::Using(idents) => {
-                    left_on = idents
-                        .iter()
-                        .map(|i| unresolved_col(i.value.clone()))
-                        .collect::<Vec<_>>();
-                    right_on.clone_from(&left_on);
+                    let using = idents.iter().map(|i| i.value.clone()).collect::<Vec<_>>();
 
-                    (true, None)
+                    (None, using)
                 }
                 JoinConstraint::Natural => unsupported_sql_err!("NATURAL JOIN not supported"),
                 JoinConstraint::None => unsupported_sql_err!("JOIN without ON/USING not supported"),
             };
 
-            if let Some(left_predicate) = combine_conjunction(left_filters) {
-                left_planner.update_plan(|plan| plan.filter(left_predicate))?;
-            }
-
-            if let Some(right_predicate) = combine_conjunction(right_filters) {
-                right_planner.update_plan(|plan| plan.filter(right_predicate))?;
-            }
+            let left_schema = left_planner.current_plan_ref().schema();
 
             left_planner.update_plan(|plan| {
-                plan.join_with_null_safe_equal(
-                    right_planner.current_plan.unwrap(),
-                    left_on,
-                    right_on,
-                    null_eq_nulls,
-                    join_type,
-                    None,
-                    join_options.merge_matching_join_keys(merge_matching_join_keys),
-                )
+                plan.join(right_plan, on, using, join_type, None, join_options)
             })?;
+
+            // add a project to reorder columns since `USING` should return [left columns, remaining right columns]
+            // but our join returns [common columns, remaining left columns, remaining right columns]
+            if matches!(&constraint, JoinConstraint::Using(..)) {
+                let new_schema = left_planner.current_plan_ref().schema();
+                let output_schema = left_schema.non_distinct_union(&new_schema);
+                let output_cols = output_schema
+                    .fields
+                    .keys()
+                    .cloned()
+                    .map(resolved_col)
+                    .collect();
+
+                left_planner.update_plan(|plan| plan.select(output_cols))?;
+            }
         }
 
         Ok(left_planner.current_plan.unwrap())
@@ -991,20 +859,48 @@ impl<'a> SQLPlanner<'a> {
             return Ok(expr);
         }
 
+        if let Some(right_plan) = &self.right_side_plan
+            && let Some(expr) = expr_from_idents(
+                right_plan.schema(),
+                &self.bound_columns,
+                idents,
+                PlanRef::Unqualified,
+            )
+        {
+            return Ok(expr);
+        }
+
         if idents.len() > 1 {
             let alias = &idents[0].value;
 
-            if let Some(schema) = current_plan.plan.clone().get_schema_for_alias(alias)? {
-                if let Some(expr) = expr_from_idents(
-                    schema,
-                    &self.bound_columns,
-                    &idents[1..],
-                    PlanRef::Alias(alias.clone().into()),
-                ) {
-                    return Ok(expr);
-                } else {
-                    column_not_found_err!(compound_ident_to_str(&idents[1..]), alias);
+            let left_schema = current_plan.plan.clone().get_schema_for_alias(alias)?;
+            let right_schema = self
+                .right_side_plan
+                .as_ref()
+                .map(|plan| plan.plan.clone().get_schema_for_alias(alias))
+                .transpose()?
+                .flatten();
+
+            match (left_schema, right_schema) {
+                (Some(_), Some(_)) => {
+                    return Err(DaftError::ValueError(format!(
+                        "Ambiguous column reference in join predicate: {full_name}"
+                    ))
+                    .into())
                 }
+                (Some(schema), None) | (None, Some(schema)) => {
+                    if let Some(expr) = expr_from_idents(
+                        schema,
+                        &self.bound_columns,
+                        &idents[1..],
+                        PlanRef::Alias(alias.clone().into()),
+                    ) {
+                        return Ok(expr);
+                    } else {
+                        column_not_found_err!(compound_ident_to_str(&idents[1..]), alias);
+                    }
+                }
+                (None, None) => {}
             }
         }
 

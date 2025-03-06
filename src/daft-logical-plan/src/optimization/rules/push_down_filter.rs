@@ -357,7 +357,7 @@ mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, resolved_col};
+    use daft_dsl::{lit, resolved_col, unresolved_col};
     use daft_functions::uri::download::UrlDownloadArgs;
     use rstest::rstest;
 
@@ -682,7 +682,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]);
         let right_scan_op = dummy_scan_operator(vec![
-            Field::new("b", DataType::Utf8),
+            Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
         let left_scan_plan = dummy_scan_node_with_pushdowns(
@@ -690,19 +690,18 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
         );
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
-        let join_on = vec![resolved_col("b")];
-        let null_equals_nulls = if null_equals_null {
-            Some(vec![true])
+        let join_on = if null_equals_null {
+            unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
-            None
+            unresolved_col("b").eq(unresolved_col("right.b"))
         };
+
         let pred = resolved_col("a").lt(lit(2));
         let plan = left_scan_plan
-            .join_with_null_safe_equal(
+            .join(
                 &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                null_equals_nulls.clone(),
+                join_on.clone().into(),
+                vec![],
                 how,
                 None,
                 Default::default(),
@@ -718,11 +717,10 @@ mod tests {
             left_scan_plan.filter(pred)?
         };
         let expected = expected_left_filter_scan
-            .join_with_null_safe_equal(
+            .join(
                 &right_scan_plan,
-                join_on.clone(),
-                join_on,
-                null_equals_nulls,
+                join_on.into(),
+                vec![],
                 how,
                 None,
                 Default::default(),
@@ -744,7 +742,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]);
         let right_scan_op = dummy_scan_operator(vec![
-            Field::new("b", DataType::Utf8),
+            Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
         let left_scan_plan = dummy_scan_node(left_scan_op.clone());
@@ -752,19 +750,17 @@ mod tests {
             right_scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
-        let join_on = vec![resolved_col("b")];
-        let null_equals_nulls = if null_equals_null {
-            Some(vec![true])
+        let join_on = if null_equals_null {
+            unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
-            None
+            unresolved_col("b").eq(unresolved_col("right.b"))
         };
         let pred = resolved_col("c").lt(lit(2.0));
         let plan = left_scan_plan
-            .join_with_null_safe_equal(
+            .join(
                 &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                null_equals_nulls.clone(),
+                join_on.clone().into(),
+                vec![],
                 how,
                 None,
                 Default::default(),
@@ -780,11 +776,10 @@ mod tests {
             right_scan_plan.filter(pred)?
         };
         let expected = left_scan_plan
-            .join_with_null_safe_equal(
+            .join(
                 &expected_right_filter_scan,
-                join_on.clone(),
-                join_on,
-                null_equals_nulls,
+                join_on.into(),
+                vec![],
                 how,
                 None,
                 Default::default(),
@@ -799,7 +794,6 @@ mod tests {
     fn filter_commutes_with_join_on_join_key(
         #[values(false, true)] push_into_left_scan: bool,
         #[values(false, true)] push_into_right_scan: bool,
-        #[values(false, true)] null_equals_null: bool,
         #[values(
             JoinType::Inner,
             JoinType::Left,
@@ -810,8 +804,6 @@ mod tests {
         )]
         how: JoinType,
     ) -> DaftResult<()> {
-        use crate::JoinOptions;
-
         let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Utf8),
             Field::new("b", DataType::Int64),
@@ -829,22 +821,16 @@ mod tests {
             right_scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
-        let join_on = vec![resolved_col("b")];
-        let null_equals_nulls = if null_equals_null {
-            Some(vec![true])
-        } else {
-            None
-        };
+
         let pred = resolved_col("b").lt(lit(2));
         let plan = left_scan_plan
-            .join_with_null_safe_equal(
+            .join(
                 &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                null_equals_nulls.clone(),
+                None,
+                vec!["b".to_string()],
                 how,
                 None,
-                JoinOptions::default().merge_matching_join_keys(true),
+                Default::default(),
             )?
             .filter(pred.clone())?
             .build();
@@ -865,14 +851,13 @@ mod tests {
             right_scan_plan.filter(pred)?
         };
         let expected = expected_left_filter_scan
-            .join_with_null_safe_equal(
+            .join(
                 &expected_right_filter_scan,
-                join_on.clone(),
-                join_on,
-                null_equals_nulls,
+                None,
+                vec!["b".to_string()],
                 how,
                 None,
-                JoinOptions::default().merge_matching_join_keys(true),
+                Default::default(),
             )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
@@ -882,7 +867,7 @@ mod tests {
     /// Tests that Filter can be pushed into the left side of a Join.
     #[rstest]
     fn filter_does_not_commute_with_join_left_side(
-        #[values(false, true)] null_equal_null: bool,
+        #[values(false, true)] null_equals_null: bool,
         #[values(JoinType::Right, JoinType::Outer)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
@@ -890,24 +875,22 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]);
         let right_scan_op = dummy_scan_operator(vec![
-            Field::new("b", DataType::Utf8),
+            Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
         let left_scan_plan = dummy_scan_node(left_scan_op.clone());
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
-        let join_on = vec![resolved_col("b")];
-        let null_equals_nulls = if null_equal_null {
-            Some(vec![true])
+        let join_on = if null_equals_null {
+            unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
-            None
+            unresolved_col("b").eq(unresolved_col("right.b"))
         };
         let pred = resolved_col("a").lt(lit(2));
         let plan = left_scan_plan
-            .join_with_null_safe_equal(
+            .join(
                 &right_scan_plan,
-                join_on.clone(),
-                join_on,
-                null_equals_nulls,
+                join_on.into(),
+                vec![],
                 how,
                 None,
                 Default::default(),
@@ -923,7 +906,7 @@ mod tests {
     /// Tests that Filter can be pushed into the right side of a Join.
     #[rstest]
     fn filter_does_not_commute_with_join_right_side(
-        #[values(false, true)] null_equal_null: bool,
+        #[values(false, true)] null_equals_null: bool,
         #[values(JoinType::Left, JoinType::Outer)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
@@ -931,24 +914,23 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]);
         let right_scan_op = dummy_scan_operator(vec![
-            Field::new("b", DataType::Utf8),
+            Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
         let left_scan_plan = dummy_scan_node(left_scan_op.clone());
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
-        let join_on = vec![resolved_col("b")];
-        let null_equals_nulls = if null_equal_null {
-            Some(vec![true])
+        let join_on = if null_equals_null {
+            unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
-            None
+            unresolved_col("b").eq(unresolved_col("right.b"))
         };
+
         let pred = resolved_col("c").lt(lit(2.0));
         let plan = left_scan_plan
-            .join_with_null_safe_equal(
+            .join(
                 &right_scan_plan,
-                join_on.clone(),
-                join_on,
-                null_equals_nulls,
+                join_on.into(),
+                vec![],
                 how,
                 None,
                 Default::default(),
@@ -971,7 +953,7 @@ mod tests {
         let plan = dummy_scan_node(left_scan_op.clone())
             .join(
                 dummy_scan_node(right_scan_op.clone()),
-                vec![],
+                None,
                 vec![],
                 JoinType::Inner,
                 None,
@@ -1004,7 +986,7 @@ mod tests {
                         .or(resolved_col("b").eq(lit("FRANCE"))),
                 )),
             ),
-            vec![],
+            None,
             vec![],
             JoinType::Inner,
             None,

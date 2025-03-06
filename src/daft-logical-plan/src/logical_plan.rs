@@ -7,9 +7,12 @@ use std::{
 
 use common_display::ascii::AsciiTreeDisplay;
 use common_error::{DaftError, DaftResult};
-use common_treenode::TreeNodeRecursion;
-use daft_dsl::{optimization::get_required_columns, Subquery, SubqueryPlan};
-use daft_schema::schema::SchemaRef;
+use common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_core::join::JoinSide;
+use daft_dsl::{
+    optimization::get_required_columns, Column, Expr, ResolvedColumn, Subquery, SubqueryPlan,
+};
+use daft_schema::{field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
 use snafu::Snafu;
 
@@ -194,12 +197,31 @@ impl LogicalPlan {
                 vec![res]
             }
             Self::Join(join) => {
-                let left = join.left_on.iter().flat_map(get_required_columns).collect();
-                let right = join
-                    .right_on
-                    .iter()
-                    .flat_map(get_required_columns)
-                    .collect();
+                let mut left = IndexSet::new();
+                let mut right = IndexSet::new();
+
+                if let Some(pred) = join.on.inner() {
+                    pred.apply(|e| {
+                        match e.as_ref() {
+                            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                                Field { name, .. },
+                                JoinSide::Left,
+                            ))) => {
+                                left.insert(name.clone());
+                            }
+                            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                                Field { name, .. },
+                                JoinSide::Right,
+                            ))) => {
+                                right.insert(name.clone());
+                            }
+                            _ => {}
+                        }
+
+                        Ok(TreeNodeRecursion::Continue)
+                    })
+                    .unwrap();
+                }
                 vec![left, right]
             }
             Self::Intersect(_) => vec![IndexSet::new(), IndexSet::new()],
@@ -393,12 +415,10 @@ impl LogicalPlan {
                 Self::Concat(_) => Self::Concat(Concat::try_new(input1.clone(), input2.clone()).unwrap()),
                 Self::Intersect(inner) => Self::Intersect(Intersect::try_new(input1.clone(), input2.clone(), inner.is_all).unwrap()),
                 Self::Union(inner) => Self::Union(Union::try_new(input1.clone(), input2.clone(), inner.quantifier, inner.strategy).unwrap()),
-                Self::Join(Join { left_on, right_on, null_equals_nulls, join_type, join_strategy, .. }) => Self::Join(Join::try_new(
+                Self::Join(Join { on, join_type, join_strategy, .. }) => Self::Join(Join::try_new(
                     input1.clone(),
                     input2.clone(),
-                    left_on.clone(),
-                    right_on.clone(),
-                    null_equals_nulls.clone(),
+                    on.clone(),
                     *join_type,
                     *join_strategy,
                 ).unwrap()),

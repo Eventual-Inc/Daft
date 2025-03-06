@@ -4,23 +4,194 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{prelude::*, utils::supertype::try_get_supertype};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_algebra::boolean::{combine_conjunction, split_conjunction};
+use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    join::infer_join_schema, optimization::replace_columns_with_expressions, resolved_col, Column,
-    Expr, ExprRef, ResolvedColumn,
+    join::infer_join_schema, resolved_col, right_col, Column, Expr, ExprRef, Operator,
+    ResolvedColumn,
 };
 use indexmap::IndexSet;
-use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use snafu::ResultExt;
 
 use crate::{
-    logical_plan::{self, CreationSnafu},
+    logical_plan::{self},
     ops::Project,
     stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan, LogicalPlanRef,
 };
+
+fn has_sides(expr: &ExprRef) -> (bool, bool) {
+    let mut has_left = false;
+    let mut has_right = false;
+
+    expr.apply(|e| {
+        match e.as_ref() {
+            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(_, JoinSide::Left))) => {
+                has_left = true;
+            }
+            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(_, JoinSide::Right))) => {
+                has_right = true;
+            }
+            _ => {}
+        }
+        Ok(TreeNodeRecursion::Continue)
+    })
+    .unwrap();
+
+    (has_left, has_right)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct JoinPredicate(Option<ExprRef>);
+
+impl JoinPredicate {
+    pub fn try_new(pred: Option<ExprRef>) -> DaftResult<Self> {
+        if let Some(pred) = &pred {
+            pred.apply(|e| match e.as_ref() {
+                Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(..))) => {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+                Expr::Column(..) => Err(DaftError::ValueError(format!(
+                    "Expected join predicates to only contain join side columns, received: {e}"
+                ))),
+                _ => Ok(TreeNodeRecursion::Continue),
+            })?;
+        }
+
+        Ok(Self(pred))
+    }
+
+    pub fn empty() -> Self {
+        Self(None)
+    }
+
+    pub fn inner(&self) -> Option<ExprRef> {
+        self.0.clone()
+    }
+
+    /// Pop the equality predicates out of the conjunction where one side is all left and the other side is all right columns.
+    ///
+    /// Returns (left keys, right keys, null equals null)
+    pub fn pop_equi_preds(&mut self) -> (Vec<ExprRef>, Vec<ExprRef>, Vec<bool>) {
+        let Some(pred) = &self.0 else {
+            return (vec![], vec![], vec![]);
+        };
+
+        let exprs = split_conjunction(pred);
+
+        let mut left_keys = Vec::new();
+        let mut right_keys = Vec::new();
+        let mut null_equals_null = Vec::new();
+
+        let remaining = exprs.into_iter().filter(|e| match e.as_ref() {
+            Expr::BinaryOp { op, left, right }
+                if matches!(op, Operator::Eq | Operator::EqNullSafe) =>
+            {
+                let (left_has_left, left_has_right) = has_sides(left);
+                let (right_has_left, right_has_right) = has_sides(right);
+
+                let (left, right) = match (
+                    left_has_left,
+                    left_has_right,
+                    right_has_left,
+                    right_has_right,
+                ) {
+                    (true, false, false, true) => (left, right),
+                    (false, true, true, false) => (right, left),
+                    _ => {
+                        return true;
+                    }
+                };
+
+                fn replace_join_side_cols(expr: ExprRef) -> ExprRef {
+                    expr.transform(|e| {
+                        if let Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                            Field { name, .. },
+                            _,
+                        ))) = e.as_ref()
+                        {
+                            Ok(Transformed::yes(resolved_col(name.clone())))
+                        } else {
+                            Ok(Transformed::no(e))
+                        }
+                    })
+                    .unwrap()
+                    .data
+                }
+
+                let left = replace_join_side_cols(left.clone());
+                let right = replace_join_side_cols(right.clone());
+
+                left_keys.push(left);
+                right_keys.push(right);
+                null_equals_null.push(*op == Operator::EqNullSafe);
+
+                false
+            }
+            _ => true,
+        });
+
+        self.0 = combine_conjunction(remaining);
+
+        (left_keys, right_keys, null_equals_null)
+    }
+
+    pub fn equi_preds(&self) -> (Vec<ExprRef>, Vec<ExprRef>, Vec<bool>) {
+        self.clone().pop_equi_preds()
+    }
+
+    /// Pop the predicates in the conjunction that only use columns from one side of the join.
+    ///
+    /// Returns (left predicate, right predicate)
+    pub fn pop_side_only_preds(&mut self) -> (Option<ExprRef>, Option<ExprRef>) {
+        let Some(pred) = &self.0 else {
+            return (None, None);
+        };
+
+        let exprs = split_conjunction(pred);
+
+        let mut left_preds = Vec::new();
+        let mut right_preds = Vec::new();
+
+        let remaining = exprs.into_iter().filter(|e| {
+            let (has_left, has_right) = has_sides(e);
+
+            if !has_right {
+                // put expressions that use neither side in left as well
+                left_preds.push(e.clone());
+
+                false
+            } else if !has_left {
+                right_preds.push(e.clone());
+
+                false
+            } else {
+                true
+            }
+        });
+
+        self.0 = combine_conjunction(remaining);
+
+        let left_pred = combine_conjunction(left_preds);
+        let right_pred = combine_conjunction(right_preds);
+
+        (left_pred, right_pred)
+    }
+
+    pub fn side_only_preds(&self) -> (Option<ExprRef>, Option<ExprRef>) {
+        self.clone().pop_side_only_preds()
+    }
+}
+
+impl TryFrom<ExprRef> for JoinPredicate {
+    type Error = DaftError;
+
+    fn try_from(value: ExprRef) -> DaftResult<Self> {
+        Self::try_new(Some(value))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Join {
@@ -29,9 +200,7 @@ pub struct Join {
     pub left: Arc<LogicalPlan>,
     pub right: Arc<LogicalPlan>,
 
-    pub left_on: Vec<ExprRef>,
-    pub right_on: Vec<ExprRef>,
-    pub null_equals_nulls: Option<Vec<bool>>,
+    pub on: JoinPredicate,
     pub join_type: JoinType,
     pub join_strategy: Option<JoinStrategy>,
     pub output_schema: SchemaRef,
@@ -46,52 +215,17 @@ impl Join {
     pub(crate) fn try_new(
         left: Arc<LogicalPlan>,
         right: Arc<LogicalPlan>,
-        left_on: Vec<ExprRef>,
-        right_on: Vec<ExprRef>,
-        null_equals_nulls: Option<Vec<bool>>,
+        on: JoinPredicate,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> logical_plan::Result<Self> {
-        if left_on.len() != right_on.len() {
-            return Err(DaftError::ValueError(format!(
-                "Expected length of left_on to match length of right_on for Join, received: {} vs {}",
-                left_on.len(),
-                right_on.len()
-            )))
-            .context(CreationSnafu);
-        }
-
-        for (l, r) in left_on.iter().zip(right_on.iter()) {
-            let l_dtype = l.to_field(&left.schema())?.dtype;
-            let r_dtype = r.to_field(&right.schema())?.dtype;
-
-            try_get_supertype(&l_dtype, &r_dtype).map_err(|_| {
-                DaftError::TypeError(
-                    format!("Expected dtypes of left_on and right_on for Join to have a valid supertype, received: {l_dtype} vs {r_dtype}")
-                )
-            })?;
-        }
-
-        if let Some(null_equals_null) = &null_equals_nulls {
-            if null_equals_null.len() != left_on.len() {
-                return Err(DaftError::ValueError(format!(
-                    "Expected null_equals_nulls to have the same length as left_on or right_on, received: {} vs {}",
-                    null_equals_null.len(),
-                    left_on.len()
-                )))
-                .context(CreationSnafu);
-            }
-        }
-
         let output_schema = infer_join_schema(&left.schema(), &right.schema(), join_type)?;
 
         Ok(Self {
             plan_id: None,
             left,
             right,
-            left_on,
-            right_on,
-            null_equals_nulls,
+            on,
             join_type,
             join_strategy,
             output_schema,
@@ -107,85 +241,74 @@ impl Join {
     /// Add a project under the right side plan when necessary in order to resolve naming conflicts
     /// between left and right side columns.
     ///
+    /// Columns in `using` are merged so they are not renamed
+    ///
     /// Returns:
     /// - left (unchanged)
     /// - updated right
-    /// - left_on (unchanged)
-    /// - updated right_on
+    /// - updated on
     pub(crate) fn deduplicate_join_columns(
         left: LogicalPlanRef,
         right: LogicalPlanRef,
-        left_on: Vec<ExprRef>,
-        right_on: Vec<ExprRef>,
+        on: Option<ExprRef>,
+        using: &[String],
         join_type: JoinType,
         options: JoinOptions,
-    ) -> DaftResult<(LogicalPlanRef, LogicalPlanRef, Vec<ExprRef>, Vec<ExprRef>)> {
+    ) -> DaftResult<(LogicalPlanRef, LogicalPlanRef, Option<ExprRef>)> {
         if matches!(join_type, JoinType::Anti | JoinType::Semi) {
-            Ok((left, right, left_on, right_on))
+            Ok((left, right, on))
         } else {
-            let merged_cols = if options.merge_matching_join_keys {
-                left_on
-                    .iter()
-                    .zip(right_on.iter())
-                    .filter_map(|(l, r)| match (l.as_ref(), r.as_ref()) {
-                        (
-                            Expr::Column(Column::Resolved(ResolvedColumn::Basic(l_name))),
-                            Expr::Column(Column::Resolved(ResolvedColumn::Basic(r_name))),
-                        ) if l_name == r_name => Some(l_name.to_string()),
-                        _ => None,
-                    })
-                    .collect()
-            } else {
-                IndexSet::new()
-            };
+            let merged_names: IndexSet<String> = IndexSet::from_iter(using.iter().cloned());
+            let left_names: IndexSet<String> = IndexSet::from_iter(left.schema().names());
+            let right_names: IndexSet<String> = IndexSet::from_iter(right.schema().names());
 
-            let left_names = left.schema().names();
-            let right_names = right.schema().names();
+            let common_names: IndexSet<String> =
+                IndexSet::from_iter(right_names.intersection(&left_names).cloned());
+            if !common_names.is_superset(&merged_names) {
+                let missing_names = merged_names.difference(&common_names).collect::<Vec<_>>();
+                return Err(DaftError::SchemaMismatch(format!("Expected merged columns in join to exist in both sides of the join, found: {missing_names:?}")));
+            }
 
-            let mut names_so_far: HashSet<String> = HashSet::from_iter(left_names);
+            let mut names_so_far: HashSet<String> =
+                HashSet::from_iter(left_names.union(&right_names).cloned());
 
-            // rename right columns that have the same name as left columns and are not join keys
+            // rename right columns that have the same name as left columns and are not merged
             // old_name -> new_name
-            let right_rename_mapping: HashMap<_, _> = right_names
-                .iter()
-                .filter_map(|name| {
-                    if !names_so_far.contains(name) || merged_cols.contains(name.as_str()) {
-                        names_so_far.insert(name.clone());
-                        None
-                    } else {
-                        let mut new_name = name.clone();
-                        while names_so_far.contains(&new_name) {
-                            new_name = match (&options.prefix, &options.suffix) {
-                                (Some(prefix), Some(suffix)) => {
-                                    format!("{}{}{}", prefix, new_name, suffix)
-                                }
-                                (Some(prefix), None) => {
-                                    format!("{}{}", prefix, new_name)
-                                }
-                                (None, Some(suffix)) => {
-                                    format!("{}{}", new_name, suffix)
-                                }
-                                (None, None) => {
-                                    format!("right.{}", new_name)
-                                }
-                            };
-                        }
-                        names_so_far.insert(new_name.clone());
-
-                        Some((name.clone(), new_name))
+            let right_rename_mapping = common_names
+                .difference(&merged_names)
+                .map(|name| {
+                    let mut new_name = name.clone();
+                    while names_so_far.contains(&new_name) {
+                        new_name = match (&options.prefix, &options.suffix) {
+                            (Some(prefix), Some(suffix)) => {
+                                format!("{}{}{}", prefix, new_name, suffix)
+                            }
+                            (Some(prefix), None) => {
+                                format!("{}{}", prefix, new_name)
+                            }
+                            (None, Some(suffix)) => {
+                                format!("{}{}", new_name, suffix)
+                            }
+                            (None, None) => {
+                                format!("right.{}", new_name)
+                            }
+                        };
                     }
+                    names_so_far.insert(new_name.clone());
+
+                    (name.clone(), new_name)
                 })
-                .collect();
+                .collect::<HashMap<_, _>>();
 
             if right_rename_mapping.is_empty() {
-                Ok((left, right, left_on, right_on))
+                Ok((left, right, on))
             } else {
                 // projection to update the right side with the new column names
                 let new_right_projection: Vec<_> = right_names
                     .iter()
                     .map(|name| {
                         if let Some(new_name) = right_rename_mapping.get(name) {
-                            Expr::Alias(resolved_col(name.clone()), new_name.clone().into()).into()
+                            resolved_col(name.clone()).alias(new_name.clone())
                         } else {
                             resolved_col(name.clone())
                         }
@@ -194,18 +317,28 @@ impl Join {
 
                 let new_right: LogicalPlan = Project::try_new(right, new_right_projection)?.into();
 
-                let right_on_replace_map = right_rename_mapping
-                    .iter()
-                    .map(|(old_name, new_name)| (old_name.clone(), resolved_col(new_name.clone())))
-                    .collect::<HashMap<_, _>>();
+                // change any column references in the join predicate to the new column names
+                let new_on = on.map(|pred| {
+                    pred.transform(|e| {
+                        if let Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                            Field { name, dtype, .. },
+                            JoinSide::Right,
+                        ))) = e.as_ref()
+                            && let Some(new_name) = right_rename_mapping.get(&name.to_string())
+                        {
+                            Ok(Transformed::yes(right_col(Field::new(
+                                new_name,
+                                dtype.clone(),
+                            ))))
+                        } else {
+                            Ok(Transformed::no(e))
+                        }
+                    })
+                    .unwrap()
+                    .data
+                });
 
-                // change any column references in the right_on expressions to the new column names
-                let new_right_on = right_on
-                    .into_iter()
-                    .map(|expr| replace_columns_with_expressions(expr, &right_on_replace_map))
-                    .collect::<Vec<_>>();
-
-                Ok((left, new_right.into(), left_on, new_right_on))
+                Ok((left, new_right.into(), new_on))
             }
         }
     }
@@ -245,31 +378,11 @@ impl Join {
             self.join_strategy
                 .map_or_else(|| "Auto".to_string(), |s| s.to_string())
         ));
-        if !self.left_on.is_empty() && !self.right_on.is_empty() && self.left_on == self.right_on {
-            res.push(format!(
-                "On = {}",
-                self.left_on.iter().map(|e| e.to_string()).join(", ")
-            ));
-        } else {
-            if !self.left_on.is_empty() {
-                res.push(format!(
-                    "Left on = {}",
-                    self.left_on.iter().map(|e| e.to_string()).join(", ")
-                ));
-            }
-            if !self.right_on.is_empty() {
-                res.push(format!(
-                    "Right on = {}",
-                    self.right_on.iter().map(|e| e.to_string()).join(", ")
-                ));
-            }
+
+        if let Some(on_expr) = self.on.inner() {
+            res.push(format!("On = {on_expr}",));
         }
-        if let Some(null_equals_nulls) = &self.null_equals_nulls {
-            res.push(format!(
-                "Null equals Nulls = [{}]",
-                null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
-            ));
-        }
+
         res.push(format!(
             "Output schema = {}",
             self.output_schema.short_string()
@@ -286,9 +399,6 @@ impl Join {
 pub struct JoinOptions {
     pub prefix: Option<String>,
     pub suffix: Option<String>,
-    /// For join predicates in the form col(a) = col(a),
-    /// merge column "a" from both sides into one column.
-    pub merge_matching_join_keys: bool,
 }
 
 impl JoinOptions {
@@ -300,32 +410,5 @@ impl JoinOptions {
     pub fn suffix(mut self, val: impl Into<String>) -> Self {
         self.suffix = Some(val.into());
         self
-    }
-
-    pub fn merge_matching_join_keys(mut self, val: bool) -> Self {
-        self.merge_matching_join_keys = val;
-        self
-    }
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl JoinOptions {
-    #[new]
-    #[pyo3(signature = (
-        prefix,
-        suffix,
-        merge_matching_join_keys,
-    ))]
-    pub fn new(
-        prefix: Option<String>,
-        suffix: Option<String>,
-        merge_matching_join_keys: bool,
-    ) -> Self {
-        Self {
-            prefix,
-            suffix,
-            merge_matching_join_keys,
-        }
     }
 }
