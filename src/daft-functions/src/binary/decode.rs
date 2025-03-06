@@ -14,7 +14,9 @@ use super::codecs::Codec;
 use crate::invalid_argument_err;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Decode(Codec);
+pub struct Decode {
+    codec: Codec,
+}
 
 #[typetag::serde]
 impl ScalarUDF for Decode {
@@ -43,12 +45,12 @@ impl ScalarUDF for Decode {
         match inputs[0].data_type() {
             DataType::Binary => {
                 let arg = inputs[0].downcast::<BinaryArray>()?;
-                let res = arg.decode(self.0.decoder())?;
+                let res = arg.decode(self.codec.decoder())?;
                 Ok(res.into_series())
             }
             DataType::FixedSizeBinary(_) => {
                 let arg = inputs[0].downcast::<FixedSizeBinaryArray>()?;
-                let res = arg.decode(self.0.decoder())?;
+                let res = arg.decode(self.codec.decoder())?;
                 Ok(res.into_series())
             }
             _ => unreachable!("type checking handled in to_field"),
@@ -58,5 +60,5 @@ impl ScalarUDF for Decode {
 
 #[must_use]
 pub fn decode(input: ExprRef, codec: Codec) -> ExprRef {
-    ScalarFunction::new(Decode(codec), vec![input]).into()
+    ScalarFunction::new(Decode { codec }, vec![input]).into()
 }
