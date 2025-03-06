@@ -92,6 +92,9 @@ jobs:
           echo "No python wheel for this commit found; proceeding with build"
         fi
         echo "wheel_name=$wheel_name" >> $GITHUB_ENV
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
     - name: Build release wheel
       run: |
         if [ "$wheel_name" ]; then
