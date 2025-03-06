@@ -1462,7 +1462,8 @@ impl Expr {
     pub fn to_left_cols(self: ExprRef, schema: SchemaRef) -> DaftResult<ExprRef> {
         Ok(self
             .transform(|e| match e.as_ref() {
-                Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                Self::Column(Column::Resolved(ResolvedColumn::Basic(name)))
+                | Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
                     Ok(Transformed::yes(left_col(schema.get_field(name)?.clone())))
                 }
                 _ => Ok(Transformed::no(e)),
@@ -1473,7 +1474,8 @@ impl Expr {
     pub fn to_right_cols(self: ExprRef, schema: SchemaRef) -> DaftResult<ExprRef> {
         Ok(self
             .transform(|e| match e.as_ref() {
-                Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                Self::Column(Column::Resolved(ResolvedColumn::Basic(name)))
+                | Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
                     Ok(Transformed::yes(right_col(schema.get_field(name)?.clone())))
                 }
                 _ => Ok(Transformed::no(e)),
