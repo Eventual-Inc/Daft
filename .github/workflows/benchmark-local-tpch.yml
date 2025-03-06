@@ -2,21 +2,26 @@ name: benchmark-local-tpch
 
 on:
   workflow_dispatch:
+    inputs:
+      daft_index_url:
+        description: The index URL of the Daft build to benchmark. If not provided, builds Daft off of the provided branch.
+        default: ""
+        required: false
   workflow_call:
     inputs:
       daft_index_url:
         description: The index URL of the Daft build to benchmark. If not provided, builds Daft off of the provided branch.
         type: string
-        default: ''
+        default: ""
         required: false
 
 env:
   DAFT_INDEX_URL: ${{ inputs.daft_index_url != '' && inputs.daft_index_url || format('https://d1p3klp2t5517h.cloudfront.net/builds/dev/{0}', github.sha) }}
   AWS_REGION: us-west-2
 
-  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_ANALYTICS_ENABLED: "0"
   UV_SYSTEM_PYTHON: 1
-  PYTHON_VERSION: '3.9'
+  PYTHON_VERSION: "3.9"
 
 jobs:
   build:
@@ -34,6 +39,8 @@ jobs:
       contents: read
 
     steps:
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
     - name: Mount local SSD to /tmp
       run: |
         findmnt /tmp 1> /dev/null
