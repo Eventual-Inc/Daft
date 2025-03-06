@@ -23,6 +23,7 @@ nav:
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
   - Catalogs: catalogs.md
+  - Spark Connect: spark_connect.md
   - Distributed Computing: distributed.md
   - Advanced:
     - Managing Memory Usage: advanced/memory.md
@@ -43,7 +44,6 @@ nav:
     - Tutorials: resources/tutorials.md
     - Benchmarks: resources/benchmarks/tpch.md # Benchmarks can expand into a folder once we have more
     - Telemetry: resources/telemetry.md
-  - Spark Connect: spark_connect.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
 - API Docs: api_docs/index.html
