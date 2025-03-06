@@ -1544,27 +1544,25 @@ mod tests {
         let join_node = force_repartition(join_node, right_partitions)?.select(vec![
             resolved_col("a"),
             resolved_col("b"),
-            resolved_col("c"),
+            resolved_col("c").alias("dataR"),
         ])?;
 
         let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
-            Field::new("d", DataType::Int64),
-            Field::new("e", DataType::Int64),
-            Field::new("f", DataType::Int64),
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
         ]));
 
         let logical_plan = force_repartition(logical_plan, left_partitions)?
             .select(vec![
-                resolved_col("d"),
-                resolved_col("e"),
-                resolved_col("f"),
+                resolved_col("a"),
+                resolved_col("b"),
+                resolved_col("c").alias("dataL"),
             ])?
             .join(
                 join_node,
-                (unresolved_col("d").eq(unresolved_col("a")))
-                    .and(unresolved_col("e").eq(unresolved_col("b")))
-                    .into(),
-                vec![],
+                None,
+                vec!["a".to_string(), "b".to_string()],
                 JoinType::Inner,
                 Some(JoinStrategy::Hash),
                 Default::default(),
