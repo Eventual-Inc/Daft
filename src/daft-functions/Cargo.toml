@@ -9,7 +9,7 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-hash = {workspace = true}
 daft-image = {path = "../daft-image", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
-flate2 = {version = "1.1", features = ["zlib-rs"], default-features = false}
+flate2 = "1.1"
 futures = {workspace = true}
 paste = "1.0.15"
 pyo3 = {workspace = true, optional = true}

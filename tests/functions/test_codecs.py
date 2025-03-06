@@ -95,20 +95,8 @@ def test_codec_gzip():
     _test_codec("gzip", buff=gzip.compress(UTF8))
 
 
-def test_codec_sanity():
-    import zlib
-
-    # sanity check
-    v = zlib.compress(b"hello, world!")
-    print(v)
-
-
 def test_codec_zlib():
     import zlib
-
-    # sanity check
-    v = zlib.compress(b"hello, world!")
-    print(v)
 
     _test_codec("zlib", buff=zlib.compress(UTF8))
 
