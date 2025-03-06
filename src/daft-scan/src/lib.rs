@@ -717,11 +717,37 @@ impl ScanTask {
         self.size_bytes_on_disk.map(|s| s as usize)
     }
 
+    fn is_gzipped_warc(&self) -> bool {
+        if !matches!(self.file_format_config.as_ref(), FileFormatConfig::Warc(_)) {
+            return false;
+        }
+
+        self.sources
+            .first()
+            .and_then(|s| match s {
+                DataSource::File { path, .. } => {
+                    let filename = std::path::Path::new(path);
+                    Some(
+                        filename
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("gz")),
+                    )
+                }
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
     #[must_use]
     pub fn estimate_in_memory_size_bytes(
         &self,
         config: Option<&DaftExecutionConfig>,
     ) -> Option<usize> {
+        // WARC files that are gzipped are often 5x smaller than the uncompressed size.
+        // For example, see this blog post by Common Crawl: https://commoncrawl.org/blog/february-2025-crawl-archive-now-available
+        if self.is_gzipped_warc() {
+            return self.size_bytes_on_disk.map(|s| s as usize * 5);
+        }
         let mat_schema = self.materialized_schema();
         self.statistics
             .as_ref()

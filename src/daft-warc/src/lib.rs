@@ -92,6 +92,7 @@ struct WarcHeaderState {
     record_id: Option<Uuid>,
     warc_date: Option<DateTime<Utc>>,
     warc_type: Option<WarcType>,
+    warc_identified_payload_type: Option<String>,
     header_lines: Vec<(String, String)>,
 }
 
@@ -101,6 +102,7 @@ impl WarcHeaderState {
         self.record_id = None;
         self.warc_date = None;
         self.warc_type = None;
+        self.warc_identified_payload_type = None;
         self.header_lines.clear();
     }
 }
@@ -112,6 +114,7 @@ struct WarcRecordBatchBuilder {
     warc_type_array: MutableUtf8Array<i64>,
     warc_date_array: MutablePrimitiveArray<i64>,
     warc_content_length_array: MutablePrimitiveArray<i64>,
+    warc_identified_payload_type_array: MutableUtf8Array<i64>,
     content_array: MutableBinaryArray<i64>,
     header_array: MutableUtf8Array<i64>,
     rows_processed: usize,
@@ -139,6 +142,10 @@ impl WarcRecordBatchBuilder {
             ),
             warc_date_array: MutablePrimitiveArray::with_capacity(chunk_size),
             warc_content_length_array: MutablePrimitiveArray::with_capacity(chunk_size),
+            warc_identified_payload_type_array: MutableUtf8Array::with_capacities(
+                chunk_size,
+                Self::DEFAULT_STRING_LENGTH * chunk_size,
+            ),
             content_array: MutableBinaryArray::with_capacities(
                 chunk_size,
                 Self::DEFAULT_CONTENT_LENGTH * chunk_size,
@@ -161,12 +168,15 @@ impl WarcRecordBatchBuilder {
         warc_type: Option<&str>,
         warc_date: Option<i64>,
         warc_content_length: Option<i64>,
+        warc_identified_payload_type: Option<&str>,
         header: Option<&str>,
     ) {
         self.record_id_array.push(record_id);
         self.warc_type_array.push(warc_type);
         self.warc_date_array.push(warc_date);
         self.warc_content_length_array.push(warc_content_length);
+        self.warc_identified_payload_type_array
+            .push(warc_identified_payload_type);
         self.header_array.push(header);
         // book keeping
         self.rows_processed += 1;
@@ -192,6 +202,7 @@ impl WarcRecordBatchBuilder {
                     self.warc_type_array.as_box(),
                     self.warc_date_array.as_box(),
                     self.warc_content_length_array.as_box(),
+                    self.warc_identified_payload_type_array.as_box(),
                     self.content_array.as_box(),
                     self.header_array.as_box(),
                 ],
@@ -210,6 +221,8 @@ impl WarcRecordBatchBuilder {
                 MutableUtf8Array::with_capacities(chunk_size, avg_warc_type_size * chunk_size);
             self.warc_date_array = MutablePrimitiveArray::with_capacity(chunk_size);
             self.warc_content_length_array = MutablePrimitiveArray::with_capacity(chunk_size);
+            self.warc_identified_payload_type_array =
+                MutableUtf8Array::with_capacities(chunk_size, avg_warc_type_size * chunk_size);
 
             let avg_content_size = self.content_bytes_so_far / rows_processed;
 
@@ -248,6 +261,7 @@ impl WarcRecordBatchIterator {
                 record_id: None,
                 warc_date: None,
                 warc_type: None,
+                warc_identified_payload_type: None,
                 header_lines: Vec::new(),
             },
             rb_builder: WarcRecordBatchBuilder::new(chunk_size, schema),
@@ -300,6 +314,7 @@ impl WarcRecordBatchIterator {
                             .warc_date
                             .and_then(|d| d.timestamp_nanos_opt()),
                         self.header_state.content_length.map(|len| len as i64),
+                        self.header_state.warc_identified_payload_type.as_deref(),
                         Some(&header_json),
                     );
 
@@ -353,6 +368,9 @@ impl WarcRecordBatchIterator {
                                 if let Ok(date) = DateTime::parse_from_rfc3339(&value) {
                                     self.header_state.warc_date = Some(date.with_timezone(&Utc));
                                 }
+                            }
+                            "WARC-Identified-Payload-Type" => {
+                                self.header_state.warc_identified_payload_type = Some(value);
                             }
                             _ => {
                                 // Store non-mandatory headers.

@@ -40,8 +40,9 @@ def read_warc(
             Defaults to None, which will let Daft decide based on the runner it is currently using.
 
     returns:
-        DataFrame: parsed DataFrame with mandatory metadata columns: "WARC-Record-ID", "WARC-Type", "WARC-Date", "Content-Length", one column "warc_content"
-            with the raw byte content of the WARC record, and one column "warc_headers" with the remaining headers of the WARC record stored as a JSON string.
+        DataFrame: parsed DataFrame with mandatory metadata columns ("WARC-Record-ID", "WARC-Type", "WARC-Date", "Content-Length"), one optional
+            metadata column ("WARC-Identified-Payload-Type"), one column "warc_content" with the raw byte content of the WARC record,
+            and one column "warc_headers" with the remaining headers of the WARC record stored as a JSON string.
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -60,6 +61,7 @@ def read_warc(
         "WARC-Type": DataType.string(),
         "WARC-Date": DataType.timestamp(TimeUnit.ns(), timezone="Etc/UTC"),
         "Content-Length": DataType.int64(),
+        "WARC-Identified-Payload-Type": DataType.string(),
         "warc_content": DataType.binary(),
         "warc_headers": DataType.string(),
     }
