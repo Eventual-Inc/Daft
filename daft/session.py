@@ -154,6 +154,19 @@ class Session:
     # create_*
     ###
 
+    def create_namespace(self, identifier: Identifier | str):
+        """Creates a namespace in the current catalog."""
+        if not (catalog := self.current_catalog()):
+            raise ValueError("Cannot create a namespace without a current catalog")
+        return catalog.create_namespace(identifier)
+
+    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+        """Creates a table in the current catalog."""
+        if not (catalog := self.current_catalog()):
+            raise ValueError("Cannot create a table without a current catalog")
+        # TODO join the identifier with the current namespace
+        return catalog.create_table(identifier, source)
+
     def create_temp_table(self, identifier: str, source: TableSource | object = None) -> Table:
         """Creates a temp table scoped to this session's lifetime.
 
@@ -283,6 +296,10 @@ class Session:
         """
         return self._session.list_catalogs(pattern)
 
+    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        """Returns a list of matching namespaces in the current catalog."""
+        return []
+
     def list_tables(self, pattern: str | None = None) -> list[Identifier]:
         """Returns a list of available tables.
 
@@ -407,6 +424,16 @@ def detach_table(alias: str):
 ###
 
 
+def create_namespace(self, identifier: Identifier | str):
+    """Creates a namespace in the current session's active catalog."""
+    return _session().create_namespace(identifier)
+
+
+def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+    """Creates a table in the current session's active catalog and namespace."""
+    return _session().create_table(identifier, source)
+
+
 def create_temp_table(identifier: str, source: object | TableSource = None) -> Table:
     """Creates a temp table scoped to current session's lifetime."""
     return _session().create_temp_table(identifier, source)
@@ -467,12 +494,17 @@ def has_table(identifier: Identifier | str) -> bool:
 ###
 
 
-def list_catalogs(pattern: None | str = None) -> list[str]:
+def list_catalogs(pattern: str | None = None) -> list[str]:
     """Returns a list of available catalogs in the current session."""
     return _session().list_catalogs(pattern)
 
 
-def list_tables(pattern: None | str = None) -> list[Identifier]:
+def list_namespaces(pattern: str | None = None) -> list[Identifier]:
+    """Returns a list of matching namespaces in the current catalog."""
+    return _session().list_namespaces(pattern)
+
+
+def list_tables(pattern: str | None = None) -> list[Identifier]:
     """Returns a list of available tables in the current session."""
     return _session().list_tables(pattern)
 

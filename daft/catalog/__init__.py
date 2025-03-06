@@ -289,20 +289,24 @@ class Catalog(ABC):
         )
 
     ###
-    # list_*
+    # create_*
     ###
 
     @abstractmethod
-    def list_tables(self, pattern: str | None = None) -> list[str]:
-        """List tables in the catalog which match the given pattern.
+    def create_namespace(self, identifier: Identifier | str): ...
 
-        Args:
-            pattern (str): pattern to match such as a namespace prefix
+    @abstractmethod
+    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table: ...
 
-        Returns:
-            list[str]: list of table names matching the pattern.
+    ###
+    # drop_*
+    ###
 
-        """
+    @abstractmethod
+    def drop_namespace(self, identifier: Identifier | str): ...
+
+    @abstractmethod
+    def drop_table(self, identifier: Identifier | str): ...
 
     ###
     # get_*
@@ -317,6 +321,32 @@ class Catalog(ABC):
 
         Returns:
             Table: matched table or raises if the table does not exist.
+        """
+
+    ###
+    # list_*
+    ###
+
+    @abstractmethod
+    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        """List namespaces in the catalog which match the given pattern.
+
+        Args:
+            pattern (str): pattern to match such as a namespace prefix
+
+        Returns:
+            list[Identifier]: list of namespace identifiers matching the pattern.
+        """
+
+    @abstractmethod
+    def list_tables(self, pattern: str | None = None) -> list[str]:
+        """List tables in the catalog which match the given pattern.
+
+        Args:
+            pattern (str): pattern to match such as a namespace prefix
+
+        Returns:
+            list[str]: list of table identifiers matching the pattern.
         """
 
     ###
@@ -357,8 +387,8 @@ class Identifier(Sequence):
     """A reference (path) to a catalog object.
 
     Example:
-    >>> id = Identifier("a", "b")
-    >>> assert len(id) == 2
+        >>> id = Identifier("a", "b")
+        >>> assert len(id) == 2
     """
 
     _ident: PyIdentifier
