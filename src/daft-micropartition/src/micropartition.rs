@@ -1,17 +1,24 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
+    fs::File,
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
+use arrow2::io::{
+    ipc::{
+        read::{self},
+        write,
+    },
+    parquet::read::schema::infer_schema_with_options,
+};
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use common_file_formats::DatabaseSourceConfig;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use common_runtime::get_io_runtime;
+use common_runtime::{get_compute_runtime, get_io_runtime};
 use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
@@ -641,6 +648,107 @@ impl MicroPartition {
             self.statistics.clone(),
         ))
     }
+
+    fn write_to_ipc_file(&self, path: &str) -> DaftResult<()> {
+        let file = File::create(path)?;
+        let schema = self.schema.to_arrow()?;
+        let options = write::WriteOptions { compression: None };
+        let mut writer = write::FileWriter::new(file, schema, None, options);
+        writer.start()?;
+
+        let tables = self.tables_or_read(IOStatsContext::new("write to file"))?;
+        for table in tables.iter() {
+            let chunk = table.to_chunk();
+            writer.write(&chunk, None)?;
+        }
+        writer.finish()?;
+        Ok(())
+    }
+
+    fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
+        let buffer = Vec::with_capacity(self.size_bytes()?.unwrap_or(0));
+        let schema = self.schema.to_arrow()?;
+        let options = write::WriteOptions { compression: None };
+        let mut writer = write::StreamWriter::new(buffer, options);
+        writer.start(&schema, None)?;
+        let tables = self.tables_or_read(IOStatsContext::new("write to stream"))?;
+        for table in tables.iter() {
+            let chunk = table.to_chunk();
+            writer.write(&chunk, None)?;
+        }
+        writer.finish()?;
+        let mut finished_buffer = writer.into_inner();
+        finished_buffer.shrink_to_fit();
+        Ok(finished_buffer)
+    }
+
+    fn read_from_ipc_file(path: &str) -> DaftResult<Self> {
+        let mut file = File::open(path)?;
+        // read the files' metadata. At this point, we can distribute the read whatever we like.
+        let metadata = read::read_file_metadata(&mut file)?;
+
+        let schema = Schema::try_from(&metadata.schema)?;
+
+        // Simplest way: use the reader, an iterator over batches.
+        let reader = read::FileReader::new(file, metadata, None, None);
+
+        let chunks = reader.collect::<arrow2::error::Result<Vec<_>>>()?;
+        let tables = chunks
+            .into_iter()
+            .map(|chunk| {
+                let series = chunk
+                    .into_arrays()
+                    .into_iter()
+                    .zip(schema.fields.iter())
+                    .map(|(array, (field_name, _))| Series::try_from((field_name.as_str(), array)))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                RecordBatch::from_nonempty_columns(series)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(Self::new_loaded(schema.into(), Arc::new(tables), None))
+    }
+}
+
+pub fn write_many_ipc_files(tables: Vec<(String, Arc<MicroPartition>)>) -> DaftResult<()> {
+    let runtime = get_compute_runtime();
+    runtime.clone().block_on_current_thread(async move {
+        let futures = tables
+            .into_iter()
+            .map(|(path, mp)| runtime.spawn(async move { mp.write_to_ipc_file(&path) }));
+        futures::future::try_join_all(futures)
+            .await?
+            .into_iter()
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(())
+    })
+}
+
+pub fn write_many_ipc_streams(tables: Vec<Arc<MicroPartition>>) -> DaftResult<Vec<Vec<u8>>> {
+    let runtime = get_compute_runtime();
+    runtime.clone().block_on_current_thread(async move {
+        let futures = tables
+            .into_iter()
+            .map(|mp| runtime.spawn(async move { mp.write_to_ipc_stream() }));
+        let results = futures::future::try_join_all(futures)
+            .await?
+            .into_iter()
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(results)
+    })
+}
+
+pub fn read_many_ipc_files(paths: Vec<String>) -> DaftResult<Vec<MicroPartition>> {
+    let runtime = get_compute_runtime();
+    runtime.clone().block_on_current_thread(async move {
+        let futures = paths
+            .into_iter()
+            .map(|path| runtime.spawn(async move { MicroPartition::read_from_ipc_file(&path) }));
+        let results = futures::future::try_join_all(futures)
+            .await?
+            .into_iter()
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(results)
+    })
 }
 
 fn prune_fields_from_schema(

@@ -39,10 +39,14 @@ impl ShuffleExchange {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShuffleExchangeStrategy {
     /// Fully materialize the data after the Map, and then pull results from the Reduce.
-    NaiveFullyMaterializingMapReduce { target_spec: Arc<ClusteringSpec> },
+    NaiveFullyMaterializingMapReduce {
+        target_spec: Arc<ClusteringSpec>,
+    },
 
     /// Sequentially splits/coalesce partitions in order to meet a target number of partitions
-    SplitOrCoalesceToTargetNum { target_num_partitions: usize },
+    SplitOrCoalesceToTargetNum {
+        target_num_partitions: usize,
+    },
 
     MapReduceWithPreShuffleMerge {
         pre_shuffle_merge_threshold: usize,
@@ -50,7 +54,6 @@ pub enum ShuffleExchangeStrategy {
     },
 
     FlightShuffle {
-        pre_shuffle_merge_threshold: usize,
         target_spec: Arc<ClusteringSpec>,
     },
 }
@@ -101,16 +104,9 @@ impl ShuffleExchange {
                     pre_shuffle_merge_threshold
                 ));
             }
-            ShuffleExchangeStrategy::FlightShuffle {
-                target_spec,
-                pre_shuffle_merge_threshold,
-            } => {
+            ShuffleExchangeStrategy::FlightShuffle { target_spec } => {
                 res.push("Strategy: FlightShuffle".to_string());
                 res.push(format!("Target Spec: {:?}", target_spec));
-                res.push(format!(
-                    "Pre-Shuffle Merge Threshold: {}",
-                    pre_shuffle_merge_threshold
-                ));
             }
         }
         res
@@ -164,7 +160,6 @@ impl ShuffleExchangeFactory {
             Some(cfg) if cfg.shuffle_algorithm == "flight_shuffle" => {
                 ShuffleExchangeStrategy::FlightShuffle {
                     target_spec: clustering_spec,
-                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
                 }
             }
             Some(cfg) if cfg.shuffle_algorithm == "auto" => {

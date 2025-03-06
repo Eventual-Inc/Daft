@@ -17,7 +17,7 @@ use daft_scan::{
     python::pylib::PyScanTask, storage_config::StorageConfig, DataSource, ScanTask, ScanTaskRef,
 };
 use daft_stats::{TableMetadata, TableStatistics};
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, wrap_pyfunction, PyTypeInfo};
 use snafu::ResultExt;
 
 use crate::{
@@ -1088,6 +1088,42 @@ pub fn read_pyfunc_into_table_iter(
     Ok(res)
 }
 
+#[pyfunction]
+pub fn write_many_ipc_files(
+    py: Python,
+    py_partitions_and_paths: Vec<(PyMicroPartition, String)>,
+) -> PyResult<()> {
+    py.allow_threads(|| {
+        let partitions_and_paths = py_partitions_and_paths
+            .into_iter()
+            .map(|(mp, path)| (path, mp.inner))
+            .collect::<Vec<_>>();
+        crate::micropartition::write_many_ipc_files(partitions_and_paths)
+    })?;
+    Ok(())
+}
+
+#[pyfunction]
+pub fn write_many_ipc_streams(
+    py: Python,
+    py_partitions: Vec<PyMicroPartition>,
+) -> PyResult<Vec<Vec<u8>>> {
+    let results = py.allow_threads(|| {
+        let partitions = py_partitions
+            .into_iter()
+            .map(|p| p.inner)
+            .collect::<Vec<_>>();
+        crate::micropartition::write_many_ipc_streams(partitions)
+    })?;
+    Ok(results)
+}
+
+#[pyfunction]
+pub fn read_many_ipc_files(py: Python, paths: Vec<String>) -> PyResult<Vec<PyMicroPartition>> {
+    let partitions = py.allow_threads(|| crate::micropartition::read_many_ipc_files(paths))?;
+    Ok(partitions.into_iter().map(PyMicroPartition::from).collect())
+}
+
 impl From<MicroPartition> for PyMicroPartition {
     fn from(value: MicroPartition) -> Self {
         Arc::new(value).into()
@@ -1108,5 +1144,8 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyMicroPartition>()?;
+    parent.add_function(wrap_pyfunction!(write_many_ipc_files, parent)?)?;
+    parent.add_function(wrap_pyfunction!(read_many_ipc_files, parent)?)?;
+    parent.add_function(wrap_pyfunction!(write_many_ipc_streams, parent)?)?;
     Ok(())
 }

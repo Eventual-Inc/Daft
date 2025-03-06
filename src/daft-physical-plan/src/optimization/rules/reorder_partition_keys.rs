@@ -139,10 +139,10 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                PhysicalPlan::ShuffleExchange(ShuffleExchange{input, strategy: ShuffleExchangeStrategy::FlightShuffle { pre_shuffle_merge_threshold,.. }}) => {
+                PhysicalPlan::ShuffleExchange(ShuffleExchange{input, strategy: ShuffleExchangeStrategy::FlightShuffle { .. }}) => {
                     let new_plan = PhysicalPlan::ShuffleExchange(ShuffleExchange {
                         input: input.clone(),
-                        strategy: ShuffleExchangeStrategy::FlightShuffle { target_spec: new_spec.into(), pre_shuffle_merge_threshold: *pre_shuffle_merge_threshold }
+                        strategy: ShuffleExchangeStrategy::FlightShuffle { target_spec: new_spec.into() }
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
