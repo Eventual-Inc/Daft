@@ -44,6 +44,9 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::binary_concat);
     add!(binary::binary_slice);
 
+    add!(binary::decode);
+    add!(binary::encode);
+
     add!(float::is_inf);
     add!(float::is_nan);
     add!(float::not_nan);
