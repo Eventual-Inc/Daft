@@ -120,7 +120,7 @@ Project1["Project: col(first_name)"]
 Filter2["Filter: col(first_name) == lit('hello')"]
 Join3["Join: Type = Inner
 Strategy = Auto
-On = col(left.id) == col(right.id)
+On = col(left.id#Int32) == col(right.id#Int32)
 Output schema = id#Int32, text#Utf8, id2#UInt64, first_name#Utf8, last_name#Utf8"]
 Filter4["Filter: col(id) == lit(1)"]
 Source5["PlaceHolder:

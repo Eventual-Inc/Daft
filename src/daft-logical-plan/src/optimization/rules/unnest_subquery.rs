@@ -126,7 +126,7 @@ impl UnnestScalarSubquery {
                                 .to_left_cols(curr_input.schema())
                                 .expect("input columns to be in curr_input");
                             let s_right = s
-                                .to_right_cols(curr_input.schema())
+                                .to_right_cols(decorrelated_subquery.schema())
                                 .expect("subquery columns to be in decorrelated_subquery");
 
                             i_left.eq(s_right)
@@ -343,7 +343,7 @@ impl OptimizerRule for UnnestPredicateSubquery {
                                 .to_left_cols(curr_input.schema())
                                 .expect("input columns to be in curr_input");
                             let s_right = s
-                                .to_right_cols(curr_input.schema())
+                                .to_right_cols(decorrelated_subquery.schema())
                                 .expect("subquery columns to be in decorrelated_subquery");
 
                             i_left.eq(s_right)
@@ -704,7 +704,7 @@ mod tests {
                     unresolved_col("inner_key2"),
                 ])?,
                 unresolved_col("inner_key")
-                    .eq(unresolved_col("innerk_key2"))
+                    .eq(unresolved_col("inner_key2"))
                     .into(),
                 vec![],
                 JoinType::Left,
