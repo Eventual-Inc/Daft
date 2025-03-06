@@ -83,3 +83,11 @@ def test_invalid_identifier(input):
 def test_identifier_with_periods():
     assert 3 == len(Identifier.from_sql("a.b.c"))
     assert 1 == len(Identifier.from_sql('"a.b.c"'))
+
+
+def test_identifier_drop():
+    ident = Identifier("a", "b", "c")
+    assert ident.drop() == Identifier("b", "c")
+    assert ident.drop(2) == Identifier("c")
+    with pytest.raises(ValueError):
+        ident.drop(3)

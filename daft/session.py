@@ -4,7 +4,8 @@ from typing import Literal
 
 from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.context import get_context
-from daft.daft import PySession, plan_sql
+from daft.daft import LogicalPlanBuilder as PyBuilder
+from daft.daft import PySession, sql_exec
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 
@@ -60,19 +61,24 @@ class Session:
     # exec
     ###
 
-    def sql(self, sql: str) -> DataFrame:
+    def sql(self, sql: str) -> DataFrame | None:
         """Executes the SQL statement using this session.
 
         Args:
             sql (str): input SQL statement
 
         Returns:
-            DataFrame: new DataFrame instance from the query
+            DataFrame: dataframe instance if this was a data statement (DQL, DDL, DML).
         """
         py_sess = self._session
         py_config = get_context().daft_planning_config
-        py_builder = plan_sql(sql, py_sess, py_config)
-        return DataFrame(LogicalPlanBuilder(py_builder))
+        py_object = sql_exec(sql, py_sess, py_config)
+        if py_object is None:
+            return None
+        elif isinstance(py_object, PyBuilder):
+            return DataFrame(LogicalPlanBuilder(py_object))
+        else:
+            raise ValueError(f"Unsupported return type from sql exec: {type(py_object)}")
 
     ###
     # attach & detach
@@ -174,6 +180,20 @@ class Session:
     # session state
     ###
 
+    def use(self, identifier: Identifier | str | None = None):
+        """Use sets the current catalog and namespace."""
+        if identifier is None:
+            self.set_catalog(None)
+            self.set_namespace(None)
+            return
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+        if len(identifier) == 1:
+            self.set_catalog(identifier[0])
+        else:
+            self.set_catalog(identifier[0])
+            self.set_namespace(identifier.drop(1))
+
     def current_catalog(self) -> Catalog | None:
         """Get the session's current catalog or None.
 
@@ -194,8 +214,8 @@ class Session:
         Returns:
             Identifier: current namespace or none if one is not set
         """
-        n = self._session.current_namespace()
-        return n._ident if n else None
+        ident = self._session.current_namespace()
+        return Identifier._from_pyidentifier(ident) if ident else None
 
     ###
     # get_*
@@ -318,7 +338,7 @@ class Session:
         """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
-        self._session.set_namespace(identifier._ident)
+        self._session.set_namespace(identifier._ident if identifier else None)
 
     ###
     # write_*

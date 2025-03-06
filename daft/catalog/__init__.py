@@ -420,6 +420,25 @@ class Identifier(Sequence):
         """
         return Identifier(*input.split("."))
 
+    def drop(self, n: int = 1) -> Identifier:
+        """Returns a new Identifier with the first n parts removed.
+
+        Args:
+            n (int): Number of parts to drop from the beginning. Defaults to 1.
+
+        Returns:
+            Identifier: A new Identifier with the first n parts removed.
+
+        Raises:
+            ValueError: If dropping n parts would result in an empty Identifier.
+        """
+        if n <= 0:
+            return Identifier(*self)
+        if n >= len(self):
+            raise ValueError(f"Cannot drop {n} parts from Identifier with {len(self)} parts")
+        parts = tuple(self)
+        return Identifier(*parts[n:])
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Identifier):
             return False
