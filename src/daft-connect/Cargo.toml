@@ -6,8 +6,9 @@ common-file-formats = {workspace = true, optional = true, features = [
   "python"
 ]}
 common-runtime = {workspace = true}
-daft-algebra = {workspace = true}
-daft-catalog = {path = "../daft-catalog", optional = true, features = ["python"]}
+daft-catalog = {path = "../daft-catalog", optional = true, features = [
+  "python"
+]}
 daft-context = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
@@ -19,7 +20,9 @@ daft-micropartition = {workspace = true, optional = true, features = [
 daft-recordbatch = {workspace = true, optional = true, features = ["python"]}
 daft-scan = {workspace = true, optional = true, features = ["python"]}
 daft-schema = {workspace = true, optional = true, features = ["python"]}
-daft-session = {path = "../daft-session", optional = true, features = ["python"]}
+daft-session = {path = "../daft-session", optional = true, features = [
+  "python"
+]}
 daft-sql = {workspace = true, optional = true, features = ["python"]}
 dashmap = "6.1.0"
 futures = "0.3.31"
