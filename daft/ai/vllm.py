@@ -11,41 +11,41 @@ class vLLM:
 
     NOTE: This requires `vllm` to be installed. See: [vllm documentation](https://docs.vllm.ai/en/latest/getting_started/installation/index.html).
 
-    ## Concurrency
+    Concurrency
+    -----------
 
     By default, this will run only 1 instance of a vLLM model for the entire query.
 
     To override this behavior, call `vllm = vLLM.with_concurrency(N)`. This is especially useful if you have `N` number of GPUs on your
     cluster and you wish to have each replica of vLLM use 1 GPU:
 
-    ```python
-    vllm = vLLM.override_options(num_gpus=1).with_concurrency(8)
-    ```
+    >>> vllm = vLLM.override_options(num_gpus=1).with_concurrency(8)
 
-
-    ## Choosing a model
+    Choosing a model
+    ----------------
 
     [Full list of supported models from vllm](https://docs.vllm.ai/en/latest/models/supported_models.html#supported-models)
 
     This UDF uses the `"facebook/opt-125m"` model by default. To select the model you intend to use, you can parametrize this UDF like so:
 
-    ```python
-    vllm = vLLM.with_init_args(model="facebook/opt-125m")
-    ```
+    >>> vllm = vLLM.with_init_args(model="facebook/opt-125m")
 
     Please note that you need to ensure that your model fits on your GPUs.
 
-    ## Tuning batch size
+    Tuning batch size
+    -----------------
 
     By default, this UDF has a batch size of 1024. Depending on your model/GPU, you may wish to tune this parameter for memory.
 
-    Setting a smaller batch size can reduce memory usage, trading off performance as the model will be called more times.
+    Setting a smaller batch size can reduce memory usage, trading off performance as the UDF will be called more times.
 
-    ```python
-    vllm = vLLM.with_init_args(batch_size=128)
-    ```
+    Note that vLLM also performs its own batching under the hood. This batch_size parameter controls the size of the batches that are
+    being processed by the UDF and that are materialized as Python strings.
 
-    ## GPUs
+    >>> vllm = vLLM.with_init_args(batch_size=128)
+
+    GPUs
+    ----
 
     To use GPUs, create a new overridden instance of this with `vllm = vLLM.override_options(num_gpus=1)`. Note that if you do not do this,
     vLLM may fail to find the GPUs on your machine and you will get errors that look like: `RuntimeError: No CUDA GPUs are available`.
