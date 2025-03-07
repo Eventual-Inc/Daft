@@ -1,6 +1,6 @@
 # Daft Catalogs
 
-!!! warning ""
+!!! warning "Warning"
 
     These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues?q=is%3Aissue%20state%3Aopen%20label%3Adata-catalogs) for any bugs you may encounter. Thank you! 🤘
 
@@ -10,7 +10,7 @@ Daft integrates with various catalog implementations using its `Catalog` and `Ta
 
 ## Example
 
-!!! note ""
+!!! note "Note"
 
     These examples use the Iceberg Catalog from the [Daft Sessions](sessions.md) tutorial.
 
@@ -148,14 +148,14 @@ daft.create_temp_table("my_temp_table", df.from_pydict({ ... }))
 df = daft.read_table("my_temp_table")
 ```
 
-!!! note ""
+!!! note "Note"
 
     Today you can read from `pyiceberg` and `daft.unity` table objects.
 
 
 ## Reference
 
-!!! note ""
+!!! note "Note"
 
     For complete documentation, please see the [Catalog & Table API docs](api_docs/catalog.html).
 

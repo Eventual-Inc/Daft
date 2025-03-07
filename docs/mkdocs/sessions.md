@@ -1,6 +1,6 @@
 # Daft Sessions
 
-!!! warning ""
+!!! warning "Warning"
 
     These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues?q=is%3Aissue%20state%3Aopen%20label%3Adata-catalogs) for any bugs you may encounter. Thank you! 🤘
 
@@ -51,7 +51,7 @@ This section covers detailed usage of the current APIs with some code snippets.
 
 ### Setup
 
-!!! note ""
+!!! note "Note"
 
     For these examples, we are using sqlite Iceberg which requires `pyiceberg[sql-sqlite]`.
 
@@ -259,15 +259,13 @@ sess.sql("SELECT * FROM example.tbl, temp LIMIT 1").show()
 ╰─────────┴───────┴──────┴────────────┴────────┴────────╯
 ```
 
-!!! note ""
+!!! note "Note"
 
     We aim to support SQL DDL in future releases!
 
 ## Reference
 
-!!! note ""
-
-    For complete documentation, please see the [Session API docs](api_docs/session.html).
+For complete documentation, please see the [Session API docs](api_docs/session.html).
 
 | Method              | Description                                                        |
 | ------------------- | ------------------------------------------------------------------ |
