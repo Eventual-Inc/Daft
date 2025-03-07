@@ -70,4 +70,4 @@ jobs:
         ${{ secrets.GOOGLE_SHEETS_SERVICE_ACCOUNT }}
         EOF
     - name: Run benchmark and upload results to Google Sheets
-      run: python .github/ci-scripts/local_tpch.py
+      run: PYTHONPATH=. python .github/ci-scripts/local_tpch.py
