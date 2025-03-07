@@ -1,6 +1,7 @@
 import pyarrow as pa
 import pytest
 
+import daft
 from daft import Catalog, DataFrame, Session
 
 
@@ -107,3 +108,37 @@ def test_unqualified_idents(sess: Session):
     # find in cat_2 only if catalog-qualified
     assert sess.sql("select * from cat_2.ns_1.tbl_cat_2_11") is not None
     assert sess.sql("select * from cat_2.ns_2.tbl_cat_2_21") is not None
+
+
+# name resolution sanity check
+def test_pydict_catalog():
+    sess = Session()
+    sess.attach(
+        Catalog.from_pydict(
+            {
+                "T": {
+                    "a": [1, 3, 5],
+                    "b": [2, 4, 6],
+                },
+                "S": daft.from_pylist(
+                    [
+                        {
+                            "a": 1,
+                            "b": 2,
+                        },
+                        {
+                            "a": 3,
+                            "b": 4,
+                        },
+                        {
+                            "a": 5,
+                            "b": 6,
+                        },
+                    ]
+                ),
+            }
+        )
+    )
+    table_t = sess.sql("SELECT * FROM T")
+    table_s = sess.read_table("S")
+    assert_eq(table_t, table_s)
