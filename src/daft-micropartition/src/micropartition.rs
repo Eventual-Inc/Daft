@@ -794,6 +794,41 @@ pub fn read_json_into_micropartition(
     }
 }
 
+pub fn read_warc_into_micropartition(
+    uris: &[&str],
+    schema: SchemaRef,
+    io_config: Arc<IOConfig>,
+    multithreaded_io: bool,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<MicroPartition> {
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config)?;
+    let convert_options = WarcConvertOptions {
+        limit: None,
+        include_columns: None,
+        schema: schema.clone(),
+        predicate: None,
+    };
+
+    match uris {
+        [] => Ok(MicroPartition::empty(None)),
+        uris => {
+            // Perform a bulk read of URIs, materializing a table per URI.
+            let tables = daft_warc::read_warc_bulk(
+                uris,
+                convert_options,
+                io_client,
+                io_stats,
+                multithreaded_io,
+                None,
+                8,
+            )
+            .context(DaftCoreComputeSnafu)?;
+
+            // Construct MicroPartition from tables and unioned schema
+            Ok(MicroPartition::new_loaded(schema, Arc::new(tables), None))
+        }
+    }
+}
 fn get_file_column_names<'a>(
     columns: Option<&'a [&'a str]>,
     partition_spec: Option<&PartitionSpec>,

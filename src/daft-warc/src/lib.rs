@@ -11,7 +11,6 @@ use daft_dsl::ExprRef;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use snafu::{futures::try_future::TryFutureExt, Snafu};
 use tokio::{
     fs::File,
@@ -126,7 +125,7 @@ struct WarcRecordBatchBuilder {
 
 impl WarcRecordBatchBuilder {
     const DEFAULT_STRING_LENGTH: usize = 20;
-    const DEFAULT_CONTENT_LENGTH: usize = 100;
+    const DEFAULT_CONTENT_LENGTH: usize = 27282; // 27282 is the average content length of a WARC file sampled from 100 Common Crawl WARC files.
 
     fn new(chunk_size: usize, schema: SchemaRef) -> Self {
         Self {
@@ -422,7 +421,7 @@ pub fn read_warc_bulk(
                 io_stats.clone(),
             );
             tokio::task::spawn(async move {
-                read_warc_single_into_table(
+                read_warc_single_into_tables(
                     uri.as_str(),
                     convert_options,
                     io_client,
@@ -444,8 +443,10 @@ pub fn read_warc_bulk(
                     // Limit has been met, early-terminate.
                     (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
                     // Limit has not yet been met, update remaining limit slack and continue.
-                    (Ok(table), Some(rows_left)) => {
-                        remaining_rows = Some(rows_left - table.len() as i64);
+                    (Ok(tables), Some(rows_left)) => {
+                        for table in tables {
+                            remaining_rows = Some(rows_left - table.len() as i64);
+                        }
                         futures::future::ready(Ok(true))
                     }
                     // (1) No limit, never early-terminate.
@@ -453,22 +454,21 @@ pub fn read_warc_bulk(
                     (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
                 }
             })
+            .map_ok(|tables| tables.into_iter().flatten().collect::<Vec<_>>())
             .try_collect::<Vec<_>>()
             .await
     })?;
 
-    tables.into_iter().collect::<DaftResult<Vec<_>>>()
+    Ok(tables.into_iter().flatten().collect::<Vec<_>>())
 }
 
-async fn read_warc_single_into_table(
+async fn read_warc_single_into_tables(
     uri: &str,
     convert_options: WarcConvertOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<RecordBatch> {
-    let limit = convert_options.limit;
-    let schema = convert_options.schema.clone();
+) -> DaftResult<Vec<RecordBatch>> {
     let record_batch_stream = stream_warc(
         uri,
         io_client,
@@ -477,24 +477,12 @@ async fn read_warc_single_into_table(
         max_chunks_in_flight,
     )
     .await?;
-    let tables = Box::pin(record_batch_stream);
-    let collected_tables = tables
+    let collected_tables = record_batch_stream
         .try_collect::<Vec<_>>()
         .await?
         .into_iter()
         .collect::<Vec<_>>();
-    if collected_tables.is_empty() {
-        RecordBatch::empty(Some(schema))
-    } else {
-        let concated_table = tables_concat(collected_tables)?;
-        if let Some(limit) = limit
-            && concated_table.len() > limit
-        {
-            concated_table.head(limit)
-        } else {
-            Ok(concated_table)
-        }
-    }
+    Ok(collected_tables)
 }
 
 pub async fn stream_warc(
@@ -623,43 +611,4 @@ fn combine_stream<T, E>(
             },
         }
     })
-}
-
-// TODO(desmond): This can be deduped for all the different file format readers.
-fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBatch> {
-    if tables.is_empty() {
-        return Err(DaftError::ValueError(
-            "Need at least 1 Table to perform concat".to_string(),
-        ));
-    }
-    if tables.len() == 1 {
-        return Ok(tables.pop().unwrap());
-    }
-    let first_table = tables.as_slice().first().unwrap();
-
-    let first_schema = &first_table.schema;
-    for tab in tables.iter().skip(1) {
-        if tab.schema.as_ref() != first_schema.as_ref() {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Table concat requires all schemas to match, {} vs {}",
-                first_schema, tab.schema
-            )));
-        }
-    }
-    let num_columns = first_table.num_columns();
-    let new_series = (0..num_columns)
-        .into_par_iter()
-        .map(|i| {
-            let series_to_cat: Vec<&Series> = tables
-                .iter()
-                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
-                .collect();
-            Series::concat(series_to_cat.as_slice())
-        })
-        .collect::<DaftResult<Vec<_>>>()?;
-    RecordBatch::new_with_size(
-        first_table.schema.clone(),
-        new_series,
-        tables.iter().map(daft_recordbatch::RecordBatch::len).sum(),
-    )
 }
