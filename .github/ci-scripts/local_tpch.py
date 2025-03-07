@@ -39,6 +39,7 @@ def run_benchmark():
     results = {}
 
     for q in range(1, 23):
+        print(f"Running TPC-H Q{q}... ", end="", flush=True)
         if q == 21:
             # TODO: remove this once we support q21
             daft_df = answers.q21(get_df)
@@ -52,6 +53,8 @@ def run_benchmark():
         end = time.perf_counter()
 
         results[q] = end - start
+
+        print(f"done in {results[q]:.2f}s")
 
     return results
 
