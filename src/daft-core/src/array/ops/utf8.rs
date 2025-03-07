@@ -1,11 +1,16 @@
 use std::{
     borrow::Cow,
-    iter::{self, Repeat, Take},
+    iter::{self, RepeatN},
     sync::Arc,
 };
 
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
-use arrow2::{array::Array, temporal_conversions};
+use arrow2::{
+    array::{Array, BinaryArray as ArrowBinaryArray},
+    datatypes::DataType as ArrowType,
+    offset::Offsets,
+    temporal_conversions,
+};
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
@@ -17,7 +22,7 @@ use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
 
 enum BroadcastedStrIter<'a> {
-    Repeat(std::iter::Take<std::iter::Repeat<Option<&'a str>>>),
+    Repeat(std::iter::RepeatN<Option<&'a str>>),
     NonRepeat(
         arrow2::bitmap::utils::ZipValidity<
             &'a str,
@@ -40,7 +45,7 @@ impl<'a> Iterator for BroadcastedStrIter<'a> {
 
 fn create_broadcasted_str_iter(arr: &Utf8Array, len: usize) -> BroadcastedStrIter<'_> {
     if arr.len() == 1 {
-        BroadcastedStrIter::Repeat(std::iter::repeat(arr.get(0)).take(len))
+        BroadcastedStrIter::Repeat(std::iter::repeat_n(arr.get(0), len))
     } else {
         BroadcastedStrIter::NonRepeat(arr.as_arrow().iter())
     }
@@ -432,7 +437,7 @@ impl Utf8Array {
         match (regex, pattern.len()) {
             (true, 1) => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
+                let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
                 split_array_on_regex(
                     self_iter,
                     regex_iter,
@@ -498,7 +503,7 @@ impl Utf8Array {
         let result = match pattern.len() {
             1 => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
+                let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
                 regex_extract_first_match(self_iter, regex_iter, index, self.name())?
             }
             _ => {
@@ -534,7 +539,7 @@ impl Utf8Array {
         let result = match pattern.len() {
             1 => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
+                let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
                 regex_extract_all_matches(self_iter, regex_iter, index, expected_size, self.name())?
             }
             _ => {
@@ -565,7 +570,7 @@ impl Utf8Array {
         let result = match (regex, pattern.len()) {
             (true, 1) => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
+                let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
                 regex_replace(self_iter, regex_iter, replacement_iter, self.name())?
             }
             (true, _) => {
@@ -1070,7 +1075,7 @@ impl Utf8Array {
                             Ok(Some(val))
                         };
 
-                        let length_repeat = iter::repeat(length_repeat).take(expected_size);
+                        let length_repeat = iter::repeat_n(length_repeat, expected_size);
                         (Some(length_repeat), None)
                     }
                     _ => {
@@ -1091,7 +1096,7 @@ impl Utf8Array {
                 }
             }
             None => {
-                let none_value_iter = iter::repeat(Ok(None)).take(expected_size);
+                let none_value_iter = iter::repeat_n(Ok(None), expected_size);
                 (Some(none_value_iter), None)
             }
         };
@@ -1105,7 +1110,7 @@ impl Utf8Array {
                     ))
                 })?;
                 let start_repeat: Result<Option<usize>, ()> = Ok(Some(start_repeat));
-                let start_repeat = iter::repeat(start_repeat).take(expected_size);
+                let start_repeat = iter::repeat_n(start_repeat, expected_size);
                 (Some(start_repeat), None)
             }
             _ => {
@@ -1199,7 +1204,7 @@ impl Utf8Array {
             val: &str,
             length: usize,
             fillchar: &str,
-            placement_fn: impl Fn(Take<Repeat<char>>, &str) -> String,
+            placement_fn: impl Fn(RepeatN<char>, &str) -> String,
         ) -> DaftResult<String> {
             if val.chars().count() >= length {
                 return Ok(val.chars().take(length).collect());
@@ -1217,15 +1222,15 @@ impl Utf8Array {
                 fillchar.chars().next().unwrap()
             };
             let fillchar =
-                std::iter::repeat(fillchar).take(length.saturating_sub(val.chars().count()));
+                std::iter::repeat_n(fillchar, length.saturating_sub(val.chars().count()));
             Ok(placement_fn(fillchar, val))
         }
 
         let placement_fn = match placement {
-            PadPlacement::Left => |fillchar: Take<Repeat<char>>, val: &str| -> String {
+            PadPlacement::Left => |fillchar: RepeatN<char>, val: &str| -> String {
                 fillchar.chain(val.chars()).collect()
             },
-            PadPlacement::Right => |fillchar: Take<Repeat<char>>, val: &str| -> String {
+            PadPlacement::Right => |fillchar: RepeatN<char>, val: &str| -> String {
                 val.chars().chain(fillchar).collect()
             },
         };
@@ -1371,7 +1376,7 @@ impl Utf8Array {
             // no matches
             return UInt64Array::from_iter(
                 Arc::new(Field::new(self.name(), DataType::UInt64)),
-                iter::repeat(Some(0)).take(self.len()),
+                iter::repeat_n(Some(0), self.len()),
             )
             .with_validity(self.validity().cloned());
         }
@@ -1421,6 +1426,35 @@ impl Utf8Array {
             .collect::<arrow2::array::Utf8Array<i64>>()
             .with_validity(self_arrow.validity().cloned());
         Ok(Self::from((self.name(), Box::new(arrow_result))))
+    }
+
+    pub fn encode<Encoder>(&self, encoder: Encoder) -> DaftResult<BinaryArray>
+    where
+        Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
+    {
+        let input = self.as_arrow();
+        let buffer = input.values();
+        let validity = input.validity().cloned();
+        //
+        let mut values = Vec::<u8>::new();
+        let mut offsets = Offsets::<i64>::new();
+        for span in input.offsets().windows(2) {
+            let s = span[0] as usize;
+            let e = span[1] as usize;
+            let bytes = encoder(&buffer[s..e])?;
+            //
+            offsets.try_push(bytes.len() as i64)?;
+            values.extend(bytes);
+        }
+        //
+        let array = ArrowBinaryArray::new(
+            ArrowType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            validity,
+        );
+        let array = Box::new(array);
+        Ok(BinaryArray::from((self.name(), array)))
     }
 }
 

@@ -159,9 +159,9 @@ fn tabular_write(
     file_format: &FileFormat,
     schema: &SchemaRef,
     root_dir: &String,
-    compression: &Option<String>,
-    partition_cols: &Option<Vec<ExprRef>>,
-    io_config: &Option<IOConfig>,
+    compression: Option<&String>,
+    partition_cols: Option<&Vec<ExprRef>>,
+    io_config: Option<&IOConfig>,
 ) -> PyResult<PyObject> {
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
@@ -171,13 +171,11 @@ fn tabular_write(
             *file_format,
             PySchema::from(schema.clone()),
             root_dir,
-            compression.clone(),
-            partition_cols.as_ref().map(|cols| exprs_to_pyexprs(cols)),
-            io_config
-                .as_ref()
-                .map(|cfg| common_io_config::python::IOConfig {
-                    config: cfg.clone(),
-                }),
+            compression,
+            partition_cols.map(|cols| exprs_to_pyexprs(cols)),
+            io_config.map(|cfg| common_io_config::python::IOConfig {
+                config: cfg.clone(),
+            }),
         ))?;
     Ok(py_iter.into())
 }
@@ -820,9 +818,9 @@ fn physical_plan_to_partition_tasks(
             file_format,
             schema,
             root_dir,
-            compression,
-            partition_cols,
-            io_config,
+            compression.as_ref(),
+            partition_cols.as_ref(),
+            io_config.as_ref(),
         ),
         PhysicalPlan::TabularWriteCsv(TabularWriteCsv {
             schema,
@@ -841,9 +839,9 @@ fn physical_plan_to_partition_tasks(
             file_format,
             schema,
             root_dir,
-            compression,
-            partition_cols,
-            io_config,
+            compression.as_ref(),
+            partition_cols.as_ref(),
+            io_config.as_ref(),
         ),
         PhysicalPlan::TabularWriteJson(TabularWriteJson {
             schema,
@@ -862,9 +860,9 @@ fn physical_plan_to_partition_tasks(
             file_format,
             schema,
             root_dir,
-            compression,
-            partition_cols,
-            io_config,
+            compression.as_ref(),
+            partition_cols.as_ref(),
+            io_config.as_ref(),
         ),
         #[cfg(feature = "python")]
         PhysicalPlan::IcebergWrite(IcebergWrite {

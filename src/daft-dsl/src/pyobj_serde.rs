@@ -46,7 +46,7 @@ struct HashWriter<'a, H: Hasher> {
     state: &'a mut H,
 }
 
-impl<'a, H: Hasher> Write for HashWriter<'a, H> {
+impl<H: Hasher> Write for HashWriter<'_, H> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         buf.hash(self.state);
         Ok(buf.len())

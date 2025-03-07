@@ -705,7 +705,7 @@ impl JoinGraphBuilder {
     /// (e.g. an aggregation, an outer join, a source node etc).
     /// It keeps track of the following state:
     /// - join_conds_to_resolve: Join conditions (left_on/right_on) from downstream joins that need to be resolved by
-    ///                          linking to some upstream relation.
+    ///   linking to some upstream relation.
     /// - final_name_map: Map from a column's current name in the query plan to its name in the final output schema.
     ///
     /// Joins that added conditions to `join_conds_to_resolve` will pop them off the stack after they have been resolved.

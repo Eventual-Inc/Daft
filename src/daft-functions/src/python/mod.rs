@@ -44,6 +44,9 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::binary_concat);
     add!(binary::binary_slice);
 
+    add!(binary::decode);
+    add!(binary::encode);
+
     add!(float::is_inf);
     add!(float::is_nan);
     add!(float::not_nan);
@@ -97,6 +100,9 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::csc);
     add!(numeric::sec);
     add!(numeric::cot);
+    add!(numeric::sinh);
+    add!(numeric::cosh);
+    add!(numeric::tanh);
     add!(numeric::arcsin);
     add!(numeric::arccos);
     add!(numeric::arctan);

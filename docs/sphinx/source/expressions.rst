@@ -65,6 +65,9 @@ Numeric
     Expression.csc
     Expression.sec
     Expression.cot
+    Expression.sinh
+    Expression.cosh
+    Expression.tanh
     Expression.arcsin
     Expression.arccos
     Expression.arctan
@@ -194,6 +197,9 @@ The following methods are available under the ``expr.binary`` attribute.
    Expression.binary.concat
    Expression.binary.length
    Expression.binary.slice
+   Expression.encode
+   Expression.decode
+
 
 .. _api-float-expression-operations:
 

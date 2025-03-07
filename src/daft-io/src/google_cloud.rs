@@ -18,6 +18,7 @@ use tokio::sync::Semaphore;
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     FileFormat, GetResult,
@@ -252,7 +253,7 @@ impl GCSClientWrapper {
         Ok(response.size as usize)
     }
     #[allow(clippy::too_many_arguments)]
-    async fn _ls_impl(
+    async fn ls_impl(
         &self,
         client: &Client,
         bucket: &str,
@@ -328,7 +329,7 @@ impl GCSClientWrapper {
                 format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
             };
             let forced_directory_ls_result = self
-                ._ls_impl(
+                .ls_impl(
                     client,
                     bucket,
                     forced_directory_key.as_str(),
@@ -343,7 +344,7 @@ impl GCSClientWrapper {
             // details as the one-and-only-one entry
             if forced_directory_ls_result.files.is_empty() {
                 let mut file_result = self
-                    ._ls_impl(
+                    .ls_impl(
                         client,
                         bucket,
                         key,
@@ -371,7 +372,7 @@ impl GCSClientWrapper {
                 Ok(forced_directory_ls_result)
             }
         } else {
-            self._ls_impl(
+            self.ls_impl(
                 client,
                 bucket,
                 key,
@@ -432,8 +433,28 @@ impl GCSSource {
                 ..Default::default()
             }
         } else {
-            let attempted = ClientConfig::default()
-                .with_auth()
+            let backoff = ExponentialBackoff::default();
+
+            let get_client_config = async || {
+                ClientConfig::default().with_auth().await.map_err(|e| {
+                    use google_cloud_storage::client::google_cloud_auth::error::Error::HttpError;
+
+                    // retry when we may receive an error from hitting the credentials server too much
+                    if let HttpError(reqwest_err) = &e
+                        && (reqwest_err.is_request()
+                            || reqwest_err.is_timeout()
+                            || matches!(reqwest_err.status().map(|s| s.as_u16()), Some(429) | Some(500..599)))
+                    {
+                        log::warn!("Encountered HTTP error while attempting to fetch Google Cloud Storage client: {reqwest_err}. Retrying...");
+                        RetryError::Transient(e)
+                    } else {
+                        RetryError::Permanent(e)
+                    }
+                })
+            };
+
+            let attempted = backoff
+                .retry(get_client_config)
                 .await
                 .context(UnableToLoadCredentialsSnafu {});
 

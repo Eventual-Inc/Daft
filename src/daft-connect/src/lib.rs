@@ -5,6 +5,7 @@
 #![feature(iter_from_coroutine)]
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
+#![allow(clippy::result_large_err)]
 
 #[cfg(feature = "python")]
 mod config;

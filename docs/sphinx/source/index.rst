@@ -8,8 +8,11 @@ Welcome to Daft API Documentation. For Daft User Guide, head to `User Guide <../
 
    creation
    dataframe
-   sql
    expressions
+   functions
+   sql
+   session
+   catalog
    schema
    datatype
    groupby

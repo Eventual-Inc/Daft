@@ -1,4 +1,4 @@
-use std::{iter::repeat, sync::Arc};
+use std::{iter::repeat_n, sync::Arc};
 
 use arrow2::offset::{Offsets, OffsetsBuffer};
 use common_error::DaftResult;
@@ -53,7 +53,7 @@ fn join_arrow_list_of_utf8s(
 // times, otherwise we simply take the original array.
 fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i64> + 'a> {
     match arr.len() {
-        1 => Box::new(repeat(arr.get(0).unwrap()).take(len)),
+        1 => Box::new(repeat_n(arr.get(0).unwrap(), len)),
         arr_len => {
             assert_eq!(arr_len, len);
             Box::new(arr.as_arrow().iter().map(|x| *x.unwrap()))
@@ -76,10 +76,7 @@ fn get_slices_helper(
     let mut starting_idx = parent_offsets.next().unwrap();
     for (i, ((start, end), ending_idx)) in start_iter.zip(end_iter).zip(parent_offsets).enumerate()
     {
-        let is_valid = match validity {
-            None => true,
-            Some(v) => v.get(i).unwrap(),
-        };
+        let is_valid = validity.is_none_or(|v| v.get(i).unwrap());
         let slice_start = if start >= 0 {
             starting_idx + start
         } else {
@@ -143,11 +140,11 @@ fn get_slices_helper(
 /// * `validity`    - The parent list's validity.
 /// * `size`        - The size for each chunk.
 /// * `total_elements_to_skip` - The number of elements in the Series that do not fit cleanly into
-///                              chunks. We take the fast path iff this value is 0.
+///   chunks. We take the fast path iff this value is 0.
 /// * `to_skip`     - An optional iterator of the number of elements to skip for each list. Elements
-///                   are skipped when they cannot fit into their parent list's chunks.
+///   are skipped when they cannot fit into their parent list's chunks.
 /// * `new_offsets` - The new offsets to use for the topmost list array, this is computed based on
-///                   the number of chunks extracted from each list.
+///   the number of chunks extracted from each list.
 fn get_chunks_helper(
     flat_child: &Series,
     field: Arc<Field>,
@@ -423,7 +420,7 @@ impl ListArray {
                         .sum()
                 })
                 .collect(),
-            (CountMode::Null, None) => repeat(0).take(self.offsets().len() - 1).collect(),
+            (CountMode::Null, None) => repeat_n(0, self.offsets().len() - 1).collect(),
             (CountMode::Null, Some(validity)) => self
                 .offsets()
                 .windows(2)
@@ -481,7 +478,7 @@ impl ListArray {
         assert_eq!(self.child_data_type(), &DataType::Utf8,);
 
         let delimiter_iter: Box<dyn Iterator<Item = Option<&str>>> = if delimiter.len() == 1 {
-            Box::new(repeat(delimiter.get(0)).take(self.len()))
+            Box::new(repeat_n(delimiter.get(0), self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
             Box::new(delimiter.as_arrow().iter())
@@ -600,8 +597,8 @@ impl ListArray {
     pub fn list_sort(&self, desc: &BooleanArray, nulls_first: &BooleanArray) -> DaftResult<Self> {
         let offsets = self.offsets();
         let child_series = if desc.len() == 1 {
-            let desc_iter = repeat(desc.get(0).unwrap()).take(self.len());
-            let nulls_first_iter = repeat(nulls_first.get(0).unwrap()).take(self.len());
+            let desc_iter = repeat_n(desc.get(0).unwrap(), self.len());
+            let nulls_first_iter = repeat_n(nulls_first.get(0).unwrap(), self.len());
             if let Some(validity) = self.validity() {
                 list_sort_helper(
                     &self.flat_child,
@@ -616,7 +613,7 @@ impl ListArray {
                     offsets,
                     desc_iter,
                     nulls_first_iter,
-                    repeat(true).take(self.len()),
+                    repeat_n(true, self.len()),
                 )?
             }
         } else {
@@ -636,7 +633,7 @@ impl ListArray {
                     offsets,
                     desc_iter,
                     nulls_first_iter,
-                    repeat(true).take(self.len()),
+                    repeat_n(true, self.len()),
                 )?
             }
         };
@@ -679,7 +676,7 @@ impl ListArray {
         let mut result_validity = Vec::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let is_valid = validity.map_or(true, |v| v.get(i).unwrap());
+            let is_valid = validity.is_none_or(|v| v.get(i).unwrap());
             if !is_valid {
                 result.push(false);
                 result_validity.push(false);
@@ -694,7 +691,7 @@ impl ListArray {
             if slice.is_empty()
                 || slice
                     .validity()
-                    .map_or(false, |v| v.unset_bits() == slice.len())
+                    .is_some_and(|v| v.unset_bits() == slice.len())
             {
                 result.push(false);
                 result_validity.push(false);
@@ -707,7 +704,7 @@ impl ListArray {
             let bool_validity = bool_slice.validity();
             let bool_data = bool_slice.as_arrow().values();
             for j in 0..bool_slice.len() {
-                if bool_validity.map_or(true, |v| v.get(j).unwrap()) && !bool_data.get_bit(j) {
+                if bool_validity.is_none_or(|v| v.get(j).unwrap()) && !bool_data.get_bit(j) {
                     all_true = false;
                     break;
                 }
@@ -735,7 +732,7 @@ impl ListArray {
         let mut result_validity = Vec::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let is_valid = validity.map_or(true, |v| v.get(i).unwrap());
+            let is_valid = validity.is_none_or(|v| v.get(i).unwrap());
             if !is_valid {
                 result.push(false);
                 result_validity.push(false);
@@ -750,7 +747,7 @@ impl ListArray {
             if slice.is_empty()
                 || slice
                     .validity()
-                    .map_or(false, |v| v.unset_bits() == slice.len())
+                    .is_some_and(|v| v.unset_bits() == slice.len())
             {
                 result.push(false);
                 result_validity.push(false);
@@ -763,7 +760,7 @@ impl ListArray {
             let bool_validity = bool_slice.validity();
             let bool_data = bool_slice.as_arrow().values();
             for j in 0..bool_slice.len() {
-                if bool_validity.map_or(true, |v| v.get(j).unwrap()) && bool_data.get_bit(j) {
+                if bool_validity.is_none_or(|v| v.get(j).unwrap()) && bool_data.get_bit(j) {
                     any_true = true;
                     break;
                 }
@@ -800,7 +797,7 @@ impl FixedSizeListArray {
         let size = self.fixed_element_len();
         let counts = match (mode, self.flat_child.validity()) {
             (CountMode::All, _) | (CountMode::Valid, None) => {
-                repeat(size as u64).take(self.len()).collect()
+                repeat_n(size as u64, self.len()).collect()
             }
             (CountMode::Valid, Some(validity)) => (0..self.len())
                 .map(|i| {
@@ -809,7 +806,7 @@ impl FixedSizeListArray {
                         .sum()
                 })
                 .collect(),
-            (CountMode::Null, None) => repeat(0).take(self.len()).collect(),
+            (CountMode::Null, None) => repeat_n(0, self.len()).collect(),
             (CountMode::Null, Some(validity)) => (0..self.len())
                 .map(|i| {
                     (0..size)
@@ -856,7 +853,7 @@ impl FixedSizeListArray {
         assert_eq!(self.child_data_type(), &DataType::Utf8,);
 
         let delimiter_iter: Box<dyn Iterator<Item = Option<&str>>> = if delimiter.len() == 1 {
-            Box::new(repeat(delimiter.get(0)).take(self.len()))
+            Box::new(repeat_n(delimiter.get(0), self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
             Box::new(delimiter.as_arrow().iter())
@@ -929,7 +926,7 @@ impl FixedSizeListArray {
         let start_iter = create_iter(start, self.len());
         let end_iter = match end {
             Some(end) => create_iter(end, self.len()),
-            None => Box::new(repeat(list_size as i64).take(self.len())),
+            None => Box::new(repeat_n(list_size as i64, self.len())),
         };
         let new_field = Arc::new(self.field.to_exploded_field()?.to_list_field()?);
         get_slices_helper(
@@ -958,7 +955,7 @@ impl FixedSizeListArray {
         let to_skip = if total_elements_to_skip == 0 {
             None
         } else {
-            Some(std::iter::repeat(modulo).take(self.len()))
+            Some(std::iter::repeat_n(modulo, self.len()))
         };
         get_chunks_helper(
             &self.flat_child,
@@ -976,8 +973,8 @@ impl FixedSizeListArray {
         let fixed_size = self.fixed_element_len();
 
         let child_series = if desc.len() == 1 {
-            let desc_iter = repeat(desc.get(0).unwrap()).take(self.len());
-            let nulls_first_iter = repeat(nulls_first.get(0).unwrap()).take(self.len());
+            let desc_iter = repeat_n(desc.get(0).unwrap(), self.len());
+            let nulls_first_iter = repeat_n(nulls_first.get(0).unwrap(), self.len());
             if let Some(validity) = self.validity() {
                 list_sort_helper_fixed_size(
                     &self.flat_child,
@@ -992,7 +989,7 @@ impl FixedSizeListArray {
                     fixed_size,
                     desc_iter,
                     nulls_first_iter,
-                    repeat(true).take(self.len()),
+                    repeat_n(true, self.len()),
                 )?
             }
         } else {
@@ -1012,7 +1009,7 @@ impl FixedSizeListArray {
                     fixed_size,
                     desc_iter,
                     nulls_first_iter,
-                    repeat(true).take(self.len()),
+                    repeat_n(true, self.len()),
                 )?
             }
         };

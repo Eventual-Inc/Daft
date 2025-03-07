@@ -448,7 +448,7 @@ impl ScanTaskLike for ScanTask {
         other
             .as_any()
             .downcast_ref::<Self>()
-            .map_or(false, |a| a == self)
+            .is_some_and(|a| a == self)
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {

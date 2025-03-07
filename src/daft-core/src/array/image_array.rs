@@ -43,9 +43,9 @@ impl ImageArray {
     pub const IMAGE_WIDTH_IDX: usize = 3;
     pub const IMAGE_MODE_IDX: usize = 4;
 
-    pub fn image_mode(&self) -> &Option<ImageMode> {
+    pub fn image_mode(&self) -> Option<ImageMode> {
         match self.data_type() {
-            DataType::Image(mode) => mode,
+            DataType::Image(mode) => *mode,
             _ => panic!("Expected dtype to be Image"),
         }
     }

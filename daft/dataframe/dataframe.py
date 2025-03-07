@@ -163,6 +163,27 @@ class DataFrame:
         else:
             return self._result_cache.value
 
+    def _broadcast_query_plan(self, plan_time_start: datetime, plan_time_end: datetime):
+        from daft import dashboard
+        from daft.dataframe.display import MermaidFormatter
+
+        if not dashboard._should_run():
+            return
+
+        is_cached = self._result_cache is not None
+        mermaid_plan: str = MermaidFormatter(
+            builder=self.__builder,
+            show_all=True,
+            simple=False,
+            is_cached=is_cached,
+        )._repr_markdown_()
+
+        dashboard.broadcast_query_information(
+            mermaid_plan=mermaid_plan,
+            plan_time_start=plan_time_start,
+            plan_time_end=plan_time_end,
+        )
+
     @DataframePublicAPI
     def explain(
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
@@ -1183,6 +1204,7 @@ class DataFrame:
             raise ImportError("lance is not installed. Please install lance using `pip install getdaft[lance]`")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         if isinstance(uri, (str, pathlib.Path)):
             if isinstance(uri, str):
                 table_uri = uri
@@ -1192,8 +1214,10 @@ class DataFrame:
                 table_uri = uri
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 
+        storage_options = io_config_to_storage_options(io_config, table_uri)
+
         try:
-            table = lance.dataset(table_uri)
+            table = lance.dataset(table_uri, storage_options=storage_options)
 
         except ValueError:
             table = None
@@ -1226,7 +1250,6 @@ class DataFrame:
         elif mode == "append":
             operation = lance.LanceOperation.Append(fragments)
 
-        storage_options = io_config_to_storage_options(io_config, table_uri)
         dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version, storage_options=storage_options)
         stats = dataset.stats.dataset_stats()
 
@@ -2977,8 +3000,10 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with materialized results.
         """
+        plan_time_start = _utc_now()
         self._materialize_results()
-
+        plan_time_end = _utc_now()
+        self._broadcast_query_plan(plan_time_start, plan_time_end)
         assert self._result is not None
         dataframe_len = len(self._result)
         if num_preview_rows is not None:

@@ -182,7 +182,7 @@ impl Series {
                         )))
                     }
                 };
-                Ok(ts_array.truncate(interval, &relative_to)?.into_series())
+                Ok(ts_array.truncate(interval, relative_to)?.into_series())
             }
             (DataType::Timestamp(..), DataType::Timestamp(..)) => Err(DaftError::ComputeError(format!(
                 "Can only run truncate() operation if self and relative_to have the same timeunit and timezone, got {} {}",
@@ -191,7 +191,7 @@ impl Series {
             ))),
             (DataType::Timestamp(..), DataType::Null) => {
                 let ts_array = self.timestamp()?;
-                Ok(ts_array.truncate(interval, &None)?.into_series())
+                Ok(ts_array.truncate(interval, None)?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run truncate() operation on temporal types, got {} {}",

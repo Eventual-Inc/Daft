@@ -1,11 +1,18 @@
 use daft_dsl::python::PyExpr;
 use pyo3::{pyfunction, PyResult};
 
-use crate::binary::{
-    concat::binary_concat as concat_fn, length::binary_length as length_fn,
-    slice::binary_slice as slice_fn,
-};
+use crate::binary::{self, codecs::Codec};
 
-simple_python_wrapper!(binary_length, length_fn, [input: PyExpr]);
-simple_python_wrapper!(binary_concat, concat_fn, [left: PyExpr, right: PyExpr]);
-simple_python_wrapper!(binary_slice, slice_fn, [input: PyExpr, start: PyExpr, length: PyExpr]);
+simple_python_wrapper!(binary_length, binary::binary_length, [input: PyExpr]);
+simple_python_wrapper!(binary_concat, binary::binary_concat, [left: PyExpr, right: PyExpr]);
+simple_python_wrapper!(binary_slice, binary::binary_slice, [input: PyExpr, start: PyExpr, length: PyExpr]);
+
+#[pyfunction]
+pub fn encode(input: PyExpr, codec: &str) -> PyResult<PyExpr> {
+    Ok(binary::encode::encode(input.expr, Codec::try_from(codec)?).into())
+}
+
+#[pyfunction]
+pub fn decode(input: PyExpr, codec: &str) -> PyResult<PyExpr> {
+    Ok(binary::decode::decode(input.expr, Codec::try_from(codec)?).into())
+}

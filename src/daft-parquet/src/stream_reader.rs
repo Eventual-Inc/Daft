@@ -280,6 +280,7 @@ impl<R> Drop for CountingReader<R> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
 pub fn local_parquet_read_into_column_iters(
     uri: &str,
     columns: Option<&[String]>,
@@ -488,7 +489,6 @@ pub fn local_parquet_read_into_arrow(
             if (curr_index + arr.len()) < row_range.start {
                 // throw arrays less than what we need
                 curr_index += arr.len();
-                continue;
             } else if curr_index < row_range.start {
                 let offset = row_range.start.saturating_sub(curr_index);
                 arrays_so_far.push(arr.sliced(offset, arr.len() - offset));

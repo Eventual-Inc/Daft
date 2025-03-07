@@ -117,7 +117,7 @@ fn hash_list(
                 let cur_seed_opt = seed_arr.get(i as usize);
                 let flat_seed = UInt64Array::from_iter(
                     Arc::new(Field::new("seed", DataType::UInt64)),
-                    std::iter::repeat(cur_seed_opt).take(end - start),
+                    std::iter::repeat_n(cur_seed_opt, end - start),
                 );
                 let hashed_child = flat_child
                     .slice(start, end)
