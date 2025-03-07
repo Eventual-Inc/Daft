@@ -65,6 +65,7 @@ jobs:
         uv pip install gspread
     - name: Write service account secret file
       run: |
+        mkdir -p ~/.config/gspread
         cat << EOF > ~/.config/gspread/service_account.json
         ${{ secrets.GOOGLE_SHEETS_SERVICE_ACCOUNT }}
         EOF
