@@ -106,6 +106,7 @@ jobs:
         args: --profile release-lto --out dist
         before-script-linux: |
           export JEMALLOC_SYS_WITH_LG_PAGE=16
+          apt install -y unzip
           curl -fsSL https://bun.sh/install | bash
           export BUN_INSTALL="$HOME/.bun"
           export PATH="$BUN_INSTALL/bin:$PATH"
