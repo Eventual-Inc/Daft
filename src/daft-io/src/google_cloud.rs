@@ -18,6 +18,7 @@ use tokio::sync::Semaphore;
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     FileFormat, GetResult,
@@ -432,8 +433,29 @@ impl GCSSource {
                 ..Default::default()
             }
         } else {
-            let attempted = ClientConfig::default()
-                .with_auth()
+            let backoff = ExponentialBackoff::default();
+
+            let get_client_config = async || {
+                ClientConfig::default().with_auth().await.map_err(|e| {
+                    use google_cloud_storage::client::google_cloud_auth::error::Error::HttpError;
+
+                    match &e {
+                        // 401 may mean that we are hitting the credentials server too much
+                        HttpError(reqwest_err)
+                            if reqwest_err
+                                .status()
+                                .is_some_and(|status| status.as_u16() == 401) =>
+                        {
+                            log::warn!("Encountered HTTP status code 401 while attempting to fetch Google Cloud Storage client, retrying.");
+                            RetryError::Transient(e)
+                        }
+                        _ => RetryError::Permanent(e),
+                    }
+                })
+            };
+
+            let attempted = backoff
+                .retry(get_client_config)
                 .await
                 .context(UnableToLoadCredentialsSnafu {});
 
