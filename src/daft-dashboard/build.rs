@@ -35,10 +35,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(install_status.success(), "Failed to install dependencies");
 
     // Run `bun run build`
-    let status = Command::new("bun")
-        .current_dir("./frontend")
-        .args(["run", "build"])
-        .status()?;
+    let mut cmd = Command::new("bun");
+    let status = cmd.current_dir("./frontend");
+
+    let status = if cfg!(debug_assertions) {
+        status.args(["run", "build", "--no-lint", "--no-mangling"])
+    } else {
+        status.args(["run", "build"])
+    };
+    let status = status.status()?;
+
+    assert!(status.success(), "Failed to build frontend assets");
 
     let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";
 
