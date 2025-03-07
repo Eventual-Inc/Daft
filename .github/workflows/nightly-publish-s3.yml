@@ -113,6 +113,7 @@ jobs:
         webhook-type: incoming-webhook
 
   integration-test-tpch:
+    needs: [publish]
     runs-on: ${{ matrix.runner-name }}
     timeout-minutes: 15
     env:
@@ -176,6 +177,7 @@ jobs:
 
 
   integration-test-io:
+    needs: [publish]
     runs-on: ${{ matrix.runner-name }}
     timeout-minutes: 30
     env:
@@ -254,6 +256,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   benchmark-local-tpch:
+    needs: [publish]
     uses: ./.github/workflows/benchmark-local-tpch.yml
     with:
       daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly
