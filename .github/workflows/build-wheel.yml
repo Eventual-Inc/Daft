@@ -101,10 +101,10 @@ jobs:
       with:
         target: aarch64-unknown-linux-gnu
         manylinux: 2_28
+        container: quay.io/pypa/manylinux_2_28_aarch64
         args: --profile release-lto --out dist
         before-script-linux: |
           export JEMALLOC_SYS_WITH_LG_PAGE=16
-          dnf install -y unzip
           curl -fsSL https://bun.sh/install | bash
           export BUN_INSTALL="$HOME/.bun"
           export PATH="$BUN_INSTALL/bin:$PATH"
