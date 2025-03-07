@@ -6,47 +6,58 @@
 
 Catalogs are a centralized place to organize and govern your data. It is often responsible for creating objects such as tables and namespaces, managing transactions, and access control. Most importantly, the catalog abstracts away physical storage details, letting you focus on the logical structure of your data without worrying about file formats, partitioning schemes, or storage locations.
 
-Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs which make it easy to manage catalog objects (tables and namespaces), while also making it easy to leverage daft's great I/O support for reading and writing open table formats like [Iceberg](integrations/iceberg.md) and [Delta Lake](integrations/delta_lake.md).
+Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs to manage catalog objects (tables and namespaces), while also making it easy to leverage Daft's existing `daft.read_` and `df.write_` APIs for open table formats like [Iceberg](integrations/iceberg.md) and [Delta Lake](integrations/delta_lake.md).
 
 ## Example
 
-Daft provides several high-level interfaces to simplify accessing your data.
+!!! note ""
 
-* [Session]() - interface for
-* [Catalog](api_docs/catalog.html) - interface for creating and accessing both tables and namespaces.
-* [Table](api_docs/catalog.html#daft.Table) -
-
-When you `import daft` there is an implicit session which is accessible via `daft.current_session()`.
+    These examples use the Iceberg Catalog from the [Daft Sessions](sessions.md) tutorial.
 
 ```python
 import daft
 
-# load an iceberg catalog
-from pyiceberg.catalog import load_catalog
+from daft import Catalog
 
-# suppose our iceberg catalog has a table named 'ns.tbl'
-pyiceberg_catalog = load_catalog("...")
+# iceberg_catalog from the  'Sessions' tutorial
+iceberg_catalog = load_catalog(...)
 
-# attach to the active session, `daft.current_session()`
-daft.attach_catalog(pyiceberg_catalog, alias="tldr")
+# create a daft catalog from the pyiceberg catalog instance
+catalog = Catalog.from_iceberg(iceberg_catalog)
 
-# read your tables as daft dataframes
-df = daft.read_table("ns.tbl")
-
-# use just like any other dataframe!
-df.show()
+# verify
+catalog
 """
-╭─────────┬───────╮
-│ a       ┆ b     │
-│ ---     ┆ ---   │
-│ Boolean ┆ Int64 │
-╞═════════╪═══════╡
-│ true    ┆ 1     │
-├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-│ true    ┆ 2     │
-├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-│ false   ┆ 3     │
-╰─────────┴───────╯
+Catalog('default')
+"""
+
+# we can read as a dataframe
+catalog.read_table("example.tbl").schema()
+"""
+╭─────────────┬─────────╮
+│ column_name ┆ type    │
+╞═════════════╪═════════╡
+│ x           ┆ Boolean │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ y           ┆ Int64   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ z           ┆ Utf8    │
+╰─────────────┴─────────╯
+"""
+
+# give a dataframe...
+df = daft.from_pylist([{ "x": False, "y": -1, "z": "xyz" }])
+
+# we can write to tables
+catalog.write_table("example.tbl", df, mode="append")
+
+# we can get also get table instances
+t = catalog.get_table("example.tbl")
+
+# see 'Working with Tables' for what we can do!
+t
+"""
+Table('tbl')
 """
 ```
 
@@ -61,7 +72,9 @@ The `Catalog` interface allows you to perform catalog actions like `get_table` a
 **Example**
 
 ```python
-from daft import Catalog
+import daft
+
+from daft import Catalog, Table
 
 # create a catalog from a pyiceberg catalog object
 _ = Catalog.from_iceberg(pyiceberg_catalog)
@@ -69,45 +82,45 @@ _ = Catalog.from_iceberg(pyiceberg_catalog)
 # create a catalog from a unity catalog object
 _ = Catalog.from_unity(unity_catalog)
 
-# create a catalog from a pydict mapping names to tables!
-catalog = Catalog.from_pydict({
-    "my_table_t": df_t,
-    "my_table_s": df_s,
-})
+# we can register various types as tables, note that all are equivalent
+example_dict = { "x": [ 1, 2, 3 ] }
+example_df = daft.from_pydict(example_dict)
+example_table = Table.from_df("temp", example_df)
+
+# create a catalog from a pydict mapping names to tables
+catalog = Catalog.from_pydict(
+    {
+        "R": example_dict,
+        "S": example_df,
+        "T": example_table,
+    }
+)
 
 # list available tables (for iceberg, the pattern is a prefix)
 catalog.list_tables(pattern=None)
+"""
+['R', 'S', 'T']
+"""
 
 # get a table by name
 table_t = catalog.get_table("T")
-table_s = catalog.get_table("S")
+
+#
+table_t.show()
+"""
+╭───────╮
+│ x     │
+│ ---   │
+│ Int64 │
+╞═══════╡
+│ 1     │
+├╌╌╌╌╌╌╌┤
+│ 2     │
+├╌╌╌╌╌╌╌┤
+│ 3     │
+╰───────╯
+"""
 ```
-
-#### Creating Catalogs
-
-You
-
-```python
-
-cat2 = Catalog.from_pydict(name="my_cat", table={
-    "tbl1": {
-        "x": [ 1,2,3 ],
-        "y": [ 4,5,6 ],
-    },
-    "tbl2": daft.read_parquet("/path/to/file.parquet"),
-})
-```
-
-#### Attach & Detach
-
-```python
-# TODO
-```
-
-**Notes**
-
-* You can create a Catalog from `pyiceberg` and `daft.unity` catalog objects.
-* We are actively working on additional catalog implementations.
 
 ### Working with Tables
 
@@ -135,11 +148,9 @@ daft.create_temp_table("my_temp_table", df.from_pydict({ ... }))
 df = daft.read_table("my_temp_table")
 ```
 
-**Notes**
+!!! note ""
 
-* Today you can read from `pyiceberg` and `daft.unity` table objects.
-* The daft catalog interface always returns tables.
-
+    Today you can read from `pyiceberg` and `daft.unity` table objects.
 
 
 ## Reference

@@ -59,6 +59,7 @@ class IcebergCatalog(Catalog):
     def _create_table_from_df(self, ident: Identifier | str, source: DataFrame) -> Table:
         t = self._create_table_from_schema(ident, source.schema())
         t.append(source)
+        return t
 
     def _create_table_from_path(self, ident: Identifier | str, source: str) -> Table:
         raise ValueError("table from path not yet supported")

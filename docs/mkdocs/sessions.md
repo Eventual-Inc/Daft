@@ -8,51 +8,41 @@ Sessions enable you to attach catalogs, tables, and create temporary objects whi
 
 ## Example
 
-This example shows
-
 ```python
 import daft
 
-# when you do `import daft`, there is an implicit global session
-sess = daft.current_session()
-
-# ...
+# `import daft` defines an implicit session `daft.current_session()`
 
 from daft import Session
 
-# you can also create an empty session object
+# create a new session
 sess = Session()
 
-# create a catalog from an iceberg catalog with name "ice_cat"
-cat1 = Catalog.from_iceberg(my_iceberg_catalog)
+# create a temp table from a DataFrame
+sess.create_temp_table("T", daft.from_pydict({ "x": [1,2,3] }))
 
-# create a catalog from a dictionary of dataframes
-cat2 = Catalog.from_pydict(name="my_cat", table={
-    "tbl1": {
-        "x": [ 1,2,3 ],
-        "y": [ 4,5,6 ],
-    },
-    "tbl2": {
-        "a": [ "ABC", "XYZ" ],
-        "b": [ True, False ],
-    },
-    "tbl3": daft.read_parquet("/path/to/file.parquet"),
-})
+# read table as dataframe from the session
+_ = sess.read_table("T")
 
-# we can attach supported catalog instances to a session
-sess.attach(cat1)
-sess.attach(cat2)
+# get the table instance
+t = sess.get_table("T")
 
-# we can then get tables using catalog-qualified names
-catalog1_tbl = sess.get_table("cat1.ns.tbl")
-catalog2_tbl = sess.get_table("cat2.ns.tbl")
+# read table instance as a datadrame
+_ = t.read()
 
-# we can also set the current_catalog variable to simplify name resolution
-sess.set_catalog("cat2")
-sess.get_table("ns.tbl") # <-- this table came from "cat2.ns.tbl"
-
-# we can even run statements against the session!
-sess.sql("select * from cat1.ns.tbl, cat2.ns.tbl")
+# execute sql against the session
+sess.sql("SELECT * FROM T").show()
+╭───────╮
+│ x     │
+│ ---   │
+│ Int64 │
+╞═══════╡
+│ 1     │
+├╌╌╌╌╌╌╌┤
+│ 2     │
+├╌╌╌╌╌╌╌┤
+│ 3     │
+╰───────╯
 ```
 
 ## Usage
@@ -61,9 +51,9 @@ This section covers detailed usage of the current APIs with some code snippets.
 
 ### Setup
 
-!!! info
+!!! note ""
 
-    For these examples we are using sqlite Iceberg which requires `pyiceberg[sql-sqlite]`.
+    For these examples, we are using sqlite Iceberg which requires `pyiceberg[sql-sqlite]`.
 
 ```python
 from daft import Catalog
@@ -275,7 +265,7 @@ sess.sql("SELECT * FROM example.tbl, temp LIMIT 1").show()
 
 ## Reference
 
-!!! tip ""
+!!! note ""
 
     For complete documentation, please see the [Session API docs](api_docs/session.html).
 

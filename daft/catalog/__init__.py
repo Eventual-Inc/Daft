@@ -686,6 +686,13 @@ class Table(ABC):
         self.write(df, mode="overwrite", **options)
 
     ###
+    # python methods
+    ###
+
+    def __repr__(self):
+        return f"Table('{self.name}')"
+
+    ###
     # TODO deprecated catalog APIs #3819
     ###
 
