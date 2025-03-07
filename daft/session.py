@@ -11,24 +11,31 @@ from daft.logical.builder import LogicalPlanBuilder
 
 __all__ = [
     "Session",
+    "attach",
     "attach_catalog",
     "attach_table",
+    "create_namespace",
+    "create_table",
     "create_temp_table",
     "current_catalog",
     "current_namespace",
     "current_session",
     "detach_catalog",
     "detach_table",
+    "drop_namespace",
+    "drop_table",
     "get_catalog",
     "get_table",
     "has_catalog",
     "has_table",
     "list_catalogs",
+    "list_namespaces",
     "list_tables",
     "read_table",
     "set_catalog",
     "set_namespace",
     "set_session",
+    "write_table",
 ]
 
 
@@ -190,6 +197,21 @@ class Session:
         return self._session.create_temp_table(identifier, s._source, replace=True)
 
     ###
+    # drop_*
+    ###
+
+    def drop_namespace(self, identifier: Identifier | str):
+        if not (catalog := self.current_catalog()):
+            raise ValueError("Cannot drop a namespace without a current catalog")
+        return catalog.drop_namespace(identifier)
+
+    def drop_table(self, identifier: Identifier | str):
+        if not (catalog := self.current_catalog()):
+            raise ValueError("Cannot drop a table without a current catalog")
+        # TODO join the identifier with the current namespace
+        return catalog.drop_table(identifier)
+
+    ###
     # session state
     ###
 
@@ -298,7 +320,9 @@ class Session:
 
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         """Returns a list of matching namespaces in the current catalog."""
-        return []
+        if not (catalog := self.current_catalog()):
+            raise ValueError("Cannot list namespaces without a current catalog")
+        return catalog.list_namespaces(pattern)
 
     def list_tables(self, pattern: str | None = None) -> list[Identifier]:
         """Returns a list of available tables.
@@ -399,6 +423,11 @@ def _session() -> Session:
 ###
 
 
+def attach(object: Catalog | Table, alias: str | None = None) -> None:
+    """Attaches a known attachable object like a Catalog or Table."""
+    return _session().attach(object, alias)
+
+
 def attach_catalog(catalog: object | Catalog, alias: str | None = None) -> Catalog:
     """Attaches an external catalog to the current session."""
     return _session().attach_catalog(catalog, alias)
@@ -437,6 +466,21 @@ def create_table(self, identifier: Identifier | str, source: TableSource | objec
 def create_temp_table(identifier: str, source: object | TableSource = None) -> Table:
     """Creates a temp table scoped to current session's lifetime."""
     return _session().create_temp_table(identifier, source)
+
+
+###
+# drop_*
+###
+
+
+def drop_namespace(identifier: Identifier | str):
+    """Drops the namespace in the current session's active catalog."""
+    return _session().drop_namespace(identifier)
+
+
+def drop_table(identifier: Identifier | str):
+    """Drops the table in the current session's active catalog."""
+    return _session().drop_namespace(identifier)
 
 
 ###

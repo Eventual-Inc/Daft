@@ -1,70 +1,69 @@
-# Catalog Usage Guide
+# Daft Catalogs
+
+!!! warning "Warning"
+
+    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues?q=is%3Aissue%20state%3Aopen%20label%3Adata-catalogs) for any bugs you may encounter. Thank you! 🤘
 
 Catalogs are a centralized place to organize and govern your data. It is often responsible for creating objects such as tables and namespaces, managing transactions, and access control. Most importantly, the catalog abstracts away physical storage details, letting you focus on the logical structure of your data without worrying about file formats, partitioning schemes, or storage locations.
 
-Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs which make it easy to manage catalog objects (tables and namespaces), while also making it easy to leverage daft's great I/O support for reading and writing open table formats like [Iceberg](integrations/iceberg.md) and [Delta Lake](integrations/delta_lake.md).
+Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs to manage catalog objects (tables and namespaces), while also making it easy to leverage Daft's existing `daft.read_` and `df.write_` APIs for open table formats like [Iceberg](integrations/iceberg.md) and [Delta Lake](integrations/delta_lake.md).
 
-Our latest release ([0.4.5](https://github.com/Eventual-Inc/Daft/releases/tag/v0.4.5)) covers the basics for connecting to catalogs and reading tables, our next release will include write support and additional catalog integrations 🤘
+## Example
 
+!!! note "Note"
 
-## TL;DR
+    These examples use the Iceberg Catalog from the [Daft Sessions](sessions.md) tutorial.
 
 ```python
 import daft
 
-from daft.catalog import Catalog, Table
-from pyiceberg.catalog import load_catalog
+from daft import Catalog
 
-# load iceberg catalog (assume table 'ns.tbl' exists)
-pyiceberg_catalog = load_catalog("...")
+# iceberg_catalog from the  'Sessions' tutorial
+iceberg_catalog = load_catalog(...)
 
-# attach to the environment
-daft.attach_catalog(pyiceberg_catalog, alias="tldr")
+# create a daft catalog from the pyiceberg catalog instance
+catalog = Catalog.from_iceberg(iceberg_catalog)
 
-# read your tables as daft dataframes
-df = daft.read_table("ns.tbl")
-df.show()
+# verify
+catalog
 """
-╭─────────┬───────╮
-│ a       ┆ b     │
-│ ---     ┆ ---   │
-│ Boolean ┆ Int64 │
-╞═════════╪═══════╡
-│ true    ┆ 1     │
-├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-│ true    ┆ 2     │
-├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-│ false   ┆ 3     │
-╰─────────┴───────╯
+Catalog('default')
+"""
+
+# we can read as a dataframe
+catalog.read_table("example.tbl").schema()
+"""
+╭─────────────┬─────────╮
+│ column_name ┆ type    │
+╞═════════════╪═════════╡
+│ x           ┆ Boolean │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ y           ┆ Int64   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ z           ┆ Utf8    │
+╰─────────────┴─────────╯
+"""
+
+# give a dataframe...
+df = daft.from_pylist([{ "x": False, "y": -1, "z": "xyz" }])
+
+# we can write to tables
+catalog.write_table("example.tbl", df, mode="append")
+
+# we can get also get table instances
+t = catalog.get_table("example.tbl")
+
+# see 'Working with Tables' for what we can do!
+t
+"""
+Table('tbl')
 """
 ```
 
 ## Usage
 
-*This section covers detailed usage of the current APIs with some code snippets.*
-
-### Attach & Detach
-
-The attach/detach APIs make it possible to use existing catalog and table objects with daft.
-
-**Example**
-
-```python
-import daft
-
-# we have an existing pyiceberg Catalog
-my_pyiceberg_catalog = load_catalog("...")
-
-# we then `attach` it to the current environment
-daft.attach_catalog(my_pyiceberg_catalog, alias="")
-
-# we can create temporary tables from dataframes
-daft.create_temp_table("my_temp_table", df.from_pydict({ ... }))
-
-# we can now read our tables using just their identifiers!
-df1 = daft.read_table("my_namespace.my_table")
-df2 = daft.read_table("my_temp_table)
-```
+This section covers detailed usage of the current APIs with some code snippets.
 
 ### Working with Catalogs
 
@@ -73,7 +72,9 @@ The `Catalog` interface allows you to perform catalog actions like `get_table` a
 **Example**
 
 ```python
-from daft import Catalog
+import daft
+
+from daft import Catalog, Table
 
 # create a catalog from a pyiceberg catalog object
 _ = Catalog.from_iceberg(pyiceberg_catalog)
@@ -81,35 +82,45 @@ _ = Catalog.from_iceberg(pyiceberg_catalog)
 # create a catalog from a unity catalog object
 _ = Catalog.from_unity(unity_catalog)
 
+# we can register various types as tables, note that all are equivalent
+example_dict = { "x": [ 1, 2, 3 ] }
+example_df = daft.from_pydict(example_dict)
+example_table = Table.from_df("temp", example_df)
+
 # create a catalog from a pydict mapping names to tables
-catalog = Catalog.from_pydict({
-    "T": table_t,
-    "S": table_s,
-})
+catalog = Catalog.from_pydict(
+    {
+        "R": example_dict,
+        "S": example_df,
+        "T": example_table,
+    }
+)
 
 # list available tables (for iceberg, the pattern is a prefix)
 catalog.list_tables(pattern=None)
+"""
+['R', 'S', 'T']
+"""
 
 # get a table by name
 table_t = catalog.get_table("T")
-table_s = catalog.get_table("S")
+
+#
+table_t.show()
+"""
+╭───────╮
+│ x     │
+│ ---   │
+│ Int64 │
+╞═══════╡
+│ 1     │
+├╌╌╌╌╌╌╌┤
+│ 2     │
+├╌╌╌╌╌╌╌┤
+│ 3     │
+╰───────╯
+"""
 ```
-
-**APIs**
-
-```python
-class Catalog(ABC):
-
-    def get_table(self, identifier: Identifier | str) -> Table: ...
-
-    def list_tables(self, pattern: str | None = None) -> list[str]: ...
-```
-
-**Notes**
-
-* You can create a Catalog from `pyiceberg` and `daft.unity` catalog objects.
-* We are actively working on additional catalog implementations.
-* Our next release will include DDL actions like `create_*` and `drop_*`.
 
 ### Working with Tables
 
@@ -137,99 +148,18 @@ daft.create_temp_table("my_temp_table", df.from_pydict({ ... }))
 df = daft.read_table("my_temp_table")
 ```
 
-**APIs**
+!!! note "Note"
 
-```python
-class Table(ABC):
+    Today you can read from `pyiceberg` and `daft.unity` table objects.
 
-    def read(self) -> DataFrame: ...
 
-    def show(self) -> None: ...
+## Reference
 
-    # coming soon!
-    # def append(self, df: DataFrame) -> None:  ...
+!!! note "Note"
 
-    # coming soon!
-    # def overwrite(self, df: DataFrame) -> None:  ...
-```
+    For complete documentation, please see the [Catalog & Table API docs](api_docs/catalog.html).
 
-**Notes**
-
-* Today you can read from `pyiceberg` and `daft.unity` table objects.
-* The daft catalog interface always returns tables.
-* We are actively working on additional table implementations and write APIs.
-
-### Working with Sessions
-
-Sessions hold attached objects, temporary objects, and stateful variables like the `current_catalog` and `current_namespace`.
-
-**Example**
-
-```python
-import daft
-
-# when you do `import daft`, there is an implicit global session
-sess = daft.current_session()
-
-# ...
-
-from daft import Session
-
-# you can also create an empty session object
-sess = Session()
-
-cat1 = # pyiceberg catalog
-cat2 = # unity catalog
-
-# we can attach external catalog instances to a session
-sess.attach_catalog(cat1, alias="cat1")
-sess.attach_catalog(cat2, alias="cat2")
-
-# we can then get tables using catalog-qualified names
-catalog1_tbl = sess.get_table("cat1.ns.tbl")
-catalog2_tbl = sess.get_table("cat2.ns.tbl")
-
-# we can also set the current_catalog variable to simplify name resolution
-sess.set_catalog("cat2")
-sess.get_table("ns.tbl") # <-- this table came from "cat2.ns.tbl"
-
-# we can even run statements against the session!
-sess.sql("select * from ice1.ns.tbl, ice2.ns.tbl")
-```
-
-**APIs**
-
-```python
-def attach_catalog(catalog: Catalog | object, alias: str | None = None) -> Catalog: ...
-
-def detach_catalog(alias: str): ...
-
-def attach_table(table: Table | object, alias: str | None = None) -> Table: ...
-
-def detach_table(alias: str): ...
-```
-
-**Notes**
-
-* You can call attach/detach on `daft.` to use the current environment's session.
-* You can call attach/detach on a `Session` instance.
-
-### Catalogs and Tables with SQL
-
-You can execute SQL against your catalogs and tables using a session.
-
-```python
-from daft import Session
-
-# create an empty session
-sess = Session()
-
-# create a temporary table from a dataframe
-sess.create_temp_table("T", df.read_csv("/path/to/file.csv"))
-
-# attaching an existing external table
-sess.attach_table(my_iceberg_table, alias="S")
-
-# joining against a temp table and an iceberg table
-sess.sql("SELECT * FROM T, S")
-```
+* [Catalog](api_docs/catalog.html) - Interface for creating and accessing both tables and namespaces
+* [Identifier](api_docs/catalog.html#daft.Identifier) - Paths to objects e.g. `catalog.namespace.table`
+* [Table](api_docs/catalog.html#daft.Table) - Interface for reading and writing dataframes
+* [TableSource](api_docs/catalog.html#daft.TableSource) - Sources for table creation like a schema or dataframe.
