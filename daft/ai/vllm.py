@@ -9,6 +9,8 @@ from daft import Series, udf
 class vLLM:
     """A simple expression that runs vLLM over an input column of strings.
 
+    NOTE: This requires `vllm` to be installed. See: [vllm documentation](https://docs.vllm.ai/en/latest/getting_started/installation/index.html).
+
     ## Concurrency
 
     By default, this will run only 1 instance of a vLLM model for the entire query.
