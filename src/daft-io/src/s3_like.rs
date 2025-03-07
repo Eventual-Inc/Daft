@@ -36,6 +36,7 @@ use url::{ParseError, Position};
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
+    retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     FileFormat, InvalidArgumentSnafu, SourceType,
@@ -500,45 +501,42 @@ async fn build_s3_conf(
 
     let builder_copy = builder.clone();
     let s3_conf = builder.build();
-    const CRED_TRIES: u64 = 4;
-    const JITTER_MS: u64 = 2_500;
-    const MAX_BACKOFF_MS: u64 = 20_000;
-    const MAX_WAITTIME_MS: u64 = 45_000;
-    let check_creds = async || -> super::Result<bool> {
-        use rand::Rng;
+
+    let backoff = ExponentialBackoff {
+        max_waittime_ms: Some(45_000),
+        ..Default::default()
+    };
+
+    let check_creds = async || {
         use CredentialsError::{CredentialsNotLoaded, ProviderTimedOut};
-        let mut attempt = 0;
-        let first_attempt_time = std::time::Instant::now();
-        loop {
-            let creds = s3_conf
-                .credentials_cache()
-                .provide_cached_credentials()
-                .await;
-            attempt += 1;
-            match creds {
-                Ok(_) => return Ok(false),
-                Err(err @ ProviderTimedOut(..)) => {
-                    let total_time_waited_ms: u64 = first_attempt_time.elapsed().as_millis().try_into().unwrap();
-                    if attempt < CRED_TRIES && (total_time_waited_ms < MAX_WAITTIME_MS) {
-                        let jitter = rand::thread_rng().gen_range(0..((1 << attempt) * JITTER_MS)) as u64;
-                        let jitter = jitter.min(MAX_BACKOFF_MS);
-                        log::warn!("S3 Credentials Provider timed out when making client for {}! Attempt {attempt} out of {CRED_TRIES} tries. Trying again in {jitter}ms. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-                        tokio::time::sleep(Duration::from_millis(jitter)).await;
-                        continue;
-                    }
-                    Err(err)
-                }
-                Err(err @ CredentialsNotLoaded(..)) => {
-                    log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-                    return Ok(true);
-                }
-                Err(err) => Err(err),
-            }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
+
+        let creds = s3_conf
+            .credentials_cache()
+            .provide_cached_credentials()
+            .await;
+
+        match creds {
+            Ok(_) => Ok(false),
+            Err(err @ ProviderTimedOut(..)) => {
+                log::warn!(
+                    "S3 Credentials Provider timed out when making client for {}! Retrying. {err}",
+                    s3_conf.region().unwrap_or(&DEFAULT_REGION)
+                );
+                Err(RetryError::Transient(err))
+            }
+            Err(err @ CredentialsNotLoaded(..)) => {
+                log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
+                Ok(true)
+            }
+            Err(err) => Err(RetryError::Permanent(err)),
         }
     };
 
     if !config.anonymous {
-        anonymous = check_creds().await?;
+        anonymous = backoff
+            .retry(check_creds)
+            .await
+            .with_context(|_| UnableToLoadCredentialsSnafu {})?;
     }
 
     let s3_conf = if s3_conf.region().is_none() {
