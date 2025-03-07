@@ -439,17 +439,16 @@ impl GCSSource {
                 ClientConfig::default().with_auth().await.map_err(|e| {
                     use google_cloud_storage::client::google_cloud_auth::error::Error::HttpError;
 
-                    match &e {
-                        // 401 may mean that we are hitting the credentials server too much
-                        HttpError(reqwest_err)
-                            if reqwest_err
-                                .status()
-                                .is_some_and(|status| status.as_u16() == 401) =>
-                        {
-                            log::warn!("Encountered HTTP status code 401 while attempting to fetch Google Cloud Storage client, retrying.");
-                            RetryError::Transient(e)
-                        }
-                        _ => RetryError::Permanent(e),
+                    // retry when we may receive an error from hitting the credentials server too much
+                    if let HttpError(reqwest_err) = &e
+                        && (reqwest_err.is_request()
+                            || reqwest_err.is_timeout()
+                            || matches!(reqwest_err.status().map(|s| s.as_u16()), Some(429) | Some(500..599)))
+                    {
+                        log::warn!("Encountered HTTP error while attempting to fetch Google Cloud Storage client: {reqwest_err}. Retrying...");
+                        RetryError::Transient(e)
+                    } else {
+                        RetryError::Permanent(e)
                     }
                 })
             };
