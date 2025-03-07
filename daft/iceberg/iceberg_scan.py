@@ -129,7 +129,7 @@ class IcebergScanOperator(ScanOperator):
     ) -> daft.recordbatch.RecordBatch | None:
         partition_fields = iceberg_partition_spec_to_fields(self._table.schema(), spec)
         arrays = dict()
-        assert len(record._position_to_field_name) == len(partition_fields)
+        assert len(record) == len(partition_fields)
         for idx, pfield in enumerate(partition_fields):
             field = Field._from_pyfield(pfield.field)
             field_name = field.name
