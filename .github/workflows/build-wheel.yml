@@ -90,7 +90,6 @@ jobs:
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile release-lto --out dist --sdist
         before-script-linux: |
-          yum -y install perl-IPC-Cmd
           curl -fsSL https://bun.sh/install | bash
           export BUN_INSTALL="$HOME/.bun"
           export PATH="$BUN_INSTALL/bin:$PATH"
@@ -104,7 +103,6 @@ jobs:
         args: --profile release-lto --out dist
         before-script-linux: |
           export JEMALLOC_SYS_WITH_LG_PAGE=16
-          apt install -y unzip
           curl -fsSL https://bun.sh/install | bash
           export BUN_INSTALL="$HOME/.bun"
           export PATH="$BUN_INSTALL/bin:$PATH"
