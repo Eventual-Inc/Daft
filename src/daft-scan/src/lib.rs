@@ -671,15 +671,26 @@ impl ScanTask {
                         FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
                             config.csv_inflation_factor
                         }
-                        // TODO(desmond): We can do a lot better here.
-                        FileFormatConfig::Warc(_) => 1.0,
+                        FileFormatConfig::Warc(_) => {
+                            if self.is_gzipped() {
+                                5.0
+                            } else {
+                                1.0
+                            }
+                        }
                         #[cfg(feature = "python")]
                         FileFormatConfig::Database(_) => 1.0,
                         #[cfg(feature = "python")]
                         FileFormatConfig::PythonFunction => 1.0,
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
-                    let read_row_size = self.schema.estimate_row_size_bytes();
+                    let read_row_size = if self.is_warc() {
+                        // Across 100 Common Crawl WARC files, the average record size is 470 (metadata) + 27282 (content) bytes.
+                        // This is 27752 bytes per record.
+                        27752.0
+                    } else {
+                        self.schema.estimate_row_size_bytes()
+                    };
                     in_mem_size / read_row_size
                 })
             });
@@ -717,11 +728,11 @@ impl ScanTask {
         self.size_bytes_on_disk.map(|s| s as usize)
     }
 
-    fn is_gzipped_warc(&self) -> bool {
-        if !matches!(self.file_format_config.as_ref(), FileFormatConfig::Warc(_)) {
-            return false;
-        }
+    fn is_warc(&self) -> bool {
+        matches!(self.file_format_config.as_ref(), FileFormatConfig::Warc(_))
+    }
 
+    fn is_gzipped(&self) -> bool {
         self.sources
             .first()
             .and_then(|s| match s {
@@ -745,7 +756,7 @@ impl ScanTask {
     ) -> Option<usize> {
         // WARC files that are gzipped are often 5x smaller than the uncompressed size.
         // For example, see this blog post by Common Crawl: https://commoncrawl.org/blog/february-2025-crawl-archive-now-available
-        if self.is_gzipped_warc() {
+        if self.is_warc() && self.is_gzipped() {
             return self.size_bytes_on_disk.map(|s| s as usize * 5);
         }
         let mat_schema = self.materialized_schema();
