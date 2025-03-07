@@ -399,6 +399,7 @@ def udf(
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
     batch_size: int | None = None,
+    concurrency: int | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
     """`@udf` Decorator to convert a Python function/class into a `UDF`.
 
@@ -446,7 +447,7 @@ def udf(
     -----------------
 
     You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 2 CPUs to run. On a
-    machine/cluster with 8 CPUs, Daft will be able to run up to 4 instances of this UDF at once, giving you a concurrency of 4!
+    machine/cluster with 8 CPUs, Daft will be able to run up to 4 instances of this UDF at once!
 
     >>> import daft
     >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
@@ -507,6 +508,9 @@ def udf(
         memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
             this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
         batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
+        concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
+            UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
+            loading model weights for model batch inference.
 
     Returns:
         Callable[[UserDefinedPyFuncLike], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
@@ -538,6 +542,7 @@ def udf(
             return_dtype=inferred_return_dtype,
             resource_request=resource_request,
             batch_size=batch_size,
+            concurrency=concurrency,
         )
 
     return _udf
