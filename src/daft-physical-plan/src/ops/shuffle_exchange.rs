@@ -31,6 +31,7 @@ impl ShuffleExchange {
             ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
                 target_spec.clone()
             }
+            ShuffleExchangeStrategy::FlightShuffle { target_spec, .. } => target_spec.clone(),
         }
     }
 }
@@ -38,13 +39,21 @@ impl ShuffleExchange {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShuffleExchangeStrategy {
     /// Fully materialize the data after the Map, and then pull results from the Reduce.
-    NaiveFullyMaterializingMapReduce { target_spec: Arc<ClusteringSpec> },
+    NaiveFullyMaterializingMapReduce {
+        target_spec: Arc<ClusteringSpec>,
+    },
 
     /// Sequentially splits/coalesce partitions in order to meet a target number of partitions
-    SplitOrCoalesceToTargetNum { target_num_partitions: usize },
+    SplitOrCoalesceToTargetNum {
+        target_num_partitions: usize,
+    },
 
     MapReduceWithPreShuffleMerge {
         pre_shuffle_merge_threshold: usize,
+        target_spec: Arc<ClusteringSpec>,
+    },
+
+    FlightShuffle {
         target_spec: Arc<ClusteringSpec>,
     },
 }
@@ -95,6 +104,10 @@ impl ShuffleExchange {
                     pre_shuffle_merge_threshold
                 ));
             }
+            ShuffleExchangeStrategy::FlightShuffle { target_spec } => {
+                res.push("Strategy: FlightShuffle".to_string());
+                res.push(format!("Target Spec: {:?}", target_spec));
+            }
         }
         res
     }
@@ -141,6 +154,11 @@ impl ShuffleExchangeFactory {
             }
             Some(cfg) if cfg.shuffle_algorithm == "map_reduce" => {
                 ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+                    target_spec: clustering_spec,
+                }
+            }
+            Some(cfg) if cfg.shuffle_algorithm == "flight_shuffle" => {
+                ShuffleExchangeStrategy::FlightShuffle {
                     target_spec: clustering_spec,
                 }
             }

@@ -55,6 +55,10 @@ impl FileWriter for DummyWriter {
         self.byte_count
     }
 
+    fn bytes_per_file(&self) -> Vec<usize> {
+        vec![self.byte_count]
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         let path_series =
             Utf8Array::from_values("path", std::iter::once(self.file_idx.clone())).into_series();
