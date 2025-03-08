@@ -275,6 +275,34 @@ class Catalog(ABC):
             raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
 
     @staticmethod
+    def from_s3tables(table_bucket_arn: str, client: object | None = None, session: object | None = None):
+        """Creates a Daft Catalog from S3 Tables bucket ARN, with optional client or session.
+
+        If neither a client nor session is given, the default boto3 client is used.
+
+        Args:
+            table_bucket_arn (str): s3tables bucket arn
+            client: optional boto3 client
+            session: optional boto3 session
+
+        Returns:
+            Catalog: new daft catalog instance backed by S3 Tables.
+        """
+        try:
+            from daft.catalog.__s3tables import S3Catalog
+
+            if client is not None and session is not None:
+                raise ValueError("Can provide either a client or session but not both.")
+            elif client is not None:
+                return S3Catalog.from_client(table_bucket_arn, client)
+            elif session is not None:
+                return S3Catalog.from_session(table_bucket_arn, session)
+            else:
+                return S3Catalog.from_arn(table_bucket_arn)
+        except ImportError:
+            raise ImportError("S3 Tables support not installed: pip install -U 'getdaft[aws]'")
+
+    @staticmethod
     def _from_obj(obj: object) -> Catalog:
         """Returns a Daft Catalog from a supported object type or raises a ValueError."""
         for factory in (Catalog.from_iceberg, Catalog.from_unity):
