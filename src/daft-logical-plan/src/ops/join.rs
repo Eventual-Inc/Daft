@@ -67,8 +67,8 @@ impl JoinPredicate {
         Self(None)
     }
 
-    pub fn inner(&self) -> Option<ExprRef> {
-        self.0.clone()
+    pub fn inner(&self) -> Option<&ExprRef> {
+        self.0.as_ref()
     }
 
     /// Pop the equality predicates out of the conjunction where one side is all left and the other side is all right columns.

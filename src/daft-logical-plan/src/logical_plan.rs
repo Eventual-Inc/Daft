@@ -474,7 +474,7 @@ impl LogicalPlan {
         names
     }
 
-    pub fn get_schema_for_alias(self: Arc<Self>, alias: &str) -> DaftResult<Option<SchemaRef>> {
+    pub fn get_schema_for_alias(self: &Arc<Self>, alias: &str) -> DaftResult<Option<SchemaRef>> {
         use common_treenode::TreeNode;
 
         let mut schema = None;
@@ -500,7 +500,7 @@ impl LogicalPlan {
         Ok(schema)
     }
 
-    pub fn get_schema_for_id(self: Arc<Self>, id: usize) -> DaftResult<Option<SchemaRef>> {
+    pub fn get_schema_for_id(self: &Arc<Self>, id: usize) -> DaftResult<Option<SchemaRef>> {
         use common_treenode::TreeNode;
 
         let mut schema = None;

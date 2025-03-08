@@ -120,7 +120,7 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
 }
 
 /// Check if you can resolve an unresolved column to the provided plan
-fn col_resolves_to_plan(column: &UnresolvedColumn, plan: LogicalPlanRef) -> DaftResult<bool> {
+fn col_resolves_to_plan(column: &UnresolvedColumn, plan: &LogicalPlanRef) -> DaftResult<bool> {
     let plan_schema = plan.schema();
 
     Ok(match &column.plan_ref {
@@ -150,10 +150,10 @@ fn col_resolves_to_plan(column: &UnresolvedColumn, plan: LogicalPlanRef) -> Daft
     })
 }
 
-fn resolve_to_basic_and_outer_cols(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<ExprRef> {
+fn resolve_to_basic_and_outer_cols(expr: ExprRef, plan: &LogicalPlanRef) -> DaftResult<ExprRef> {
     expr.transform(|e| {
         if let Expr::Column(Column::Unresolved(column)) = e.as_ref() {
-            if col_resolves_to_plan(column, plan.clone())? {
+            if col_resolves_to_plan(column, plan)? {
                 Ok(Transformed::yes(resolved_col(column.name.clone())))
             } else if let Some(schema) = &column.plan_schema {
                 Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(
@@ -236,7 +236,7 @@ impl ExprResolver<'_> {
 
         expand_wildcard(expr, plan.clone())?
             .into_iter()
-            .map(|e| resolve_to_basic_and_outer_cols(e, plan.clone()))
+            .map(|e| resolve_to_basic_and_outer_cols(e, &plan))
             .map(|e| {
                 if self.in_agg_context {
                     self.validate_expr_in_agg(e?)
@@ -281,8 +281,8 @@ impl ExprResolver<'_> {
 
         expr.transform(|e| {
             if let Expr::Column(Column::Unresolved(column)) = e.as_ref() {
-                let resolves_left = col_resolves_to_plan(column, left_plan.clone())?;
-                let resolves_right = col_resolves_to_plan(column, right_plan.clone())?;
+                let resolves_left = col_resolves_to_plan(column, &left_plan)?;
+                let resolves_right = col_resolves_to_plan(column, &right_plan)?;
 
                 match (resolves_left, resolves_right) {
                     (true, true) => Err(DaftError::ValueError(format!(
