@@ -63,7 +63,7 @@ def get_run_metadata():
     return {
         "started at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f"),
         "daft version": daft.__version__,
-        "github ref": os.getenv("GITHUB_REF"),
+        "github ref": os.getenv("GITHUB_REF_NAME"),
         "github sha": os.getenv("GITHUB_SHA"),
     }
 
