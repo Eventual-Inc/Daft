@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use common_display::DisplayAs;
@@ -16,7 +16,6 @@ use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
@@ -502,19 +501,21 @@ impl From<ScanTask> for ScanTaskLikeRef {
 
 pub type ScanTaskRef = Arc<ScanTask>;
 
-lazy_static! {
-    static ref WARC_COLUMN_SIZES: HashMap<&'static str, usize> = {
+static WARC_COLUMN_SIZES: OnceLock<HashMap<&'static str, usize>> = OnceLock::new();
+
+fn warc_column_sizes() -> &'static HashMap<&'static str, usize> {
+    WARC_COLUMN_SIZES.get_or_init(|| {
         let mut m = HashMap::new();
         // Average sizes based on analysis of Common Crawl WARC files.
-        m.insert("WARC-Record-ID", 36);  // UUID-style identifiers.
-        m.insert("WARC-Type", 8);        // e.g. "response".
-        m.insert("WARC-Date", 8);        // Timestamp stored as i64 nanoseconds.
-        m.insert("Content-Length", 8);   // i64.
+        m.insert("WARC-Record-ID", 36); // UUID-style identifiers.
+        m.insert("WARC-Type", 8); // e.g. "response".
+        m.insert("WARC-Date", 8); // Timestamp stored as i64 nanoseconds.
+        m.insert("Content-Length", 8); // i64.
         m.insert("WARC-Identified-Payload-Type", 5); // e.g. "text/html". Typically null.
         m.insert("warc_content", 27282); // Average content size.
-        m.insert("warc_headers", 350);   // Average headers size.
+        m.insert("warc_headers", 350); // Average headers size.
         m
-    };
+    })
 }
 
 impl ScanTask {
@@ -781,7 +782,7 @@ impl ScanTask {
             let row_size: usize = mat_schema
                 .fields
                 .iter()
-                .map(|(name, _)| WARC_COLUMN_SIZES.get(name.as_str()).copied().unwrap_or(8))
+                .map(|(name, _)| warc_column_sizes().get(name.as_str()).copied().unwrap_or(8))
                 .sum();
 
             let estimate = (approx_num_rows * row_size as f64) as usize;
