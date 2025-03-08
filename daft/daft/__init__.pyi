@@ -1582,6 +1582,13 @@ class PyMicroPartition:
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
     ): ...
+    @classmethod
+    def read_warc(
+        cls,
+        uri: str,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ): ...
 
 class PhysicalPlanScheduler:
     """A work scheduler for physical query plans."""

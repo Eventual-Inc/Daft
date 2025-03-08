@@ -3,6 +3,7 @@
 use std::{
     any::Any,
     borrow::Cow,
+    collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
     sync::Arc,
@@ -15,6 +16,7 @@ use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
@@ -500,6 +502,21 @@ impl From<ScanTask> for ScanTaskLikeRef {
 
 pub type ScanTaskRef = Arc<ScanTask>;
 
+lazy_static! {
+    static ref WARC_COLUMN_SIZES: HashMap<&'static str, usize> = {
+        let mut m = HashMap::new();
+        // Average sizes based on analysis of Common Crawl WARC files.
+        m.insert("WARC-Record-ID", 36);  // UUID-style identifiers.
+        m.insert("WARC-Type", 8);        // e.g. "response".
+        m.insert("WARC-Date", 8);        // Timestamp stored as i64 nanoseconds.
+        m.insert("Content-Length", 8);   // i64.
+        m.insert("WARC-Identified-Payload-Type", 5); // e.g. "text/html". Typically null.
+        m.insert("warc_content", 27282); // Average content size.
+        m.insert("warc_headers", 350);   // Average headers size.
+        m
+    };
+}
+
 impl ScanTask {
     #[must_use]
     pub fn new(
@@ -671,15 +688,26 @@ impl ScanTask {
                         FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
                             config.csv_inflation_factor
                         }
-                        // TODO(desmond): We can do a lot better here.
-                        FileFormatConfig::Warc(_) => 1.0,
+                        FileFormatConfig::Warc(_) => {
+                            if self.is_gzipped() {
+                                5.0
+                            } else {
+                                1.0
+                            }
+                        }
                         #[cfg(feature = "python")]
                         FileFormatConfig::Database(_) => 1.0,
                         #[cfg(feature = "python")]
                         FileFormatConfig::PythonFunction => 1.0,
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
-                    let read_row_size = self.schema.estimate_row_size_bytes();
+                    let read_row_size = if self.is_warc() {
+                        // Across 100 Common Crawl WARC files, the average record size is 470 (metadata) + 27282 (content) bytes.
+                        // This is 27752 bytes per record.
+                        27752.0
+                    } else {
+                        self.schema.estimate_row_size_bytes()
+                    };
                     in_mem_size / read_row_size
                 })
             });
@@ -717,30 +745,68 @@ impl ScanTask {
         self.size_bytes_on_disk.map(|s| s as usize)
     }
 
+    fn is_warc(&self) -> bool {
+        matches!(self.file_format_config.as_ref(), FileFormatConfig::Warc(_))
+    }
+
+    fn is_gzipped(&self) -> bool {
+        self.sources
+            .first()
+            .and_then(|s| match s {
+                DataSource::File { path, .. } => {
+                    let filename = std::path::Path::new(path);
+                    Some(
+                        filename
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("gz")),
+                    )
+                }
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
     #[must_use]
     pub fn estimate_in_memory_size_bytes(
         &self,
         config: Option<&DaftExecutionConfig>,
     ) -> Option<usize> {
-        let mat_schema = self.materialized_schema();
-        self.statistics
-            .as_ref()
-            .and_then(|s| {
-                // Derive in-memory size estimate from table stats.
-                self.num_rows().and_then(|num_rows| {
-                    let row_size = s.estimate_row_size(Some(mat_schema.as_ref())).ok()?;
-                    let estimate = (num_rows as f64) * row_size;
-                    Some(estimate as usize)
+        // WARC files that are gzipped are often 5x smaller than the uncompressed size.
+        // For example, see this blog post by Common Crawl: https://commoncrawl.org/blog/february-2025-crawl-archive-now-available
+        if self.is_warc() {
+            let approx_num_rows = self.approx_num_rows(config)?;
+            let mat_schema = self.materialized_schema();
+
+            // Calculate size based on materialized schema and WARC column sizes
+            let row_size: usize = mat_schema
+                .fields
+                .iter()
+                .map(|(name, _)| WARC_COLUMN_SIZES.get(name.as_str()).copied().unwrap_or(8))
+                .sum();
+
+            let estimate = (approx_num_rows * row_size as f64) as usize;
+            Some(estimate)
+        } else {
+            let mat_schema = self.materialized_schema();
+            self.statistics
+                .as_ref()
+                .and_then(|s| {
+                    // Derive in-memory size estimate from table stats.
+                    self.num_rows().and_then(|num_rows| {
+                        let row_size = s.estimate_row_size(Some(mat_schema.as_ref())).ok()?;
+                        let estimate = (num_rows as f64) * row_size;
+                        Some(estimate as usize)
+                    })
                 })
-            })
-            .or_else(|| {
-                // use approximate number of rows multiplied by an approximate bytes-per-row
-                self.approx_num_rows(config).map(|approx_num_rows| {
-                    let row_size = mat_schema.estimate_row_size_bytes();
-                    let estimate = approx_num_rows * row_size;
-                    estimate as usize
+                .or_else(|| {
+                    // use approximate number of rows multiplied by an approximate bytes-per-row
+                    self.approx_num_rows(config).map(|approx_num_rows| {
+                        let row_size = mat_schema.estimate_row_size_bytes();
+                        let estimate = approx_num_rows * row_size;
+                        estimate as usize
+                    })
                 })
-            })
+        }
     }
 
     #[must_use]
