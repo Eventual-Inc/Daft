@@ -3,6 +3,7 @@
 use std::{
     any::Any,
     borrow::Cow,
+    collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
     sync::Arc,
@@ -15,6 +16,7 @@ use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
@@ -500,6 +502,21 @@ impl From<ScanTask> for ScanTaskLikeRef {
 
 pub type ScanTaskRef = Arc<ScanTask>;
 
+lazy_static! {
+    static ref WARC_COLUMN_SIZES: HashMap<&'static str, usize> = {
+        let mut m = HashMap::new();
+        // Average sizes based on analysis of Common Crawl WARC files.
+        m.insert("WARC-Record-ID", 36);  // UUID-style identifiers.
+        m.insert("WARC-Type", 8);        // e.g. "response".
+        m.insert("WARC-Date", 8);        // Timestamp stored as i64 nanoseconds.
+        m.insert("Content-Length", 8);   // i64.
+        m.insert("WARC-Identified-Payload-Type", 5); // e.g. "text/html". Typically null.
+        m.insert("warc_content", 27282); // Average content size.
+        m.insert("warc_headers", 350);   // Average headers size.
+        m
+    };
+}
+
 impl ScanTask {
     #[must_use]
     pub fn new(
@@ -756,28 +773,40 @@ impl ScanTask {
     ) -> Option<usize> {
         // WARC files that are gzipped are often 5x smaller than the uncompressed size.
         // For example, see this blog post by Common Crawl: https://commoncrawl.org/blog/february-2025-crawl-archive-now-available
-        if self.is_warc() && self.is_gzipped() {
-            return self.size_bytes_on_disk.map(|s| s as usize * 5);
+        if self.is_warc() {
+            let approx_num_rows = self.approx_num_rows(config)?;
+            let mat_schema = self.materialized_schema();
+
+            // Calculate size based on materialized schema and WARC column sizes
+            let row_size: usize = mat_schema
+                .fields
+                .iter()
+                .map(|(name, _)| WARC_COLUMN_SIZES.get(name.as_str()).copied().unwrap_or(8))
+                .sum();
+
+            let estimate = (approx_num_rows * row_size as f64) as usize;
+            Some(estimate)
+        } else {
+            let mat_schema = self.materialized_schema();
+            self.statistics
+                .as_ref()
+                .and_then(|s| {
+                    // Derive in-memory size estimate from table stats.
+                    self.num_rows().and_then(|num_rows| {
+                        let row_size = s.estimate_row_size(Some(mat_schema.as_ref())).ok()?;
+                        let estimate = (num_rows as f64) * row_size;
+                        Some(estimate as usize)
+                    })
+                })
+                .or_else(|| {
+                    // use approximate number of rows multiplied by an approximate bytes-per-row
+                    self.approx_num_rows(config).map(|approx_num_rows| {
+                        let row_size = mat_schema.estimate_row_size_bytes();
+                        let estimate = approx_num_rows * row_size;
+                        estimate as usize
+                    })
+                })
         }
-        let mat_schema = self.materialized_schema();
-        self.statistics
-            .as_ref()
-            .and_then(|s| {
-                // Derive in-memory size estimate from table stats.
-                self.num_rows().and_then(|num_rows| {
-                    let row_size = s.estimate_row_size(Some(mat_schema.as_ref())).ok()?;
-                    let estimate = (num_rows as f64) * row_size;
-                    Some(estimate as usize)
-                })
-            })
-            .or_else(|| {
-                // use approximate number of rows multiplied by an approximate bytes-per-row
-                self.approx_num_rows(config).map(|approx_num_rows| {
-                    let row_size = mat_schema.estimate_row_size_bytes();
-                    let estimate = approx_num_rows * row_size;
-                    estimate as usize
-                })
-            })
     }
 
     #[must_use]

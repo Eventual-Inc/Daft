@@ -22,6 +22,7 @@ daft-stats = {path = "../daft-stats", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
+lazy_static = "1.5.0"
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
