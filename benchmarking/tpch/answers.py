@@ -621,7 +621,8 @@ def q21(get_df: GetDFFunc) -> DataFrame:
 
     res_1 = (
         lineitem.select("L_SUPPKEY", "L_ORDERKEY")
-        .distinct()
+        # distinct not needed? either way we should stop using dataframe answers soon
+        # .distinct()
         .groupby("L_ORDERKEY")
         .agg(col("L_SUPPKEY").count().alias("nunique_col"))
         .where(col("nunique_col") > 1)
