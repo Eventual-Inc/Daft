@@ -201,6 +201,7 @@ common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
 common-runtime = {path = "src/common/runtime", default-features = false}
+daft-algebra = {path = "src/daft-algebra"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}

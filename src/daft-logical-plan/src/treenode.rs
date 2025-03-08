@@ -42,7 +42,10 @@ impl LogicalPlan {
         self: Arc<Self>,
         mut f: F,
     ) -> DaftResult<Transformed<Arc<Self>>> {
-        use crate::ops::{ActorPoolProject, Explode, Filter, Join, Project, Repartition, Sort};
+        use crate::ops::{ActorPoolProject, Explode, Filter, Project, Repartition, Sort};
+
+        // TODO: support mapping join predicate once we can have duplicate columns in schema
+        // This is because we would pass in the combined schema of the left and right sides into `f`
 
         Ok(match self.as_ref() {
             Self::Project(Project {
@@ -166,47 +169,6 @@ impl LogicalPlan {
                     })
                     .into()
                 }),
-            Self::Join(Join {
-                plan_id,
-                left,
-                right,
-                left_on,
-                right_on,
-                null_equals_nulls,
-                join_type,
-                join_strategy,
-                output_schema,
-                stats_state,
-            }) => {
-                let new_left_on = left_on
-                    .iter()
-                    .cloned()
-                    .map_and_collect(|expr| f(expr, &left.schema()))?;
-                let new_right_on = right_on
-                    .iter()
-                    .cloned()
-                    .map_and_collect(|expr| f(expr, &right.schema()))?;
-
-                if new_left_on.transformed && new_right_on.transformed {
-                    Transformed::yes(
-                        Self::Join(Join {
-                            plan_id: *plan_id,
-                            left: left.clone(),
-                            right: right.clone(),
-                            left_on: new_left_on.data,
-                            right_on: new_right_on.data,
-                            null_equals_nulls: null_equals_nulls.clone(),
-                            join_type: *join_type,
-                            join_strategy: *join_strategy,
-                            output_schema: output_schema.clone(),
-                            stats_state: stats_state.clone(),
-                        })
-                        .into(),
-                    )
-                } else {
-                    Transformed::no(self)
-                }
-            }
             Self::Source(Source {
                 plan_id,
                 output_schema,
