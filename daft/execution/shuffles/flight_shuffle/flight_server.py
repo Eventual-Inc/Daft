@@ -1,11 +1,8 @@
 import os
-import shutil
 
-import pyarrow as pa
-import pyarrow.feather as feather
-import pyarrow.flight as flight
-
+from daft.dependencies import flight, pa
 from daft.execution.shuffles.flight_shuffle.utils import (
+    PartitionCache,
     get_shuffle_file_path,
 )
 
@@ -16,49 +13,41 @@ class FlightServer(flight.FlightServerBase):
         host: str,
         node_id: str,
         shuffle_stage_id: int,
+        partition_cache: PartitionCache,
         **kwargs,
     ):
         location = f"grpc://{host}:0"
-        super(FlightServer, self).__init__(location, **kwargs)
+        super().__init__(location, **kwargs)
         self.node_id = node_id
         self.shuffle_stage_id = shuffle_stage_id
+        self.partition_cache = partition_cache
 
     def get_port(self):
         return self.port
 
     def do_get(self, context, ticket):
-        shuffle_stage_id, partition = ticket.ticket.decode("utf-8").split(",")
+        shuffle_stage_id, partition_idx = ticket.ticket.decode("utf-8").split(",")
         shuffle_stage_id = int(shuffle_stage_id)
-        partition_idx = int(partition)
-        assert shuffle_stage_id == self.shuffle_stage_id
+        partition_idx = int(partition_idx)
+        assert (
+            shuffle_stage_id == self.shuffle_stage_id
+        ), f"Shuffle stage id mismatch, expected {self.shuffle_stage_id}, got {shuffle_stage_id}"
 
-        path = get_shuffle_file_path(self.node_id, self.shuffle_stage_id, partition_idx)
-        files = os.listdir(path)
+        schema = self.partition_cache.schema()
+        assert (
+            schema is not None
+        ), f"Schema is not set in partition cache, for node {self.node_id}, shuffle stage {self.shuffle_stage_id}, partition {partition_idx}"
 
         def read_tables():
-            first_file = files[0]
-            first_table = feather.read_table(f"{path}/{first_file}")
-            yield first_table.schema
-            if len(first_table) > 0:
-                yield first_table
-            for file in files[1:]:
-                table = feather.read_table(f"{path}/{file}")
-                if len(table) > 0:
-                    yield table
+            path = get_shuffle_file_path(self.node_id, self.shuffle_stage_id, partition_idx)
+            files = os.listdir(path)
+            if len(files) == 0:
+                return
 
-        generator = read_tables()
-        return pa.flight.GeneratorStream(next(generator), generator)
+            for file in files:
+                # with pa.memory_map(f"{path}/{file}") as source:
+                #     yield pa.ipc.open_file(source).read_all()
+                with pa.OSFile(f"{path}/{file}", "rb") as source:
+                    yield pa.ipc.open_file(source).read_all()
 
-    def do_action(self, context, action):
-        if action.type == "drop_partition":
-            self.do_drop_partition(action.body.to_pybytes().decode("utf-8"))
-        else:
-            raise NotImplementedError
-
-    def do_drop_partition(self, partition):
-        path = get_shuffle_file_path(self.node_id, self.shuffle_stage_id, int(partition))
-        try:
-            if os.path.exists(path):
-                shutil.rmtree(path)
-        except Exception as e:
-            print(f"Error dropping partition {partition}: {e}")
+        return pa.flight.GeneratorStream(schema, read_tables())

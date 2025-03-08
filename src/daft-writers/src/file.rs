@@ -12,6 +12,7 @@ struct TargetFileSizeWriter {
     current_in_memory_size_estimate: usize,
     current_in_memory_bytes_written: usize,
     total_physical_bytes_written: usize,
+    bytes_per_file: Vec<usize>,
     current_writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     writer_factory:
         Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
@@ -36,6 +37,7 @@ impl TargetFileSizeWriter {
             current_in_memory_size_estimate: estimate,
             current_in_memory_bytes_written: 0,
             total_physical_bytes_written: 0,
+            bytes_per_file: vec![],
             current_writer: writer,
             writer_factory,
             size_calculator,
@@ -77,6 +79,8 @@ impl TargetFileSizeWriter {
         // Close the current writer and add the result to the results
         if let Some(result) = self.current_writer.close()? {
             self.results.push(result);
+            self.bytes_per_file
+                .push(self.current_writer.bytes_written());
         }
 
         // Create a new writer and reset the current bytes written
@@ -143,10 +147,16 @@ impl FileWriter for TargetFileSizeWriter {
         self.total_physical_bytes_written
     }
 
+    fn bytes_per_file(&self) -> Vec<usize> {
+        self.bytes_per_file.clone()
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         if self.current_in_memory_bytes_written > 0 {
             if let Some(result) = self.current_writer.close()? {
                 self.results.push(result);
+                self.bytes_per_file
+                    .push(self.current_writer.bytes_written());
             }
         }
         self.is_closed = true;

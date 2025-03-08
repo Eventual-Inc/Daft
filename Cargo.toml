@@ -36,6 +36,7 @@ daft-recordbatch = {path = "src/daft-recordbatch", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
 daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-session = {path = "src/daft-session", default-features = false}
+daft-shuffles = {path = "src/daft-shuffles", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-warc = {path = "src/daft-warc", default-features = false}
@@ -80,6 +81,7 @@ python = [
   "daft-scheduler/python",
   "daft-sql/python",
   "daft-session/python",
+  "daft-shuffles/python",
   "daft-stats/python",
   "daft-recordbatch/python",
   "daft-writers/python"
@@ -118,6 +120,10 @@ debug = 1  # include symbols
 inherits = "release"
 lto = 'thin'
 strip = "none"  # dont strip
+
+[profile.release]
+panic = 'abort'
+strip = true
 
 [profile.release-lto]
 codegen-units = 1
@@ -170,6 +176,7 @@ members = [
   "src/daft-scan",
   "src/daft-scheduler",
   "src/daft-session",
+  "src/daft-shuffles",
   "src/daft-sketch",
   "src/daft-sql",
   "src/daft-recordbatch",

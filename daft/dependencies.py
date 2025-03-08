@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import pyarrow.csv as pacsv
     import pyarrow.dataset as pads
+    import pyarrow.flight as flight
     import pyarrow.fs as pafs
     import pyarrow.json as pajson
     import pyarrow.parquet as pq
@@ -24,5 +25,6 @@ else:
     pafs = LazyImport("pyarrow.fs")
     pajson = LazyImport("pyarrow.json")
     pq = LazyImport("pyarrow.parquet")
+    flight = LazyImport("pyarrow.flight")
 
 unity_catalog = LazyImport("daft.unity_catalog")

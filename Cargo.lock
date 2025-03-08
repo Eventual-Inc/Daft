@@ -1948,6 +1948,7 @@ dependencies = [
  "daft-scan",
  "daft-scheduler",
  "daft-session",
+ "daft-shuffles",
  "daft-sql",
  "daft-stats",
  "daft-warc",
@@ -2614,6 +2615,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-shuffles"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-runtime",
+ "daft-dsl",
+ "daft-micropartition",
+ "daft-recordbatch",
+ "daft-writers",
+ "futures",
+ "pyo3",
+ "tokio",
+]
+
+[[package]]
 name = "daft-sketch"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2692,6 +2708,7 @@ dependencies = [
 name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-daft-config",
  "common-error",
  "common-file-formats",
