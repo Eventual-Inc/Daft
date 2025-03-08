@@ -1,4 +1,5 @@
 mod detect_monotonic_id;
+mod detect_window_function;
 mod drop_repartition;
 mod eliminate_cross_join;
 mod eliminate_subquery_alias;
@@ -16,6 +17,7 @@ mod split_actor_pool_projects;
 mod unnest_subquery;
 
 pub use detect_monotonic_id::DetectMonotonicId;
+pub use detect_window_function::DetectWindowFunction;
 pub use drop_repartition::DropRepartition;
 pub use eliminate_cross_join::EliminateCrossJoin;
 pub use eliminate_subquery_alias::EliminateSubqueryAliasRule;

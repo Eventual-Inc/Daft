@@ -172,6 +172,8 @@ impl Display for Column {
 
 pub type ExprRef = Arc<Expr>;
 
+pub mod window;
+
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
     #[display("{_0}")]
@@ -199,6 +201,7 @@ pub enum Expr {
         inputs: Vec<ExprRef>,
     },
 
+    // add window function variant here (or it will be a function itself)
     #[display("not({_0})")]
     Not(ExprRef),
 
@@ -1085,7 +1088,7 @@ impl Expr {
             })) => plan_schema.get_field(name).cloned(),
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
-                plan_schema: None,
+                plan_schema: _none,
                 ..
             })) => schema.get_field(name).cloned(),
 
@@ -1291,11 +1294,26 @@ impl Expr {
             Self::List(..) => "list",
             Self::Function { func, inputs } => match func {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
-                _ => inputs.first().unwrap().name(),
+                FunctionExpr::Window(_) => "window_function", // Special handling for window functions
+                _ => {
+                    if inputs.is_empty() {
+                        // Handle the case where there are no inputs
+                        "function"
+                    } else {
+                        inputs.first().unwrap().name()
+                    }
+                }
             },
             Self::ScalarFunction(func) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
-                _ => func.inputs.first().unwrap().name(),
+                _ => {
+                    if func.inputs.is_empty() {
+                        // Handle the case where there are no inputs
+                        "function"
+                    } else {
+                        func.inputs.first().unwrap().name()
+                    }
+                }
             },
             Self::BinaryOp {
                 op: _,
