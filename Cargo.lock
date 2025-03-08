@@ -2689,7 +2689,6 @@ dependencies = [
  "daft-recordbatch",
  "flate2",
  "futures",
- "rayon",
  "serde_json",
  "snafu",
  "tokio",
