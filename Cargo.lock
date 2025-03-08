@@ -2623,6 +2623,7 @@ dependencies = [
  "daft-dsl",
  "daft-micropartition",
  "daft-recordbatch",
+ "daft-schema",
  "daft-writers",
  "futures",
  "pyo3",

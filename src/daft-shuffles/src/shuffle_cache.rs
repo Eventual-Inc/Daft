@@ -5,21 +5,23 @@ use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+use daft_schema::schema::SchemaRef;
 use daft_writers::{make_ipc_writer, FileWriter};
 use tokio::sync::Mutex;
 
-struct ShuffleWriterState {
+struct ShuffleCacheState {
     writer_tasks: Vec<RuntimeTask<DaftResult<Vec<usize>>>>,
     writer_senders: Vec<tokio::sync::mpsc::Sender<Arc<MicroPartition>>>,
+    schema: Option<SchemaRef>,
 }
 
-pub struct ShuffleWriter {
-    state: Mutex<ShuffleWriterState>,
+pub struct ShuffleCache {
+    state: Mutex<ShuffleCacheState>,
     partition_by: Option<Vec<ExprRef>>,
     num_partitions: usize,
 }
 
-impl ShuffleWriter {
+impl ShuffleCache {
     pub fn try_new(
         num_partitions: usize,
         dir: &str,
@@ -41,9 +43,10 @@ impl ShuffleWriter {
         }
 
         Ok(Self {
-            state: Mutex::new(ShuffleWriterState {
+            state: Mutex::new(ShuffleCacheState {
                 writer_tasks,
                 writer_senders,
+                schema: None,
             }),
             partition_by,
             num_partitions,
@@ -51,6 +54,7 @@ impl ShuffleWriter {
     }
 
     pub async fn push_partition(&self, input_partition: Arc<MicroPartition>) -> DaftResult<()> {
+        let schema = input_partition.schema();
         let partitioned = match &self.partition_by {
             Some(partition_by) => {
                 input_partition.partition_by_hash(partition_by, self.num_partitions)?
@@ -59,6 +63,9 @@ impl ShuffleWriter {
         };
 
         let mut state = self.state.lock().await;
+        if state.schema.is_none() {
+            state.schema = Some(schema.clone());
+        }
         let send_futures = partitioned
             .into_iter()
             .zip(state.writer_senders.iter())
@@ -78,6 +85,11 @@ impl ShuffleWriter {
         Ok(())
     }
 
+    pub async fn schema(&self) -> Option<SchemaRef> {
+        let state = self.state.lock().await;
+        state.schema.clone()
+    }
+
     pub async fn close(&self) -> DaftResult<Vec<Vec<usize>>> {
         let mut state = self.state.lock().await;
         let writer_tasks = std::mem::take(&mut state.writer_tasks);
@@ -87,9 +99,9 @@ impl ShuffleWriter {
 
     async fn close_internal(
         writer_tasks: Vec<RuntimeTask<DaftResult<Vec<usize>>>>,
-        mut writer_senders: Vec<tokio::sync::mpsc::Sender<Arc<MicroPartition>>>,
+        writer_senders: Vec<tokio::sync::mpsc::Sender<Arc<MicroPartition>>>,
     ) -> DaftResult<Vec<Vec<usize>>> {
-        writer_senders.clear();
+        drop(writer_senders);
         let results = futures::future::try_join_all(writer_tasks)
             .await?
             .into_iter()

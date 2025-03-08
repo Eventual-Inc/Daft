@@ -1,8 +1,8 @@
 import os
 
+from daft.daft import ShuffleCache
 from daft.dependencies import flight, pa
 from daft.execution.shuffles.flight_shuffle.utils import (
-    PartitionCache,
     get_shuffle_file_path,
 )
 
@@ -13,14 +13,15 @@ class FlightServer(flight.FlightServerBase):
         host: str,
         node_id: str,
         shuffle_stage_id: int,
-        partition_cache: PartitionCache,
+        shuffle_cache: ShuffleCache,
         **kwargs,
     ):
         location = f"grpc://{host}:0"
         super().__init__(location, **kwargs)
         self.node_id = node_id
         self.shuffle_stage_id = shuffle_stage_id
-        self.partition_cache = partition_cache
+        self.shuffle_cache = shuffle_cache
+        self.schema = None
 
     def get_port(self):
         return self.port
@@ -33,10 +34,11 @@ class FlightServer(flight.FlightServerBase):
             shuffle_stage_id == self.shuffle_stage_id
         ), f"Shuffle stage id mismatch, expected {self.shuffle_stage_id}, got {shuffle_stage_id}"
 
-        schema = self.partition_cache.schema()
-        assert (
-            schema is not None
-        ), f"Schema is not set in partition cache, for node {self.node_id}, shuffle stage {self.shuffle_stage_id}, partition {partition_idx}"
+        if self.schema is None:
+            self.schema = self.shuffle_cache.schema().to_pyarrow_schema()
+            assert (
+                self.schema is not None
+            ), f"Schema is not set in shuffle cache, for node {self.node_id}, shuffle stage {self.shuffle_stage_id}, partition {partition_idx}"
 
         def read_tables():
             path = get_shuffle_file_path(self.node_id, self.shuffle_stage_id, partition_idx)
@@ -50,4 +52,4 @@ class FlightServer(flight.FlightServerBase):
                 with pa.OSFile(f"{path}/{file}", "rb") as source:
                     yield pa.ipc.open_file(source).read_all()
 
-        return pa.flight.GeneratorStream(schema, read_tables())
+        return pa.flight.GeneratorStream(self.schema, read_tables())
