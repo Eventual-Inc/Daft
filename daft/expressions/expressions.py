@@ -739,6 +739,26 @@ class Expression:
         expr = native.sign(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def signum(self) -> Expression:
+        """The signum of a numeric expression."""
+        expr = native.signum(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def negate(self) -> Expression:
+        """The negative of a numeric expression."""
+        expr = native.negate(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def negative(self) -> Expression:
+        """The negative of a numeric expression."""
+        expr = native.negative(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def positive(self) -> Expression:
+        """The unchanged numeric expression."""
+        expr = native.positive(self._expr)
+        return Expression._from_pyexpr(expr)
+
     def round(self, decimals: int = 0) -> Expression:
         """The round of a numeric expression.
 
