@@ -37,25 +37,25 @@ impl Series {
                 .i8()
                 .unwrap()
                 .negative()?
-                .into_series()),
+                .cast(&DataType::UInt8)?),
             DataType::UInt16 => Ok(self
                 .cast(&DataType::Int16)?
                 .i16()
                 .unwrap()
                 .negative()?
-                .into_series()),
+                .cast(&DataType::UInt16)?),
             DataType::UInt32 => Ok(self
                 .cast(&DataType::Int32)?
                 .i32()
                 .unwrap()
                 .negative()?
-                .into_series()),
+                .cast(&DataType::UInt32)?),
             DataType::UInt64 => Ok(self
                 .cast(&DataType::Int64)?
                 .i64()
                 .unwrap()
                 .negative()?
-                .into_series()),
+                .cast(&DataType::UInt64)?),
             DataType::Int8 => Ok(self.i8().unwrap().negative()?.into_series()),
             DataType::Int16 => Ok(self.i16().unwrap().negative()?.into_series()),
             DataType::Int32 => Ok(self.i32().unwrap().negative()?.into_series()),
