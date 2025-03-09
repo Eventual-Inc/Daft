@@ -308,7 +308,24 @@ class Series:
         return Series._from_pyseries(self._series.floor())
 
     def sign(self) -> Series:
+        """The sign of a numeric series."""
         return Series._from_pyseries(self._series.sign())
+
+    def signum(self) -> Series:
+        """The signum of a numeric series."""
+        return Series._from_pyseries(self._series.signum())
+
+    def negate(self) -> Series:
+        """The negative of a numeric series."""
+        return Series._from_pyseries(self._series.negate())
+
+    def negative(self) -> Series:
+        """The negative of a numeric series."""
+        return Series._from_pyseries(self._series.negative())
+
+    def positive(self) -> Series:
+        """The unchanged numeric series."""
+        return Series._from_pyseries(self._series.positive())
 
     def round(self, decimal: int) -> Series:
         return Series._from_pyseries(self._series.round(decimal))
