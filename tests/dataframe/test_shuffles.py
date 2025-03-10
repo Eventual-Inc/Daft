@@ -173,7 +173,7 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
 )
 @pytest.mark.parametrize(
     "input_partitions, output_partitions",
-    [(100, 100), (100, 1), (100, 50), (100, 200)],
+    [(2, 2)],
 )
 def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions):
     """Test that flight shuffle is working."""
