@@ -11,7 +11,7 @@ use daft_writers::{make_ipc_writer, FileWriter};
 use tokio::sync::Mutex;
 
 struct InProgressShuffleCacheState {
-    writer_tasks: Vec<RuntimeTask<DaftResult<(Vec<usize>, Vec<String>)>>>,
+    writer_tasks: Vec<RuntimeTask<DaftResult<Vec<(usize, String)>>>>,
     writer_senders: Vec<tokio::sync::mpsc::Sender<Arc<MicroPartition>>>,
     schema: Option<SchemaRef>,
 }
@@ -98,14 +98,16 @@ impl InProgressShuffleCache {
         let mut state = self.state.lock().await;
         let writer_tasks = std::mem::take(&mut state.writer_tasks);
         let writer_senders = std::mem::take(&mut state.writer_senders);
-        let (bytes_per_file_per_partition, file_paths_per_partition): (
-            Vec<Vec<usize>>,
-            Vec<Vec<String>>,
-        ) = Self::close_internal(writer_tasks, writer_senders)
-            .await?
-            .into_iter()
-            .unzip();
+        let writer_results = Self::close_internal(writer_tasks, writer_senders).await?;
 
+        let bytes_per_file_per_partition = writer_results
+            .iter()
+            .map(|partition| partition.iter().map(|(bytes, _)| *bytes).collect())
+            .collect();
+        let file_paths_per_partition = writer_results
+            .iter()
+            .map(|partition| partition.iter().map(|(_, path)| path.clone()).collect())
+            .collect();
         Ok(ShuffleCache::new(
             state.schema.take().unwrap(),
             bytes_per_file_per_partition,
@@ -114,9 +116,9 @@ impl InProgressShuffleCache {
     }
 
     async fn close_internal(
-        writer_tasks: Vec<RuntimeTask<DaftResult<(Vec<usize>, Vec<String>)>>>,
+        writer_tasks: Vec<RuntimeTask<DaftResult<Vec<(usize, String)>>>>,
         writer_senders: Vec<tokio::sync::mpsc::Sender<Arc<MicroPartition>>>,
-    ) -> DaftResult<Vec<(Vec<usize>, Vec<String>)>> {
+    ) -> DaftResult<Vec<Vec<(usize, String)>>> {
         drop(writer_senders);
         let results = futures::future::try_join_all(writer_tasks)
             .await?
@@ -129,7 +131,7 @@ impl InProgressShuffleCache {
 async fn writer_task(
     mut rx: tokio::sync::mpsc::Receiver<Arc<MicroPartition>>,
     mut writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
-) -> DaftResult<(Vec<usize>, Vec<String>)> {
+) -> DaftResult<Vec<(usize, String)>> {
     while let Some(partition) = rx.recv().await {
         writer.write(partition)?;
     }
@@ -149,7 +151,7 @@ async fn writer_task(
 
     let bytes_per_file = writer.bytes_per_file();
     assert!(bytes_per_file.len() == file_paths.len());
-    Ok((bytes_per_file, file_paths))
+    Ok(bytes_per_file.into_iter().zip(file_paths).collect())
 }
 
 pub struct ShuffleCache {
