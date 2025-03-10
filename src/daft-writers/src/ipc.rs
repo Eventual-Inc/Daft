@@ -15,7 +15,7 @@ pub struct IPCWriter {
     bytes_written: usize,
     file_path: String,
     compression: Option<arrow2::io::ipc::write::Compression>,
-    writer: Option<arrow2::io::ipc::write::FileWriter<File>>,
+    writer: Option<arrow2::io::ipc::write::StreamWriter<File>>,
 }
 
 impl IPCWriter {
@@ -32,15 +32,14 @@ impl IPCWriter {
     fn get_or_create_writer(
         &mut self,
         schema: &Schema,
-    ) -> DaftResult<&mut arrow2::io::ipc::write::FileWriter<File>> {
+    ) -> DaftResult<&mut arrow2::io::ipc::write::StreamWriter<File>> {
         if self.writer.is_none() {
             let file = File::create(self.file_path.as_str())?;
             let options = arrow2::io::ipc::write::WriteOptions {
                 compression: self.compression,
             };
-            let mut writer =
-                arrow2::io::ipc::write::FileWriter::new(file, schema.to_arrow()?, None, options);
-            writer.start()?;
+            let mut writer = arrow2::io::ipc::write::StreamWriter::new(file, options);
+            writer.start(&schema.to_arrow()?, None)?;
             self.writer = Some(writer);
         }
         Ok(self.writer.as_mut().unwrap())

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
+use common_error::{DaftError, DaftResult};
 use daft_dsl::ExprRef;
+use daft_io::{parse_url, SourceType};
 use daft_logical_plan::partitioning::{
     ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
     UnknownClusteringConfig,
@@ -39,14 +41,10 @@ impl ShuffleExchange {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShuffleExchangeStrategy {
     /// Fully materialize the data after the Map, and then pull results from the Reduce.
-    NaiveFullyMaterializingMapReduce {
-        target_spec: Arc<ClusteringSpec>,
-    },
+    NaiveFullyMaterializingMapReduce { target_spec: Arc<ClusteringSpec> },
 
     /// Sequentially splits/coalesce partitions in order to meet a target number of partitions
-    SplitOrCoalesceToTargetNum {
-        target_num_partitions: usize,
-    },
+    SplitOrCoalesceToTargetNum { target_num_partitions: usize },
 
     MapReduceWithPreShuffleMerge {
         pre_shuffle_merge_threshold: usize,
@@ -55,6 +53,7 @@ pub enum ShuffleExchangeStrategy {
 
     FlightShuffle {
         target_spec: Arc<ClusteringSpec>,
+        shuffle_dirs: Vec<String>,
     },
 }
 
@@ -104,9 +103,13 @@ impl ShuffleExchange {
                     pre_shuffle_merge_threshold
                 ));
             }
-            ShuffleExchangeStrategy::FlightShuffle { target_spec } => {
+            ShuffleExchangeStrategy::FlightShuffle {
+                target_spec,
+                shuffle_dirs,
+            } => {
                 res.push("Strategy: FlightShuffle".to_string());
                 res.push(format!("Target Spec: {:?}", target_spec));
+                res.push(format!("Shuffle Dirs: {}", shuffle_dirs.join(", ")));
             }
         }
         res
@@ -144,8 +147,8 @@ impl ShuffleExchangeFactory {
         &self,
         clustering_spec: Arc<ClusteringSpec>,
         cfg: Option<&DaftExecutionConfig>,
-    ) -> ShuffleExchangeStrategy {
-        match cfg {
+    ) -> DaftResult<ShuffleExchangeStrategy> {
+        let strategy = match cfg {
             Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
                 ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                     target_spec: clustering_spec,
@@ -158,8 +161,23 @@ impl ShuffleExchangeFactory {
                 }
             }
             Some(cfg) if cfg.shuffle_algorithm == "flight_shuffle" => {
+                if cfg.flight_shuffle_dirs.is_empty() {
+                    return Err(DaftError::ValueError(
+                        "flight_shuffle_dirs must be non-empty to use flight shuffle".to_string(),
+                    ));
+                }
+                if cfg
+                    .flight_shuffle_dirs
+                    .iter()
+                    .any(|dir| !matches!(parse_url(dir).unwrap().0, SourceType::File))
+                {
+                    return Err(DaftError::ValueError(
+                        "Flight_shuffle_dirs must be valid file paths".to_string(),
+                    ));
+                }
                 ShuffleExchangeStrategy::FlightShuffle {
                     target_spec: clustering_spec,
+                    shuffle_dirs: cfg.flight_shuffle_dirs.clone(),
                 }
             }
             Some(cfg) if cfg.shuffle_algorithm == "auto" => {
@@ -194,7 +212,8 @@ impl ShuffleExchangeFactory {
                 }
             }
             _ => unreachable!(),
-        }
+        };
+        Ok(strategy)
     }
 
     pub fn get_hash_partitioning(
@@ -202,18 +221,18 @@ impl ShuffleExchangeFactory {
         by: Vec<ExprRef>,
         num_partitions: usize,
         cfg: Option<&DaftExecutionConfig>,
-    ) -> ShuffleExchange {
+    ) -> DaftResult<ShuffleExchange> {
         let clustering_spec = Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
             num_partitions,
             by,
         )));
 
-        let strategy = self.get_shuffle_strategy(clustering_spec, cfg);
+        let strategy = self.get_shuffle_strategy(clustering_spec, cfg)?;
 
-        ShuffleExchange {
+        Ok(ShuffleExchange {
             input: self.input.clone(),
             strategy,
-        }
+        })
     }
 
     pub fn get_range_partitioning(
@@ -222,36 +241,36 @@ impl ShuffleExchangeFactory {
         descending: Vec<bool>,
         num_partitions: usize,
         cfg: Option<&DaftExecutionConfig>,
-    ) -> ShuffleExchange {
+    ) -> DaftResult<ShuffleExchange> {
         let clustering_spec = Arc::new(ClusteringSpec::Range(RangeClusteringConfig::new(
             num_partitions,
             by,
             descending,
         )));
 
-        let strategy = self.get_shuffle_strategy(clustering_spec, cfg);
+        let strategy = self.get_shuffle_strategy(clustering_spec, cfg)?;
 
-        ShuffleExchange {
+        Ok(ShuffleExchange {
             input: self.input.clone(),
             strategy,
-        }
+        })
     }
 
     pub fn get_random_partitioning(
         &self,
         num_partitions: usize,
         cfg: Option<&DaftExecutionConfig>,
-    ) -> ShuffleExchange {
+    ) -> DaftResult<ShuffleExchange> {
         let clustering_spec = Arc::new(ClusteringSpec::Random(RandomClusteringConfig::new(
             num_partitions,
         )));
 
-        let strategy = self.get_shuffle_strategy(clustering_spec, cfg);
+        let strategy = self.get_shuffle_strategy(clustering_spec, cfg)?;
 
-        ShuffleExchange {
+        Ok(ShuffleExchange {
             input: self.input.clone(),
             strategy,
-        }
+        })
     }
 
     pub fn get_split_or_coalesce(&self, num_partitions: usize) -> ShuffleExchange {

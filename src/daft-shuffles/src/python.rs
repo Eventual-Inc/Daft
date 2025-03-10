@@ -46,14 +46,26 @@ impl PyShuffleCache {
         })
     }
 
-    pub fn close(&self) -> PyResult<Vec<Vec<usize>>> {
-        let bytes_per_file = get_compute_runtime().block_on_current_thread(self.cache.close())?;
-        Ok(bytes_per_file)
+    pub fn close(&self) -> PyResult<()> {
+        get_compute_runtime().block_on_current_thread(self.cache.close())?;
+        Ok(())
     }
 
     pub fn schema(&self) -> PyResult<Option<PySchema>> {
         let schema = get_compute_runtime().block_on_current_thread(self.cache.schema());
         Ok(schema.map(|s| s.into()))
+    }
+
+    pub fn bytes_per_file(&self, partition_idx: usize) -> PyResult<Vec<usize>> {
+        let bytes_per_file = get_compute_runtime()
+            .block_on_current_thread(self.cache.bytes_per_file(partition_idx))?;
+        Ok(bytes_per_file)
+    }
+
+    pub fn file_paths(&self, partition_idx: usize) -> PyResult<Vec<String>> {
+        let file_paths =
+            get_compute_runtime().block_on_current_thread(self.cache.file_paths(partition_idx))?;
+        Ok(file_paths)
     }
 }
 

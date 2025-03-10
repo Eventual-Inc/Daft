@@ -180,10 +180,6 @@ impl<W: Write> FileWriter<W> {
         Ok(())
     }
 
-    pub fn bytes_written(&self) -> usize {
-        self.block_offsets
-    }
-
     /// Write footer and closing tag, then mark the writer as done
     pub fn finish(&mut self) -> Result<()> {
         if self.state != State::Started {

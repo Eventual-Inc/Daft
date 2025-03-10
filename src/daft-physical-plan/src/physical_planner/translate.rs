@@ -215,7 +215,7 @@ pub(super) fn translate_single_logical_node(
                     }
                     ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
                         ShuffleExchangeFactory::new(input_physical)
-                            .get_random_partitioning(num_partitions, Some(cfg)),
+                            .get_random_partitioning(num_partitions, Some(cfg))?,
                     ),
                     ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
                         PhysicalPlan::ShuffleExchange(
@@ -223,7 +223,7 @@ pub(super) fn translate_single_logical_node(
                                 by,
                                 num_partitions,
                                 Some(cfg),
-                            ),
+                            )?,
                         )
                     }
                     ClusteringSpec::Range(_) => {
@@ -250,7 +250,7 @@ pub(super) fn translate_single_logical_node(
                         col_exprs.clone(),
                         num_partitions,
                         Some(cfg),
-                    ),
+                    )?,
                 );
                 Ok(
                     PhysicalPlan::Aggregate(Aggregate::new(shuffle_op.into(), vec![], col_exprs))
@@ -328,7 +328,7 @@ pub(super) fn translate_single_logical_node(
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
                                 Some(cfg),
-                            ),
+                            )?,
                         )
                         .into()
                     };
@@ -398,7 +398,7 @@ pub(super) fn translate_single_logical_node(
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
                                 Some(cfg),
-                            ),
+                            )?,
                         )
                         .into()
                     };
@@ -1328,7 +1328,7 @@ fn translate_join(
                         left_on.clone(),
                         num_partitions,
                         Some(cfg),
-                    ),
+                    )?,
                 )
                 .into();
             }
@@ -1340,7 +1340,7 @@ fn translate_join(
                         right_on.clone(),
                         num_partitions,
                         Some(cfg),
-                    ),
+                    )?,
                 )
                 .into();
             }
