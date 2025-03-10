@@ -1290,25 +1290,11 @@ impl Expr {
             Self::List(..) => "list",
             Self::Function { func, inputs } => match func {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
-                _ => {
-                    if inputs.is_empty() {
-                        // Handle the case where there are no inputs
-                        "function"
-                    } else {
-                        inputs.first().unwrap().name()
-                    }
-                }
+                _ => inputs.first().unwrap().name(),
             },
             Self::ScalarFunction(func) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
-                _ => {
-                    if func.inputs.is_empty() {
-                        // Handle the case where there are no inputs
-                        "function"
-                    } else {
-                        func.inputs.first().unwrap().name()
-                    }
-                }
+                _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {
                 op: _,
