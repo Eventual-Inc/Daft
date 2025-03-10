@@ -61,6 +61,12 @@ def assert_eq(df1, df2):
     assert df1.to_pydict() == df2.to_pydict()
 
 
+def test_name(catalog):
+    assert catalog.name == CATALOG_ALIAS
+    assert catalog.get_table("default.tbl").name == "tbl"
+    assert catalog.get_table("default.tbl").__repr__() == "Table('tbl')"
+
+
 ###
 # ddl tests
 ###
