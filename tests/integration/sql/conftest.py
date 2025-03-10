@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 
 URLS = [
-    "mssql+pyodbc://SA:StrongPassword!@127.0.0.1:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes",
+    "mssql+pyodbc://SA:StrongPassword!@127.0.0.1:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes&timeout=60",
     "trino://user@localhost:8080/memory/default",
     "postgresql://username:password@localhost:5432/postgres",
     "mysql+pymysql://username:password@localhost:3306/mysql",
