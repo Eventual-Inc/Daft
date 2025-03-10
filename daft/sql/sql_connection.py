@@ -82,7 +82,7 @@ class SQLConnection:
                 f"Unsupported dialect: {target_dialect}, please refer to the documentation for supported dialects."
             )
 
-        query = sqlglot.subquery(sql, "subquery")
+        query = sqlglot.subquery(sql, "subquery", dialect=target_dialect)
 
         if projection is not None:
             query = query.select(*projection)
