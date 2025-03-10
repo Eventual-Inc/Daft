@@ -122,7 +122,7 @@ class IcebergTable(Table):
 
     @property
     def name(self) -> str:
-        return self._inner.name[-1]
+        return self._inner.name()[-1]
 
     @staticmethod
     def _from_obj(obj: object) -> IcebergTable | None:
