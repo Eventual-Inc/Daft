@@ -8,7 +8,7 @@ use common_runtime::{get_compute_runtime, get_io_runtime};
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::ExprRef;
-use daft_io::{GetResult, IOClient, IOStatsRef};
+use daft_io::{CountingReader, GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::{futures::try_future::TryFutureExt, Snafu};
@@ -507,14 +507,15 @@ pub async fn stream_warc(
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
-            .single_url_get(uri.to_string(), None, io_stats)
+            .single_url_get(uri.to_string(), None, io_stats.clone())
             .await?
         {
             GetResult::File(file) => {
                 let buffer_size = 256 * 1024;
                 let file_reader = File::open(file.path).await?;
+                let counting_reader = CountingReader::new(file_reader, io_stats);
                 (
-                    Box::new(BufReader::with_capacity(buffer_size, file_reader)),
+                    Box::new(BufReader::with_capacity(buffer_size, counting_reader)),
                     buffer_size,
                     64,
                 )
@@ -611,4 +612,69 @@ fn combine_stream<T, E>(
             },
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_core::prelude::{Field, Schema, TimeUnit};
+    use daft_io::{IOConfig, IOStatsContext};
+
+    use crate::{read_warc_bulk, WarcConvertOptions};
+
+    #[test]
+    fn test_warc_read_iostats() -> DaftResult<()> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("WARC-Record-ID", daft_core::prelude::DataType::Utf8),
+            Field::new("WARC-Type", daft_core::prelude::DataType::Utf8),
+            Field::new(
+                "WARC-Date",
+                daft_core::prelude::DataType::Timestamp(
+                    TimeUnit::Nanoseconds,
+                    Some("Etc/UTC".to_string()),
+                ),
+            ),
+            Field::new("Content-Length", daft_core::prelude::DataType::Int64),
+            Field::new(
+                "WARC-Identified-Payload-Type",
+                daft_core::prelude::DataType::Utf8,
+            ),
+            Field::new("warc_content", daft_core::prelude::DataType::Binary),
+            Field::new("warc_headers", daft_core::prelude::DataType::Utf8),
+        ])?);
+        let io_config = Arc::new(IOConfig::default());
+        let io_client = daft_io::get_io_client(true, io_config)?;
+        let io_stats = IOStatsContext::new("test_warc_read");
+        let warc_file = format!("{}/test/example.warc", env!("CARGO_MANIFEST_DIR"),);
+        let warc_gz_file = format!("{}/test/example.warc.gz", env!("CARGO_MANIFEST_DIR"),);
+
+        let convert_options = WarcConvertOptions {
+            schema: schema.clone(),
+            predicate: None,
+            include_columns: None,
+            limit: None,
+        };
+
+        let _ = read_warc_bulk(
+            &[&warc_file, &warc_gz_file],
+            convert_options,
+            io_client,
+            Some(io_stats.clone()),
+            true,
+            None,
+            8,
+        )?;
+
+        let warc_file_size = std::fs::metadata(&warc_file)?.len() as usize;
+        let warc_gz_file_size = std::fs::metadata(&warc_gz_file)?.len() as usize;
+        let bytes_read = io_stats.load_bytes_read();
+        assert_eq!(
+            bytes_read,
+            warc_file_size + warc_gz_file_size,
+            "IO stats should record the bytes read correctly"
+        );
+        Ok(())
+    }
 }

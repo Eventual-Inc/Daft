@@ -1,0 +1,1221 @@
+WARC/1.0
+WARC-Type: warcinfo
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Filename: 20250228104207334.warc
+WARC-Record-ID: <urn:uuid:88a3565d-4018-45e7-79ae-ab12fde58be4>
+Content-Type: application/warc-fields
+Content-Length: 451
+WARC-Block-Digest: sha1:6M4CL7OB7YM77TMNXXZZUCEE3CCPRQ6R
+
+software: WARCreate/0.2021.6.28 http://warcreate.com
+format: WARC File Format 1.0
+conformsTo: http://bibnum.bnf.fr/WARC/WARC_ISO_28500_version1_latestdraft.pdf
+isPartOf:  basic
+description:  Captured by the WARCreate Google Chrome extension
+robots: ignore
+http-header-user-agent:  Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+http-header-from: warcreate@matkelly.com 
+
+
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.eventualcomputing.com/
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:914de67e-a294-21e1-00c0-726650647932>
+Content-Type: application/http; msgtype=request
+Content-Length: 435
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:HNOPNHUO2VY45N327AS3NAMDYT6ERWUE
+
+GET / HTTP/1.1
+DNT: 1
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "macOS"
+
+
+
+WARC/1.0
+WARC-Type: metadata
+WARC-Target-URI: https://www.eventualcomputing.com/
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:dddc4ba2-c1e1-459b-8d0d-a98a20b87e96>
+WARC-Record-ID: <urn:uuid:6fef2a49-a9ba-4b40-9f4a-5ca5db1fd5c6>
+Content-Type: application/warc-fields
+Content-Length: 5032
+WARC-Payload-Digest: sha1:HZ4AADTEQ2GD7QG65HGJX6VX3W6B7DAD
+WARC-Block-Digest: sha1:HZ4AADTEQ2GD7QG65HGJX6VX3W6B7DAD
+
+outlink: https://www.eventualcomputing.com/assets/eventual.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/slack.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/backed-by-ycombinator.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/daft-diagram-desktop.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/daft-diagram-mobile.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/trust-bar/amazon.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/trust-bar/cloudkitchens.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/trust-bar/togetherai.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/trust-bar/amazon.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/trust-bar/togetherai.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/trust-bar/cloudkitchens.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/team-photos/sammy.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/linkedin-purple.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/team-photos/jay.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/linkedin-purple.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/team-photos/kevin.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/linkedin-purple.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/team-photos/colin.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/linkedin-purple.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/team-photos/cory.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/linkedin-purple.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/team-photos/desmond.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/linkedin-purple.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/team-photos/chanchan.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/linkedin-purple.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/team-photos/raunak.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/linkedin-purple.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/eventual-black.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/x.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/linkedin.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/slack.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/github.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/substack.png E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/assets/youtube.png E =EMBED_MISC
+outlink: https://static.scarf.sh/a.png?x-pxid=6f9dd415-f331-4826-97a7-83e94dc0f89e E =EMBED_MISC
+outlink: https://www.eventualcomputing.com/styles.css E link/@href
+outlink: https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap E link/@href
+outlink: https://fonts.googleapis.com/css2?family=Oxygen:wght@300;400;700&display=swap E link/@href
+outlink: https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Oxygen:wght@300;400;700&display=swap E link/@href
+outlink: https://www.eventualcomputing.com/script.js E script/@src
+outlink: https://www.eventualcomputing.com/# L a/@href
+outlink: https://blog.getdaft.io/ L a/@href
+outlink: https://jobs.ashbyhq.com/eventualcomputing L a/@href
+outlink: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg L a/@href
+outlink: https://github.com/Eventual-Inc/Daft L a/@href
+outlink: https://github.com/Eventual-Inc/Daft L a/@href
+outlink: https://www.getdaft.io/ L a/@href
+outlink: https://noteforms.com/forms/contact-us-2cyb1u L a/@href
+outlink: https://www.linkedin.com/in/sammy-sidhu/ L a/@href
+outlink: https://www.linkedin.com/in/chiajay/ L a/@href
+outlink: https://www.linkedin.com/in/kevinzhiwang/ L a/@href
+outlink: https://www.linkedin.com/in/colin-ho99/ L a/@href
+outlink: https://www.linkedin.com/in/cory-grinstead/ L a/@href
+outlink: https://www.linkedin.com/in/desmondcheongzx/ L a/@href
+outlink: https://www.linkedin.com/in/chanchanmao/ L a/@href
+outlink: https://www.linkedin.com/in/raunakbhagat/ L a/@href
+outlink: https://jobs.ashbyhq.com/eventualcomputing L a/@href
+outlink: https://www.eventualcomputing.com/# L a/@href
+outlink: https://twitter.com/daft_dataframe L a/@href
+outlink: https://www.linkedin.com/company/eventualcomputing/ L a/@href
+outlink: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg L a/@href
+outlink: https://github.com/Eventual-Inc/Daft L a/@href
+outlink: http://blog.getdaft.io/ L a/@href
+outlink: https://www.youtube.com/@daftdf L a/@href
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.eventualcomputing.com/
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:6575ccbe-3e31-534a-7651-dcf29f5e88b9>
+Content-Type: application/http; msgtype=response
+Content-Length: 14662
+WARC-Payload-Digest: sha1:XZZHYA7SPFTKEKKAHDRUMN3ZMZMPJ6PT
+WARC-Block-Digest: sha1:ARJ3OD562BIIVF4HIGOAGE6Q672REUMX
+
+HTTP/1.1 200
+accept-ranges: bytes
+age: 0
+cache-control: public,max-age=0,must-revalidate
+cache-status: "Netlify Edge"; fwd=miss
+content-encoding: br
+content-type: text/html; charset=UTF-8
+date: Fri, 28 Feb 2025 10:42:01 GMT
+etag: "4f1eb6d1a757bc064c6741b06a326a4b-ssl-df"
+server: Netlify
+strict-transport-security: max-age=31536000
+vary: Accept-Encoding
+x-nf-request-id: 01JN62C75VD9DB2GSAVAXVABTW
+
+<!DOCTYPE html><html><head>
+    <title>Eventual: The Data Warehouse for ML/AI</title>
+    <link rel="icon" type="image/x-icon" href="assets/favicon.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="The all-in-one platform for modern data workloads across data engineering, machine learning and analytics.">
+    <meta name="keywords" content="data engineering, machine learning, analytics, open source, data warehouse">
+    <link rel="stylesheet" type="text/css" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Oxygen:wght@300;400;700&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&amp;family=Oxygen:wght@300;400;700&amp;display=swap" rel="stylesheet">
+</head>
+
+<body class="body">
+    <section class="header">
+        <div class="wrapper">
+            <a href="#" class="nav-logo"><img src="assets/eventual.png" alt="Eventual Logo"></a>
+            <div class="nav-links">
+                <a href="https://blog.getdaft.io/" target="_blank" class="nav-link">Blog</a>
+                <a href="https://jobs.ashbyhq.com/eventualcomputing" target="_blank" class="nav-link">Careers</a>
+                <a href="https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg" target="_blank"><img src="assets/slack.png" style="width: 22px; height: 22px;"></a>
+                <div class="star-count">
+                    <a href="https://github.com/Eventual-Inc/Daft" target="_blank" id="star">Stars</a>
+                    <a href="https://github.com/Eventual-Inc/Daft" target="_blank" id="stargazers-count">2569</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="our-vision">
+        <div class="wrapper">
+            <p class="hero-content">
+                The all-in-one platform for modern data workloads across <span class="emphasis">data engineering</span>,
+                <span class="emphasis">machine learning</span> and <span class="emphasis">analytics</span>.
+            </p>
+            <p class="hero-sub-content">
+                Modern data workloads incorporate diverse modalities stored in various formats and systems.
+                Eventual simplifies this with a Python-native platform that integrates seamlessly with existing tools,
+                supports scalable data processing, and interoperates with diverse data types.
+            </p>
+            <div class="hero-btn">
+                 <a href="https://www.getdaft.io/" target="_blank" class="btn dark">See Open Source</a>
+                 <a href="https://noteforms.com/forms/contact-us-2cyb1u" target="_blank" class="btn light">Contact Us</a>
+            </div>
+            <img src="assets/backed-by-ycombinator.png">
+        </div>
+    </section>
+
+    <section class="our-open-source-engine">
+        <div class="wrapper">
+            <p class="eyebrow-text">OUR OPEN SOURCE ENGINE</p>
+            <div class="daft-card-info">
+                Daft is our open source framework that powers ETL, analytics and ML/AI at scale.
+            </div>
+            <div class="daft-diagram">
+                  <img src="assets/daft-diagram-desktop.png" class="desktop">
+                  <img src="assets/daft-diagram-mobile.png" class="mobile">
+            </div>
+
+        </div>
+    </section>
+
+    <section class="trust-bar">
+        <div class="wrapper">
+            <p class="eyebrow-text">TRUSTED BY</p>
+            <div class="trust-list">
+                <div class="trust-item">
+                    <img src="assets/trust-bar/amazon.png">
+                </div>
+                <div class="trust-item">
+                    <img src="assets/trust-bar/cloudkitchens.png">
+                </div>
+                <div class="trust-item">
+                    <img src="assets/trust-bar/togetherai.png">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="testimonials">
+        <div class="wrapper">
+            <div class="customer-quotes">
+                <div class="quote-box">
+                    <p class="quote">Amazon uses Daft to manage <b>exabytes of Apache Parquet</b> in our Amazon S3-based data catalog. Daft improved the efficiency of one of our most critical data processing jobs by <b>over 24%, saving over 40,000 years of Amazon EC2 vCPU computing time annually.</b></p>
+                    <div class="customer-info">
+                        <div style="text-align: left;">
+                            <p class="customer-name">Patrick Ames</p>
+                            <p class="customer-role">Principal Engineer @ Amazon</p>
+                        </div>
+                        <img src="assets/trust-bar/amazon.png" class="customer-logo">
+                    </div>
+                </div>
+                <div class="quote-box">
+                    <p class="quote">Daft has <b>dramatically improved our 100TB+ text data pipelines</b>, speeding up workloads such as <b>fuzzy deduplication by 10x</b>. Jobs previously built using custom code on Ray/Polars has been replaced by simple Daft queries, running on <b>internet-scale unstructured datasets</b>.
+                    </p>
+                    <div class="customer-info">
+                        <div style="text-align: left;">
+                            <p class="customer-name">Maurice Weber</p>
+                            <p class="customer-role">PhD AI Researcher @ Together AI</p>
+                        </div>
+                        <img src="assets/trust-bar/togetherai.png" class="customer-logo">
+                    </div>
+                </div>
+                <div class="quote-box">
+                    <p class="quote">Daft was incredible at <b>large volumes of abnormally shaped workloads</b> - I pointed it at 16,000 small Parquet files in a self-hosted S3 service and <b>it just worked!</b> It's the data engine built for the cloud and AI workloads.
+                    </p>
+                    <div class="customer-info">
+                        <div style="text-align: left;">
+                            <p class="customer-name">Tony Wang</p>
+                            <p class="customer-role">Data @ Anthropic, PhD @ Stanford</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="quote-box">
+                    <p class="quote">Daft as an alternative to Spark has changed the way we think about data on our ML Platform. Its tight integrations with Ray lets us maintain a <b>unified set of infrastructure while improving both query performance and developer productivity</b>. Less is more.</p>
+                    <div class="customer-info">
+                        <div style="text-align: left;">
+                            <p class="customer-name">Alexander Filipchik</p>
+                            <p class="customer-role">Head Of Infrastructure at City Storage Systems (CloudKitchens)</p>
+                        </div>
+                        <img src="assets/trust-bar/cloudkitchens.png" class="customer-logo">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="our-team">
+        <div class="wrapper">
+            <p class="eyebrow-text">OUR TEAM</p>
+            <p class="team-info">Eventual is built by experts in distributed data systems, machine learning, and high performance computing.</p>
+            <div class="team-cards">
+                <div class="team-card">
+                    <img src="assets/team-photos/sammy.png">
+                    <p class="name">Sammy Sidhu</p>
+                    <p class="role">CEO &amp; Co-Founder</p>
+                    <p class="fun-fact">High performance computing, prev. CTO @ DeepScale</p>
+                    <div class="team-social">
+                        <a href="https://www.linkedin.com/in/sammy-sidhu/" target="_blank"><img src="assets/linkedin-purple.png"></a>
+                    </div>
+                </div>
+                <div class="team-card">
+                    <img src="assets/team-photos/jay.png">
+                    <p class="name">Jay Chia</p>
+                    <p class="role">Co-Founder</p>
+                    <p class="fun-fact">Prev. Cloud data systems for ML Infra @ Freenome &amp; Lyft</p>
+                    <div class="team-social">
+                        <a href="https://www.linkedin.com/in/chiajay/" target="_blank"><img src="assets/linkedin-purple.png"></a>
+                    </div>
+                </div>
+                <div class="team-card">
+                    <img src="assets/team-photos/kevin.png">
+                    <p class="name">Kevin Wang</p>
+                    <p class="role">Software Engineer</p>
+                    <p class="fun-fact">Prev. Quant research @ Akuna &amp; Arrowstreet</p>
+                    <div class="team-social">
+                        <a href="https://www.linkedin.com/in/kevinzhiwang/" target="_blank"><img src="assets/linkedin-purple.png"></a>
+                    </div>
+                </div>
+                <div class="team-card">
+                    <img src="assets/team-photos/colin.png">
+                    <p class="name">Colin Ho</p>
+                    <p class="role">Software Engineer</p>
+                    <p class="fun-fact">Prev. Software Engineer @ Stripe &amp; Coinbase</p>
+                    <div class="team-social">
+                        <a href="https://www.linkedin.com/in/colin-ho99/" target="_blank"><img src="assets/linkedin-purple.png"></a>
+                    </div>
+                </div>
+                <div class="team-card">
+                    <img src="assets/team-photos/cory.png">
+                    <p class="name">Cory Grinstead</p>
+                    <p class="role">Software Engineer</p>
+                    <p class="fun-fact">Contributor of Polars, Apache DataFusion, &amp; LanceDB</p>
+                    <div class="team-social">
+                        <a href="https://www.linkedin.com/in/cory-grinstead/" target="_blank"><img src="assets/linkedin-purple.png"></a>
+                    </div>
+                </div>
+            </div>
+            <div class="team-cards">
+                <div class="team-card">
+                    <img src="assets/team-photos/desmond.png">
+                    <p class="name">Desmond Cheong</p>
+                    <p class="role">Software Engineer</p>
+                    <p class="fun-fact">Query Processing, prev. Photon @ Databricks</p>
+                    <div class="team-social">
+                        <a href="https://www.linkedin.com/in/desmondcheongzx/" target="_blank"><img src="assets/linkedin-purple.png"></a>
+                    </div>
+                </div>
+                <div class="team-card">
+                    <img src="assets/team-photos/chanchan.png">
+                    <p class="name">ChanChan Mao</p>
+                    <p class="role">Developer Relations</p>
+                    <p class="fun-fact">Prev. Developer Advocate &amp; Community @ Alluxio</p>
+                    <div class="team-social">
+                        <a href="https://www.linkedin.com/in/chanchanmao/" target="_blank"><img src="assets/linkedin-purple.png"></a>
+                    </div>
+                </div>
+                <div class="team-card">
+                    <img src="assets/team-photos/raunak.png">
+                    <p class="name">Raunak Bhagat</p>
+                    <p class="role">Software Engineer</p>
+                    <p class="fun-fact">Prev. Simulations Software Engineer @ Tesla</p>
+                    <div class="team-social">
+                        <a href="https://www.linkedin.com/in/raunakbhagat/" target="_blank"><img src="assets/linkedin-purple.png"></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <section class="join-us" id="joinus">
+        <div class="wrapper">
+            <p class="join-us-headline">Join us <span class="today">today</span>.</p>
+            <p class="join-us-content">We’re a fun loving team that’s passionate about building awesome systems. Come join us in our office in San Francisco!</p>
+            <a href="https://jobs.ashbyhq.com/eventualcomputing" target="_blank" class="btn light">See Open Roles</a>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="wrapper">
+             <div class="footer-logo">
+                <a href="#" class="social-link"><img src="assets/eventual-black.png" class="social-image"></a>
+            </div>
+            <div class="footer-social">
+                <a href="https://twitter.com/daft_dataframe" target="_blank" class="social-link"><img src="assets/x.png" class="social-image"></a>
+                <a href="https://www.linkedin.com/company/eventualcomputing/" target="_blank" class="social-link"><img src="assets/linkedin.png" class="social-image"></a>
+                <a href="https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg" target="_blank" class="social-link"><img src="assets/slack.png" class="social-image"></a>
+                <a href="https://github.com/Eventual-Inc/Daft" target="_blank" class="social-link"><img src="assets/github.png" class="social-image"></a>
+                <a href="http://blog.getdaft.io" target="_blank" class="social-link"><img src="assets/substack.png" class="social-image"></a>
+                <a href="https://www.youtube.com/@daftdf" target="_blank" class="social-link"><img src="assets/youtube.png" class="social-image"></a>
+            </div>
+        </div>
+        <img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=6f9dd415-f331-4826-97a7-83e94dc0f89e" c6xktjbo0="">
+
+    </footer>
+
+    <script src="script.js" defer=""></script>
+
+
+
+
+
+</body></html>
+
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://calendar.google.com/calendar/u/0/sync.sync
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:a95d3675-0439-8222-efe4-13432eae978c>
+Content-Type: application/http; msgtype=request
+Content-Length: 693
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:OLRXL3ZDCEJCGYYEXNC3PT3JYDGRJMHO
+
+POST /calendar/u/0/sync.sync HTTP/1.1
+sec-ch-ua-full-version-list: "Not A(Brand";v="8.0.0.0", "Chromium";v="132.0.6834.160"
+sec-ch-ua-platform: "macOS"
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+sec-ch-ua-bitness: "64"
+X-If-No-Redirect: 1
+sec-ch-ua-mobile: ?0
+sec-ch-ua-form-factors: "Desktop"
+sec-ch-ua-model: ""
+sec-ch-ua-wow64: ?0
+sec-ch-ua-arch: "arm"
+sec-ch-ua-full-version: "132.0.6834.160"
+Content-Type: application/x-www-form-urlencoded;charset=UTF-8
+X-Is-Xhr-Request: 1
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+DNT: 1
+sec-ch-ua-platform-version: "13.2.1"
+Accept: */*
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://calendar.google.com/calendar/u/0/sync.sync
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:9fa2450e-07d3-20a8-0cee-adcbc49f450a>
+Content-Type: application/http; msgtype=response
+Content-Length: 1364
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:KE4R3YMDRF72CWMHNGHCDVVL47F2WJNH
+
+HTTP/1.1 200
+content-type: application/json; charset=utf-8
+vary: Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+cache-control: no-cache, no-store, max-age=0, must-revalidate
+pragma: no-cache
+expires: Mon, 01 Jan 1990 00:00:00 GMT
+date: Fri, 28 Feb 2025 10:41:45 GMT
+content-disposition: attachment; filename="response.bin"; filename*=UTF-8''response.bin
+x-content-type-options: nosniff
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+origin-trial: ArgW966I/6lXMx2TxG+8jsKxWtdxDJjncZLdpMCclesHTMYya5bXR+I4kM6dMx9oXPC9yUUTcG/LkL+mYf7X+AsAAACGeyJvcmlnaW4iOiJodHRwczovL2dvb2dsZS5jb206NDQzIiwiZmVhdHVyZSI6IkRvY3VtZW50UG9saWN5SW5jbHVkZUpTQ2FsbFN0YWNrc0luQ3Jhc2hSZXBvcnRzIiwiZXhwaXJ5IjoxNzQyMzQyMzk5LCJpc1N1YmRvbWFpbiI6dHJ1ZX0=
+cross-origin-opener-policy-report-only: same-origin-allow-popups; report-to="calendar_coop_coep"
+content-security-policy: require-trusted-types-for 'script';report-uri /calendar/u/0/cspreport
+cross-origin-embedder-policy-report-only: require-corp; report-to="calendar_coop_coep"
+report-to: {"group":"calendar_coop_coep","max_age":2592000,"endpoints":[{"url":"https://csp.withgoogle.com/csp/report-to/calendar"}]}
+content-encoding: gzip
+server: ESF
+x-xss-protection: 0
+x-frame-options: SAMEORIGIN
+alt-svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+x-l2-request-path: l2-managed-14
+
+
+undefined
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://ssl.gstatic.com/dynamite/images/cleardot.gif?zx=6mk89m5h81rt
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:92780c22-0506-9679-df0f-9ede7819fe2c>
+Content-Type: application/http; msgtype=request
+Content-Length: 609
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:JV6LPVTTMTHSAPXIC6YTSXD47QX4BUQN
+
+GET /dynamite/images/cleardot.gif?zx=6mk89m5h81rt HTTP/1.1
+sec-ch-ua-full-version-list: "Not A(Brand";v="8.0.0.0", "Chromium";v="132.0.6834.160"
+sec-ch-ua-platform: "macOS"
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+sec-ch-ua-bitness: "64"
+sec-ch-ua-model: ""
+sec-ch-ua-mobile: ?0
+sec-ch-ua-form-factors: "Desktop"
+sec-ch-ua-wow64: ?0
+sec-ch-ua-arch: "arm"
+sec-ch-ua-full-version: "132.0.6834.160"
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+DNT: 1
+sec-ch-ua-platform-version: "13.2.1"
+Accept: */*
+
+
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://chat.google.com/u/0/webchannel/events?VER=8&RID=rpc&SID=emBCI7N47BVbWyMxKAghcw&AID=344&CI=0&TYPE=xmlhttp&zx=2yec22msuwgo&t=1
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:1f6f8e5c-39e3-de87-e14f-bbe10f536531>
+Content-Type: application/http; msgtype=request
+Content-Length: 673
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:SRE2UCN4QYZFS7YJX2T7TG7EGB45S4CE
+
+GET /u/0/webchannel/events?VER=8&RID=rpc&SID=emBCI7N47BVbWyMxKAghcw&AID=344&CI=0&TYPE=xmlhttp&zx=2yec22msuwgo&t=1 HTTP/1.1
+sec-ch-ua-full-version-list: "Not A(Brand";v="8.0.0.0", "Chromium";v="132.0.6834.160"
+sec-ch-ua-platform: "macOS"
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+sec-ch-ua-bitness: "64"
+sec-ch-ua-model: ""
+sec-ch-ua-mobile: ?0
+sec-ch-ua-form-factors: "Desktop"
+sec-ch-ua-wow64: ?0
+sec-ch-ua-arch: "arm"
+sec-ch-ua-full-version: "132.0.6834.160"
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+DNT: 1
+sec-ch-ua-platform-version: "13.2.1"
+Accept: */*
+
+
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:d5f3a84d-bf09-c587-260b-18ab106b0d91>
+Content-Type: application/http; msgtype=request
+Content-Length: 327
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:NXPVW46TVZF5U4DQR6RVTDL7ULF4OFCY
+
+GET / HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:8d9309ab-d241-4a1f-e19e-ef385b8c10af>
+Content-Type: application/http; msgtype=request
+Content-Length: 379
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:2VVSJMTQ55PXEYT2OP4JCIB5DWQ6YBR7
+
+GET /_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.getdaft.io/_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:7dbede32-9971-6077-376d-7acc1aebccfb>
+Content-Type: application/http; msgtype=response
+Content-Length: 1171
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:HZ4HWBIXWEKFF4ASO4WWP4DEHOHXZOC6
+
+HTTP/1.1 200
+date: Fri, 28 Feb 2025 09:51:49 GMT
+content-type: text/css; charset=utf-8
+cf-ray: 918f84b0ccee7aca-SJC
+cf-cache-status: HIT
+access-control-allow-origin: *
+cache-control: max-age=1200
+etag: W/"ba991262871b8a033e409b8b1907ab72"
+last-modified: Wed, 17 Jan 2024 19:26:32 GMT
+vary: Accept-Encoding
+access-control-allow-methods: HEAD, OPTIONS, GET
+cdn-cache-control: public
+referrer-policy: no-referrer-when-downgrade
+x-amz-id-2: VNPh45BDH812V+m9wVi38kN75EF03YhX02YPChIjvTgiCXImCoIWv/hby5kL2/GJecx231QapSo=
+x-amz-meta-mtime: 1705519587.45045638
+x-amz-request-id: RY5663S2W32HKPBV
+x-amz-server-side-encryption: AES256
+x-backend: web-ext-theme-i-0436ee8ff47737585
+x-content-type-options: nosniff
+x-rtd-domain: www.getdaft.io
+x-rtd-force-addons: true
+x-rtd-path: /proxito/html/getdaft/latest/_static/styles/theme.css
+x-rtd-project: getdaft
+x-rtd-project-method: custom_domain
+x-rtd-resolver-filename: /_static/styles/theme.css
+x-rtd-version: latest
+x-rtd-version-method: path
+x-served: Nginx-Proxito-Sendfile
+priority: u=0,i=?0
+server: cloudflare
+content-encoding: br
+alt-svc: h3=":443"; ma=86400
+server-timing: cfExtPri
+
+
+undefined
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:aad95886-206f-dd59-139f-ac8ed2262e38>
+Content-Type: application/http; msgtype=request
+Content-Length: 383
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:GVTXCG7KVJDHONZG5WPEJIMQ2ONTZTQB
+
+GET /_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.getdaft.io/_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:8b5913ec-628a-8ae2-5edd-170b9888485c>
+Content-Type: application/http; msgtype=response
+Content-Length: 1182
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:5QTDTM6DUP6HLFVJGJI7XDZR5NSQGPAE
+
+HTTP/1.1 200
+date: Fri, 28 Feb 2025 09:51:49 GMT
+content-type: text/css; charset=utf-8
+cf-ray: 918f84b0dcf17aca-SJC
+cf-cache-status: HIT
+access-control-allow-origin: *
+cache-control: max-age=1200
+content-encoding: gzip
+etag: W/"2dea1bed0aa3b6c4db9060d2b908e3f7"
+last-modified: Wed, 10 Jul 2024 22:55:35 GMT
+vary: Accept-Encoding
+access-control-allow-methods: HEAD, OPTIONS, GET
+cdn-cache-control: public
+referrer-policy: no-referrer-when-downgrade
+x-amz-id-2: I0E1JSSPwGFVGBFemN/pjPCfpp75ET6mDwbs50c62ER0D0vE5S9upzNOy6iQs8r4mevM7pjVuzg=
+x-amz-meta-mtime: 1720652130.416048526
+x-amz-request-id: CN5ZNHW73A03TP8Y
+x-amz-server-side-encryption: AES256
+x-backend: web-ext-theme-i-0b0dd2ee85b7a8011
+x-content-type-options: nosniff
+x-rtd-domain: www.getdaft.io
+x-rtd-force-addons: true
+x-rtd-path: /proxito/html/getdaft/latest/_static/styles/bootstrap.css
+x-rtd-project: getdaft
+x-rtd-project-method: custom_domain
+x-rtd-resolver-filename: /_static/styles/bootstrap.css
+x-rtd-version: latest
+x-rtd-version-method: path
+x-served: Nginx-Proxito-Sendfile
+priority: u=0,i=?0
+server: cloudflare
+alt-svc: h3=":443"; ma=86400
+server-timing: cfExtPri
+
+
+undefined
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:30c3aa81-b101-e68c-d4d6-16c6dc21a012>
+Content-Type: application/http; msgtype=request
+Content-Length: 393
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:DMFCAOUOATQVBAU4K56JMWCGRWGS2ACQ
+
+GET /_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.getdaft.io/_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:954fe357-15b4-1cc6-8dc8-aeb10c4e02d6>
+Content-Type: application/http; msgtype=response
+Content-Length: 1202
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:FNNIC5I3H22GSDCTGCNR5XGC4KUTJQRB
+
+HTTP/1.1 200
+date: Fri, 28 Feb 2025 09:51:49 GMT
+content-type: text/css; charset=utf-8
+cf-ray: 918f84b0dcf47aca-SJC
+cf-cache-status: HIT
+access-control-allow-origin: *
+cache-control: max-age=1200
+content-encoding: gzip
+etag: W/"a10f8b7ad107e6ebb552445e952da86c"
+last-modified: Wed, 10 Jul 2024 22:55:35 GMT
+vary: Accept-Encoding
+access-control-allow-methods: HEAD, OPTIONS, GET
+cdn-cache-control: public
+referrer-policy: no-referrer-when-downgrade
+x-amz-id-2: n4sHGut5ugtyjCKSlZE08uWFBcIKZAkvRgxoGSHcpJRrd04ol4JAlzonMt21r+xHJy7c+imsR1c=
+x-amz-meta-mtime: 1720652130.420048713
+x-amz-request-id: RY55Y6XWDR96PC6S
+x-amz-server-side-encryption: AES256
+x-backend: web-ext-theme-i-0436ee8ff47737585
+x-content-type-options: nosniff
+x-rtd-domain: www.getdaft.io
+x-rtd-force-addons: true
+x-rtd-path: /proxito/html/getdaft/latest/_static/styles/pydata-sphinx-theme.css
+x-rtd-project: getdaft
+x-rtd-project-method: custom_domain
+x-rtd-resolver-filename: /_static/styles/pydata-sphinx-theme.css
+x-rtd-version: latest
+x-rtd-version-method: path
+x-served: Nginx-Proxito-Sendfile
+priority: u=0,i=?0
+server: cloudflare
+alt-svc: h3=":443"; ma=86400
+server-timing: cfExtPri
+
+
+undefined
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:96818c9f-6f09-6955-4cd6-68ade02bcf95>
+Content-Type: application/http; msgtype=request
+Content-Length: 403
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:MVCYNT3DPKPBZD3RY4QZYATZW4CKI3YE
+
+GET /_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.getdaft.io/_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:9fe74c87-67a0-b4a9-eed8-3584bc90a772>
+Content-Type: application/http; msgtype=response
+Content-Length: 1222
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:ODSJS53VEDNTTKV4X2HY23O5DPQCVH5D
+
+HTTP/1.1 200
+date: Fri, 28 Feb 2025 09:51:49 GMT
+content-type: text/css; charset=utf-8
+cf-ray: 918f84b0dcf67aca-SJC
+cf-cache-status: HIT
+access-control-allow-origin: *
+cache-control: max-age=1200
+content-encoding: gzip
+etag: W/"8b08bbacc2487ed2f7c08ea26d7f9678"
+last-modified: Wed, 10 Jul 2024 22:55:35 GMT
+vary: Accept-Encoding
+access-control-allow-methods: HEAD, OPTIONS, GET
+cdn-cache-control: public
+referrer-policy: no-referrer-when-downgrade
+x-amz-id-2: sNpEvaY7RFqiXyeB+reaDogRj0JCOrVFv4KDtBEeT4K185HfaiVmUZ2MwNfOJghKIJfQ1O3jj54=
+x-amz-meta-mtime: 1720652130.420048713
+x-amz-request-id: RY510Q7AS16F2V0K
+x-amz-server-side-encryption: AES256
+x-backend: web-ext-theme-i-03dc2a28c1a6d9982
+x-content-type-options: nosniff
+x-rtd-domain: www.getdaft.io
+x-rtd-force-addons: true
+x-rtd-path: /proxito/html/getdaft/latest/_static/vendor/fontawesome/6.5.2/css/all.min.css
+x-rtd-project: getdaft
+x-rtd-project-method: custom_domain
+x-rtd-resolver-filename: /_static/vendor/fontawesome/6.5.2/css/all.min.css
+x-rtd-version: latest
+x-rtd-version-method: path
+x-served: Nginx-Proxito-Sendfile
+priority: u=0,i=?0
+server: cloudflare
+alt-svc: h3=":443"; ma=86400
+server-timing: cfExtPri
+
+
+undefined
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:8b446a98-2a9f-3d3b-2df3-0c49370e5cb4>
+Content-Type: application/http; msgtype=request
+Content-Length: 333
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:UQTXDQCYLQ7EEXZXGSXZZKRTUUFAEM25
+
+GET /_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2 HTTP/1.1
+sec-ch-ua-platform: "macOS"
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+Accept: */*
+
+
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:c7a7832c-551e-0781-c65e-45dd5af0a24b>
+Content-Type: application/http; msgtype=request
+Content-Length: 334
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:MG53CKJHRL3GFSUAF6BJLNGA4DM7YSRQ
+
+GET /_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2 HTTP/1.1
+sec-ch-ua-platform: "macOS"
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+Accept: */*
+
+
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:5f257031-5e6a-f83b-e4b8-36a89ee4865a>
+Content-Type: application/http; msgtype=request
+Content-Length: 335
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:G7V36UEMY23I4CNSU4MA5LIOBICW4CPL
+
+GET /_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2 HTTP/1.1
+sec-ch-ua-platform: "macOS"
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+Accept: */*
+
+
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/pygments.css
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:60fd5f30-609b-9cd4-431f-479f3e9f7223>
+Content-Type: application/http; msgtype=request
+Content-Length: 347
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:53EKAAKQALUKXILWUMOPHIBOICKVC4WY
+
+GET /_static/pygments.css HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.getdaft.io/_static/pygments.css
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:16c583bd-a238-254b-bcdd-9316c84cf43d>
+Content-Type: application/http; msgtype=response
+Content-Length: 1198
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:WS6SPXJXEVUTN56MDQYHHAXA6FX7DSCI
+
+HTTP/1.1 200
+date: Fri, 28 Feb 2025 09:51:49 GMT
+content-type: text/css; charset=utf-8
+cf-ray: 918f84b0dcfd7aca-SJC
+cf-cache-status: HIT
+access-control-allow-origin: *
+cache-control: max-age=1200
+content-encoding: gzip
+etag: W/"e7fd88a27cd3f1113706a84533634833"
+last-modified: Mon, 03 Feb 2025 22:25:48 GMT
+vary: Accept-Encoding
+access-control-allow-methods: HEAD, OPTIONS, GET
+cdn-cache-control: public
+referrer-policy: no-referrer-when-downgrade
+x-amz-id-2: lYMdB6t+KgnY5PbXSJbCbdPjp1T3Ks+i8YDcgH4XVrul7OyE8m19zG2eL+gZWQ4rRe8IwSf1/FC6LwU+Qw5oCHMz0FNRXPQPhNLHdXrnJ8Y=
+x-amz-meta-mtime: 1738621546.546723294
+x-amz-request-id: CN5ZF3CS7Z2GE3V1
+x-amz-server-side-encryption: AES256
+x-backend: web-ext-theme-i-0eaa1a9202bfb0b08
+x-content-type-options: nosniff
+x-rtd-domain: www.getdaft.io
+x-rtd-force-addons: true
+x-rtd-path: /proxito/html/getdaft/latest/_static/pygments.css
+x-rtd-project: getdaft
+x-rtd-project-method: custom_domain
+x-rtd-resolver-filename: /_static/pygments.css
+x-rtd-version: latest
+x-rtd-version-method: path
+x-served: Nginx-Proxito-Sendfile
+priority: u=0,i=?0
+server: cloudflare
+alt-svc: h3=":443"; ma=86400
+server-timing: cfExtPri
+
+
+undefined
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/styles/sphinx-book-theme.css
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:1b5d78bc-172b-f81e-e0fa-fbd5ec472908>
+Content-Type: application/http; msgtype=request
+Content-Length: 363
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:GJY7CRYV2H3FLLC7UIENRJCTOD7QQ2ZV
+
+GET /_static/styles/sphinx-book-theme.css HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.getdaft.io/_static/styles/sphinx-book-theme.css
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:4a420574-d07d-7fab-a6c4-bdf17315b73e>
+Content-Type: application/http; msgtype=response
+Content-Length: 1230
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:FSIGWCV554MHTQMJH7RIUJY3NZMPO6DC
+
+HTTP/1.1 200
+date: Fri, 28 Feb 2025 09:51:49 GMT
+content-type: text/css; charset=utf-8
+cf-ray: 918f84b0dcff7aca-SJC
+cf-cache-status: HIT
+access-control-allow-origin: *
+cache-control: max-age=1200
+content-encoding: gzip
+etag: W/"b6c659195fb7d09661131c2b298bc270"
+last-modified: Wed, 17 Jan 2024 19:26:32 GMT
+vary: Accept-Encoding
+access-control-allow-methods: HEAD, OPTIONS, GET
+cdn-cache-control: public
+referrer-policy: no-referrer-when-downgrade
+x-amz-id-2: 9Y8+sXciAWS0GGZn3Y2ZdV3tlu5ZPx7gBsbddjMtJq9m1RK9p1ygphWpetdjPp06JBk3Dc8LKOY8HOsL3wl57PZl2chWfry7muH07RQCnJ0=
+x-amz-meta-mtime: 1705519587.514455556
+x-amz-request-id: CN5MJCT4JFD782VR
+x-amz-server-side-encryption: AES256
+x-backend: web-ext-theme-i-0673792d6b270b483
+x-content-type-options: nosniff
+x-rtd-domain: www.getdaft.io
+x-rtd-force-addons: true
+x-rtd-path: /proxito/html/getdaft/latest/_static/styles/sphinx-book-theme.css
+x-rtd-project: getdaft
+x-rtd-project-method: custom_domain
+x-rtd-resolver-filename: /_static/styles/sphinx-book-theme.css
+x-rtd-version: latest
+x-rtd-version-method: path
+x-served: Nginx-Proxito-Sendfile
+priority: u=0,i=?0
+server: cloudflare
+alt-svc: h3=":443"; ma=86400
+server-timing: cfExtPri
+
+
+undefined
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/styles.css
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:c8d17d1a-a3fa-7812-c4e0-d697006a71ff>
+Content-Type: application/http; msgtype=request
+Content-Length: 345
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:YDJO67VBRO354BQG52C2UKI67QOTJD3S
+
+GET /_static/styles.css HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.getdaft.io/_static/styles.css
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:00d80fdc-b1fe-5ea5-82a8-209899ab1f19>
+Content-Type: application/http; msgtype=response
+Content-Length: 1182
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:ZQ34NTWJOJ7AGKCZC7LDZYRBKNXNAPSK
+
+HTTP/1.1 200
+date: Fri, 28 Feb 2025 09:51:50 GMT
+content-type: text/css; charset=utf-8
+cf-ray: 918f84b0dd007aca-SJC
+cf-cache-status: HIT
+access-control-allow-origin: *
+cache-control: max-age=1200
+content-encoding: gzip
+etag: W/"56ae09ef61e86e4dea22684d96e2adc0"
+last-modified: Mon, 03 Feb 2025 22:25:48 GMT
+vary: Accept-Encoding
+access-control-allow-methods: HEAD, OPTIONS, GET
+cdn-cache-control: public
+referrer-policy: no-referrer-when-downgrade
+x-amz-id-2: eYbry2o86h8hlNmD32MyIIzKlk+IK1vioGBNIdHzDUe17PgOhrUAKwd15IK595Nlt/9Lg5KtdonclhMclN8VmWC7fqFSgp+I
+x-amz-meta-mtime: 1738621521.998921871
+x-amz-request-id: CN5ZY3RH8Z4NG6HY
+x-amz-server-side-encryption: AES256
+x-backend: web-ext-theme-i-0436ee8ff47737585
+x-content-type-options: nosniff
+x-rtd-domain: www.getdaft.io
+x-rtd-force-addons: true
+x-rtd-path: /proxito/html/getdaft/latest/_static/styles.css
+x-rtd-project: getdaft
+x-rtd-project-method: custom_domain
+x-rtd-resolver-filename: /_static/styles.css
+x-rtd-version: latest
+x-rtd-version-method: path
+x-served: Nginx-Proxito-Sendfile
+priority: u=0,i=?0
+server: cloudflare
+alt-svc: h3=":443"; ma=86400
+server-timing: cfExtPri
+
+
+undefined
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:e9827f46-13a3-42c3-429e-0ed0899e6d84>
+Content-Type: application/http; msgtype=request
+Content-Length: 383
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:WD4F5OHXDJY3GUWR3DG4ZYFGLWCXT25V
+
+GET /_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.getdaft.io/_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:d96c5703-f92c-7b3e-3025-4f93afbdee1a>
+Content-Type: application/http; msgtype=response
+Content-Length: 1187
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:WOOCX2ETENNOYPHIL3YDCCHIIS5T7KHT
+
+HTTP/1.1 200
+date: Fri, 28 Feb 2025 09:51:49 GMT
+content-type: text/javascript; charset=utf-8
+cf-ray: 918f84b0dd027aca-SJC
+cf-cache-status: HIT
+access-control-allow-origin: *
+cache-control: max-age=1200
+etag: W/"1baa30c2f9ff97f0e99fa86590da1efb"
+last-modified: Wed, 10 Jul 2024 22:55:35 GMT
+vary: Accept-Encoding
+access-control-allow-methods: HEAD, OPTIONS, GET
+cdn-cache-control: public
+referrer-policy: no-referrer-when-downgrade
+x-amz-id-2: RRk013UZQee376uWdsu8scmOnnXqfZYX3r49JFTBbTS7Mdd7HvKXvgjLTX0JP24rJ7OS3JgPJO8=
+x-amz-meta-mtime: 1720652130.416048526
+x-amz-request-id: CN5TPHFTYQ60A49E
+x-amz-server-side-encryption: AES256
+x-backend: web-ext-theme-i-05c7394ea407a5396
+x-content-type-options: nosniff
+x-rtd-domain: www.getdaft.io
+x-rtd-force-addons: true
+x-rtd-path: /proxito/html/getdaft/latest/_static/scripts/bootstrap.js
+x-rtd-project: getdaft
+x-rtd-project-method: custom_domain
+x-rtd-resolver-filename: /_static/scripts/bootstrap.js
+x-rtd-version: latest
+x-rtd-version-method: path
+x-served: Nginx-Proxito-Sendfile
+priority: u=1,i=?0
+server: cloudflare
+content-encoding: br
+alt-svc: h3=":443"; ma=86400
+server-timing: cfExtPri
+
+
+undefined
+
+WARC/1.0
+WARC-Type: request
+WARC-Target-URI: https://www.getdaft.io/_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Concurrent-To: <urn:uuid:43ded40e-62ae-d0b8-3565-ef546de3b8cc>
+WARC-Record-ID: <urn:uuid:e1d606af-1aa8-b8cf-0ff2-d98f79763fd9>
+Content-Type: application/http; msgtype=request
+Content-Length: 393
+WARC-Payload-Digest: sha1:3I42H3S6NNFQ2MSVX7XZKYAYSCX5QBYJ
+WARC-Block-Digest: sha1:3HZKBQOIXGO5GB7KSL6BUTGEOBHCMSLH
+
+GET /_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b HTTP/1.1
+sec-ch-ua-platform: "macOS"
+X-Requested-With: XMLHttpRequest
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36
+Accept: text/plain, */*; q=0.01
+sec-ch-ua: "Not A(Brand";v="8", "Chromium";v="132"
+DNT: 1
+sec-ch-ua-mobile: ?0
+
+
+
+WARC/1.0
+WARC-Type: response
+WARC-Target-URI: https://www.getdaft.io/_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b
+WARC-Date: 2025-02-28T10:42:07Z
+WARC-Record-ID: <urn:uuid:48c2571e-e6b1-acc2-8321-9826759e2a29>
+Content-Type: application/http; msgtype=response
+Content-Length: 1227
+WARC-Payload-Digest: sha1:TJI7NJEGJVDUHII2N35YDGSOM36IVESU
+WARC-Block-Digest: sha1:MHTYQUICBRA3ZYDED5MPUBDRIOHPPJA4
+
+HTTP/1.1 200
+date: Fri, 28 Feb 2025 09:51:49 GMT
+content-type: text/javascript; charset=utf-8
+cf-ray: 918f84b0dd047aca-SJC
+cf-cache-status: HIT
+access-control-allow-origin: *
+cache-control: max-age=1200
+etag: W/"387e810ff113ddbe2e265f6eedd9a648"
+last-modified: Wed, 10 Jul 2024 22:55:35 GMT
+vary: Accept-Encoding
+access-control-allow-methods: HEAD, OPTIONS, GET
+cdn-cache-control: public
+referrer-policy: no-referrer-when-downgrade
+x-amz-id-2: wtrLQ98LToS3HIn1Eag5aUG5wnqBIq/QlYoOZmcZq7bG7HtlHw18kq4ioYMCV3oampT4km987VAm3PNYI02VJ8YGMGfDevNJ
+x-amz-meta-mtime: 1720652130.416048526
+x-amz-request-id: CN5QMA2BJY6XXMYH
+x-amz-server-side-encryption: AES256
+x-backend: web-ext-theme-i-0436ee8ff47737585
+x-content-type-options: nosniff
+x-rtd-domain: www.getdaft.io
+x-rtd-force-addons: true
+x-rtd-path: /proxito/html/getdaft/latest/_static/scripts/pydata-sphinx-theme.js
+x-rtd-project: getdaft
+x-rtd-project-method: custom_domain
+x-rtd-resolver-filename: /_static/scripts/pydata-sphinx-theme.js
+x-rtd-version: latest
+x-rtd-version-method: path
+x-served: Nginx-Proxito-Sendfile
+priority: u=1,i=?0
+server: cloudflare
+content-encoding: br
+alt-svc: h3=":443"; ma=86400
+server-timing: cfExtPri
+
+
+undefined
+
