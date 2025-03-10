@@ -1335,13 +1335,14 @@ mod tests {
     use common_error::DaftResult;
     use daft_core::{
         datatypes::{DataType, Field, Int32Array},
-        prelude::Schema,
+        prelude::{Schema, TimeUnit},
         series::IntoSeries,
     };
+    use daft_io::{IOConfig, IOStatsContext};
     use daft_recordbatch::RecordBatch;
     use futures::StreamExt;
 
-    use crate::MicroPartition;
+    use crate::{micropartition::read_warc_into_micropartition, MicroPartition};
 
     #[tokio::test]
     async fn test_mp_stream() -> DaftResult<()> {
@@ -1364,6 +1365,50 @@ mod tests {
         assert_eq!(tbl, table1);
         let tbl = stream.next().await.unwrap().unwrap();
         assert_eq!(tbl, table2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_warc_read_iostats() -> DaftResult<()> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("WARC-Record-ID", daft_core::prelude::DataType::Utf8),
+            Field::new("WARC-Type", daft_core::prelude::DataType::Utf8),
+            Field::new(
+                "WARC-Date",
+                daft_core::prelude::DataType::Timestamp(
+                    TimeUnit::Nanoseconds,
+                    Some("Etc/UTC".to_string()),
+                ),
+            ),
+            Field::new("Content-Length", daft_core::prelude::DataType::Int64),
+            Field::new(
+                "WARC-Identified-Payload-Type",
+                daft_core::prelude::DataType::Utf8,
+            ),
+            Field::new("warc_content", daft_core::prelude::DataType::Binary),
+            Field::new("warc_headers", daft_core::prelude::DataType::Utf8),
+        ])?);
+        let io_config = Arc::new(IOConfig::default());
+        let io_stats = IOStatsContext::new("test_warc_read");
+        let warc_file = format!("{}/test/example.warc", env!("CARGO_MANIFEST_DIR"),);
+        let warc_gz_file = format!("{}/test/example.warc.gz", env!("CARGO_MANIFEST_DIR"),);
+
+        let _ = read_warc_into_micropartition(
+            &[&warc_file, &warc_gz_file],
+            schema,
+            io_config,
+            true,
+            Some(io_stats.clone()),
+        )?;
+
+        let warc_file_size = std::fs::metadata(&warc_file)?.len() as usize;
+        let warc_gz_file_size = std::fs::metadata(&warc_gz_file)?.len() as usize;
+        let bytes_read = io_stats.load_bytes_read();
+        assert_eq!(
+            bytes_read,
+            warc_file_size + warc_gz_file_size,
+            "IO stats should record the bytes read correctly"
+        );
         Ok(())
     }
 }

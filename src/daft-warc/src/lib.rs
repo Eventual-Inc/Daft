@@ -8,7 +8,7 @@ use common_runtime::{get_compute_runtime, get_io_runtime};
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::ExprRef;
-use daft_io::{GetResult, IOClient, IOStatsRef};
+use daft_io::{CountingReader, GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::{futures::try_future::TryFutureExt, Snafu};
@@ -507,14 +507,15 @@ pub async fn stream_warc(
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
-            .single_url_get(uri.to_string(), None, io_stats)
+            .single_url_get(uri.to_string(), None, io_stats.clone())
             .await?
         {
             GetResult::File(file) => {
                 let buffer_size = 256 * 1024;
                 let file_reader = File::open(file.path).await?;
+                let reader = CountingReader::new(file_reader, io_stats);
                 (
-                    Box::new(BufReader::with_capacity(buffer_size, file_reader)),
+                    Box::new(BufReader::with_capacity(buffer_size, reader)),
                     buffer_size,
                     64,
                 )
