@@ -55,7 +55,7 @@ pub struct WindowSpec {
     pub ascending: Vec<bool>,
     /// Window frame specification
     pub frame: Option<WindowFrame>,
-    /// Minimum number of rows required to compute a result
+    /// Minimum number of observations required to produce a value
     pub min_periods: i64,
 }
 
