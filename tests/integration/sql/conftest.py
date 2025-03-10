@@ -56,6 +56,24 @@ def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Gen
     yield db_url
 
 
+@tenacity.retry(
+    stop=tenacity.stop_after_attempt(3),
+    wait=tenacity.wait_exponential(multiplier=1, min=4, max=15),
+    reraise=True,
+    before_sleep=lambda retry_state: print(
+        f"Connection attempt {retry_state.attempt_number} failed. Retrying in {retry_state.sleep} seconds..."
+    ),
+)
+def create_engine_with_retry(db_url: str) -> Engine:
+    return create_engine(
+        db_url,
+        pool_size=5,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=1800,
+    )
+
+
 @pytest.fixture(scope="session", params=URLS)
 def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
     data = pd.DataFrame(
@@ -65,7 +83,7 @@ def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
         }
     )
     db_url = request.param
-    engine = create_engine(db_url)
+    engine = create_engine_with_retry(db_url)
     metadata = MetaData()
     table = Table(
         EMPTY_TEST_TABLE_NAME,
@@ -80,7 +98,7 @@ def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
 
 @tenacity.retry(stop=tenacity.stop_after_delay(10), wait=tenacity.wait_fixed(5), reraise=True)
 def setup_database(db_url: str, data: pd.DataFrame) -> None:
-    engine = create_engine(db_url)
+    engine = create_engine_with_retry(db_url)
     create_and_populate(engine, data)
 
     # Ensure the table is created and populated
