@@ -67,6 +67,10 @@ class SQLConnection:
         limit: int | None = None,
         partition_bounds: tuple[str, str] | None = None,
     ) -> str:
+        # If all options are None, just return the original sql
+        if projection is None and predicate is None and limit is None and partition_bounds is None:
+            return sql
+
         import sqlglot
 
         target_dialect = self.dialect
