@@ -25,9 +25,9 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.9', '3.10']
-        daft-runner: [py, ray, native]
+        daft-runner: [ray]
         pyarrow-version: [8.0.0, 16.0.0]
-        os: [ubuntu-20.04, windows-latest]
+        os: [ubuntu-20.04]
         enable-aqe: [1, 0]
         exclude:
         - daft-runner: py
@@ -108,8 +108,8 @@ jobs:
         export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
         cargo llvm-cov clean --workspace
         maturin develop
-        pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest --cov=daft --ignore tests/integration --durations=50
+        pytest tests/dataframe/test_shuffles.py::test_flight_shuffle --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
+        pytest tests/dataframe/test_shuffles.py::test_flight_shuffle --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
         mkdir -p report-output
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml

@@ -1,4 +1,3 @@
-import os
 import random
 import tempfile
 from contextlib import contextmanager
@@ -6,6 +5,7 @@ from functools import partial
 from typing import Callable
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 import daft
@@ -17,7 +17,10 @@ from tests.conftest import get_tests_daft_runner_name
 def generate(num_rows: int, bytes_per_row: int):
     data = {
         "ints": np.random.randint(0, num_rows, num_rows, dtype=np.uint64),
-        "bytes": [os.urandom(bytes_per_row) for _ in range(num_rows)],
+        "bytes": pa.array(
+            [np.random.bytes(bytes_per_row) for _ in range(num_rows)],
+            type=pa.binary(bytes_per_row),
+        ),
     }
     yield RecordBatch.from_pydict(data)
 
@@ -191,7 +194,7 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
                 schema=daft.Schema._from_field_name_and_types(
                     [
                         ("ints", daft.DataType.uint64()),
-                        ("bytes", daft.DataType.binary()),
+                        ("bytes", daft.DataType.fixed_size_binary(10)),
                     ]
                 ),
             )
