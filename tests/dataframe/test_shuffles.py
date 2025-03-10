@@ -1,5 +1,7 @@
 import os
 import random
+import tempfile
+from contextlib import contextmanager
 from functools import partial
 from typing import Callable
 
@@ -43,10 +45,15 @@ def pre_shuffle_merge_ctx():
 
 @pytest.fixture(scope="function")
 def flight_shuffle_ctx():
-    """Fixture that provides a context manager for flight shuffle testing."""
+    """Fixture that provides a context manager for flight shuffle testing with a temporary directory."""
 
-    def _ctx(shuffle_dirs: list[str] | None = None):
-        return daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=shuffle_dirs)
+    @contextmanager
+    def _ctx():
+        # Create a temporary directory that automatically cleans up
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Use the temporary directory for flight shuffle
+            with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
+                yield ctx
 
     return _ctx
 
