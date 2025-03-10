@@ -50,7 +50,7 @@ pub fn build_dyn_multi_array_compare(
         move |left: &[Box<dyn Array>], right: &[Box<dyn Array>], i: usize, j: usize| -> Ordering {
             for (f, (l, r)) in fn_list.iter().zip(left.iter().zip(right.iter())) {
                 match f(l.as_ref(), r.as_ref(), i, j) {
-                    std::cmp::Ordering::Equal => continue,
+                    std::cmp::Ordering::Equal => {}
                     other => return other,
                 }
             }

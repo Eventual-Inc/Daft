@@ -42,24 +42,26 @@ jobs:
   build:
     name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
     needs: check-exists
-    if: ${{ needs.check-exists.outputs.build_exists }}
+    if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
     uses: ./.github/workflows/build-wheel.yml
     with:
       os: ${{ matrix.os }}
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       build_type: release
+      use_new_name: ${{ matrix.use_new_name }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu]
         arch: [x86_64, aarch64]
         lts: [false]
+        use_new_name: [false, true]
 
   publish:
     name: Publish wheels to S3
     needs: [check-exists, build]
-    if: ${{ needs.check-exists.outputs.build_exists }}
+    if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write

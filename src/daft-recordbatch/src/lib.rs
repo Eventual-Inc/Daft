@@ -63,7 +63,7 @@ impl Hash for RecordBatch {
 }
 
 #[inline]
-fn _validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
+fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     if schema.fields.len() != columns.len() {
         return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
     }
@@ -92,7 +92,7 @@ impl RecordBatch {
         num_rows: usize,
     ) -> DaftResult<Self> {
         let schema: SchemaRef = schema.into();
-        _validate_schema(schema.as_ref(), columns.as_slice())?;
+        validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Validate Series lengths against provided num_rows
         for (field, series) in schema.fields.values().zip(columns.iter()) {
@@ -137,7 +137,7 @@ impl RecordBatch {
         num_rows: usize,
     ) -> DaftResult<Self> {
         let schema: SchemaRef = schema.into();
-        _validate_schema(schema.as_ref(), columns.as_slice())?;
+        validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Validate Series lengths against provided num_rows
         for (field, series) in schema.fields.values().zip(columns.iter()) {
@@ -190,7 +190,7 @@ impl RecordBatch {
 
         let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect())?;
         let schema: SchemaRef = schema.into();
-        _validate_schema(schema.as_ref(), columns.as_slice())?;
+        validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Infer the num_rows, assume no broadcasting
         let mut num_rows = 1;

@@ -71,16 +71,13 @@ impl From<arrow2::error::Error> for DaftError {
 
 #[cfg(test)]
 mod tests {
-    use std::io::ErrorKind;
-
     use super::*;
 
     #[test]
     fn test_arrow_io_error_conversion() {
         // Ensure that arrow2 IO errors get converted into transient Byte Stream errors.
         let error_message = "IO error occurred";
-        let arrow_io_error =
-            arrow2::error::Error::Io(std::io::Error::new(ErrorKind::Other, error_message));
+        let arrow_io_error = arrow2::error::Error::Io(std::io::Error::other(error_message));
         let daft_error: DaftError = arrow_io_error.into();
         match daft_error {
             DaftError::ByteStreamError(e) => {
@@ -95,7 +92,7 @@ mod tests {
         // Ensure that parquet2 IO errors get converted into transient Byte Stream errors.
         let error_message = "IO error occurred";
         let parquet_io_error =
-            parquet2::error::Error::IoError(std::io::Error::new(ErrorKind::Other, error_message));
+            parquet2::error::Error::IoError(std::io::Error::other(error_message));
         let arrow_error: arrow2::error::Error = parquet_io_error.into();
         //let arrow_error = arrow2::error::Error::from(parquet_io_error);
         let daft_error: DaftError = arrow_error.into();

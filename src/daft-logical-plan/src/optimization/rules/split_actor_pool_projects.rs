@@ -285,7 +285,7 @@ fn split_projection(
     let (mut new_children_seen, mut new_children): (HashSet<String>, Vec<ExprRef>) =
         (HashSet::new(), Vec::new());
 
-    fn _is_actor_pool_udf_and_should_truncate_children(expr: &ExprRef) -> bool {
+    fn is_actor_pool_udf_and_should_truncate_children(expr: &ExprRef) -> bool {
         let mut cond = true;
         expr.apply(|e| match e.as_ref() {
             Expr::Alias(..) => Ok(TreeNodeRecursion::Continue),
@@ -301,7 +301,7 @@ fn split_projection(
 
     for (expr_idx, expr) in projection.iter().enumerate() {
         // Run the TruncateRootActorPoolUDF TreeNodeRewriter
-        if _is_actor_pool_udf_and_should_truncate_children(expr) {
+        if is_actor_pool_udf_and_should_truncate_children(expr) {
             let mut rewriter = TruncateRootActorPoolUDF::new(stage_idx, expr_idx);
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
             truncated_exprs.push(rewritten_root);

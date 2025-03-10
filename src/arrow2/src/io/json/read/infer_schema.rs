@@ -1,11 +1,12 @@
 use std::borrow::Borrow;
 
-use indexmap::map::IndexMap as HashMap;
-use indexmap::set::IndexSet as HashSet;
+use indexmap::{map::IndexMap as HashMap, set::IndexSet as HashSet};
 use json_deserializer::{Number, Value};
 
-use crate::datatypes::*;
-use crate::error::{Error, Result};
+use crate::{
+    datatypes::*,
+    error::{Error, Result},
+};
 
 const ITEM_NAME: &str = "item";
 
@@ -171,7 +172,7 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
     }
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
 
-    return match (lhs, rhs) {
+    match (lhs, rhs) {
         (lhs, rhs) if lhs == rhs => lhs.clone(),
         (List(lhs), List(rhs)) => {
             let inner = coerce_data_type(&[lhs.data_type(), rhs.data_type()]);
@@ -190,7 +191,7 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
         (Int64, Boolean) => Int64,
         (Boolean, Int64) => Int64,
         (_, _) => Utf8,
-    };
+    }
 }
 
 #[cfg(test)]

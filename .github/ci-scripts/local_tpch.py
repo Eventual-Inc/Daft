@@ -39,6 +39,7 @@ def run_benchmark():
     results = {}
 
     for q in range(1, 23):
+        print(f"Running TPC-H Q{q}... ", end="", flush=True)
         if q == 21:
             # TODO: remove this once we support q21
             daft_df = answers.q21(get_df)
@@ -53,6 +54,8 @@ def run_benchmark():
 
         results[q] = end - start
 
+        print(f"done in {results[q]:.2f}s")
+
     return results
 
 
@@ -60,7 +63,7 @@ def get_run_metadata():
     return {
         "started at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f"),
         "daft version": daft.__version__,
-        "github ref": os.getenv("GITHUB_REF"),
+        "github ref": os.getenv("GITHUB_REF_NAME"),
         "github sha": os.getenv("GITHUB_SHA"),
     }
 

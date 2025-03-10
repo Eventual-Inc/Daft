@@ -1004,7 +1004,7 @@ class Expression:
             │ ---                 ┆ ---                            │
             │ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═════════════════════╪════════════════════════════════╡
-            │ 2.9742334234767163  ┆ [1.993661701417351, 2.9742334… │
+            │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
             ╰─────────────────────┴────────────────────────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
@@ -1478,6 +1478,76 @@ class Expression:
         assert hash_function in ["murmurhash3", "xxhash", "sha1"], f"Hash function {hash_function} not found"
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
+
+    def encode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+        r"""Encodes the expression (binary strings) using the specified codec.
+
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"text": [b"hello, world!"]})  # binary
+            >>> df.select(col("text").encode("zlib")).show()
+            ╭────────────────────────────────╮
+            │ text                           │
+            │ ---                            │
+            │ Binary                         │
+            ╞════════════════════════════════╡
+            │ b"x\x9c\xcbH\xcd\xc9\xc9\xd7Q… │
+            ╰────────────────────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"text": ["hello, world!"]})  # string
+            >>> df.select(col("text").encode("zlib")).show()
+            ╭────────────────────────────────╮
+            │ text                           │
+            │ ---                            │
+            │ Binary                         │
+            ╞════════════════════════════════╡
+            │ b"x\x9c\xcbH\xcd\xc9\xc9\xd7Q… │
+            ╰────────────────────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Args:
+            codec (str): encoding codec (deflate, gzip, zlib)
+
+        Returns:
+            Expression: A new expression with the encoded values.
+        """
+        expr = native.encode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
+
+    def decode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+        """Decodes the expression (binary strings) using the specified codec.
+
+        Example:
+            >>> import daft
+            >>> import zlib
+            >>> from daft import col
+            >>> df = daft.from_pydict({"bytes": [zlib.compress(b"hello, world!")]})
+            >>> df.select(col("bytes").decode("zlib")).show()
+            ╭──────────────────╮
+            │ bytes            │
+            │ ---              │
+            │ Binary           │
+            ╞══════════════════╡
+            │ b"hello, world!" │
+            ╰──────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Args:
+            codec (str): decoding codec (deflate, gzip, zlib)
+
+        Returns:
+            Expression: A new expression with the decoded values.
+        """
+        expr = native.decode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:
         return self._expr.name()

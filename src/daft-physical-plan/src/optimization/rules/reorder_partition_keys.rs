@@ -53,7 +53,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::BroadcastJoin(..) |
                 PhysicalPlan::SortMergeJoin(..) => return Ok(Transformed::no(c)),
                 _ => {},
-            };
+            }
 
             // check clustering spec for compatibility
             let clustering_spec = c.plan.clustering_spec();
@@ -70,7 +70,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     // otherwise we need to reorder the columns
                 }
                 _ => return Ok(Transformed::no(c)),
-            };
+            }
 
             let new_spec = ClusteringSpec::Hash(HashClusteringConfig::new(
                 clustering_spec.num_partitions(),

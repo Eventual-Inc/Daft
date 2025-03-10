@@ -55,3 +55,4 @@ unsafe impl<T> TrustedLen for std::vec::IntoIter<T> {}
 unsafe impl<A: Clone> TrustedLen for std::iter::Repeat<A> {}
 unsafe impl<A, F: FnMut() -> A> TrustedLen for std::iter::RepeatWith<F> {}
 unsafe impl<A: TrustedLen> TrustedLen for std::iter::Take<A> {}
+unsafe impl<A: Clone> TrustedLen for std::iter::RepeatN<A> {}

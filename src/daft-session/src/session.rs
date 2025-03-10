@@ -171,15 +171,15 @@ impl Session {
             };
         }
         //
-        // The next resolution rules require a qualifier.
-        if !name.has_qualifier() {
-            obj_not_found_err!("Table", name)
-        }
-        //
         // Rule 2: try to resolve as schema-qualified using the current catalog.
         if let Some(table) = curr_catalog.get_table(name)? {
             return Ok(table.into());
-        };
+        }
+        //
+        // The next resolution rule requires a qualifier.
+        if !name.has_qualifier() {
+            obj_not_found_err!("Table", name)
+        }
         //
         // Rule 3: try to resolve as catalog-qualified.
         if let Ok(catalog) = self.get_catalog(&name.qualifier[0]) {

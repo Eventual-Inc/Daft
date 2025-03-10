@@ -43,7 +43,9 @@ jobs:
     - name: Install dependencies
       run: |
         uv pip install -r requirements-dev.txt
-
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
     - name: Build Rust Library
       run: |
         source activate

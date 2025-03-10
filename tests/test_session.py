@@ -1,7 +1,7 @@
 import pytest
 
 import daft
-from daft.catalog import Catalog, Table
+from daft.catalog import Catalog, Identifier, Table
 from daft.session import Session
 
 ###
@@ -138,3 +138,65 @@ def test_create_temp_table():
     # replace tbl1 with df2
     sess.create_temp_table("tbl1", df2)
     assert sess.read_table("tbl1").to_pydict() == df2.to_pydict()
+
+
+###
+# USE / SET [CATALOG|SCHEMA]
+###
+
+
+def test_use():
+    sess = Session()
+    #
+    # create some catalogs to use
+    cat1 = Catalog.from_pydict(name="cat1", tables={})
+    cat2 = Catalog.from_pydict(name="cat2", tables={})
+    sess.attach(cat1)
+    sess.attach(cat2)
+    #
+    # current catalog defaults to the first attached
+    assert sess.current_catalog() == cat1
+    #
+    # set and assert
+    sess.set_catalog("cat2")
+    assert sess.current_catalog() == cat2
+    assert sess.current_namespace() is None
+    #
+    # set a namespace
+    sess.set_namespace("a.b")
+    assert sess.current_namespace() == Identifier("a", "b")
+    #
+    sess.set_catalog(None)
+    sess.set_namespace(None)
+    assert sess.current_catalog() is None
+    assert sess.current_namespace() is None
+    #
+    # test use <catalog>
+    sess.use("cat2")
+    assert sess.current_catalog() == cat2
+    assert sess.current_namespace() is None
+    #
+    #  test use <catalog>.<namespace>
+    sess.use("cat2.a.b")
+    assert sess.current_catalog() == cat2
+    assert sess.current_namespace() == Identifier("a", "b")
+
+
+def test_sql():
+    sess = Session()
+    #
+    # create some catalogs to use
+    cat1 = Catalog.from_pydict(name="cat1", tables={})
+    cat2 = Catalog.from_pydict(name="cat2", tables={})
+    sess.attach(cat1)
+    sess.attach(cat2)
+    #
+    # test use <catalog>
+    sess.sql("USE cat2")
+    assert sess.current_catalog() == cat2
+    assert sess.current_namespace() is None
+    #
+    #  test use <catalog>.<namespace>
+    sess.sql("USE cat2.a.b")
+    assert sess.current_catalog() == cat2
+    assert sess.current_namespace() == Identifier("a", "b")

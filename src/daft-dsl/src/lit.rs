@@ -282,10 +282,7 @@ impl LiteralValue {
     }
 
     pub fn display_sql<W: Write>(&self, buffer: &mut W) -> io::Result<()> {
-        let display_sql_err = Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Unsupported literal for SQL translation",
-        ));
+        let display_sql_err = Err(io::Error::other("Unsupported literal for SQL translation"));
         match self {
             Self::Null => write!(buffer, "NULL"),
             Self::Boolean(val) => write!(buffer, "{}", val),
@@ -454,7 +451,7 @@ impl Literal for String {
     }
 }
 
-impl<'a> Literal for &'a str {
+impl Literal for &'_ str {
     fn literal_value(self) -> LiteralValue {
         LiteralValue::Utf8(self.to_owned())
     }
@@ -470,7 +467,7 @@ macro_rules! make_literal {
     };
 }
 
-impl<'a> Literal for &'a [u8] {
+impl Literal for &'_ [u8] {
     fn literal_value(self) -> LiteralValue {
         LiteralValue::Binary(self.to_vec())
     }

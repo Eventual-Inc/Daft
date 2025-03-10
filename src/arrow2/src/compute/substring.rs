@@ -176,7 +176,7 @@ pub fn substring(array: &dyn Array, start: i64, length: &Option<u64>) -> Result<
 ///
 /// let data_type = DataType::Utf8;
 /// assert_eq!(can_substring(&data_type), true);
-
+///
 /// let data_type = DataType::Null;
 /// assert_eq!(can_substring(&data_type), false);
 /// ```

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io, ops::Range, string::FromUtf8Error, sync::Arc, time::Duration};
+use std::{collections::HashMap, ops::Range, string::FromUtf8Error, sync::Arc, time::Duration};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -36,6 +36,7 @@ use url::{ParseError, Position};
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
+    retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     FileFormat, InvalidArgumentSnafu, SourceType,
@@ -272,9 +273,9 @@ impl From<Error> for super::Error {
                 let io_error = if let Some(source) = source.source() {
                     // if we have a source, lets extract out the error as a string rather than rely on the aws-sdk fmt.
                     let source_as_string = source.to_string();
-                    std::io::Error::new(io::ErrorKind::Other, source_as_string)
+                    std::io::Error::other(source_as_string)
                 } else {
-                    std::io::Error::new(io::ErrorKind::Other, source)
+                    std::io::Error::other(source)
                 };
                 Self::UnableToReadBytes {
                     path,
@@ -500,46 +501,43 @@ async fn build_s3_conf(
 
     let builder_copy = builder.clone();
     let s3_conf = builder.build();
-    const CRED_TRIES: u64 = 4;
-    const JITTER_MS: u64 = 2_500;
-    const MAX_BACKOFF_MS: u64 = 20_000;
-    const MAX_WAITTIME_MS: u64 = 45_000;
-    let check_creds = async || -> super::Result<bool> {
-        use rand::Rng;
+
+    let backoff = ExponentialBackoff {
+        max_waittime_ms: Some(45_000),
+        ..Default::default()
+    };
+
+    let check_creds = async || {
         use CredentialsError::{CredentialsNotLoaded, ProviderTimedOut};
-        let mut attempt = 0;
-        let first_attempt_time = std::time::Instant::now();
-        loop {
-            let creds = s3_conf
-                .credentials_cache()
-                .provide_cached_credentials()
-                .await;
-            attempt += 1;
-            match creds {
-                Ok(_) => return Ok(false),
-                Err(err @ ProviderTimedOut(..)) => {
-                    let total_time_waited_ms: u64 = first_attempt_time.elapsed().as_millis().try_into().unwrap();
-                    if attempt < CRED_TRIES && (total_time_waited_ms < MAX_WAITTIME_MS) {
-                        let jitter = rand::thread_rng().gen_range(0..((1 << attempt) * JITTER_MS)) as u64;
-                        let jitter = jitter.min(MAX_BACKOFF_MS);
-                        log::warn!("S3 Credentials Provider timed out when making client for {}! Attempt {attempt} out of {CRED_TRIES} tries. Trying again in {jitter}ms. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-                        tokio::time::sleep(Duration::from_millis(jitter)).await;
-                        continue;
-                    }
-                    Err(err)
-                }
-                Err(err @ CredentialsNotLoaded(..)) => {
-                    log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-                    return Ok(true);
-                }
-                Err(err) => Err(err),
-            }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
+
+        let creds = s3_conf
+            .credentials_cache()
+            .provide_cached_credentials()
+            .await;
+
+        match creds {
+            Ok(_) => Ok(false),
+            Err(err @ ProviderTimedOut(..)) => {
+                log::warn!(
+                    "S3 Credentials Provider timed out when making client for {}! Retrying. {err}",
+                    s3_conf.region().unwrap_or(&DEFAULT_REGION)
+                );
+                Err(RetryError::Transient(err))
+            }
+            Err(err @ CredentialsNotLoaded(..)) => {
+                log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
+                Ok(true)
+            }
+            Err(err) => Err(RetryError::Permanent(err)),
         }
     };
 
     if !config.anonymous {
-        anonymous = check_creds().await?;
-    };
+        anonymous = backoff
+            .retry(check_creds)
+            .await
+            .with_context(|_| UnableToLoadCredentialsSnafu {})?;
+    }
 
     let s3_conf = if s3_conf.region().is_none() {
         builder_copy.region(DEFAULT_REGION).build()
@@ -610,7 +608,7 @@ impl S3LikeSource {
     }
 
     #[async_recursion]
-    async fn _get_impl(
+    async fn get_impl(
         &self,
         permit: OwnedSemaphorePermit,
         uri: &str,
@@ -709,7 +707,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
-                            self._get_impl(permit, uri, range, &new_region).await
+                            self.get_impl(permit, uri, range, &new_region).await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -722,7 +720,7 @@ impl S3LikeSource {
     }
 
     #[async_recursion]
-    async fn _head_impl(
+    async fn head_impl(
         &self,
         permit: SemaphorePermit<'async_recursion>,
         uri: &str,
@@ -792,7 +790,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client", new_region, region);
-                            self._head_impl(permit, uri, &new_region).await
+                            self.head_impl(permit, uri, &new_region).await
                         }
                         _ => Err(UnableToHeadFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -806,7 +804,7 @@ impl S3LikeSource {
 
     #[allow(clippy::too_many_arguments)]
     #[async_recursion]
-    async fn _list_impl(
+    async fn list_impl(
         &self,
         permit: SemaphorePermit<'async_recursion>,
         scheme: &str,
@@ -933,7 +931,7 @@ impl S3LikeSource {
 
                         let new_region = Region::new(region_name);
                         log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
-                        self._list_impl(
+                        self.list_impl(
                             permit,
                             scheme,
                             bucket,
@@ -957,7 +955,7 @@ impl S3LikeSource {
     }
 
     #[async_recursion]
-    async fn _put_impl(
+    async fn put_impl(
         &self,
         _permit: OwnedSemaphorePermit,
         uri: &str,
@@ -1017,7 +1015,7 @@ impl ObjectSource for S3LikeSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
         let get_result = self
-            ._get_impl(permit, uri, range, &self.default_region)
+            .get_impl(permit, uri, range, &self.default_region)
             .await?;
 
         if io_stats.is_some() {
@@ -1052,7 +1050,7 @@ impl ObjectSource for S3LikeSource {
             .acquire_owned()
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
-        self._put_impl(permit, uri, data, &self.default_region)
+        self.put_impl(permit, uri, data, &self.default_region)
             .await?;
 
         if let Some(io_stats) = io_stats {
@@ -1069,7 +1067,7 @@ impl ObjectSource for S3LikeSource {
             .acquire()
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
-        let head_result = self._head_impl(permit, uri, &self.default_region).await?;
+        let head_result = self.head_impl(permit, uri, &self.default_region).await?;
         if let Some(is) = io_stats.as_ref() {
             is.mark_head_requests(1);
         }
@@ -1126,7 +1124,7 @@ impl ObjectSource for S3LikeSource {
                     .await
                     .context(UnableToGrabSemaphoreSnafu)?;
 
-                self._list_impl(
+                self.list_impl(
                     permit,
                     scheme.as_str(),
                     bucket.as_str(),
@@ -1151,7 +1149,7 @@ impl ObjectSource for S3LikeSource {
                 // Might be a File
                 let key = key.trim_end_matches(S3_DELIMITER);
                 let mut lsr = self
-                    ._list_impl(
+                    .list_impl(
                         permit,
                         scheme.as_str(),
                         bucket.as_str(),
@@ -1185,7 +1183,7 @@ impl ObjectSource for S3LikeSource {
                     .await
                     .context(UnableToGrabSemaphoreSnafu)?;
 
-                self._list_impl(
+                self.list_impl(
                     permit,
                     scheme.as_str(),
                     bucket.as_str(),

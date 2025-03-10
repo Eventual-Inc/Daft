@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Configurations for Daft to use during the building of a Dataframe's plan.
 ///
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
-///     that this does not include the actual scan, which is taken care of by the DaftExecutionConfig.
+///    that this does not include the actual scan, which is taken care of by the DaftExecutionConfig.
 /// 2. Building of logical plan nodes
 #[derive(Clone, Serialize, Deserialize, Default, Debug, Eq, PartialEq)]
 pub struct DaftPlanningConfig {

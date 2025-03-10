@@ -8,7 +8,8 @@ dependencies = [
   "pyarrow >= 8.0.0",
   "fsspec",
   "tqdm",
-  "typing-extensions >= 4.0.0; python_version < '3.10'"
+  "typing-extensions >= 4.0.0; python_version < '3.10'",
+  "importlib-metadata; python_version < '3.10'"
 ]
 description = "Distributed Dataframes for Multimodal Data"
 dynamic = ["version"]
@@ -28,7 +29,7 @@ azure = []
 deltalake = ["deltalake"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
-iceberg = ["pyiceberg >= 0.4.0", "packaging"]
+iceberg = ["pyiceberg >= 0.7.0", "packaging"]
 lance = ["lancedb"]
 numpy = ["numpy"]
 pandas = ["pandas"]

@@ -87,7 +87,7 @@ impl<'a, W> MermaidDisplayVisitor<'a, W> {
     }
 }
 
-impl<'a, W> MermaidDisplayVisitor<'a, W>
+impl<W> MermaidDisplayVisitor<'_, W>
 where
     W: fmt::Write,
 {
@@ -129,7 +129,7 @@ where
     }
 
     fn add_edge(&mut self, parent: String, child: String) -> fmt::Result {
-        writeln!(self.output, r#"{child} --> {parent}"#)
+        writeln!(self.output, r"{child} --> {parent}")
     }
 
     fn fmt_node(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
@@ -156,9 +156,9 @@ where
         {
             writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
             if self.bottom_up {
-                writeln!(self.output, r#"direction BT"#)?;
+                writeln!(self.output, r"direction BT")?;
             } else {
-                writeln!(self.output, r#"direction TB"#)?;
+                writeln!(self.output, r"direction TB")?;
             }
             // add metadata to the subgraph
             let metadata_id = if let Some(metadata) = metadata {
@@ -175,11 +175,11 @@ where
             if let Some(metadata_id) = metadata_id {
                 if self.bottom_up {
                     let first_node_id = self.nodes.values().next().unwrap();
-                    writeln!(self.output, r#"{first_node_id} ~~~ {metadata_id}"#)?;
+                    writeln!(self.output, r"{first_node_id} ~~~ {metadata_id}")?;
                 } else {
                     let last_node_id = self.nodes.values().last().unwrap();
-                    writeln!(self.output, r#"{metadata_id} ~~~ {last_node_id}"#)?;
-                };
+                    writeln!(self.output, r"{metadata_id} ~~~ {last_node_id}")?;
+                }
             }
 
             writeln!(self.output, "end")?;

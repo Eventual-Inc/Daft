@@ -81,7 +81,7 @@ pub fn make_comfy_table<S: AsRef<str>>(
     let num_columns = fields.len();
 
     let (head_cols, tail_cols, total_cols) = if num_columns > max_cols {
-        let head_cols = (max_cols + 1) / 2;
+        let head_cols = max_cols.div_ceil(2);
         let tail_cols = max_cols / 2;
         (head_cols, tail_cols, head_cols + tail_cols + 1)
     } else {

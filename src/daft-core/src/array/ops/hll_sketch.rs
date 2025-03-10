@@ -28,7 +28,7 @@ impl DaftHllSketchAggable for UInt64Array {
             for &index in group {
                 if let Some(value) = data.get(index as _) {
                     hll.add_already_hashed(value);
-                };
+                }
             }
             bytes.extend(hll.registers.as_ref());
         }

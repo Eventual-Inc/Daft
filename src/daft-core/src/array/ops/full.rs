@@ -1,4 +1,4 @@
-use std::{iter::repeat, sync::Arc};
+use std::{iter::repeat_n, sync::Arc};
 
 use arrow2::offset::OffsetsBuffer;
 #[cfg(feature = "python")]
@@ -99,7 +99,7 @@ where
 
 impl FullNull for FixedSizeListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat_n(false, length));
 
         match dtype {
             DataType::FixedSizeList(child_dtype, size) => {
@@ -130,7 +130,7 @@ impl FullNull for FixedSizeListArray {
 
 impl FullNull for ListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat_n(false, length));
 
         match dtype {
             DataType::List(child_dtype) => {
@@ -138,8 +138,7 @@ impl FullNull for ListArray {
                 Self::new(
                     Field::new(name, dtype.clone()),
                     empty_flat_child,
-                    OffsetsBuffer::try_from(repeat(0).take(length + 1).collect::<Vec<_>>())
-                        .unwrap(),
+                    OffsetsBuffer::try_from(repeat_n(0, length + 1).collect::<Vec<_>>()).unwrap(),
                     Some(validity),
                 )
             }
@@ -164,7 +163,7 @@ impl FullNull for ListArray {
 
 impl FullNull for StructArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat_n(false, length));
         match dtype {
             DataType::Struct(children) => {
                 let field = Field::new(name, dtype.clone());

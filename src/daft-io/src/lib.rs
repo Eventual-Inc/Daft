@@ -1,4 +1,3 @@
-#![feature(async_closure)]
 #![feature(let_chains)]
 #![feature(io_error_more)]
 #![feature(if_let_guard)]
@@ -9,15 +8,17 @@ mod huggingface;
 mod local;
 mod object_io;
 mod object_store_glob;
+mod retry;
 mod s3_like;
 mod stats;
 mod stream_utils;
+
+use std::sync::LazyLock;
 
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
-use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -173,7 +174,7 @@ impl From<Error> for DaftError {
 
 impl From<Error> for std::io::Error {
     fn from(err: Error) -> Self {
-        Self::new(std::io::ErrorKind::Other, err)
+        Self::other(err)
     }
 }
 
@@ -427,10 +428,8 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 }
 type CacheKey = (bool, Arc<IOConfig>);
 
-lazy_static! {
-    static ref CLIENT_CACHE: std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
-        std::sync::RwLock::new(HashMap::new());
-}
+static CLIENT_CACHE: LazyLock<std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>>> =
+    LazyLock::new(|| std::sync::RwLock::new(HashMap::new()));
 
 pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
     let read_handle = CLIENT_CACHE.read().unwrap();

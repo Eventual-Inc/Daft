@@ -1,6 +1,6 @@
 mod expr;
 
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -11,7 +11,6 @@ use daft_dsl::{functions::ScalarFunction, ExprRef};
 use expr::JsonQuery;
 use itertools::Itertools;
 use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter};
-use lazy_static::lazy_static;
 use serde_json::Value;
 
 fn setup_parse_ctx() -> ParseCtx {
@@ -22,9 +21,7 @@ fn setup_parse_ctx() -> ParseCtx {
     defs
 }
 
-lazy_static! {
-    static ref PARSE_CTX: Mutex<ParseCtx> = Mutex::new(setup_parse_ctx());
-}
+static PARSE_CTX: LazyLock<Mutex<ParseCtx>> = LazyLock::new(|| Mutex::new(setup_parse_ctx()));
 
 fn compile_filter(query: &str) -> DaftResult<Filter> {
     // parse the filter

@@ -5,9 +5,11 @@ use daft_catalog::TableSource;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_session::{python::PySession, Session};
-use pyo3::prelude::*;
+use pyo3::{prelude::*, IntoPyObjectExt};
 
-use crate::{functions::SQL_FUNCTIONS, planner::SQLPlanner};
+use crate::{
+    error::PlannerError, functions::SQL_FUNCTIONS, planner::SQLPlanner, statement::Statement,
+};
 
 #[pyclass]
 pub struct SQLFunctionStub {
@@ -34,15 +36,32 @@ impl SQLFunctionStub {
     }
 }
 
+/// This method is called via `Session.sql` returns a PyObject (typically a PyLogicalBuilder)
 #[pyfunction]
-pub fn plan_sql(
+pub fn sql_exec(
+    py: Python<'_>,
     sql: &str,
     session: &PySession,
     config: PyDaftPlanningConfig,
-) -> PyResult<PyLogicalPlanBuilder> {
-    let sess = Rc::new(session.into());
-    let plan = SQLPlanner::new(sess).plan_sql(sql)?;
-    Ok(LogicalPlanBuilder::new(plan, Some(config.config)).into())
+) -> PyResult<Option<PyObject>> {
+    let sess: Rc<Session> = Rc::new(session.into());
+    let stmt = SQLPlanner::new(sess.clone()).plan(sql)?;
+    match stmt {
+        Statement::Select(select) => {
+            let builder = LogicalPlanBuilder::new(select, Some(config.config));
+            let builder = PyLogicalPlanBuilder::from(builder);
+            let builder = builder.into_py_any(py)?;
+            Ok(Some(builder))
+        }
+        Statement::Set(_) => Err(PlannerError::unsupported_sql(
+            "SET statement is not yet supported.".to_string(),
+        ))?,
+        Statement::Use(use_) => {
+            sess.set_catalog(Some(&use_.catalog))?;
+            sess.set_namespace(use_.namespace.as_ref())?;
+            Ok(None)
+        }
+    }
 }
 
 #[pyfunction]

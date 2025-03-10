@@ -556,9 +556,9 @@ impl SQLFunction for SQLCountMatches {
                     args.case_sensitive,
                 ))
             }
-            _ => Err(PlannerError::invalid_operation(
-                "Invalid arguments for count_matches: '{inputs:?}'",
-            )),
+            _ => Err(PlannerError::invalid_operation(format!(
+                "Invalid arguments for count_matches: '{inputs:?}'"
+            ))),
         }
     }
 
