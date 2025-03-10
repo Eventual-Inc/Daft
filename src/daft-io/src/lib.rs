@@ -2,6 +2,7 @@
 #![feature(io_error_more)]
 #![feature(if_let_guard)]
 mod azure_blob;
+mod counting_reader;
 mod google_cloud;
 mod http;
 mod huggingface;
@@ -17,6 +18,7 @@ use std::sync::LazyLock;
 
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
+pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
 #[cfg(feature = "python")]

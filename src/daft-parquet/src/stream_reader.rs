@@ -1,17 +1,11 @@
-use std::{
-    cmp::max,
-    collections::HashSet,
-    fs::File,
-    io::{Read, Seek},
-    sync::Arc,
-};
+use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 
 use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
 use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
-use daft_io::IOStatsRef;
+use daft_io::{CountingReader, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
@@ -224,61 +218,6 @@ pub fn spawn_column_iters_to_table_task(
     })
 }
 
-struct CountingReader<R> {
-    reader: R,
-    count: usize,
-    io_stats: Option<IOStatsRef>,
-}
-
-impl<R> CountingReader<R> {
-    fn update_count(&mut self) {
-        if let Some(ios) = &self.io_stats {
-            ios.mark_bytes_read(self.count);
-            self.count = 0;
-        }
-    }
-}
-
-impl<R> Read for CountingReader<R>
-where
-    R: Read + Seek,
-{
-    #[inline]
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let read = self.reader.read(buf)?;
-        self.count += read;
-        Ok(read)
-    }
-    #[inline]
-    fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {
-        let read = self.reader.read_vectored(bufs)?;
-        self.count += read;
-        Ok(read)
-    }
-    #[inline]
-    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
-        let read = self.reader.read_to_end(buf)?;
-        self.count += read;
-        Ok(read)
-    }
-}
-
-impl<R> Seek for CountingReader<R>
-where
-    R: Read + Seek,
-{
-    #[inline]
-    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        self.reader.seek(pos)
-    }
-}
-
-impl<R> Drop for CountingReader<R> {
-    fn drop(&mut self) {
-        self.update_count();
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
 pub fn local_parquet_read_into_column_iters(
@@ -320,11 +259,7 @@ pub fn local_parquet_read_into_column_iters(
             file_size: size as usize,
         });
     }
-    let mut reader = CountingReader {
-        reader,
-        count: 0,
-        io_stats,
-    };
+    let mut reader = CountingReader::new(reader, io_stats);
 
     let metadata = match metadata {
         Some(m) => m,
