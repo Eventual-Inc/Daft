@@ -1088,7 +1088,7 @@ impl Expr {
             })) => plan_schema.get_field(name).cloned(),
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
-                plan_schema: _none,
+                plan_schema: None,
                 ..
             })) => schema.get_field(name).cloned(),
 
@@ -1290,7 +1290,6 @@ impl Expr {
             Self::List(..) => "list",
             Self::Function { func, inputs } => match func {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
-                FunctionExpr::Window(_) => "window_function", // Special handling for window functions
                 _ => {
                     if inputs.is_empty() {
                         // Handle the case where there are no inputs
