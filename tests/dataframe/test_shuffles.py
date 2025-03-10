@@ -182,7 +182,7 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
         return output_partitions
 
     def bytes_per_row_fn():
-        return 200
+        return 10
 
     with flight_shuffle_ctx():
         df = (
