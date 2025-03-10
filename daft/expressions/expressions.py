@@ -27,6 +27,7 @@ from daft.daft import (
     ResourceRequest,
     initialize_udfs,
     resolved_col,
+    sql_datatype,
     unresolved_col,
 )
 from daft.daft import PyExpr as _PyExpr
@@ -683,6 +684,7 @@ class Expression:
 
         Note:
             - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
+            - If a string is provided, it will use the sql engine to parse the string into a data type. See the SQL documentation for more information.
 
         Example:
             >>> import daft
@@ -706,10 +708,12 @@ class Expression:
         Returns:
             Expression: Expression with the specified new datatype
         """
-        assert isinstance(dtype, (DataType, type))
-        inferred_dtype = DataType._infer_type(dtype)
-
-        expr = self._expr.cast(inferred_dtype._dtype)
+        if isinstance(dtype, str):
+            dtype = DataType._from_pydatatype(sql_datatype(dtype))
+        else:
+            assert isinstance(dtype, (DataType, type))
+            dtype = DataType._infer_type(dtype)
+        expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
 
     def ceil(self) -> Expression:
