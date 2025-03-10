@@ -513,9 +513,9 @@ pub async fn stream_warc(
             GetResult::File(file) => {
                 let buffer_size = 256 * 1024;
                 let file_reader = File::open(file.path).await?;
-                let reader = CountingReader::new(file_reader, io_stats);
+                let counting_reader = CountingReader::new(file_reader, io_stats);
                 (
-                    Box::new(BufReader::with_capacity(buffer_size, reader)),
+                    Box::new(BufReader::with_capacity(buffer_size, counting_reader)),
                     buffer_size,
                     64,
                 )
