@@ -520,3 +520,26 @@ def test_monotonic_id_in_join_condition(make_df) -> None:
     )
 
     assert df1.to_pydict() == df2.to_pydict()
+
+
+def test_monotonically_increasing_id_with_cast(make_df) -> None:
+    """Test that casting monotonically_increasing_id directly works correctly.
+
+    This tests addresses a bug where calling .cast() directly on monotonically_increasing_id()
+    would result in a PanicException with 'called `Option::unwrap()` on a `None` value'.
+    """
+    data = {"foo": list(range(10))}
+
+    df = make_df(data).with_column("id", monotonically_increasing_id().cast(DataType.string())).collect()
+
+    assert len(df) == 10
+    assert df.schema()["id"].dtype == DataType.string()
+
+    df2 = (
+        make_df(data)
+        .with_column("id", monotonically_increasing_id())
+        .with_column("id_str", col("id").cast(DataType.string()))
+        .collect()
+    )
+
+    assert df.to_pydict()["id"] == df2.to_pydict()["id_str"]
