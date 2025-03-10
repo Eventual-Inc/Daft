@@ -41,6 +41,16 @@ def pre_shuffle_merge_ctx():
     return _ctx
 
 
+@pytest.fixture(scope="function")
+def flight_shuffle_ctx():
+    """Fixture that provides a context manager for flight shuffle testing."""
+
+    def _ctx(shuffle_dirs: list[str] | None = None):
+        return daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=shuffle_dirs)
+
+    return _ctx
+
+
 @pytest.mark.skipif(
     get_tests_daft_runner_name() != "ray",
     reason="shuffle tests are meant for the ray runner",
@@ -134,6 +144,40 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
     threshold = output_partitions * (8 + output_partitions)
 
     with pre_shuffle_merge_ctx(threshold):
+        df = (
+            read_generator(
+                generator(input_partitions, num_rows_fn, bytes_per_row_fn),
+                schema=daft.Schema._from_field_name_and_types(
+                    [
+                        ("ints", daft.DataType.uint64()),
+                        ("bytes", daft.DataType.binary()),
+                    ]
+                ),
+            )
+            .repartition(output_partitions, "ints")
+            .collect()
+        )
+        assert len(df) == input_partitions * output_partitions
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+@pytest.mark.parametrize(
+    "input_partitions, output_partitions",
+    [(100, 100), (100, 1), (100, 50), (100, 200)],
+)
+def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions):
+    """Test that flight shuffle is working."""
+
+    def num_rows_fn():
+        return output_partitions
+
+    def bytes_per_row_fn():
+        return 200
+
+    with flight_shuffle_ctx():
         df = (
             read_generator(
                 generator(input_partitions, num_rows_fn, bytes_per_row_fn),
