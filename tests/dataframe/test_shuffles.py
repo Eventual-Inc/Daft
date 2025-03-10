@@ -194,7 +194,7 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
                 schema=daft.Schema._from_field_name_and_types(
                     [
                         ("ints", daft.DataType.uint64()),
-                        ("bytes", daft.DataType.fixed_size_binary(10)),
+                        ("bytes", daft.DataType.fixed_size_binary(200)),
                     ]
                 ),
             )
