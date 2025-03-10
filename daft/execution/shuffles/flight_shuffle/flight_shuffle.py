@@ -34,8 +34,27 @@ def get_shuffle_dir_path(
     node_id: str,
     shuffle_stage_id: int,
 ):
-    shuffle_dir = shuffle_dirs[shuffle_stage_id % len(shuffle_dirs)]
-    return f"{shuffle_dir}/daft_shuffle/node_{node_id}/shuffle_stage_{shuffle_stage_id}"
+    if not shuffle_dirs:
+        raise ValueError("No shuffle directories provided")
+
+    # Find directory with most available space
+    max_space = -1
+    selected_dir = None
+
+    for directory in shuffle_dirs:
+        if os.path.exists(directory):
+            try:
+                free_space = shutil.disk_usage(directory).free
+                if free_space > max_space:
+                    max_space = free_space
+                    selected_dir = directory
+            except OSError:
+                continue
+
+    if selected_dir is None:
+        selected_dir = random.choice(shuffle_dirs)
+
+    return f"{selected_dir}/daft_shuffle/node_{node_id}/shuffle_stage_{shuffle_stage_id}"
 
 
 @ray.remote(num_cpus=0)
@@ -81,7 +100,8 @@ class ShuffleActorManager:
                     soft=False,  # TODO: check if this is dangerous, if so, check if we can do true
                 ),
             ).remote(
-                get_shuffle_dir_path(self.shuffle_dirs, node_id, self.shuffle_stage_id),
+                self.shuffle_stage_id,
+                self.shuffle_dirs,
                 self.num_output_partitions,
                 self.partition_by,
             )
@@ -179,16 +199,17 @@ class ShuffleActor:
 
     def __init__(
         self,
-        shuffle_dir: str,
+        shuffle_stage_id: int,
+        shuffle_dirs: list[str],
         num_output_partitions: int,
         partition_by: list[PyExpr] | None = None,
     ):
-        self.shuffle_dir = shuffle_dir
-        self.num_output_partitions = num_output_partitions
-        self.partition_by = partition_by
-
         self.node_id = ray.get_runtime_context().get_node_id()
         self.host = ray.util.get_node_ip_address()
+
+        self.shuffle_dir = get_shuffle_dir_path(shuffle_dirs, self.node_id, shuffle_stage_id)
+        self.num_output_partitions = num_output_partitions
+        self.partition_by = partition_by
 
         # create a shuffle cache to store the partitions
         self.in_progress_shuffle_cache = InProgressShuffleCache.try_new(

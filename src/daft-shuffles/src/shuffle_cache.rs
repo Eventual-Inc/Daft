@@ -10,8 +10,11 @@ use daft_schema::schema::SchemaRef;
 use daft_writers::{make_ipc_writer, FileWriter};
 use tokio::sync::Mutex;
 
+type WriterTaskResult = Vec<(usize, String)>;
+type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
+
 struct InProgressShuffleCacheState {
-    writer_tasks: Vec<RuntimeTask<DaftResult<Vec<(usize, String)>>>>,
+    writer_tasks: Vec<WriterTask>,
     writer_senders: Vec<tokio::sync::mpsc::Sender<Arc<MicroPartition>>>,
     schema: Option<SchemaRef>,
 }
@@ -116,9 +119,9 @@ impl InProgressShuffleCache {
     }
 
     async fn close_internal(
-        writer_tasks: Vec<RuntimeTask<DaftResult<Vec<(usize, String)>>>>,
+        writer_tasks: Vec<WriterTask>,
         writer_senders: Vec<tokio::sync::mpsc::Sender<Arc<MicroPartition>>>,
-    ) -> DaftResult<Vec<Vec<(usize, String)>>> {
+    ) -> DaftResult<Vec<WriterTaskResult>> {
         drop(writer_senders);
         let results = futures::future::try_join_all(writer_tasks)
             .await?
@@ -131,7 +134,7 @@ impl InProgressShuffleCache {
 async fn writer_task(
     mut rx: tokio::sync::mpsc::Receiver<Arc<MicroPartition>>,
     mut writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
-) -> DaftResult<Vec<(usize, String)>> {
+) -> DaftResult<WriterTaskResult> {
     while let Some(partition) = rx.recv().await {
         writer.write(partition)?;
     }
