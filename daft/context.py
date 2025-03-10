@@ -204,6 +204,7 @@ def set_execution_config(
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
+    flight_shuffle_dirs: list[str] | None = None,
     enable_ray_tracing: bool | None = None,
     scantask_splitting_level: int | None = None,
 ) -> DaftContext:
@@ -249,6 +250,7 @@ def set_execution_config(
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce" and "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
+        flight_shuffle_dirs: The directories to use for flight shuffle. Defaults to ["/tmp"].
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
     """
@@ -280,6 +282,7 @@ def set_execution_config(
             enable_native_executor=enable_native_executor,
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
+            flight_shuffle_dirs=flight_shuffle_dirs,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             enable_ray_tracing=enable_ray_tracing,
             scantask_splitting_level=scantask_splitting_level,

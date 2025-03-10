@@ -2,6 +2,7 @@
 #![feature(let_chains)]
 mod batch;
 mod file;
+mod ipc;
 mod partition;
 mod physical;
 
@@ -22,13 +23,14 @@ use std::{
 
 use batch::TargetBatchWriterFactory;
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_dsl::ExprRef;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use file::TargetFileSizeWriterFactory;
+use ipc::IPCWriterFactory;
 #[cfg(feature = "python")]
 pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
@@ -49,6 +51,9 @@ pub trait FileWriter: Send + Sync {
 
     /// Return the total number of bytes written by this writer.
     fn bytes_written(&self) -> usize;
+
+    /// Return the number of bytes written for each file.
+    fn bytes_per_file(&self) -> Vec<usize>;
 }
 
 /// This trait is used to abstract the creation of a `FileWriter`
@@ -126,6 +131,36 @@ pub fn make_physical_writer_factory(
         }
         _ => unreachable!("Physical write should only support Parquet and CSV"),
     }
+}
+
+pub fn make_ipc_writer(
+    dir: &str,
+    partition_idx: usize,
+    target_filesize: usize,
+    compression: Option<&str>,
+) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
+    let compression = match compression {
+        Some("lz4") => Some(arrow2::io::ipc::write::Compression::LZ4),
+        Some("zstd") => Some(arrow2::io::ipc::write::Compression::ZSTD),
+        Some(c) => {
+            return Err(DaftError::ValueError(format!(
+                "Unsupported compression for ipc writer: {}, only lz4 and zstd are supported",
+                c
+            )));
+        }
+        None => None,
+    };
+    let base_writer_factory = IPCWriterFactory::new(dir.to_string(), partition_idx, compression);
+    let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+        target_filesize,
+        if compression.is_some() { 1.0 } else { 2.0 },
+    );
+    let file_writer_factory = TargetFileSizeWriterFactory::new(
+        Arc::new(base_writer_factory),
+        Arc::new(file_size_calculator),
+    );
+    let file_writer = file_writer_factory.create_writer(0, None)?;
+    Ok(file_writer)
 }
 
 #[cfg(feature = "python")]

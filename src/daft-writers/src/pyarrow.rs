@@ -196,6 +196,10 @@ impl FileWriter for PyArrowWriter {
         self.bytes_written
     }
 
+    fn bytes_per_file(&self) -> Vec<usize> {
+        vec![self.bytes_written]
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         self.is_closed = true;
         Python::with_gil(|py| {

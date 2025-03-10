@@ -69,6 +69,10 @@ impl FileWriter for LanceWriter {
         self.bytes_written
     }
 
+    fn bytes_per_file(&self) -> Vec<usize> {
+        vec![self.bytes_written]
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         self.is_closed = true;
         Ok(std::mem::take(&mut self.results))

@@ -99,6 +99,7 @@ impl PyDaftExecutionConfig {
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
+        flight_shuffle_dirs=None,
         enable_ray_tracing=None,
         scantask_splitting_level=None
     ))]
@@ -127,6 +128,7 @@ impl PyDaftExecutionConfig {
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
+        flight_shuffle_dirs: Option<Vec<String>>,
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
     ) -> PyResult<Self> {
@@ -204,16 +206,19 @@ impl PyDaftExecutionConfig {
         if let Some(shuffle_algorithm) = shuffle_algorithm {
             if !matches!(
                 shuffle_algorithm,
-                "map_reduce" | "pre_shuffle_merge" | "auto"
+                "map_reduce" | "pre_shuffle_merge" | "flight_shuffle" | "auto"
             ) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "shuffle_algorithm must be 'auto', 'map_reduce' or 'pre_shuffle_merge'",
+                    "shuffle_algorithm must be 'auto', 'map_reduce', 'pre_shuffle_merge', or 'flight_shuffle'",
                 ));
             }
             config.shuffle_algorithm = shuffle_algorithm.to_string();
         }
         if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
             config.pre_shuffle_merge_threshold = pre_shuffle_merge_threshold;
+        }
+        if let Some(flight_shuffle_dirs) = flight_shuffle_dirs {
+            config.flight_shuffle_dirs = flight_shuffle_dirs;
         }
 
         if let Some(enable_ray_tracing) = enable_ray_tracing {
