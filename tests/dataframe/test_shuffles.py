@@ -176,7 +176,7 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
 )
 @pytest.mark.parametrize(
     "input_partitions, output_partitions",
-    [(2, 2)],
+    [(100, 100), (100, 1), (100, 50), (100, 200)],
 )
 def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions):
     """Test that flight shuffle is working."""
@@ -185,7 +185,7 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
         return output_partitions
 
     def bytes_per_row_fn():
-        return 10
+        return 200
 
     with flight_shuffle_ctx():
         df = (
