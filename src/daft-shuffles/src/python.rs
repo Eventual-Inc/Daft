@@ -8,15 +8,15 @@ use pyo3::{
     Bound, PyResult, Python,
 };
 
-use crate::shuffle_cache::ShuffleCache;
+use crate::shuffle_cache::{InProgressShuffleCache, ShuffleCache};
 
-#[pyclass(module = "daft.daft", name = "ShuffleCache", frozen)]
-pub struct PyShuffleCache {
-    cache: ShuffleCache,
+#[pyclass(module = "daft.daft", name = "InProgressShuffleCache", frozen)]
+pub struct PyInProgressShuffleCache {
+    cache: InProgressShuffleCache,
 }
 
 #[pymethods]
-impl PyShuffleCache {
+impl PyInProgressShuffleCache {
     #[staticmethod]
     #[pyo3(signature = (num_partitions, dir, target_filesize, compression=None, partition_by=None))]
     pub fn try_new(
@@ -26,7 +26,7 @@ impl PyShuffleCache {
         compression: Option<&str>,
         partition_by: Option<Vec<PyExpr>>,
     ) -> PyResult<Self> {
-        let shuffle_cache = ShuffleCache::try_new(
+        let shuffle_cache = InProgressShuffleCache::try_new(
             num_partitions,
             dir,
             target_filesize,
@@ -46,30 +46,36 @@ impl PyShuffleCache {
         })
     }
 
-    pub fn close(&self) -> PyResult<()> {
-        get_compute_runtime().block_on_current_thread(self.cache.close())?;
-        Ok(())
+    pub fn close(&self) -> PyResult<PyShuffleCache> {
+        let shuffle_cache = get_compute_runtime().block_on_current_thread(self.cache.close())?;
+        Ok(PyShuffleCache {
+            cache: shuffle_cache,
+        })
     }
+}
 
-    pub fn schema(&self) -> PyResult<Option<PySchema>> {
-        let schema = get_compute_runtime().block_on_current_thread(self.cache.schema());
-        Ok(schema.map(|s| s.into()))
+#[pyclass(module = "daft.daft", name = "ShuffleCache", frozen)]
+pub struct PyShuffleCache {
+    cache: ShuffleCache,
+}
+
+#[pymethods]
+impl PyShuffleCache {
+    pub fn schema(&self) -> PyResult<PySchema> {
+        Ok(self.cache.schema().into())
     }
 
     pub fn bytes_per_file(&self, partition_idx: usize) -> PyResult<Vec<usize>> {
-        let bytes_per_file = get_compute_runtime()
-            .block_on_current_thread(self.cache.bytes_per_file(partition_idx))?;
-        Ok(bytes_per_file)
+        Ok(self.cache.bytes_per_file(partition_idx))
     }
 
     pub fn file_paths(&self, partition_idx: usize) -> PyResult<Vec<String>> {
-        let file_paths =
-            get_compute_runtime().block_on_current_thread(self.cache.file_paths(partition_idx))?;
-        Ok(file_paths)
+        Ok(self.cache.file_paths(partition_idx))
     }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_class::<PyInProgressShuffleCache>()?;
     parent.add_class::<PyShuffleCache>()?;
     Ok(())
 }

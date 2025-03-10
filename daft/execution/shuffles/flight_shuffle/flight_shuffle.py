@@ -5,7 +5,7 @@ import random
 import shutil
 from collections import defaultdict, deque
 
-from daft.daft import PyExpr, ShuffleCache
+from daft.daft import InProgressShuffleCache, PyExpr
 from daft.execution.execution_step import (
     PartitionTaskBuilder,
     SingleOutputPartitionTask,
@@ -191,7 +191,7 @@ class ShuffleActor:
         self.host = ray.util.get_node_ip_address()
 
         # create a shuffle cache to store the partitions
-        self.shuffle_cache = ShuffleCache.try_new(
+        self.in_progress_shuffle_cache = InProgressShuffleCache.try_new(
             num_output_partitions,
             self.shuffle_dir,
             target_filesize=1024 * 1024 * 10,
@@ -200,7 +200,7 @@ class ShuffleActor:
         )
 
         # create a flight server to serve data from the shuffle cache
-        self.server = FlightServer(self.host, self.node_id, self.shuffle_cache)
+        self.server = FlightServer(self.host, self.node_id)
         self.port = self.server.get_port()
 
         # create a threadpool to push partitions to the shuffle cache
@@ -219,7 +219,9 @@ class ShuffleActor:
     # Push a partition to the shuffle cache, do this in a threadpool so we return immediately
     def push_partitions(self, *partitions: MicroPartition):
         self.push_partition_futures.extend(
-            self.push_partition_executor.submit(self.shuffle_cache.push_partition, partition._micropartition)
+            self.push_partition_executor.submit(
+                self.in_progress_shuffle_cache.push_partition, partition._micropartition
+            )
             for partition in partitions
         )
 
@@ -230,7 +232,8 @@ class ShuffleActor:
         self.push_partition_futures.clear()
         self.push_partition_executor.shutdown()
 
-        self.shuffle_cache.close()
+        self.server.set_shuffle_cache(self.in_progress_shuffle_cache.close())
+        self.in_progress_shuffle_cache = None
 
     # Clean up the shuffle files for the given partition
     def clear_partition(self, partition_idx: int):

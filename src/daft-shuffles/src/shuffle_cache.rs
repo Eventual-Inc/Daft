@@ -10,26 +10,19 @@ use daft_schema::schema::SchemaRef;
 use daft_writers::{make_ipc_writer, FileWriter};
 use tokio::sync::Mutex;
 
-enum ShuffleCacheState {
-    Open {
-        writer_tasks: Vec<RuntimeTask<DaftResult<(Vec<usize>, Vec<String>)>>>,
-        writer_senders: Vec<tokio::sync::mpsc::Sender<Arc<MicroPartition>>>,
-        schema: Option<SchemaRef>,
-    },
-    Closed {
-        bytes_per_file_per_partition: Vec<Vec<usize>>,
-        file_paths_per_partition: Vec<Vec<String>>,
-        schema: SchemaRef,
-    },
+struct InProgressShuffleCacheState {
+    writer_tasks: Vec<RuntimeTask<DaftResult<(Vec<usize>, Vec<String>)>>>,
+    writer_senders: Vec<tokio::sync::mpsc::Sender<Arc<MicroPartition>>>,
+    schema: Option<SchemaRef>,
 }
 
-pub struct ShuffleCache {
-    state: Mutex<ShuffleCacheState>,
+pub struct InProgressShuffleCache {
+    state: Mutex<InProgressShuffleCacheState>,
     partition_by: Option<Vec<ExprRef>>,
     num_partitions: usize,
 }
 
-impl ShuffleCache {
+impl InProgressShuffleCache {
     pub fn try_new(
         num_partitions: usize,
         dir: &str,
@@ -59,7 +52,7 @@ impl ShuffleCache {
         }
 
         Ok(Self {
-            state: Mutex::new(ShuffleCacheState::Open {
+            state: Mutex::new(InProgressShuffleCacheState {
                 writer_tasks,
                 writer_senders,
                 schema: None,
@@ -77,30 +70,20 @@ impl ShuffleCache {
             None => input_partition.partition_by_random(self.num_partitions, 0)?,
         };
 
-        let mut state_guard = self.state.lock().await;
-        let ShuffleCacheState::Open {
-            writer_tasks,
-            writer_senders,
-            schema,
-        } = &mut *state_guard
-        else {
-            return Err(DaftError::InternalError(
-                "ShuffleCache should be in open state when pushing partitions".to_string(),
-            ));
-        };
-        if schema.is_none() {
-            *schema = Some(input_partition.schema().clone());
+        let mut state = self.state.lock().await;
+        if state.schema.is_none() {
+            state.schema = Some(input_partition.schema());
         }
 
         let send_futures = partitioned
             .into_iter()
-            .zip(writer_senders.iter())
+            .zip(state.writer_senders.iter())
             .map(|(partition, sender)| sender.send(partition.into()));
         match futures::future::try_join_all(send_futures).await {
             Ok(_) => (),
             Err(e) => {
-                let writer_tasks = std::mem::take(writer_tasks);
-                let writer_senders = std::mem::take(writer_senders);
+                let writer_tasks = std::mem::take(&mut state.writer_tasks);
+                let writer_senders = std::mem::take(&mut state.writer_senders);
                 Self::close_internal(writer_tasks, writer_senders).await?;
                 return Err(DaftError::InternalError(format!(
                     "Failed to send partition to writer: {}",
@@ -111,57 +94,10 @@ impl ShuffleCache {
         Ok(())
     }
 
-    pub async fn schema(&self) -> Option<SchemaRef> {
-        let state_guard = self.state.lock().await;
-        let ShuffleCacheState::Closed { schema, .. } = &*state_guard else {
-            return None;
-        };
-        Some(schema.clone())
-    }
-
-    pub async fn bytes_per_file(&self, partition_idx: usize) -> DaftResult<Vec<usize>> {
-        let state_guard = self.state.lock().await;
-        let ShuffleCacheState::Closed {
-            bytes_per_file_per_partition,
-            ..
-        } = &*state_guard
-        else {
-            return Err(DaftError::InternalError(
-                "ShuffleCache should be in closed state when retrieving bytes per file".to_string(),
-            ));
-        };
-        Ok(bytes_per_file_per_partition[partition_idx].clone())
-    }
-
-    pub async fn file_paths(&self, partition_idx: usize) -> DaftResult<Vec<String>> {
-        let state_guard = self.state.lock().await;
-        let ShuffleCacheState::Closed {
-            file_paths_per_partition,
-            ..
-        } = &*state_guard
-        else {
-            return Err(DaftError::InternalError(
-                "ShuffleCache should be in closed state when getting file paths".to_string(),
-            ));
-        };
-        Ok(file_paths_per_partition[partition_idx].clone())
-    }
-
-    pub async fn close(&self) -> DaftResult<()> {
-        let mut state_guard = self.state.lock().await;
-        let ShuffleCacheState::Open {
-            writer_tasks,
-            writer_senders,
-            schema,
-        } = &mut *state_guard
-        else {
-            return Err(DaftError::InternalError(
-                "ShuffleCache cannot be closed more than once".to_string(),
-            ));
-        };
-
-        let writer_tasks = std::mem::take(writer_tasks);
-        let writer_senders = std::mem::take(writer_senders);
+    pub async fn close(&self) -> DaftResult<ShuffleCache> {
+        let mut state = self.state.lock().await;
+        let writer_tasks = std::mem::take(&mut state.writer_tasks);
+        let writer_senders = std::mem::take(&mut state.writer_senders);
         let (bytes_per_file_per_partition, file_paths_per_partition): (
             Vec<Vec<usize>>,
             Vec<Vec<String>>,
@@ -169,12 +105,12 @@ impl ShuffleCache {
             .await?
             .into_iter()
             .unzip();
-        *state_guard = ShuffleCacheState::Closed {
+
+        Ok(ShuffleCache::new(
+            state.schema.take().unwrap(),
             bytes_per_file_per_partition,
             file_paths_per_partition,
-            schema: schema.as_ref().unwrap().clone(),
-        };
-        Ok(())
+        ))
     }
 
     async fn close_internal(
@@ -214,4 +150,36 @@ async fn writer_task(
     let bytes_per_file = writer.bytes_per_file();
     assert!(bytes_per_file.len() == file_paths.len());
     Ok((bytes_per_file, file_paths))
+}
+
+pub struct ShuffleCache {
+    schema: SchemaRef,
+    bytes_per_file_per_partition: Vec<Vec<usize>>,
+    file_paths_per_partition: Vec<Vec<String>>,
+}
+
+impl ShuffleCache {
+    pub fn new(
+        schema: SchemaRef,
+        bytes_per_file_per_partition: Vec<Vec<usize>>,
+        file_paths_per_partition: Vec<Vec<String>>,
+    ) -> Self {
+        Self {
+            schema,
+            bytes_per_file_per_partition,
+            file_paths_per_partition,
+        }
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+
+    pub fn bytes_per_file(&self, partition_idx: usize) -> Vec<usize> {
+        self.bytes_per_file_per_partition[partition_idx].clone()
+    }
+
+    pub fn file_paths(&self, partition_idx: usize) -> Vec<String> {
+        self.file_paths_per_partition[partition_idx].clone()
+    }
 }
