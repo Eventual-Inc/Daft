@@ -151,18 +151,10 @@ class ShuffleActorManager:
 
     # Wait for all shuffle actors to finish pushing objects to the cache
     def finish_push_objects(self):
-        ray.wait(
-            self.push_partition_futures,
-            num_returns=len(self.push_partition_futures),
-            fetch_local=False,
-        )
+        ray.get(self.push_partition_futures)
         self.push_partition_futures.clear()
 
-        ray.wait(
-            [actor.finish_push_partitions.remote() for actor in self.active_actors.values()],
-            num_returns=len(self.active_actors),
-            fetch_local=False,
-        )
+        ray.get([actor.finish_push_partitions.remote() for actor in self.active_actors.values()])
 
     # Clear the given partitions from the shuffle actors
     def clear_partition(self, partition_idx: int):
@@ -172,17 +164,10 @@ class ShuffleActorManager:
 
     # Shutdown the shuffle actor manager and all the shuffle actors
     def shutdown(self):
-        ray.wait(
-            self.clear_partition_futures,
-            num_returns=len(self.clear_partition_futures),
-            fetch_local=False,
-        )
+        ray.get(self.clear_partition_futures)
         self.clear_partition_futures.clear()
 
-        ray.wait(
-            [actor.shutdown.remote() for actor in self.all_actors.values()],
-            fetch_local=False,
-        )
+        ray.get([actor.shutdown.remote() for actor in self.all_actors.values()])
 
 
 @ray.remote(num_cpus=0)
@@ -367,11 +352,7 @@ def reduce_partitions(
         for client in clients:
             client.close()
         loop.close()
-        ray.wait(
-            clear_partitions_futures,
-            num_returns=len(clear_partitions_futures),
-            fetch_local=False,
-        )
+        ray.get(clear_partitions_futures)
 
 
 # Figure out which partitions go to which reduce tasks
@@ -436,15 +417,11 @@ def run_map_phase(
                 yield None
 
     # All the map tasks have been emitted, so wait for the actor manager to finish pushing them to the actors
-    ray.wait(
-        push_objects_futures,
-        num_returns=len(push_objects_futures),
-        fetch_local=False,
-    )
+    ray.get(push_objects_futures)
     del push_objects_futures
 
     # Wait for all actors to complete the map phase
-    ray.wait([shuffle_actor_manager.finish_push_objects.remote()], fetch_local=False)
+    ray.get(shuffle_actor_manager.finish_push_objects.remote())
 
 
 def run_reduce_phase(
@@ -484,13 +461,10 @@ def run_reduce_phase(
             partial_metadatas=[metadata],
         )
     # Wait for all the reduce tasks to complete
-    ray.wait(
-        [reduce_gen.completed() for reduce_gen in reduce_generators],
-        num_returns=len(reduce_generators),
-        fetch_local=False,
-    )
+    ray.get([reduce_gen.completed() for reduce_gen in reduce_generators])
+    del reduce_generators
     # Shutdown the actor manager
-    ray.wait([shuffle_actor_manager.shutdown.remote()], fetch_local=False)
+    ray.get(shuffle_actor_manager.shutdown.remote())
 
 
 def flight_shuffle(
