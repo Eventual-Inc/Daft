@@ -58,7 +58,7 @@ def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Gen
 
 @tenacity.retry(
     stop=tenacity.stop_after_attempt(3),
-    wait=tenacity.wait_exponential(multiplier=1, min=4, max=15),
+    wait=tenacity.wait_random_exponential(multiplier=2, min=1, max=20),
     reraise=True,
     before_sleep=lambda retry_state: print(
         f"Connection attempt {retry_state.attempt_number} failed. Retrying in {retry_state.sleep} seconds..."
