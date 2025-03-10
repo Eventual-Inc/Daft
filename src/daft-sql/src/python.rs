@@ -2,13 +2,15 @@ use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use common_daft_config::PyDaftPlanningConfig;
 use daft_catalog::TableSource;
+use daft_core::python::PyDataType;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_session::{python::PySession, Session};
 use pyo3::{prelude::*, IntoPyObjectExt};
 
 use crate::{
-    error::PlannerError, functions::SQL_FUNCTIONS, planner::SQLPlanner, statement::Statement,
+    error::PlannerError, functions::SQL_FUNCTIONS, planner::SQLPlanner, schema::try_parse_dtype,
+    statement::Statement,
 };
 
 #[pyclass]
@@ -84,6 +86,12 @@ pub fn sql(
 pub fn sql_expr(sql: &str) -> PyResult<PyExpr> {
     let expr = crate::planner::sql_expr(sql)?;
     Ok(PyExpr { expr })
+}
+
+#[pyfunction]
+pub fn sql_datatype(sql: &str) -> PyResult<PyDataType> {
+    let dtype = try_parse_dtype(sql)?;
+    Ok(PyDataType { dtype })
 }
 
 #[pyfunction]
