@@ -3,6 +3,7 @@
 import asyncio
 import os
 import sys
+import time
 
 from ray.job_submission import JobInfo, JobStatus, JobSubmissionClient
 
@@ -33,6 +34,8 @@ def run_benchmark():
     for q in range(1, 23):
         print(f"Running TPC-H Q{q}... ", end="", flush=True)
 
+        start = time.perf_counter()
+
         job_id = client.submit_job(
             entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
             runtime_env={"working_dir": "./benchmarking/tpch"},
@@ -40,11 +43,13 @@ def run_benchmark():
 
         job_info = asyncio.run(tail_logs(client, job_id))
 
+        end = time.perf_counter()
+
         if job_info.status != JobStatus.SUCCEEDED:
             print(f"\nRay job did not succeed, received job status: {job_info.status}\nJob message: {job_info.message}")
             sys.exit(1)
 
-        results[q] = (job_info.end_time - job_info.start_time) / 1000
+        results[q] = end - start
 
         print(f"done in {results[q]:.2f}s")
 
