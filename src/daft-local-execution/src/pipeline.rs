@@ -48,6 +48,7 @@ use crate::{
         pivot::PivotSink,
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
+        window_partition_only::WindowPartitionOnlySink,
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
@@ -126,60 +127,15 @@ pub fn physical_plan_to_pipeline(
             input,
             partition_by,
             schema,
-            stats_state: _,
-            window_functions,
+            stats_state,
+            aggregations,
         }) => {
-            // First, ensure the input is processed
             let input_node = physical_plan_to_pipeline(input, psets, cfg)?;
-
-            // Create a project node that actually adds window_0 columns
-            println!("Basic window partition implementation");
-            println!("  Partition by: {:?}", partition_by);
-            println!("  Window functions: {:?}", window_functions);
-            println!("  Output schema: {:?}", schema);
-
-            // For test_single_partition_sum, we need to calculate sum(value) grouped by category
-            // A=22, B=29, C=21
-            use daft_dsl::{lit, resolved_col};
-
-            // Add the original columns
-            let category_col = resolved_col("category");
-            let value_col = resolved_col("value");
-
-            // Create an expression to select the correct sum based on category
-            // We'll use nested if_else expressions to handle all categories
-            let cat_equal_a = category_col.clone().eq(lit("A"));
-            let cat_equal_b = category_col.clone().eq(lit("B"));
-
-            // Creates an expression that returns:
-            // - 22 if category is "A"
-            // - 29 if category is "B"
-            // - 21 otherwise (for "C")
-            let window_expr = cat_equal_a.if_else(
-                lit(22), // If category is "A"
-                cat_equal_b.if_else(
-                    lit(29), // If category is "B"
-                    lit(21), // Else (category is "C")
-                ),
-            );
-
-            // Alias the result as "window_0"
-            let window_col = window_expr.alias("window_0");
-
-            // Create the projection with all columns
-            let projection = vec![category_col, value_col, window_col];
-
-            let proj_op =
-                ProjectOperator::new(projection).with_context(|_| PipelineCreationSnafu {
-                    plan_name: "WindowPartitionOnly",
+            let agg_sink = WindowPartitionOnlySink::new(aggregations, partition_by, schema)
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
                 })?;
-
-            IntermediateNode::new(
-                Arc::new(proj_op),
-                vec![input_node],
-                StatsState::NotMaterialized,
-            )
-            .boxed()
+            BlockingSinkNode::new(Arc::new(agg_sink), input_node, stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, stats_state }) => {
             let cache_key: Arc<str> = info.cache_key.clone().into();
