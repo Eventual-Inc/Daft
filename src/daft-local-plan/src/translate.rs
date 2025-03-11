@@ -105,13 +105,13 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         }
         LogicalPlan::Window(window) => {
             let input = translate(&window.input)?;
-            if !window.partition_by.is_empty()
-                && window.order_by.is_empty()
-                && window.frame.is_none()
+            if !window.window_spec.partition_by.is_empty()
+                && window.window_spec.order_by.is_empty()
+                && window.window_spec.frame.is_none()
             {
                 Ok(LocalPhysicalPlan::window_partition_only(
                     input,
-                    window.partition_by.clone(),
+                    window.window_spec.partition_by.clone(),
                     window.schema.clone(),
                     window.stats_state.clone(),
                     window.window_functions.clone(),

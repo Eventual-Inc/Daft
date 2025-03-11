@@ -519,8 +519,8 @@ fn pull_up_correlated_cols(
         }
         LogicalPlan::Window(window) => Ok((
             window.input.clone(),
-            window.partition_by.clone(),
-            window.order_by.clone(),
+            window.window_spec.partition_by.clone(),
+            window.window_spec.order_by.clone(),
         )),
     }
 }

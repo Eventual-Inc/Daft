@@ -211,9 +211,10 @@ impl LogicalPlan {
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
             Self::Window(window) => {
                 let res = window
+                    .window_spec
                     .partition_by
                     .iter()
-                    .chain(window.order_by.iter())
+                    .chain(window.window_spec.order_by.iter())
                     .flat_map(get_required_columns)
                     .collect();
                 vec![res]
@@ -401,13 +402,10 @@ impl LogicalPlan {
                 Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
                 Self::Union(_) => panic!("Union ops should never have only one input, but got one"),
                 Self::Join(_) => panic!("Join ops should never have only one input, but got one"),
-                Self::Window(Window { window_functions, partition_by, order_by, ascending, frame, .. }) => Self::Window(Window::try_new(
+                Self::Window(Window { window_functions, window_spec, .. }) => Self::Window(Window::try_new(
                     input.clone(),
                     window_functions.clone(),
-                    partition_by.clone(),
-                    order_by.clone(),
-                    ascending.clone(),
-                    frame.clone()
+                    window_spec.clone(),
                 ).unwrap()),
             },
             [input1, input2] => match self {

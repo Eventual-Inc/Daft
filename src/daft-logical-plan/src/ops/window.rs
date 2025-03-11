@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{expr::window::WindowFrame, ExprRef};
+use daft_dsl::{expr::window::WindowSpec, ExprRef};
 
 use crate::{
     logical_plan::{Error, LogicalPlan, Result},
@@ -18,14 +18,8 @@ pub struct Window {
     pub input: Arc<LogicalPlan>,
     /// The window functions to compute.
     pub window_functions: Vec<ExprRef>,
-    /// The columns to partition by.
-    pub partition_by: Vec<ExprRef>,
-    /// The columns to order by.
-    pub order_by: Vec<ExprRef>,
-    /// The ascending flags for the order by columns.
-    pub ascending: Vec<bool>,
-    /// The window frame.
-    pub frame: Option<WindowFrame>,
+    /// The window specification (partition by, order by, frame, etc.)
+    pub window_spec: WindowSpec,
     /// The output schema.
     pub schema: Arc<Schema>,
     /// The plan statistics.
@@ -37,10 +31,7 @@ impl Window {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         window_functions: Vec<ExprRef>,
-        partition_by: Vec<ExprRef>,
-        order_by: Vec<ExprRef>,
-        ascending: Vec<bool>,
-        frame: Option<WindowFrame>,
+        window_spec: WindowSpec,
     ) -> Result<Self> {
         let input_schema = input.schema();
 
@@ -62,10 +53,7 @@ impl Window {
             plan_id: None,
             input,
             window_functions,
-            partition_by,
-            order_by,
-            ascending,
-            frame,
+            window_spec,
             schema,
             stats_state: StatsState::NotMaterialized,
         })
@@ -88,10 +76,7 @@ impl Window {
             plan_id: id,
             input: self.input.clone(),
             window_functions: self.window_functions.clone(),
-            partition_by: self.partition_by.clone(),
-            order_by: self.order_by.clone(),
-            ascending: self.ascending.clone(),
-            frame: self.frame.clone(),
+            window_spec: self.window_spec.clone(),
             schema: self.schema.clone(),
             stats_state: self.stats_state.clone(),
         })
@@ -121,10 +106,7 @@ impl Window {
             plan_id: self.plan_id,
             input: children[0].clone(),
             window_functions: self.window_functions.clone(),
-            partition_by: self.partition_by.clone(),
-            order_by: self.order_by.clone(),
-            ascending: self.ascending.clone(),
-            frame: self.frame.clone(),
+            window_spec: self.window_spec.clone(),
             schema: self.schema.clone(),
             stats_state: self.stats_state.clone(),
         })))

@@ -122,10 +122,7 @@ impl OptimizerRule for ExtractWindowFunction {
                                 Window::try_new(
                                     project.input.clone(),
                                     window_function_exprs.clone(),
-                                    sample_window_spec.partition_by.clone(),
-                                    sample_window_spec.order_by.clone(),
-                                    vec![true; sample_window_spec.order_by.len()],
-                                    sample_window_spec.frame.clone(),
+                                    sample_window_spec.clone(),
                                 )?
                                 .with_window_functions(window_function_exprs),
                             ));
