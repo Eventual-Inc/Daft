@@ -46,7 +46,7 @@ def run_benchmark():
         start = time.perf_counter()
 
         submission_id = client.submit_job(
-            entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
+            entrypoint=f"DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python answers_sql.py {parquet_path} {q}",
             runtime_env={"working_dir": "./benchmarking/tpch"},
         )
 
