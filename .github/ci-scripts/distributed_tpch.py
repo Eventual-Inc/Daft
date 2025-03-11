@@ -37,6 +37,9 @@ def run_benchmark():
 
     client = JobSubmissionClient(address="http://localhost:8265")
 
+    # Create the directory if it doesn't exist
+    os.makedirs("traces", exist_ok=True)
+
     for q in range(1, 2):
         print(f"Running TPC-H Q{q}... ", end="", flush=True)
 
@@ -51,10 +54,9 @@ def run_benchmark():
 
         end = time.perf_counter()
 
-        trace_url = f"http://localhost:8265/api/v0/tasks/timeline?download=1&job_id={job_id}"
+        time.sleep(5)
 
-        # Create the directory if it doesn't exist
-        os.makedirs("traces", exist_ok=True)
+        trace_url = f"http://localhost:8265/api/v0/tasks/timeline?download=1&job_id={job_id}"
 
         # Download the trace file
         urllib.request.urlretrieve(trace_url, f"traces/q{q}-trace.json")
