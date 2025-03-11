@@ -87,7 +87,7 @@ impl Series {
             DataType::Float32 => Ok(self.f32().unwrap().clone().into_series()),
             DataType::Float64 => Ok(self.f64().unwrap().clone().into_series()),
             dt => Err(DaftError::TypeError(format!(
-                "negate not implemented for {}",
+                "positive not implemented for {}",
                 dt
             ))),
         }
