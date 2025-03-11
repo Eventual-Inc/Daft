@@ -85,8 +85,8 @@ def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
 
 
 @tenacity.retry(
-    stop=tenacity.stop_after_attempt(5),
-    wait=tenacity.wait_random_exponential(multiplier=2, min=1, max=20),
+    stop=tenacity.stop_after_attempt(10),
+    wait=tenacity.wait_random_exponential(multiplier=3, min=3, max=60),
     reraise=True,
     before_sleep=lambda retry_state: print(f"Connection attempt {retry_state.attempt_number} failed. Retrying..."),
 )
