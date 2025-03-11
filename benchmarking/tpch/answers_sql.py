@@ -5,10 +5,10 @@ You may also run this file directly as such: `python answers_sql.py <path to TPC
 
 import sys
 
-import answers
-
 import daft
 from daft.sql import SQLCatalog
+
+from . import answers
 
 TABLE_NAMES = [
     "part",
