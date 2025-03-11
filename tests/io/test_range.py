@@ -23,6 +23,16 @@ def test_range_with_partitions():
     assert df.num_partitions() == 2
 
 
+def test_range_with_step_kwargs():
+    df = daft.range(2, 10, step=2)
+    assert df.to_pydict() == {"id": [2, 4, 6, 8]}
+
+
+def test_with_start_end_and_step_kwargs():
+    df = daft.range(start=2, end=10, step=2)
+    assert df.to_pydict() == {"id": [2, 4, 6, 8]}
+
+
 def test_with_no_args_raises_error():
     with pytest.raises(TypeError):
         daft.range()
