@@ -79,9 +79,10 @@ def get_answer(q: int, get_df) -> daft.DataFrame:
 
 
 def main(parquet_path, q):
+    s3_config_from_env = S3Config.from_env()
+    io_config = IOConfig(s3=s3_config_from_env)
+
     def get_df(name):
-        s3_config_from_env = S3Config.from_env()
-        io_config = IOConfig(s3=s3_config_from_env)
         return daft.read_parquet(f"{parquet_path}{name}/*", io_config=io_config)
 
     daft_df = get_answer(q, get_df)

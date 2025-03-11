@@ -6,17 +6,17 @@ import sys
 import time
 import urllib.request
 
-from ray.job_submission import JobInfo, JobStatus, JobSubmissionClient
+from ray.job_submission import JobDetails, JobStatus, JobSubmissionClient
 
 import daft
 from tools.ci_bench_utils import get_run_metadata, upload_to_google_sheets
 
 
-async def tail_logs(client: JobSubmissionClient, job_id: str) -> JobInfo:
-    async for lines in client.tail_job_logs(job_id):
+async def tail_logs(client: JobSubmissionClient, submission_id: str) -> JobDetails:
+    async for lines in client.tail_job_logs(submission_id):
         print(lines, end="")
 
-    return client.get_job_info(job_id)
+    return client.get_job_info(submission_id)
 
 
 SF_TO_S3_PATH = {
@@ -45,27 +45,27 @@ def run_benchmark():
 
         start = time.perf_counter()
 
-        job_id = client.submit_job(
+        submission_id = client.submit_job(
             entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
             runtime_env={"working_dir": "./benchmarking/tpch"},
         )
 
-        job_info = asyncio.run(tail_logs(client, job_id))
+        job_details = asyncio.run(tail_logs(client, submission_id))
 
         end = time.perf_counter()
 
-        trace_url = f"http://localhost:8265/api/v0/tasks/timeline?download=1&job_id={job_id}"
-
         # Download the trace file
+        trace_url = f"http://localhost:8265/api/v0/tasks/timeline?download=1&job_id={job_details.job_id}"
         urllib.request.urlretrieve(trace_url, f"traces/q{q}-trace.json")
 
-        if job_info.status != JobStatus.SUCCEEDED:
-            print(f"\nRay job did not succeed, received job status: {job_info.status}\nJob message: {job_info.message}")
+        if job_details.status != JobStatus.SUCCEEDED:
+            print(f"\nRay job did not succeed, received job status: {job_details.status}\nJob details: {job_details}")
             sys.exit(1)
 
         results[q] = end - start
 
         print(f"done in {results[q]:.2f}s")
+        print(f"Job details: {job_details}")
 
     return results
 
