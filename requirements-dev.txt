@@ -36,6 +36,9 @@ opencv-python==4.10.0.84
 tiktoken==0.7.0
 duckdb==1.1.2
 
+# TQDM
+tqdm
+
 # Pyarrow
 pyarrow==16.0.0
 # Ray
