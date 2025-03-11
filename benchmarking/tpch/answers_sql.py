@@ -4,7 +4,6 @@ You may also run this file directly as such: `python answers_sql.py <path to TPC
 """
 
 import os
-import sys
 
 import daft
 from daft import col
@@ -87,6 +86,8 @@ def main(parquet_path, q):
 
 
 if __name__ == "__main__":
-    parquet_path = sys.argv[1]
-    q = int(sys.argv[2])
-    main(parquet_path, q)
+    print("hello world")
+
+    # parquet_path = sys.argv[1]
+    # q = int(sys.argv[2])
+    # main(parquet_path, q)
