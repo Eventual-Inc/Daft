@@ -8,7 +8,7 @@ provider:
     GroupName: ray-autoscaler-c1
 
 auth:
-  ssh_user: ubuntu
+  ssh_user: ec2-user
   ssh_private_key: ~/.ssh/ci-github-actions-ray-cluster-key.pem
 
 max_workers: ${RAY_NUM_WORKERS}
@@ -18,7 +18,7 @@ available_node_types:
     node_config:
       KeyName: ci-github-actions-ray-cluster-key
       InstanceType: i8g.4xlarge
-      ImageId: ami-0d4eea77bb23270f4
+      ImageId: ami-0345469b8a1ca112a
       IamInstanceProfile:
         Name: ray-autoscaler-v1
 
@@ -29,14 +29,14 @@ available_node_types:
     node_config:
       KeyName: ci-github-actions-ray-cluster-key
       InstanceType: i8g.4xlarge
-      ImageId: ami-0d4eea77bb23270f4
+      ImageId: ami-0345469b8a1ca112a
       IamInstanceProfile:
         Name: ray-autoscaler-v1
 
 setup_commands:
 # mount NVME to /tmp
-- sudo mkfs.ext4 /dev/nvme0n1
-- sudo mount -t ext4 /dev/nvme0n1 /tmp
+- sudo mkfs.ext4 /dev/nvme1n1
+- sudo mount -t ext4 /dev/nvme1n1 /tmp
 - sudo chmod 777 /tmp
 
 # install UV and dependencies

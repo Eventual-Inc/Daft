@@ -8,6 +8,7 @@ import sys
 
 import daft
 from daft import col
+from daft.io import IOConfig, S3Config
 from daft.sql import SQLCatalog
 
 TABLE_NAMES = [
@@ -78,8 +79,11 @@ def get_answer(q: int, get_df) -> daft.DataFrame:
 
 
 def main(parquet_path, q):
+    s3_config_from_env = S3Config.from_env()
+    io_config = IOConfig(s3=s3_config_from_env)
+
     def get_df(name):
-        return daft.read_parquet(f"{parquet_path}{name}/*")
+        return daft.read_parquet(f"{parquet_path}{name}/*", io_config=io_config)
 
     daft_df = get_answer(q, get_df)
 
