@@ -10,9 +10,9 @@ import tenacity
 from sqlalchemy import (
     Boolean,
     Column,
-    Connection,
     Date,
     DateTime,
+    Engine,
     Float,
     Integer,
     MetaData,
@@ -56,6 +56,14 @@ def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Gen
     yield db_url
 
 
+@tenacity.retry(
+    stop=tenacity.stop_after_attempt(3),
+    wait=tenacity.wait_random_exponential(multiplier=2, min=1, max=20),
+    reraise=True,
+    before_sleep=lambda retry_state: print(
+        f"Connection attempt {retry_state.attempt_number} failed. Retrying in {retry_state.sleep} seconds..."
+    ),
+)
 @pytest.fixture(scope="session", params=URLS)
 def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
     data = pd.DataFrame(
@@ -66,16 +74,15 @@ def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
     )
     db_url = request.param
     engine = create_engine(db_url)
-    with engine.connect() as conn:
-        metadata = MetaData()
-        table = Table(
-            EMPTY_TEST_TABLE_NAME,
-            metadata,
-            Column("id", Integer),
-            Column("string_col", String(50)),
-        )
-        metadata.create_all(conn)
-        data.to_sql(table.name, con=conn, if_exists="replace", index=False)
+    metadata = MetaData()
+    table = Table(
+        EMPTY_TEST_TABLE_NAME,
+        metadata,
+        Column("id", Integer),
+        Column("string_col", String(50)),
+    )
+    metadata.create_all(engine)
+    data.to_sql(table.name, con=engine, if_exists="replace", index=False)
     yield db_url
 
 
@@ -88,22 +95,16 @@ def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
     ),
 )
 def setup_database(db_url: str, data: pd.DataFrame) -> None:
-    engine = create_engine(
-        db_url,
-        pool_size=5,
-        max_overflow=10,
-        pool_timeout=30,
-        pool_recycle=1800,
-    )
+    engine = create_engine(db_url)
+    create_and_populate(engine, data)
 
     # Ensure the table is created and populated
     with engine.connect() as conn:
-        create_and_populate(conn, data)
         result = conn.execute(text(f"SELECT COUNT(*) FROM {TEST_TABLE_NAME}")).fetchone()[0]
         assert result == len(data)
 
 
-def create_and_populate(conn: Connection, data: pd.DataFrame) -> None:
+def create_and_populate(engine: Engine, data: pd.DataFrame) -> None:
     metadata = MetaData()
     table = Table(
         TEST_TABLE_NAME,
@@ -117,5 +118,5 @@ def create_and_populate(conn: Connection, data: pd.DataFrame) -> None:
         Column("null_col", String(50)),
         Column("non_uniformly_distributed_col", Integer),
     )
-    metadata.create_all(conn)
-    data.to_sql(table.name, con=conn, if_exists="replace", index=False)
+    metadata.create_all(engine)
+    data.to_sql(table.name, con=engine, if_exists="replace", index=False)
