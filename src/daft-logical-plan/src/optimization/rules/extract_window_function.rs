@@ -33,9 +33,6 @@ impl ExtractWindowFunction {
             // Check if this is a function expression with a window function evaluator
             Expr::Function { func, .. } => {
                 let is_window = matches!(func, FunctionExpr::Window(_));
-                if is_window {
-                    println!("ExtractWindowFunction: Found window function: {:?}", expr);
-                }
                 is_window
             }
             // Recursively check children
@@ -46,12 +43,7 @@ impl ExtractWindowFunction {
 
     /// Helper function to check if any expression in the projection contains window functions
     fn contains_window_function(project: &Project) -> bool {
-        let contains = project.projection.iter().any(Self::is_window_function_expr);
-        println!(
-            "ExtractWindowFunction: Project contains window functions: {}",
-            contains
-        );
-        contains
+        project.projection.iter().any(Self::is_window_function_expr)
     }
 
     /// Helper function to extract window function expressions from a projection
@@ -62,18 +54,6 @@ impl ExtractWindowFunction {
             Self::collect_window_functions(expr, &mut result);
         }
 
-        println!(
-            "ExtractWindowFunction: Extracted {} window functions",
-            result.len()
-        );
-        if !result.is_empty() {
-            for (i, (expr, spec)) in result.iter().enumerate() {
-                println!(
-                    "ExtractWindowFunction: Window function {}: {:?} with spec {:?}",
-                    i, expr, spec
-                );
-            }
-        }
         result
     }
 
@@ -83,10 +63,6 @@ impl ExtractWindowFunction {
             Expr::Function { func, .. } => {
                 // If this is a window function, extract its window spec
                 if let FunctionExpr::Window(window_func) = func {
-                    println!(
-                        "ExtractWindowFunction: Collecting window function: {:?} with spec {:?}",
-                        expr, window_func.window_spec
-                    );
                     result.push((expr.clone(), window_func.window_spec.clone()));
                 }
             }
@@ -104,17 +80,12 @@ impl ExtractWindowFunction {
         expr: &ExprRef,
         window_col_mappings: &[(ExprRef, String)],
     ) -> DaftResult<ExprRef> {
-        println!(
-            "ExtractWindowFunction: Replacing window functions in expression: {:?}",
-            expr
-        );
         // Use transform pattern similar to replace_monotonic_id in DetectMonotonicId
         let transformed = expr.clone().transform(|e| {
             // First, check if this expression is a window function that needs to be replaced
             for (window_expr, col_name) in window_col_mappings {
                 if Arc::ptr_eq(&e, window_expr) {
                     // Replace with a column reference and mark as transformed
-                    println!("ExtractWindowFunction: Replacing window function {:?} with column reference to {}", e, col_name);
                     return Ok(Transformed::yes(resolved_col(col_name.clone())));
                 }
             }
@@ -128,43 +99,24 @@ impl ExtractWindowFunction {
 
 impl OptimizerRule for ExtractWindowFunction {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        println!(
-            "ExtractWindowFunction: Attempting to optimize plan: {:?}",
-            plan
-        );
         plan.transform_down(|node| {
             match node.as_ref() {
                 LogicalPlan::Project(project) => {
-                    println!("ExtractWindowFunction: Inspecting Project operation: {:?}", project);
-                    println!("ExtractWindowFunction: Input schema: {:?}", project.input.schema());
-                    println!("ExtractWindowFunction: Project schema: {:?}", project.projected_schema);
                     // Check if any expression contains window functions
                     #[allow(clippy::needless_borrow)]
                     if Self::contains_window_function(&project) {
                         // Extract window functions and their specs
                         let window_funcs = Self::extract_window_functions(&project.projection);
 
-                        println!("ExtractWindowFunction: Extracted {} window functions", window_funcs.len());
-                        for (i, (expr, spec)) in window_funcs.iter().enumerate() {
-                            println!("ExtractWindowFunction: Window function {}: {:?} with spec {:?}", i, expr, spec);
-                            println!("ExtractWindowFunction: Partition by columns: {:?}", spec.partition_by);
-                        }
-
                         if !window_funcs.is_empty() {
                             let sample_window_spec = &window_funcs[0].1;
-                            println!("ExtractWindowFunction: Using window spec: {:?}", sample_window_spec);
-                            println!("ExtractWindowFunction: Partition columns = {:?}", sample_window_spec.partition_by);
-                            println!("ExtractWindowFunction: Partition column types = {:?}",
-                                     sample_window_spec.partition_by.iter()
-                                     .map(|e| format!("{:?}", e))
-                                     .collect::<Vec<_>>());
 
                             // Extract the window function expressions
-                            let window_function_exprs = window_funcs.iter()
+                            let window_function_exprs = window_funcs
+                                .iter()
                                 .map(|(expr, _)| expr.clone())
                                 .collect::<Vec<ExprRef>>();
 
-                            println!("ExtractWindowFunction: Creating Window operation with {} window functions", window_function_exprs.len());
                             // Create a Window operation with the window functions
                             let window_plan = Arc::new(LogicalPlan::Window(
                                 Window::try_new(
@@ -185,18 +137,14 @@ impl OptimizerRule for ExtractWindowFunction {
                                 .map(|(i, (expr, _))| (expr.clone(), format!("window_{}", i)))
                                 .collect();
 
-                            println!("ExtractWindowFunction: Created {} window column mappings", window_col_mappings.len());
-                            for (i, (expr, col_name)) in window_col_mappings.iter().enumerate() {
-                                println!("ExtractWindowFunction: Mapping {} - {:?} -> {}", i, expr, col_name);
-                            }
-
                             // Replace window function expressions with column references in the projection
-                            let new_projection = project.projection
+                            let new_projection = project
+                                .projection
                                 .iter()
-                                .map(|expr| Self::replace_window_functions(expr, &window_col_mappings))
+                                .map(|expr| {
+                                    Self::replace_window_functions(expr, &window_col_mappings)
+                                })
                                 .collect::<DaftResult<Vec<ExprRef>>>()?;
-
-                            println!("ExtractWindowFunction: Created new projection with {} expressions", new_projection.len());
 
                             // Create a new Project operation with the updated projection list
                             let final_plan = Arc::new(LogicalPlan::Project(Project::try_new(
@@ -204,21 +152,15 @@ impl OptimizerRule for ExtractWindowFunction {
                                 new_projection,
                             )?));
 
-                            println!("ExtractWindowFunction: Successfully transformed the plan with Window operation");
                             Ok(Transformed::yes(final_plan))
                         } else {
-                            println!("ExtractWindowFunction: No window functions found, skipping transformation");
                             Ok(Transformed::no(node))
                         }
                     } else {
-                        println!("ExtractWindowFunction: No window functions in this Project operation");
                         Ok(Transformed::no(node))
                     }
                 }
-                _ => {
-                    println!("ExtractWindowFunction: Skipping non-Project operation: {:?}", node);
-                    Ok(Transformed::no(node))
-                },
+                _ => Ok(Transformed::no(node)),
             }
         })
     }

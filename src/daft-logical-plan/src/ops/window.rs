@@ -42,35 +42,21 @@ impl Window {
         ascending: Vec<bool>,
         frame: Option<WindowFrame>,
     ) -> Result<Self> {
-        println!(
-            "Creating Window logical operator with {} window function(s)",
-            window_functions.len()
-        );
-        println!("Window input schema: {:?}", input.schema());
-        println!("Window partition columns: {:?}", partition_by);
-        println!("Window functions: {:?}", window_functions);
-
         let input_schema = input.schema();
 
         // Clone the input schema fields
         let mut fields = input_schema.fields.clone();
-        println!("Input schema fields: {:?}", fields);
 
         // Add fields for window function expressions with auto-generated names (window_0, window_1, etc.)
         for (i, expr) in window_functions.iter().enumerate() {
             let window_col_name = format!("window_{}", i);
             let expr_type = expr.get_type(&input_schema)?;
             let field = Field::new(&window_col_name, expr_type);
-            println!(
-                "Adding window function field: {:?} with name {}",
-                field, window_col_name
-            );
             fields.insert(window_col_name, field);
         }
 
         // Create a new schema with all fields
         let schema = Arc::new(Schema::new(fields.values().cloned().collect())?);
-        println!("Window output schema: {:?}", schema);
 
         Ok(Self {
             plan_id: None,
