@@ -27,6 +27,7 @@ from daft.daft import (
     ResourceRequest,
     initialize_udfs,
     resolved_col,
+    sql_datatype,
     unresolved_col,
 )
 from daft.daft import PyExpr as _PyExpr
@@ -629,6 +630,11 @@ class Expression:
     def cast(self, dtype: DataTypeLike) -> Expression:
         """Casts an expression to the given datatype if possible.
 
+        Note:
+            - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
+            - If a string is provided, it will use the sql engine to parse the string into a data type. See the SQL documentation for more information.
+            - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
+
         The following combinations of datatype casting is valid:
 
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
@@ -681,8 +687,6 @@ class Expression:
         | Duration           | Y    | N       | Y        | Y      | N          | N      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
 
-        Note:
-            - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
 
         Example:
             >>> import daft
@@ -703,13 +707,41 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
+        Example with python type and sql types:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3]})
+            >>> df = df.select(
+            ...     daft.col("a").cast(str).alias("str"),
+            ...     daft.col("a").cast(int).alias("int"),
+            ...     daft.col("a").cast(float).alias("float"),
+            ...     daft.col("a").cast("string").alias("sql_string"),
+            ...     daft.col("a").cast("int").alias("sql_int"),
+            ...     daft.col("a").cast("tinyint").alias("sql_tinyint"),
+            ... )
+            >>> df.show()
+            ╭──────┬───────┬─────────┬────────────┬─────────┬─────────────╮
+            │ str  ┆ int   ┆ float   ┆ sql_string ┆ sql_int ┆ sql_tinyint │
+            │ ---  ┆ ---   ┆ ---     ┆ ---        ┆ ---     ┆ ---         │
+            │ Utf8 ┆ Int64 ┆ Float64 ┆ Utf8       ┆ Int32   ┆ Int8        │
+            ╞══════╪═══════╪═════════╪════════════╪═════════╪═════════════╡
+            │ 1    ┆ 1     ┆ 1       ┆ 1          ┆ 1       ┆ 1           │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2    ┆ 2     ┆ 2       ┆ 2          ┆ 2       ┆ 2           │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3    ┆ 3     ┆ 3       ┆ 3          ┆ 3       ┆ 3           │
+            ╰──────┴───────┴─────────┴────────────┴─────────┴─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
         Returns:
             Expression: Expression with the specified new datatype
         """
-        assert isinstance(dtype, (DataType, type))
-        inferred_dtype = DataType._infer_type(dtype)
-
-        expr = self._expr.cast(inferred_dtype._dtype)
+        if isinstance(dtype, str):
+            dtype = DataType._from_pydatatype(sql_datatype(dtype))
+        else:
+            assert isinstance(dtype, (DataType, type))
+            dtype = DataType._infer_type(dtype)
+        expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
 
     def ceil(self) -> Expression:

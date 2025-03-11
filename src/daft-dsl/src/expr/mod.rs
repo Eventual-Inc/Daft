@@ -1295,6 +1295,7 @@ impl Expr {
             },
             Self::ScalarFunction(func) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
+                "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {

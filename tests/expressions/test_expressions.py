@@ -679,3 +679,21 @@ def test_list_value_counts_degenerate():
 
     # Check the result for null values
     assert result_null.to_pydict() == {"value_counts": [[], []]}
+
+
+@pytest.mark.parametrize(
+    # we don't need to test all types, just a few as a sanity check. The rest are tested in the sql tests
+    "sql, actual",
+    [
+        ("int32", DataType.int32()),
+        ("int64", DataType.int64()),
+        ("float64", DataType.float64()),
+        ("text", DataType.string()),
+    ],
+)
+def test_cast_sql_string(sql, actual):
+    expr = col("a").cast(sql)
+    actual = col("a").cast(actual)
+    df = daft.from_pydict({"a": [1, 2, 3]}).select(expr)
+    actual_df = daft.from_pydict({"a": [1, 2, 3]}).select(actual)
+    assert df.schema() == actual_df.schema()

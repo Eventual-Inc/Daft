@@ -26,11 +26,11 @@ requires-python = ">=3.9"
 all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
 aws = ["boto3"]
 azure = []
-deltalake = ["deltalake"]
+deltalake = ["deltalake", "packaging"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
 iceberg = ["pyiceberg >= 0.7.0", "packaging"]
-lance = ["lancedb"]
+lance = ["pylance"]
 numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
