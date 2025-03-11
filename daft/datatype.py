@@ -574,7 +574,7 @@ class DataType:
 
 
 # Type alias for a union of types that can be inferred into a DataType
-DataTypeLike = Union[DataType, type]
+DataTypeLike = Union[DataType, type, str]
 
 
 _EXT_TYPE_REGISTRATION_LOCK = threading.Lock()

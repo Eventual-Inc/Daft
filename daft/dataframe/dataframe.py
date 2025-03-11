@@ -969,6 +969,22 @@ class DataFrame:
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
+        def _create_metadata_param(metadata: Optional[Dict[str, str]]):
+            """From deltalake>=0.20.0 onwards, custom_metadata has to be passed as CommitProperties.
+
+            Args:
+                metadata
+
+            Returns:
+                DataFrame: metadata for deltalake<0.20.0, otherwise CommitProperties with custom_metadata
+            """
+            if parse(deltalake.__version__) < parse("0.20.0"):
+                return metadata
+            else:
+                from deltalake import CommitProperties
+
+                return CommitProperties(custom_metadata=metadata)
+
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
 
@@ -1113,8 +1129,9 @@ class DataFrame:
                     rows.append(old_actions_dict["num_records"][i])
                     sizes.append(old_actions_dict["size_bytes"][i])
 
+            metadata_param = _create_metadata_param(custom_metadata)
             table._table.create_write_transaction(
-                add_actions, mode, partition_cols or [], delta_schema, None, custom_metadata
+                add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
             )
             table.update_incremental()
 

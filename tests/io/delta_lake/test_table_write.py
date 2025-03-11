@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import datetime
 import decimal
 from pathlib import Path
+from unittest.mock import patch
 
 import pyarrow as pa
 import pytest
@@ -17,6 +19,29 @@ pytestmark = pytest.mark.skipif(
     PYARROW_LOWER_BOUND_SKIP,
     reason="deltalake not supported on older versions of pyarrow",
 )
+
+
+class _FakeCommitProperties:
+    def __init__(self, custom_metadata):
+        self.custom_metadata = custom_metadata
+
+
+@pytest.fixture
+def custom_metadata():
+    return {"CUSTOM_METADATA": "1"}
+
+
+@pytest.fixture()
+def commit_properties():
+    @contextlib.contextmanager
+    def _(deltalake):
+        setattr(deltalake, "CommitProperties", _FakeCommitProperties)
+        try:
+            yield
+        finally:
+            delattr(deltalake, "CommitProperties")
+
+    return _
 
 
 def test_deltalake_write_basic(tmp_path, base_table):
@@ -306,3 +331,59 @@ def test_deltalake_write_roundtrip(tmp_path):
     read_df = daft.read_deltalake(str(path))
     assert df.schema() == read_df.schema()
     assert df.to_arrow() == read_df.to_arrow()
+
+
+def test_custom_metadata_added_for_new_table(tmp_path, custom_metadata):
+    # import deltalake
+    deltalake = pytest.importorskip("deltalake")
+
+    path = tmp_path / "some_table"
+    df = daft.from_pydict({"a": [1, 2, 3, 4]})
+    df.write_deltalake(str(path), custom_metadata=custom_metadata)
+
+    table = deltalake.DeltaTable(path)
+    history = table.history(1)
+
+    assert custom_metadata.items() <= history[0].items()
+
+
+def test_custom_metadata_updated_for_existing_table(tmp_path, custom_metadata):
+    """Tests for deltalake version installed in the current environment (currently 0.19.2)."""
+    # import deltalake
+    deltalake = pytest.importorskip("deltalake")
+
+    path = tmp_path / "some_table"
+    df = daft.from_pydict({"a": [1, 2, 3, 4]})
+    df.write_deltalake(str(path))
+
+    df = daft.from_pydict({"a": [5, 6]})
+    df.write_deltalake(str(path), custom_metadata=custom_metadata, mode="append")
+
+    table = deltalake.DeltaTable(path)
+    history = table.history(1)
+
+    assert custom_metadata.items() <= history[0].items()
+
+
+@patch("deltalake.__version__", "0.20.0")
+def test_custom_metadata_updated_for_existing_table_with_commit_properties(
+    tmp_path, custom_metadata, commit_properties
+):
+    deltalake = pytest.importorskip("deltalake")
+    from deltalake._internal import RawDeltaTable
+
+    # write once to get into the table is not None path
+    path = tmp_path / "some_table"
+    df = daft.from_pydict({"a": [1, 2, 3, 4]})
+    df.write_deltalake(str(path))
+
+    # Add mocked CommitProperties class introduced in 0.20.0
+    with commit_properties(deltalake), patch.object(RawDeltaTable, "create_write_transaction") as mock_method:
+        df = daft.from_pydict({"a": [5, 6]})
+        df.write_deltalake(str(path), custom_metadata=custom_metadata, mode="append")
+
+        mock_method.assert_called_once()
+        (_, _, _, _, _, custom_metadata_arg) = mock_method.call_args[0]
+
+        assert isinstance(custom_metadata_arg, _FakeCommitProperties)
+        assert custom_metadata_arg.custom_metadata == custom_metadata
