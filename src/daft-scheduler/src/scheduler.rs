@@ -675,6 +675,7 @@ fn physical_plan_to_partition_tasks(
             right_on,
             null_equals_nulls,
             join_type,
+            emit_first,
             ..
         }) => {
             let upstream_left_iter =
@@ -699,6 +700,7 @@ fn physical_plan_to_partition_tasks(
                     right_on_pyexprs,
                     null_equals_nulls.clone(),
                     *join_type,
+                    *emit_first,
                 ))?;
             Ok(py_iter.into())
         }

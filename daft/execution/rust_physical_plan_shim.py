@@ -6,6 +6,7 @@ from daft.context import get_context
 from daft.daft import (
     FileFormat,
     IOConfig,
+    JoinSide,
     JoinType,
     PyExpr,
     PySchema,
@@ -240,20 +241,28 @@ def reduce_merge(
 
 
 def hash_join(
-    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    left: physical_plan.InProgressPhysicalPlan[PartitionT],
     right: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
     null_equals_nulls: list[bool] | None,
     join_type: JoinType,
+    emit_first: JoinSide,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
     right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
+
+    left_on, right_on = (
+        (left_on_expr_proj, right_on_expr_proj)
+        if emit_first == JoinSide.Left
+        else (right_on_expr_proj, left_on_expr_proj)
+    )
+    left_plan, right_plan = (left, right) if emit_first == JoinSide.Left else (right, left)
     return physical_plan.hash_join(
-        left_plan=input,
-        right_plan=right,
-        left_on=left_on_expr_proj,
-        right_on=right_on_expr_proj,
+        left_plan=left_plan,
+        right_plan=right_plan,
+        left_on=left_on,
+        right_on=right_on,
         how=join_type,
         null_equals_nulls=null_equals_nulls,
     )

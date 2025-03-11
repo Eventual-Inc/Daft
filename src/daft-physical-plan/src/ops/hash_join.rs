@@ -1,5 +1,7 @@
+use std::cmp::Ordering;
+
 use common_display::tree::TreeDisplay;
-use daft_core::join::JoinType;
+use daft_core::join::{JoinSide, JoinType};
 use daft_dsl::ExprRef;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -15,6 +17,7 @@ pub struct HashJoin {
     pub right_on: Vec<ExprRef>,
     pub null_equals_nulls: Option<Vec<bool>>,
     pub join_type: JoinType,
+    pub emit_first: JoinSide,
 }
 
 impl HashJoin {
@@ -26,6 +29,15 @@ impl HashJoin {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
     ) -> Self {
+        let emit_first = match left
+            .approximate_stats()
+            .size_bytes
+            .cmp(&right.approximate_stats().size_bytes)
+        {
+            Ordering::Less => JoinSide::Left,
+            Ordering::Greater => JoinSide::Right,
+            Ordering::Equal => JoinSide::Left,
+        };
         Self {
             left,
             right,
@@ -33,6 +45,7 @@ impl HashJoin {
             right_on,
             null_equals_nulls,
             join_type,
+            emit_first,
         }
     }
 
@@ -64,6 +77,7 @@ impl HashJoin {
                 null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
             ));
         }
+        res.push(format!("Emit first = {}", self.emit_first));
         res
     }
 }
