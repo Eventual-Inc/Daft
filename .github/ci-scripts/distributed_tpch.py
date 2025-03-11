@@ -40,7 +40,7 @@ def run_benchmark():
     # Create the directory if it doesn't exist
     os.makedirs("traces", exist_ok=True)
 
-    for q in range(1, 2):
+    for q in range(1, 23):
         print(f"Running TPC-H Q{q}... ", end="", flush=True)
 
         start = time.perf_counter()
