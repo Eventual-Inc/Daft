@@ -7,7 +7,7 @@ use daft_functions::numeric::{
     floor::floor,
     log::{ln, log, log10, log1p, log2},
     round::round,
-    sign::{negate, negative, positive, sign, signum},
+    sign::{negative, positive, sign},
     sqrt::sqrt,
     trigonometry::{
         arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cosh, cot, csc, degrees,
@@ -220,11 +220,11 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
         }
         SQLNumericExpr::Signum => {
             ensure!(args.len() == 1, "signum takes exactly one argument");
-            Ok(signum(args[0].clone()))
+            Ok(sign(args[0].clone()))
         }
         SQLNumericExpr::Negate => {
             ensure!(args.len() == 1, "negate takes exactly one argument");
-            Ok(negate(args[0].clone()))
+            Ok(negative(args[0].clone()))
         }
         SQLNumericExpr::Negative => {
             ensure!(args.len() == 1, "negative takes exactly one argument");

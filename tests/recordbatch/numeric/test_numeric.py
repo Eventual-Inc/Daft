@@ -190,7 +190,9 @@ def test_table_numeric_sign(fun: str) -> None:
 def test_table_sign_bad_input(fun: str) -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    with pytest.raises(ValueError, match=f"Expected input to {fun} to be numeric"):
+    mapping = {"negate": "negative", "signum": "sign"}
+    true_fun = mapping[fun] if fun in mapping else fun
+    with pytest.raises(ValueError, match=f"Expected input to {true_fun} to be numeric"):
         table.eval_expression_list([getattr(col("a"), fun)()])
 
 

@@ -153,14 +153,6 @@ impl PySeries {
         Ok(self.series.sign()?.into())
     }
 
-    pub fn signum(&self) -> PyResult<Self> {
-        Ok(self.series.signum()?.into())
-    }
-
-    pub fn negate(&self) -> PyResult<Self> {
-        Ok(self.series.negate()?.into())
-    }
-
     pub fn negative(&self) -> PyResult<Self> {
         Ok(self.series.negative()?.into())
     }

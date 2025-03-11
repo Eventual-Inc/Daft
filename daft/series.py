@@ -313,11 +313,11 @@ class Series:
 
     def signum(self) -> Series:
         """The signum of a numeric series."""
-        return Series._from_pyseries(self._series.signum())
+        return Series._from_pyseries(self._series.sign())
 
     def negate(self) -> Series:
         """The negative of a numeric series."""
-        return Series._from_pyseries(self._series.negate())
+        return Series._from_pyseries(self._series.negative())
 
     def negative(self) -> Series:
         """The negative of a numeric series."""
