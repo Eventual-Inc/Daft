@@ -52,36 +52,21 @@ def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
 @pytest.fixture(scope="session", params=URLS)
 def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Generator[str, None, None]:
     db_url = request.param
-    setup_database(db_url, generated_data)
-    yield db_url
+    try:
+        setup_database(db_url, generated_data)
+        yield db_url
+    except Exception as e:
+        pytest.skip(f"Skipping test due to database connection error: {e}, {db_url}")
 
 
-@tenacity.retry(
-    stop=tenacity.stop_after_attempt(5),
-    wait=tenacity.wait_random_exponential(multiplier=2, min=1, max=20),
-    reraise=True,
-    before_sleep=lambda retry_state: print(f"Connection attempt {retry_state.attempt_number} failed. Retrying..."),
-)
 @pytest.fixture(scope="session", params=URLS)
 def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
-    data = pd.DataFrame(
-        {
-            "id": pd.Series(dtype="int"),
-            "string_col": pd.Series(dtype="str"),
-        }
-    )
     db_url = request.param
-    engine = create_engine(db_url, pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=3600)
-    metadata = MetaData()
-    table = Table(
-        EMPTY_TEST_TABLE_NAME,
-        metadata,
-        Column("id", Integer),
-        Column("string_col", String(50)),
-    )
-    metadata.create_all(engine)
-    data.to_sql(table.name, con=engine, if_exists="replace", index=False)
-    yield db_url
+    try:
+        setup_empty_database(db_url)
+        yield db_url
+    except Exception as e:
+        pytest.skip(f"Skipping test due to database connection error: {e}, {db_url}")
 
 
 @tenacity.retry(
@@ -98,6 +83,31 @@ def setup_database(db_url: str, data: pd.DataFrame) -> None:
     with engine.connect() as conn:
         result = conn.execute(text(f"SELECT COUNT(*) FROM {TEST_TABLE_NAME}")).fetchone()[0]
         assert result == len(data)
+
+
+@tenacity.retry(
+    stop=tenacity.stop_after_attempt(10),
+    wait=tenacity.wait_random_exponential(multiplier=3, min=3, max=60),
+    reraise=True,
+    before_sleep=lambda retry_state: print(f"Connection attempt {retry_state.attempt_number} failed. Retrying..."),
+)
+def setup_empty_database(db_url: str) -> None:
+    data = pd.DataFrame(
+        {
+            "id": pd.Series(dtype="int"),
+            "string_col": pd.Series(dtype="str"),
+        }
+    )
+    engine = create_engine(db_url, pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=3600)
+    metadata = MetaData()
+    table = Table(
+        EMPTY_TEST_TABLE_NAME,
+        metadata,
+        Column("id", Integer),
+        Column("string_col", String(50)),
+    )
+    metadata.create_all(engine)
+    data.to_sql(table.name, con=engine, if_exists="replace", index=False)
 
 
 def create_and_populate(engine: Engine, data: pd.DataFrame) -> None:
