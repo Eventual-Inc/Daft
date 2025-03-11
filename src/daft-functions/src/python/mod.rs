@@ -25,7 +25,6 @@ mod temporal;
 mod tokenize;
 mod uri;
 mod utf8;
-mod window;
 
 use pyo3::{
     types::{PyModule, PyModuleMethods},
@@ -152,18 +151,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(utf8::utf8_normalize);
     add!(utf8::utf8_to_date);
     add!(utf8::utf8_to_datetime);
-
-    // Window functions
-    add!(window::rank);
-    add!(window::dense_rank);
-    add!(window::row_number);
-    add!(window::percent_rank);
-    add!(window::ntile);
-    add!(window::first_value);
-    add!(window::last_value);
-    add!(window::nth_value);
-    add!(window::lag);
-    add!(window::lead);
 
     Ok(())
 }
