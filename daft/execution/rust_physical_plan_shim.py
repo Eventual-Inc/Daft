@@ -251,18 +251,11 @@ def hash_join(
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
     right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
-
-    left_on, right_on = (
-        (left_on_expr_proj, right_on_expr_proj)
-        if emit_first == JoinSide.Left
-        else (right_on_expr_proj, left_on_expr_proj)
-    )
-    left_plan, right_plan = (left, right) if emit_first == JoinSide.Left else (right, left)
     return physical_plan.hash_join(
-        left_plan=left_plan,
-        right_plan=right_plan,
-        left_on=left_on,
-        right_on=right_on,
+        left_plan=left,
+        right_plan=right,
+        left_on=left_on_expr_proj,
+        right_on=right_on_expr_proj,
         how=join_type,
         null_equals_nulls=null_equals_nulls,
     )
