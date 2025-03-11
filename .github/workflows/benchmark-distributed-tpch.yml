@@ -57,7 +57,7 @@ jobs:
   benchmark:
     needs: build
     if: ${{ !failure() && !cancelled() }}
-    runs-on: [self-hosted, linux, x86, job-runner]
+    runs-on: [self-hosted, linux, x64, job-runner]
     permissions:
       id-token: write
       contents: read
