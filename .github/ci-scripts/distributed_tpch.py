@@ -60,6 +60,8 @@ def main():
     daft.context.set_runner_native()
 
     metadata = get_run_metadata()
+    scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
+    num_workers = int(os.getenv("RAY_NUM_WORKERS"))
 
     print("Starting warmup run...")
     run_benchmark()
@@ -67,7 +69,7 @@ def main():
     print("Warmup done. Running benchmark and collecting results...")
     results = run_benchmark()
 
-    data_dict = {**metadata, **results}
+    data_dict = {**metadata, "scale factor": scale_factor, "num workers": num_workers, **results}
 
     print("Results:")
     print(data_dict)

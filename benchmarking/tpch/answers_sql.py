@@ -7,9 +7,8 @@ import os
 import sys
 
 import daft
+from daft import col
 from daft.sql import SQLCatalog
-
-from . import answers
 
 TABLE_NAMES = [
     "part",
@@ -24,7 +23,41 @@ TABLE_NAMES = [
 
 
 def lowercase_column_names(df):
-    return df.select(*[daft.col(name).alias(name.lower()) for name in df.column_names])
+    return df.select(*[col(name).alias(name.lower()) for name in df.column_names])
+
+
+def q21(get_df) -> daft.DataFrame:
+    supplier = get_df("supplier")
+    nation = get_df("nation")
+    lineitem = get_df("lineitem")
+    orders = get_df("orders")
+
+    res_1 = (
+        lineitem.select("L_SUPPKEY", "L_ORDERKEY")
+        # distinct not needed? either way we should stop using dataframe answers soon
+        # .distinct()
+        .groupby("L_ORDERKEY")
+        .agg(col("L_SUPPKEY").count().alias("nunique_col"))
+        .where(col("nunique_col") > 1)
+        .join(lineitem.where(col("L_RECEIPTDATE") > col("L_COMMITDATE")), on="L_ORDERKEY")
+    )
+
+    daft_df = (
+        res_1.select("L_SUPPKEY", "L_ORDERKEY")
+        .groupby("L_ORDERKEY")
+        .agg(col("L_SUPPKEY").count().alias("nunique_col"))
+        .join(res_1, on="L_ORDERKEY")
+        .join(supplier, left_on="L_SUPPKEY", right_on="S_SUPPKEY")
+        .join(nation, left_on="S_NATIONKEY", right_on="N_NATIONKEY")
+        .join(orders, left_on="L_ORDERKEY", right_on="O_ORDERKEY")
+        .where((col("nunique_col") == 1) & (col("N_NAME") == "SAUDI ARABIA") & (col("O_ORDERSTATUS") == "F"))
+        .groupby("S_NAME")
+        .agg(col("O_ORDERKEY").count().alias("numwait"))
+        .sort(["numwait", "S_NAME"], desc=[True, False])
+        .limit(100)
+    )
+
+    return daft_df
 
 
 def get_answer(q: int, get_df) -> daft.DataFrame:
@@ -32,7 +65,7 @@ def get_answer(q: int, get_df) -> daft.DataFrame:
 
     if q == 21:
         # TODO: remove this once we support q21
-        return answers.q21(get_df)
+        return q21(get_df)
     else:
         catalog = SQLCatalog({tbl: lowercase_column_names(get_df(tbl)) for tbl in TABLE_NAMES})
 

@@ -290,6 +290,8 @@ jobs:
     uses: ./.github/workflows/benchmark-distributed-tpch.yml
     with:
       daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly
+      scale_factor: 1000
+      num_workers: 4
     secrets: inherit
 
   on-distributed-tpch-failure:

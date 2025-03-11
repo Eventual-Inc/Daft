@@ -57,7 +57,7 @@ jobs:
   benchmark:
     needs: build
     if: ${{ !failure() && !cancelled() }}
-    runs-on: [self-hosted, linux, x86, job-runner]
+    runs-on: [self-hosted, linux, x64, job-runner]
     permissions:
       id-token: write
       contents: read
@@ -79,7 +79,7 @@ jobs:
       run: |
         rm -rf daft
         uv pip install daft --pre --extra-index-url ${{ env.DAFT_INDEX_URL }}
-        uv pip install gspread ray[default]
+        uv pip install gspread ray[default] boto3
     - name: Write service account secret file
       run: |
         mkdir -p ~/.config/gspread

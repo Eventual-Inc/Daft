@@ -44,5 +44,5 @@ setup_commands:
 - uv venv --python 3.9
 - echo "source ~/.venv/bin/activate" >> ~/.bashrc
 - source .venv/bin/activate
-- uv pip install pip ray[default]
-- uv pip install getdaft --pre --extra-index-url ${DAFT_INDEX_URL}
+- uv pip install pip ray[default] --no-progress
+- uv pip install getdaft --no-progress --pre --extra-index-url ${DAFT_INDEX_URL}
