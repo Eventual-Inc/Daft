@@ -2,7 +2,8 @@
 
 !!! warning "Warning"
 
-    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues?q=is%3Aissue%20state%3Aopen%20label%3Adata-catalogs) for any bugs you may encounter. Thank you! 🤘
+    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love hear want you would like, thank you! 🤘
+
 
 Sessions enable you to attach catalogs, tables, and create temporary objects which are accessible through both the Python and SQL APIs. Sessions hold configuration state such as `current_catalog` and `current_namespace` which are used in name resolution and can simplify your workflows.
 
@@ -269,28 +270,28 @@ For complete documentation, please see the [Session API docs](api_docs/session.h
 
 | Method              | Description                                                        |
 | ------------------- | ------------------------------------------------------------------ |
-| `attach`            | Attaches a catalog or table to this session.                       |
-| `attach_catalog`    | Attaches (or creates) a catalog to this session                    |
-| `attach_table`      | Attaches (or creates) a table to this session                      |
-| `create_namespace`  | Creates a new namespace                                            |
-| `create_table`      | Creates a new table from the source                                |
-| `create_temp_table` | Creates a temp table scoped to this session from an existing view. |
-| `current_catalog`   | Returns the session's current catalog.                             |
-| `current_namespace` | Returns the session's current namespace.                           |
-| `detach_catalog`    | Detaches the catalog from this session                             |
-| `detach_table`      | Detaches the table from this session                               |
-| `drop_namespace`    | Drop the namespace in the session's current catalog                |
-| `drop_table`        | Drop the table in the session's current catalog                    |
-| `get_catalog`       | Returns the catalog or an object not found error.                  |
-| `get_table`         | Returns the table or an object not found error.                    |
-| `has_catalog`       | Returns true iff the session has access to a matching catalog.     |
-| `has_table`         | Returns true iff the session has access to a matching table.       |
-| `list_catalogs`     | Lists all catalogs matching the pattern.                           |
-| `list_namespaces`   | Lists all namespaces matching the pattern.                         |
-| `list_tables`       | Lists all tables matching the pattern.                             |
-| `read_table`        | Reads a table from the session.                                    |
-| `write_table`       | Writes a dataframe to the table.                                   |
-| `set_catalog`       | Sets the current catalog.                                          |
-| `set_namespace`     | Sets the current namespace.                                        |
-| `sql`               | Executes SQL against the session.                                  |
-| `use`               | Sets the current catalog *and* namespace.                          |
+| [`attach`](api_docs/session.html#daft.Session.attach)            | Attaches a catalog or table to this session.                       |
+| [`attach_catalog`](api_docs/session.html#daft.Session.attach_catalog)    | Attaches (or creates) a catalog to this session                    |
+| [`attach_table`](api_docs/session.html#daft.Session.attach_table)      | Attaches (or creates) a table to this session                      |
+| [`create_namespace`](api_docs/session.html#daft.Session.create_namespace)  | Creates a new namespace                                            |
+| [`create_table`](api_docs/session.html#daft.Session.create_table)      | Creates a new table from the source                                |
+| [`create_temp_table`](api_docs/session.html#daft.Session.create_temp_table) | Creates a temp table scoped to this session from an existing view. |
+| [`current_catalog`](api_docs/session.html#daft.Session.current_catalog)   | Returns the session's current catalog.                             |
+| [`current_namespace`](api_docs/session.html#daft.Session.current_namespace) | Returns the session's current namespace.                           |
+| [`detach_catalog`](api_docs/session.html#daft.Session.detach_catalog)    | Detaches the catalog from this session                             |
+| [`detach_table`](api_docs/session.html#daft.Session.detach_table)      | Detaches the table from this session                               |
+| [`drop_namespace`](api_docs/session.html#daft.Session.drop_namespace)    | Drop the namespace in the session's current catalog                |
+| [`drop_table`](api_docs/session.html#daft.Session.drop_table)        | Drop the table in the session's current catalog                    |
+| [`get_catalog`](api_docs/session.html#daft.Session.get_catalog)       | Returns the catalog or an object not found error.                  |
+| [`get_table`](api_docs/session.html#daft.Session.get_table)         | Returns the table or an object not found error.                    |
+| [`has_catalog`](api_docs/session.html#daft.Session.has_catalog)       | Returns true iff the session has access to a matching catalog.     |
+| [`has_table`](api_docs/session.html#daft.Session.has_table)         | Returns true iff the session has access to a matching table.       |
+| [`list_catalogs`](api_docs/session.html#daft.Session.list_catalogs)     | Lists all catalogs matching the pattern.                           |
+| [`list_namespaces`](api_docs/session.html#daft.Session.list_namespaces)   | Lists all namespaces matching the pattern.                         |
+| [`list_tables`](api_docs/session.html#daft.Session.list_tables)       | Lists all tables matching the pattern.                             |
+| [`read_table`](api_docs/session.html#daft.Session.read_table)        | Reads a table from the session.                                    |
+| [`write_table`](api_docs/session.html#daft.Session.write_table)       | Writes a dataframe to the table.                                   |
+| [`set_catalog`](api_docs/session.html#daft.Session.set_catalog)       | Sets the current catalog.                                          |
+| [`set_namespace`](api_docs/session.html#daft.Session.set_namespace)     | Sets the current namespace.                                        |
+| [`sql`](api_docs/session.html#daft.Session.sql)               | Executes SQL against the session.                                  |
+| [`use`](api_docs/session.html#daft.Session.use)               | Sets the current catalog and namespace.                          |

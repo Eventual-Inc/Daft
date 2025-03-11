@@ -201,11 +201,27 @@ class Session:
     ###
 
     def drop_namespace(self, identifier: Identifier | str):
+        """Drop the given namespace in the current catalog.
+
+        Args:
+            identifier (Identifier|str): table identifier
+
+        Returns:
+            None
+        """
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a namespace without a current catalog")
         return catalog.drop_namespace(identifier)
 
     def drop_table(self, identifier: Identifier | str):
+        """Drop the given table in the current catalog.
+
+        Args:
+            identifier (Identifier|str): table identifier
+
+        Returns:
+            None
+        """
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a table without a current catalog")
         # TODO join the identifier with the current namespace
@@ -392,6 +408,17 @@ class Session:
         mode: Literal["append", "overwrite"] = "append",
         **options,
     ):
+        """Writes the DataFrame to the table specified by the identifier.
+
+        Args:
+            identifier (Identifier|str): table identifier
+            df (DataFrame|object): dataframe to write
+            mode ("append"|"overwrite"): write mode, defaults to "append"
+            options**: additional, format-specific write options
+
+        Returns:
+            None
+        """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         self._session.get_table(identifier._ident).write(df, mode=mode, **options)
