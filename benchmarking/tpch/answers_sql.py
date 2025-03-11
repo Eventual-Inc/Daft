@@ -3,6 +3,7 @@
 You may also run this file directly as such: `python answers_sql.py <path to TPC-H parquet data dir> <question number>`
 """
 
+import os
 import sys
 
 import daft
@@ -35,7 +36,10 @@ def get_answer(q: int, get_df) -> daft.DataFrame:
     else:
         catalog = SQLCatalog({tbl: lowercase_column_names(get_df(tbl)) for tbl in TABLE_NAMES})
 
-        with open(f"queries/{q:02}.sql") as query_file:
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        query_file_path = os.path.join(module_dir, f"queries/{q:02}.sql")
+
+        with open(query_file_path) as query_file:
             query = query_file.read()
         return daft.sql(query, catalog=catalog)
 
