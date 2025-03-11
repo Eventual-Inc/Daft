@@ -4,9 +4,11 @@ You may also run this file directly as such: `python answers_sql.py <path to TPC
 """
 
 import os
+import sys
 
 import daft
 from daft import col
+from daft.io import IOConfig, S3Config
 from daft.sql import SQLCatalog
 
 TABLE_NAMES = [
@@ -78,7 +80,9 @@ def get_answer(q: int, get_df) -> daft.DataFrame:
 
 def main(parquet_path, q):
     def get_df(name):
-        return daft.read_parquet(f"{parquet_path}{name}/*")
+        s3_config_from_env = S3Config.from_env()
+        io_config = IOConfig(s3=s3_config_from_env)
+        return daft.read_parquet(f"{parquet_path}{name}/*", io_config=io_config)
 
     daft_df = get_answer(q, get_df)
 
@@ -86,8 +90,6 @@ def main(parquet_path, q):
 
 
 if __name__ == "__main__":
-    print("hello world")
-
-    # parquet_path = sys.argv[1]
-    # q = int(sys.argv[2])
-    # main(parquet_path, q)
+    parquet_path = sys.argv[1]
+    q = int(sys.argv[2])
+    main(parquet_path, q)
