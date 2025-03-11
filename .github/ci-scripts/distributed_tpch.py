@@ -54,8 +54,6 @@ def run_benchmark():
 
         end = time.perf_counter()
 
-        time.sleep(5)
-
         trace_url = f"http://localhost:8265/api/v0/tasks/timeline?download=1&job_id={job_id}"
 
         # Download the trace file

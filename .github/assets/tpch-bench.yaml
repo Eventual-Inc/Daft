@@ -46,3 +46,6 @@ setup_commands:
 - source .venv/bin/activate
 - uv pip install pip ray[default] --no-progress
 - uv pip install getdaft --no-progress --pre --extra-index-url ${DAFT_INDEX_URL}
+
+- echo "export RAY_PROFILING=1" >> ~/.bashrc
+- source ~/.bashrc
