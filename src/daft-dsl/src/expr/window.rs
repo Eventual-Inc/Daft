@@ -156,7 +156,7 @@ impl FunctionEvaluator for WindowFunction {
 
     fn evaluate(&self, _inputs: &[Series], _expr: &FunctionExpr) -> DaftResult<Series> {
         Err(DaftError::NotImplemented(
-            "Window functions should be rewritten into a separate plan step by the optimizer. If you're seeing this error, the DetectWindowFunctions optimization rule may not have been applied.".to_string(),
+            "Window functions should be rewritten into a separate plan step by the optimizer. If you're seeing this error, the ExtractWindowFunction optimization rule may not have been applied.".to_string(),
         ))
     }
 }
