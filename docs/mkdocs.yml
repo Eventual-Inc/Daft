@@ -23,7 +23,7 @@ nav:
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
   - SQL Reference:
-    - Introduction: sql/introduction.md
+    - Overview: sql/overview.md
     - Statements:
       - SELECT: sql/statements/select.md
       - USE: sql/statements/use.md
@@ -68,6 +68,7 @@ theme:
   - content.code.copy   # add copy button to code sections
   - content.tabs.link   # If one tab switches Python to SQL, all tabs switch
   - toc.follow
+  - toc.integrate   # adds page subsections to left-hand menu (instead of right-hand menu)
   - navigation.tracking   # url in address bar is automatically updated with active anchor as highlighted in TOC
   - navigation.tabs   # moves nav bar to top, with secondary left-hand menu
   - navigation.tabs.sticky   # top nav bar remains visible when scrolling down
