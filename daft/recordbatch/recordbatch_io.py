@@ -488,7 +488,7 @@ def write_lance(
     io_config: IOConfig | None,
     kwargs: dict | None,
 ):
-    import lance
+    import lancedb
 
     from daft.io.object_store_options import io_config_to_storage_options
 
@@ -497,7 +497,9 @@ def write_lance(
 
     arrow_table = mp.to_arrow()
 
-    fragments = lance.fragment.write_fragments(arrow_table, base_path, mode, storage_options=storage_options, **kwargs)
+    fragments = lancedb.fragment.write_fragments(
+        arrow_table, base_path, mode, storage_options=storage_options, **kwargs
+    )
 
     mp = MicroPartition.from_pydict({"fragments": fragments})
 

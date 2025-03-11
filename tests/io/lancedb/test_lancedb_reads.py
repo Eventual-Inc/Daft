@@ -1,4 +1,4 @@
-import lance
+import lancedb
 import pyarrow as pa
 import pytest
 
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="lance not supp
 @pytest.fixture(scope="function")
 def lance_dataset_path(tmp_path_factory):
     tmp_dir = tmp_path_factory.mktemp("lance")
-    lance.write_dataset(pa.Table.from_pydict(data), tmp_dir)
+    lancedb.write_dataset(pa.Table.from_pydict(data), tmp_dir)
     yield str(tmp_dir)
 
 

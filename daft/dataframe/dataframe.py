@@ -1214,7 +1214,7 @@ class DataFrame:
         from daft.io.object_store_options import io_config_to_storage_options
 
         try:
-            import lance
+            import lancedb
             import pyarrow as pa
 
         except ImportError:
@@ -1234,7 +1234,7 @@ class DataFrame:
         storage_options = io_config_to_storage_options(io_config, table_uri)
 
         try:
-            table = lance.dataset(table_uri, storage_options=storage_options)
+            table = lancedb.dataset(table_uri, storage_options=storage_options)
 
         except ValueError:
             table = None
@@ -1263,11 +1263,13 @@ class DataFrame:
         fragments = write_result["fragments"]
 
         if mode == "create" or mode == "overwrite":
-            operation = lance.LanceOperation.Overwrite(pyarrow_schema, fragments)
+            operation = lancedb.LanceOperation.Overwrite(pyarrow_schema, fragments)
         elif mode == "append":
-            operation = lance.LanceOperation.Append(fragments)
+            operation = lancedb.LanceOperation.Append(fragments)
 
-        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version, storage_options=storage_options)
+        dataset = lancedb.LanceDataset.commit(
+            table_uri, operation, read_version=version, storage_options=storage_options
+        )
         stats = dataset.stats.dataset_stats()
 
         tbl = from_pydict(

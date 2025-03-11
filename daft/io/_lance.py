@@ -13,11 +13,11 @@ from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
-    import lance
+    import lancedb
 
 
 def _lancedb_table_factory_function(
-    fragment: "lance.LanceFragment", required_columns: Optional[List[str]]
+    fragment: "lancedb.LanceFragment", required_columns: Optional[List[str]]
 ) -> Iterator["PyRecordBatch"]:
     return (
         RecordBatch.from_arrow_record_batches([rb], rb.schema)._table
@@ -47,16 +47,16 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
     """
     try:
-        import lance
+        import lancedb
     except ImportError as e:
         raise ImportError(
-            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install getdaft[lance]`"
+            "Unable to import the `lancedb` package, please ensure that Daft is installed with the lance extra dependency: `pip install getdaft[lance]`"
         ) from e
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_options = io_config_to_storage_options(io_config, url)
 
-    ds = lance.dataset(url, storage_options=storage_options)
+    ds = lancedb.dataset(url, storage_options=storage_options)
     iceberg_operator = LanceDBScanOperator(ds)
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
@@ -65,7 +65,7 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
 
 
 class LanceDBScanOperator(ScanOperator):
-    def __init__(self, ds: "lance.LanceDataset"):
+    def __init__(self, ds: "lancedb.LanceDataset"):
         self._ds = ds
 
     def name(self) -> str:
