@@ -76,16 +76,16 @@ impl Series {
 
     pub fn positive(&self) -> DaftResult<Self> {
         match self.data_type() {
-            DataType::UInt8 => Ok(self.u8().unwrap().clone().into_series()),
-            DataType::UInt16 => Ok(self.u16().unwrap().clone().into_series()),
-            DataType::UInt32 => Ok(self.u32().unwrap().clone().into_series()),
-            DataType::UInt64 => Ok(self.u64().unwrap().clone().into_series()),
-            DataType::Int8 => Ok(self.i8().unwrap().clone().into_series()),
-            DataType::Int16 => Ok(self.i16().unwrap().clone().into_series()),
-            DataType::Int32 => Ok(self.i32().unwrap().clone().into_series()),
-            DataType::Int64 => Ok(self.i64().unwrap().clone().into_series()),
-            DataType::Float32 => Ok(self.f32().unwrap().clone().into_series()),
-            DataType::Float64 => Ok(self.f64().unwrap().clone().into_series()),
+            DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::Float32
+            | DataType::Float64 => Ok(self.clone()),
             dt => Err(DaftError::TypeError(format!(
                 "negate not implemented for {}",
                 dt
