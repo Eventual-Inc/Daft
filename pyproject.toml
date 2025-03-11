@@ -53,7 +53,7 @@ repository = "https://github.com/Eventual-Inc/Daft"
 [tool.codespell]
 check-filenames = true
 check-hidden = true
-ignore-words-list = "crate,arithmetics,ser"
+ignore-words-list = "crate,arithmetics,ser,acter"
 # Feel free to un-skip examples, and experimental, you will just need to
 # work through many typos (--write-changes and --interactive will help)
 skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken,*.sql,tests/table/utf8/*,tests/table/binary/*,*.warc"

@@ -2,7 +2,8 @@
 
 !!! warning "Warning"
 
-    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues?q=is%3Aissue%20state%3Aopen%20label%3Adata-catalogs) for any bugs you may encounter. Thank you! 🤘
+    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love hear want you would like, thank you! 🤘
+
 
 Sessions enable you to attach catalogs, tables, and create temporary objects which are accessible through both the Python and SQL APIs. Sessions hold configuration state such as `current_catalog` and `current_namespace` which are used in name resolution and can simplify your workflows.
 

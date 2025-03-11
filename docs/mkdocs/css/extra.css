@@ -27,3 +27,12 @@
 .md-typeset details.note {
   border-color: #7862FF;
 }
+
+/* use 100% width for tables */
+.md-typeset__table {
+  width: 100%;
+}
+
+.md-typeset__table table:not([class]) {
+  display: table
+}
