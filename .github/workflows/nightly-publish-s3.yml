@@ -171,9 +171,9 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
 
 
   integration-test-io:
@@ -241,19 +241,18 @@ jobs:
       with:
         payload: |
           {
-          "blocks": [
+            "blocks": [
               {
-              "type": "section",
-              "text": {
+                "type": "section",
+                "text": {
                   "type": "mrkdwn",
                   "text": ":rotating_light: [CI] IO Integration Tests on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
               }
-              }
-          ]
+            ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   benchmark-local-tpch:
     needs: [publish]
@@ -266,7 +265,7 @@ jobs:
     name: Send Slack notification on failure
     runs-on: ubuntu-latest
     needs: benchmark-local-tpch
-    if: ${{ failure() }}
+    if: ${{ failure() && (github.ref == 'refs/heads/main') }}
 
     steps:
     - uses: slackapi/slack-github-action@v2.0.0
@@ -279,6 +278,39 @@ jobs:
                 "text": {
                   "type": "mrkdwn",
                   "text": ":rotating_light: [CI] Local TPC-H benchmarks on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
+  benchmark-distributed-tpch:
+    needs: [publish]
+    uses: ./.github/workflows/benchmark-distributed-tpch.yml
+    with:
+      daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly
+      scale_factor: 1000
+      num_workers: 4
+    secrets: inherit
+
+  on-distributed-tpch-failure:
+    name: Send Slack notification on failure
+    runs-on: ubuntu-latest
+    needs: benchmark-distributed-tpch
+    if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+
+    steps:
+    - uses: slackapi/slack-github-action@v2.0.0
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Distributed TPC-H benchmarks on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
                 }
               }
             ]
