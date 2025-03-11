@@ -297,7 +297,7 @@ jobs:
   on-distributed-tpch-failure:
     name: Send Slack notification on failure
     runs-on: ubuntu-latest
-    needs: benchmark-local-tpch
+    needs: benchmark-distributed-tpch
     if: ${{ failure() && (github.ref == 'refs/heads/main') }}
 
     steps:
