@@ -168,6 +168,9 @@ class ShuffleActorManager:
         self.clear_partition_futures.clear()
 
         ray.get([actor.shutdown.remote() for actor in self.all_actors.values()])
+        for actor in self.all_actors.values():
+            ray.kill(actor)
+        self.all_actors.clear()
 
 
 @ray.remote(num_cpus=0)
@@ -465,6 +468,8 @@ def run_reduce_phase(
     del reduce_generators
     # Shutdown the actor manager
     ray.get(shuffle_actor_manager.shutdown.remote())
+    # Kill the actor manager
+    ray.kill(shuffle_actor_manager)
 
 
 def flight_shuffle(
