@@ -160,12 +160,3 @@ impl FunctionEvaluator for WindowFunction {
         ))
     }
 }
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WindowExpr {
-    /// The window frame specification
-    pub frame: WindowFrame,
-    /// The data type of the window expression
-    pub data_type: DataType,
-}
