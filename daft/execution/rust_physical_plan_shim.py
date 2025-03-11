@@ -258,6 +258,7 @@ def hash_join(
         right_on=right_on_expr_proj,
         how=join_type,
         null_equals_nulls=null_equals_nulls,
+        emit_first=emit_first,
     )
 
 
