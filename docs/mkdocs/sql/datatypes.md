@@ -39,7 +39,7 @@ These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps 
 
 !!! warning "Warning"
 
-    Daft uses UTF-8, and there is no fixed-length character string type. You may use the fixed-sized binary type to specify a fixed size in bytes. For strings, Daft uses Arrow's variable-size list, with UTF-8 bytes, and 64-bit offsets.
+    Daft uses UTF-8, and there is no fixed-length character string type. You may use the fixed-sized binary type to specify a fixed size in bytes.
 
 
 ## Binary Types
@@ -95,7 +95,7 @@ These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps 
 
 ### Tensor Type
 
-The `TENSTOR(T, [shape...])` type represents n-dimensional arrays of data of the provided type `T`, each of the provided shape. The shape is given as an optional list of integers.
+The `TENSOR(T, [shape...])` type represents n-dimensional arrays of data of the provided type `T`, each of the provided shape. The shape is given as an optional list of integers.
 
 **Examples**
 
