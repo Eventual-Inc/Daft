@@ -12,7 +12,7 @@ In this quickstart, you will learn the basics of Daft's DataFrame and SQL API an
 
 <!-- You will build a database of dog owners and their fluffy companions and see how you can use Daft to download images from URLs, run an ML classifier and call custom UDFs, all within an interactive DataFrame interface. Woof! 🐶 -->
 
-## Install Daft
+### Install Daft
 
 You can install Daft using `pip`. Run the following command in your terminal or notebook:
 
@@ -24,7 +24,7 @@ You can install Daft using `pip`. Run the following command in your terminal or 
 
 For more advanced installation options, please see [Installation](install.md).
 
-## Create Your First Daft DataFrame
+### Create Your First Daft DataFrame
 
 See also [DataFrame Creation](api_docs/creation.html#df-input-output). Let's create a DataFrame from a dictionary of columns:
 
@@ -64,7 +64,7 @@ See also [DataFrame Creation](api_docs/creation.html#df-input-output). Let's cre
 
 You just created your first DataFrame!
 
-## Read From a Data Source
+### Read From a Data Source
 
 Daft supports both local paths as well as paths to object storage such as AWS S3:
 
@@ -105,7 +105,7 @@ Let’s read in a Parquet file from a public S3 bucket. Note that this Parquet f
 
 Why does it say `(No data to display: Dataframe not materialized)` and where are the rows?
 
-## Execute Your DataFrame and View Data
+### Execute Your DataFrame and View Data
 
 Daft DataFrames are **lazy** by default. This means that the contents will not be computed (“materialized”) unless you explicitly tell Daft to do so. This is best practice for working with larger-than-memory datasets and parallel/distributed architectures.
 
@@ -158,7 +158,7 @@ To view just the first few rows, you can use the [`df.show()`]({{ api_path }}/da
 
 Now let's take a look at some common DataFrame operations.
 
-## Select Columns
+### Select Columns
 
 <!-- todo(docs - jay): SQL equivalent? -->
 
@@ -185,7 +185,7 @@ You can **select** specific columns from your DataFrame with the [`df.select()`]
 (Showing first 5 of 5 rows)
 
 ```
-## Select Rows
+### Select Rows
 
 You can **filter** rows using the [`df.where()`]({{ api_path }}/dataframe_methods/daft.DataFrame.where.html) method that takes an Logical Expression predicate input. In this case, we call the [`df.col()`]({{ api_path }}/expression_methods/daft.col.html) method that refers to the column with the provided name `age`:
 
@@ -213,7 +213,7 @@ Filtering can give you powerful optimization when you are working with partition
 
     As mentioned earlier that our Parquet file is partitioned on the `country` column, this means that queries with a `country` predicate will benefit from query optimization.
 
-## Exclude Data
+### Exclude Data
 
 You can **limit** the number of rows in a DataFrame by calling the [`df.limit()`]({{ api_path }}/dataframe_methods/daft.DataFrame.limit.html) method:
 
@@ -258,7 +258,7 @@ To **drop** columns from the DataFrame, use the [`df.exclude()`]({{ api_path }}/
 
 ```
 
-## Transform Columns with Expressions
+### Transform Columns with Expressions
 
 [Expressions](core_concepts.md#expressions) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`]({{ api_path }}/expression_methods/daft.col.html) expressions together with the [`with_column`]({{ api_path }}/dataframe_methods/daft.DataFrame.with_column.html) method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
 
@@ -307,7 +307,7 @@ Alternatively, you can also run your column transformation using Expressions dir
 (Showing first 5 of 5 rows)
 ```
 
-## Sort Data
+### Sort Data
 
 You can **sort** a DataFrame with the [`df.sort()`]({{ api_path }}/dataframe_methods/daft.DataFrame.sort.html), in this example we chose to sort in ascending order:
 
@@ -332,7 +332,7 @@ You can **sort** a DataFrame with the [`df.sort()`]({{ api_path }}/dataframe_met
 (Showing first 5 of 5 rows)
 ```
 
-## Group and Aggregate Data
+### Group and Aggregate Data
 
 You can **group** and **aggregate** your data using the [`df.groupby()`]({{ api_path }}/dataframe_methods/daft.DataFrame.groupby.html) and the [`df.agg()`]({{ api_path }}/dataframe_methods/daft.DataFrame.agg.html) methods. A groupby aggregation operation over a dataset happens in 2 steps:
 
@@ -366,7 +366,7 @@ You can **group** and **aggregate** your data using the [`df.groupby()`]({{ api_
     The [`df.alias()`]({{ api_path }}/expression_methods/daft.Expression.alias.html) method renames the given column.
 
 
-## What's Next?
+### What's Next?
 
 Now that you have a basic sense of Daft’s functionality and features, here are some more resources to help you get the most out of Daft:
 
