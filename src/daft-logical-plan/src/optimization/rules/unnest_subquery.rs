@@ -507,7 +507,8 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Pivot(..)
         | LogicalPlan::Concat(..)
         | LogicalPlan::Join(..)
-        | LogicalPlan::Sink(..) => {
+        | LogicalPlan::Sink(..)
+        | LogicalPlan::Window(..) => {
             if subquery_on.is_empty() {
                 Ok((plan.clone(), vec![], vec![]))
             } else {
@@ -517,11 +518,6 @@ fn pull_up_correlated_cols(
                 )))
             }
         }
-        LogicalPlan::Window(window) => Ok((
-            window.input.clone(),
-            window.window_spec.partition_by.clone(),
-            window.window_spec.order_by.clone(),
-        )),
     }
 }
 
