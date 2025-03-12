@@ -12,16 +12,51 @@ use crate::{
 /// Represents a window frame boundary
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum WindowFrameBoundary {
-    /// Represents UNBOUNDED PRECEDING
-    UnboundedPreceding,
-    /// Represents UNBOUNDED FOLLOWING
-    UnboundedFollowing,
-    /// Represents CURRENT ROW
-    CurrentRow,
-    /// Represents N PRECEDING
-    Preceding(i64),
-    /// Represents N FOLLOWING
-    Following(i64),
+    /// Represents UNBOUNDED PRECEDING or UNBOUNDED FOLLOWING
+    Unbounded(UnboundedDirection),
+    /// Represents a row offset:
+    /// - 0 for CURRENT ROW
+    /// - Negative for PRECEDING
+    /// - Positive for FOLLOWING
+    Offset(i64),
+}
+
+/// Direction for unbounded boundaries
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub enum UnboundedDirection {
+    /// Unbounded Preceding
+    Preceding,
+    /// Unbounded Following
+    Following,
+}
+
+impl WindowFrameBoundary {
+    /// Helper to create an UNBOUNDED PRECEDING boundary
+    pub fn unbounded_preceding() -> Self {
+        Self::Unbounded(UnboundedDirection::Preceding)
+    }
+
+    /// Helper to create an UNBOUNDED FOLLOWING boundary
+    pub fn unbounded_following() -> Self {
+        Self::Unbounded(UnboundedDirection::Following)
+    }
+
+    /// Helper to create a CURRENT ROW boundary
+    pub fn current_row() -> Self {
+        Self::Offset(0)
+    }
+
+    /// Helper to create a PRECEDING boundary with a positive number of rows
+    pub fn preceding(n: u64) -> Self {
+        assert!(n > 0, "PRECEDING value must be positive");
+        Self::Offset(-(n as i64))
+    }
+
+    /// Helper to create a FOLLOWING boundary with a positive number of rows
+    pub fn following(n: u64) -> Self {
+        assert!(n > 0, "FOLLOWING value must be positive");
+        Self::Offset(n as i64)
+    }
 }
 
 /// Represents the type of window frame (ROWS or RANGE)

@@ -22,9 +22,12 @@ use pyo3::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    expr::window::{WindowFrameBoundary, WindowFunction},
+    expr::{
+        window::{UnboundedDirection, WindowFrameBoundary, WindowFunction},
+        Expr,
+    },
     functions::FunctionExpr,
-    Expr, ExprRef, LiteralValue,
+    ExprRef, LiteralValue,
 };
 
 #[pyfunction]
@@ -585,11 +588,15 @@ pub enum WindowBoundary {
 impl From<WindowFrameBoundary> for WindowBoundary {
     fn from(value: WindowFrameBoundary) -> Self {
         match value {
-            WindowFrameBoundary::UnboundedPreceding => Self::UnboundedPreceding(),
-            WindowFrameBoundary::UnboundedFollowing => Self::UnboundedFollowing(),
-            WindowFrameBoundary::CurrentRow => Self::CurrentRow(),
-            WindowFrameBoundary::Preceding(n) => Self::Preceding(n),
-            WindowFrameBoundary::Following(n) => Self::Following(n),
+            WindowFrameBoundary::Unbounded(UnboundedDirection::Preceding) => {
+                Self::UnboundedPreceding()
+            }
+            WindowFrameBoundary::Unbounded(UnboundedDirection::Following) => {
+                Self::UnboundedFollowing()
+            }
+            WindowFrameBoundary::Offset(0) => Self::CurrentRow(),
+            WindowFrameBoundary::Offset(n) if n < 0 => Self::Preceding(-n),
+            WindowFrameBoundary::Offset(n) => Self::Following(n),
         }
     }
 }
@@ -633,18 +640,26 @@ impl WindowFrame {
             frame: crate::expr::window::WindowFrame {
                 frame_type: frame_type.into(),
                 start: match start {
-                    WindowBoundary::UnboundedPreceding() => WindowFrameBoundary::UnboundedPreceding,
-                    WindowBoundary::UnboundedFollowing() => WindowFrameBoundary::UnboundedFollowing,
-                    WindowBoundary::CurrentRow() => WindowFrameBoundary::CurrentRow,
-                    WindowBoundary::Preceding(n) => WindowFrameBoundary::Preceding(n),
-                    WindowBoundary::Following(n) => WindowFrameBoundary::Following(n),
+                    WindowBoundary::UnboundedPreceding() => {
+                        WindowFrameBoundary::unbounded_preceding()
+                    }
+                    WindowBoundary::UnboundedFollowing() => {
+                        WindowFrameBoundary::unbounded_following()
+                    }
+                    WindowBoundary::CurrentRow() => WindowFrameBoundary::current_row(),
+                    WindowBoundary::Preceding(n) => WindowFrameBoundary::preceding(n as u64),
+                    WindowBoundary::Following(n) => WindowFrameBoundary::following(n as u64),
                 },
                 end: match end {
-                    WindowBoundary::UnboundedPreceding() => WindowFrameBoundary::UnboundedPreceding,
-                    WindowBoundary::UnboundedFollowing() => WindowFrameBoundary::UnboundedFollowing,
-                    WindowBoundary::CurrentRow() => WindowFrameBoundary::CurrentRow,
-                    WindowBoundary::Preceding(n) => WindowFrameBoundary::Preceding(n),
-                    WindowBoundary::Following(n) => WindowFrameBoundary::Following(n),
+                    WindowBoundary::UnboundedPreceding() => {
+                        WindowFrameBoundary::unbounded_preceding()
+                    }
+                    WindowBoundary::UnboundedFollowing() => {
+                        WindowFrameBoundary::unbounded_following()
+                    }
+                    WindowBoundary::CurrentRow() => WindowFrameBoundary::current_row(),
+                    WindowBoundary::Preceding(n) => WindowFrameBoundary::preceding(n as u64),
+                    WindowBoundary::Following(n) => WindowFrameBoundary::following(n as u64),
                 },
             },
         }
