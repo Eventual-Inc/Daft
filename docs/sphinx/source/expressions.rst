@@ -18,6 +18,7 @@ Constructors
     lit
     list_
     struct
+    interval
 
 Generic
 #######
@@ -49,9 +50,11 @@ Numeric
     Expression.__sub__
     Expression.__mul__
     Expression.__truediv__
+    Expression.__floordiv__
     Expression.__mod__
     Expression.__lshift__
     Expression.__rshift__
+    Expression.abs
     Expression.ceil
     Expression.floor
     Expression.sign
@@ -86,6 +89,9 @@ Numeric
     Expression.expm1
     Expression.shift_left
     Expression.shift_right
+    Expression.bitwise_and
+    Expression.bitwise_or
+    Expression.bitwise_xor
 
 .. _api-comparison-expression:
 
@@ -99,6 +105,7 @@ Logical
     Expression.__invert__
     Expression.__and__
     Expression.__or__
+    Expression.__xor__
     Expression.__lt__
     Expression.__le__
     Expression.__eq__
@@ -323,6 +330,7 @@ URLs
    :template: autosummary/accessor_method.rst
 
    Expression.url.download
+   Expression.url.upload
 
 JSON
 ####

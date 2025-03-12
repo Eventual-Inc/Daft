@@ -315,14 +315,14 @@ class DataFrame:
             The default value is the total number of CPUs available on the current machine.
 
         Example:
-        >>> import daft
-        >>>
-        >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
-        >>> for row in df.iter_rows():
-        ...     print(row)
-        {'foo': 1, 'bar': 'a'}
-        {'foo': 2, 'bar': 'b'}
-        {'foo': 3, 'bar': 'c'}
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
+            >>> for row in df.iter_rows():
+            ...     print(row)
+            {'foo': 1, 'bar': 'a'}
+            {'foo': 2, 'bar': 'b'}
+            {'foo': 3, 'bar': 'c'}
 
 
         Args:
@@ -1165,50 +1165,46 @@ class DataFrame:
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Example:
-        --------
-        >>> import daft
-        >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
-        >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
-        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
-        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
-        │ ---           ┆ ---              ┆ ---             ┆ ---     │
-        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
-        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
-        │ 1             ┆ 0                ┆ 1               ┆ 1       │
-        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
-        <BLANKLINE>
-        (Showing first 1 of 1 rows)
-
-        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
-        ╭───────╮
-        │ a     │
-        │ ---   │
-        │ Int64 │
-        ╞═══════╡
-        │ 1     │
-        ├╌╌╌╌╌╌╌┤
-        │ 2     │
-        ├╌╌╌╌╌╌╌┤
-        │ 3     │
-        ├╌╌╌╌╌╌╌┤
-        │ 4     │
-        ╰───────╯
-        <BLANKLINE>
-        (Showing first 4 of 4 rows)
-
-
-        # Pass additional keyword arguments to the Lance writer
-        # All additional keyword arguments are passed to `lance.write_fragments`
-        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
-        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
-        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
-        │ ---           ┆ ---              ┆ ---             ┆ ---     │
-        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
-        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
-        │ 1             ┆ 0                ┆ 1               ┆ 2       │
-        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
-        <BLANKLINE>
-        (Showing first 1 of 1 rows)
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
+            >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
+            ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+            │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+            │ ---           ┆ ---              ┆ ---             ┆ ---     │
+            │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+            ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+            │ 1             ┆ 0                ┆ 1               ┆ 1       │
+            ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+            >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
+            ╭───────╮
+            │ a     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+            >>> # Pass additional keyword arguments to the Lance writer
+            >>> # All additional keyword arguments are passed to `lance.write_fragments`
+            >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
+            ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+            │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+            │ ---           ┆ ---              ┆ ---             ┆ ---     │
+            │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+            ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+            │ 1             ┆ 0                ┆ 1               ┆ 2       │
+            ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         from daft import from_pydict
         from daft.io.object_store_options import io_config_to_storage_options
@@ -2126,6 +2122,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
+            >>> import daft
             >>> df = daft.from_pydict({"a": [1.6, 2.5, 3.3, float("nan")]})
             >>> df.drop_nan("a").collect()  # drops rows where column a contains NaN values
             ╭─────────╮
