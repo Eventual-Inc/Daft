@@ -1,20 +1,19 @@
+"""WARNING! THIS PACKAGE IS INTERNAL AND IS SUBJECT TO CHANGE."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 import boto3
 
 from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.daft import IOConfig, S3Config
+from daft.dataframe import DataFrame
 from daft.io import read_iceberg
-
-if TYPE_CHECKING:
-    from daft.dataframe import DataFrame
+from daft.logical.schema import Schema
 
 
 class S3Path(Sequence):
-    #
     _parts: tuple[str]
 
     def __init__(self, *parts: str):
@@ -81,7 +80,8 @@ class S3Catalog(Catalog):
     @staticmethod
     def from_arn(table_bucket_arn: str, s3_config: S3Config | None = None) -> S3Catalog:
         """Creates an S3Catalog from the table bucket ARN."""
-        region = table_bucket_arn.split(":")[3]  # ARN format: arn:aws:s3tables:region:account:bucket/name
+        # ARN format: arn:aws:s3tables:region:account:bucket/name
+        region = table_bucket_arn.split(":")[3]
         c = S3Catalog.__new__(S3Catalog)
         c._client = boto3.client("s3tables", region_name=region)
         c._table_bucket_arn = table_bucket_arn
@@ -109,20 +109,71 @@ class S3Catalog(Catalog):
     ###
 
     def create_namespace(self, identifier: Identifier | str):
-        raise ValueError("S3 Tables create_namespace not yet supported.")
+        """Creates a namespace in the S3 Tables catalog."""
+        try:
+            path = S3Path.from_ident(identifier)
+            self._client.create_namespace(
+                tableBucketARN=self._table_bucket_arn,
+                namespace=path._parts,
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to create namespace: {e}")
 
-    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
-        raise ValueError("S3 Tables create_table not yet supported.")
+    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+        if isinstance(source, Schema):
+            return self._create_table(identifier, source)
+        elif isinstance(source, DataFrame):
+            raise ValueError("S3 Tables create table from DataFrame not yet supported.")
+        elif isinstance(source, str):
+            raise ValueError("S3 Tables create table from path not yet supported.")
+        else:
+            raise Exception(f"Unknown table source: {source}")
+
+    def _create_table(self, ident: Identifier | str, source: Schema) -> Table:
+        path = S3Path.from_ident(ident)
+        if len(path) < 2:
+            raise ValueError(f"Table identifier is missing a namespace, {path!s}")
+
+        try:
+            _ = self._client.create_table(
+                tableBucketARN=self._table_bucket_arn,
+                namespace=str(path.parent),
+                name=path.name,
+                format="ICEBERG",  # <-- only supported value
+                metadata=_to_metadata(source),
+            )
+            return self.get_table(ident)
+        except Exception as e:
+            raise ValueError(f"Failed to create table: {e}")
 
     ###
     # drop_*
     ###
 
     def drop_namespace(self, identifier: Identifier | str):
-        raise ValueError("S3 Tables drop_namespace not yet supported.")
+        """Drops a namespace from the S3 Tables catalog."""
+        path = S3Path.from_ident(identifier)
+
+        try:
+            self._client.delete_namespace(
+                tableBucketARN=self._table_bucket_arn,
+                namespace=str(path),
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to drop namespace: {e}")
 
     def drop_table(self, identifier: Identifier | str):
-        raise ValueError("S3 Tables drop_table not yet supported.")
+        """Drops a table from the S3 Tables catalog."""
+        path = S3Path.from_ident(identifier)
+
+        try:
+            self._client.delete_table(
+                tableBucketARN=self._table_bucket_arn,
+                namespace=str(path.parent),
+                name=path.name,
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to drop table: {e}")
 
     ###
     # get_*
@@ -135,17 +186,76 @@ class S3Catalog(Catalog):
             namespace=str(path.parent),
             tableBucketARN=self._table_bucket_arn,
         )
-        return S3Table(self, path, res["metadataLocation"])
+        return S3Table(self, path, res.get("metadataLocation"))
 
     ###
     # list_*
     ###
 
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        raise ValueError("S3 Tables list_namespaces not yet supported.")
+        """Lists namespaces in the S3 Tables catalog."""
+        # base request
+        req = {
+            "tableBucketARN": self._table_bucket_arn,
+            "maxNamespaces": 1000,
+        }
+
+        # pattern here just represents the namespace prefix
+        if pattern:
+            req["prefix"] = pattern
+
+        try:
+            namespaces = []
+            while True:
+                res = self._client.list_namespaces(**req)
+                for namespace in res["namespaces"]:
+                    namespaces.append(Identifier(*namespace["namespace"]))
+                if cont_token := res.get("continuationToken"):
+                    req["continuationToken"] = cont_token
+                else:
+                    break
+            return namespaces
+        except Exception as e:
+            raise ValueError(f"Failed to list namespaces: {e}")
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
-        raise ValueError("S3 Tables list_tables not yet supported.")
+        """Lists tables in the S3 Tables catalog."""
+        # base request
+        req = {
+            "tableBucketARN": self._table_bucket_arn,
+            "maxTables": 1000,
+        }
+
+        # need to return qualified names, so stitch the parts (str for now).
+        def to_ident(table_summary) -> str:
+            parts = []
+            parts.extend(table_summary["namespace"])
+            parts.append(table_summary["name"])
+            return ".".join(parts)
+
+        # we must split the pattern and use the last part as the table preefix.
+        if pattern:
+            parts = pattern.split(".")
+            if len(parts) == 1:
+                req["namespace"] = parts[0]
+            else:
+                req["namespace"] = ".".join(parts[:-1])
+                req["prefix"] = parts[-1]
+
+        # loop each page
+        try:
+            tables = []
+            while True:
+                res = self._client.list_tables(**req)
+                for table in res["tables"]:
+                    tables.append(to_ident(table))
+                if cont_token := res.get("continuationToken"):
+                    req["continuationToken"] = cont_token
+                else:
+                    break
+            return tables
+        except Exception as e:
+            raise ValueError(f"Failed to list tables: {e}")
 
     ###
     # private methods
@@ -189,3 +299,33 @@ class S3Table(Table):
 
     def write(self):
         raise ValueError("S3 Table writes require using Glue Iceberg REST.")
+
+
+###
+# PRIVATE HELPERS
+###
+
+
+def _to_metadata(schema: Schema) -> dict:
+    from pyiceberg.io.pyarrow import _ConvertToIcebergWithoutIDs, visit_pyarrow
+
+    # We must stringify the iceberg schema.
+    # Conversion: daft schema -> pyarrow schema -> iceberg schema
+    pa_schema = schema.to_pyarrow_schema()
+    ic_schema = visit_pyarrow(pa_schema, _ConvertToIcebergWithoutIDs())
+
+    # https://docs.aws.amazon.com/AmazonS3/latest/API/API_s3TableBuckets_TableMetadata.html
+    return {
+        "iceberg": {
+            "schema": {
+                "fields": [_to_field(f) for f in ic_schema.fields],
+            }
+        }
+    }
+
+
+def _to_field(field: object) -> dict:
+    return {
+        "name": field.name,
+        "type": str(field.field_type),
+    }
