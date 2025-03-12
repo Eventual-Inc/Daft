@@ -14,9 +14,9 @@ fn check_decimal_invariants(
             precision,
         )));
     }
-    if scale >= precision {
+    if scale > precision {
         return Err(Error::oos(format!(
-            "Invalid DECIMAL: scale ({}) cannot be greater than or equal to precision \
+            "Invalid DECIMAL: scale ({}) cannot be greater than precision \
             ({})",
             scale, precision
         )));
