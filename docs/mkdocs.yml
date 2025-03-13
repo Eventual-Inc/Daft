@@ -56,6 +56,7 @@ nav:
 - API Docs:
   - Overview: api_docs/index.md
   - DataFrame: api_docs/dataframe.md
+  - Expressions: api_docs/expressions.md
 
 # Configuration
 theme:
@@ -150,7 +151,7 @@ extra_css:
 markdown_extensions:
 - admonition
 - toc:
-    toc_depth: 2
+    toc_depth: 3
     permalink: "#"
 - pymdownx.tabbed:
     alternate_style: true
@@ -182,46 +183,34 @@ plugins:
 #     cards_layout_options:
 #       background_color: "#532687"
 #     cards_dir: social
-# - mkdocstrings: # clean up
-#     handlers:
-#       python:
-#         selection:
-#           docstring_style: google
-#         rendering:
-#           show_source: true
-#           show_category_heading: true
-#           show_if_no_docstring: false
 - mkdocstrings:
     handlers:
       python:
         options:
-          # backlinks: tree
           docstring_style: google
-          # docstring_options:
-          #   ignore_init_summary: true
           docstring_section_style: spacy
-          # filters: ["!^_"]
           heading_level: 2
           # inherited_members: true
           # merge_init_into_class: true
           # preload_modules: [mkdocstrings]
-          # relative_crossrefs: true
+          relative_crossrefs: true
           # scoped_crossrefs: true
           separate_signature: true
           # show_bases: false
           # show_inheritance_diagram: true
           show_root_heading: true
           show_root_full_path: false
+          show_object_full_path: false
           show_signature_annotations: true
           # show_source: false
           show_symbol_type_heading: true
           show_symbol_type_toc: true
           signature_crossrefs: true
-          # summary: true
           unwrap_annotated: true
           show_if_no_docstring: true
           members_order: source
           show_docstring_examples: true
+          show_labels: true
 - mike:
     # Version provider for documentation
     version_selector: true
