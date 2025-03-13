@@ -55,8 +55,20 @@ nav:
     - Coming from Dask: migration/dask_migration.md
 - API Docs:
   - Overview: api_docs/index.md
+  - DataFrame Creation: api_docs/dataframe_creation.md
   - DataFrame: api_docs/dataframe.md
   - Expressions: api_docs/expressions.md
+  - Functions: api_docs/functions.md
+  - SQL: api_docs/sql.md
+  - Session: api_docs/sessions.md
+  - Catalogs & Tables: api_docs/catalogs_tables.md
+  - Schema: api_docs/schema.md
+  - DataTypes: api_docs/data_types.md
+  - Groupby: api_docs/groupby.md
+  - User-Defined Functions: api_docs/udf.md
+  - Series: api_docs/series.md
+  - Configuration: api_docs/config.md
+  - Miscellaneous: api_docs/misc.md
 
 # Configuration
 theme:
@@ -183,6 +195,7 @@ plugins:
 #     cards_layout_options:
 #       background_color: "#532687"
 #     cards_dir: social
+- autorefs
 - mkdocstrings:
     handlers:
       python:
@@ -190,28 +203,21 @@ plugins:
           docstring_style: google
           docstring_section_style: spacy
           heading_level: 2
-          # inherited_members: true
-          # merge_init_into_class: true
-          # preload_modules: [mkdocstrings]
-          relative_crossrefs: true
-          # scoped_crossrefs: true
+          merge_init_into_class: true
           separate_signature: true
-          # show_bases: false
-          # show_inheritance_diagram: true
+          show_signature_annotations: true
+          line_length: 60
           show_root_heading: true
           show_root_full_path: false
           show_object_full_path: false
-          show_signature_annotations: true
-          # show_source: false
+          show_source: true
           show_symbol_type_heading: true
           show_symbol_type_toc: true
           signature_crossrefs: true
           unwrap_annotated: true
           show_if_no_docstring: true
-          members_order: source
+          members_order: alphabetical # or source
           show_docstring_examples: true
+          show_docstring_returns: true
           show_labels: true
-- mike:
-    # Version provider for documentation
-    version_selector: true
-    canonical_version: latest
+          show_bases: false
