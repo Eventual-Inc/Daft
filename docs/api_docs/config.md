@@ -48,4 +48,3 @@ These configurations are most often used as inputs to Daft DataFrame reading I/O
 <!-- ::: daft.io.AzureConfig
     options:
         filters: ["!^_"] -->
-
