@@ -190,6 +190,10 @@ impl FileWriter for TargetBatchWriter {
         self.writer.bytes_written()
     }
 
+    fn bytes_per_file(&self) -> Vec<usize> {
+        self.writer.bytes_per_file()
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         if let Some(leftovers) = self.buffer.pop_all()? {
             self.writer.write(leftovers)?;

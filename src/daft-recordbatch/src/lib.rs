@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::array::Array;
+use arrow2::{array::Array, chunk::Chunk};
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
@@ -914,6 +914,11 @@ impl RecordBatch {
             Some(self.len()),
             max_col_width,
         )
+    }
+
+    pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
+        let chunk = Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect());
+        chunk
     }
 }
 impl TryFrom<RecordBatch> for FileInfos {
