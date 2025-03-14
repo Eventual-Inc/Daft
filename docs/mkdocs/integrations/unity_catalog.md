@@ -5,7 +5,7 @@
 To use Daft with the Unity Catalog, you will need to install Daft with the `unity` option specified like so:
 
 ```bash
-pip install getdaft[unity]
+pip install daft[unity]
 ```
 
 !!! warning "Warning"

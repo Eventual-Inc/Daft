@@ -18,7 +18,7 @@ pip install -r benchmark-requirements.txt
 Now, install the version of Daft you wish to use for benchmarking (either a released wheel, or if you want, a local build)
 
 ```bash
-pip install getdaft
+pip install daft
 ```
 
 ## Running the benchmarks:
