@@ -184,7 +184,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       matrix:
         python-version: ['3.9']
@@ -225,7 +225,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -305,7 +305,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -389,7 +389,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -489,7 +489,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -572,7 +572,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -670,7 +670,7 @@ jobs:
     runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 30
     env:
-      package-name: getdaft
+      package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     steps:
     - uses: actions/checkout@v4
