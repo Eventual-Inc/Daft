@@ -59,7 +59,7 @@ def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
             import botocore.session
         except ImportError:
             logger.error(
-                "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
+                "Error when importing botocore. install daft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
             )
             raise
 

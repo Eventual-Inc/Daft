@@ -40,7 +40,7 @@ Getting Started
 Installation
 ^^^^^^^^^^^^
 
-Install Daft with ``pip install getdaft``.
+Install Daft with ``pip install daft``.
 
 For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://www.getdaft.io/projects/docs/en/stable/install/>`_
 
