@@ -26,7 +26,7 @@ Here's an example of how you can use the Ray client with Daft:
     import ray
 
     # Refer to the note under "Ray Job" for details on "runtime_env"
-    ray.init("ray://<head_node_host>:10001", runtime_env={"pip": ["getdaft"]})
+    ray.init("ray://<head_node_host>:10001", runtime_env={"pip": ["daft"]})
 
     # Starts the Ray client and tells Daft to use Ray to execute queries
     # If ray.init() has already been called, it uses the existing client
@@ -85,7 +85,7 @@ To submit this script as a job, use the Ray CLI, which can be installed with `pi
 ray job submit \
     --working-dir wd \
     --address "http://<head_node_host>:8265" \
-    --runtime-env-json '{"pip": ["getdaft"]}' \
+    --runtime-env-json '{"pip": ["daft"]}' \
     -- python job.py
 ```
 

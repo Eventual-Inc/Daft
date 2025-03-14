@@ -99,9 +99,9 @@ if __name__ == "__main__":
     elif args.daft_wheel_url:
         daft_install = args.daft_wheel_url
     elif args.daft_version:
-        daft_install = f"getdaft=={args.daft_version}"
+        daft_install = f"daft=={args.daft_version}"
     else:
-        daft_install = "getdaft"
+        daft_install = "daft"
     content = content.replace(DAFT_INSTALL_PLACEHOLDER, daft_install)
 
     content = content.replace(PYTHON_VERSION_PLACEHOLDER, args.python_version)

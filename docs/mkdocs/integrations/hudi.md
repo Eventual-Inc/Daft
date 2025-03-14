@@ -15,7 +15,7 @@ Daft currently supports:
 Daft supports installing Hudi through optional dependency.
 
 ```bash
-pip install -U "getdaft[hudi]"
+pip install -U "daft[hudi]"
 ```
 
 ## Reading a Table
