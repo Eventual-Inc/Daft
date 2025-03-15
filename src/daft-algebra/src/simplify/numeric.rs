@@ -92,16 +92,16 @@ pub(crate) fn simplify_numeric_expr(
                 // 0 * A --> 0 (if A is not null and not floating/decimal)
 
                 // A * 1 -> A
+                // 1 * A -> A
                 Operator::Multiply if is_one(left) => Transformed::yes(right.clone()),
                 Operator::Multiply if is_one(right) => Transformed::yes(left.clone()),
                 // A / 1 -> A
-                Operator::TrueDivide if is_one(left) => Transformed::yes(right.clone()),
                 Operator::TrueDivide if is_one(right) => Transformed::yes(left.clone()),
                 // A + 0 -> A
+                // 0 + A -> A
                 Operator::Plus if is_zero(left) => Transformed::yes(right.clone()),
                 Operator::Plus if is_zero(right) => Transformed::yes(left.clone()),
                 // A - 0 -> A
-                Operator::Minus if is_zero(left) => Transformed::yes(right.clone()),
                 Operator::Minus if is_zero(right) => Transformed::yes(left.clone()),
 
                 _ => Transformed::no(expr),
@@ -109,4 +109,110 @@ pub(crate) fn simplify_numeric_expr(
         }
         _ => Transformed::no(expr),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use common_treenode::Transformed;
+    use daft_dsl::{lit, Column, Expr, ExprRef, Operator, ResolvedColumn};
+    use daft_schema::schema::Schema;
+
+    use crate::simplify::numeric::simplify_numeric_expr;
+
+    // Helper function to create a column reference.
+    fn col(name: String) -> ExprRef {
+        Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::Basic(
+            Arc::<str>::from(name),
+        ))))
+    }
+
+    // Helper functions for tests.
+    fn add(left: ExprRef, right: ExprRef) -> ExprRef {
+        Arc::new(Expr::BinaryOp {
+            op: Operator::Plus,
+            left,
+            right,
+        })
+    }
+
+    fn mul(left: ExprRef, right: ExprRef) -> ExprRef {
+        Arc::new(Expr::BinaryOp {
+            op: Operator::Multiply,
+            left,
+            right,
+        })
+    }
+
+    fn div(left: ExprRef, right: ExprRef) -> ExprRef {
+        Arc::new(Expr::BinaryOp {
+            op: Operator::TrueDivide,
+            left,
+            right,
+        })
+    }
+
+    fn sub(left: ExprRef, right: ExprRef) -> ExprRef {
+        Arc::new(Expr::BinaryOp {
+            op: Operator::Minus,
+            left,
+            right,
+        })
+    }
+
+    #[test]
+    fn test_simplify_numeric_identity_operations() -> DaftResult<()> {
+        let empty_schema = Arc::new(Schema::new(vec![])?);
+        let col_expr = col("a".to_string());
+
+        // Test addition with 0.
+        let expr = add(col_expr.clone(), lit(0));
+        let simplified = simplify_numeric_expr(expr, &empty_schema)?;
+        assert_eq!(simplified, Transformed::yes(col_expr.clone()));
+
+        let expr = add(lit(0), col_expr.clone());
+        let simplified = simplify_numeric_expr(expr, &empty_schema)?;
+        assert_eq!(simplified, Transformed::yes(col_expr.clone()));
+
+        // Test multiplication with 1.
+        let expr = mul(col_expr.clone(), lit(1));
+        let simplified = simplify_numeric_expr(expr, &empty_schema)?;
+        assert_eq!(simplified, Transformed::yes(col_expr.clone()));
+
+        let expr = mul(lit(1), col_expr.clone());
+        let simplified = simplify_numeric_expr(expr, &empty_schema)?;
+        assert_eq!(simplified, Transformed::yes(col_expr.clone()));
+
+        // Test division by 1.
+        let expr = div(col_expr.clone(), lit(1));
+        let simplified = simplify_numeric_expr(expr, &empty_schema)?;
+        assert_eq!(simplified, Transformed::yes(col_expr.clone()));
+
+        // Test subtraction with 0.
+        let expr = sub(col_expr.clone(), lit(0));
+        let simplified = simplify_numeric_expr(expr, &empty_schema)?;
+        assert_eq!(simplified, Transformed::yes(col_expr.clone()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_simplify_numeric_identity_operations_edge_cases() -> DaftResult<()> {
+        let empty_schema = Arc::new(Schema::new(vec![])?);
+        let col_expr = col("a".to_string());
+
+        // 1 / a should not be simplified.
+        let expr = div(lit(1), col_expr.clone());
+        let simplified = simplify_numeric_expr(expr.clone(), &empty_schema)?;
+        assert_eq!(simplified, Transformed::no(expr));
+
+        // 0 - a should not be simplified.
+        let expr = sub(lit(0), col_expr.clone());
+        let simplified = simplify_numeric_expr(expr.clone(), &empty_schema)?;
+        assert_eq!(simplified, Transformed::no(expr));
+
+        Ok(())
+    }
 }
