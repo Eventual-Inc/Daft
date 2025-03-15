@@ -147,12 +147,15 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
 
-            let (left_on, right_on) = normalize_join_keys(
-                join.left_on.clone(),
-                join.right_on.clone(),
-                join.left.schema(),
-                join.right.schema(),
-            )?;
+            let mut on = join.on.clone();
+            let (left_on, right_on, null_equals_nulls) = on.pop_equi_preds();
+
+            if on.inner().is_some() {
+                return Err(DaftError::not_implemented("Execution of non-equality join"));
+            }
+
+            let (left_on, right_on) =
+                normalize_join_keys(left_on, right_on, join.left.schema(), join.right.schema())?;
 
             if left_on.is_empty() && right_on.is_empty() && join.join_type == JoinType::Inner {
                 Ok(LocalPhysicalPlan::cross_join(
@@ -167,7 +170,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     right,
                     left_on,
                     right_on,
-                    join.null_equals_nulls.clone(),
+                    Some(null_equals_nulls),
                     join.join_type,
                     join.output_schema.clone(),
                     join.stats_state.clone(),
