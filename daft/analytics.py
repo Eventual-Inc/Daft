@@ -49,7 +49,7 @@ def _build_segment_batch_payload(
                 "timestamp": event.event_time.isoformat(),
                 "context": {
                     "app": {
-                        "name": "getdaft",
+                        "name": "daft",
                         "version": daft_version,
                         "build": daft_build_type,
                     },

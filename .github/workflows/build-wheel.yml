@@ -1,5 +1,5 @@
 name: build-wheel
-run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-newname=${{ inputs.use_new_name }}'
+run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-newname=${{ inputs.use_old_name }}'
 
 on:
   workflow_call:
@@ -16,8 +16,8 @@ on:
       build_type:
         description: Value to set RUST_DAFT_PKG_BUILD_TYPE to (release, dev, nightly, etc.)
         type: string
-      use_new_name:
-        description: Set to true to build as `daft` instead of `getdaft`
+      use_old_name:
+        description: Set to true to build as `getdaft` instead of `daft`
         type: boolean
 
 env:
@@ -56,8 +56,8 @@ jobs:
         tomlq -i -t ".workspace.package.version = \"$VERSION\"" Cargo.toml
 
     - name: Patch name to daft if using new name
-      if: ${{ inputs.use_new_name }}
-      run: tomlq -i -t ".project.name = \"daft\"" pyproject.toml
+      if: ${{ inputs.use_old_name }}
+      run: tomlq -i -t ".project.name = \"getdaft\"" pyproject.toml
 
     - name: Patch name to daft-lts if LTS
       if: ${{ inputs.lts }}
@@ -122,5 +122,5 @@ jobs:
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
-        name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-newname=${{ inputs.use_new_name }}
+        name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-newname=${{ inputs.use_old_name }}
         path: dist

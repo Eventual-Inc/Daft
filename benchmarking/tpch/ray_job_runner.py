@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = [
 #   "ray[default]",
-#   "getdaft",
+#   "daft",
 # ]
 # ///
 

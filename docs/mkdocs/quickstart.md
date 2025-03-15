@@ -19,7 +19,7 @@ You can install Daft using `pip`. Run the following command in your terminal or 
 === "🐍 Python"
 
     ```python
-    pip install getdaft
+    pip install daft
     ```
 
 For more advanced installation options, please see [Installation](install.md).

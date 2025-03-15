@@ -255,7 +255,7 @@ class Catalog(ABC):
 
             return IcebergCatalog._from_obj(catalog)
         except ImportError:
-            raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
+            raise ImportError("Iceberg support not installed: pip install -U 'daft[iceberg]'")
 
     @staticmethod
     def from_unity(catalog: object) -> Catalog:
@@ -272,7 +272,7 @@ class Catalog(ABC):
 
             return UnityCatalog._from_obj(catalog)
         except ImportError:
-            raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
+            raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
     def _from_obj(obj: object) -> Catalog:
@@ -571,7 +571,7 @@ class Table(ABC):
 
             return IcebergTable._from_obj(table)
         except ImportError:
-            raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
+            raise ImportError("Iceberg support not installed: pip install -U 'daft[iceberg]'")
 
     @staticmethod
     def from_unity(table: object) -> Table:
@@ -585,7 +585,7 @@ class Table(ABC):
 
             return UnityTable._from_obj(table)
         except ImportError:
-            raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
+            raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
     def _from_obj(name: str, source: object) -> Table:
