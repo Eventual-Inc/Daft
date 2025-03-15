@@ -342,20 +342,23 @@ def hash_join(
     right_on: ExpressionsProjection,
     null_equals_nulls: None | list[bool],
     how: JoinType,
+    emit_first: JoinSide,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Hash-based pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
-    left_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
-    right_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
+    first_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
+    second_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
 
-    left_stage_id = next(stage_id_counter)
-    right_stage_id = next(stage_id_counter)
+    first_stage_id = next(stage_id_counter)
+    second_stage_id = next(stage_id_counter)
     hash_join_stage_id = next(stage_id_counter)
 
-    # First, fully materialize the left side of the join
-    for step in left_plan:
+    first_plan, second_plan = (left_plan, right_plan) if emit_first == JoinSide.Left else (right_plan, left_plan)
+
+    # First, fully materialize the smaller side of the join
+    for step in first_plan:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output(stage_id=left_stage_id)
-            left_tasks[len(left_tasks)] = step
+            step = step.finalize_partition_task_single_output(stage_id=first_stage_id)
+            first_tasks[len(first_tasks)] = step
         yield step
 
     def create_join_step(
@@ -395,7 +398,7 @@ def hash_join(
         return join_step
 
     join_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
-    right_partition_counter = 0
+    partition_counter = 0
     next_join_partition_to_emit = 0
     while True:
         # Check if we have any join tasks that are ready to be emitted
@@ -412,34 +415,34 @@ def hash_join(
         # Find all partitions that are ready to be joined
         ready_partitions = [
             partition_num
-            for partition_num in left_tasks.keys() & right_tasks.keys()  # Intersection of keys
-            if left_tasks[partition_num].done() and right_tasks[partition_num].done()
+            for partition_num in first_tasks.keys() & second_tasks.keys()  # Intersection of keys
+            if first_tasks[partition_num].done() and second_tasks[partition_num].done()
         ]
 
         if len(ready_partitions) > 0:
             # Process all ready pairs
             for partition in ready_partitions:
-                left_task = left_tasks.pop(partition)
-                right_task = right_tasks.pop(partition)
+                left_task = first_tasks.pop(partition) if emit_first == JoinSide.Left else second_tasks.pop(partition)
+                right_task = second_tasks.pop(partition) if emit_first == JoinSide.Left else first_tasks.pop(partition)
                 join_task = create_join_step(left_task, right_task)
                 join_tasks[partition] = join_task
                 yield join_task
         else:
             try:
                 # Process next right plan step
-                step = next(right_plan)
+                step = next(second_plan)
                 if isinstance(step, PartitionTaskBuilder):
-                    step = step.finalize_partition_task_single_output(stage_id=right_stage_id)
-                    right_tasks[right_partition_counter] = step
-                    right_partition_counter += 1
+                    step = step.finalize_partition_task_single_output(stage_id=second_stage_id)
+                    second_tasks[partition_counter] = step
+                    partition_counter += 1
                 yield step
 
             except StopIteration:
-                if left_tasks or right_tasks:
+                if first_tasks or second_tasks:
                     logger.debug(
                         "join blocked on completion of sources.\n Left sources: %s\nRight sources: %s",
-                        left_tasks,
-                        right_tasks,
+                        first_tasks,
+                        second_tasks,
                     )
                     yield None
                 else:
