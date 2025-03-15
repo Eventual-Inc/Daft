@@ -112,7 +112,7 @@ class AnalyticsClient:
                 AnalyticsEvent(
                     session_id=self._session_key,
                     event_name=event_name,
-                    event_time=datetime.datetime.utcnow(),
+                    event_time=datetime.datetime.now(datetime.UTC),
                     data=data,
                 )
             )
