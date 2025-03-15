@@ -37,6 +37,25 @@ pub struct PythonUDF {
     pub concurrency: Option<usize>,
 }
 
+impl PythonUDF {
+    #[cfg(feature = "test-utils")]
+    pub fn new_testing_udf() -> Self {
+        Self {
+            name: Arc::new("dummy_udf".to_string()),
+            func: MaybeInitializedUDF::Uninitialized {
+                inner: RuntimePyObject::new_testing_none(),
+                init_args: RuntimePyObject::new_testing_none(),
+            },
+            bound_args: RuntimePyObject::new_testing_none(),
+            num_expressions: 1,
+            return_dtype: DataType::Int64,
+            resource_request: None,
+            batch_size: None,
+            concurrency: Some(4),
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn udf(
     name: &str,
