@@ -172,6 +172,8 @@ impl Display for Column {
 
 pub type ExprRef = Arc<Expr>;
 
+pub mod window;
+
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
     #[display("{_0}")]
@@ -199,6 +201,7 @@ pub enum Expr {
         inputs: Vec<ExprRef>,
     },
 
+    // add window function variant here (or it will be a function itself)
     #[display("not({_0})")]
     Not(ExprRef),
 

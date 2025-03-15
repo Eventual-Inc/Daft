@@ -17,6 +17,7 @@ mod sort;
 mod source;
 mod summarize;
 mod unpivot;
+mod window;
 
 pub use actor_pool_project::ActorPoolProject;
 pub use agg::Aggregate;
@@ -37,3 +38,4 @@ pub use sort::Sort;
 pub use source::Source;
 pub use summarize::summarize;
 pub use unpivot::Unpivot;
+pub use window::Window;
