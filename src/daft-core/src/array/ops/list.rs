@@ -639,7 +639,11 @@ impl ListArray {
         };
 
         let child_refs: Vec<&Series> = child_series.iter().collect();
-        let child = Series::concat(&child_refs)?;
+        let child = if child_refs.is_empty() {
+            Series::empty(self.name(), self.child_data_type())
+        } else {
+            Series::concat(&child_refs)?
+        };
         Ok(Self::new(
             self.field.clone(),
             child,
@@ -1015,7 +1019,11 @@ impl FixedSizeListArray {
         };
 
         let child_refs: Vec<&Series> = child_series.iter().collect();
-        let child = Series::concat(&child_refs)?;
+        let child = if child_refs.is_empty() {
+            Series::empty(self.name(), self.child_data_type())
+        } else {
+            Series::concat(&child_refs)?
+        };
         Ok(Self::new(
             self.field.clone(),
             child,
