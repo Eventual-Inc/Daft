@@ -27,7 +27,7 @@ Spilling to disk is a mechanism that Daft uses to ensure workload completion in 
 
 There are some things you can do that will help with this.
 
-1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. [AWS EC2 r5 instances](https://aws.amazon.com/ec2/instance-types/r5/)
+1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. [AWS EC2 r5 instances](https://aws.amazon.com/ec2/instance-types/r5/))
 
 2. Use more machines in your cluster to increase overall cluster memory size
 
@@ -59,7 +59,7 @@ There are some options available to you.
 
 3. Aggressively filter your data so that Daft can avoid reading data that it does not have to (e.g. `df.where(...)`)
 
-4. Request more memory for your UDFs (see [Resource Requests](../core_concepts.md#resource-requests) if your UDFs are memory intensive (e.g. decompression of data, running large matrix computations etc)
+4. Request more memory for your UDFs (see [Resource Requests](../core_concepts.md#resource-requests)) if your UDFs are memory intensive (e.g. decompression of data, running large matrix computations etc)
 
 5. Increase the number of partitions in your dataframe (hence making each partition smaller) using something like: `df.into_partitions(df.num_partitions() * 2)`
 

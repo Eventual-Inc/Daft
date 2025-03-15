@@ -1,4 +1,4 @@
-# PySpark.
+# PySpark
 
 The `daft.pyspark` module provides a way to create a PySpark session that can be run locally or backed by a ray cluster.
 
@@ -29,7 +29,7 @@ spark.createDataFrame([{"hello": "world"}]).select(col("hello")).show()
 spark.stop()
 ```
 
-## Notable Differences.
+## Notable Differences
 
 A few methods do have some notable differences compared to PySpark.
 
