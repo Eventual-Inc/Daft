@@ -66,10 +66,7 @@ impl JoinOrderTree {
             (
                 JoinOrderTree::Join(left1, right1, _, _),
                 JoinOrderTree::Join(left2, right2, _, _),
-            ) => {
-                (Self::order_eq(left1, left2) && Self::order_eq(right1, right2))
-                    || (Self::order_eq(left1, right2) && Self::order_eq(right1, left2))
-            }
+            ) => (Self::order_eq(left1, left2) && Self::order_eq(right1, right2)),
             _ => false,
         }
     }
