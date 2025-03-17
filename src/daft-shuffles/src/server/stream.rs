@@ -74,13 +74,13 @@ impl<R: Read> Iterator for FlightDataStreamReader<R> {
 
 /// Skip stream metadata on reader. We don't need it when sending data over flight.
 pub fn skip_stream_metadata<R: Read>(reader: &mut R) -> DaftResult<()> {
-    let mut meta_size = [0u8; 4];
-    reader.read_exact(&mut meta_size)?;
+    let mut meta_buf = [0u8; 4];
+    reader.read_exact(&mut meta_buf)?;
 
-    if meta_size == CONTINUATION_MARKER {
-        reader.read_exact(&mut meta_size)?;
+    if meta_buf == CONTINUATION_MARKER {
+        reader.read_exact(&mut meta_buf)?;
     }
-    let meta_len = i32::from_le_bytes(meta_size);
+    let meta_len = i32::from_le_bytes(meta_buf);
 
     let meta_len = meta_len
         .try_into()
@@ -94,9 +94,9 @@ pub fn skip_stream_metadata<R: Read>(reader: &mut R) -> DaftResult<()> {
 
 /// Process next IPC message into FlightData
 fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> {
-    let mut meta_length = [0u8; 4];
+    let mut meta_buf = [0u8; 4];
 
-    match state.reader.read_exact(&mut meta_length) {
+    match state.reader.read_exact(&mut meta_buf) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
             return Ok(StreamState::Continue(state))
@@ -104,12 +104,10 @@ fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> 
         Err(e) => return Err(DaftError::from(e)),
     }
 
-    let meta_length = if meta_length == CONTINUATION_MARKER {
-        state.reader.read_exact(&mut meta_length)?;
-        i32::from_le_bytes(meta_length)
-    } else {
-        i32::from_le_bytes(meta_length)
-    };
+    if meta_buf == CONTINUATION_MARKER {
+        state.reader.read_exact(&mut meta_buf)?;
+    }
+    let meta_length = i32::from_le_bytes(meta_buf);
 
     let meta_length: usize = meta_length
         .try_into()

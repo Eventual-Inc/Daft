@@ -254,7 +254,8 @@ class ShuffleActor:
 
     # Shutdown the shuffle actor
     def shutdown(self):
-        self.server.shutdown()
+        if self.server is not None:
+            self.server.shutdown()
         try:
             if os.path.exists(self.shuffle_dir):
                 shutil.rmtree(self.shuffle_dir)
