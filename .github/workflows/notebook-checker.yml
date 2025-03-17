@@ -29,7 +29,7 @@ jobs:
     - name: Run notebooks in docs
       run: find docs -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --no-progress-bar --cwd /tmp/
     - name: Run notebooks in tutorials
-      run: find tutorials -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --no-progress-bar --cwd /tmp/
+      run: find tutorials -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --cwd /tmp/
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
