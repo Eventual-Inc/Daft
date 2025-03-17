@@ -105,30 +105,34 @@ impl WindowSpec {
         }
     }
 
-    pub fn with_partition_by(mut self, exprs: Vec<Arc<Expr>>) -> Self {
-        self.partition_by = exprs;
-        self
+    pub fn with_partition_by(&self, exprs: Vec<Arc<Expr>>) -> Self {
+        let mut new_spec = self.clone();
+        new_spec.partition_by = exprs;
+        new_spec
     }
 
-    pub fn with_order_by(mut self, exprs: Vec<Arc<Expr>>, ascending: Vec<bool>) -> Self {
+    pub fn with_order_by(&self, exprs: Vec<Arc<Expr>>, ascending: Vec<bool>) -> Self {
         assert_eq!(
             exprs.len(),
             ascending.len(),
             "Order by expressions and ascending flags must have same length"
         );
-        self.order_by = exprs;
-        self.ascending = ascending;
-        self
+        let mut new_spec = self.clone();
+        new_spec.order_by = exprs;
+        new_spec.ascending = ascending;
+        new_spec
     }
 
-    pub fn with_frame(mut self, frame: WindowFrame) -> Self {
-        self.frame = Some(frame);
-        self
+    pub fn with_frame(&self, frame: WindowFrame) -> Self {
+        let mut new_spec = self.clone();
+        new_spec.frame = Some(frame);
+        new_spec
     }
 
-    pub fn with_min_periods(mut self, min_periods: i64) -> Self {
-        self.min_periods = min_periods;
-        self
+    pub fn with_min_periods(&self, min_periods: i64) -> Self {
+        let mut new_spec = self.clone();
+        new_spec.min_periods = min_periods;
+        new_spec
     }
 }
 

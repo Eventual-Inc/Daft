@@ -1,3 +1,5 @@
+pub mod window;
+
 mod display;
 #[cfg(test)]
 mod tests;
@@ -171,8 +173,6 @@ impl Display for Column {
 }
 
 pub type ExprRef = Arc<Expr>;
-
-pub mod window;
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
