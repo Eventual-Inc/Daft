@@ -5,13 +5,12 @@ import random
 import shutil
 from collections import defaultdict, deque
 
-from daft.daft import InProgressShuffleCache, PyExpr
+from daft.daft import InProgressShuffleCache, PyExpr, start_flight_server
 from daft.execution.execution_step import (
     PartitionTaskBuilder,
     SingleOutputPartitionTask,
 )
 from daft.execution.physical_plan import InProgressPhysicalPlan, stage_id_counter
-from daft.execution.shuffles.flight_shuffle.flight_server import FlightServer
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import PartitionMetadata
 from daft.runners.ray_runner import _ray_num_cpus_provider
@@ -208,9 +207,8 @@ class ShuffleActor:
             partition_by=partition_by,
         )
 
-        # create a flight server to serve data from the shuffle cache
-        self.server = FlightServer(self.host, self.node_id)
-        self.port = self.server.get_port()
+        self.server = None
+        self.port = None
 
         # create a threadpool to push partitions to the shuffle cache
         self.push_partition_executor = concurrent.futures.ThreadPoolExecutor()
@@ -241,7 +239,8 @@ class ShuffleActor:
         self.push_partition_futures.clear()
         self.push_partition_executor.shutdown()
 
-        self.server.set_shuffle_cache(self.in_progress_shuffle_cache.close())
+        self.server = start_flight_server(self.in_progress_shuffle_cache.close(), self.host)
+        self.port = self.server.port()
         self.in_progress_shuffle_cache = None
 
     # Clean up the shuffle files for the given partition
