@@ -9,7 +9,7 @@ use ahash::AHashMap;
 use crate::array::Array;
 
 mod array;
-mod common;
+pub mod common;
 mod deserialize;
 mod error;
 pub(crate) mod file;

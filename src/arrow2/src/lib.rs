@@ -49,3 +49,5 @@ pub mod util;
 pub use ahash::AHashMap;
 // re-exported because we return `Either` in our public API
 pub use either::Either;
+// re-export flight
+pub use arrow_format::flight;
