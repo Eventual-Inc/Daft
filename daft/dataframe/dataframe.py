@@ -1449,13 +1449,13 @@ class DataFrame:
 
     @DataframePublicAPI
     def distinct(self) -> "DataFrame":
-        """Computes unique rows, dropping duplicates.
+        """Computes distinct rows, dropping duplicates.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 8]})
-            >>> unique_df = df.distinct()
-            >>> unique_df.show()
+            >>> distinct_df = df.distinct()
+            >>> distinct_df.show()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
@@ -1469,7 +1469,7 @@ class DataFrame:
             (Showing first 2 of 2 rows)
 
         Returns:
-            DataFrame: DataFrame that has only  unique rows.
+            DataFrame: DataFrame that has only distinct rows.
         """
         ExpressionsProjection.from_schema(self._builder.schema())
         builder = self._builder.distinct()
