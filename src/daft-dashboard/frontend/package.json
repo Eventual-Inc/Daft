@@ -24,7 +24,7 @@
     "jotai": "^2.11.3",
     "lucide-react": "^0.474.0",
     "mermaid": "^11.4.1",
-    "next": "15.1.6",
+    "next": "15.2.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^2.6.0",
