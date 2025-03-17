@@ -1,2 +1,2 @@
-pub mod server;
+pub mod flight_server;
 mod stream;

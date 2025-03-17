@@ -6,31 +6,81 @@ use common_error::{DaftError, DaftResult};
 
 /// Reading state maintenance
 struct ReadState<R> {
+    // The reader to read from
     reader: R,
+    // The buffer to store the data
     data_buffer: Vec<u8>,
+    // The buffer to store the message
     message_buffer: Vec<u8>,
 }
 
 /// State machine for stream processing
 enum StreamState<R> {
+    // A tuple of the current read state and the flight data to be sent
     Ready((ReadState<R>, FlightData)),
+    // The read state is not done, continue reading
     Continue(ReadState<R>),
+    // The read state is done, no more data to read
     Done,
 }
 
 const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
 
-/// Skip stream metadata on reader
+/// A reader that reads arrow ipc files in stream format and converts them to FlightData for serving
+/// over flight. This is an optimization where we skip converting the ipc files to RecordBatches
+/// and instead read the data directly into FlightData, since we already know that the data is in
+/// arrow ipc stream format.
+pub struct FlightDataStreamReader<R: Read> {
+    state: Option<ReadState<R>>,
+}
+
+impl<R: Read> FlightDataStreamReader<R> {
+    pub fn try_new(mut reader: R) -> DaftResult<Self> {
+        // Skip stream metadata in the file since we don't need it when sending data over flight
+        skip_stream_metadata(&mut reader)?;
+        Ok(Self {
+            state: Some(ReadState {
+                reader,
+                data_buffer: Vec::new(),
+                message_buffer: Vec::new(),
+            }),
+        })
+    }
+}
+
+impl<R: Read> Iterator for FlightDataStreamReader<R> {
+    type Item = DaftResult<FlightData>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let state = self.state.take()?;
+
+        match process_next(state) {
+            Ok(StreamState::Ready((state, data))) => {
+                self.state = Some(state);
+                Some(Ok(data))
+            }
+            Ok(StreamState::Continue(state)) => {
+                self.state = Some(state);
+                self.next() // Recursive call to continue processing
+            }
+            Ok(StreamState::Done) => None,
+            Err(e) => {
+                self.state = None;
+                Some(Err(e))
+            }
+        }
+    }
+}
+
+/// Skip stream metadata on reader. We don't need it when sending data over flight.
 pub fn skip_stream_metadata<R: Read>(reader: &mut R) -> DaftResult<()> {
     let mut meta_size = [0u8; 4];
     reader.read_exact(&mut meta_size)?;
 
-    let meta_len = if meta_size == CONTINUATION_MARKER {
+    if meta_size == CONTINUATION_MARKER {
         reader.read_exact(&mut meta_size)?;
-        i32::from_le_bytes(meta_size)
-    } else {
-        i32::from_le_bytes(meta_size)
-    };
+    }
+    let meta_len = i32::from_le_bytes(meta_size);
 
     let meta_len = meta_len
         .try_into()
@@ -42,7 +92,7 @@ pub fn skip_stream_metadata<R: Read>(reader: &mut R) -> DaftResult<()> {
     Ok(())
 }
 
-/// Process next IPC message into EncodedData
+/// Process next IPC message into FlightData
 fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> {
     let mut meta_length = [0u8; 4];
 
@@ -94,49 +144,4 @@ fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> 
     };
 
     Ok(StreamState::Ready((state, flight_data)))
-}
-
-pub struct FlightDataStreamReader<R: Read> {
-    state: Option<ReadState<R>>,
-}
-
-impl<R: Read> FlightDataStreamReader<R> {
-    /// Create new reader starting after schema
-    pub fn try_new(mut reader: R) -> DaftResult<Self> {
-        skip_stream_metadata(&mut reader)?;
-        Ok(Self {
-            state: Some(ReadState {
-                reader,
-                data_buffer: Vec::new(),
-                message_buffer: Vec::new(),
-            }),
-        })
-    }
-}
-
-impl<R: Read> Iterator for FlightDataStreamReader<R> {
-    type Item = DaftResult<FlightData>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let state = match self.state.take() {
-            Some(s) => s,
-            None => return None,
-        };
-
-        match process_next(state) {
-            Ok(StreamState::Ready((state, data))) => {
-                self.state = Some(state);
-                Some(Ok(data))
-            }
-            Ok(StreamState::Continue(state)) => {
-                self.state = Some(state);
-                self.next() // Recursive call to continue processing
-            }
-            Ok(StreamState::Done) => None,
-            Err(e) => {
-                self.state = None;
-                Some(Err(e))
-            }
-        }
-    }
 }

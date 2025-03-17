@@ -1,14 +1,19 @@
+use std::sync::Arc;
+
 use common_runtime::get_compute_runtime;
 use daft_dsl::python::PyExpr;
 use daft_micropartition::python::PyMicroPartition;
 use daft_schema::python::schema::PySchema;
 use pyo3::{
-    pyclass, pymethods,
+    pyclass, pyfunction, pymethods,
     types::{PyModule, PyModuleMethods},
     Bound, PyResult, Python,
 };
 
-use crate::shuffle_cache::{InProgressShuffleCache, ShuffleCache};
+use crate::{
+    server::flight_server::{start_flight_server, FlightServerConnectionHandle},
+    shuffle_cache::{InProgressShuffleCache, ShuffleCache},
+};
 
 #[pyclass(module = "daft.daft", name = "InProgressShuffleCache", frozen)]
 pub struct PyInProgressShuffleCache {
@@ -49,14 +54,14 @@ impl PyInProgressShuffleCache {
     pub fn close(&self) -> PyResult<PyShuffleCache> {
         let shuffle_cache = get_compute_runtime().block_on_current_thread(self.cache.close())?;
         Ok(PyShuffleCache {
-            cache: shuffle_cache,
+            cache: Arc::new(shuffle_cache),
         })
     }
 }
 
 #[pyclass(module = "daft.daft", name = "ShuffleCache", frozen)]
 pub struct PyShuffleCache {
-    cache: ShuffleCache,
+    cache: Arc<ShuffleCache>,
 }
 
 #[pymethods]
@@ -72,6 +77,32 @@ impl PyShuffleCache {
     pub fn file_paths(&self, partition_idx: usize) -> PyResult<Vec<String>> {
         Ok(self.cache.file_paths(partition_idx))
     }
+}
+
+#[pyclass(module = "daft.daft", name = "FlightServerConnectionHandle")]
+pub struct PyFlightServerConnectionHandle {
+    handle: FlightServerConnectionHandle,
+}
+
+#[pymethods]
+impl PyFlightServerConnectionHandle {
+    pub fn shutdown(&mut self) -> PyResult<()> {
+        self.handle.shutdown()?;
+        Ok(())
+    }
+
+    pub fn port(&self) -> PyResult<u16> {
+        Ok(self.handle.port())
+    }
+}
+
+#[pyfunction(name = "start_flight_server")]
+pub fn py_start_flight_server(
+    shuffle_cache: &PyShuffleCache,
+    ip: &str,
+) -> PyResult<PyFlightServerConnectionHandle> {
+    let handle = start_flight_server(shuffle_cache.cache.clone(), ip).unwrap();
+    Ok(PyFlightServerConnectionHandle { handle })
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
