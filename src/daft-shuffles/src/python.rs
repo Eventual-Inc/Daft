@@ -7,7 +7,7 @@ use daft_schema::python::schema::PySchema;
 use pyo3::{
     pyclass, pyfunction, pymethods,
     types::{PyModule, PyModuleMethods},
-    Bound, PyResult, Python,
+    wrap_pyfunction, Bound, PyResult, Python,
 };
 
 use crate::{
@@ -108,5 +108,7 @@ pub fn py_start_flight_server(
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyInProgressShuffleCache>()?;
     parent.add_class::<PyShuffleCache>()?;
+    parent.add_class::<PyFlightServerConnectionHandle>()?;
+    parent.add_function(wrap_pyfunction!(py_start_flight_server, parent)?)?;
     Ok(())
 }
