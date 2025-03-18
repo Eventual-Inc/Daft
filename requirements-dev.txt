@@ -3,6 +3,7 @@ ipdb
 maturin
 pre-commit
 docker
+importlib-metadata
 
 # Pinned requests due to docker-py issue: https://github.com/docker/docker-py/issues/3256
 requests<2.32.0
@@ -35,13 +36,16 @@ opencv-python==4.10.0.84
 tiktoken==0.7.0
 duckdb==1.1.2
 
+# TQDM
+tqdm
+
 # Pyarrow
 pyarrow==16.0.0
 # Ray
 ray[data, client]==2.34.0
 
 # Lance
-lancedb>=0.6.10
+pylance>=0.10.12
 
 #Iceberg
 pyiceberg==0.7.0

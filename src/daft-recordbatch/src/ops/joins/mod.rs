@@ -131,12 +131,10 @@ impl RecordBatch {
             }
             let left = self.sort(
                 left_on,
-                std::iter::repeat(false)
-                    .take(left_on.len())
+                std::iter::repeat_n(false, left_on.len())
                     .collect::<Vec<_>>()
                     .as_slice(),
-                std::iter::repeat(false)
-                    .take(left_on.len())
+                std::iter::repeat_n(false, left_on.len())
                     .collect::<Vec<_>>()
                     .as_slice(),
             )?;
@@ -147,12 +145,10 @@ impl RecordBatch {
             }
             let right = right.sort(
                 right_on,
-                std::iter::repeat(false)
-                    .take(right_on.len())
+                std::iter::repeat_n(false, right_on.len())
                     .collect::<Vec<_>>()
                     .as_slice(),
-                std::iter::repeat(false)
-                    .take(right_on.len())
+                std::iter::repeat_n(false, right_on.len())
                     .collect::<Vec<_>>()
                     .as_slice(),
             )?;
@@ -203,7 +199,7 @@ impl RecordBatch {
             inner_len: usize,
         ) -> DaftResult<RecordBatch> {
             let idx = (0..input.len() as u64)
-                .flat_map(|i| std::iter::repeat(i).take(inner_len))
+                .flat_map(|i| std::iter::repeat_n(i, inner_len))
                 .collect::<Vec<_>>();
 
             let idx_series = UInt64Array::from(("inner_indices", idx)).into_series();

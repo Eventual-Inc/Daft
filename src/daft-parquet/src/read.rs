@@ -259,7 +259,7 @@ async fn read_parquet_single(
         let start_offset = start_offset.unwrap_or(0);
 
         for row in delete_rows.into_iter().map(|r| r as usize) {
-            if row >= start_offset && num_rows_to_read.map_or(true, |n| row < start_offset + n) {
+            if row >= start_offset && num_rows_to_read.is_none_or(|n| row < start_offset + n) {
                 let table_row = row - start_offset;
 
                 if table_row < table.len() {
@@ -644,7 +644,7 @@ async fn read_parquet_single_into_arrow(
             }),
             _ => Ok(()),
         }?;
-    };
+    }
 
     let expected_num_columns = if let Some(columns) = &columns {
         columns.len()

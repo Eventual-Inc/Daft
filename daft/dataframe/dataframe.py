@@ -163,6 +163,27 @@ class DataFrame:
         else:
             return self._result_cache.value
 
+    def _broadcast_query_plan(self, plan_time_start: datetime, plan_time_end: datetime):
+        from daft import dashboard
+        from daft.dataframe.display import MermaidFormatter
+
+        if not dashboard._should_run():
+            return
+
+        is_cached = self._result_cache is not None
+        mermaid_plan: str = MermaidFormatter(
+            builder=self.__builder,
+            show_all=True,
+            simple=False,
+            is_cached=is_cached,
+        )._repr_markdown_()
+
+        dashboard.broadcast_query_information(
+            mermaid_plan=mermaid_plan,
+            plan_time_start=plan_time_start,
+            plan_time_end=plan_time_end,
+        )
+
     @DataframePublicAPI
     def explain(
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
@@ -294,14 +315,14 @@ class DataFrame:
             The default value is the total number of CPUs available on the current machine.
 
         Example:
-        >>> import daft
-        >>>
-        >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
-        >>> for row in df.iter_rows():
-        ...     print(row)
-        {'foo': 1, 'bar': 'a'}
-        {'foo': 2, 'bar': 'b'}
-        {'foo': 3, 'bar': 'c'}
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
+            >>> for row in df.iter_rows():
+            ...     print(row)
+            {'foo': 1, 'bar': 'a'}
+            {'foo': 2, 'bar': 'b'}
+            {'foo': 3, 'bar': 'c'}
 
 
         Args:
@@ -948,6 +969,22 @@ class DataFrame:
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
+        def _create_metadata_param(metadata: Optional[Dict[str, str]]):
+            """From deltalake>=0.20.0 onwards, custom_metadata has to be passed as CommitProperties.
+
+            Args:
+                metadata
+
+            Returns:
+                DataFrame: metadata for deltalake<0.20.0, otherwise CommitProperties with custom_metadata
+            """
+            if parse(deltalake.__version__) < parse("0.20.0"):
+                return metadata
+            else:
+                from deltalake import CommitProperties
+
+                return CommitProperties(custom_metadata=metadata)
+
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
 
@@ -1092,8 +1129,9 @@ class DataFrame:
                     rows.append(old_actions_dict["num_records"][i])
                     sizes.append(old_actions_dict["size_bytes"][i])
 
+            metadata_param = _create_metadata_param(custom_metadata)
             table._table.create_write_transaction(
-                add_actions, mode, partition_cols or [], delta_schema, None, custom_metadata
+                add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
             )
             table.update_incremental()
 
@@ -1127,50 +1165,46 @@ class DataFrame:
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Example:
-        --------
-        >>> import daft
-        >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
-        >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
-        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
-        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
-        │ ---           ┆ ---              ┆ ---             ┆ ---     │
-        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
-        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
-        │ 1             ┆ 0                ┆ 1               ┆ 1       │
-        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
-        <BLANKLINE>
-        (Showing first 1 of 1 rows)
-
-        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
-        ╭───────╮
-        │ a     │
-        │ ---   │
-        │ Int64 │
-        ╞═══════╡
-        │ 1     │
-        ├╌╌╌╌╌╌╌┤
-        │ 2     │
-        ├╌╌╌╌╌╌╌┤
-        │ 3     │
-        ├╌╌╌╌╌╌╌┤
-        │ 4     │
-        ╰───────╯
-        <BLANKLINE>
-        (Showing first 4 of 4 rows)
-
-
-        # Pass additional keyword arguments to the Lance writer
-        # All additional keyword arguments are passed to `lance.write_fragments`
-        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
-        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
-        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
-        │ ---           ┆ ---              ┆ ---             ┆ ---     │
-        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
-        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
-        │ 1             ┆ 0                ┆ 1               ┆ 2       │
-        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
-        <BLANKLINE>
-        (Showing first 1 of 1 rows)
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
+            >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
+            ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+            │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+            │ ---           ┆ ---              ┆ ---             ┆ ---     │
+            │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+            ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+            │ 1             ┆ 0                ┆ 1               ┆ 1       │
+            ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+            >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
+            ╭───────╮
+            │ a     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+            >>> # Pass additional keyword arguments to the Lance writer
+            >>> # All additional keyword arguments are passed to `lance.write_fragments`
+            >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
+            ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+            │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+            │ ---           ┆ ---              ┆ ---             ┆ ---     │
+            │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+            ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+            │ 1             ┆ 0                ┆ 1               ┆ 2       │
+            ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         from daft import from_pydict
         from daft.io.object_store_options import io_config_to_storage_options
@@ -1183,6 +1217,7 @@ class DataFrame:
             raise ImportError("lance is not installed. Please install lance using `pip install getdaft[lance]`")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         if isinstance(uri, (str, pathlib.Path)):
             if isinstance(uri, str):
                 table_uri = uri
@@ -1192,8 +1227,10 @@ class DataFrame:
                 table_uri = uri
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 
+        storage_options = io_config_to_storage_options(io_config, table_uri)
+
         try:
-            table = lance.dataset(table_uri)
+            table = lance.dataset(table_uri, storage_options=storage_options)
 
         except ValueError:
             table = None
@@ -1226,7 +1263,6 @@ class DataFrame:
         elif mode == "append":
             operation = lance.LanceOperation.Append(fragments)
 
-        storage_options = io_config_to_storage_options(io_config, table_uri)
         dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version, storage_options=storage_options)
         stats = dataset.stats.dataset_stats()
 
@@ -2086,6 +2122,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
+            >>> import daft
             >>> df = daft.from_pydict({"a": [1.6, 2.5, 3.3, float("nan")]})
             >>> df.drop_nan("a").collect()  # drops rows where column a contains NaN values
             ╭─────────╮
@@ -2977,8 +3014,10 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with materialized results.
         """
+        plan_time_start = _utc_now()
         self._materialize_results()
-
+        plan_time_end = _utc_now()
+        self._broadcast_query_plan(plan_time_start, plan_time_end)
         assert self._result is not None
         dataframe_len = len(self._result)
         if num_preview_rows is not None:

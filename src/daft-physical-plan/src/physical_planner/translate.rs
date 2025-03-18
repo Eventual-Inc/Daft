@@ -215,7 +215,7 @@ pub(super) fn translate_single_logical_node(
                     }
                     ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
                         ShuffleExchangeFactory::new(input_physical)
-                            .get_random_partitioning(num_partitions, Some(cfg)),
+                            .get_random_partitioning(num_partitions, Some(cfg))?,
                     ),
                     ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
                         PhysicalPlan::ShuffleExchange(
@@ -223,7 +223,7 @@ pub(super) fn translate_single_logical_node(
                                 by,
                                 num_partitions,
                                 Some(cfg),
-                            ),
+                            )?,
                         )
                     }
                     ClusteringSpec::Range(_) => {
@@ -250,7 +250,7 @@ pub(super) fn translate_single_logical_node(
                         col_exprs.clone(),
                         num_partitions,
                         Some(cfg),
-                    ),
+                    )?,
                 );
                 Ok(
                     PhysicalPlan::Aggregate(Aggregate::new(shuffle_op.into(), vec![], col_exprs))
@@ -328,7 +328,7 @@ pub(super) fn translate_single_logical_node(
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
                                 Some(cfg),
-                            ),
+                            )?,
                         )
                         .into()
                     };
@@ -398,7 +398,7 @@ pub(super) fn translate_single_logical_node(
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
                                 Some(cfg),
-                            ),
+                            )?,
                         )
                         .into()
                     };
@@ -1073,7 +1073,7 @@ fn translate_join(
     };
     let has_null_safe_equals = null_equals_nulls
         .as_ref()
-        .map_or(false, |v| v.iter().any(|b| *b));
+        .is_some_and(|v| v.iter().any(|b| *b));
     let join_strategy = join_strategy.unwrap_or_else(|| {
         if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
             return JoinStrategy::Cross;
@@ -1262,8 +1262,8 @@ fn translate_join(
                     left_physical = PhysicalPlan::Sort(Sort::new(
                         left_physical,
                         left_on.clone(),
-                        std::iter::repeat(false).take(left_on.len()).collect(),
-                        std::iter::repeat(false).take(left_on.len()).collect(),
+                        std::iter::repeat_n(false, left_on.len()).collect(),
+                        std::iter::repeat_n(false, left_on.len()).collect(),
                         num_partitions,
                     ))
                     .arced();
@@ -1272,8 +1272,8 @@ fn translate_join(
                     right_physical = PhysicalPlan::Sort(Sort::new(
                         right_physical,
                         right_on.clone(),
-                        std::iter::repeat(false).take(right_on.len()).collect(),
-                        std::iter::repeat(false).take(right_on.len()).collect(),
+                        std::iter::repeat_n(false, right_on.len()).collect(),
+                        std::iter::repeat_n(false, right_on.len()).collect(),
                         num_partitions,
                     ))
                     .arced();
@@ -1328,7 +1328,7 @@ fn translate_join(
                         left_on.clone(),
                         num_partitions,
                         Some(cfg),
-                    ),
+                    )?,
                 )
                 .into();
             }
@@ -1340,7 +1340,7 @@ fn translate_join(
                         right_on.clone(),
                         num_partitions,
                         Some(cfg),
-                    ),
+                    )?,
                 )
                 .into();
             }

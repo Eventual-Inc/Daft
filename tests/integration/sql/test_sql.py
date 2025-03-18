@@ -90,7 +90,9 @@ def test_sql_partitioned_read_on_empty_table(empty_test_db, num_partitions, part
         )
         assert df.num_partitions() == 1
         empty_pdf = pd.read_sql_query(
-            f"SELECT * FROM {EMPTY_TEST_TABLE_NAME}", empty_test_db, dtype={"id": "int64", "string_col": "str"}
+            f"SELECT * FROM {EMPTY_TEST_TABLE_NAME}",
+            empty_test_db,
+            dtype={"id": "int64", "string_col": "str"},
         )
         assert_df_equals(df.to_pandas(), empty_pdf, sort_key="id")
 
@@ -300,6 +302,22 @@ def test_sql_read_with_projection_pushdown(test_db, generated_data, num_partitio
     df = df.collect()
     assert df.column_names == ["id", "string_col"]
     assert len(df) == len(generated_data)
+
+
+@pytest.mark.integration()
+def test_postgres_read_with_posix_operators(test_db) -> None:
+    if not test_db.startswith("postgres"):
+        pytest.skip("Skipping test for non-PostgreSQL databases")
+
+    # regex to match on strings that end with 0
+    df = daft.read_sql(
+        f"SELECT id, string_col FROM {TEST_TABLE_NAME} WHERE string_col ~ '0$'",
+        test_db,
+    )
+    df = df.collect()
+    assert df.column_names == ["id", "string_col"]
+    # There's 200 rows from row_0 to row_199, so there's 20 rows that end with 0
+    assert len(df) == 20
 
 
 @pytest.mark.integration()

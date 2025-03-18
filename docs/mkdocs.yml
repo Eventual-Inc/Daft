@@ -22,7 +22,15 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
+  - SQL Reference:
+    - Overview: sql/overview.md
+    - Statements:
+      - SELECT: sql/statements/select.md
+      - USE: sql/statements/use.md
+    - Data Types: sql/datatypes.md
+  - Sessions: sessions.md
   - Catalogs: catalogs.md
+  - Spark Connect: spark_connect.md
   - Distributed Computing: distributed.md
   - Advanced:
     - Managing Memory Usage: advanced/memory.md

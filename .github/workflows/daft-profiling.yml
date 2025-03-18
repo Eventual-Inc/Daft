@@ -17,8 +17,6 @@ jobs:
   profile-daft:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -43,7 +41,9 @@ jobs:
     - name: Install dependencies
       run: |
         uv pip install -r requirements-dev.txt
-
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
     - name: Build Rust Library
       run: |
         source activate
@@ -80,7 +80,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: failure()
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
           {
@@ -94,6 +94,5 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook

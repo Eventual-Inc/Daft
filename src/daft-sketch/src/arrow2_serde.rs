@@ -1,6 +1,7 @@
+use std::sync::LazyLock;
+
 use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
-use lazy_static::lazy_static;
 use serde_arrow::{
     schema::{SchemaLike, SerdeArrowSchema, TracingOptions},
     utils::{Item, Items},
@@ -25,16 +26,21 @@ impl From<Error> for DaftError {
     }
 }
 
-lazy_static! {
-    static ref ARROW2_DDSKETCH_ITEM_FIELDS: Vec<arrow2::datatypes::Field> =
-        SerdeArrowSchema::from_type::<Item<Option<DDSketch>>>(TracingOptions::default())
-            .unwrap()
-            .to_arrow2_fields()
-            .unwrap();
+static ARROW2_DDSKETCH_ITEM_FIELDS: LazyLock<Vec<arrow2::datatypes::Field>> = LazyLock::new(|| {
+    SerdeArrowSchema::from_type::<Item<Option<DDSketch>>>(TracingOptions::default())
+        .unwrap()
+        .to_arrow2_fields()
+        .unwrap()
+});
 
-    /// The corresponding arrow2 DataType of Vec<DDSketch> when serialized as an arrow2 array
-    pub static ref ARROW2_DDSKETCH_DTYPE: arrow2::datatypes::DataType = ARROW2_DDSKETCH_ITEM_FIELDS.first().unwrap().data_type().clone();
-}
+/// The corresponding arrow2 DataType of Vec<DDSketch> when serialized as an arrow2 array
+pub static ARROW2_DDSKETCH_DTYPE: LazyLock<arrow2::datatypes::DataType> = LazyLock::new(|| {
+    ARROW2_DDSKETCH_ITEM_FIELDS
+        .first()
+        .unwrap()
+        .data_type()
+        .clone()
+});
 
 /// Converts a Vec<Option<DDSketch>> into an arrow2 Array
 #[must_use]

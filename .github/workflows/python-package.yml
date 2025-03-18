@@ -165,9 +165,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -206,6 +205,10 @@ jobs:
       with:
         key: ${{ runner.os }}-integration-build
         cache-all-crates: 'true'
+
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
 
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
@@ -293,9 +296,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-io:
     runs-on: ubuntu-latest
@@ -376,9 +378,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
   integration-test-io-credentialed:
@@ -479,9 +480,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-iceberg:
     runs-on: ubuntu-latest
@@ -563,9 +563,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-sql:
     runs-on: ubuntu-latest
@@ -646,9 +645,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
 
   integration-tests:
@@ -674,8 +672,6 @@ jobs:
     env:
       package-name: getdaft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
-    strategy:
-      fail-fast: false
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -687,6 +683,9 @@ jobs:
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
         cache-provider: buildjet
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12' # Codspeed requires Python 3.12
@@ -730,9 +729,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   rust-tests-platform:
     runs-on: ${{ matrix.os }}-latest
@@ -780,9 +778,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   rust-tests:
     runs-on: ubuntu-latest
@@ -884,9 +881,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   test-imports-platform:
     runs-on: ${{ matrix.os }}-latest
@@ -965,9 +961,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   test-imports:
     runs-on: ubuntu-latest
@@ -1032,6 +1027,5 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook

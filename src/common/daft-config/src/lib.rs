@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Configurations for Daft to use during the building of a Dataframe's plan.
 ///
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
-///     that this does not include the actual scan, which is taken care of by the DaftExecutionConfig.
+///    that this does not include the actual scan, which is taken care of by the DaftExecutionConfig.
 /// 2. Building of logical plan nodes
 #[derive(Clone, Serialize, Deserialize, Default, Debug, Eq, PartialEq)]
 pub struct DaftPlanningConfig {
@@ -61,6 +61,7 @@ pub struct DaftExecutionConfig {
     pub default_morsel_size: usize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
+    pub flight_shuffle_dirs: Vec<String>,
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
 }
@@ -91,6 +92,7 @@ impl Default for DaftExecutionConfig {
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
+            flight_shuffle_dirs: vec!["/tmp".to_string()],
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
         }

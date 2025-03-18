@@ -53,7 +53,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::BroadcastJoin(..) |
                 PhysicalPlan::SortMergeJoin(..) => return Ok(Transformed::no(c)),
                 _ => {},
-            };
+            }
 
             // check clustering spec for compatibility
             let clustering_spec = c.plan.clustering_spec();
@@ -70,7 +70,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     // otherwise we need to reorder the columns
                 }
                 _ => return Ok(Transformed::no(c)),
-            };
+            }
 
             let new_spec = ClusteringSpec::Hash(HashClusteringConfig::new(
                 clustering_spec.num_partitions(),
@@ -139,6 +139,13 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
+                PhysicalPlan::ShuffleExchange(ShuffleExchange{input, strategy: ShuffleExchangeStrategy::FlightShuffle { shuffle_dirs, .. }}) => {
+                    let new_plan = PhysicalPlan::ShuffleExchange(ShuffleExchange {
+                        input: input.clone(),
+                        strategy: ShuffleExchangeStrategy::FlightShuffle { target_spec: new_spec.into(), shuffle_dirs: shuffle_dirs.clone() }
+                    });
+                    Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
+                }
 
                 // these depend solely on their input
                 PhysicalPlan::Filter(..) |
@@ -202,11 +209,11 @@ mod tests {
         num_partitions: usize,
         partition_by: Vec<ExprRef>,
     ) -> PhysicalPlanRef {
-        PhysicalPlan::ShuffleExchange(ShuffleExchangeFactory::new(plan).get_hash_partitioning(
-            partition_by,
-            num_partitions,
-            None,
-        ))
+        PhysicalPlan::ShuffleExchange(
+            ShuffleExchangeFactory::new(plan)
+                .get_hash_partitioning(partition_by, num_partitions, None)
+                .unwrap(),
+        )
         .into()
     }
 

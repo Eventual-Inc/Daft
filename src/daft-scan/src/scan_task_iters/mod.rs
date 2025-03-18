@@ -91,7 +91,7 @@ struct MergeByFileSize<'a> {
     max_source_count: usize,
 }
 
-impl<'a> MergeByFileSize<'a> {
+impl MergeByFileSize<'_> {
     /// Returns whether or not the current accumulator is "ready" to be emitted as a finalized merged ScanTask
     ///
     /// "Readiness" is determined by a combination of factors based on how large the accumulated ScanTask is
@@ -102,7 +102,7 @@ impl<'a> MergeByFileSize<'a> {
             acc.sources.len() >= self.max_source_count
                 || acc
                     .estimate_in_memory_size_bytes(Some(self.cfg))
-                    .map_or(false, |bytes| bytes >= self.target_lower_bound_size_bytes)
+                    .is_some_and(|bytes| bytes >= self.target_lower_bound_size_bytes)
         } else {
             false
         }
@@ -135,7 +135,7 @@ impl<'a> MergeByFileSize<'a> {
     }
 }
 
-impl<'a> Iterator for MergeByFileSize<'a> {
+impl Iterator for MergeByFileSize<'_> {
     type Item = DaftResult<ScanTaskRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -222,10 +222,10 @@ fn split_by_row_groups(
                         t.pushdowns.limit,
                     ) && source
                         .get_size_bytes()
-                        .map_or(true, |s| s > max_size_bytes as u64)
+                        .is_none_or(|s| s > max_size_bytes as u64)
                       && source
                         .get_iceberg_delete_files()
-                        .map_or(true, std::vec::Vec::is_empty)
+                        .is_none_or(std::vec::Vec::is_empty)
                     {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;

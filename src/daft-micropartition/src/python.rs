@@ -762,6 +762,48 @@ impl PyMicroPartition {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (
+        uri,
+        io_config=None,
+        multithreaded_io=None
+    ))]
+    pub fn read_warc(
+        py: Python,
+        uri: &str,
+        io_config: Option<IOConfig>,
+        multithreaded_io: Option<bool>,
+    ) -> PyResult<Self> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("WARC-Record-ID", daft_core::prelude::DataType::Utf8),
+            Field::new("WARC-Type", daft_core::prelude::DataType::Utf8),
+            Field::new(
+                "WARC-Date",
+                daft_core::prelude::DataType::Timestamp(
+                    TimeUnit::Nanoseconds,
+                    Some("Etc/UTC".to_string()),
+                ),
+            ),
+            Field::new("Content-Length", daft_core::prelude::DataType::Int64),
+            Field::new(
+                "WARC-Identified-Payload-Type",
+                daft_core::prelude::DataType::Utf8,
+            ),
+            Field::new("warc_content", daft_core::prelude::DataType::Binary),
+            Field::new("warc_headers", daft_core::prelude::DataType::Utf8),
+        ])?);
+        let mp = py.allow_threads(|| {
+            crate::micropartition::read_warc_into_micropartition(
+                &[uri],
+                schema.into(),
+                io_config.unwrap_or_default().config.into(),
+                multithreaded_io.unwrap_or(true),
+                None,
+            )
+        })?;
+        Ok(mp.into())
+    }
+
+    #[staticmethod]
     pub fn _from_unloaded_table_state(
         schema_bytes: &[u8],
         loading_scan_task_bytes: &[u8],

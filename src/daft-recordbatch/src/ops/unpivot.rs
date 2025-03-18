@@ -40,7 +40,7 @@ impl RecordBatch {
         let values_names = values_table.column_names();
         let variable_column = values_names
             .iter()
-            .flat_map(|n| std::iter::repeat(n).take(self.len()));
+            .flat_map(|n| std::iter::repeat_n(n, self.len()));
         let variable_arr = Box::new(arrow2::array::Utf8Array::from_iter_values(variable_column));
         let variable_series = Utf8Array::from((variable_name, variable_arr)).into_series();
 

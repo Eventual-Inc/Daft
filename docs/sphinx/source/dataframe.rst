@@ -39,6 +39,7 @@ Manipulating Columns
 
     DataFrame.select
     DataFrame.with_column
+    DataFrame.with_columns
     DataFrame.with_column_renamed
     DataFrame.with_columns_renamed
     DataFrame.pivot
@@ -63,6 +64,8 @@ Filtering Rows
     DataFrame.where
     DataFrame.limit
     DataFrame.sample
+    DataFrame.drop_nan
+    DataFrame.drop_null
 
 Reordering
 **********
@@ -88,6 +91,14 @@ Combining
 
     DataFrame.join
     DataFrame.concat
+    DataFrame.union
+    DataFrame.union_all
+    DataFrame.union_by_name
+    DataFrame.union_all_by_name
+    DataFrame.intersect
+    DataFrame.intersect_all
+    DataFrame.except_distinct
+    DataFrame.except_all
 
 .. _df-aggregations:
 
@@ -102,6 +113,7 @@ Aggregations
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
+    DataFrame.agg
     DataFrame.groupby
     DataFrame.sum
     DataFrame.mean
@@ -109,7 +121,10 @@ Aggregations
     DataFrame.count
     DataFrame.min
     DataFrame.max
-    DataFrame.agg
+    DataFrame.any_value
+    DataFrame.agg_list
+    DataFrame.agg_set
+    DataFrame.agg_concat
 
 Execution
 #########
@@ -130,6 +145,8 @@ These methods will run the dataframe and retrieve them to where the code is bein
     DataFrame.to_pylist
     DataFrame.iter_partitions
     DataFrame.iter_rows
+    DataFrame.__iter__
+    DataFrame.to_arrow_iter
 
 Materialization
 ***************
@@ -167,6 +184,7 @@ Writing Data
     DataFrame.write_csv
     DataFrame.write_iceberg
     DataFrame.write_deltalake
+    DataFrame.write_lance
 
 Integrations
 ************
@@ -195,6 +213,8 @@ Schema and Lineage
     DataFrame.schema
     DataFrame.describe
     DataFrame.column_names
+    DataFrame.columns
+    DataFrame.__contains__
 
 Statistics
 ##########
@@ -204,3 +224,5 @@ Statistics
     :toctree: doc_gen/dataframe_methods
 
     DataFrame.summarize
+    DataFrame.count_rows
+    DataFrame.__len__

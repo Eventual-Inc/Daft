@@ -31,7 +31,7 @@ impl ScalarUDF for HashFunction {
                         let seed = seed.get(0).unwrap();
                         let seed = UInt64Array::from_iter(
                             Field::new("seed", DataType::UInt64),
-                            std::iter::repeat(Some(seed)).take(input.len()),
+                            std::iter::repeat_n(Some(seed), input.len()),
                         );
                         input
                             .hash(Some(&seed))

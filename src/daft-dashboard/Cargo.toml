@@ -1,7 +1,6 @@
 [dependencies]
 anyhow = "1.0"
 chrono = {workspace = true, features = ["serde"]}
-clap = {version = "4.5.28", features = ["derive"]}
 http-body-util = "0.1"
 hyper = {features = ["full"], version = "1.6"}
 hyper-util = {features = ["tokio"], version = "0.1"}
@@ -14,19 +13,13 @@ serde.workspace = true
 tokio.workspace = true
 
 [features]
+default = ["python"]
 python = ["dep:pyo3"]
-
-[lib]
-crate-type = ["cdylib", "lib"]
-name = "daft_dashboard"
 
 [lints]
 workspace = true
 
 [package]
-name = "daft_dashboard"
+name = "daft-dashboard"
 edition.workspace = true
 version.workspace = true
-
-[target.'cfg(unix)'.dependencies]
-fork = "0.2"

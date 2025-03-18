@@ -61,7 +61,7 @@ impl<'a> StructGrowable<'a> {
     }
 }
 
-impl<'a> Growable for StructGrowable<'a> {
+impl Growable for StructGrowable<'_> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         for child_growable in &mut self.children_growables {
             child_growable.extend(index, start, len);

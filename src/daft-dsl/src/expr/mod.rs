@@ -559,7 +559,7 @@ impl AggExpr {
                                 r#"Expected input to approx_sketch() to be numeric but received dtype {} for column "{}""#,
                                 field.dtype, field.name,
                             )));
-                        };
+                        }
                         DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE)
                     }
                     SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
@@ -1295,6 +1295,7 @@ impl Expr {
             },
             Self::ScalarFunction(func) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
+                "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {
@@ -1349,8 +1350,7 @@ impl Expr {
                         Operator::ShiftLeft => "<<",
                         Operator::ShiftRight => ">>",
                         _ => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::Other,
+                            return Err(io::Error::other(
                                 "Unsupported operator for SQL translation",
                             ))
                         }
@@ -1386,8 +1386,7 @@ impl Expr {
                 | Expr::Subquery(..)
                 | Expr::InSubquery(..)
                 | Expr::Exists(..)
-                | Expr::Column(..) => Err(io::Error::new(
-                    io::ErrorKind::Other,
+                | Expr::Column(..) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",
                 )),
             }

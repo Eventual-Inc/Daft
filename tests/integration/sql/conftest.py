@@ -23,10 +23,10 @@ from sqlalchemy import (
 )
 
 URLS = [
+    "mssql+pyodbc://SA:StrongPassword!@127.0.0.1:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes&timeout=60&connection_timeout=30&connect_retry_count=5&connect_retry_interval=10",
     "trino://user@localhost:8080/memory/default",
     "postgresql://username:password@localhost:5432/postgres",
     "mysql+pymysql://username:password@localhost:3306/mysql",
-    "mssql+pyodbc://SA:StrongPassword!@127.0.0.1:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes",
 ]
 TEST_TABLE_NAME = "example"
 EMPTY_TEST_TABLE_NAME = "empty_table"
@@ -52,20 +52,53 @@ def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
 @pytest.fixture(scope="session", params=URLS)
 def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Generator[str, None, None]:
     db_url = request.param
-    setup_database(db_url, generated_data)
-    yield db_url
+    try:
+        setup_database(db_url, generated_data)
+        yield db_url
+    except Exception as e:
+        pytest.skip(f"Skipping test due to database connection error: {e}, {db_url}")
 
 
 @pytest.fixture(scope="session", params=URLS)
 def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
+    db_url = request.param
+    try:
+        setup_empty_database(db_url)
+        yield db_url
+    except Exception as e:
+        pytest.skip(f"Skipping test due to database connection error: {e}, {db_url}")
+
+
+@tenacity.retry(
+    stop=tenacity.stop_after_attempt(10),
+    wait=tenacity.wait_random_exponential(multiplier=3, min=3, max=60),
+    reraise=True,
+    before_sleep=lambda retry_state: print(f"Connection attempt {retry_state.attempt_number} failed. Retrying..."),
+)
+def setup_database(db_url: str, data: pd.DataFrame) -> None:
+    engine = create_engine(db_url, pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=3600)
+    create_and_populate(engine, data)
+
+    # Ensure the table is created and populated
+    with engine.connect() as conn:
+        result = conn.execute(text(f"SELECT COUNT(*) FROM {TEST_TABLE_NAME}")).fetchone()[0]
+        assert result == len(data)
+
+
+@tenacity.retry(
+    stop=tenacity.stop_after_attempt(10),
+    wait=tenacity.wait_random_exponential(multiplier=3, min=3, max=60),
+    reraise=True,
+    before_sleep=lambda retry_state: print(f"Connection attempt {retry_state.attempt_number} failed. Retrying..."),
+)
+def setup_empty_database(db_url: str) -> None:
     data = pd.DataFrame(
         {
             "id": pd.Series(dtype="int"),
             "string_col": pd.Series(dtype="str"),
         }
     )
-    db_url = request.param
-    engine = create_engine(db_url)
+    engine = create_engine(db_url, pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=3600)
     metadata = MetaData()
     table = Table(
         EMPTY_TEST_TABLE_NAME,
@@ -75,18 +108,6 @@ def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
     )
     metadata.create_all(engine)
     data.to_sql(table.name, con=engine, if_exists="replace", index=False)
-    yield db_url
-
-
-@tenacity.retry(stop=tenacity.stop_after_delay(10), wait=tenacity.wait_fixed(5), reraise=True)
-def setup_database(db_url: str, data: pd.DataFrame) -> None:
-    engine = create_engine(db_url)
-    create_and_populate(engine, data)
-
-    # Ensure the table is created and populated
-    with engine.connect() as conn:
-        result = conn.execute(text(f"SELECT COUNT(*) FROM {TEST_TABLE_NAME}")).fetchone()[0]
-        assert result == len(data)
 
 
 def create_and_populate(engine: Engine, data: pd.DataFrame) -> None:

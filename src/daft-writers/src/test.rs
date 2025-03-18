@@ -55,6 +55,10 @@ impl FileWriter for DummyWriter {
         self.byte_count
     }
 
+    fn bytes_per_file(&self) -> Vec<usize> {
+        vec![self.byte_count]
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         let path_series =
             Utf8Array::from_values("path", std::iter::once(self.file_idx.clone())).into_series();
@@ -80,8 +84,7 @@ impl FileWriter for DummyWriter {
 }
 
 pub(crate) fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
-    let series =
-        UInt8Array::from_values("ints", std::iter::repeat(42).take(size_bytes)).into_series();
+    let series = UInt8Array::from_values("ints", std::iter::repeat_n(42, size_bytes)).into_series();
     let schema = Arc::new(Schema::new(vec![series.field().clone()]).unwrap());
     let table = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
     Arc::new(MicroPartition::new_loaded(

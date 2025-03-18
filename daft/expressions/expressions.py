@@ -27,6 +27,7 @@ from daft.daft import (
     ResourceRequest,
     initialize_udfs,
     resolved_col,
+    sql_datatype,
     unresolved_col,
 )
 from daft.daft import PyExpr as _PyExpr
@@ -629,6 +630,11 @@ class Expression:
     def cast(self, dtype: DataTypeLike) -> Expression:
         """Casts an expression to the given datatype if possible.
 
+        Note:
+            - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
+            - If a string is provided, it will use the sql engine to parse the string into a data type. See the SQL documentation for more information.
+            - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
+
         The following combinations of datatype casting is valid:
 
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
@@ -681,8 +687,6 @@ class Expression:
         | Duration           | Y    | N       | Y        | Y      | N          | N      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
 
-        Note:
-            - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
 
         Example:
             >>> import daft
@@ -703,13 +707,41 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
+        Example with python type and sql types:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3]})
+            >>> df = df.select(
+            ...     daft.col("a").cast(str).alias("str"),
+            ...     daft.col("a").cast(int).alias("int"),
+            ...     daft.col("a").cast(float).alias("float"),
+            ...     daft.col("a").cast("string").alias("sql_string"),
+            ...     daft.col("a").cast("int").alias("sql_int"),
+            ...     daft.col("a").cast("tinyint").alias("sql_tinyint"),
+            ... )
+            >>> df.show()
+            ╭──────┬───────┬─────────┬────────────┬─────────┬─────────────╮
+            │ str  ┆ int   ┆ float   ┆ sql_string ┆ sql_int ┆ sql_tinyint │
+            │ ---  ┆ ---   ┆ ---     ┆ ---        ┆ ---     ┆ ---         │
+            │ Utf8 ┆ Int64 ┆ Float64 ┆ Utf8       ┆ Int32   ┆ Int8        │
+            ╞══════╪═══════╪═════════╪════════════╪═════════╪═════════════╡
+            │ 1    ┆ 1     ┆ 1       ┆ 1          ┆ 1       ┆ 1           │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2    ┆ 2     ┆ 2       ┆ 2          ┆ 2       ┆ 2           │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3    ┆ 3     ┆ 3       ┆ 3          ┆ 3       ┆ 3           │
+            ╰──────┴───────┴─────────┴────────────┴─────────┴─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
         Returns:
             Expression: Expression with the specified new datatype
         """
-        assert isinstance(dtype, (DataType, type))
-        inferred_dtype = DataType._infer_type(dtype)
-
-        expr = self._expr.cast(inferred_dtype._dtype)
+        if isinstance(dtype, str):
+            dtype = DataType._from_pydatatype(sql_datatype(dtype))
+        else:
+            assert isinstance(dtype, (DataType, type))
+            dtype = DataType._infer_type(dtype)
+        expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
 
     def ceil(self) -> Expression:
@@ -1004,7 +1036,7 @@ class Expression:
             │ ---                 ┆ ---                            │
             │ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═════════════════════╪════════════════════════════════╡
-            │ 2.9742334234767163  ┆ [1.993661701417351, 2.9742334… │
+            │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
             ╰─────────────────────┴────────────────────────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
@@ -1478,6 +1510,76 @@ class Expression:
         assert hash_function in ["murmurhash3", "xxhash", "sha1"], f"Hash function {hash_function} not found"
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
+
+    def encode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+        r"""Encodes the expression (binary strings) using the specified codec.
+
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"text": [b"hello, world!"]})  # binary
+            >>> df.select(col("text").encode("zlib")).show()
+            ╭────────────────────────────────╮
+            │ text                           │
+            │ ---                            │
+            │ Binary                         │
+            ╞════════════════════════════════╡
+            │ b"x\x9c\xcbH\xcd\xc9\xc9\xd7Q… │
+            ╰────────────────────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"text": ["hello, world!"]})  # string
+            >>> df.select(col("text").encode("zlib")).show()
+            ╭────────────────────────────────╮
+            │ text                           │
+            │ ---                            │
+            │ Binary                         │
+            ╞════════════════════════════════╡
+            │ b"x\x9c\xcbH\xcd\xc9\xc9\xd7Q… │
+            ╰────────────────────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Args:
+            codec (str): encoding codec (deflate, gzip, zlib)
+
+        Returns:
+            Expression: A new expression with the encoded values.
+        """
+        expr = native.encode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
+
+    def decode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+        """Decodes the expression (binary strings) using the specified codec.
+
+        Example:
+            >>> import daft
+            >>> import zlib
+            >>> from daft import col
+            >>> df = daft.from_pydict({"bytes": [zlib.compress(b"hello, world!")]})
+            >>> df.select(col("bytes").decode("zlib")).show()
+            ╭──────────────────╮
+            │ bytes            │
+            │ ---              │
+            │ Binary           │
+            ╞══════════════════╡
+            │ b"hello, world!" │
+            ╰──────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        Args:
+            codec (str): decoding codec (deflate, gzip, zlib)
+
+        Returns:
+            Expression: A new expression with the decoded values.
+        """
+        expr = native.decode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:
         return self._expr.name()

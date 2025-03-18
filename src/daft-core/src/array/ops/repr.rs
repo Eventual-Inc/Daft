@@ -77,7 +77,7 @@ fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
         builder.push_str(POSTFIX);
     } else {
         builder.push_str(POSTFIX_TRUNC);
-    };
+    }
 
     Ok(builder)
 }
@@ -308,7 +308,7 @@ impl SparseTensorArray {
         let is_valid = self
             .values_array()
             .validity()
-            .map_or(true, |v| v.get_bit(idx));
+            .is_none_or(|v| v.get_bit(idx));
         let shape_element = if is_valid {
             self.shape_array().get(idx)
         } else {

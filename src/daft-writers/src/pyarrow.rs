@@ -17,8 +17,8 @@ impl PyArrowWriter {
     pub fn new_parquet_writer(
         root_dir: &str,
         file_idx: usize,
-        compression: &Option<String>,
-        io_config: &Option<daft_io::IOConfig>,
+        compression: Option<&String>,
+        io_config: Option<&daft_io::IOConfig>,
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
@@ -40,8 +40,8 @@ impl PyArrowWriter {
                 root_dir,
                 file_idx,
                 partition_values,
-                compression.as_ref().map(|c| c.as_str()),
-                io_config.as_ref().map(|cfg| daft_io::python::IOConfig {
+                compression.map(|c| c.as_str()),
+                io_config.map(|cfg| daft_io::python::IOConfig {
                     config: cfg.clone(),
                 }),
             ))?;
@@ -56,7 +56,7 @@ impl PyArrowWriter {
     pub fn new_csv_writer(
         root_dir: &str,
         file_idx: usize,
-        io_config: &Option<daft_io::IOConfig>,
+        io_config: Option<&daft_io::IOConfig>,
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
@@ -77,7 +77,7 @@ impl PyArrowWriter {
                 root_dir,
                 file_idx,
                 partition_values,
-                io_config.as_ref().map(|cfg| daft_io::python::IOConfig {
+                io_config.map(|cfg| daft_io::python::IOConfig {
                     config: cfg.clone(),
                 }),
             ))?;
@@ -96,7 +96,7 @@ impl PyArrowWriter {
         properties: &pyo3::Py<pyo3::PyAny>,
         partition_spec_id: i64,
         partition_values: Option<&RecordBatch>,
-        io_config: &Option<daft_io::IOConfig>,
+        io_config: Option<&daft_io::IOConfig>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
@@ -119,7 +119,7 @@ impl PyArrowWriter {
                 properties,
                 partition_spec_id,
                 partition_values,
-                io_config.as_ref().map(|cfg| daft_io::python::IOConfig {
+                io_config.map(|cfg| daft_io::python::IOConfig {
                     config: cfg.clone(),
                 }),
             ))?;
@@ -137,7 +137,7 @@ impl PyArrowWriter {
         version: i32,
         large_dtypes: bool,
         partition_values: Option<&RecordBatch>,
-        io_config: &Option<daft_io::IOConfig>,
+        io_config: Option<&daft_io::IOConfig>,
     ) -> DaftResult<Self> {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
@@ -159,7 +159,7 @@ impl PyArrowWriter {
                 version,
                 large_dtypes,
                 partition_values,
-                io_config.as_ref().map(|cfg| daft_io::python::IOConfig {
+                io_config.map(|cfg| daft_io::python::IOConfig {
                     config: cfg.clone(),
                 }),
             ))?;
@@ -194,6 +194,10 @@ impl FileWriter for PyArrowWriter {
 
     fn bytes_written(&self) -> usize {
         self.bytes_written
+    }
+
+    fn bytes_per_file(&self) -> Vec<usize> {
+        vec![self.bytes_written]
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {

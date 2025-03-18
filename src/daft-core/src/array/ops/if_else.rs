@@ -70,25 +70,23 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     } else {
         // Helper to extend the growable, taking into account broadcast semantics
         let (broadcast_lhs, broadcast_rhs) = (lhs_len == 1, rhs_len == 1);
-        let mut extend = |pred: bool, start, len| {
-            match (pred, broadcast_lhs, broadcast_rhs) {
-                (true, false, _) => {
-                    growable.extend(0, start, len);
+        let mut extend = |pred: bool, start, len| match (pred, broadcast_lhs, broadcast_rhs) {
+            (true, false, _) => {
+                growable.extend(0, start, len);
+            }
+            (false, _, false) => {
+                growable.extend(1, start, len);
+            }
+            (true, true, _) => {
+                for _ in 0..len {
+                    growable.extend(0, 0, 1);
                 }
-                (false, _, false) => {
-                    growable.extend(1, start, len);
+            }
+            (false, _, true) => {
+                for _ in 0..len {
+                    growable.extend(1, 0, 1);
                 }
-                (true, true, _) => {
-                    for _ in 0..len {
-                        growable.extend(0, 0, 1);
-                    }
-                }
-                (false, _, true) => {
-                    for _ in 0..len {
-                        growable.extend(1, 0, 1);
-                    }
-                }
-            };
+            }
         };
 
         // Iterate through the predicate using SlicesIterator, which is a much faster way of iterating through a bitmap
@@ -98,7 +96,7 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
             if start != start_falsy {
                 extend(false, start_falsy, start - start_falsy);
                 total_len += start - start_falsy;
-            };
+            }
             extend(true, start, len);
             total_len += len;
             start_falsy = start + len;
