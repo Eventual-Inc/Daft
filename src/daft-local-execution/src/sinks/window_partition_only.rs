@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::prelude::SchemaRef;
-use daft_dsl::{Expr, ExprRef};
+use daft_core::{join::JoinType, prelude::SchemaRef};
+use daft_dsl::{resolved_col, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
 use itertools::Itertools;
@@ -77,8 +77,8 @@ struct WindowPartitionOnlyParams {
     partial_agg_exprs: Vec<ExprRef>,
     // Second stage aggregation expressions
     final_agg_exprs: Vec<ExprRef>,
-    // Final projections
-    final_projections: Vec<ExprRef>,
+    // Column name mappings for window results
+    window_column_names: Vec<String>,
 }
 
 pub struct WindowPartitionOnlySink {
@@ -91,15 +91,36 @@ impl WindowPartitionOnlySink {
         partition_by: &[ExprRef],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
-        // Extract aggregation expressions
+        // Extract aggregation expressions from window functions
         let aggregations = aggregations
             .iter()
-            .map(extract_agg_expr)
+            .map(|expr| {
+                // Check if this is a window function (Function::Window variant)
+                match expr.as_ref() {
+                    Expr::Function { func, inputs: _ } => {
+                        // If this is a window function, extract the inner aggregation
+                        if let daft_dsl::functions::FunctionExpr::Window(window_func) = func {
+                            // Extract the inner expression (which should be an aggregation)
+                            extract_agg_expr(&window_func.expr)
+                        } else {
+                            // For regular functions, try to extract the aggregation normally
+                            extract_agg_expr(expr)
+                        }
+                    }
+                    // For non-function expressions, use the standard extraction
+                    _ => extract_agg_expr(expr),
+                }
+            })
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Use the same multi-stage approach as grouped aggregates
-        let (partial_aggs, final_aggs, final_projections) =
+        let (partial_aggs, final_aggs, _final_projections) =
             daft_physical_plan::populate_aggregation_stages(&aggregations, schema, partition_by);
+
+        // Generate window column names based on the window function count
+        let window_column_names = (0..aggregations.len())
+            .map(|i| format!("window_{}", i))
+            .collect::<Vec<_>>();
 
         // Convert first stage aggregations to expressions
         let partial_agg_exprs = partial_aggs
@@ -122,7 +143,7 @@ impl WindowPartitionOnlySink {
                 partition_by: partition_by.to_vec(),
                 partial_agg_exprs,
                 final_agg_exprs,
-                final_projections,
+                window_column_names,
             }),
         })
     }
@@ -206,35 +227,79 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 return Ok(None);
                             }
 
-                            let concated = MicroPartition::concat(&partitions)?;
+                            // Get the original data
+                            let original_data = MicroPartition::concat(&partitions)?;
 
-                            // Two-stage window function processing:
+                            // Compute the aggregate values per partition
+                            let aggregated = if !params.partial_agg_exprs.is_empty() {
+                                // First apply partial aggregations
+                                let partial = original_data
+                                    .agg(&params.partial_agg_exprs, &params.partition_by)?;
 
-                            // 1. First stage: Apply partial aggregations
-                            // For window functions, the first stage creates intermediate results like sums and counts
-                            let partially_aggregated = if !params.partial_agg_exprs.is_empty() {
-                                concated.agg(&params.partial_agg_exprs, &params.partition_by)?
+                                // Then apply final aggregations if needed
+                                if !params.final_agg_exprs.is_empty() {
+                                    partial.agg(&params.final_agg_exprs, &params.partition_by)?
+                                } else {
+                                    partial
+                                }
                             } else {
-                                // If no partial aggregations are needed, use original expressions
-                                concated.agg(&params.original_aggregations, &params.partition_by)?
+                                // Apply direct aggregations
+                                original_data
+                                    .agg(&params.original_aggregations, &params.partition_by)?
                             };
 
-                            // 2. Second stage: Apply final aggregations
-                            // This stage combines the intermediate results to get final values
-                            let final_result = if !params.final_agg_exprs.is_empty() {
-                                // Apply the second stage and then final projections
-                                let final_agged = partially_aggregated
-                                    .agg(&params.final_agg_exprs, &params.partition_by)?;
+                            // Rename the aggregated columns to the desired window function names
+                            let mut window_projection_exprs = Vec::new();
 
-                                // Apply final projections to produce the output columns
-                                final_agged.eval_expression_list(&params.final_projections)?
-                            } else {
-                                // If there's no second stage, just apply projections directly
-                                partially_aggregated
-                                    .eval_expression_list(&params.final_projections)?
-                            };
+                            // First add the partition columns (needed for join)
+                            for (i, _) in params.partition_by.iter().enumerate() {
+                                let field_name = aggregated
+                                    .schema()
+                                    .fields
+                                    .keys()
+                                    .nth(i)
+                                    .unwrap()
+                                    .to_string();
+                                window_projection_exprs.push(resolved_col(field_name));
+                            }
 
-                            Ok(Some(final_result))
+                            // Then add the aggregate columns with their window names
+                            let num_partition_cols = params.partition_by.len();
+                            for (i, window_name) in params.window_column_names.iter().enumerate() {
+                                if i < aggregated.schema().fields.len() - num_partition_cols {
+                                    let agg_col_name = aggregated
+                                        .schema()
+                                        .fields
+                                        .keys()
+                                        .nth(num_partition_cols + i)
+                                        .unwrap()
+                                        .to_string();
+                                    window_projection_exprs.push(
+                                        resolved_col(agg_col_name).alias(window_name.clone()),
+                                    );
+                                }
+                            }
+
+                            // Create the renamed aggregated result
+                            let renamed_aggs =
+                                aggregated.eval_expression_list(&window_projection_exprs)?;
+
+                            // Join the aggregated values back to the original data
+                            // This preserves all original rows while adding the aggregated values
+                            let joined = original_data.hash_join(
+                                &renamed_aggs,
+                                &params.partition_by, // Join on partition columns (left)
+                                &params
+                                    .partition_by
+                                    .iter()
+                                    .take(num_partition_cols)
+                                    .cloned()
+                                    .collect::<Vec<_>>(), // Join on partition columns (right)
+                                None,
+                                JoinType::Inner,
+                            )?;
+
+                            Ok(Some(joined))
                         });
                     }
 

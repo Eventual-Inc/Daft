@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from daft import Window, col
 
@@ -32,7 +31,7 @@ def assert_equal_ignoring_order(result_dict, expected_dict):
     ), f"Result data doesn't match expected after sorting.\nGot: {sorted_result}\nExpected: {sorted_expected}"
 
 
-@pytest.mark.skip(reason="Skipping this test (currently hardcoded to pass in pipeline.rs)")
+# @pytest.mark.skip(reason="Skipping this test (currently hardcoded to pass in pipeline.rs)")
 def test_single_partition_sum(make_df):
     """Stage: PARTITION BY-Only Window Aggregations.
 
