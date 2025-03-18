@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
+import os
 import threading
 import time
 import uuid
@@ -1046,6 +1047,7 @@ def _build_partitions(
             *task.inputs,
         )
 
+    task.inputs.clear()
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result(
         [
@@ -1177,6 +1179,11 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> None:
         super().__init__()
 
+        # ray.init does not accept "ray://" prefix for some reason.
+        # We remove it here to avoid issues.
+        if address is not None and address.startswith("ray://"):
+            address = address.replace("ray://", "")
+
         self.ray_address = address
 
         if ray.is_initialized():
@@ -1280,20 +1287,47 @@ class RayRunner(Runner[ray.ObjectRef]):
         if daft_execution_config.enable_aqe:
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
             while not adaptive_planner.is_done():
-                source_id, plan_scheduler = adaptive_planner.next()
+                stage_id, plan_scheduler = adaptive_planner.next()
+                start_time = time.time()
                 # don't store partition sets in variable to avoid reference
                 result_uuid = self._start_plan(
                     plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
                 )
                 del plan_scheduler
                 results_iter = self._stream_plan(result_uuid)
-                # if source_id is None that means this is the final stage
-                if source_id is None:
-                    yield from results_iter
+                # if stage_id is None that means this is the final stage
+                if stage_id is None:
+                    num_rows_processed = 0
+                    bytes_processed = 0
+
+                    for result in results_iter:
+                        num_rows_processed += result.metadata().num_rows
+                        size_bytes = result.metadata().size_bytes
+                        if size_bytes is not None:
+                            bytes_processed += size_bytes
+                        yield result
+                    adaptive_planner.update_stats(
+                        time.time() - start_time, bytes_processed, num_rows_processed, stage_id
+                    )
                 else:
                     cache_entry = self._collect_into_cache(results_iter)
-                    adaptive_planner.update(source_id, cache_entry)
+                    adaptive_planner.update_stats(
+                        time.time() - start_time, cache_entry.size_bytes(), cache_entry.num_rows(), stage_id
+                    )
+                    adaptive_planner.update(stage_id, cache_entry)
                     del cache_entry
+
+            enable_explain_analyze = os.getenv("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE")
+            ray_logs_location = ray_tracing.get_log_location()
+            should_explain_analyze = (
+                ray_logs_location.exists()
+                and enable_explain_analyze is not None
+                and enable_explain_analyze in ["1", "true"]
+            )
+            if should_explain_analyze:
+                explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
+                explain_analyze_dir.mkdir(exist_ok=True, parents=True)
+                adaptive_planner.explain_analyze(str(explain_analyze_dir))
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.

@@ -1,12 +1,11 @@
 #![feature(mapped_lock_guards)]
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use daft_py_runners::{NativeRunner, PyRunner, RayRunner};
 use daft_py_runners::{Runner, RunnerConfig};
-use once_cell::sync::OnceCell;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
@@ -171,7 +170,7 @@ impl DaftContext {
     }
 }
 
-static DAFT_CONTEXT: OnceCell<DaftContext> = OnceCell::new();
+static DAFT_CONTEXT: OnceLock<DaftContext> = OnceLock::new();
 
 #[cfg(feature = "python")]
 pub fn get_context() -> DaftContext {

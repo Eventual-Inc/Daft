@@ -38,8 +38,8 @@ impl WriterFactory for PhysicalWriterFactory {
                 let writer = create_pyarrow_file_writer(
                     &self.output_file_info.root_dir,
                     file_idx,
-                    &self.output_file_info.compression,
-                    &self.output_file_info.io_config,
+                    self.output_file_info.compression.as_ref(),
+                    self.output_file_info.io_config.as_ref(),
                     self.output_file_info.file_format,
                     partition_values,
                 )?;
@@ -52,8 +52,8 @@ impl WriterFactory for PhysicalWriterFactory {
 pub fn create_pyarrow_file_writer(
     root_dir: &str,
     file_idx: usize,
-    compression: &Option<String>,
-    io_config: &Option<daft_io::IOConfig>,
+    compression: Option<&String>,
+    io_config: Option<&daft_io::IOConfig>,
     format: FileFormat,
     partition: Option<&RecordBatch>,
 ) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>> {

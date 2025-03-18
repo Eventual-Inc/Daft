@@ -54,12 +54,32 @@ analytics_client = init_analytics(get_version(), get_build_type(), user_opted_ou
 analytics_client.track_import()
 
 ###
+# Warn if using the old package name
+###
+try:
+    if sys.version_info < (3, 10):
+        from importlib_metadata import packages_distributions
+    else:
+        from importlib.metadata import packages_distributions
+
+    package_map = packages_distributions()
+    if "getdaft" in package_map["daft"]:
+        import warnings
+
+        warnings.warn(
+            "The 'getdaft' PyPI package is migrating to `daft` and will no longer will receive updates v0.5.0 onwards.\nPlease install Daft via\n\t'pip install daft'"
+        )
+except Exception:
+    pass
+
+###
 # Daft top-level imports
 ###
 
 from daft.catalog import (
+    Catalog,
     Identifier,
-    read_table,
+    Table,
     register_table,
 )
 from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
@@ -80,6 +100,7 @@ from daft.io import (
     DataCatalogTable,
     DataCatalogType,
     from_glob_path,
+    _range as range,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -88,9 +109,34 @@ from daft.io import (
     read_parquet,
     read_sql,
     read_lance,
+    read_warc,
 )
 from daft.series import Series
-from daft.session import Session, current_session, set_session
+from daft.session import (
+    Session,
+    attach,
+    attach_catalog,
+    attach_table,
+    detach_catalog,
+    detach_table,
+    drop_namespace,
+    drop_table,
+    create_temp_table,
+    current_catalog,
+    current_namespace,
+    current_session,
+    get_catalog,
+    get_table,
+    has_catalog,
+    has_table,
+    list_catalogs,
+    list_tables,
+    read_table,
+    set_catalog,
+    set_namespace,
+    set_session,
+    write_table,
+)
 from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
@@ -98,6 +144,7 @@ from daft.viz import register_viz_hook
 to_struct = Expression.to_struct
 
 __all__ = [
+    "Catalog",
     "DataCatalogTable",
     "DataCatalogType",
     "DataFrame",
@@ -110,10 +157,20 @@ __all__ = [
     "Schema",
     "Series",
     "Session",
+    "Table",
     "TimeUnit",
+    "attach_catalog",
+    "attach_table",
     "coalesce",
     "col",
+    "create_temp_table",
+    "current_catalog",
+    "current_namespace",
     "current_session",
+    "detach_catalog",
+    "detach_table",
+    "drop_namespace",
+    "drop_table",
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
@@ -122,10 +179,17 @@ __all__ = [
     "from_pydict",
     "from_pylist",
     "from_ray_dataset",
+    "get_catalog",
+    "get_table",
+    "has_catalog",
+    "has_table",
     "interval",
     "list_",
+    "list_catalogs",
+    "list_tables",
     "lit",
     "planning_config_ctx",
+    "range",
     "read_csv",
     "read_deltalake",
     "read_hudi",
@@ -135,10 +199,13 @@ __all__ = [
     "read_parquet",
     "read_sql",
     "read_table",
+    "read_warc",
     "refresh_logger",
     "register_table",
     "register_viz_hook",
+    "set_catalog",
     "set_execution_config",
+    "set_namespace",
     "set_planning_config",
     "set_session",
     "sql",
@@ -146,4 +213,5 @@ __all__ = [
     "struct",
     "to_struct",
     "udf",
+    "write_table",
 ]

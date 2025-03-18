@@ -174,6 +174,15 @@ def test_repr_functions_ln() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_log1p() -> None:
+    a = col("a")
+    y = a.log1p()
+    repr_out = repr(y)
+    assert repr_out == "log1p(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_shift_left() -> None:
     a = col("a")
     b = col("b")
@@ -200,7 +209,12 @@ def test_repr_functions_shift_right() -> None:
         "sin",
         "cos",
         "tan",
+        "csc",
+        "sec",
         "cot",
+        "sinh",
+        "cosh",
+        "tanh",
         "arcsin",
         "arccos",
         "arctan",
@@ -295,6 +309,15 @@ def test_repr_functions_exp() -> None:
     y = a.exp()
     repr_out = repr(y)
     assert repr_out == "exp(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_expm1() -> None:
+    a = col("a")
+    y = a.expm1()
+    repr_out = repr(y)
+    assert repr_out == "expm1(col(a))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -656,3 +679,21 @@ def test_list_value_counts_degenerate():
 
     # Check the result for null values
     assert result_null.to_pydict() == {"value_counts": [[], []]}
+
+
+@pytest.mark.parametrize(
+    # we don't need to test all types, just a few as a sanity check. The rest are tested in the sql tests
+    "sql, actual",
+    [
+        ("int32", DataType.int32()),
+        ("int64", DataType.int64()),
+        ("float64", DataType.float64()),
+        ("text", DataType.string()),
+    ],
+)
+def test_cast_sql_string(sql, actual):
+    expr = col("a").cast(sql)
+    actual = col("a").cast(actual)
+    df = daft.from_pydict({"a": [1, 2, 3]}).select(expr)
+    actual_df = daft.from_pydict({"a": [1, 2, 3]}).select(actual)
+    assert df.schema() == actual_df.schema()

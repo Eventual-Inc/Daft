@@ -46,11 +46,11 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
         let buffer_size = args.try_get_named("buffer_size")?;
         let file_path_column = args.try_get_named("file_path_column")?;
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
-        let schema = if let Some(schema_arg) = args.try_get_named("schema")? {
-            Some(Arc::new(try_parse_schema(schema_arg)?))
-        } else {
-            None
-        };
+        let schema = args
+            .try_get_named("schema")?
+            .map(try_parse_schema)
+            .transpose()?
+            .map(Arc::new);
         let schema_hints = None; // TODO
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
 

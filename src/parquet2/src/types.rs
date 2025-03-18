@@ -122,7 +122,7 @@ pub fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
 
     for (v1, v2) in a.iter().zip(b.iter()) {
         match v1.cmp(v2) {
-            Equal => continue,
+            Equal => {},
             other => return other,
         }
     }

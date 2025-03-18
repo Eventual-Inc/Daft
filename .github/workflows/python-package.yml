@@ -28,7 +28,12 @@ jobs:
         daft-runner: [py, ray, native]
         pyarrow-version: [8.0.0, 16.0.0]
         os: [ubuntu-20.04, windows-latest]
+        enable-aqe: [1, 0]
         exclude:
+        - daft-runner: py
+          enable-aqe: 1
+        - daft-runner: native
+          enable-aqe: 1
         - daft-runner: ray
           pyarrow-version: 8.0.0
           os: ubuntu-20.04
@@ -119,6 +124,7 @@ jobs:
         CARGO_TARGET_DIR: ./target
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
 
     - name: Build library and Test with pytest (Windows)
       if: ${{ (runner.os == 'Windows') }}
@@ -135,6 +141,7 @@ jobs:
         # cargo llvm-cov --no-run --lcov --output-path report-output\rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
@@ -158,9 +165,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -200,6 +206,10 @@ jobs:
         key: ${{ runner.os }}-integration-build
         cache-all-crates: 'true'
 
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
       run: maturin build --release --compatibility linux --out dist
@@ -221,6 +231,12 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [py, ray, native]
+        enable-aqe: [1, 0]
+        exclude:
+        - daft-runner: py
+          enable-aqe: 1
+        - daft-runner: native
+          enable-aqe: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -263,7 +279,7 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -280,9 +296,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-io:
     runs-on: ubuntu-latest
@@ -296,6 +311,12 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
+        enable-aqe: [1, 0]
+        exclude:
+        - daft-runner: py
+          enable-aqe: 1
+        - daft-runner: native
+          enable-aqe: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -340,6 +361,7 @@ jobs:
         pytest tests/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -356,9 +378,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
   integration-test-io-credentialed:
@@ -374,6 +395,12 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
+        enable-aqe: [1, 0]
+        exclude:
+        - daft-runner: py
+          enable-aqe: 1
+        - daft-runner: native
+          enable-aqe: 1
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
@@ -436,6 +463,7 @@ jobs:
         pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() }}
@@ -452,9 +480,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-iceberg:
     runs-on: ubuntu-latest
@@ -468,6 +495,12 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
+        enable-aqe: [1, 0]
+        exclude:
+        - daft-runner: py
+          enable-aqe: 1
+        - daft-runner: native
+          enable-aqe: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -513,6 +546,7 @@ jobs:
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -529,9 +563,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-sql:
     runs-on: ubuntu-latest
@@ -545,6 +578,12 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
+        enable-aqe: [1, 0]
+        exclude:
+        - daft-runner: py
+          enable-aqe: 1
+        - daft-runner: native
+          enable-aqe: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -589,6 +628,7 @@ jobs:
         pytest tests/integration/sql -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -605,9 +645,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
 
   integration-tests:
@@ -633,8 +672,6 @@ jobs:
     env:
       package-name: getdaft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
-    strategy:
-      fail-fast: false
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -646,6 +683,9 @@ jobs:
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
         cache-provider: buildjet
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12' # Codspeed requires Python 3.12
@@ -689,9 +729,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   rust-tests-platform:
     runs-on: ${{ matrix.os }}-latest
@@ -739,9 +778,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   rust-tests:
     runs-on: ubuntu-latest
@@ -843,9 +881,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   test-imports-platform:
     runs-on: ${{ matrix.os }}-latest
@@ -924,9 +961,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   test-imports:
     runs-on: ubuntu-latest
@@ -991,6 +1027,5 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook

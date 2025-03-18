@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use common_error::DaftError;
 use daft_sql::error::PlannerError;
 use snafu::Snafu;
@@ -11,7 +13,7 @@ pub enum ConnectError {
     UnsupportedOperation { op: String },
     #[snafu(display("Invalid argument: {arg}"))]
     InvalidArgument { arg: String },
-    #[snafu(display(r#"Feature: {msg} is not yet implemented, please open an issue at https://github.com/Eventual-Inc/Daft/issues/new?assignees=&labels=enhancement%2Cneeds+triage&projects=&template=feature_request.yaml"#))]
+    #[snafu(display(r"Feature: {msg} is not yet implemented, please open an issue at https://github.com/Eventual-Inc/Daft/issues/new?assignees=&labels=enhancement%2Cneeds+triage&projects=&template=feature_request.yaml"))]
     NotYetImplemented { msg: String },
 
     #[snafu(display("Daft error: {source}"))]
@@ -32,6 +34,14 @@ pub enum ConnectError {
         #[snafu(source(from(Box<dyn std::error::Error + 'static + Send + Sync>, Some)))]
         source: Option<Box<dyn std::error::Error + 'static + Send + Sync>>,
     },
+}
+
+impl ConnectError {
+    pub fn not_yet_implemented<S: Display>(msg: S) -> Self {
+        Self::NotYetImplemented {
+            msg: msg.to_string(),
+        }
+    }
 }
 
 impl From<daft_micropartition::Error> for ConnectError {

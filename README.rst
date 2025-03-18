@@ -165,5 +165,5 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :alt: Coverage
 
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
-   :target: https://join.slack.com/t/dist-data/shared_invite/zt-1t44ss4za-1rtsJNIsQOnjlf8BlG05yw
+   :target: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
    :alt: slack community

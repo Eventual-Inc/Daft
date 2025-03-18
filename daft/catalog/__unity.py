@@ -5,7 +5,8 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Table
+from daft.catalog import Catalog, Identifier, Table, TableSource
+from daft.io._deltalake import read_deltalake
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
@@ -24,6 +25,11 @@ class UnityCatalog(Catalog):
         )
         self._inner = unity_catalog
 
+    @property
+    def name(self) -> str:
+        # TODO feat: add names to unity catalogs
+        return "unity"
+
     @staticmethod
     def _from_obj(obj: object) -> UnityCatalog:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
@@ -34,17 +40,40 @@ class UnityCatalog(Catalog):
         raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
 
     ###
+    # create_*
+    ###
+
+    def create_namespace(self, identifier: Identifier | str):
+        raise ValueError("Unity create_namespace not yet supported.")
+
+    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
+        raise ValueError("Unity create_table not yet supported.")
+
+    ###
+    # drop_*
+    ###
+
+    def drop_namespace(self, identifier: Identifier | str):
+        raise ValueError("Unity drop_namespace not yet supported.")
+
+    def drop_table(self, identifier: Identifier | str):
+        raise ValueError("Unity drop_table not yet supported.")
+
+    ###
     # get_*
     ###
 
-    def get_table(self, name: str | Identifier) -> UnityTable:
-        if isinstance(name, Identifier):
-            name = ".".join(name)  # TODO unity qualified identifiers
-        return UnityTable(self._inner.load_table(name))
+    def get_table(self, ident: Identifier | str) -> UnityTable:
+        if isinstance(ident, Identifier):
+            ident = ".".join(ident)  # TODO unity qualified identifiers
+        return UnityTable(self._inner.load_table(ident))
 
     ###
     # list_.*
     ###
+
+    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        raise ValueError("Unity list_namespaces not yet supported.")
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         if pattern is None or pattern == "":
@@ -70,6 +99,17 @@ class UnityCatalog(Catalog):
 class UnityTable(Table):
     _inner: InnerTable
 
+    _read_options = {"version"}
+    _write_options = {
+        "schema_mode",
+        "partition_col",
+        "description",
+        "configuration",
+        "custom_metadata",
+        "dynamo_table_name",
+        "allow_unsafe_rename",
+    }
+
     def __init__(self, unity_table: InnerTable):
         """DEPRECATED: Please use `Table.from_unity`; version 0.5.0!"""
         warnings.warn(
@@ -77,6 +117,10 @@ class UnityTable(Table):
             category=DeprecationWarning,
         )
         self._inner = unity_table
+
+    @property
+    def name(self) -> str:
+        return self._inner.table_info.name
 
     @staticmethod
     def _from_obj(obj: object) -> UnityTable | None:
@@ -87,19 +131,30 @@ class UnityTable(Table):
             return t
         raise ValueError(f"Unsupported unity table type: {type(obj)}")
 
-    @staticmethod
-    def _try_from(obj: object) -> UnityTable | None:
-        """Returns an UnityTable if the given object can be adapted so."""
-        if isinstance(obj, InnerTable):
-            return UnityTable(obj)
-        return None
+    ###
+    # read methods
+    ###
 
-    @property
-    def inner(self) -> InnerTable:
-        """Returns the inner unity table."""
-        return self._inner
+    def read(self, **options) -> DataFrame:
+        Table._validate_options("Unity read", options, UnityTable._read_options)
 
-    def read(self) -> DataFrame:
-        import daft
+        return read_deltalake(self._inner, version=options.get("version"))
 
-        return daft.read_deltalake(self._inner)
+    ###
+    # write methods
+    ###
+
+    def write(self, df: DataFrame | object, mode: str = "append", **options):
+        self._validate_options("Unity write", options, UnityTable._write_options)
+
+        return df.write_deltalake(
+            self._inner,
+            mode=mode,
+            schema_mode=options.get("schema_mode"),
+            partition_cols=options.get("partition_cols"),
+            description=options.get("description"),
+            configuration=options.get("configuration"),
+            custom_metadata=options.get("custom_metadata"),
+            dynamo_table_name=options.get("dynamo_table_name"),
+            allow_unsafe_rename=options.get("allow_unsafe_rename", False),
+        )

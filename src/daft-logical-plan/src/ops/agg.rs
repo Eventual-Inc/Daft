@@ -12,6 +12,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Aggregate {
+    pub plan_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
 
@@ -41,12 +42,18 @@ impl Aggregate {
         )?;
 
         Ok(Self {
+            plan_id: None,
             input,
             aggregations,
             groupby,
             output_schema,
             stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {

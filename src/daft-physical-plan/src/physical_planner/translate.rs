@@ -101,8 +101,8 @@ pub(super) fn translate_single_logical_node(
                 .arced();
                 Ok(scan)
             }
-            SourceInfo::PlaceHolder(PlaceHolderInfo { source_id, .. }) => {
-                panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
+            SourceInfo::PlaceHolder(PlaceHolderInfo { .. }) => {
+                panic!("Placeholder should not get to translation. This should have been optimized away");
             }
         },
         LogicalPlan::Project(LogicalProject { projection, .. }) => {
@@ -197,40 +197,41 @@ pub(super) fn translate_single_logical_node(
                 // Repartitioning to the same partition spec as the input is always a no-op.
                 || (&clustering_spec == input_clustering_spec.as_ref())
             {
-                return Ok(input_physical);
-            }
-            let repartitioned_plan = match clustering_spec {
-                ClusteringSpec::Unknown(_) => {
-                    match num_partitions.cmp(&input_num_partitions) {
-                        Ordering::Equal => {
-                            // # of output partitions == # of input partitions; this should have already short-circuited with
-                            // a repartition drop above.
-                            unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
+                Ok(input_physical)
+            } else {
+                let repartitioned_plan = match clustering_spec {
+                    ClusteringSpec::Unknown(_) => {
+                        match num_partitions.cmp(&input_num_partitions) {
+                            Ordering::Equal => {
+                                // # of output partitions == # of input partitions; this should have already short-circuited with
+                                // a repartition drop above.
+                                unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
+                            }
+                            _ => PhysicalPlan::ShuffleExchange(
+                                ShuffleExchangeFactory::new(input_physical)
+                                    .get_split_or_coalesce(num_partitions),
+                            ),
                         }
-                        _ => PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(input_physical)
-                                .get_split_or_coalesce(num_partitions),
-                        ),
                     }
-                }
-                ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
-                    ShuffleExchangeFactory::new(input_physical)
-                        .get_random_partitioning(num_partitions, Some(cfg)),
-                ),
-                ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
-                    PhysicalPlan::ShuffleExchange(
-                        ShuffleExchangeFactory::new(input_physical).get_hash_partitioning(
-                            by,
-                            num_partitions,
-                            Some(cfg),
-                        ),
-                    )
-                }
-                ClusteringSpec::Range(_) => {
-                    unreachable!("Repartitioning by range is not supported")
-                }
-            };
-            Ok(repartitioned_plan.arced())
+                    ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
+                        ShuffleExchangeFactory::new(input_physical)
+                            .get_random_partitioning(num_partitions, Some(cfg))?,
+                    ),
+                    ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
+                        PhysicalPlan::ShuffleExchange(
+                            ShuffleExchangeFactory::new(input_physical).get_hash_partitioning(
+                                by,
+                                num_partitions,
+                                Some(cfg),
+                            )?,
+                        )
+                    }
+                    ClusteringSpec::Range(_) => {
+                        unreachable!("Repartitioning by range is not supported")
+                    }
+                };
+                Ok(repartitioned_plan.arced())
+            }
         }
         LogicalPlan::Distinct(LogicalDistinct { input, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -249,7 +250,7 @@ pub(super) fn translate_single_logical_node(
                         col_exprs.clone(),
                         num_partitions,
                         Some(cfg),
-                    ),
+                    )?,
                 );
                 Ok(
                     PhysicalPlan::Aggregate(Aggregate::new(shuffle_op.into(), vec![], col_exprs))
@@ -327,7 +328,7 @@ pub(super) fn translate_single_logical_node(
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
                                 Some(cfg),
-                            ),
+                            )?,
                         )
                         .into()
                     };
@@ -397,7 +398,7 @@ pub(super) fn translate_single_logical_node(
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
                                 Some(cfg),
-                            ),
+                            )?,
                         )
                         .into()
                     };
@@ -426,306 +427,9 @@ pub(super) fn translate_single_logical_node(
             let input_physical = physical_children.pop().expect("requires 2 inputs");
             Ok(PhysicalPlan::Concat(Concat::new(input_physical, other_physical)).arced())
         }
-        LogicalPlan::Join(LogicalJoin {
-            left,
-            right,
-            left_on,
-            right_on,
-            null_equals_nulls,
-            join_type,
-            join_strategy,
-            ..
-        }) => {
-            let mut right_physical = physical_children.pop().expect("requires 1 inputs");
-            let mut left_physical = physical_children.pop().expect("requires 2 inputs");
-
-            let (left_on, right_on) = normalize_join_keys(
-                left_on.clone(),
-                right_on.clone(),
-                left.schema(),
-                right.schema(),
-            )?;
-
-            let left_clustering_spec = left_physical.clustering_spec();
-            let right_clustering_spec = right_physical.clustering_spec();
-            let num_partitions = max(
-                left_clustering_spec.num_partitions(),
-                right_clustering_spec.num_partitions(),
-            );
-
-            let is_left_hash_partitioned =
-                matches!(left_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
-                    && is_partition_compatible(&left_clustering_spec.partition_by(), &left_on);
-            let is_right_hash_partitioned =
-                matches!(right_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
-                    && is_partition_compatible(&right_clustering_spec.partition_by(), &right_on);
-
-            // Left-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
-            // sequence of expressions that has the join key as a prefix.
-            let is_left_sort_partitioned =
-                if let ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) =
-                    left_clustering_spec.as_ref()
-                {
-                    by.len() >= left_on.len()
-                        && by.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
-                        // TODO(Clark): Add support for descending sort orders.
-                        && descending.iter().all(|v| !*v)
-                } else {
-                    false
-                };
-            // Right-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
-            // sequence of expressions that has the join key as a prefix.
-            let is_right_sort_partitioned =
-                if let ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) =
-                    right_clustering_spec.as_ref()
-                {
-                    by.len() >= right_on.len()
-                        && by.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
-                        // TODO(Clark): Add support for descending sort orders.
-                        && descending.iter().all(|v| !*v)
-                } else {
-                    false
-                };
-            let left_stats = left_physical.approximate_stats();
-            let right_stats = right_physical.approximate_stats();
-
-            // For broadcast joins, ensure that the left side of the join is the smaller side.
-            let (smaller_size_bytes, left_is_larger) =
-                if right_stats.size_bytes < left_stats.size_bytes {
-                    (right_stats.size_bytes, true)
-                } else {
-                    (left_stats.size_bytes, false)
-                };
-            let is_larger_partitioned = if left_is_larger {
-                is_left_hash_partitioned || is_left_sort_partitioned
-            } else {
-                is_right_hash_partitioned || is_right_sort_partitioned
-            };
-            let has_null_safe_equals = null_equals_nulls
-                .as_ref()
-                .map_or(false, |v| v.iter().any(|b| *b));
-            let join_strategy = join_strategy.unwrap_or_else(|| {
-                if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
-                    return JoinStrategy::Cross;
-                }
-
-                fn keys_are_primitive(on: &[ExprRef], schema: &SchemaRef) -> bool {
-                    on.iter().all(|expr| {
-                        let dtype = expr.get_type(schema).unwrap();
-                        dtype.is_integer()
-                            || dtype.is_floating()
-                            || matches!(
-                                dtype,
-                                DataType::Utf8 | DataType::Binary | DataType::Boolean
-                            )
-                    })
-                }
-
-                let smaller_side_is_broadcastable = match join_type {
-                    JoinType::Inner => true,
-                    JoinType::Left | JoinType::Anti | JoinType::Semi => left_is_larger,
-                    JoinType::Right => !left_is_larger,
-                    JoinType::Outer => false,
-                };
-
-                // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join.
-                if !is_larger_partitioned
-                    && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold
-                    && smaller_side_is_broadcastable
-                {
-                    JoinStrategy::Broadcast
-                // Larger side of join is range-partitioned on the join column, so we use a sort-merge join.
-                // TODO(Clark): Support non-primitive dtypes for sort-merge join (e.g. temporal types).
-                // TODO(Clark): Also do a sort-merge join if a downstream op needs the table to be sorted on the join key.
-                // TODO(Clark): Look into defaulting to sort-merge join over hash join under more input partitioning setups.
-                // TODO(Kevin): Support sort-merge join for other types of joins.
-                // TODO(advancedxy): Rewrite null safe equals to support SMJ
-                } else if *join_type == JoinType::Inner
-                    && keys_are_primitive(&left_on, &left.schema())
-                    && keys_are_primitive(&right_on, &right.schema())
-                    && (is_left_sort_partitioned || is_right_sort_partitioned)
-                    && (!is_larger_partitioned
-                        || (left_is_larger && is_left_sort_partitioned
-                            || !left_is_larger && is_right_sort_partitioned))
-                    && !has_null_safe_equals
-                {
-                    JoinStrategy::SortMerge
-                // Otherwise, use a hash join.
-                } else {
-                    JoinStrategy::Hash
-                }
-            });
-            match join_strategy {
-                JoinStrategy::Broadcast => {
-                    let is_swapped = match (join_type, left_is_larger) {
-                        (JoinType::Left, _) => true,
-                        (JoinType::Right, _) => false,
-                        (JoinType::Inner, left_is_larger) => left_is_larger,
-                        (JoinType::Outer, _) => {
-                            return Err(common_error::DaftError::ValueError(
-                                "Broadcast join does not support outer joins.".to_string(),
-                            ));
-                        }
-                        (JoinType::Anti, _) => true,
-                        (JoinType::Semi, _) => true,
-                    };
-
-                    if is_swapped {
-                        (left_physical, right_physical) = (right_physical, left_physical);
-                    }
-
-                    Ok(PhysicalPlan::BroadcastJoin(BroadcastJoin::new(
-                        left_physical,
-                        right_physical,
-                        left_on,
-                        right_on,
-                        null_equals_nulls.clone(),
-                        *join_type,
-                        is_swapped,
-                    ))
-                    .arced())
-                }
-                JoinStrategy::SortMerge => {
-                    if *join_type != JoinType::Inner {
-                        return Err(common_error::DaftError::ValueError(
-                            "Sort-merge join currently only supports inner joins".to_string(),
-                        ));
-                    }
-                    if has_null_safe_equals {
-                        return Err(common_error::DaftError::ValueError(
-                            "Sort-merge join does not support null-safe equals yet".to_string(),
-                        ));
-                    }
-
-                    let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
-                        // Use the special-purpose presorting that ensures join inputs are sorted with aligned
-                        // boundaries, allowing for a more efficient downstream merge-join (~one-to-one zip).
-                        !is_left_sort_partitioned || !is_right_sort_partitioned
-                    } else {
-                        // Manually insert presorting ops for each side of the join that needs it.
-                        // Note that these merge-join inputs will most likely not have aligned boundaries, which could
-                        // result in less efficient merge-joins (~all-to-all broadcast).
-                        if !is_left_sort_partitioned {
-                            left_physical = PhysicalPlan::Sort(Sort::new(
-                                left_physical,
-                                left_on.clone(),
-                                std::iter::repeat(false).take(left_on.len()).collect(),
-                                std::iter::repeat(false).take(left_on.len()).collect(),
-                                num_partitions,
-                            ))
-                            .arced();
-                        }
-                        if !is_right_sort_partitioned {
-                            right_physical = PhysicalPlan::Sort(Sort::new(
-                                right_physical,
-                                right_on.clone(),
-                                std::iter::repeat(false).take(right_on.len()).collect(),
-                                std::iter::repeat(false).take(right_on.len()).collect(),
-                                num_partitions,
-                            ))
-                            .arced();
-                        }
-                        false
-                    };
-                    Ok(PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
-                        left_physical,
-                        right_physical,
-                        left_on,
-                        right_on,
-                        *join_type,
-                        num_partitions,
-                        left_is_larger,
-                        needs_presort,
-                    ))
-                    .arced())
-                }
-                JoinStrategy::Hash => {
-                    // allow for leniency in partition size to avoid minor repartitions
-                    let num_left_partitions = left_clustering_spec.num_partitions();
-                    let num_right_partitions = right_clustering_spec.num_partitions();
-
-                    let num_partitions = match (
-                        is_left_hash_partitioned,
-                        is_right_hash_partitioned,
-                        num_left_partitions,
-                        num_right_partitions,
-                    ) {
-                        (true, true, a, b) | (false, false, a, b) => max(a, b),
-                        (_, _, 1, x) | (_, _, x, 1) => x,
-                        (true, false, a, b)
-                            if (a as f64) >= (b as f64) * cfg.hash_join_partition_size_leniency =>
-                        {
-                            a
-                        }
-                        (false, true, a, b)
-                            if (b as f64) >= (a as f64) * cfg.hash_join_partition_size_leniency =>
-                        {
-                            b
-                        }
-                        (_, _, a, b) => max(a, b),
-                    };
-
-                    if num_left_partitions != num_partitions
-                        || (num_partitions > 1 && !is_left_hash_partitioned)
-                    {
-                        left_physical = PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(left_physical).get_hash_partitioning(
-                                left_on.clone(),
-                                num_partitions,
-                                Some(cfg),
-                            ),
-                        )
-                        .into();
-                    }
-                    if num_right_partitions != num_partitions
-                        || (num_partitions > 1 && !is_right_hash_partitioned)
-                    {
-                        right_physical = PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(right_physical).get_hash_partitioning(
-                                right_on.clone(),
-                                num_partitions,
-                                Some(cfg),
-                            ),
-                        )
-                        .into();
-                    }
-                    Ok(PhysicalPlan::HashJoin(HashJoin::new(
-                        left_physical,
-                        right_physical,
-                        left_on,
-                        right_on,
-                        null_equals_nulls.clone(),
-                        *join_type,
-                    ))
-                    .arced())
-                }
-                JoinStrategy::Cross => {
-                    if *join_type != JoinType::Inner {
-                        return Err(common_error::DaftError::ValueError(
-                            "Cross join is only applicable for inner joins".to_string(),
-                        ));
-                    }
-                    if !left_on.is_empty() || !right_on.is_empty() {
-                        return Err(common_error::DaftError::ValueError(
-                            "Cross join cannot have join keys".to_string(),
-                        ));
-                    }
-
-                    // choose the larger side to be in the outer loop since the inner side has to be fully materialized
-                    let outer_loop_side = if left_is_larger {
-                        JoinSide::Left
-                    } else {
-                        JoinSide::Right
-                    };
-
-                    Ok(PhysicalPlan::CrossJoin(CrossJoin::new(
-                        left_physical,
-                        right_physical,
-                        outer_loop_side,
-                    ))
-                    .arced())
-                }
-            }
+        LogicalPlan::Join(..) => {
+            let (physical_plan, _) = translate_join(physical_children, logical_plan, cfg, false)?;
+            Ok(physical_plan)
         }
         LogicalPlan::Sink(LogicalSink {
             schema, sink_info, ..
@@ -761,6 +465,9 @@ pub(super) fn translate_single_logical_node(
                         )),
                         FileFormat::Python => Err(common_error::DaftError::ValueError(
                             "Cannot write to PythonFunction file format".to_string(),
+                        )),
+                        FileFormat::Warc => Err(common_error::DaftError::ValueError(
+                            "Warc sink not yet implemented".to_string(),
                         )),
                     }
                 }
@@ -816,6 +523,22 @@ pub(super) fn translate_single_logical_node(
     // this, we can add back in the assertion here.
     // debug_assert!(logical_plan.get_stats().approx_stats == physical_plan.approximate_stats());
     Ok(physical_plan)
+}
+
+pub fn adaptively_translate_single_logical_node(
+    logical_plan: &LogicalPlan,
+    physical_children: &mut Vec<PhysicalPlanRef>,
+    cfg: &DaftExecutionConfig,
+) -> DaftResult<(PhysicalPlanRef, Option<LogicalPlan>)> {
+    match logical_plan {
+        LogicalPlan::Join(..) => translate_join(physical_children, logical_plan, cfg, true),
+        _ => {
+            let physical_plan =
+                translate_single_logical_node(logical_plan, physical_children, cfg)?;
+            let boundary_placeholder = None;
+            Ok((physical_plan, boundary_placeholder))
+        }
+    }
 }
 
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
@@ -1258,6 +981,412 @@ pub fn populate_aggregation_stages(
         }
     }
     (first_stage_aggs, second_stage_aggs, final_exprs)
+}
+
+fn translate_join(
+    physical_children: &mut Vec<Arc<PhysicalPlan>>,
+    join_plan: &LogicalPlan,
+    cfg: &DaftExecutionConfig,
+    adaptive: bool,
+) -> DaftResult<(PhysicalPlanRef, Option<LogicalPlan>)> {
+    let LogicalJoin {
+        left,
+        right,
+        left_on,
+        right_on,
+        join_type,
+        null_equals_nulls,
+        join_strategy,
+        ..
+    } = match join_plan {
+        LogicalPlan::Join(join_op) => join_op,
+        _ => {
+            return Err(common_error::DaftError::ValueError(
+                "Expected a join plan".to_string(),
+            ));
+        }
+    };
+
+    let mut right_physical = physical_children.pop().expect("requires 1 inputs");
+    let mut left_physical = physical_children.pop().expect("requires 2 inputs");
+
+    let (left_on, right_on) = normalize_join_keys(
+        left_on.clone(),
+        right_on.clone(),
+        left.schema(),
+        right.schema(),
+    )?;
+
+    let left_clustering_spec = left_physical.clustering_spec();
+    let right_clustering_spec = right_physical.clustering_spec();
+    let num_partitions = max(
+        left_clustering_spec.num_partitions(),
+        right_clustering_spec.num_partitions(),
+    );
+
+    let is_left_hash_partitioned =
+        matches!(left_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
+            && is_partition_compatible(&left_clustering_spec.partition_by(), &left_on);
+    let is_right_hash_partitioned =
+        matches!(right_clustering_spec.as_ref(), ClusteringSpec::Hash(..))
+            && is_partition_compatible(&right_clustering_spec.partition_by(), &right_on);
+
+    // Left-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
+    // sequence of expressions that has the join key as a prefix.
+    let is_left_sort_partitioned =
+        if let ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) =
+            left_clustering_spec.as_ref()
+        {
+            by.len() >= left_on.len()
+                        && by.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
+                        // TODO(Clark): Add support for descending sort orders.
+                        && descending.iter().all(|v| !*v)
+        } else {
+            false
+        };
+    // Right-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
+    // sequence of expressions that has the join key as a prefix.
+    let is_right_sort_partitioned =
+        if let ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) =
+            right_clustering_spec.as_ref()
+        {
+            by.len() >= right_on.len()
+                        && by.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
+                        // TODO(Clark): Add support for descending sort orders.
+                        && descending.iter().all(|v| !*v)
+        } else {
+            false
+        };
+    let left_stats = left_physical.approximate_stats();
+    let right_stats = right_physical.approximate_stats();
+
+    // For broadcast joins, ensure that the left side of the join is the smaller side.
+    let (smaller_size_bytes, left_is_larger) = if right_stats.size_bytes < left_stats.size_bytes {
+        (right_stats.size_bytes, true)
+    } else {
+        (left_stats.size_bytes, false)
+    };
+    let is_larger_partitioned = if left_is_larger {
+        is_left_hash_partitioned || is_left_sort_partitioned
+    } else {
+        is_right_hash_partitioned || is_right_sort_partitioned
+    };
+    let has_null_safe_equals = null_equals_nulls
+        .as_ref()
+        .is_some_and(|v| v.iter().any(|b| *b));
+    let join_strategy = join_strategy.unwrap_or_else(|| {
+        if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
+            return JoinStrategy::Cross;
+        }
+
+        fn keys_are_primitive(on: &[ExprRef], schema: &SchemaRef) -> bool {
+            on.iter().all(|expr| {
+                let dtype = expr.get_type(schema).unwrap();
+                dtype.is_integer()
+                    || dtype.is_floating()
+                    || matches!(dtype, DataType::Utf8 | DataType::Binary | DataType::Boolean)
+            })
+        }
+
+        let smaller_side_is_broadcastable = match join_type {
+            JoinType::Inner => true,
+            JoinType::Left | JoinType::Anti | JoinType::Semi => left_is_larger,
+            JoinType::Right => !left_is_larger,
+            JoinType::Outer => false,
+        };
+
+        // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join.
+        if !is_larger_partitioned
+            && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold
+            && smaller_side_is_broadcastable
+        {
+            JoinStrategy::Broadcast
+        // Larger side of join is range-partitioned on the join column, so we use a sort-merge join.
+        // TODO(Clark): Support non-primitive dtypes for sort-merge join (e.g. temporal types).
+        // TODO(Clark): Also do a sort-merge join if a downstream op needs the table to be sorted on the join key.
+        // TODO(Clark): Look into defaulting to sort-merge join over hash join under more input partitioning setups.
+        // TODO(Kevin): Support sort-merge join for other types of joins.
+        // TODO(advancedxy): Rewrite null safe equals to support SMJ
+        } else if *join_type == JoinType::Inner
+            && keys_are_primitive(&left_on, &left.schema())
+            && keys_are_primitive(&right_on, &right.schema())
+            && (is_left_sort_partitioned || is_right_sort_partitioned)
+            && (!is_larger_partitioned
+                || (left_is_larger && is_left_sort_partitioned
+                    || !left_is_larger && is_right_sort_partitioned))
+            && !has_null_safe_equals
+        {
+            JoinStrategy::SortMerge
+        // Otherwise, use a hash join.
+        } else {
+            JoinStrategy::Hash
+        }
+    });
+
+    let left_is_in_memory = matches!(
+        left_physical.as_ref(),
+        PhysicalPlan::InMemoryScan(InMemoryScan { .. })
+    );
+    let right_is_in_memory = matches!(
+        right_physical.as_ref(),
+        PhysicalPlan::InMemoryScan(InMemoryScan { .. })
+    );
+
+    match join_strategy {
+        JoinStrategy::Broadcast => {
+            let is_swapped = match (join_type, left_is_larger) {
+                (JoinType::Left, _) => true,
+                (JoinType::Right, _) => false,
+                (JoinType::Inner, left_is_larger) => left_is_larger,
+                (JoinType::Outer, _) => {
+                    return Err(common_error::DaftError::ValueError(
+                        "Broadcast join does not support outer joins.".to_string(),
+                    ));
+                }
+                (JoinType::Anti, _) => true,
+                (JoinType::Semi, _) => true,
+            };
+
+            if is_swapped {
+                (left_physical, right_physical) = (right_physical, left_physical);
+            }
+
+            Ok((
+                PhysicalPlan::BroadcastJoin(BroadcastJoin::new(
+                    left_physical,
+                    right_physical,
+                    left_on,
+                    right_on,
+                    null_equals_nulls.clone(),
+                    *join_type,
+                    is_swapped,
+                ))
+                .arced(),
+                None,
+            ))
+        }
+        // If we are adaptively translating and we decided not to do broadcast join,
+        // but our children have not been materialized, we need to materialize them to get stats
+        JoinStrategy::SortMerge | JoinStrategy::Hash
+            if adaptive && (!left_is_in_memory || !right_is_in_memory) =>
+        {
+            if left_is_in_memory {
+                // if left is in memory it means the right side is not in memory, so we should emit the right side first
+                let ph = PlaceHolderInfo::new(right.schema(), right_clustering_spec);
+                let new_scan = LogicalPlan::Source(Source::new(
+                    right.schema(),
+                    SourceInfo::PlaceHolder(ph).into(),
+                ));
+                let new_join = join_plan.with_new_children(&[left.clone(), new_scan.into()]);
+                Ok((right_physical, Some(new_join)))
+            } else if right_is_in_memory {
+                // if right is in memory it means the left side is not in memory, so we should emit the left side first
+                let ph = PlaceHolderInfo::new(left.schema(), left_clustering_spec);
+                let new_scan = LogicalPlan::Source(Source::new(
+                    left.schema(),
+                    SourceInfo::PlaceHolder(ph).into(),
+                ));
+                let new_join = join_plan.with_new_children(&[new_scan.into(), right.clone()]);
+                Ok((left_physical, Some(new_join)))
+            } else {
+                // if both sides are not in memory, we need to choose one side to emit first
+                // bias towards the side with fewer in-memory children
+                fn num_in_memory_children(plan: &PhysicalPlan) -> usize {
+                    if matches!(plan, PhysicalPlan::InMemoryScan(..)) {
+                        1
+                    } else {
+                        plan.children()
+                            .iter()
+                            .map(|c| num_in_memory_children(c))
+                            .sum()
+                    }
+                }
+                let left_in_memory_children = num_in_memory_children(&left_physical);
+                let right_in_memory_children = num_in_memory_children(&right_physical);
+
+                let run_left = match left_in_memory_children.cmp(&right_in_memory_children) {
+                    Ordering::Greater => {
+                        // left has more in-memory children, so we should emit the left side first
+                        true
+                    }
+                    Ordering::Less => {
+                        // right has more in-memory children, so we should emit the left side first
+                        false
+                    }
+                    Ordering::Equal => {
+                        // Else pick the smaller side
+                        left_stats.size_bytes < right_stats.size_bytes
+                    }
+                };
+
+                if run_left {
+                    let ph = PlaceHolderInfo::new(left.schema(), left_clustering_spec);
+                    let new_scan = LogicalPlan::Source(Source::new(
+                        left.schema(),
+                        SourceInfo::PlaceHolder(ph).into(),
+                    ));
+                    let new_join = join_plan.with_new_children(&[new_scan.into(), right.clone()]);
+                    Ok((left_physical, Some(new_join)))
+                } else {
+                    let ph = PlaceHolderInfo::new(right.schema(), right_clustering_spec);
+                    let new_scan = LogicalPlan::Source(Source::new(
+                        right.schema(),
+                        SourceInfo::PlaceHolder(ph).into(),
+                    ));
+                    let new_join = join_plan.with_new_children(&[left.clone(), new_scan.into()]);
+                    Ok((right_physical, Some(new_join)))
+                }
+            }
+        }
+        JoinStrategy::SortMerge => {
+            if *join_type != JoinType::Inner {
+                return Err(common_error::DaftError::ValueError(
+                    "Sort-merge join currently only supports inner joins".to_string(),
+                ));
+            }
+            if has_null_safe_equals {
+                return Err(common_error::DaftError::ValueError(
+                    "Sort-merge join does not support null-safe equals yet".to_string(),
+                ));
+            }
+
+            let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
+                // Use the special-purpose presorting that ensures join inputs are sorted with aligned
+                // boundaries, allowing for a more efficient downstream merge-join (~one-to-one zip).
+                !is_left_sort_partitioned || !is_right_sort_partitioned
+            } else {
+                // Manually insert presorting ops for each side of the join that needs it.
+                // Note that these merge-join inputs will most likely not have aligned boundaries, which could
+                // result in less efficient merge-joins (~all-to-all broadcast).
+                if !is_left_sort_partitioned {
+                    left_physical = PhysicalPlan::Sort(Sort::new(
+                        left_physical,
+                        left_on.clone(),
+                        std::iter::repeat_n(false, left_on.len()).collect(),
+                        std::iter::repeat_n(false, left_on.len()).collect(),
+                        num_partitions,
+                    ))
+                    .arced();
+                }
+                if !is_right_sort_partitioned {
+                    right_physical = PhysicalPlan::Sort(Sort::new(
+                        right_physical,
+                        right_on.clone(),
+                        std::iter::repeat_n(false, right_on.len()).collect(),
+                        std::iter::repeat_n(false, right_on.len()).collect(),
+                        num_partitions,
+                    ))
+                    .arced();
+                }
+                false
+            };
+            Ok((
+                PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
+                    left_physical,
+                    right_physical,
+                    left_on,
+                    right_on,
+                    *join_type,
+                    num_partitions,
+                    left_is_larger,
+                    needs_presort,
+                ))
+                .arced(),
+                None,
+            ))
+        }
+        JoinStrategy::Hash => {
+            // allow for leniency in the number of partitions
+            let num_left_partitions = left_physical.clustering_spec().num_partitions();
+            let num_right_partitions = right_physical.clustering_spec().num_partitions();
+
+            let num_partitions = match (
+                is_left_hash_partitioned,
+                is_right_hash_partitioned,
+                num_left_partitions,
+                num_right_partitions,
+            ) {
+                (true, true, a, b) | (false, false, a, b) => max(a, b),
+                (_, _, 1, x) | (_, _, x, 1) => x,
+                (true, false, a, b)
+                    if (a as f64) >= (b as f64) * cfg.hash_join_partition_size_leniency =>
+                {
+                    a
+                }
+                (false, true, a, b)
+                    if (b as f64) >= (a as f64) * cfg.hash_join_partition_size_leniency =>
+                {
+                    b
+                }
+                (_, _, a, b) => max(a, b),
+            };
+            if num_left_partitions != num_partitions
+                || (num_partitions > 1 && !is_left_hash_partitioned)
+            {
+                left_physical = PhysicalPlan::ShuffleExchange(
+                    ShuffleExchangeFactory::new(left_physical).get_hash_partitioning(
+                        left_on.clone(),
+                        num_partitions,
+                        Some(cfg),
+                    )?,
+                )
+                .into();
+            }
+            if num_right_partitions != num_partitions
+                || (num_partitions > 1 && !is_right_hash_partitioned)
+            {
+                right_physical = PhysicalPlan::ShuffleExchange(
+                    ShuffleExchangeFactory::new(right_physical).get_hash_partitioning(
+                        right_on.clone(),
+                        num_partitions,
+                        Some(cfg),
+                    )?,
+                )
+                .into();
+            }
+            Ok((
+                PhysicalPlan::HashJoin(HashJoin::new(
+                    left_physical,
+                    right_physical,
+                    left_on,
+                    right_on,
+                    null_equals_nulls.clone(),
+                    *join_type,
+                ))
+                .arced(),
+                None,
+            ))
+        }
+        JoinStrategy::Cross => {
+            if *join_type != JoinType::Inner {
+                return Err(common_error::DaftError::ValueError(
+                    "Cross join is only applicable for inner joins".to_string(),
+                ));
+            }
+            if !left_on.is_empty() || !right_on.is_empty() {
+                return Err(common_error::DaftError::ValueError(
+                    "Cross join cannot have join keys".to_string(),
+                ));
+            }
+
+            // choose the larger side to be in the outer loop since the inner side has to be fully materialized
+            let outer_loop_side = if left_is_larger {
+                JoinSide::Left
+            } else {
+                JoinSide::Right
+            };
+
+            Ok((
+                PhysicalPlan::CrossJoin(CrossJoin::new(
+                    left_physical,
+                    right_physical,
+                    outer_loop_side,
+                ))
+                .arced(),
+                None,
+            ))
+        }
+    }
 }
 
 #[cfg(test)]

@@ -13,10 +13,12 @@ class AsciiOptions:
 class SubgraphOptions:
     name: str
     subgraph_id: str
+    metadata: Optional[str]
 
-    def __init__(self, name: str, subgraph_id: str):
+    def __init__(self, name: str, subgraph_id: str, metadata: Optional[str] = None):
         self.name = name
         self.subgraph_id = subgraph_id
+        self.metadata = metadata
 
 
 class MermaidOptions:
@@ -29,8 +31,8 @@ class MermaidOptions:
         self.bottom_up = bottom_up
         self.subgraph_options = subgraph_options
 
-    def with_subgraph_options(self, name: str, subgraph_id: str):
-        opts = MermaidOptions(self.simple, subgraph_options=SubgraphOptions(name, subgraph_id))
+    def with_subgraph_options(self, name: str, subgraph_id: str, metadata: Optional[str] = None):
+        opts = MermaidOptions(self.simple, subgraph_options=SubgraphOptions(name, subgraph_id, metadata))
 
         return opts
 

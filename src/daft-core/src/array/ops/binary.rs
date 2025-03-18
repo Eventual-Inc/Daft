@@ -1,6 +1,11 @@
 use std::iter;
 
-use arrow2::bitmap::utils::{BitmapIter, ZipValidity};
+use arrow2::{
+    array::BinaryArray as ArrowBinaryArray,
+    bitmap::utils::{BitmapIter, ZipValidity},
+    datatypes::DataType as ArrowType,
+    offset::Offsets,
+};
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -11,7 +16,7 @@ use crate::{
 };
 
 enum BroadcastedBinaryIter<'a> {
-    Repeat(std::iter::Take<std::iter::Repeat<Option<&'a [u8]>>>),
+    Repeat(std::iter::RepeatN<Option<&'a [u8]>>),
     NonRepeat(
         ZipValidity<
             &'a [u8],
@@ -22,7 +27,7 @@ enum BroadcastedBinaryIter<'a> {
 }
 
 enum BroadcastedFixedSizeBinaryIter<'a> {
-    Repeat(std::iter::Take<std::iter::Repeat<Option<&'a [u8]>>>),
+    Repeat(std::iter::RepeatN<Option<&'a [u8]>>),
     NonRepeat(ZipValidity<&'a [u8], std::slice::ChunksExact<'a, u8>, BitmapIter<'a>>),
 }
 
@@ -32,7 +37,7 @@ where
     T::Native: TryInto<U> + Ord,
 {
     Repeat(
-        std::iter::Take<std::iter::Repeat<Option<<T as DaftNumericType>::Native>>>,
+        std::iter::RepeatN<Option<<T as DaftNumericType>::Native>>,
         std::marker::PhantomData<U>,
     ),
     NonRepeat(
@@ -102,7 +107,7 @@ where
 
 fn create_broadcasted_binary_iter(arr: &BinaryArray, len: usize) -> BroadcastedBinaryIter<'_> {
     if arr.len() == 1 {
-        BroadcastedBinaryIter::Repeat(std::iter::repeat(arr.as_arrow().get(0)).take(len))
+        BroadcastedBinaryIter::Repeat(std::iter::repeat_n(arr.as_arrow().get(0), len))
     } else {
         BroadcastedBinaryIter::NonRepeat(arr.as_arrow().iter())
     }
@@ -113,7 +118,7 @@ fn create_broadcasted_fixed_size_binary_iter(
     len: usize,
 ) -> BroadcastedFixedSizeBinaryIter<'_> {
     if arr.len() == 1 {
-        BroadcastedFixedSizeBinaryIter::Repeat(iter::repeat(arr.as_arrow().get(0)).take(len))
+        BroadcastedFixedSizeBinaryIter::Repeat(iter::repeat_n(arr.as_arrow().get(0), len))
     } else {
         BroadcastedFixedSizeBinaryIter::NonRepeat(arr.as_arrow().iter())
     }
@@ -129,7 +134,7 @@ where
 {
     if arr.len() == 1 {
         BroadcastedNumericIter::Repeat(
-            iter::repeat(arr.as_arrow().get(0)).take(len),
+            iter::repeat_n(arr.as_arrow().get(0), len),
             std::marker::PhantomData,
         )
     } else {
@@ -249,15 +254,74 @@ impl BinaryArray {
 
         Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
+
+    pub fn encode<Encoder>(&self, encoder: Encoder) -> DaftResult<Self>
+    where
+        Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
+    {
+        let input = self.as_arrow();
+        let buffer = input.values();
+        let validity = input.validity().cloned();
+        //
+        let mut values = Vec::<u8>::new();
+        let mut offsets = Offsets::<i64>::new();
+        for span in input.offsets().windows(2) {
+            let s = span[0] as usize;
+            let e = span[1] as usize;
+            let bytes = encoder(&buffer[s..e])?;
+            //
+            offsets.try_push(bytes.len() as i64)?;
+            values.extend(bytes);
+        }
+        //
+        let array = ArrowBinaryArray::new(
+            ArrowType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            validity,
+        );
+        let array = Box::new(array);
+        Ok(Self::from((self.name(), array)))
+    }
+
+    pub fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Self>
+    where
+        Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
+    {
+        let input = self.as_arrow();
+        let buffer = input.values();
+        let validity = input.validity().cloned();
+        //
+        let mut values = Vec::<u8>::new();
+        let mut offsets = Offsets::<i64>::new();
+        for span in input.offsets().windows(2) {
+            let s = span[0] as usize;
+            let e = span[1] as usize;
+            let bytes = decoder(&buffer[s..e])?;
+            //
+            offsets.try_push(bytes.len() as i64)?;
+            values.extend(bytes);
+        }
+        //
+        let array = ArrowBinaryArray::new(
+            ArrowType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            validity,
+        );
+        let array = Box::new(array);
+        Ok(Self::from((self.name(), array)))
+    }
 }
 
 impl FixedSizeBinaryArray {
     pub fn length(&self) -> DaftResult<UInt64Array> {
         let self_arrow = self.as_arrow();
         let size = self_arrow.size();
-        let arrow_result = arrow2::array::UInt64Array::from_iter(
-            iter::repeat(Some(size as u64)).take(self_arrow.len()),
-        )
+        let arrow_result = arrow2::array::UInt64Array::from_iter(iter::repeat_n(
+            Some(size as u64),
+            self_arrow.len(),
+        ))
         .with_validity(self_arrow.validity().cloned());
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
@@ -290,7 +354,7 @@ impl FixedSizeBinaryArray {
                     validity.push(true);
                 }
                 _ => {
-                    values.extend(std::iter::repeat(0u8).take(combined_size));
+                    values.extend(std::iter::repeat_n(0u8, combined_size));
                     validity.push(false);
                 }
             }
@@ -304,5 +368,67 @@ impl FixedSizeBinaryArray {
         )?;
 
         Ok(Self::from((self.name(), Box::new(result))))
+    }
+
+    pub fn encode<Encoder>(&self, encoder: Encoder) -> DaftResult<BinaryArray>
+    where
+        Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
+    {
+        let input = self.as_arrow();
+        let size = input.size();
+        let buffer = input.values();
+        let chunks = buffer.len() / size;
+        let validity = input.validity().cloned();
+        //
+        let mut values = Vec::<u8>::new();
+        let mut offsets = Offsets::<i64>::new();
+        for i in 0..chunks {
+            let s = i * size;
+            let e = s + size;
+            let encoded = encoder(&buffer[s..e])?;
+            //
+            offsets.try_push(encoded.len() as i64)?;
+            values.extend(encoded);
+        }
+        //
+        let array = ArrowBinaryArray::new(
+            ArrowType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            validity,
+        );
+        let array = Box::new(array);
+        Ok(BinaryArray::from((self.name(), array)))
+    }
+
+    pub fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<BinaryArray>
+    where
+        Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
+    {
+        let input = self.as_arrow();
+        let size = input.size();
+        let buffer = input.values();
+        let chunks = buffer.len() / size;
+        let validity = input.validity().cloned();
+        //
+        let mut values = Vec::<u8>::new();
+        let mut offsets = Offsets::<i64>::new();
+        for i in 0..chunks {
+            let s = i * size;
+            let e = s + size;
+            let encoded = decoder(&buffer[s..e])?;
+            //
+            offsets.try_push(encoded.len() as i64)?;
+            values.extend(encoded);
+        }
+        //
+        let array = ArrowBinaryArray::new(
+            ArrowType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            validity,
+        );
+        let array = Box::new(array);
+        Ok(BinaryArray::from((self.name(), array)))
     }
 }

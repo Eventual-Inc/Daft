@@ -19,8 +19,10 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyCatalog>()?;
+    parent.add_function(wrap_pyfunction!(python::sql_exec, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_expr, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::sql_datatype, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::list_sql_functions, parent)?)?;
     Ok(())
 }
@@ -64,7 +66,6 @@ mod tests {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -85,7 +86,6 @@ mod tests {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()
@@ -106,7 +106,6 @@ mod tests {
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                source_id: 0,
             })),
         ))
         .arced()

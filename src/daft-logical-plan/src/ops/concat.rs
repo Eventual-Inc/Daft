@@ -11,6 +11,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Concat {
+    pub plan_id: Option<usize>,
     // Upstream nodes.
     pub input: Arc<LogicalPlan>,
     pub other: Arc<LogicalPlan>,
@@ -33,10 +34,16 @@ impl Concat {
         }
 
         Ok(Self {
+            plan_id: None,
             input,
             other,
             stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {

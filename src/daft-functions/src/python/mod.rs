@@ -20,6 +20,7 @@ mod image;
 mod list;
 mod misc;
 mod numeric;
+mod sequence;
 mod temporal;
 mod tokenize;
 mod uri;
@@ -42,6 +43,9 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::binary_length);
     add!(binary::binary_concat);
     add!(binary::binary_slice);
+
+    add!(binary::decode);
+    add!(binary::encode);
 
     add!(float::is_inf);
     add!(float::is_nan);
@@ -81,6 +85,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::ceil);
     add!(numeric::clip);
     add!(numeric::exp);
+    add!(numeric::expm1);
     add!(numeric::floor);
     add!(numeric::sign);
     add!(numeric::sqrt);
@@ -88,10 +93,16 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::log10);
     add!(numeric::log);
     add!(numeric::ln);
+    add!(numeric::log1p);
     add!(numeric::sin);
     add!(numeric::cos);
     add!(numeric::tan);
+    add!(numeric::csc);
+    add!(numeric::sec);
     add!(numeric::cot);
+    add!(numeric::sinh);
+    add!(numeric::cosh);
+    add!(numeric::tanh);
     add!(numeric::arcsin);
     add!(numeric::arccos);
     add!(numeric::arctan);
@@ -102,6 +113,8 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::arctanh);
     add!(numeric::arctan2);
     add!(numeric::round);
+
+    add!(sequence::monotonically_increasing_id);
 
     add!(temporal::dt_date);
     add!(temporal::dt_day);

@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::array::Array;
+use arrow2::{array::Array, chunk::Chunk};
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
@@ -63,7 +63,7 @@ impl Hash for RecordBatch {
 }
 
 #[inline]
-fn _validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
+fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     if schema.fields.len() != columns.len() {
         return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
     }
@@ -92,7 +92,7 @@ impl RecordBatch {
         num_rows: usize,
     ) -> DaftResult<Self> {
         let schema: SchemaRef = schema.into();
-        _validate_schema(schema.as_ref(), columns.as_slice())?;
+        validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Validate Series lengths against provided num_rows
         for (field, series) in schema.fields.values().zip(columns.iter()) {
@@ -137,7 +137,7 @@ impl RecordBatch {
         num_rows: usize,
     ) -> DaftResult<Self> {
         let schema: SchemaRef = schema.into();
-        _validate_schema(schema.as_ref(), columns.as_slice())?;
+        validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Validate Series lengths against provided num_rows
         for (field, series) in schema.fields.values().zip(columns.iter()) {
@@ -190,7 +190,7 @@ impl RecordBatch {
 
         let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect())?;
         let schema: SchemaRef = schema.into();
-        _validate_schema(schema.as_ref(), columns.as_slice())?;
+        validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Infer the num_rows, assume no broadcasting
         let mut num_rows = 1;
@@ -914,6 +914,11 @@ impl RecordBatch {
             Some(self.len()),
             max_col_width,
         )
+    }
+
+    pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
+        let chunk = Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect());
+        chunk
     }
 }
 impl TryFrom<RecordBatch> for FileInfos {

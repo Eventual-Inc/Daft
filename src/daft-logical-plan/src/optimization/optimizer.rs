@@ -6,9 +6,9 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule, EnrichWithStats,
-        FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownFilter,
-        PushDownLimit, PushDownProjection, ReorderJoins, SimplifyExpressionsRule,
+        DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
+        EnrichWithStats, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
+        PushDownFilter, PushDownLimit, PushDownProjection, ReorderJoins, SimplifyExpressionsRule,
         SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
@@ -99,6 +99,7 @@ impl Default for OptimizerBuilder {
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
                         Box::new(SplitActorPoolProjects::new()),
+                        Box::new(DetectMonotonicId::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
@@ -157,12 +158,27 @@ impl Default for OptimizerBuilder {
 }
 
 impl OptimizerBuilder {
+    pub fn new() -> Self {
+        Self {
+            rule_batches: vec![],
+            config: Default::default(),
+        }
+    }
+
     pub fn reorder_joins(mut self) -> Self {
         self.rule_batches.push(RuleBatch::new(
             vec![
                 Box::new(ReorderJoins::new()),
                 Box::new(EnrichWithStats::new()),
             ],
+            RuleExecutionStrategy::Once,
+        ));
+        self
+    }
+
+    pub fn enrich_with_stats(mut self) -> Self {
+        self.rule_batches.push(RuleBatch::new(
+            vec![Box::new(EnrichWithStats::new())],
             RuleExecutionStrategy::Once,
         ));
         self

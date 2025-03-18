@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![allow(clippy::useless_conversion)]
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -46,12 +47,12 @@ fn should_enable_chrome_trace() -> bool {
 
 #[cfg(feature = "python")]
 pub mod pylib {
+    use std::sync::LazyLock;
+
     use common_tracing::init_tracing;
-    use lazy_static::lazy_static;
     use pyo3::prelude::*;
-    lazy_static! {
-        static ref LOG_RESET_HANDLE: pyo3_log::ResetHandle = pyo3_log::init();
-    }
+
+    static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(pyo3_log::init);
 
     #[pyfunction]
     pub fn version() -> &'static str {
@@ -123,12 +124,7 @@ pub mod pylib {
         daft_scheduler::register_modules(m)?;
         daft_session::register_modules(m)?;
         daft_sql::register_modules(m)?;
-
-        // Register `py_register_python_catalog` to daft.catalog
-        let catalog_attr = m.getattr("catalog")?;
-        let catalog_module = catalog_attr.downcast()?;
-        daft_catalog_python_catalog::python::register_modules(catalog_module)?;
-
+        daft_shuffles::python::register_modules(m)?;
         // Register testing module
         let testing_module = PyModule::new(m.py(), "testing")?;
         m.add_submodule(&testing_module)?;
@@ -139,6 +135,8 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
         daft_image::python::register_modules(m)?;
+
+        daft_dashboard::register_modules(m)?;
         Ok(())
     }
 }

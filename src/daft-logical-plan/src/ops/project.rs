@@ -17,6 +17,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Project {
+    pub plan_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
@@ -41,11 +42,17 @@ impl Project {
         let projected_schema = Schema::new(fields)?.into();
 
         Ok(Self {
+            plan_id: None,
             input: factored_input,
             projection: factored_projection,
             projected_schema,
             stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
     }
 
     /// Create a new Projection using the specified output schema

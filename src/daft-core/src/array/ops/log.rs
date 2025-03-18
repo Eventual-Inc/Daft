@@ -23,4 +23,8 @@ where
     pub fn ln(&self) -> DaftResult<Self> {
         self.apply(|v| v.ln())
     }
+
+    pub fn log1p(&self) -> DaftResult<Self> {
+        self.apply(|v| v.ln_1p())
+    }
 }

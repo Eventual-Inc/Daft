@@ -37,12 +37,12 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
             field.dtype
         );
         assert_eq!(
-            physical.data_type(),
-            &field.dtype.to_physical(),
+            physical.data_type().to_physical(),
+            field.dtype.to_physical(),
             "Logical field {} expected {} for Physical Array, got {}",
             &field,
-            &field.dtype.to_physical(),
-            physical.data_type()
+            field.dtype.to_physical(),
+            physical.data_type().to_physical()
         );
 
         Self {

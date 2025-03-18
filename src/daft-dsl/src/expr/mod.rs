@@ -22,7 +22,7 @@ use daft_core::{
     },
     join::JoinSide,
     prelude::*,
-    utils::supertype::try_get_supertype,
+    utils::supertype::{try_get_collection_supertype, try_get_supertype},
 };
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
@@ -120,6 +120,7 @@ pub enum PlanRef {
     ///
     /// Can either be from the immediate input or an outer scope.
     Unqualified,
+    Id(usize),
 }
 
 /// Column that is not yet resolved to a scope.
@@ -558,7 +559,7 @@ impl AggExpr {
                                 r#"Expected input to approx_sketch() to be numeric but received dtype {} for column "{}""#,
                                 field.dtype, field.name,
                             )));
-                        };
+                        }
                         DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE)
                     }
                     SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
@@ -630,6 +631,23 @@ impl AggExpr {
 impl From<&AggExpr> for ExprRef {
     fn from(agg_expr: &AggExpr) -> Self {
         Self::new(Expr::Agg(agg_expr.clone()))
+    }
+}
+
+impl From<UnresolvedColumn> for ExprRef {
+    fn from(col: UnresolvedColumn) -> Self {
+        Self::new(Expr::Column(Column::Unresolved(col)))
+    }
+}
+impl From<ResolvedColumn> for ExprRef {
+    fn from(col: ResolvedColumn) -> Self {
+        Self::new(Expr::Column(Column::Resolved(col)))
+    }
+}
+
+impl From<Column> for ExprRef {
+    fn from(col: Column) -> Self {
+        Self::new(Expr::Column(col))
     }
 }
 
@@ -814,6 +832,12 @@ impl Expr {
                 plan_ref: PlanRef::Alias(alias),
                 ..
             })) => FieldID::new(format!("{alias}.{name}")),
+
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Id(id),
+                ..
+            })) => FieldID::new(format!("{id}.{name}")),
 
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
@@ -1110,7 +1134,11 @@ impl Expr {
             Self::List(items) => {
                 // Use "list" as the field name, and infer list type from items.
                 let field_name = "list";
-                let field_type = try_compute_collection_supertype(items, schema)?;
+                let field_types = items
+                    .iter()
+                    .map(|e| e.get_type(schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let field_type = try_get_collection_supertype(&field_types)?;
                 Ok(Field::new(field_name, DataType::new_list(field_type)))
             }
             Self::Between(value, lower, upper) => {
@@ -1267,6 +1295,7 @@ impl Expr {
             },
             Self::ScalarFunction(func) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
+                "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {
@@ -1321,8 +1350,7 @@ impl Expr {
                         Operator::ShiftLeft => "<<",
                         Operator::ShiftRight => ">>",
                         _ => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::Other,
+                            return Err(io::Error::other(
                                 "Unsupported operator for SQL translation",
                             ))
                         }
@@ -1358,8 +1386,7 @@ impl Expr {
                 | Expr::Subquery(..)
                 | Expr::InSubquery(..)
                 | Expr::Exists(..)
-                | Expr::Column(..) => Err(io::Error::new(
-                    io::ErrorKind::Other,
+                | Expr::Column(..) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",
                 )),
             }
@@ -1562,10 +1589,10 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
             let right_selectivity = estimated_selectivity(right, schema);
             match op {
                 // Fixed selectivity for all common comparisons
-                Operator::Eq => 0.1,
-                Operator::EqNullSafe => 0.1,
-                Operator::NotEq => 0.9,
-                Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.2,
+                Operator::Eq => 0.05,
+                Operator::EqNullSafe => 0.05,
+                Operator::NotEq => 0.95,
+                Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.5,
 
                 // Logical operators with fixed estimates
                 // P(A and B) = P(A) * P(B)
@@ -1595,8 +1622,8 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::Not(expr) => 1.0 - estimated_selectivity(expr, schema),
 
         // Fixed selectivity for IS NULL and IS NOT NULL, assume not many nulls
-        Expr::IsNull(_) => 0.1,
-        Expr::NotNull(_) => 0.9,
+        Expr::IsNull(_) => 0.05,
+        Expr::NotNull(_) => 0.95,
 
         // All membership operations use same selectivity
         Expr::IsIn(_, _) | Expr::Between(_, _, _) | Expr::InSubquery(_, _) | Expr::Exists(_) => 0.2,
@@ -1689,17 +1716,6 @@ fn try_compute_is_in_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Opti
         if dtype.as_ref() != Some(&other_dtype) {
             return Err(DaftError::TypeError(format!("Expected all arguments to be of the same type {}, but found element with type {other_dtype}", dtype.unwrap())));
         }
-    }
-    Ok(dtype)
-}
-
-/// Tries to get the supertype of all exprs in the collection.
-fn try_compute_collection_supertype(exprs: &[ExprRef], schema: &Schema) -> DaftResult<DataType> {
-    let mut dtype = DataType::Null;
-    for expr in exprs {
-        let other_dtype = expr.get_type(schema)?;
-        let super_dtype = try_get_supertype(&dtype, &other_dtype)?;
-        dtype = super_dtype;
     }
     Ok(dtype)
 }

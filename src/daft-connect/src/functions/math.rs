@@ -3,14 +3,14 @@ use daft_functions::numeric::{
     abs::Abs,
     cbrt::Cbrt,
     ceil::Ceil,
-    exp::Exp,
+    exp::{Exp, Expm1},
     floor::Floor,
-    log::{log, Ln, Log10, Log2},
+    log::{log, Ln, Log10, Log1p, Log2},
     round::round,
     sqrt::Sqrt,
     trigonometry::{
-        ArcCos, ArcCosh, ArcSin, ArcSinh, ArcTan, ArcTanh, Atan2, Cos, Cot, Degrees, Radians, Sin,
-        Tan,
+        ArcCos, ArcCosh, ArcSin, ArcSinh, ArcTan, ArcTanh, Atan2, Cos, Cosh, Cot, Csc, Degrees,
+        Radians, Sec, Sin, Sinh, Tan, Tanh,
     },
 };
 use spark_connect::Expression;
@@ -19,7 +19,7 @@ use super::{FunctionModule, SparkFunction, TODO_FUNCTION};
 use crate::{
     error::{ConnectError, ConnectResult},
     invalid_argument_err,
-    spark_analyzer::SparkAnalyzer,
+    spark_analyzer::expr_analyzer::analyze_expr,
 };
 
 // see https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#math-functions
@@ -42,21 +42,21 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("ceiling", Ceil {});
         parent.add_fn("conv", TODO_FUNCTION);
         parent.add_fn("cos", Cos {});
-        parent.add_fn("cosh", TODO_FUNCTION);
+        parent.add_fn("cosh", Cosh {});
         parent.add_fn("cot", Cot {});
-        parent.add_fn("csc", TODO_FUNCTION);
+        parent.add_fn("csc", Csc {});
         parent.add_fn("e", TODO_FUNCTION);
         parent.add_fn("exp", Exp {});
-        parent.add_fn("expm1", TODO_FUNCTION);
+        parent.add_fn("expm1", Expm1 {});
         parent.add_fn("factorial", TODO_FUNCTION);
         parent.add_fn("floor", Floor {});
         parent.add_fn("hex", TODO_FUNCTION);
         parent.add_fn("unhex", TODO_FUNCTION);
         parent.add_fn("hypot", TODO_FUNCTION);
         parent.add_fn("ln", Ln {});
-        parent.add_fn("log", LogFunction);
+        parent.add_fn("log", LogFunction {});
         parent.add_fn("log10", Log10 {});
-        parent.add_fn("log1p", TODO_FUNCTION);
+        parent.add_fn("log1p", Log1p {});
         parent.add_fn("log2", Log2 {});
         parent.add_fn("negate", TODO_FUNCTION);
         parent.add_fn("negative", TODO_FUNCTION);
@@ -68,15 +68,15 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("rint", TODO_FUNCTION);
         parent.add_fn("round", RoundFunction);
         parent.add_fn("bround", TODO_FUNCTION);
-        parent.add_fn("sec", TODO_FUNCTION);
+        parent.add_fn("sec", Sec {});
         parent.add_fn("shiftleft", TODO_FUNCTION);
         parent.add_fn("shiftright", TODO_FUNCTION);
         parent.add_fn("sign", TODO_FUNCTION);
         parent.add_fn("signum", TODO_FUNCTION);
         parent.add_fn("sin", Sin {});
-        parent.add_fn("sinh", TODO_FUNCTION);
+        parent.add_fn("sinh", Sinh {});
         parent.add_fn("tan", Tan {});
-        parent.add_fn("tanh", TODO_FUNCTION);
+        parent.add_fn("tanh", Tanh {});
         parent.add_fn("toDegrees", TODO_FUNCTION);
         parent.add_fn("try_add", TODO_FUNCTION);
         parent.add_fn("try_avg", TODO_FUNCTION);
@@ -96,14 +96,10 @@ impl FunctionModule for MathFunctions {
 
 struct LogFunction;
 impl SparkFunction for LogFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         let args = args
             .iter()
-            .map(|arg| analyzer.to_daft_expr(arg))
+            .map(analyze_expr)
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let [input, base] = args.as_slice() else {
@@ -129,14 +125,10 @@ impl SparkFunction for LogFunction {
 struct RoundFunction;
 
 impl SparkFunction for RoundFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         let mut args = args
             .iter()
-            .map(|arg| analyzer.to_daft_expr(arg))
+            .map(analyze_expr)
             .collect::<ConnectResult<Vec<_>>>()?
             .into_iter();
 

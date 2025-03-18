@@ -1,4 +1,3 @@
-#![feature(async_closure)]
 #![feature(let_chains)]
 #![feature(result_flattening)]
 

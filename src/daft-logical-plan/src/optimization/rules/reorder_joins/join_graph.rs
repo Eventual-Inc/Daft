@@ -251,20 +251,27 @@ impl JoinAdjList {
         }
     }
 
+    // Helper function that estimates the total domain for a join between two relations.
+    fn get_estimated_total_domain(
+        &self,
+        left_plan: &LogicalPlanRef,
+        right_plan: &LogicalPlanRef,
+    ) -> usize {
+        let left_stats = left_plan.materialized_stats();
+        let right_stats = right_plan.materialized_stats();
+        // We multiple the number of rows by the reciprocal of the selectivity to get the original total domain.
+        let left_rows = left_stats.approx_stats.num_rows as f64
+            / left_stats.approx_stats.acc_selectivity.max(0.01);
+        let right_rows = right_stats.approx_stats.num_rows as f64
+            / right_stats.approx_stats.acc_selectivity.max(0.01);
+        left_rows.min(right_rows).max(1.0) as usize
+    }
+
     pub(super) fn add_bidirectional_edge(&mut self, node1: JoinNode, node2: JoinNode) {
         let node1_id = self.get_or_create_plan_id(&node1.plan);
         let node2_id = self.get_or_create_plan_id(&node2.plan);
         // Find the minimal total domain for the join columns, either from the current nodes or from the existing total domains.
-        let mut td = {
-            let node1_stats = node1.plan.materialized_stats();
-            let node2_stats = node2.plan.materialized_stats();
-            // We multiple the number of rows by the reciprocal of the selectivity to get the original total domain.
-            let node1_rows = node1_stats.approx_stats.num_rows as f64
-                / node1_stats.approx_stats.acc_selectivity.max(0.01);
-            let node2_rows = node2_stats.approx_stats.num_rows as f64
-                / node2_stats.approx_stats.acc_selectivity.max(0.01);
-            node1_rows.min(node2_rows).max(1.0) as usize
-        };
+        let mut td = self.get_estimated_total_domain(&node1.plan, &node2.plan);
         if let Some(equivalence_set_id) = self
             .equivalence_set_map
             .get(&(node1_id, node1.relation_name.clone()))
@@ -365,26 +372,93 @@ impl JoinAdjList {
         // Grab the minimum spanning tree of join conditions that connect the left and right trees, i.e. we take at most one join condition
         // from each equivalence set of join conditions.
         let mut conds = vec![];
-        let mut seen_equivalence_set_ids = HashSet::new();
+        let mut added_equivalence_set_id_for_td = HashSet::new();
+        let mut added_equivalence_set_id_for_conds = HashSet::new();
+        let mut double_counted_equivalence_set_ids = HashSet::new();
         let mut td = 1;
         for left_node in left.iter() {
             if let Some(neighbors) = self.edges.get(&left_node) {
                 for right_node in right.iter() {
                     if let Some(edges) = neighbors.get(&right_node) {
-                        for edge in edges {
+                        // When there is only one join condition, we multiply the total domain by the domain of the equivalence set.
+                        // However, when there's more than one join condition between two nodes, then we know that this is not a pk-fk join
+                        // on the join keys. Rather, it's a pk-fk join on the tuple of join keys. So we estimate its total domain as the
+                        // cardinality of the smaller table. In this case as well, we should avoid multiplying the total domain by the
+                        // domains of the equivalence sets. So we use `double_counted_equivalence_set_ids` to keep track of the
+                        // equivalence sets that we should not multiply the total domain by.
+                        //
+                        // For a more concrete example, consider the following join:
+                        //
+                        // part.x = partsupp.x
+                        //
+                        // Assuming |part| < |partsupp|, then the total domain of the join is |part|.
+                        //
+                        // Now consider the following joins:
+                        //
+                        // part.x = partsupp.x
+                        // supp.y = partsupp.y
+                        // lineitem.x = partsupp.x
+                        // lineitem.y = partsupp.y
+                        //
+                        // Note that there are implicit join edges part.x = lineitem.x and supp.y = lineitem.y that we infer.
+                        //
+                        // Assume |supp| < |part| < |partsupp| < |lineitem|.
+                        //
+                        // When joining part and partsupp, we know that the join is a pk-fk join on part.x,
+                        // so the selectivity of the join is 1/|part|.
+                        //
+                        // When joining partsupp and lineitem, we know that the join is a pk-fk join on (partsupp.x, partsupp.y).
+                        // We cannot use the total domains of |supp| or |part| to determine the total domain of (partsupp.x, partsupp.y)
+                        // in partsupp. Instead, we estimate the total domain of |(partsupp.x, partsupp.y)| in partsupp as |partsupp|.
+                        // So the selectivity of the join is 1/|partsupp|.
+                        //
+                        // The same is true when we join (partsupp x part) and lineitem: the total domain of the join is still |partsupp|.
+                        if edges.len() == 1 {
+                            let edge = edges[0].clone();
                             let equivalence_set_id = self
                                 .equivalence_set_map
                                 .get(&(left_node, edge.left_on.clone()))
                                 .expect("Left join condition should be part of an equivalence set");
-                            if seen_equivalence_set_ids.insert(*equivalence_set_id) {
+                            if added_equivalence_set_id_for_td.insert(*equivalence_set_id) {
                                 td *= self.total_domains[*equivalence_set_id];
+                            }
+                            if added_equivalence_set_id_for_conds.insert(*equivalence_set_id) {
                                 conds.push(edge.clone());
+                            }
+                        }
+                        if edges.len() > 1 {
+                            let node1_plan = self
+                                .id_to_plan
+                                .get(&left_node)
+                                .expect("left id not found in adj list");
+                            let node2_plan = self
+                                .id_to_plan
+                                .get(&right_node)
+                                .expect("right id not found in adj list");
+                            td *= self.get_estimated_total_domain(node1_plan, node2_plan);
+                            for edge in edges {
+                                let equivalence_set_id = self
+                                    .equivalence_set_map
+                                    .get(&(left_node, edge.left_on.clone()))
+                                    .expect(
+                                        "Left join condition should be part of an equivalence set",
+                                    );
+                                if added_equivalence_set_id_for_conds.insert(*equivalence_set_id) {
+                                    conds.push(edge.clone());
+                                }
+                                double_counted_equivalence_set_ids.insert(*equivalence_set_id);
                             }
                         }
                     }
                 }
             }
         }
+        for equivalence_set_id in double_counted_equivalence_set_ids {
+            if added_equivalence_set_id_for_td.contains(&equivalence_set_id) {
+                td /= self.total_domains[equivalence_set_id].max(1);
+            }
+        }
+        td = td.max(1);
         (conds, td)
     }
 }
@@ -631,7 +705,7 @@ impl JoinGraphBuilder {
     /// (e.g. an aggregation, an outer join, a source node etc).
     /// It keeps track of the following state:
     /// - join_conds_to_resolve: Join conditions (left_on/right_on) from downstream joins that need to be resolved by
-    ///                          linking to some upstream relation.
+    ///   linking to some upstream relation.
     /// - final_name_map: Map from a column's current name in the query plan to its name in the final output schema.
     ///
     /// Joins that added conditions to `join_conds_to_resolve` will pop them off the stack after they have been resolved.

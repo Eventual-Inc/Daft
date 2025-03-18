@@ -44,7 +44,7 @@ struct BoxStreamIterator<'a, T> {
     runtime_handle: RuntimeRef,
 }
 
-impl<'a, T> Iterator for BoxStreamIterator<'a, T> {
+impl<T> Iterator for BoxStreamIterator<'_, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -270,6 +270,11 @@ impl GlobScanOperator {
                         )
                         .await?;
                         (schema, None)
+                    }
+                    FileFormatConfig::Warc(_) => {
+                        return Err(DaftError::ValueError(
+                            "Warc schemas do not need to be inferred".to_string(),
+                        ))
                     }
                     #[cfg(feature = "python")]
                     FileFormatConfig::Database(_) => {

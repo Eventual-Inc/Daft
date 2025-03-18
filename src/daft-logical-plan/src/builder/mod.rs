@@ -30,7 +30,7 @@ use {
 
 use crate::{
     logical_plan::{LogicalPlan, SubqueryAlias},
-    ops::{self, join::JoinOptions},
+    ops::{self, join::JoinOptions, SetQuantifier, UnionStrategy},
     optimization::OptimizerBuilder,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
@@ -45,7 +45,7 @@ use crate::{
 ///
 /// This builder holds the current root (sink) of the logical plan, and the building methods return
 /// a brand new builder holding a new plan; i.e., this is an immutable builder.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
@@ -121,9 +121,14 @@ impl LogicalPlanBuilder {
 
     pub fn alias(&self, id: impl Into<Arc<str>>) -> Self {
         self.with_new_plan(LogicalPlan::SubqueryAlias(SubqueryAlias {
+            plan_id: None,
             input: self.plan.clone(),
             name: id.into(),
         }))
+    }
+
+    pub fn with_plan_id(&self, id: usize) -> Self {
+        self.with_new_plan(self.plan.clone().with_plan_id(id))
     }
 
     pub fn in_memory_scan(
@@ -137,11 +142,12 @@ impl LogicalPlanBuilder {
         let source_info = SourceInfo::InMemory(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
-            cache_entry,
+            Some(cache_entry),
             num_partitions,
             size_bytes,
             num_rows,
             None, // TODO(sammy) thread through clustering spec to Python
+            None,
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
@@ -202,7 +208,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
-        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
+        let expr_resolver = ExprResolver::builder()
+            .allow_actor_pool_udf(true)
+            .allow_monotonic_id(true)
+            .build();
 
         let to_select = expr_resolver.resolve(to_select, self.plan.clone())?;
 
@@ -211,7 +220,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn with_columns(&self, columns: Vec<ExprRef>) -> DaftResult<Self> {
-        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
+        let expr_resolver = ExprResolver::builder()
+            .allow_actor_pool_udf(true)
+            .allow_monotonic_id(true)
+            .build();
 
         let columns = expr_resolver.resolve(columns, self.plan.clone())?;
 
@@ -602,10 +614,19 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn union(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan =
-            ops::Union::try_new(self.plan.clone(), other.plan.clone(), is_all)?
-                .to_logical_plan()?;
+    pub fn union(
+        &self,
+        other: &Self,
+        set_quantifier: SetQuantifier,
+        strategy: UnionStrategy,
+    ) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::Union::try_new(
+            self.plan.clone(),
+            other.plan.clone(),
+            set_quantifier,
+            strategy,
+        )?
+        .to_logical_plan()?;
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -742,8 +763,7 @@ impl LogicalPlanBuilder {
         std::thread::spawn(move || {
             let optimizer = OptimizerBuilder::default()
                 .when(
-                    cfg.as_ref()
-                        .map_or(false, |conf| conf.enable_join_reordering),
+                    cfg.as_ref().is_some_and(|conf| conf.enable_join_reordering),
                     |builder| builder.reorder_joins(),
                 )
                 .simplify_expressions()
@@ -796,8 +816,7 @@ impl LogicalPlanBuilder {
 
         let optimizer = OptimizerBuilder::default()
             .when(
-                cfg.as_ref()
-                    .map_or(false, |conf| conf.enable_join_reordering),
+                cfg.as_ref().is_some_and(|conf| conf.enable_join_reordering),
                 |builder| builder.reorder_joins(),
             )
             .simplify_expressions()
@@ -1072,6 +1091,24 @@ impl PyLogicalPlanBuilder {
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
         Ok(self.builder.concat(&other.builder)?.into())
+    }
+
+    pub fn union(&self, other: &Self, is_all: bool, is_by_name: bool) -> DaftResult<Self> {
+        let quantifier = if is_all {
+            SetQuantifier::All
+        } else {
+            SetQuantifier::Distinct
+        };
+        let strategy = if is_by_name {
+            UnionStrategy::ByName
+        } else {
+            UnionStrategy::Positional
+        };
+
+        Ok(self
+            .builder
+            .union(&other.builder, quantifier, strategy)?
+            .into())
     }
 
     pub fn intersect(&self, other: &Self, is_all: bool) -> DaftResult<Self> {

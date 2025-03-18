@@ -58,6 +58,10 @@ impl Session {
         if self.state().catalogs.exists(&alias) {
             obj_already_exists_err!("Catalog", &alias.into())
         }
+        if self.state().catalogs.is_empty() {
+            // use only catalog as the current catalog
+            self.state_mut().options.curr_catalog = Some(alias.clone());
+        }
         self.state_mut().catalogs.insert(alias, catalog);
         Ok(())
     }
@@ -76,7 +80,7 @@ impl Session {
     ///
     /// TODO feat: consider making a CreateTableSource object for more complicated options.
     ///
-    /// ```
+    /// ```text
     /// CREATE [OR REPLACE] TEMP TABLE [IF NOT EXISTS] <name> <source>;
     /// ```
     pub fn create_temp_table(
@@ -99,8 +103,17 @@ impl Session {
     }
 
     /// Returns the session's current catalog.
-    pub fn current_catalog(&self) -> Result<CatalogRef> {
-        self.get_catalog(&self.state().options.curr_catalog)
+    pub fn current_catalog(&self) -> Result<Option<CatalogRef>> {
+        if let Some(catalog) = &self.state().options.curr_catalog {
+            self.get_catalog(catalog).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Returns the session's current namespace.
+    pub fn current_namespace(&self) -> Result<Option<Vec<String>>> {
+        Ok(self.state().options.curr_namespace.clone())
     }
 
     /// Detaches a table from this session, err if does not exist.
@@ -118,6 +131,10 @@ impl Session {
             obj_not_found_err!("Catalog", &alias.into())
         }
         self.state_mut().catalogs.remove(alias);
+        // cleanup session state
+        if self.state().catalogs.is_empty() {
+            self.set_catalog(None)?;
+        }
         Ok(())
     }
 
@@ -132,11 +149,43 @@ impl Session {
 
     /// Returns the table or an object not found error.
     pub fn get_table(&self, name: &Identifier) -> Result<TableRef> {
-        if name.has_namespace() {
-            unsupported_err!("Qualified identifiers are not yet supported")
+        //
+        // Rule 0: check temp tables.
+        if !name.has_qualifier() {
+            if let Some(view) = self.state().tables.get(&name.name) {
+                return Ok(view.clone());
+            }
         }
-        if let Some(view) = self.state().tables.get(&name.name) {
-            return Ok(view.clone());
+        //
+        // Use session state, but error if there's no catalog and the table was not in temp tables.
+        let curr_catalog = match self.current_catalog()? {
+            Some(catalog) => catalog,
+            None => obj_not_found_err!("Table", name),
+        };
+        let curr_namespace = self.current_namespace()?;
+        //
+        // Rule 1: try to resolve using the current catalog and current schema.
+        if let Some(qualifier) = curr_namespace {
+            if let Some(table) = curr_catalog.get_table(&name.qualify(qualifier))? {
+                return Ok(table.into());
+            };
+        }
+        //
+        // Rule 2: try to resolve as schema-qualified using the current catalog.
+        if let Some(table) = curr_catalog.get_table(name)? {
+            return Ok(table.into());
+        }
+        //
+        // The next resolution rule requires a qualifier.
+        if !name.has_qualifier() {
+            obj_not_found_err!("Table", name)
+        }
+        //
+        // Rule 3: try to resolve as catalog-qualified.
+        if let Ok(catalog) = self.get_catalog(&name.qualifier[0]) {
+            if let Some(table) = catalog.get_table(&name.drop(1))? {
+                return Ok(table.into());
+            }
         }
         obj_not_found_err!("Table", name)
     }
@@ -148,10 +197,7 @@ impl Session {
 
     /// Returns true iff the session has access to a matching table.
     pub fn has_table(&self, name: &Identifier) -> bool {
-        if name.has_namespace() {
-            return false;
-        }
-        return self.state().tables.exists(&name.name);
+        self.get_table(name).is_ok()
     }
 
     /// Lists all catalogs matching the pattern.
@@ -165,11 +211,29 @@ impl Session {
     }
 
     /// Sets the current_catalog
-    pub fn set_catalog(&self, name: &str) -> Result<()> {
-        if !self.has_catalog(name) {
-            obj_not_found_err!("Catalog", &name.into())
+    pub fn set_catalog(&self, ident: Option<&str>) -> Result<()> {
+        if let Some(ident) = ident {
+            if !self.has_catalog(ident) {
+                obj_not_found_err!("Catalog", &ident.into())
+            }
+            self.state_mut().options.curr_catalog = Some(ident.to_string());
+        } else {
+            self.state_mut().options.curr_catalog = None;
         }
-        self.state_mut().options.curr_catalog = name.to_string();
+        Ok(())
+    }
+
+    /// Sets the current_namespace (consider an Into at a later time).
+    pub fn set_namespace(&self, ident: Option<&Identifier>) -> Result<()> {
+        // TODO chore: update once Identifier is a Vec<String>
+        if let Some(ident) = ident {
+            let mut path = vec![];
+            path.extend_from_slice(&ident.qualifier);
+            path.push(ident.name.clone());
+            self.state_mut().options.curr_namespace = Some(path);
+        } else {
+            self.state_mut().options.curr_namespace = None;
+        }
         Ok(())
     }
 }
@@ -177,5 +241,63 @@ impl Session {
 impl Default for Session {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+/// Migrated from daft-catalog DaftMetaCatalog tests
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_catalog::View;
+    use daft_core::prelude::*;
+    use daft_logical_plan::{
+        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
+        LogicalPlanRef, SourceInfo,
+    };
+
+    use super::*;
+
+    fn mock_plan() -> LogicalPlanRef {
+        let schema = Arc::new(
+            Schema::new(vec![
+                Field::new("text", DataType::Utf8),
+                Field::new("id", DataType::Int32),
+            ])
+            .unwrap(),
+        );
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+                source_schema: schema,
+                clustering_spec: Arc::new(ClusteringSpec::unknown()),
+            })),
+        ))
+        .arced()
+    }
+
+    #[test]
+    fn test_attach_table() {
+        let sess = Session::empty();
+        let plan = LogicalPlanBuilder::from(mock_plan());
+        let view = View::from(plan).arced();
+
+        // Register a table
+        assert!(sess.attach_table(view, "test_table").is_ok());
+    }
+
+    #[test]
+    fn test_get_table() {
+        let sess = Session::empty();
+        let plan = LogicalPlanBuilder::from(mock_plan());
+        let view = View::from(plan).arced();
+
+        sess.attach_table(view, "test_table")
+            .expect("failed to attach table");
+
+        assert!(sess.get_table(&Identifier::simple("test_table")).is_ok());
+        assert!(sess
+            .get_table(&Identifier::simple("non_existent_table"))
+            .is_err());
     }
 }

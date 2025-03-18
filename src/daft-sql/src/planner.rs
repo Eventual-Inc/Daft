@@ -18,7 +18,10 @@ use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
     utf8::{ilike, like, to_date, to_datetime},
 };
-use daft_logical_plan::{JoinOptions, LogicalPlanBuilder, LogicalPlanRef};
+use daft_logical_plan::{
+    ops::{SetQuantifier, UnionStrategy},
+    JoinOptions, LogicalPlanBuilder, LogicalPlanRef,
+};
 use daft_session::Session;
 use itertools::Itertools;
 use sqlparser::{
@@ -35,7 +38,7 @@ use sqlparser::{
 
 use crate::{
     column_not_found_err, error::*, invalid_operation_err, schema::sql_dtype_to_dtype,
-    table_not_found_err, unsupported_sql_err,
+    statement::Statement, table_not_found_err, unsupported_sql_err,
 };
 
 /// Bindings are used to lookup in-scope tables, views, and columns (targets T).
@@ -102,6 +105,7 @@ impl PlannerContext {
 }
 
 /// An SQLPlanner is created for each scope to bind names and translate to logical plans.
+///
 /// TODO flip SQLPlanner to pass scoped state objects rather than being stateful itself.
 /// This gives us control on state management without coupling our scopes to the call stack.
 /// It also eliminates extra references on the shared context and we can remove interior mutability.
@@ -175,9 +179,7 @@ impl<'a> SQLPlanner<'a> {
         Ref::map(self.context.borrow(), |i| &i.bound_ctes)
     }
 
-    /// Get the table associated with the name from the session.
-    ///
-    /// Also adds a SubqueryAlias to the table with the name.
+    /// Get the table associated with the name from the session and wrap in a SubqueryAlias.
     fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
         let table = self.session().get_table(name)?;
         let plan = table.get_logical_plan()?;
@@ -220,8 +222,8 @@ impl<'a> SQLPlanner<'a> {
         Ok(())
     }
 
-    pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
-        let tokens = Tokenizer::new(&GenericDialect {}, sql).tokenize()?;
+    pub fn plan(&mut self, input: &str) -> SQLPlannerResult<Statement> {
+        let tokens = Tokenizer::new(&GenericDialect {}, input).tokenize()?;
 
         let mut parser = Parser::new(&GenericDialect {})
             .with_options(ParserOptions {
@@ -241,10 +243,17 @@ impl<'a> SQLPlanner<'a> {
 
         // plan single statement
         let stmt = &statements[0];
-        let plan = self.plan_statement(stmt)?.build();
+        let stmt = self.plan_statement(stmt)?;
         self.clear_context();
+        Ok(stmt)
+    }
 
-        Ok(plan)
+    pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
+        if let Statement::Select(plan) = self.plan(sql)? {
+            Ok(plan)
+        } else {
+            unsupported_sql_err!("plan_sql does not support non-query statements")
+        }
     }
 
     pub(crate) fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
@@ -261,7 +270,7 @@ impl<'a> SQLPlanner<'a> {
             } => {
                 use sqlparser::ast::{
                     SetOperator::{Intersect, Union},
-                    SetQuantifier,
+                    SetQuantifier as SQLSetQuantifier,
                 };
                 fn make_query(expr: &SetExpr) -> Query {
                     Query {
@@ -283,16 +292,29 @@ impl<'a> SQLPlanner<'a> {
                 let right = self.new_with_context().plan_query(&make_query(right))?;
 
                 return match (op, set_quantifier) {
-                    (Union, SetQuantifier::All) => left.union(&right, true).map_err(|e| e.into()),
-
-                    (Union, SetQuantifier::None | SetQuantifier::Distinct) => {
-                        left.union(&right, false).map_err(|e| e.into())
+                    (Union, set_quantifier) => {
+                        let (set_quantifier, strategy) = match set_quantifier {
+                            SQLSetQuantifier::All => {
+                                (SetQuantifier::All, UnionStrategy::Positional)
+                            }
+                            SQLSetQuantifier::None | SQLSetQuantifier::Distinct => {
+                                (SetQuantifier::Distinct, UnionStrategy::Positional)
+                            }
+                            SQLSetQuantifier::ByName | SQLSetQuantifier::DistinctByName => {
+                                (SetQuantifier::Distinct, UnionStrategy::ByName)
+                            }
+                            SQLSetQuantifier::AllByName => {
+                                (SetQuantifier::All, UnionStrategy::ByName)
+                            }
+                        };
+                        left.union(&right, set_quantifier, strategy)
+                            .map_err(|e| e.into())
                     }
 
-                    (Intersect, SetQuantifier::All) => {
+                    (Intersect, SQLSetQuantifier::All) => {
                         left.intersect(&right, true).map_err(|e| e.into())
                     }
-                    (Intersect, SetQuantifier::None | SetQuantifier::Distinct) => {
+                    (Intersect, SQLSetQuantifier::None | SQLSetQuantifier::Distinct) => {
                         left.intersect(&right, false).map_err(|e| e.into())
                     }
                     (op, set_quantifier) => {
@@ -555,7 +577,7 @@ impl<'a> SQLPlanner<'a> {
                     descending.push(true);
                 }
 
-            };
+            }
             if order_by_expr.with_fill.is_some() {
                 unsupported_sql_err!("WITH FILL");
             }
@@ -819,7 +841,7 @@ impl<'a> SQLPlanner<'a> {
                 ..
             } => {
                 let tbl_fn = name.0.first().unwrap().value.as_str();
-                (self.plan_table_function(tbl_fn, args)?, alias.clone())
+                (self.plan_table_function(tbl_fn, args)?, alias)
             }
             sqlparser::ast::TableFactor::Table {
                 name,
@@ -833,7 +855,7 @@ impl<'a> SQLPlanner<'a> {
                     self.plan_relation_table(name)?
                 };
 
-                (plan, alias.clone())
+                (plan, alias)
             }
             sqlparser::ast::TableFactor::Derived {
                 lateral,
@@ -844,7 +866,7 @@ impl<'a> SQLPlanner<'a> {
                     unsupported_sql_err!("LATERAL");
                 }
                 let subquery = self.new_with_context().plan_query(subquery)?;
-                (subquery, alias.clone())
+                (subquery, alias)
             }
             sqlparser::ast::TableFactor::TableFunction { .. } => {
                 unsupported_sql_err!("Unsupported table factor: TableFunction")
@@ -872,7 +894,7 @@ impl<'a> SQLPlanner<'a> {
             }
         };
         if let Some(alias) = alias {
-            apply_table_alias(plan, &alias)
+            apply_table_alias(plan, alias)
         } else {
             Ok(plan)
         }
@@ -905,7 +927,7 @@ impl<'a> SQLPlanner<'a> {
         name: &ObjectName,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let ident = normalize(name);
-        let table = if ident.has_namespace() {
+        let table = if ident.has_qualifier() {
             // qualified search of session metadata
             self.get_table(&ident).ok()
         } else {
@@ -1136,7 +1158,7 @@ impl<'a> SQLPlanner<'a> {
             Value::Null => LiteralValue::Null,
             _ => {
                 return Err(PlannerError::invalid_operation(
-                    "Only string, number, boolean and null literals are supported. Instead found: `{value}`",
+                    format!("Only string, number, boolean and null literals are supported. Instead found: `{value}`"),
                 ))
             }
         })

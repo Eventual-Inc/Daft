@@ -1,4 +1,3 @@
-#![feature(async_closure)]
 pub mod binary;
 pub mod coalesce;
 pub mod count_matches;
@@ -11,6 +10,7 @@ pub mod minhash;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod sequence;
 pub mod temporal;
 pub mod to_struct;
 pub mod tokenize;
@@ -30,7 +30,7 @@ pub enum Error {
 
 impl From<Error> for std::io::Error {
     fn from(err: Error) -> Self {
-        Self::new(std::io::ErrorKind::Other, err)
+        Self::other(err)
     }
 }
 
@@ -38,4 +38,13 @@ impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
         Self::External(err.into())
     }
+}
+
+/// TODO chore: cleanup function implementations using error macros
+#[macro_export]
+macro_rules! invalid_argument_err {
+    ($($arg:tt)*)  => {{
+        let msg = format!($($arg)*);
+        return Err(common_error::DaftError::TypeError(msg).into());
+    }};
 }

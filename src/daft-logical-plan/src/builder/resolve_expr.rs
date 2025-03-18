@@ -12,6 +12,13 @@ use typed_builder::TypedBuilder;
 
 use crate::LogicalPlanRef;
 
+fn contains_monotonic_id(expr: &ExprRef) -> bool {
+    expr.exists(|e| match e.as_ref() {
+        Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
+        _ => false,
+    })
+}
+
 /// Duplicate an expression tree for each wildcard match in a column or struct get.
 fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
     let mut wildcard_expansion = None;
@@ -48,6 +55,17 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                                 set_wildcard_expansion(&mut wildcard_expansion, &expr, schema.fields.keys().cloned())?;
                             },
                         }
+                    }
+                    PlanRef::Id(id) => {
+                        match (&plan.clone().get_schema_for_id(*id)?, plan_schema) {
+                            (None, None) => {
+                                return Err(DaftError::ValueError(format!("Plan id {id} in unresolved column is not in current scope, must have schema specified.")));
+                            }
+                            (Some(schema), _) | (None, Some(schema)) => {
+                                set_wildcard_expansion(&mut wildcard_expansion, &expr, schema.fields.keys().cloned())?;
+                            },
+                        }
+
                     }
                     PlanRef::Unqualified => set_wildcard_expansion(&mut wildcard_expansion, &expr, plan.schema().fields.keys().cloned())?,
                 }
@@ -128,6 +146,18 @@ fn resolve_unresolved_columns(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult
                         Err(DaftError::FieldNotFound(format!("Column {alias}.{name} is an outer column but does not have an associated schema.")))
                     }
                 }
+                PlanRef::Id(id) => {
+                    if let Some(schema) = plan.clone().get_schema_for_id(*id)? {
+                        // make sure column exists in schema
+                        schema.get_field(name)?;
+
+                        Ok(Transformed::yes(resolved_col(name.clone())))
+                    } else if let Some(schema) = plan_schema {
+                        Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(schema.get_field(name)?.clone()))))))
+                    } else {
+                        Err(DaftError::FieldNotFound(format!("Column {id}.{name} is an outer column but does not have an associated schema.")))
+                    }
+                }
                 PlanRef::Unqualified => {
                     if plan.schema().has_field(name) {
                         Ok(Transformed::yes(resolved_col(name.clone())))
@@ -168,6 +198,8 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
 pub struct ExprResolver<'a> {
     #[builder(default)]
     allow_actor_pool_udf: bool,
+    #[builder(default)]
+    allow_monotonic_id: bool,
     #[builder(via_mutators, mutators(
         pub fn in_agg_context(&mut self, in_agg_context: bool) {
             // workaround since typed_builder can't have defaults for mutator requirements
@@ -184,12 +216,18 @@ pub struct ExprResolver<'a> {
     groupby: HashSet<&'a ExprRef>,
 }
 
-impl<'a> ExprResolver<'a> {
+impl ExprResolver<'_> {
     fn resolve_helper(&self, expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
         if !self.allow_actor_pool_udf && expr.exists(is_actor_pool_udf) {
             return Err(DaftError::ValueError(format!(
                 "UDFs with concurrency set are only allowed in projections: {expr}"
             )));
+        }
+
+        if !self.allow_monotonic_id && contains_monotonic_id(&expr) {
+            return Err(DaftError::ValueError(
+                "monotonically_increasing_id() is only allowed in projections".to_string(),
+            ));
         }
 
         expand_wildcard(expr, plan.clone())?

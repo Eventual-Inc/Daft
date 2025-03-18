@@ -19,7 +19,7 @@ pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 #[cfg(feature = "python")]
 use common_file_formats::{
     python::PyFileFormatConfig, CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig,
-    ParquetSourceConfig,
+    ParquetSourceConfig, WarcSourceConfig,
 };
 pub use daft_core::join::{JoinStrategy, JoinType};
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
@@ -38,6 +38,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyFileFormatConfig>()?;
     parent.add_class::<ParquetSourceConfig>()?;
     parent.add_class::<JsonSourceConfig>()?;
+    parent.add_class::<WarcSourceConfig>()?;
     parent.add_class::<CsvSourceConfig>()?;
     parent.add_class::<DatabaseSourceConfig>()?;
     parent.add_class::<FileInfos>()?;

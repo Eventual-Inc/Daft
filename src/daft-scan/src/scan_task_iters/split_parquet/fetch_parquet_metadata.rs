@@ -34,7 +34,7 @@ pub(super) enum ParquetSplitScanTaskGenerator {
     _Split(split_parquet_file::ParquetFileSplitter),
 }
 
-impl<'cfg> Iterator for RetrieveParquetMetadataIterator<'cfg> {
+impl Iterator for RetrieveParquetMetadataIterator<'_> {
     type Item = ParquetSplitScanTaskGenerator;
 
     fn next(&mut self) -> Option<Self::Item> {

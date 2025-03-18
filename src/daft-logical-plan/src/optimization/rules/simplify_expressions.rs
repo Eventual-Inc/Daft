@@ -66,11 +66,11 @@ mod test {
         );
         LogicalPlanBuilder::from(
             LogicalPlan::Source(Source {
+                plan_id: None,
                 output_schema: schema.clone(),
                 source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                     source_schema: schema,
                     clustering_spec: Arc::new(ClusteringSpec::unknown()),
-                    source_id: 0,
                 })),
                 stats_state: StatsState::NotMaterialized,
             })

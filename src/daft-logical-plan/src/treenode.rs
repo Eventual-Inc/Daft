@@ -46,6 +46,8 @@ impl LogicalPlan {
 
         Ok(match self.as_ref() {
             Self::Project(Project {
+                plan_id,
+
                 input,
                 projection,
                 projected_schema,
@@ -56,6 +58,7 @@ impl LogicalPlan {
                 .map_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_projection| {
                     Self::Project(Project {
+                        plan_id: *plan_id,
                         input: input.clone(),
                         projection: new_projection,
                         projected_schema: projected_schema.clone(),
@@ -64,11 +67,13 @@ impl LogicalPlan {
                     .into()
                 }),
             Self::Filter(Filter {
+                plan_id,
                 input,
                 predicate,
                 stats_state,
             }) => f(predicate.clone(), &input.schema())?.update_data(|expr| {
                 Self::Filter(Filter {
+                    plan_id: *plan_id,
                     input: input.clone(),
                     predicate: expr,
                     stats_state: stats_state.clone(),
@@ -76,6 +81,7 @@ impl LogicalPlan {
                 .into()
             }),
             Self::Repartition(Repartition {
+                plan_id,
                 input,
                 repartition_spec,
                 stats_state,
@@ -86,6 +92,7 @@ impl LogicalPlan {
                     .map_and_collect(|expr| f(expr, &input.schema()))?
                     .update_data(|expr| {
                         Self::Repartition(Repartition {
+                            plan_id: *plan_id,
                             input: input.clone(),
                             repartition_spec: RepartitionSpec::Hash(HashRepartitionConfig {
                                 num_partitions: *num_partitions,
@@ -98,6 +105,7 @@ impl LogicalPlan {
                 _ => Transformed::no(self.clone()),
             },
             Self::ActorPoolProject(ActorPoolProject {
+                plan_id,
                 input,
                 projection,
                 projected_schema,
@@ -108,6 +116,7 @@ impl LogicalPlan {
                 .map_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_projection| {
                     Self::ActorPoolProject(ActorPoolProject {
+                        plan_id: *plan_id,
                         input: input.clone(),
                         projection: new_projection,
                         projected_schema: projected_schema.clone(),
@@ -116,6 +125,7 @@ impl LogicalPlan {
                     .into()
                 }),
             Self::Sort(Sort {
+                plan_id,
                 input,
                 sort_by,
                 descending,
@@ -127,6 +137,7 @@ impl LogicalPlan {
                 .map_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_sort_by| {
                     Self::Sort(Sort {
+                        plan_id: *plan_id,
                         input: input.clone(),
                         sort_by: new_sort_by,
                         descending: descending.clone(),
@@ -136,6 +147,7 @@ impl LogicalPlan {
                     .into()
                 }),
             Self::Explode(Explode {
+                plan_id,
                 input,
                 to_explode,
                 exploded_schema,
@@ -146,6 +158,7 @@ impl LogicalPlan {
                 .map_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_to_explode| {
                     Self::Explode(Explode {
+                        plan_id: *plan_id,
                         input: input.clone(),
                         to_explode: new_to_explode,
                         exploded_schema: exploded_schema.clone(),
@@ -154,6 +167,7 @@ impl LogicalPlan {
                     .into()
                 }),
             Self::Join(Join {
+                plan_id,
                 left,
                 right,
                 left_on,
@@ -176,6 +190,7 @@ impl LogicalPlan {
                 if new_left_on.transformed && new_right_on.transformed {
                     Transformed::yes(
                         Self::Join(Join {
+                            plan_id: *plan_id,
                             left: left.clone(),
                             right: right.clone(),
                             left_on: new_left_on.data,
@@ -193,6 +208,7 @@ impl LogicalPlan {
                 }
             }
             Self::Source(Source {
+                plan_id,
                 output_schema,
                 source_info,
                 stats_state,
@@ -217,6 +233,7 @@ impl LogicalPlan {
 
                     f(filter.clone(), schema)?.update_data(|new_filter| {
                         Self::Source(Source {
+                            plan_id: *plan_id,
                             output_schema: output_schema.clone(),
                             source_info: Arc::new(SourceInfo::Physical(
                                 physical_scan_info

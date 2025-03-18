@@ -18,6 +18,7 @@ Constructors
     lit
     list_
     struct
+    interval
 
 Generic
 #######
@@ -49,9 +50,11 @@ Numeric
     Expression.__sub__
     Expression.__mul__
     Expression.__truediv__
+    Expression.__floordiv__
     Expression.__mod__
     Expression.__lshift__
     Expression.__rshift__
+    Expression.abs
     Expression.ceil
     Expression.floor
     Expression.sign
@@ -62,7 +65,12 @@ Numeric
     Expression.sin
     Expression.cos
     Expression.tan
+    Expression.csc
+    Expression.sec
     Expression.cot
+    Expression.sinh
+    Expression.cosh
+    Expression.tanh
     Expression.arcsin
     Expression.arccos
     Expression.arctan
@@ -76,9 +84,14 @@ Numeric
     Expression.log10
     Expression.log
     Expression.ln
+    Expression.log1p
     Expression.exp
+    Expression.expm1
     Expression.shift_left
     Expression.shift_right
+    Expression.bitwise_and
+    Expression.bitwise_or
+    Expression.bitwise_xor
 
 .. _api-comparison-expression:
 
@@ -92,6 +105,7 @@ Logical
     Expression.__invert__
     Expression.__and__
     Expression.__or__
+    Expression.__xor__
     Expression.__lt__
     Expression.__le__
     Expression.__eq__
@@ -190,6 +204,9 @@ The following methods are available under the ``expr.binary`` attribute.
    Expression.binary.concat
    Expression.binary.length
    Expression.binary.slice
+   Expression.encode
+   Expression.decode
+
 
 .. _api-float-expression-operations:
 
@@ -313,6 +330,7 @@ URLs
    :template: autosummary/accessor_method.rst
 
    Expression.url.download
+   Expression.url.upload
 
 JSON
 ####

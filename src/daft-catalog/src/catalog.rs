@@ -14,7 +14,7 @@ pub trait Catalog: Sync + Send + std::fmt::Debug {
     fn name(&self) -> String;
 
     /// Returns the given table if it exists.
-    fn get_table(&self, name: &Identifier) -> Result<Option<Box<dyn Table>>>;
+    fn get_table(&self, ident: &Identifier) -> Result<Option<Box<dyn Table>>>;
 
     /// Leverage dynamic dispatch to return the inner object for a PyCatalogImpl (generics?)
     #[cfg(feature = "python")]

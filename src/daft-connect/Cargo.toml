@@ -23,7 +23,6 @@ daft-sql = {workspace = true, optional = true, features = ["python"]}
 dashmap = "6.1.0"
 futures = "0.3.31"
 itertools = {workspace = true}
-once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 spark-connect = {workspace = true}
 textwrap = "0.16.1"

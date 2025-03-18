@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use common_display::table_display::StrValue;
 use itertools::Itertools;
 
@@ -108,7 +110,7 @@ pub fn display_duration(val: i64, unit: &TimeUnit) -> String {
             (val % sizes[i - 1]) / size
         };
         if whole_num != 0 {
-            output.push_str(&format!("{}{}", whole_num, UNITS[i]));
+            write!(output, "{}{}", whole_num, UNITS[i]).unwrap();
             if val % size != 0 {
                 output.push(' ');
             }
@@ -117,7 +119,7 @@ pub fn display_duration(val: i64, unit: &TimeUnit) -> String {
 
     let remainder = val % remainder_divisor;
     if remainder != 0 && suffix != "s" {
-        output.push_str(&format!("{}{}", remainder, suffix));
+        write!(output, "{}{}", remainder, suffix).unwrap();
     }
 
     output

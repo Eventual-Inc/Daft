@@ -184,31 +184,58 @@ def test_table_sign_bad_input() -> None:
 
 
 @pytest.mark.parametrize(
-    ("fun", "is_arc"),
+    ("fun", "is_arc", "is_co"),
     [
-        ("sin", False),
-        ("cos", False),
-        ("tan", False),
-        ("arcsin", True),
-        ("arccos", True),
-        ("arctan", True),
-        ("radians", False),
-        ("degrees", False),
+        ("sin", False, False),
+        ("cos", False, False),
+        ("tan", False, False),
+        ("sinh", False, False),
+        ("cosh", False, False),
+        ("arcsin", True, False),
+        ("arccos", True, False),
+        ("arctan", True, False),
+        ("radians", False, False),
+        ("degrees", False, False),
+        ("csc", False, True),
+        ("sec", False, True),
+        ("cot", False, True),
     ],
 )
-def test_table_numeric_trigonometry(fun: str, is_arc: bool) -> None:
+def test_table_numeric_trigonometry(fun: str, is_arc: bool, is_co: bool) -> None:
+    np_fun = fun
     if not is_arc:
         table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
+        if is_co:
+            reciprocal = {"cot": "tan", "csc": "sin", "sec": "cos"}
+            np_fun = reciprocal[fun]
     else:
         table = MicroPartition.from_pydict({"a": [0.0, 1, 0.5, math.nan]})
     s = table.to_pandas()["a"]
-    np_result = getattr(np, fun)(s)
+    np_result = getattr(np, np_fun)(s)
+    if is_co:
+        np_result = 1 / np_result
 
     trigonometry_table = table.eval_expression_list([getattr(col("a"), fun)()])
     assert (
         all(
             x == y or (math.isnan(x) and math.isnan(y))
             for x, y in zip(trigonometry_table.get_column("a").to_pylist(), np_result.to_list())
+        )
+        is True
+    )
+
+
+def test_table_numeric_tanh() -> None:
+    table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
+    s = table.to_pandas()["a"]
+    np_result = np.tanh(s)
+    arct = table.eval_expression_list([col("a").tanh()])
+    assert (
+        all(
+            x - y < 1.0e-10
+            or (x is None and y is None)
+            or (math.isnan(x) and math.isnan(y) or math.isinf(x) and math.isinf(y))
+            for x, y in zip(arct.get_column("a").to_pylist(), np_result.to_list())
         )
         is True
     )
@@ -577,6 +604,39 @@ def test_table_ln_bad_input() -> None:
 
     with pytest.raises(ValueError, match="Expected input to log to be numeric"):
         table.eval_expression_list([col("a").ln()])
+
+
+def test_table_numeric_log1p() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
+    log1p_table = table.eval_expression_list([col("a").log1p(), col("b").log1p()])
+    assert lists_close_with_nones(
+        [math.log1p(v) if v is not None else v for v in table.get_column("a").to_pylist()],
+        log1p_table.get_column("a").to_pylist(),
+    )
+    assert lists_close_with_nones(
+        [math.log1p(v) if v is not None else v for v in table.get_column("b").to_pylist()],
+        log1p_table.get_column("b").to_pylist(),
+    )
+
+
+def test_table_log1p_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to log to be numeric"):
+        table.eval_expression_list([col("a").log1p()])
+
+
+def test_table_expm1() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, None], "b": [1, 10, None]})
+    expm1_table = table.eval_expression_list([col("a").expm1(), col("b").expm1()])
+    assert lists_close_with_nones(
+        [0.10517091807564763, 0.010050167084168058, None],
+        expm1_table.get_column("a").to_pylist(),
+    )
+    assert lists_close_with_nones(
+        [1.718281828459045, 22025.465794806718, None],
+        expm1_table.get_column("b").to_pylist(),
+    )
 
 
 def test_table_exp() -> None:

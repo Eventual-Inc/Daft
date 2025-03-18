@@ -21,13 +21,13 @@ daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
+daft-warc = {path = "../daft-warc", default-features = false}
 daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 indicatif = "0.17.9"
 itertools = {workspace = true}
 kanal = "0.1.0-pre8"
-lazy_static = {workspace = true}
 log = {workspace = true}
 num-format = {workspace = true}
 pin-project = "1"

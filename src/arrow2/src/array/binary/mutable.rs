@@ -119,6 +119,16 @@ impl<O: Offset> MutableBinaryArray<O> {
         self.try_push(value).unwrap()
     }
 
+    #[inline]
+    pub fn allocate_slice(&mut self, num_bytes: usize) -> &mut [u8] {
+        match &mut self.validity {
+            Some(validity) => validity.push(true),
+            None => {}
+        }
+
+        self.values.allocate_slice(num_bytes)
+    }
+
     /// Pop the last entry from [`MutableBinaryArray`].
     /// This function returns `None` iff this array is empty
     pub fn pop(&mut self) -> Option<Vec<u8>> {

@@ -33,7 +33,7 @@ impl<'cfg> SplitParquetScanTasksIterator<'cfg> {
     }
 }
 
-impl<'cfg> Iterator for SplitParquetScanTasksIterator<'cfg> {
+impl Iterator for SplitParquetScanTasksIterator<'_> {
     type Item = DaftResult<ScanTaskRef>;
 
     fn next(&mut self) -> Option<Self::Item> {

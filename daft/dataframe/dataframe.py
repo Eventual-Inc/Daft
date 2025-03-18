@@ -94,6 +94,10 @@ def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
     )
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class DataFrame:
     """A Daft DataFrame is a table of data.
 
@@ -159,7 +163,7 @@ class DataFrame:
         else:
             return self._result_cache.value
 
-    def _broadcast_query_plan(self):
+    def _broadcast_query_plan(self, plan_time_start: datetime, plan_time_end: datetime):
         from daft import dashboard
         from daft.dataframe.display import MermaidFormatter
 
@@ -167,16 +171,17 @@ class DataFrame:
             return
 
         is_cached = self._result_cache is not None
-        plan_time_start = datetime.now(timezone.utc)
         mermaid_plan: str = MermaidFormatter(
-            builder=self.__builder, show_all=True, simple=False, is_cached=is_cached
+            builder=self.__builder,
+            show_all=True,
+            simple=False,
+            is_cached=is_cached,
         )._repr_markdown_()
-        plan_time_end = datetime.now(timezone.utc)
 
-        dashboard._broadcast_query_plan(
-            mermaid_plan,
-            plan_time_start,
-            plan_time_end,
+        dashboard.broadcast_query_information(
+            mermaid_plan=mermaid_plan,
+            plan_time_start=plan_time_start,
+            plan_time_end=plan_time_end,
         )
 
     @DataframePublicAPI
@@ -310,14 +315,14 @@ class DataFrame:
             The default value is the total number of CPUs available on the current machine.
 
         Example:
-        >>> import daft
-        >>>
-        >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
-        >>> for row in df.iter_rows():
-        ...     print(row)
-        {'foo': 1, 'bar': 'a'}
-        {'foo': 2, 'bar': 'b'}
-        {'foo': 3, 'bar': 'c'}
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
+            >>> for row in df.iter_rows():
+            ...     print(row)
+            {'foo': 1, 'bar': 'a'}
+            {'foo': 2, 'bar': 'b'}
+            {'foo': 3, 'bar': 'c'}
 
 
         Args:
@@ -964,6 +969,22 @@ class DataFrame:
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
+        def _create_metadata_param(metadata: Optional[Dict[str, str]]):
+            """From deltalake>=0.20.0 onwards, custom_metadata has to be passed as CommitProperties.
+
+            Args:
+                metadata
+
+            Returns:
+                DataFrame: metadata for deltalake<0.20.0, otherwise CommitProperties with custom_metadata
+            """
+            if parse(deltalake.__version__) < parse("0.20.0"):
+                return metadata
+            else:
+                from deltalake import CommitProperties
+
+                return CommitProperties(custom_metadata=metadata)
+
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
 
@@ -1108,8 +1129,9 @@ class DataFrame:
                     rows.append(old_actions_dict["num_records"][i])
                     sizes.append(old_actions_dict["size_bytes"][i])
 
+            metadata_param = _create_metadata_param(custom_metadata)
             table._table.create_write_transaction(
-                add_actions, mode, partition_cols or [], delta_schema, None, custom_metadata
+                add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
             )
             table.update_incremental()
 
@@ -1143,50 +1165,46 @@ class DataFrame:
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Example:
-        --------
-        >>> import daft
-        >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
-        >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
-        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
-        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
-        │ ---           ┆ ---              ┆ ---             ┆ ---     │
-        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
-        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
-        │ 1             ┆ 0                ┆ 1               ┆ 1       │
-        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
-        <BLANKLINE>
-        (Showing first 1 of 1 rows)
-
-        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
-        ╭───────╮
-        │ a     │
-        │ ---   │
-        │ Int64 │
-        ╞═══════╡
-        │ 1     │
-        ├╌╌╌╌╌╌╌┤
-        │ 2     │
-        ├╌╌╌╌╌╌╌┤
-        │ 3     │
-        ├╌╌╌╌╌╌╌┤
-        │ 4     │
-        ╰───────╯
-        <BLANKLINE>
-        (Showing first 4 of 4 rows)
-
-
-        # Pass additional keyword arguments to the Lance writer
-        # All additional keyword arguments are passed to `lance.write_fragments`
-        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
-        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
-        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
-        │ ---           ┆ ---              ┆ ---             ┆ ---     │
-        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
-        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
-        │ 1             ┆ 0                ┆ 1               ┆ 2       │
-        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
-        <BLANKLINE>
-        (Showing first 1 of 1 rows)
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
+            >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
+            ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+            │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+            │ ---           ┆ ---              ┆ ---             ┆ ---     │
+            │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+            ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+            │ 1             ┆ 0                ┆ 1               ┆ 1       │
+            ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+            >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
+            ╭───────╮
+            │ a     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+            >>> # Pass additional keyword arguments to the Lance writer
+            >>> # All additional keyword arguments are passed to `lance.write_fragments`
+            >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
+            ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+            │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+            │ ---           ┆ ---              ┆ ---             ┆ ---     │
+            │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+            ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+            │ 1             ┆ 0                ┆ 1               ┆ 2       │
+            ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         from daft import from_pydict
         from daft.io.object_store_options import io_config_to_storage_options
@@ -1199,6 +1217,7 @@ class DataFrame:
             raise ImportError("lance is not installed. Please install lance using `pip install getdaft[lance]`")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         if isinstance(uri, (str, pathlib.Path)):
             if isinstance(uri, str):
                 table_uri = uri
@@ -1208,8 +1227,10 @@ class DataFrame:
                 table_uri = uri
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 
+        storage_options = io_config_to_storage_options(io_config, table_uri)
+
         try:
-            table = lance.dataset(table_uri)
+            table = lance.dataset(table_uri, storage_options=storage_options)
 
         except ValueError:
             table = None
@@ -1242,7 +1263,6 @@ class DataFrame:
         elif mode == "append":
             operation = lance.LanceOperation.Append(fragments)
 
-        storage_options = io_config_to_storage_options(io_config, table_uri)
         dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version, storage_options=storage_options)
         stats = dataset.stats.dataset_stats()
 
@@ -2102,6 +2122,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
+            >>> import daft
             >>> df = daft.from_pydict({"a": [1.6, 2.5, 3.3, float("nan")]})
             >>> df.drop_nan("a").collect()  # drops rows where column a contains NaN values
             ╭─────────╮
@@ -2344,9 +2365,9 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(result, DataFrame), (
-            f"Func returned an instance of type [{type(result)}], " "should have been DataFrame."
-        )
+        assert isinstance(
+            result, DataFrame
+        ), f"Func returned an instance of type [{type(result)}], should have been DataFrame."
         return result
 
     def _agg(
@@ -2638,7 +2659,11 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ...     {
+            ...         "pet": ["cat", "dog", "dog", "cat"],
+            ...         "age": [1, 2, 3, 4],
+            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
+            ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
@@ -2725,6 +2750,128 @@ class DataFrame:
             names = self.select(pivot_col_expr).distinct().to_pydict()[pivot_col_expr.name()]
             names = [str(x) for x in names]
         builder = self._builder.pivot(group_by_expr, pivot_col_expr, value_col_expr, agg_expr, names)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def union(self, other: "DataFrame") -> "DataFrame":
+        """Returns the distinct union of two DataFrames.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df2 = daft.from_pydict({"x": [3, 4, 5], "y": [6, 7, 8]})
+            >>> df1.union(df2).sort("x").show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 5     ┆ 8     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+        """
+        builder = self._builder.union(other._builder)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def union_all(self, other: "DataFrame") -> "DataFrame":
+        """Returns the union of two DataFrames, including duplicates.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df2 = daft.from_pydict({"x": [3, 2, 1], "y": [6, 5, 4]})
+            >>> df1.union_all(df2).sort("x").show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        builder = self._builder.union(other._builder, is_all=True)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def union_by_name(self, other: "DataFrame") -> "DataFrame":
+        """Returns the distinct union by name.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"x": [1, 2], "y": [4, 5], "w": [9, 10]})
+            >>> df2 = daft.from_pydict({"y": [6, 7], "z": ["a", "b"]})
+            >>> df1.union_by_name(df2).sort("y").show()
+            ╭───────┬───────┬───────┬──────╮
+            │ x     ┆ y     ┆ w     ┆ z    │
+            │ ---   ┆ ---   ┆ ---   ┆ ---  │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ Utf8 │
+            ╞═══════╪═══════╪═══════╪══════╡
+            │ 1     ┆ 4     ┆ 9     ┆ None │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 10    ┆ None │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 6     ┆ None  ┆ a    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 7     ┆ None  ┆ b    │
+            ╰───────┴───────┴───────┴──────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        builder = self._builder.union(other._builder, is_all=False, is_by_name=True)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def union_all_by_name(self, other: "DataFrame") -> "DataFrame":
+        """Returns the union of two DataFrames, including duplicates, with columns matched by name.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"x": [1, 2], "y": [4, 5], "w": [9, 10]})
+            >>> df2 = daft.from_pydict({"y": [6, 6, 7, 7], "z": ["a", "a", "b", "b"]})
+            >>> df1.union_all_by_name(df2).sort("y").show()
+            ╭───────┬───────┬───────┬──────╮
+            │ x     ┆ y     ┆ w     ┆ z    │
+            │ ---   ┆ ---   ┆ ---   ┆ ---  │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ Utf8 │
+            ╞═══════╪═══════╪═══════╪══════╡
+            │ 1     ┆ 4     ┆ 9     ┆ None │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 10    ┆ None │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 6     ┆ None  ┆ a    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 6     ┆ None  ┆ a    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 7     ┆ None  ┆ b    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ None  ┆ 7     ┆ None  ┆ b    │
+            ╰───────┴───────┴───────┴──────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        builder = self._builder.union(other._builder, is_all=True, is_by_name=True)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2867,9 +3014,10 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with materialized results.
         """
+        plan_time_start = _utc_now()
         self._materialize_results()
-        self._broadcast_query_plan()
-
+        plan_time_end = _utc_now()
+        self._broadcast_query_plan(plan_time_start, plan_time_end)
         assert self._result is not None
         dataframe_len = len(self._result)
         if num_preview_rows is not None:
@@ -2940,7 +3088,6 @@ class DataFrame:
             n: number of rows to show. Defaults to 8.
         """
         dataframe_display = self._construct_show_display(n)
-        self._broadcast_query_plan()
 
         try:
             from IPython.display import display
@@ -3422,7 +3569,11 @@ class GroupedDataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ...     {
+            ...         "pet": ["cat", "dog", "dog", "cat"],
+            ...         "age": [1, 2, 3, 4],
+            ...         "name": ["Alex", "Jordan", "Sam", "Riley"],
+            ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),

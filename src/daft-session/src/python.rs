@@ -1,5 +1,6 @@
-use daft_catalog::python::{
-    PyCatalogWrapper, PyIdentifier, PyTable, PyTableSource, PyTableWrapper,
+use daft_catalog::{
+    python::{PyCatalogWrapper, PyIdentifier, PyTable, PyTableSource, PyTableWrapper},
+    Identifier,
 };
 use pyo3::prelude::*;
 
@@ -44,24 +45,33 @@ impl PySession {
         Ok(table)
     }
 
-    pub fn current_catalog(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.0.current_catalog()?.to_py(py)
+    pub fn current_catalog(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+        self.0.current_catalog()?.map(|c| c.to_py(py)).transpose()
+    }
+
+    pub fn current_namespace(&self) -> PyResult<Option<PyIdentifier>> {
+        if let Some(namespace) = self.0.current_namespace()? {
+            let ident = Identifier::from_path(namespace)?;
+            let ident = PyIdentifier::from(ident);
+            return Ok(Some(ident));
+        }
+        Ok(None)
     }
 
     pub fn get_catalog(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {
         self.0.get_catalog(name)?.to_py(py)
     }
 
-    pub fn get_table(&self, py: Python<'_>, name: &PyIdentifier) -> PyResult<PyObject> {
-        self.0.get_table(name.as_ref())?.to_py(py)
+    pub fn get_table(&self, py: Python<'_>, ident: &PyIdentifier) -> PyResult<PyObject> {
+        self.0.get_table(ident.as_ref())?.to_py(py)
     }
 
     pub fn has_catalog(&self, name: &str) -> PyResult<bool> {
         Ok(self.0.has_catalog(name))
     }
 
-    pub fn has_table(&self, name: &PyIdentifier) -> PyResult<bool> {
-        Ok(self.0.has_table(name.as_ref()))
+    pub fn has_table(&self, ident: &PyIdentifier) -> PyResult<bool> {
+        Ok(self.0.has_table(ident.as_ref()))
     }
 
     #[pyo3(signature = (pattern=None))]
@@ -74,8 +84,20 @@ impl PySession {
         Ok(self.0.list_tables(pattern)?)
     }
 
-    pub fn set_catalog(&self, name: &str) -> PyResult<()> {
-        Ok(self.0.set_catalog(name)?)
+    #[pyo3(signature = (ident))]
+    pub fn set_catalog(&self, ident: Option<&str>) -> PyResult<()> {
+        Ok(self.0.set_catalog(ident)?)
+    }
+
+    #[pyo3(signature = (ident))]
+    pub fn set_namespace(&self, ident: Option<&PyIdentifier>) -> PyResult<()> {
+        Ok(self.0.set_namespace(ident.map(|i| i.as_ref()))?)
+    }
+}
+
+impl From<&PySession> for Session {
+    fn from(sess: &PySession) -> Self {
+        sess.0.clone()
     }
 }
 

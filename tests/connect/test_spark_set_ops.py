@@ -114,3 +114,21 @@ def test_except_with_nulls(spark_session, make_df, op, left, right, expected):
 )
 def test_multiple_fields(spark_session, make_df, op, left, right, expected):
     helper(spark_session, make_df, op, left, right, expected)
+
+
+def test_union(spark_session, spark_to_daft):
+    df1 = spark_session.createDataFrame([(1, "A"), (2, "B")], ["id", "value"])
+    df2 = spark_session.createDataFrame([(3, "C"), (4, "D")], ["id", "value"])
+    df3 = df1.union(df2)
+    actual = spark_to_daft(df3)
+    expected = {"id": [1, 2, 3, 4], "value": ["A", "B", "C", "D"]}
+
+    assert actual.to_pydict() == expected
+
+
+def test_union_by_name(spark_session, spark_to_daft):
+    df1 = spark_session.createDataFrame([[1, 2, 3]], ["col0", "col1", "col2"])
+    df2 = spark_session.createDataFrame([[4, 5, 6]], ["col1", "col2", "col0"])
+    actual = spark_to_daft(df1.unionByName(df2))
+    expected = {"col0": [1, 6], "col1": [2, 4], "col2": [3, 5]}
+    assert actual.to_pydict() == expected

@@ -32,6 +32,7 @@ impl ScalarFunction {
         self.udf.to_field(&self.inputs, schema)
     }
 }
+
 impl From<ScalarFunction> for ExprRef {
     fn from(func: ScalarFunction) -> Self {
         Expr::ScalarFunction(func).into()

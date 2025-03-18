@@ -1,5 +1,5 @@
 use std::{
-    iter::repeat,
+    iter::repeat_n,
     ops::{Div, Mul},
     sync::Arc,
 };
@@ -720,12 +720,12 @@ fn extract_python_to_vec<
                 }
             }
         } else if let Some(list_size) = list_size {
-            values_vec.extend(iter::repeat(Tgt::default()).take(list_size));
+            values_vec.extend(iter::repeat_n(Tgt::default(), list_size));
         } else {
             let offset = offsets_vec.last().unwrap();
             offsets_vec.push(*offset);
             if let Some(shape_size) = shape_size {
-                shapes_vec.extend(iter::repeat(1).take(shape_size));
+                shapes_vec.extend(iter::repeat_n(1, shape_size));
                 shape_offsets_vec.push(shape_offsets_vec.last().unwrap() + shape_size as i64);
             } else {
                 shape_offsets_vec.push(*shape_offsets_vec.last().unwrap());
@@ -851,7 +851,7 @@ fn extract_python_like_to_image_array<
     let mut widths = Vec::<u32>::with_capacity(num_rows);
     let mut modes = Vec::<u8>::with_capacity(num_rows);
     for i in 0..num_rows {
-        let is_valid = validity.map_or(true, |v| v.get_bit(i));
+        let is_valid = validity.is_none_or(|v| v.get_bit(i));
         if !is_valid {
             // Handle invalid row by populating dummy data.
             channels.push(1);
@@ -1361,7 +1361,7 @@ impl TensorArray {
                 let da = self.data_array();
                 let sa = self.shape_array();
                 if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
-                    s.map_or(true, |s| {
+                    s.is_none_or(|s| {
                         s.u64()
                             .unwrap()
                             .as_arrow()
@@ -1396,7 +1396,7 @@ impl TensorArray {
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
-                    let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                    let is_valid = validity.is_none_or(|v| v.get_bit(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
@@ -1480,7 +1480,7 @@ impl TensorArray {
             DataType::Image(mode) => {
                 let sa = self.shape_array();
                 if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
-                    s.map_or(true, |s| {
+                    s.is_none_or(|s| {
                         if s.len() != 3 && s.len() != 2 {
                             // Images must have 2 or 3 dimensions: height x width or height x width x channel.
                             // If image is 2 dimensions, 8-bit grayscale is assumed.
@@ -1509,7 +1509,7 @@ impl TensorArray {
                 let da = self.data_array();
                 let validity = da.validity();
                 for i in 0..num_rows {
-                    let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                    let is_valid = validity.is_none_or(|v| v.get_bit(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         channels.push(1);
@@ -1520,7 +1520,7 @@ impl TensorArray {
                     }
                     let shape = sa.get(i).unwrap();
                     let shape = shape.u64().unwrap().as_arrow();
-                    assert!(shape.validity().map_or(true, |v| v.iter().all(|b| b)));
+                    assert!(shape.validity().is_none_or(|v| v.iter().all(|b| b)));
                     let mut shape = shape.values().to_vec();
                     if shape.len() == 2 {
                         // Add unit channel dimension to grayscale height x width image.
@@ -1608,7 +1608,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
             let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
             let validity = non_zero_values_array.validity();
             for i in 0..non_zero_values_array.len() {
-                let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                let is_valid = validity.is_none_or(|v| v.get_bit(i));
                 if !is_valid {
                     continue;
                 }
@@ -1709,7 +1709,7 @@ impl SparseTensorArray {
                 let va = self.values_array();
                 let ia = self.indices_array();
                 if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
-                    s.map_or(true, |s| {
+                    s.is_none_or(|s| {
                         s.u64()
                             .unwrap()
                             .as_arrow()
@@ -1722,7 +1722,7 @@ impl SparseTensorArray {
                         dtype,
                         shape,
                     )));
-                };
+                }
 
                 let largest_index = std::cmp::max(shape.iter().product::<u64>(), 1) - 1;
                 let indices_minimal_inner_dtype = minimal_uint_dtype(largest_index);
@@ -1856,7 +1856,7 @@ impl FixedShapeSparseTensorArray {
                     n_values,
                     non_zero_indices_array,
                     non_zero_values_array,
-                    &Offsets::try_from_iter(repeat(target_size).take(self.len()))?,
+                    &Offsets::try_from_iter(repeat_n(target_size, self.len()))?,
                     use_offset_indices,
                 )?;
                 let validity = non_zero_values_array.validity();
@@ -1997,7 +1997,7 @@ impl FixedShapeTensorArray {
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, data_series) in physical_arr.into_iter().enumerate() {
-                    let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                    let is_valid = validity.is_none_or(|v| v.get_bit(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
@@ -2102,7 +2102,7 @@ impl FixedSizeListArray {
             DataType::List(child_dtype) => {
                 let element_size = self.fixed_element_len();
                 let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                let offsets = Offsets::try_from_iter(repeat(element_size).take(self.len()))?;
+                let offsets = Offsets::try_from_iter(repeat_n(element_size, self.len()))?;
                 Ok(ListArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,

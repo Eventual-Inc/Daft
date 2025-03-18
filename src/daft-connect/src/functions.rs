@@ -1,13 +1,17 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
-use once_cell::sync::Lazy;
 use spark_connect::Expression;
 
-use crate::{error::ConnectResult, invalid_argument_err, spark_analyzer::SparkAnalyzer};
+use crate::{
+    error::ConnectResult, invalid_argument_err, spark_analyzer::expr_analyzer::analyze_expr,
+};
 mod aggregate;
 mod core;
 mod datetime;
@@ -16,7 +20,7 @@ mod math;
 mod partition_transform;
 mod string;
 
-pub(crate) static CONNECT_FUNCTIONS: Lazy<SparkFunctions> = Lazy::new(|| {
+pub(crate) static CONNECT_FUNCTIONS: LazyLock<SparkFunctions> = LazyLock::new(|| {
     let mut functions = SparkFunctions::new();
     functions.register::<aggregate::AggregateFunctions>();
     functions.register::<core::CoreFunctions>();
@@ -28,11 +32,7 @@ pub(crate) static CONNECT_FUNCTIONS: Lazy<SparkFunctions> = Lazy::new(|| {
 });
 
 pub trait SparkFunction: Send + Sync {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef>;
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef>;
 }
 
 pub struct SparkFunctions {
@@ -70,20 +70,17 @@ pub trait FunctionModule {
 }
 
 struct UnaryFunction(fn(ExprRef) -> ExprRef);
+struct BinaryFunction(fn(ExprRef, ExprRef) -> ExprRef);
 
 impl<T> SparkFunction for T
 where
     T: ScalarUDF + 'static + Clone,
 {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         let sf = ScalarFunction::new(
             self.clone(),
             args.iter()
-                .map(|arg| analyzer.to_daft_expr(arg))
+                .map(analyze_expr)
                 .collect::<ConnectResult<Vec<_>>>()?,
         );
         Ok(sf.into())
@@ -91,17 +88,26 @@ where
 }
 
 impl SparkFunction for UnaryFunction {
-    fn to_expr(
-        &self,
-        args: &[Expression],
-        analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         match args {
             [arg] => {
-                let arg = analyzer.to_daft_expr(arg)?;
+                let arg = analyze_expr(arg)?;
                 Ok(self.0(arg))
             }
             _ => invalid_argument_err!("requires exactly one argument"),
+        }
+    }
+}
+
+impl SparkFunction for BinaryFunction {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
+        match args {
+            [arg, arg2] => {
+                let arg = analyze_expr(arg)?;
+                let arg2 = analyze_expr(arg2)?;
+                Ok(self.0(arg, arg2))
+            }
+            _ => invalid_argument_err!("requires exactly two arguments"),
         }
     }
 }
@@ -110,11 +116,7 @@ impl SparkFunction for UnaryFunction {
 struct TODO_FUNCTION;
 
 impl SparkFunction for TODO_FUNCTION {
-    fn to_expr(
-        &self,
-        _args: &[Expression],
-        _analyzer: &SparkAnalyzer,
-    ) -> ConnectResult<daft_dsl::ExprRef> {
+    fn to_expr(&self, _args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
         invalid_argument_err!("Function not implemented")
     }
 }

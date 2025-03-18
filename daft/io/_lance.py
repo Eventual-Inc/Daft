@@ -36,8 +36,8 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
         To ensure that this is installed with Daft, you may install: ``pip install getdaft[lance]``
 
     Example:
-    >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
-    >>> df.show()
+        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
+        >>> df.show()
 
     Args:
         url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
