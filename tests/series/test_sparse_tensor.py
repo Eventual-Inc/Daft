@@ -13,8 +13,8 @@ ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
-@pytest.mark.parametrize("is_indices_offset", [None, False, True])
-def test_sparse_tensor_roundtrip(dtype, is_indices_offset):
+@pytest.mark.parametrize("use_offset_indices", [None, False, True])
+def test_sparse_tensor_roundtrip(dtype, use_offset_indices):
     np_dtype = dtype.to_pandas_dtype()
     data = [
         np.array([[0, 1, 0, 0], [0, 0, 0, 0]], dtype=np_dtype),
@@ -30,11 +30,11 @@ def test_sparse_tensor_roundtrip(dtype, is_indices_offset):
     assert t.datatype() == tensor_dtype
 
     # Test sparse tensor roundtrip.
-    if is_indices_offset is None:
+    if use_offset_indices is None:
         sparse_tensor_dtype = DataType.sparse_tensor(dtype=DataType.from_arrow_type(dtype))
     else:
         sparse_tensor_dtype = DataType.sparse_tensor(
-            dtype=DataType.from_arrow_type(dtype), is_indices_offsets=is_indices_offset
+            dtype=DataType.from_arrow_type(dtype), use_offset_indices=use_offset_indices
         )
     sparse_tensor_series = t.cast(sparse_tensor_dtype)
     assert sparse_tensor_series.datatype() == sparse_tensor_dtype
