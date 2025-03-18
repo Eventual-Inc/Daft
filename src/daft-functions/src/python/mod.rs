@@ -91,7 +91,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::signum);
     add!(numeric::negate);
     add!(numeric::negative);
-    add!(numeric::positive);
     add!(numeric::sqrt);
     add!(numeric::log2);
     add!(numeric::log10);

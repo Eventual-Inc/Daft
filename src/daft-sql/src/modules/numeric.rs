@@ -7,7 +7,7 @@ use daft_functions::numeric::{
     floor::floor,
     log::{ln, log, log10, log1p, log2},
     round::round,
-    sign::{negative, positive, sign},
+    sign::{negative, sign},
     sqrt::sqrt,
     trigonometry::{
         arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cosh, cot, csc, degrees,
@@ -34,7 +34,6 @@ impl SQLModule for SQLModuleNumeric {
         parent.add_fn("signum", SQLNumericExpr::Signum);
         parent.add_fn("negate", SQLNumericExpr::Negate);
         parent.add_fn("negative", SQLNumericExpr::Negative);
-        parent.add_fn("positive", SQLNumericExpr::Positive);
         parent.add_fn("round", SQLNumericExpr::Round);
         parent.add_fn("clip", SQLNumericExpr::Clip);
         parent.add_fn("sqrt", SQLNumericExpr::Sqrt);
@@ -77,7 +76,6 @@ enum SQLNumericExpr {
     Signum,
     Negate,
     Negative,
-    Positive,
     Sqrt,
     Sin,
     Cos,
@@ -127,7 +125,6 @@ impl SQLFunction for SQLNumericExpr {
             Self::Signum => "Returns the signum of a number (-1, 0, or 1).",
             Self::Negate => "Returns the negative of a number.",
             Self::Negative => "Returns the negative of a number.",
-            Self::Positive => "Returns the unchanged number.",
             Self::Sqrt => "Calculates the square root of a number.",
             Self::Sin => "Calculates the sine of an angle in radians.",
             Self::Cos => "Calculates the cosine of an angle in radians.",
@@ -167,7 +164,6 @@ impl SQLFunction for SQLNumericExpr {
             | Self::Signum
             | Self::Negate
             | Self::Negative
-            | Self::Positive
             | Self::Sqrt
             | Self::Sin
             | Self::Cos
@@ -229,10 +225,6 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
         SQLNumericExpr::Negative => {
             ensure!(args.len() == 1, "negative takes exactly one argument");
             Ok(negative(args[0].clone()))
-        }
-        SQLNumericExpr::Positive => {
-            ensure!(args.len() == 1, "positive takes exactly one argument");
-            Ok(positive(args[0].clone()))
         }
         SQLNumericExpr::Round => {
             ensure!(

@@ -12,7 +12,6 @@ simple_python_wrapper!(sign, crate::numeric::sign::sign, [expr: PyExpr]);
 simple_python_wrapper!(signum, crate::numeric::sign::sign, [expr: PyExpr]);
 simple_python_wrapper!(negate, crate::numeric::sign::negative, [expr: PyExpr]);
 simple_python_wrapper!(negative, crate::numeric::sign::negative, [expr: PyExpr]);
-simple_python_wrapper!(positive, crate::numeric::sign::positive, [expr: PyExpr]);
 simple_python_wrapper!(sqrt, crate::numeric::sqrt::sqrt, [expr: PyExpr]);
 simple_python_wrapper!(log2, crate::numeric::log::log2, [expr: PyExpr]);
 simple_python_wrapper!(log10, crate::numeric::log::log10, [expr: PyExpr]);

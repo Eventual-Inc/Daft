@@ -58,7 +58,6 @@ Numeric
     Expression.signum
     Expression.negate
     Expression.negative
-    Expression.positive
     Expression.round
     Expression.clip
     Expression.sqrt

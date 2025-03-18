@@ -73,23 +73,4 @@ impl Series {
         // Reuse negate implementation since they're identical
         self.negate()
     }
-
-    pub fn positive(&self) -> DaftResult<Self> {
-        match self.data_type() {
-            DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64
-            | DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Int64
-            | DataType::Float32
-            | DataType::Float64 => Ok(self.clone()),
-            dt => Err(DaftError::TypeError(format!(
-                "positive not implemented for {}",
-                dt
-            ))),
-        }
-    }
 }

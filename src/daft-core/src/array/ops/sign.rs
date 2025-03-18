@@ -22,10 +22,6 @@ where
     pub fn negative(&self) -> DaftResult<Self> {
         self.apply(|v| -v)
     }
-
-    pub fn positive(&self) -> DaftResult<Self> {
-        self.apply(|v| v)
-    }
 }
 
 impl<T: DaftNumericType> DataArray<T>

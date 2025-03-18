@@ -43,4 +43,3 @@ macro_rules! sign {
 
 sign!(sign, Sign);
 sign!(negative, Negative);
-sign!(positive, Positive);

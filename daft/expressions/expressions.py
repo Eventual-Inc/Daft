@@ -754,11 +754,6 @@ class Expression:
         expr = native.negative(self._expr)
         return Expression._from_pyexpr(expr)
 
-    def positive(self) -> Expression:
-        """The unchanged numeric expression."""
-        expr = native.positive(self._expr)
-        return Expression._from_pyexpr(expr)
-
     def round(self, decimals: int = 0) -> Expression:
         """The round of a numeric expression.
 

@@ -7,7 +7,7 @@ use daft_functions::numeric::{
     floor::Floor,
     log::{log, Ln, Log10, Log1p, Log2},
     round::round,
-    sign::{Negative, Positive, Sign},
+    sign::{Negative, Sign},
     sqrt::Sqrt,
     trigonometry::{
         ArcCos, ArcCosh, ArcSin, ArcSinh, ArcTan, ArcTanh, Atan2, Cos, Cosh, Cot, Csc, Degrees,
@@ -63,7 +63,6 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("negative", Negative {});
         parent.add_fn("pi", TODO_FUNCTION);
         parent.add_fn("pmod", TODO_FUNCTION);
-        parent.add_fn("positive", Positive {});
         parent.add_fn("pow", TODO_FUNCTION);
         parent.add_fn("power", TODO_FUNCTION);
         parent.add_fn("rint", TODO_FUNCTION);

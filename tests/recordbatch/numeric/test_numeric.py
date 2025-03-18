@@ -184,7 +184,6 @@ def test_table_numeric_sign(fun: str) -> None:
         "signum",
         "negate",
         "negative",
-        "positive",
     ],
 )
 def test_table_sign_bad_input(fun: str) -> None:
@@ -197,41 +196,30 @@ def test_table_sign_bad_input(fun: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("fun", "neg"),
+    ("fun"),
     [
-        ("negate", True),
-        ("negative", True),
-        ("positive", False),
+        ("negate"),
+        ("negative"),
     ],
 )
-def test_table_numeric_positive(fun: str, neg: bool) -> None:
+def test_table_numeric_negative(fun: str) -> None:
     table = MicroPartition.from_pydict(
         {
             "a": [None, -1, -5, 0, 5, 2, None],
             "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None],
         }
     )
-    my_schema = pa.schema([pa.field("uint8", pa.uint8())])
-
     sign_table = table.eval_expression_list([getattr(col("a"), fun)(), getattr(col("b"), fun)()])
 
     # Check signed integers
     a_result = sign_table.to_pydict()["a"]
-    expected_a = [None, 1, 5, 0, -5, -2, None] if neg else [None, -1, -5, 0, 5, 2, None]
+    expected_a = [None, 1, 5, 0, -5, -2, None]
     assert a_result == expected_a
 
     # Check floating point
     b_result = sign_table.to_pydict()["b"]
-    expected_b = [1.7, 1.5, 1.3, -0.3, -0.7, None, None] if neg else [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]
+    expected_b = [1.7, 1.5, 1.3, -0.3, -0.7, None, None]
     assert b_result == expected_b
-
-    # Check unsigned integers
-    if not neg:
-        table_Unsign = MicroPartition.from_arrow(pa.Table.from_arrays([pa.array([None, 0, 1, 2, 3])], schema=my_schema))
-        unsign_sign_table = table_Unsign.eval_expression_list([getattr(col("uint8"), fun)()])
-        uint8_result = unsign_sign_table.to_pydict()["uint8"]
-        expected_uint8 = [None, 0, 1, 2, 3]
-        assert uint8_result == expected_uint8
 
 
 @pytest.mark.parametrize(
