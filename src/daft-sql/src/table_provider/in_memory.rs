@@ -97,6 +97,7 @@ mod test {
     use super::*;
 
     #[test]
+    #[cfg(feature = "python")]
     fn test_from_arrow_sanity() {
         let schema = Schema::new(vec![Field::new("col1", DataType::Int64)]).unwrap();
         let schema = Arc::new(schema);
