@@ -1387,7 +1387,7 @@ impl TensorArray {
                 );
                 Ok(tensor_array.into_series())
             }
-            DataType::SparseTensor(inner_dtype) => {
+            DataType::SparseTensor(inner_dtype, use_offset_indices) => {
                 let shape_iterator = self.shape_array().into_iter();
                 let data_iterator = self.data_array().into_iter();
                 let validity = self.data_array().validity();
@@ -1415,8 +1415,24 @@ impl TensorArray {
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
+                    let indices_arr = match use_offset_indices {
+                        true => {
+                            let offsets_values = indices
+                                .u64()?
+                                .as_slice()
+                                .iter()
+                                .scan(0, |previous, &current| {
+                                    let offset = current - *previous;
+                                    *previous = current;
+                                    Some(offset)
+                                })
+                                .collect::<Vec<_>>();
+                            UInt64Array::from(("item", offsets_values)).into_series()
+                        }
+                        false => indices,
+                    };
                     non_zero_values.push(data);
-                    non_zero_indices.push(indices);
+                    non_zero_indices.push(indices_arr);
                 }
 
                 let offsets: Offsets<i64> =
@@ -1586,6 +1602,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
     non_zero_indices_array: &ListArray,
     non_zero_values_array: &ListArray,
     offsets: &Offsets<i64>,
+    use_offset_indices: &bool,
 ) -> DaftResult<Box<dyn arrow2::array::Array>> {
     let item: Box<dyn arrow2::array::Array> = with_match_numeric_daft_types!(inner_dtype, |$T| {
             let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
@@ -1601,10 +1618,23 @@ fn cast_sparse_to_dense_for_inner_dtype(
                 let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
                 .unwrap()
                 .as_arrow();
-                for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
-                    let list_start_offset = offsets.start_end(i).0;
-                    values[list_start_offset + *idx.unwrap() as usize] = *val.unwrap();
-                }
+                match use_offset_indices {
+                    true => {
+                        let mut old_idx: u64 = 0;
+                        for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
+                            let list_start_offset = offsets.start_end(i).0;
+                            let current_idx = idx.unwrap() + old_idx;
+                            old_idx = current_idx;
+                            values[list_start_offset + current_idx as usize] = *val.unwrap();
+                        }
+                    },
+                    false => {
+                        for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
+                            let list_start_offset = offsets.start_end(i).0;
+                            values[list_start_offset + *idx.unwrap() as usize] = *val.unwrap();
+                        }
+                    }
+                };
             }
             Box::new(arrow2::array::PrimitiveArray::from_vec(values))
     });
@@ -1625,8 +1655,8 @@ fn minimal_uint_dtype(value: u64) -> DataType {
 
 impl SparseTensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match dtype {
-            DataType::Tensor(inner_dtype) => {
+        match (dtype, self.data_type()) {
+            (DataType::Tensor(_), DataType::SparseTensor(inner_dtype, use_offset_indices)) => {
                 let non_zero_values_array = self.values_array();
                 let non_zero_indices_array = self.indices_array();
                 let shape_array = self.shape_array();
@@ -1648,6 +1678,7 @@ impl SparseTensorArray {
                     non_zero_indices_array,
                     non_zero_values_array,
                     &offsets,
+                    use_offset_indices,
                 )?;
                 let list_arr = ListArray::new(
                     Field::new(
@@ -1670,7 +1701,10 @@ impl SparseTensorArray {
                         .into_series(),
                 )
             }
-            DataType::FixedShapeSparseTensor(inner_dtype, shape) => {
+            (
+                DataType::FixedShapeSparseTensor(_, shape, _),
+                DataType::SparseTensor(inner_dtype, _),
+            ) => {
                 let sa = self.shape_array();
                 let va = self.values_array();
                 let ia = self.indices_array();
@@ -1708,7 +1742,7 @@ impl SparseTensorArray {
                 Ok(sparse_tensor_array.into_series())
             }
             #[cfg(feature = "python")]
-            DataType::Python => Python::with_gil(|py| {
+            (DataType::Python, DataType::SparseTensor(_, _)) => Python::with_gil(|py| {
                 let mut pydicts: Vec<Arc<PyObject>> = Vec::with_capacity(self.len());
                 let sa = self.shape_array();
                 let va = self.values_array();
@@ -1745,7 +1779,7 @@ impl SparseTensorArray {
                 )?
                 .into_series())
             }),
-            _ => self.physical.cast(dtype),
+            (_, _) => self.physical.cast(dtype),
         }
     }
 }
@@ -1754,8 +1788,8 @@ impl FixedShapeSparseTensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (dtype, self.data_type()) {
             (
-                DataType::SparseTensor(_),
-                DataType::FixedShapeSparseTensor(inner_dtype, tensor_shape),
+                DataType::SparseTensor(_, _),
+                DataType::FixedShapeSparseTensor(inner_dtype, tensor_shape, _),
             ) => {
                 let ndim = tensor_shape.len();
                 let shapes = tensor_shape
@@ -1803,7 +1837,7 @@ impl FixedShapeSparseTensorArray {
             }
             (
                 DataType::FixedShapeTensor(_, target_tensor_shape),
-                DataType::FixedShapeSparseTensor(inner_dtype, tensor_shape),
+                DataType::FixedShapeSparseTensor(inner_dtype, tensor_shape, use_offset_indices),
             ) => {
                 let non_zero_values_array = self.values_array();
                 let non_zero_indices_array = self.indices_array();
@@ -1823,6 +1857,7 @@ impl FixedShapeSparseTensorArray {
                     non_zero_indices_array,
                     non_zero_values_array,
                     &Offsets::try_from_iter(repeat_n(target_size, self.len()))?,
+                    use_offset_indices,
                 )?;
                 let validity = non_zero_values_array.validity();
                 let physical = FixedSizeListArray::new(
@@ -1838,7 +1873,7 @@ impl FixedShapeSparseTensorArray {
                 Ok(fixed_shape_tensor_array.into_series())
             }
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::FixedShapeSparseTensor(_, tensor_shape)) => {
+            (DataType::Python, DataType::FixedShapeSparseTensor(_, tensor_shape, _)) => {
                 Python::with_gil(|py| {
                     let mut pydicts: Vec<Arc<PyObject>> = Vec::with_capacity(self.len());
                     let va = self.values_array();
@@ -1953,7 +1988,7 @@ impl FixedShapeTensorArray {
                 )
             }
             (
-                DataType::FixedShapeSparseTensor(_, _),
+                DataType::FixedShapeSparseTensor(_, _, use_offset_indices),
                 DataType::FixedShapeTensor(inner_dtype, tensor_shape),
             ) => {
                 let physical_arr = &self.physical;
@@ -1979,8 +2014,24 @@ impl FixedShapeTensorArray {
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
+                    let indices_arr = match use_offset_indices {
+                        true => {
+                            let offsets_values = indices
+                                .u64()?
+                                .as_slice()
+                                .iter()
+                                .scan(0, |previous, &current| {
+                                    let offset = current - *previous;
+                                    *previous = current;
+                                    Some(offset)
+                                })
+                                .collect::<Vec<_>>();
+                            UInt64Array::from(("item", offsets_values)).into_series()
+                        }
+                        false => indices,
+                    };
                     non_zero_values.push(data);
-                    non_zero_indices.push(indices);
+                    non_zero_indices.push(indices_arr);
                 }
                 let offsets: Offsets<i64> =
                     Offsets::try_from_iter(non_zero_values.iter().map(|s| s.len()))?;

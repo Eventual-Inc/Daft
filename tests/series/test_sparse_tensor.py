@@ -13,7 +13,8 @@ ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
-def test_sparse_tensor_roundtrip(dtype):
+@pytest.mark.parametrize("use_offset_indices", [None, False, True])
+def test_sparse_tensor_roundtrip(dtype, use_offset_indices):
     np_dtype = dtype.to_pandas_dtype()
     data = [
         np.array([[0, 1, 0, 0], [0, 0, 0, 0]], dtype=np_dtype),
@@ -29,7 +30,12 @@ def test_sparse_tensor_roundtrip(dtype):
     assert t.datatype() == tensor_dtype
 
     # Test sparse tensor roundtrip.
-    sparse_tensor_dtype = DataType.sparse_tensor(dtype=DataType.from_arrow_type(dtype))
+    if use_offset_indices is None:
+        sparse_tensor_dtype = DataType.sparse_tensor(dtype=DataType.from_arrow_type(dtype))
+    else:
+        sparse_tensor_dtype = DataType.sparse_tensor(
+            dtype=DataType.from_arrow_type(dtype), use_offset_indices=use_offset_indices
+        )
     sparse_tensor_series = t.cast(sparse_tensor_dtype)
     assert sparse_tensor_series.datatype() == sparse_tensor_dtype
     back = sparse_tensor_series.cast(tensor_dtype)
@@ -45,17 +51,17 @@ def test_sparse_tensor_repr():
     out_repr = ANSI_ESCAPE.sub("", repr(s))
     assert (
         out_repr.replace("\r", "")
-        == """╭─────────────────────────────╮
-│ list_series                 │
-│ ---                         │
-│ SparseTensor(Int64)         │
-╞═════════════════════════════╡
-│ <SparseTensor shape=(2, 2)> │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ <SparseTensor shape=(2, 2)> │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ None                        │
-╰─────────────────────────────╯
+        == """╭────────────────────────────────────────────╮
+│ list_series                                │
+│ ---                                        │
+│ SparseTensor[Int64; indices_offset: false] │
+╞════════════════════════════════════════════╡
+│ <SparseTensor shape=(2, 2)>                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ <SparseTensor shape=(2, 2)>                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ None                                       │
+╰────────────────────────────────────────────╯
 """
     )
 
