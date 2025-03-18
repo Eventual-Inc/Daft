@@ -1,6 +1,6 @@
 from typing import Literal
 
-from daft import Expression, Series, udf
+from daft import DataType, Expression, Series, udf
 
 
 def llm_generate(
@@ -48,7 +48,13 @@ def llm_generate(
     Make sure the required provider packages are installed (e.g. vllm, transformers).
     """
 
-    @udf(return_dtype=str, concurrency=concurrency, batch_size=batch_size, num_cpus=num_cpus, num_gpus=num_gpus)
+    @udf(
+        return_dtype=DataType.string(),
+        concurrency=concurrency,
+        batch_size=batch_size,
+        num_cpus=num_cpus,
+        num_gpus=num_gpus,
+    )
     class LLMGenerator:
         def __init__(
             self,
