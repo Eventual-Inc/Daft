@@ -43,15 +43,6 @@ def llm_generate(
     >>> df = df.with_column("response", llm_generate(col("prompt"), model="facebook/opt-125m"))
     >>> df.collect()
 
-    Example with Hugging Face model
-    >>> import daft
-    >>> from daft import col
-    >>> from daft.functions import llm_generate
-    >>> df = daft.read_csv("prompts.csv")
-    >>> response = llm_generate(col("prompt"), model="gpt2", provider="huggingface")
-    >>> df = df.with_column("response", response)
-    >>> df.collect()
-
     Notes:
     -----
     Make sure the required provider packages are installed (e.g. vllm, transformers).

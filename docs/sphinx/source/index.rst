@@ -17,7 +17,6 @@ Welcome to Daft API Documentation. For Daft User Guide, head to `User Guide <../
    datatype
    groupby
    udf
-   ai
    series
    configs
    misc
