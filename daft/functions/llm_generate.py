@@ -1,12 +1,10 @@
-from typing import Literal
-
 from daft import DataType, Expression, Series, udf
 
 
 def llm_generate(
     input_column: Expression,
     model: str = "facebook/opt-125m",
-    provider: Literal["vllm"] = "vllm",
+    provider: str = "vllm",
     concurrency: int = 1,
     batch_size: int = 1024,
     num_cpus: float | None = None,
