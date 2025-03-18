@@ -1,14 +1,16 @@
+from typing import Literal, Optional
+
 from daft import DataType, Expression, Series, udf
 
 
 def llm_generate(
     input_column: Expression,
     model: str = "facebook/opt-125m",
-    provider: str = "vllm",
+    provider: Literal["vllm"] = "vllm",  # vllm is the only supported provider for now
     concurrency: int = 1,
     batch_size: int = 1024,
-    num_cpus: float | None = None,
-    num_gpus: float | None = None,
+    num_cpus: Optional[int] = None,
+    num_gpus: Optional[int] = None,
     **generation_config,
 ):
     """A UDF for running LLM inference over an input column of strings.
