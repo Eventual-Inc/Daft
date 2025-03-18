@@ -159,9 +159,7 @@ pub enum PartitionCacheEntry {
     },
 }
 
-
 impl PartitionCacheEntry {
-
     pub fn new_rust<T: Any + Send + Sync + 'static>(key: String, value: Arc<T>) -> Self {
         Self::Rust {
             key,
@@ -174,21 +172,18 @@ impl PartitionCacheEntry {
         use pyo3::Python;
 
         match self {
-            Self::Python(obj) => {
-                Python::with_gil(|py| {
-                    let key = obj.getattr(py, "key").unwrap();
-                    key.extract::<String>(py).unwrap()
-                })
-            },
-            Self::Rust { key, ..} => key.clone(),
+            Self::Python(obj) => Python::with_gil(|py| {
+                let key = obj.getattr(py, "key").unwrap();
+                key.extract::<String>(py).unwrap()
+            }),
+            Self::Rust { key, .. } => key.clone(),
         }
     }
 
     #[cfg(not(feature = "python"))]
     pub fn key(&self) -> String {
         match self {
-            PartitionCacheEntry::Rust { key, ..} => key.clone(),
+            PartitionCacheEntry::Rust { key, .. } => key.clone(),
         }
     }
-
 }

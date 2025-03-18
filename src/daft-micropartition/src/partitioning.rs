@@ -48,7 +48,10 @@ impl MicroPartitionSet {
         Self::default()
     }
 
-    pub fn from_record_batches(id: PartitionId, record_batches: Vec<RecordBatch>) -> DaftResult<Self> {
+    pub fn from_record_batches(
+        id: PartitionId,
+        record_batches: Vec<RecordBatch>,
+    ) -> DaftResult<Self> {
         if record_batches.is_empty() {
             return Ok(Self::empty());
         }

@@ -21,7 +21,9 @@ use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
 use snafu::ResultExt;
 
 use crate::{
-    micropartition::{MicroPartition, TableState}, partitioning::MicroPartitionSet, DaftCoreComputeSnafu, MicroPartitionRef, PyIOSnafu
+    micropartition::{MicroPartition, TableState},
+    partitioning::MicroPartitionSet,
+    DaftCoreComputeSnafu, PyIOSnafu,
 };
 
 #[pyclass(module = "daft.daft", frozen)]
@@ -1153,7 +1155,6 @@ pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 
 #[pymethods]
 impl PyMicroPartitionSet {
-
     fn get_partition(&self, idx: PartitionId) -> PyResult<PyMicroPartition> {
         Ok(self.0.get_partition(&idx)?.into())
     }
@@ -1183,7 +1184,7 @@ impl PyMicroPartitionSet {
     }
 
     fn wait(&self) -> PyResult<()> {
-        Ok(())    
+        Ok(())
     }
 }
 

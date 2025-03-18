@@ -207,7 +207,6 @@ impl LogicalPlanBuilder {
         Ok(Self::from(Arc::new(logical_plan)))
     }
 
-
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::builder()
             .allow_actor_pool_udf(true)

@@ -405,9 +405,7 @@ impl MicroPartition {
         Self {
             schema,
             state: Mutex::new(TableState::Loaded(record_batches)),
-            metadata: TableMetadata {
-                length,
-            },
+            metadata: TableMetadata { length },
             statistics,
         }
     }
