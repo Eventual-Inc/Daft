@@ -3635,6 +3635,54 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(_list_distinct(self._expr))
 
+    def unique(self) -> Expression:
+        """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
+
+        Alias for :func:`Expression.list.distinct`.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1], [None, 1, None, 1]]})
+            >>> df.select(df["a"].list.unique()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ [1, 2, 3]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [4, 6, 2]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [6, 7, 1]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+
+            Note that null values are ignored:
+
+            >>> df = daft.from_pydict({"a": [[None, None], [1, None, 1], [None]]})
+            >>> df.select(df["a"].list.unique()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ []          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ []          │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Returns:
+            Expression: An expression with lists containing only distinct elements
+        """
+        return self.distinct()
+
 
 class ExpressionStructNamespace(ExpressionNamespace):
     def get(self, name: str) -> Expression:

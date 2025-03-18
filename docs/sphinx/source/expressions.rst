@@ -258,6 +258,7 @@ List
    Expression.list.bool_or
    Expression.list.chunk
    Expression.list.count
+   Expression.list.distinct
    Expression.list.get
    Expression.list.join
    Expression.list.length
@@ -267,7 +268,7 @@ List
    Expression.list.slice
    Expression.list.sort
    Expression.list.sum
-   Expression.list.distinct
+   Expression.list.unique
    Expression.list.value_counts
 
 Struct
