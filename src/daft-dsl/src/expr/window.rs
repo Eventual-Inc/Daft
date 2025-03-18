@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::DataType, prelude::*};
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -9,9 +11,10 @@ use crate::{
     functions::{FunctionEvaluator, FunctionExpr},
 };
 
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 /// Represents a window frame boundary
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub enum WindowFrameBoundary {
+pub enum WindowBoundary {
     /// Represents UNBOUNDED PRECEDING or UNBOUNDED FOLLOWING
     Unbounded(UnboundedDirection),
     /// Represents a row offset:
@@ -21,6 +24,7 @@ pub enum WindowFrameBoundary {
     Offset(i64),
 }
 
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq))]
 /// Direction for unbounded boundaries
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum UnboundedDirection {
@@ -30,7 +34,7 @@ pub enum UnboundedDirection {
     Following,
 }
 
-impl WindowFrameBoundary {
+impl WindowBoundary {
     /// Helper to create an UNBOUNDED PRECEDING boundary
     pub fn unbounded_preceding() -> Self {
         Self::Unbounded(UnboundedDirection::Preceding)
@@ -74,9 +78,9 @@ pub struct WindowFrame {
     /// Type of window frame (ROWS or RANGE)
     pub frame_type: WindowFrameType,
     /// Start boundary of window frame
-    pub start: WindowFrameBoundary,
+    pub start: WindowBoundary,
     /// End boundary of window frame
-    pub end: WindowFrameBoundary,
+    pub end: WindowBoundary,
 }
 
 /// Represents a window specification

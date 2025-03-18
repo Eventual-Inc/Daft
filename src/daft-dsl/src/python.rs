@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     expr::{
-        window::{UnboundedDirection, WindowFrameBoundary, WindowFunction},
+        window::{WindowBoundary, WindowFunction},
         Expr,
     },
     functions::FunctionExpr,
@@ -577,32 +577,6 @@ impl From<&PyExpr> for crate::ExprRef {
 
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum WindowBoundary {
-    UnboundedPreceding(),
-    UnboundedFollowing(),
-    CurrentRow(),
-    Preceding(i64),
-    Following(i64),
-}
-
-impl From<WindowFrameBoundary> for WindowBoundary {
-    fn from(value: WindowFrameBoundary) -> Self {
-        match value {
-            WindowFrameBoundary::Unbounded(UnboundedDirection::Preceding) => {
-                Self::UnboundedPreceding()
-            }
-            WindowFrameBoundary::Unbounded(UnboundedDirection::Following) => {
-                Self::UnboundedFollowing()
-            }
-            WindowFrameBoundary::Offset(0) => Self::CurrentRow(),
-            WindowFrameBoundary::Offset(n) if n < 0 => Self::Preceding(-n),
-            WindowFrameBoundary::Offset(n) => Self::Following(n),
-        }
-    }
-}
-
-#[pyclass(module = "daft.daft")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WindowFrameType {
     Rows(),
     Range(),
@@ -639,28 +613,8 @@ impl WindowFrame {
         Self {
             frame: crate::expr::window::WindowFrame {
                 frame_type: frame_type.into(),
-                start: match start {
-                    WindowBoundary::UnboundedPreceding() => {
-                        WindowFrameBoundary::unbounded_preceding()
-                    }
-                    WindowBoundary::UnboundedFollowing() => {
-                        WindowFrameBoundary::unbounded_following()
-                    }
-                    WindowBoundary::CurrentRow() => WindowFrameBoundary::current_row(),
-                    WindowBoundary::Preceding(n) => WindowFrameBoundary::preceding(n as u64),
-                    WindowBoundary::Following(n) => WindowFrameBoundary::following(n as u64),
-                },
-                end: match end {
-                    WindowBoundary::UnboundedPreceding() => {
-                        WindowFrameBoundary::unbounded_preceding()
-                    }
-                    WindowBoundary::UnboundedFollowing() => {
-                        WindowFrameBoundary::unbounded_following()
-                    }
-                    WindowBoundary::CurrentRow() => WindowFrameBoundary::current_row(),
-                    WindowBoundary::Preceding(n) => WindowFrameBoundary::preceding(n as u64),
-                    WindowBoundary::Following(n) => WindowFrameBoundary::following(n as u64),
-                },
+                start,
+                end,
             },
         }
     }
