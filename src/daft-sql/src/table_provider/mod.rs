@@ -1,3 +1,4 @@
+mod from_arrow;
 mod read_csv;
 mod read_deltalake;
 mod read_iceberg;
@@ -79,7 +80,7 @@ impl SQLPlanner<'_> {
     }
 }
 
-// nit cleanup: switch param order and rename to `to_logical_plan` for consistency with SQLFunction.
+// TODO chore: switch param order and rename to `to_logical_plan` for consistency with SQLFunction.
 pub(crate) trait SQLTableFunction: Send + Sync {
     fn plan(
         &self,
