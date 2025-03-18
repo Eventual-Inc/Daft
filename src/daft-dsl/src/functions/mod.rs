@@ -5,7 +5,6 @@ pub mod python;
 pub mod scalar;
 pub mod sketch;
 pub mod struct_;
-pub mod window;
 
 use std::{
     fmt::{Display, Formatter, Result, Write},
@@ -17,7 +16,6 @@ use daft_core::prelude::*;
 use python::PythonUDF;
 pub use scalar::*;
 use serde::{Deserialize, Serialize};
-pub use window::*;
 
 use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};
 use crate::{expr::window::WindowFunction, ExprRef};
