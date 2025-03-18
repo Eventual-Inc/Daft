@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Literal, TypeVar
+from typing import Any, Iterator, Literal, TypeVar
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
@@ -17,6 +17,12 @@ class Series:
 
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Series via __init__ ")
+
+    def __iter__(self) -> Iterator[Any]:
+        """Return an iterator over the elements of the Series."""
+        arrow_data = self.to_arrow()
+        for item in arrow_data:
+            yield None if item is None else item.as_py()
 
     @staticmethod
     def _from_pyseries(pyseries: PySeries) -> Series:
