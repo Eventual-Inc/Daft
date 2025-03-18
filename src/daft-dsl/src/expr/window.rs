@@ -2,8 +2,6 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::DataType, prelude::*};
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -11,7 +9,6 @@ use crate::{
     functions::{FunctionEvaluator, FunctionExpr},
 };
 
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 /// Represents a window frame boundary
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum WindowBoundary {
@@ -24,7 +21,6 @@ pub enum WindowBoundary {
     Offset(i64),
 }
 
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq))]
 /// Direction for unbounded boundaries
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum UnboundedDirection {
@@ -52,13 +48,11 @@ impl WindowBoundary {
 
     /// Helper to create a PRECEDING boundary with a positive number of rows
     pub fn preceding(n: u64) -> Self {
-        assert!(n > 0, "PRECEDING value must be positive");
         Self::Offset(-(n as i64))
     }
 
     /// Helper to create a FOLLOWING boundary with a positive number of rows
     pub fn following(n: u64) -> Self {
-        assert!(n > 0, "FOLLOWING value must be positive");
         Self::Offset(n as i64)
     }
 }

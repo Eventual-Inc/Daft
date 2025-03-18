@@ -22,10 +22,7 @@ use pyo3::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    expr::{
-        window::{WindowBoundary, WindowFunction},
-        Expr,
-    },
+    expr::{window::WindowFunction, Expr},
     functions::FunctionExpr,
     ExprRef, LiteralValue,
 };
@@ -613,8 +610,8 @@ impl WindowFrame {
         Self {
             frame: crate::expr::window::WindowFrame {
                 frame_type: frame_type.into(),
-                start,
-                end,
+                start: start.into(),
+                end: end.into(),
             },
         }
     }
@@ -669,5 +666,55 @@ impl WindowSpec {
         Ok(Self {
             spec: self.spec.clone().with_min_periods(min_periods),
         })
+    }
+}
+
+#[pyclass(module = "daft.daft")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowBoundary {
+    pub boundary: crate::expr::window::WindowBoundary,
+}
+
+#[pymethods]
+impl WindowBoundary {
+    #[staticmethod]
+    pub fn UnboundedPreceding() -> Self {
+        Self {
+            boundary: crate::expr::window::WindowBoundary::unbounded_preceding(),
+        }
+    }
+
+    #[staticmethod]
+    pub fn UnboundedFollowing() -> Self {
+        Self {
+            boundary: crate::expr::window::WindowBoundary::unbounded_following(),
+        }
+    }
+
+    #[staticmethod]
+    pub fn CurrentRow() -> Self {
+        Self {
+            boundary: crate::expr::window::WindowBoundary::current_row(),
+        }
+    }
+
+    #[staticmethod]
+    pub fn Preceding(n: u64) -> Self {
+        Self {
+            boundary: crate::expr::window::WindowBoundary::preceding(n),
+        }
+    }
+
+    #[staticmethod]
+    pub fn Following(n: u64) -> Self {
+        Self {
+            boundary: crate::expr::window::WindowBoundary::following(n),
+        }
+    }
+}
+
+impl From<WindowBoundary> for crate::expr::window::WindowBoundary {
+    fn from(value: WindowBoundary) -> Self {
+        value.boundary
     }
 }

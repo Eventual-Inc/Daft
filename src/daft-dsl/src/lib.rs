@@ -27,6 +27,7 @@ use pyo3::prelude::*;
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyExpr>()?;
 
+    parent.add_class::<python::WindowBoundary>()?;
     parent.add_class::<python::WindowFrameType>()?;
     parent.add_class::<python::WindowFrame>()?;
     parent.add_class::<python::WindowSpec>()?;
