@@ -12,48 +12,62 @@ copyright: '&copy; Copyright 2025, Eventual <img referrerpolicy="no-referrer-whe
 # Repository
 repo_name: Daft
 repo_url: https://github.com/Eventual-Inc/Daft
-docs_dir: mkdocs
 
 # Sitemap
 nav:
 - Daft User Guide:
-  - Overview: index.md
-  - Terminology: terms.md
-  - Installation: install.md
-  - Quickstart: quickstart.md
-  - Core Concepts: core_concepts.md
+  - Overview: user_guide/index.md
+  - Terminology: user_guide/terms.md
+  - Installation: user_guide/install.md
+  - Quickstart: user_guide/quickstart.md
+  - Core Concepts: user_guide/core_concepts.md
   - SQL Reference:
-    - Overview: sql/overview.md
+    - Overview: user_guide/sql/overview.md
     - Statements:
-      - SELECT: sql/statements/select.md
-      - USE: sql/statements/use.md
-    - Data Types: sql/datatypes.md
-  - Sessions: sessions.md
-  - Catalogs: catalogs.md
-  - Spark Connect: spark_connect.md
-  - Distributed Computing: distributed.md
+      - SELECT: user_guide/sql/statements/select.md
+      - USE: user_guide/sql/statements/use.md
+    - Data Types: user_guide/sql/datatypes.md
+  - Sessions: user_guide/sessions.md
+  - Catalogs: user_guide/catalogs.md
+  - Spark Connect: user_guide/spark_connect.md
+  - Distributed Computing: user_guide/distributed.md
   - Advanced:
-    - Managing Memory Usage: advanced/memory.md
-    - Partitioning: advanced/partitioning.md
+    - Managing Memory Usage: user_guide/advanced/memory.md
+    - Partitioning: user_guide/advanced/partitioning.md
   - Integrations:
-    - Ray: integrations/ray.md
-    - Unity Catalog: integrations/unity_catalog.md
-    - Apache Iceberg: integrations/iceberg.md
-    - Delta Lake: integrations/delta_lake.md
-    - Apache Hudi: integrations/hudi.md
-    - Microsoft Azure: integrations/azure.md
-    - Amazon Web Services: integrations/aws.md
-    - SQL: integrations/sql.md
-    - Hugging Face Datasets: integrations/huggingface.md
+    - Ray: user_guide/integrations/ray.md
+    - Unity Catalog: user_guide/integrations/unity_catalog.md
+    - Apache Iceberg: user_guide/integrations/iceberg.md
+    - Delta Lake: user_guide/integrations/delta_lake.md
+    - Apache Hudi: user_guide/integrations/hudi.md
+    - Microsoft Azure: user_guide/integrations/azure.md
+    - Amazon Web Services: user_guide/integrations/aws.md
+    - SQL: user_guide/integrations/sql.md
+    - Hugging Face Datasets: user_guide/integrations/huggingface.md
   - Resources:
-    - Architecture: resources/architecture.md
-    - DataFrame Comparison: resources/dataframe_comparison.md
-    - Tutorials: resources/tutorials.md
-    - Benchmarks: resources/benchmarks/tpch.md # Benchmarks can expand into a folder once we have more
-    - Telemetry: resources/telemetry.md
+    - Architecture: user_guide/resources/architecture.md
+    - DataFrame Comparison: user_guide/resources/dataframe_comparison.md
+    - Tutorials: user_guide/resources/tutorials.md
+    - Benchmarks: user_guide/resources/benchmarks/tpch.md # Benchmarks can expand into a folder once we have more
+    - Telemetry: user_guide/resources/telemetry.md
   - Migration Guide:
-    - Coming from Dask: migration/dask_migration.md
-- API Docs: api_docs/index.html
+    - Coming from Dask: user_guide/migration/dask_migration.md
+- API Docs:
+  - Overview: api_docs/index.md
+  - DataFrame Creation: api_docs/dataframe_creation.md
+  - DataFrame: api_docs/dataframe.md
+  - Expressions: api_docs/expressions.md
+  - Functions: api_docs/functions.md
+  - SQL: api_docs/sql.md
+  - Session: api_docs/sessions.md
+  - Catalogs & Tables: api_docs/catalogs_tables.md
+  - Schema: api_docs/schema.md
+  - DataTypes: api_docs/data_types.md
+  - Groupby: api_docs/groupby.md
+  - User-Defined Functions: api_docs/udf.md
+  - Series: api_docs/series.md
+  - Configuration: api_docs/config.md
+  - Miscellaneous: api_docs/misc.md
 
 # Configuration
 theme:
@@ -61,14 +75,16 @@ theme:
   locale: en
   logo: img/daft.png
   favicon: img/favicon.png
+  font:
+    text: Oxygen
   features:
-  - navigation.footer
   - search.suggest
   - search.highlight
   - content.code.copy   # add copy button to code sections
   - content.tabs.link   # If one tab switches Python to SQL, all tabs switch
   - toc.follow
   - toc.integrate   # adds page subsections to left-hand menu (instead of right-hand menu)
+  - navigation.footer
   - navigation.tracking   # url in address bar is automatically updated with active anchor as highlighted in TOC
   - navigation.tabs   # moves nav bar to top, with secondary left-hand menu
   - navigation.tabs.sticky   # top nav bar remains visible when scrolling down
@@ -156,7 +172,6 @@ markdown_extensions:
       # dedent_subsections: true
 - pymdownx.superfences
 - pymdownx.details
-  # - pymdownx.blocks.admonition
 - attr_list
 - md_in_html
 - pymdownx.emoji:
@@ -172,10 +187,36 @@ plugins:
 - search:
     separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
 - macros
-- mkdocs-simple-hooks:
-    hooks:
-      on_pre_build: "docs.hooks:make_api_docs"
+# - mkdocs-simple-hooks:
+#     hooks:
+#       on_pre_build: "docs.hooks:make_api_docs"
 # - social:
 #     cards_layout_options:
 #       background_color: "#532687"
 #     cards_dir: social
+- autorefs
+- mkdocstrings:
+    handlers:
+      python:
+        options:
+          docstring_style: google
+          docstring_section_style: spacy
+          heading_level: 2
+          merge_init_into_class: true
+          separate_signature: true
+          show_signature_annotations: true
+          line_length: 60
+          show_root_heading: true
+          show_root_full_path: false
+          show_object_full_path: false
+          show_source: true
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          signature_crossrefs: true
+          unwrap_annotated: true
+          show_if_no_docstring: true
+          members_order: alphabetical # or source
+          show_docstring_examples: true
+          show_docstring_returns: true
+          show_labels: true
+          show_bases: false
