@@ -8,7 +8,9 @@ use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_session::{python::PySession, Session};
 use pyo3::{prelude::*, IntoPyObjectExt};
 
-use crate::{exec::exec, functions::SQL_FUNCTIONS, planner::SQLPlanner, schema::try_parse_dtype};
+use crate::{
+    exec::execute_statement, functions::SQL_FUNCTIONS, planner::SQLPlanner, schema::try_parse_dtype,
+};
 
 #[pyclass]
 pub struct SQLFunctionStub {
@@ -43,7 +45,7 @@ pub fn sql_exec(
     session: &PySession,
     config: PyDaftPlanningConfig,
 ) -> PyResult<Option<PyObject>> {
-    if let Some(plan) = exec(session.into(), sql)? {
+    if let Some(plan) = execute_statement(session.into(), sql)? {
         let builder = LogicalPlanBuilder::new(plan, Some(config.config));
         let builder = PyLogicalPlanBuilder::from(builder);
         let builder = builder.into_py_any(py)?;

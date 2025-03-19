@@ -12,34 +12,34 @@ use crate::{
 pub(crate) type DataFrame = Arc<LogicalPlan>;
 
 /// Execute SQL statements against the session.
-pub(crate) fn exec(sess: Session, statement: &str) -> DaftResult<Option<DataFrame>> {
+pub(crate) fn execute_statement(sess: Session, statement: &str) -> DaftResult<Option<DataFrame>> {
     let sess: Rc<Session> = Rc::new(sess.into());
     let stmt = SQLPlanner::new(sess.clone()).plan(statement)?;
     match stmt {
-        Statement::Select(select) => exec_select(&sess, select),
-        Statement::Set(set) => exec_set(&sess, set),
-        Statement::Use(use_) => exec_use(&sess, use_),
-        Statement::ShowTables(show_tables) => exec_show_tables(&sess, show_tables),
+        Statement::Select(select) => execute_select(&sess, select),
+        Statement::Set(set) => execute_set(&sess, set),
+        Statement::Use(use_) => execute_use(&sess, use_),
+        Statement::ShowTables(show_tables) => execute_show_tables(&sess, show_tables),
     }
 }
 
-fn exec_select(_: &Session, select: DataFrame) -> DaftResult<Option<DataFrame>> {
+fn execute_select(_: &Session, select: DataFrame) -> DaftResult<Option<DataFrame>> {
     Ok(Some(select))
 }
 
-fn exec_set(_: &Session, _: statement::Set) -> DaftResult<Option<DataFrame>> {
+fn execute_set(_: &Session, _: statement::Set) -> DaftResult<Option<DataFrame>> {
     Err(PlannerError::unsupported_sql(
         "SET statement is not yet supported.".to_string(),
     ))?
 }
 
-fn exec_use(sess: &Session, use_: statement::Use) -> DaftResult<Option<DataFrame>> {
+fn execute_use(sess: &Session, use_: statement::Use) -> DaftResult<Option<DataFrame>> {
     sess.set_catalog(Some(&use_.catalog))?;
     sess.set_namespace(use_.namespace.as_ref())?;
     Ok(None)
 }
 
-fn exec_show_tables(
+fn execute_show_tables(
     sess: &Session,
     show_tables: statement::ShowTables,
 ) -> DaftResult<Option<DataFrame>> {
@@ -71,7 +71,11 @@ fn exec_show_tables(
     let mut tbl_array = MutableUtf8Array::<i64>::with_capacity(tables.len());
     for ident in &tables {
         cat_array.push(Some(catalog.name()));
-        nsp_array.push(Some(ident.qualifier.join(".")));
+        if ident.qualifier.is_empty() {
+            nsp_array.push_null();
+        } else {
+            nsp_array.push(Some(ident.qualifier.join(".")));
+        }
         tbl_array.push(Some(ident.name.to_string()));
     }
 

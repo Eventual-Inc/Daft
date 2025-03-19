@@ -33,6 +33,25 @@ def test_show_tables(sess):
     assert "bb_table" in res["table"]
 
 
+def test_show_tables_all(sess):
+    actual = sess.sql("SHOW TABLES").to_pydict()
+    expect = {
+        "catalog": [
+            "cat1",
+            "cat1",
+        ],
+        "namespace": [
+            None,
+            None,
+        ],
+        "table": [
+            "aa_table",
+            "bb_table",
+        ],
+    }
+    assert actual == expect
+
+
 def test_show_tables_with_pattern(sess):
     # test: show tables in the current catalog and current namespace matching the pattern
     res = sess.sql("SHOW TABLES LIKE 'aa'").to_pydict()
