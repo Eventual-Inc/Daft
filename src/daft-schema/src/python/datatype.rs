@@ -301,8 +301,12 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    #[pyo3(signature = (dtype, shape=None))]
-    pub fn sparse_tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
+    #[pyo3(signature = (dtype, shape=None, use_offset_indices=false))]
+    pub fn sparse_tensor(
+        dtype: Self,
+        shape: Option<Vec<u64>>,
+        use_offset_indices: bool,
+    ) -> PyResult<Self> {
         if !dtype.dtype.is_numeric() {
             return Err(PyValueError::new_err(format!(
                 "The data type for a tensor column must be numeric, but got: {}",
@@ -311,8 +315,10 @@ impl PyDataType {
         }
         let dtype = Box::new(dtype.dtype);
         match shape {
-            Some(shape) => Ok(DataType::FixedShapeSparseTensor(dtype, shape).into()),
-            None => Ok(DataType::SparseTensor(dtype).into()),
+            Some(shape) => {
+                Ok(DataType::FixedShapeSparseTensor(dtype, shape, use_offset_indices).into())
+            }
+            None => Ok(DataType::SparseTensor(dtype, use_offset_indices).into()),
         }
     }
 
