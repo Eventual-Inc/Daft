@@ -100,12 +100,21 @@ def test_floor(unary_data_fixture):
     )
 
 
-def test_sign(unary_data_fixture):
+@pytest.mark.parametrize(
+    ("fun"),
+    [
+        "sign",
+        "signum",
+        "negate",
+        "negative",
+    ],
+)
+def test_sign(unary_data_fixture, fun):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
         data=(unary_data_fixture,),
-        expr=col(arg.name()).sign(),
-        run_kernel=lambda: arg.sign(),
+        expr=getattr(col(arg.name()), fun)(),
+        run_kernel=lambda: getattr(arg, fun)(),
         resolvable=is_numeric(arg.datatype()),
     )
 

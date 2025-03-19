@@ -153,6 +153,10 @@ impl PySeries {
         Ok(self.series.sign()?.into())
     }
 
+    pub fn negative(&self) -> PyResult<Self> {
+        Ok(self.series.negative()?.into())
+    }
+
     pub fn round(&self, decimal: i32) -> PyResult<Self> {
         if decimal < 0 {
             return Err(PyValueError::new_err(format!(

@@ -58,6 +58,9 @@ Numeric
     Expression.ceil
     Expression.floor
     Expression.sign
+    Expression.signum
+    Expression.negate
+    Expression.negative
     Expression.round
     Expression.clip
     Expression.sqrt
