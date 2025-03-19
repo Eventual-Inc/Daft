@@ -153,7 +153,7 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :alt: Github Actions tests
 
 .. |PyPI| image:: https://img.shields.io/pypi/v/getdaft.svg?label=pip&logo=PyPI&logoColor=white
-   :target: https://pypi.org/project/getdaft
+   :target: https://pypi.org/project/daft
    :alt: PyPI
 
 .. |Latest Tag| image:: https://img.shields.io/github/v/tag/Eventual-Inc/Daft?label=latest&logo=GitHub
