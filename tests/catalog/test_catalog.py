@@ -66,3 +66,39 @@ def test_from_pydict():
     assert_eq(sess.read_table("default.R"), dataframe)
     assert_eq(sess.read_table("default.S"), dataframe)
     assert_eq(sess.read_table("default.T"), dataframe)
+
+
+def test_from_pydict_namespaced():
+    from daft.catalog import Identifier
+    from daft.session import Session
+
+    # dummy data, we're testing namespaces here
+    table = {"_": [0]}
+    cat = Catalog.from_pydict(
+        {
+            "T0": table,
+            "S0": table,
+            "ns1.T1": table,
+            "ns1.S1": table,
+            "ns2.T2": table,
+            "ns2.S2": table,
+        }
+    )
+
+    assert len(cat.list_tables()) == 6
+    assert len(cat.list_namespaces()) == 2
+    assert cat.get_table("T0") is not None
+    assert cat.get_table("ns1.T1") is not None
+    assert cat.get_table("ns2.T2") is not None
+
+    assert cat.list_namespaces("XXX") == []
+    assert cat.list_namespaces("ns1") == [Identifier("ns1")]
+    assert cat.list_namespaces("ns2") == [Identifier("ns2")]
+    assert cat.list_namespaces("ns") == [Identifier("ns1"), Identifier("ns2")]
+
+    # session name resolution should still work
+    sess = Session()
+    sess.attach_catalog(cat)
+    assert sess.get_table("default.T0") is not None
+    assert sess.get_table("default.ns1.T1") is not None
+    assert sess.get_table("default.ns2.T2") is not None
