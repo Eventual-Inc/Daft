@@ -1,15 +1,18 @@
 [dependencies]
+arrow2 = {workspace = true}
 common-daft-config = {path = "../common/daft-config"}
 common-error = {path = "../common/error"}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-runtime = {workspace = true}
 daft-algebra = {path = "../daft-algebra"}
 daft-catalog = {path = "../daft-catalog"}
+daft-context = {path = "../daft-context"}
 daft-core = {path = "../daft-core"}
 daft-dsl = {path = "../daft-dsl"}
 daft-functions = {path = "../daft-functions"}
 daft-functions-json = {path = "../daft-functions-json"}
 daft-logical-plan = {path = "../daft-logical-plan"}
+daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-scan = {path = "../daft-scan"}
 daft-session = {path = "../daft-session"}
 itertools = {workspace = true}
@@ -28,11 +31,13 @@ python = [
   "common-error/python",
   "common-io-config/python",
   "daft-catalog/python",
+  "daft-context/python",
   "daft-core/python",
   "daft-dsl/python",
   "daft-functions/python",
   "daft-functions-json/python",
   "daft-logical-plan/python",
+  "daft-micropartition/python",
   "daft-scan/python",
   "daft-session/python"
 ]
