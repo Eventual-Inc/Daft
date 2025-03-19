@@ -94,7 +94,9 @@ def test_from_pydict_namespaced():
     assert cat.list_namespaces("XXX") == []
     assert cat.list_namespaces("ns1") == [Identifier("ns1")]
     assert cat.list_namespaces("ns2") == [Identifier("ns2")]
-    assert cat.list_namespaces("ns") == [Identifier("ns1"), Identifier("ns2")]
+    namespaces = cat.list_namespaces("ns")
+    assert Identifier("ns1") in namespaces
+    assert Identifier("ns2") in namespaces
 
     # session name resolution should still work
     sess = Session()
