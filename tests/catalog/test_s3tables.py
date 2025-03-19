@@ -15,6 +15,27 @@ else:
     S3TablesClient = object
 
 
+@pytest.mark.skip("skipped for integration testing")
+def test_s3tables_iceberg_rest():
+    import daft
+
+    table_bucket_arn = "..."
+    catalog = Catalog.from_s3tables(table_bucket_arn)
+    print(catalog.list_tables("demo"))
+    catalog.read_table("demo.points").show()
+    catalog.write_table(
+        "demo.points",
+        daft.from_pydict(
+            {
+                "x": [True],
+                "y": [4],
+                "z": ["d"],
+            }
+        ),
+    )
+    catalog.read_table("demo.points").show()
+
+
 @pytest.fixture(scope="function")
 def aws_credentials():
     os.environ["AWS_ACCESS_KEY_ID"] = "testing"

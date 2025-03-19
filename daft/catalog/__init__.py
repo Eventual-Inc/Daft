@@ -275,10 +275,14 @@ class Catalog(ABC):
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
-    def from_s3tables(table_bucket_arn: str, client: object | None = None, session: object | None = None):
+    def from_s3tables(
+        table_bucket_arn: str,
+        client: object | None = None,
+        session: object | None = None,
+    ):
         """Creates a Daft Catalog from S3 Tables bucket ARN, with optional client or session.
 
-        If neither a client nor session is given, the default boto3 client is used.
+        If neither a boto3 client nor session is given, an Iceberg REST client is used.
 
         Args:
             table_bucket_arn (str): s3tables bucket arn
