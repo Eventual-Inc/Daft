@@ -1,4 +1,5 @@
-mod in_memory;
+pub mod in_memory;
+
 mod read_csv;
 mod read_deltalake;
 mod read_iceberg;

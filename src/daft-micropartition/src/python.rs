@@ -1149,6 +1149,7 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
+/// TODO chore: cutover LocalPartitionSet to use this pyclass.
 #[pyclass(module = "daft.daft")]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
