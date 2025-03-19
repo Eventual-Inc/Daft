@@ -20,6 +20,11 @@ class Series:
 
     def __iter__(self) -> Iterator[Any]:
         """Return an iterator over the elements of the Series."""
+        dt = self.datatype()
+        if dt == DataType.python():
+            return iter(self.to_pylist())
+        elif dt._should_cast_to_python():
+            return iter(self.cast(DataType.python()._dtype).to_pylist())
         arrow_data = self.to_arrow()
         for item in arrow_data:
             yield None if item is None else item.as_py()
