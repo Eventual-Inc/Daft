@@ -47,53 +47,59 @@ def llm_generate(
     -----
     Make sure the required provider packages are installed (e.g. vllm, transformers).
     """
-
-    @udf(
+    llm_generator = udf(
         return_dtype=DataType.string(),
-        concurrency=concurrency,
         batch_size=batch_size,
         num_cpus=num_cpus,
         num_gpus=num_gpus,
+        concurrency=concurrency,
+    )(_LLMGenerator).with_init_args(
+        model=model,
+        provider=provider,
+        generation_config=generation_config,
     )
-    class LLMGenerator:
-        def __init__(
-            self,
-            model: str,
-            provider: str,
-            generation_config: dict = {},
-        ):
-            self.model = model
-            self.provider = provider
-            self.generation_config = generation_config
-            self._initialize_provider()
 
-        def _initialize_vllm(self):
-            try:
-                from vllm import LLM, SamplingParams
-            except ImportError:
-                raise ImportError("Please install the vllm package to use this provider.")
-            self.llm = LLM(model=self.model)
-            self.sampling_params = SamplingParams(**self.generation_config)
+    return llm_generator(input_column)
 
-        def _initialize_provider(self):
-            if self.provider == "vllm":
-                self._initialize_vllm()
-            else:
-                raise ValueError(f"Unsupported provider: {self.provider}")
 
-        def _generate_vllm(self, prompts, **kwargs):
-            from vllm import SamplingParams
+class _LLMGenerator:
+    model: str
+    provider: str
+    generation_config: dict
 
-            outputs = self.llm.generate(prompts, SamplingParams(**self.generation_config, **kwargs))
-            return [output.outputs[0].text for output in outputs]
+    def __init__(
+        self,
+        model: str = "facebook/opt-125m",
+        provider: str = "vllm",
+        generation_config: dict = {},
+    ):
+        self.model = model
+        self.provider = provider
+        self.generation_config = generation_config
+        self._initialize_provider()
 
-        def __call__(self, input_prompt_column: Series):
-            prompts = input_prompt_column.to_pylist()
-            if self.provider == "vllm":
-                return self._generate_vllm(prompts)
-            else:
-                raise ValueError(f"Unsupported provider: {self.provider}")
+    def _initialize_vllm(self):
+        try:
+            from vllm import LLM
+        except ImportError:
+            raise ImportError("Please install the vllm package to use this provider.")
+        self.llm = LLM(model=self.model)
 
-    return LLMGenerator.with_init_args(model=model, provider=provider, generation_config=generation_config)(
-        input_column
-    )
+    def _initialize_provider(self):
+        if self.provider == "vllm":
+            self._initialize_vllm()
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
+
+    def _generate_vllm(self, prompts, **kwargs):
+        from vllm import SamplingParams
+
+        outputs = self.llm.generate(prompts, SamplingParams(**self.generation_config, **kwargs))
+        return [output.outputs[0].text for output in outputs]
+
+    def __call__(self, input_prompt_column: Series):
+        prompts = input_prompt_column.to_pylist()
+        if self.provider == "vllm":
+            return self._generate_vllm(prompts)
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
