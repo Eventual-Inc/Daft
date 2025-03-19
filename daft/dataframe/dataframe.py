@@ -1214,7 +1214,7 @@ class DataFrame:
             import pyarrow as pa
 
         except ImportError:
-            raise ImportError("lance is not installed. Please install lance using `pip install getdaft[lance]`")
+            raise ImportError("lance is not installed. Please install lance using `pip install daft[lance]`")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
