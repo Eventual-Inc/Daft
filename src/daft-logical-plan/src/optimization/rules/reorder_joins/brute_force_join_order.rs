@@ -45,28 +45,26 @@ impl BruteForceJoinOrderer {
                     // divided by the selectivity of the join.
                     // Assuming that join keys are uniformly distributed and independent, the selectivity is computed as the reciprocal
                     // of the product of the largest total domains that form a minimum spanning tree of the relations.
-                    let cardinality = left_join_order_tree.get_cardinality()
-                        * right_join_order_tree.get_cardinality()
-                        / total_domain;
+                    let left_cardinality = left_join_order_tree.get_cardinality();
+                    let right_cardinality = right_join_order_tree.get_cardinality();
+                    let cardinality = left_cardinality * right_cardinality / total_domain;
+                    // Ensure that the left subtree always has the smaller cardinality.
+                    let (left, right) = if left_cardinality > right_cardinality {
+                        (right_join_order_tree, left_join_order_tree)
+                    } else {
+                        (left_join_order_tree, right_join_order_tree)
+                    };
                     // The cost of the join is the sum of the cardinalities of the left and right subgraphs, plus the cardinality of the joined graph.
                     let cur_cost = cardinality + left_cost + right_cost;
                     // Take the join with the lowest summed cardinality.
                     if let Some(ref mut cur_min_cost) = min_cost {
                         if *cur_min_cost > cur_cost {
                             *cur_min_cost = cur_cost;
-                            *chosen_plan = Some(left_join_order_tree.join(
-                                right_join_order_tree,
-                                connections,
-                                cardinality,
-                            ));
+                            *chosen_plan = Some(left.join(right, connections, cardinality));
                         }
                     } else {
                         *min_cost = Some(cur_cost);
-                        *chosen_plan = Some(left_join_order_tree.join(
-                            right_join_order_tree,
-                            connections,
-                            cardinality,
-                        ));
+                        *chosen_plan = Some(left.join(right, connections, cardinality));
                     }
                 }
             }
@@ -281,11 +279,11 @@ mod tests {
             },
         ];
         let optimal_order = test_join(
-            test_relation(name_to_id["large"]),
             test_join(
-                test_relation(name_to_id["medium"]),
                 test_relation(name_to_id["small"]),
+                test_relation(name_to_id["medium"]),
             ),
+            test_relation(name_to_id["large"]),
         );
         create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
     }
@@ -348,17 +346,17 @@ mod tests {
         let optimal_order = test_join(
             test_relation(name_to_id["supplier"]),
             test_join(
-                test_relation(name_to_id["lineitem"]),
                 test_join(
-                    test_relation(name_to_id["orders"]),
                     test_join(
-                        test_relation(name_to_id["customer"]),
                         test_join(
-                            test_relation(name_to_id["nation"]),
                             test_relation(name_to_id["region"]),
+                            test_relation(name_to_id["nation"]),
                         ),
+                        test_relation(name_to_id["customer"]),
                     ),
+                    test_relation(name_to_id["orders"]),
                 ),
+                test_relation(name_to_id["lineitem"]),
             ),
         );
         create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
@@ -479,9 +477,7 @@ mod tests {
             },
         ];
         let optimal_order = test_join(
-            test_relation(name_to_id["orders"]),
             test_join(
-                test_relation(name_to_id["lineitem"]),
                 test_join(
                     test_join(
                         test_relation(name_to_id["nation"]),
@@ -492,7 +488,9 @@ mod tests {
                         test_relation(name_to_id["partsupp"]),
                     ),
                 ),
+                test_relation(name_to_id["lineitem"]),
             ),
+            test_relation(name_to_id["orders"]),
         );
         create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
     }
@@ -529,14 +527,14 @@ mod tests {
             }, // Pretend there was a small filter on dim3.
         ];
         let optimal_order = test_join(
-            test_join(
-                test_join(
-                    test_relation(name_to_id["fact"]),
-                    test_relation(name_to_id["dim1"]),
-                ),
-                test_relation(name_to_id["dim3"]),
-            ),
             test_relation(name_to_id["dim2"]),
+            test_join(
+                test_relation(name_to_id["dim3"]),
+                test_join(
+                    test_relation(name_to_id["dim1"]),
+                    test_relation(name_to_id["fact"]),
+                ),
+            ),
         );
         create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
     }
@@ -584,14 +582,14 @@ mod tests {
         let optimal_order = test_join(
             test_relation(name_to_id["dim1"]),
             test_join(
-                test_relation(name_to_id["fact"]),
                 test_join(
-                    test_relation(name_to_id["dim3"]),
                     test_join(
-                        test_relation(name_to_id["dim2"]),
                         test_relation(name_to_id["dim4"]),
+                        test_relation(name_to_id["dim2"]),
                     ),
+                    test_relation(name_to_id["dim3"]),
                 ),
+                test_relation(name_to_id["fact"]),
             ),
         );
         create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
@@ -631,12 +629,12 @@ mod tests {
         ];
         let optimal_order = test_join(
             test_join(
-                test_relation(name_to_id["table1"]),
-                test_relation(name_to_id["table2"]),
-            ),
-            test_join(
                 test_relation(name_to_id["table3"]),
                 test_relation(name_to_id["table4"]),
+            ),
+            test_join(
+                test_relation(name_to_id["table1"]),
+                test_relation(name_to_id["table2"]),
             ),
         );
         create_and_test_join_order!(nodes, edges, BruteForceJoinOrderer {}, optimal_order);
