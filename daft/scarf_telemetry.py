@@ -4,8 +4,6 @@ import urllib.parse
 import urllib.request
 from typing import Optional
 
-from daft import get_build_type, get_version
-
 
 def _track_on_scarf(endpoint: str, extra_params: Optional[dict] = None):
     """Common implementation for Scarf telemetry tracking.
@@ -17,6 +15,8 @@ def _track_on_scarf(endpoint: str, extra_params: Optional[dict] = None):
     Returns:
         A tuple of (response_message, extra_value) or (None, None) if telemetry is disabled
     """
+    from daft import get_build_type, get_version
+
     version = get_version()
     build_type = get_build_type()
     scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
