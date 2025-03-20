@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-
-import boto3
+from typing import TYPE_CHECKING
 
 from daft.catalog import Catalog, Identifier, Table, TableSource
-from daft.daft import IOConfig, S3Config
+from daft.catalog.__iceberg import IcebergCatalog
 from daft.dataframe import DataFrame
 from daft.io import read_iceberg
 from daft.logical.schema import Schema
+
+if TYPE_CHECKING:
+    from daft.daft import IOConfig
 
 
 class S3Path(Sequence):
@@ -78,15 +80,23 @@ class S3Catalog(Catalog):
     ###
 
     @staticmethod
-    def from_arn(table_bucket_arn: str, s3_config: S3Config | None = None) -> S3Catalog:
-        """Creates an S3Catalog from the table bucket ARN."""
-        # ARN format: arn:aws:s3tables:region:account:bucket/name
-        region = table_bucket_arn.split(":")[3]
-        c = S3Catalog.__new__(S3Catalog)
-        c._client = boto3.client("s3tables", region_name=region)
-        c._table_bucket_arn = table_bucket_arn
-        c._io_config = IOConfig(s3=s3_config)
-        return c
+    def from_arn(table_bucket_arn: str) -> IcebergCatalog:
+        """Creates a Catalog from the S3 table bucket ARN using the Iceberg REST endpoint."""
+        # arn:aws:s3tables:region:account:bucket/name
+        arn_parts = table_bucket_arn.split(":")
+        region = arn_parts[3]
+        bucket = arn_parts[5][7:]
+        return IcebergCatalog._load_catalog(
+            bucket,
+            **{
+                "type": "rest",
+                "warehouse": table_bucket_arn,
+                "uri": f"https://s3tables.{region}.amazonaws.com/iceberg",
+                "rest.sigv4-enabled": "true",
+                "rest.signing-name": "s3tables",
+                "rest.signing-region": region,
+            },
+        )
 
     @staticmethod
     def from_client(table_bucket_arn: str, client: object) -> S3Catalog:
@@ -298,7 +308,7 @@ class S3Table(Table):
         return self._catalog._read_iceberg(self)
 
     def write(self):
-        raise ValueError("S3 Table writes require using Glue Iceberg REST.")
+        raise ValueError("S3 Table writes require using Iceberg REST.")
 
 
 ###
