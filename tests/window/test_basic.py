@@ -153,14 +153,11 @@ def test_multiple_partition_columns(make_df):
     df = make_df(
         {
             "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            # "group": [1, 1, 2, 1, 22, 2, 2, 1],
             "group": [1, 1, 2, 1, 2, 2, 2, 1],
             "value": [10, 5, 15, 8, 12, 6, 9, 7],
         }
     )
-
-    # Verify the data for category B, group 2
-    filtered = df.filter((col("category") == "B") & (col("group") == 2)).collect().to_pydict()
-    print("Category B, Group 2 data:", filtered)
 
     window = Window.partition_by(["category", "group"])
     result = df.select(
@@ -170,12 +167,9 @@ def test_multiple_partition_columns(make_df):
         col("value").sum().over(window).alias("sum"),
     ).collect()
 
-    # The correct expected values based on the data partitioning
-    # Note: The value for B/2 should be 12 (as there's only one row with value 12),
-    # but due to an implementation quirk, it returns 13. We're adjusting the test to match
-    # the consistent behavior of the implementation.
     expected = {
         "category": ["A", "A", "A", "B", "B", "B", "C", "C"],
+        # "group": [1, 1, 2, 1, 22, 1, 2, 2],
         "group": [1, 1, 2, 1, 2, 1, 2, 2],
         "value": [5, 8, 9, 10, 12, 7, 15, 6],
         "sum": [13, 13, 9, 17, 12, 17, 21, 21],

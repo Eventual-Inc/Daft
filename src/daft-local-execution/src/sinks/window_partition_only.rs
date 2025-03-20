@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::{prelude::SchemaRef, series::Series};
+use daft_core::prelude::SchemaRef;
 use daft_dsl::{resolved_col, Column, Expr, ExprRef, ResolvedColumn};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
@@ -25,7 +25,7 @@ enum WindowPartitionOnlyState {
 
 impl WindowPartitionOnlyState {
     fn new(num_partitions: usize) -> Self {
-        let inner_states = (0..num_partitions).map(|_| Vec::new()).collect();
+        let inner_states = (0..num_partitions).map(|_| Vec::new()).collect::<Vec<_>>();
         Self::Accumulating { inner_states }
     }
 
@@ -34,31 +34,36 @@ impl WindowPartitionOnlyState {
         input: Arc<MicroPartition>,
         params: &WindowPartitionOnlyParams,
     ) -> DaftResult<()> {
-        match self {
-            Self::Accumulating { inner_states } => {
-                let partitioned =
-                    input.partition_by_hash(params.partition_by.as_slice(), inner_states.len())?;
+        let Self::Accumulating {
+            ref mut inner_states,
+        } = self
+        else {
+            panic!("WindowPartitionOnlySink should be in Accumulating state");
+        };
 
-                for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
-                    state.push(p);
-                }
-                Ok(())
+        // Partition by value ensures unique partition keys are separated correctly
+        let (partitioned, _partition_values) = input.partition_by_value(&params.partition_by)?;
+
+        for (partition_idx, mp) in partitioned.into_iter().enumerate() {
+            if partition_idx >= inner_states.len() {
+                inner_states.resize_with(partition_idx + 1, Vec::new);
             }
-            Self::Done => Err(common_error::DaftError::ValueError(
-                "WindowPartitionOnlySink should be in Accumulating state".to_string(),
-            )),
+            inner_states[partition_idx].push(mp);
         }
+        Ok(())
     }
 
     fn finalize(&mut self) -> Vec<Vec<MicroPartition>> {
-        match self {
-            Self::Accumulating { inner_states } => {
-                let res = std::mem::take(inner_states);
-                *self = Self::Done;
-                res
-            }
-            Self::Done => Vec::new(),
-        }
+        let res = if let Self::Accumulating {
+            ref mut inner_states,
+        } = self
+        {
+            std::mem::take(inner_states)
+        } else {
+            panic!("WindowPartitionOnlySink should be in Accumulating state");
+        };
+        *self = Self::Done;
+        res
     }
 }
 
@@ -78,7 +83,6 @@ struct WindowPartitionOnlyParams {
     window_column_names: Vec<String>,
 }
 
-/// Window function implementation
 pub struct WindowPartitionOnlySink {
     window_partition_only_params: Arc<WindowPartitionOnlyParams>,
 }
@@ -108,17 +112,17 @@ impl WindowPartitionOnlySink {
 
         let window_column_names = (0..aggregations.len())
             .map(|i| format!("window_{}", i))
-            .collect();
+            .collect::<Vec<_>>();
 
         let partial_agg_exprs = partial_aggs
             .into_values()
             .map(|e| Arc::new(Expr::Agg(e)))
-            .collect();
+            .collect::<Vec<_>>();
 
         let final_agg_exprs = final_aggs
             .into_values()
             .map(|e| Arc::new(Expr::Agg(e)))
-            .collect();
+            .collect::<Vec<_>>();
 
         Ok(Self {
             window_partition_only_params: Arc::new(WindowPartitionOnlyParams {
@@ -158,6 +162,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                         .expect("WindowPartitionOnlySink should have WindowPartitionOnlyState");
 
                     agg_state.push(input, &params)?;
+
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -176,7 +181,6 @@ impl BlockingSink for WindowPartitionOnlySink {
         spawner
             .spawn(
                 async move {
-                    // Extract state values from each state
                     let mut state_iters = states
                         .into_iter()
                         .map(|mut state| {
@@ -191,10 +195,8 @@ impl BlockingSink for WindowPartitionOnlySink {
                         })
                         .collect::<Vec<_>>();
 
-                    // Process each partition in parallel
                     let mut per_partition_finalize_tasks = tokio::task::JoinSet::new();
                     for _ in 0..num_partitions {
-                        // Get the next state for each task
                         let per_partition_state = state_iters
                             .iter_mut()
                             .filter_map(|state| state.next())
@@ -202,47 +204,41 @@ impl BlockingSink for WindowPartitionOnlySink {
 
                         let params = params.clone();
                         per_partition_finalize_tasks.spawn(async move {
-                            // Skip if no data
-                            let partitions: Vec<MicroPartition> =
-                                per_partition_state.into_iter().flatten().collect();
-
+                            let partitions = per_partition_state
+                                .into_iter()
+                                .flatten()
+                                .collect::<Vec<_>>();
                             if partitions.is_empty() {
                                 return Ok(None);
                             }
 
-                            // Concatenate partitions
                             let original_data = MicroPartition::concat(&partitions)?;
                             let original_tables = original_data.get_tables()?;
                             if original_tables.is_empty() {
                                 return Ok(None);
                             }
 
-                            // Compute aggregations
-                            let aggregated = if !params.partial_agg_exprs.is_empty() {
-                                // Multi-stage aggregation (for complex aggs like mean)
+                            let final_projected = if !params.partial_agg_exprs.is_empty() {
                                 let partial = original_data
                                     .agg(&params.partial_agg_exprs, &params.partition_by)?;
-                                if !params.final_agg_exprs.is_empty() {
+
+                                let aggregated = if !params.final_agg_exprs.is_empty() {
                                     partial.agg(&params.final_agg_exprs, &params.partition_by)?
                                 } else {
                                     partial
-                                }
+                                };
+
+                                aggregated.eval_expression_list(&params.final_projections)?
                             } else {
-                                // Simple aggregation
-                                original_data
-                                    .agg(&params.original_aggregations, &params.partition_by)?
+                                let aggregated = original_data
+                                    .agg(&params.original_aggregations, &params.partition_by)?;
+                                aggregated.eval_expression_list(&params.final_projections)?
                             };
 
-                            // Apply final projections
-                            let final_projected =
-                                aggregated.eval_expression_list(&params.final_projections)?;
-
-                            // Create projection expressions
                             let mut window_projection_exprs = Vec::with_capacity(
                                 params.partition_by.len() + params.window_column_names.len(),
                             );
 
-                            // Add partition columns
                             for i in 0..params.partition_by.len() {
                                 if let Some(field_name) =
                                     final_projected.schema().fields.keys().nth(i)
@@ -251,7 +247,6 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 }
                             }
 
-                            // Add window aggregation columns
                             let partition_col_offset = params.partition_by.len();
                             for (i, window_name) in params.window_column_names.iter().enumerate() {
                                 let agg_idx = i + partition_col_offset;
@@ -271,7 +266,6 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 return Ok(None);
                             }
 
-                            // Apply projections to rename columns
                             let renamed_aggs =
                                 final_projected.eval_expression_list(&window_projection_exprs)?;
                             let agg_tables = renamed_aggs.get_tables()?;
@@ -281,8 +275,7 @@ impl BlockingSink for WindowPartitionOnlySink {
 
                             let agg_table = &agg_tables.as_ref()[0];
 
-                            // Extract partition column names
-                            let partition_col_names: Vec<String> = params
+                            let partition_col_names = params
                                 .partition_by
                                 .iter()
                                 .filter_map(|expr| {
@@ -305,12 +298,10 @@ impl BlockingSink for WindowPartitionOnlySink {
                                         None
                                     }
                                 })
-                                .collect();
+                                .collect::<Vec<String>>();
 
-                            // Build lookup dictionary
                             let mut agg_dict = std::collections::HashMap::new();
                             for row_idx in 0..agg_table.len() {
-                                // Create key from partition columns
                                 let key_parts: Vec<String> = partition_col_names
                                     .iter()
                                     .filter_map(|col_name| {
@@ -327,87 +318,74 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 }
                             }
 
-                            // Process each record batch
                             let mut processed_tables = Vec::with_capacity(original_tables.len());
                             for original_batch in original_tables.iter() {
                                 if original_batch.is_empty() {
                                     continue;
                                 }
 
-                                // Process rows in the batch
-                                let mut rows_with_aggs = Vec::with_capacity(original_batch.len());
+                                let key_parts: Vec<String> = partition_col_names
+                                    .iter()
+                                    .filter_map(|col_name| {
+                                        original_batch.get_column(col_name).ok().and_then(|col| {
+                                            col.slice(0, 1).ok().map(|value| format!("{:?}", value))
+                                        })
+                                    })
+                                    .collect();
 
-                                for row_idx in 0..original_batch.len() {
-                                    // Extract partition values for this row
-                                    let key_parts: Vec<String> = partition_col_names
+                                let row_idx = if key_parts.len() == partition_col_names.len() {
+                                    agg_dict.get(&key_parts.join("|")).copied()
+                                } else {
+                                    None
+                                };
+
+                                let window_cols = params
+                                    .window_column_names
+                                    .iter()
+                                    .filter_map(|window_name| {
+                                        agg_table.get_column(window_name.as_str()).ok().and_then(
+                                            |col| match row_idx {
+                                                Some(idx) => col
+                                                    .slice(idx, idx + 1)
+                                                    .and_then(|value| {
+                                                        value.broadcast(original_batch.len())
+                                                    })
+                                                    .ok(),
+                                                None => col
+                                                    .slice(0, 0)
+                                                    .and_then(|null_col| {
+                                                        null_col.broadcast(original_batch.len())
+                                                    })
+                                                    .ok(),
+                                            },
+                                        )
+                                    })
+                                    .collect::<Vec<_>>();
+
+                                if !window_cols.is_empty() {
+                                    let window_fields = params
+                                        .window_column_names
                                         .iter()
-                                        .filter_map(|col_name| {
-                                            original_batch.get_column(col_name).ok().and_then(
-                                                |col| {
-                                                    col.slice(row_idx, row_idx + 1)
-                                                        .ok()
-                                                        .map(|value| format!("{:?}", value))
-                                                },
+                                        .zip(window_cols.iter())
+                                        .map(|(name, col)| {
+                                            daft_core::prelude::Field::new(
+                                                name,
+                                                col.data_type().clone(),
                                             )
                                         })
-                                        .collect();
+                                        .collect::<Vec<_>>();
 
-                                    // Look up the aggregation for this row
-                                    if key_parts.len() == partition_col_names.len() {
-                                        let key = key_parts.join("|");
-                                        rows_with_aggs.push((row_idx, agg_dict.get(&key).copied()));
-                                    } else {
-                                        rows_with_aggs.push((row_idx, None));
-                                    }
-                                }
+                                    let window_schema =
+                                        daft_core::prelude::Schema::new(window_fields)?;
+                                    let window_batch = RecordBatch::new_with_size(
+                                        Arc::new(window_schema),
+                                        window_cols,
+                                        original_batch.len(),
+                                    )?;
 
-                                // Create result columns
-                                let mut result_columns = Vec::with_capacity(
-                                    original_batch.num_columns() + params.window_column_names.len(),
-                                );
-
-                                // Add original columns
-                                for col_idx in 0..original_batch.num_columns() {
-                                    if let Ok(col) = original_batch.get_column_by_index(col_idx) {
-                                        result_columns.push(col.clone());
-                                    }
-                                }
-
-                                // Add window columns
-                                for window_name in &params.window_column_names {
-                                    if let Ok(agg_col) = agg_table.get_column(window_name) {
-                                        // Create window column values for each row
-                                        let mut values = Vec::with_capacity(original_batch.len());
-
-                                        for (_, agg_row_idx) in &rows_with_aggs {
-                                            if let Some(idx) = agg_row_idx {
-                                                if let Ok(value) = agg_col.slice(*idx, *idx + 1) {
-                                                    values.push(value);
-                                                }
-                                            } else if let Ok(null_value) = agg_col.slice(0, 0) {
-                                                values.push(null_value);
-                                            }
-                                        }
-
-                                        // Concatenate values into a window column
-                                        if !values.is_empty() {
-                                            let values_ref: Vec<&Series> = values.iter().collect();
-                                            if let Ok(combined) =
-                                                Series::concat(values_ref.as_slice())
-                                            {
-                                                result_columns.push(combined.rename(window_name));
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Create result table
-                                if !result_columns.is_empty() {
-                                    if let Ok(result_table) =
-                                        RecordBatch::from_nonempty_columns(result_columns)
-                                    {
-                                        processed_tables.push(result_table);
-                                    }
+                                    processed_tables.push(original_batch.union(&window_batch)?);
+                                } else {
+                                    processed_tables.push(original_batch.clone());
                                 }
                             }
 
@@ -415,23 +393,24 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 return Ok(None);
                             }
 
-                            Ok(Some(MicroPartition::new_loaded(
+                            let result = MicroPartition::new_loaded(
                                 processed_tables[0].schema.clone(),
                                 Arc::new(processed_tables),
                                 None,
-                            )))
+                            );
+
+                            Ok(Some(result))
                         });
                     }
 
-                    // Collect and combine results
-                    let results: Vec<_> = per_partition_finalize_tasks
+                    let results = per_partition_finalize_tasks
                         .join_all()
                         .await
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?
                         .into_iter()
                         .flatten()
-                        .collect();
+                        .collect::<Vec<_>>();
 
                     if results.is_empty() {
                         return Ok(None);
@@ -449,24 +428,24 @@ impl BlockingSink for WindowPartitionOnlySink {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec![
-            format!(
-                "WindowPartitionOnly: {}",
-                self.window_partition_only_params
-                    .original_aggregations
-                    .iter()
-                    .map(|e| e.to_string())
-                    .join(", ")
-            ),
-            format!(
-                "Partition by: {}",
-                self.window_partition_only_params
-                    .partition_by
-                    .iter()
-                    .map(|e| e.to_string())
-                    .join(", ")
-            ),
-        ]
+        let mut display = vec![];
+        display.push(format!(
+            "WindowPartitionOnly: {}",
+            self.window_partition_only_params
+                .original_aggregations
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        display.push(format!(
+            "Partition by: {}",
+            self.window_partition_only_params
+                .partition_by
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        display
     }
 
     fn max_concurrency(&self) -> usize {
