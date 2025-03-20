@@ -35,6 +35,7 @@ Generic
    Expression.fill_null
    Expression.hash
    Expression.apply
+   Expression.__getitem__
 
 .. _api-numeric-expression-operations:
 
