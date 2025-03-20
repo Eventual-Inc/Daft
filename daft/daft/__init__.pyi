@@ -1966,3 +1966,8 @@ def start_flight_server(
     shuffle_cache: ShuffleCache,
     ip: str,
 ) -> FlightServerConnectionHandle: ...
+def fetch_partitions_from_flight(
+    addresses: list[str],
+    partitions: list[int],
+    num_parallel_partitions: int,
+) -> Iterator[PyMicroPartition]: ...

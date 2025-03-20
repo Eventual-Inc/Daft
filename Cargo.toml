@@ -271,6 +271,7 @@ url = "2.4.0"
 xxhash-rust = "0.8.12"
 
 [workspace.dependencies.arrow2]
+features = ["serde_types"]
 path = "src/arrow2"
 
 [workspace.dependencies.bincode]

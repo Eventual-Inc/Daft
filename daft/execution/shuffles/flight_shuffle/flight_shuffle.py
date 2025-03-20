@@ -5,7 +5,12 @@ import random
 import shutil
 from collections import defaultdict, deque
 
-from daft.daft import InProgressShuffleCache, PyExpr, start_flight_server
+from daft.daft import (
+    InProgressShuffleCache,
+    PyExpr,
+    fetch_partitions_from_flight,
+    start_flight_server,
+)
 from daft.execution.execution_step import (
     PartitionTaskBuilder,
     SingleOutputPartitionTask,
@@ -202,7 +207,7 @@ class ShuffleActor:
         self.in_progress_shuffle_cache = InProgressShuffleCache.try_new(
             num_output_partitions,
             self.shuffle_dir,
-            target_filesize=1024 * 1024 * 10,
+            target_filesize=1024 * 1024 * 64,
             compression=None,
             partition_by=partition_by,
         )
@@ -239,7 +244,8 @@ class ShuffleActor:
         self.push_partition_futures.clear()
         self.push_partition_executor.shutdown()
 
-        self.server = start_flight_server(self.in_progress_shuffle_cache.close(), self.host)
+        shuffle_cache = self.in_progress_shuffle_cache.close()
+        self.server = start_flight_server(shuffle_cache, self.host)
         self.port = self.server.port()
         self.in_progress_shuffle_cache = None
 
@@ -269,92 +275,18 @@ def reduce_partitions(
     shuffle_actor_addresses: list[str],
     shuffle_actor_manager: ShuffleActorManager,
     max_parallel_fetches: int = 2,
-    max_workers: int = 4,
 ):
-    """reduce_partitions is task that produces reduced partitions.
-
-    It is responsible for:
-    - Fetching the partitions from the shuffle actors
-    - Concatenating the partitions
-    - Yielding the concatenated partition and its metadata
-
-    We submit the requests in parallel on a threadpool with an async queue as a backpressure mechanism.
-    """
-    import asyncio
-
-    from daft.dependencies import flight
-
-    # Fetch a single partition from a single actor
-    def fetch_partition_from_actor(client: flight.FlightClient, partition_idx: int):
-        ticket = flight.Ticket(f"{partition_idx}".encode())
-        reader = client.do_get(ticket)
-        res = MicroPartition.from_arrow(reader.read_all())
-        return res
-
-    # Fetch all the partitions from all the actors
-    async def fetch_all_partitions(
-        clients: list[flight.FlightClient],
-        partition_idxs: list[int],
-        executor: concurrent.futures.ThreadPoolExecutor,
-        queue: asyncio.Queue,
-    ):
-        for partition_idx in partition_idxs:
-            # Submit all the fetch requests to the thread pool
-            futures = [executor.submit(fetch_partition_from_actor, client, partition_idx) for client in clients]
-            # Put the futures in the queue, the queue is used as a backpressure mechanism
-            await queue.put((partition_idx, futures))
-        # Put None in the queue to indicate that the fetch is done
-        await queue.put(None)
-
-    clients = [flight.FlightClient(address) for address in shuffle_actor_addresses]
-
-    async def gen_partitions():
-        loop = asyncio.get_running_loop()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            queue = asyncio.Queue(maxsize=max_parallel_fetches)
-            fetch_task = asyncio.create_task(fetch_all_partitions(clients, partitions, executor, queue))
-
-            while True:
-                next_item = await queue.get()
-                if next_item is None:
-                    break
-                partition_idx, futures = next_item
-
-                def wait_for_futures(futures):
-                    return [future.result() for future in concurrent.futures.as_completed(futures)]
-
-                # Wait for all the futures to complete, run in threadpool so we don't block the event loop
-                to_reduce = await loop.run_in_executor(
-                    executor,
-                    wait_for_futures,
-                    futures,
-                )
-                yield (partition_idx, to_reduce)
-
-            await fetch_task
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    async_partition_gen = gen_partitions()
-    clear_partitions_futures = []
     try:
-        while True:
-            try:
-                partition_idx, to_reduce = loop.run_until_complete(async_partition_gen.__anext__())
-                reduced = MicroPartition.concat(to_reduce)
-                metadata = PartitionMetadata.from_table(reduced)
+        clear_partitions_futures = []
+        partition_stream = fetch_partitions_from_flight(shuffle_actor_addresses, partitions, max_parallel_fetches)
+        for partition_idx, py_micropartition in enumerate(partition_stream):
+            micropartition = MicroPartition._from_pymicropartition(py_micropartition)
+            metadata = PartitionMetadata.from_table(micropartition)
+            yield micropartition
+            clear_partitions_futures.append(shuffle_actor_manager.clear_partition.remote(partitions[partition_idx]))
+            yield metadata
 
-                yield reduced
-                clear_partitions_futures.append(shuffle_actor_manager.clear_partition.remote(partition_idx))
-                yield metadata
-
-            except StopAsyncIteration:
-                break
     finally:
-        for client in clients:
-            client.close()
-        loop.close()
         ray.get(clear_partitions_futures)
 
 
@@ -406,6 +338,7 @@ def run_map_phase(
                 done_partitions.append(materialization.partition())
 
             push_objects_futures.append(shuffle_actor_manager.push_objects.remote(done_partitions))
+            del done_partitions
         # If there are no map tasks that are done, try to emit more map tasks. Else, yield None to indicate to the scheduler that we need to wait
         else:
             # Max number of maps to emit per wave
@@ -454,22 +387,26 @@ def run_reduce_phase(
             ).remote(partitions, actor_addresses, shuffle_actor_manager)
         )
 
-    # Collect the results from the reduce tasks, they are configured as ray generators that yield partition, and then metadata
-    for reduce_task_idx in partitions_to_reduce_task:
-        reduce_gen = reduce_generators[reduce_task_idx]
-        partition = next(reduce_gen)
-        metadata = ray.get(next(reduce_gen))
-        yield PartitionTaskBuilder(
-            inputs=[partition],
-            partial_metadatas=[metadata],
-        )
-    # Wait for all the reduce tasks to complete
-    ray.get([reduce_gen.completed() for reduce_gen in reduce_generators])
-    del reduce_generators
-    # Shutdown the actor manager
-    ray.get(shuffle_actor_manager.shutdown.remote())
-    # Kill the actor manager
-    ray.kill(shuffle_actor_manager)
+    try:
+        # Collect the results from the reduce tasks, they are configured as ray generators that yield partition, and then metadata
+        for reduce_task_idx in partitions_to_reduce_task:
+            reduce_gen = reduce_generators[reduce_task_idx]
+            partition = next(reduce_gen)
+            metadata = ray.get(next(reduce_gen))
+            yield PartitionTaskBuilder(
+                inputs=[partition],
+                partial_metadatas=[metadata],
+            )
+    except StopIteration:
+        pass
+    finally:
+        # Wait for all the reduce tasks to complete
+        ray.get([reduce_gen.completed() for reduce_gen in reduce_generators])
+        del reduce_generators
+        # Shutdown the actor manager
+        ray.get(shuffle_actor_manager.shutdown.remote())
+        # Kill the actor manager
+        ray.kill(shuffle_actor_manager)
 
 
 def flight_shuffle(
