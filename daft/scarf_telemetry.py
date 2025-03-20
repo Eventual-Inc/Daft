@@ -20,10 +20,10 @@ def _track_on_scarf(endpoint: str, extra_params: Optional[dict] = None):
     version = get_version()
     build_type = get_build_type()
     scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
-    daft_analytics_enabled = os.getenv("DAFT_ANALYTICS_ENABLED") != "0"
+    daft_analytics_disabled = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
 
     # Skip analytics for dev builds or if user opted out
-    if build_type == "dev" or scarf_opt_out or daft_analytics_enabled:
+    if build_type == "dev" or scarf_opt_out or daft_analytics_disabled:
         return None, None
 
     try:

@@ -10,6 +10,25 @@ import pytest
 from daft.scarf_telemetry import track_import_on_scarf, track_runner_on_scarf
 
 
+@pytest.fixture
+def ensure_analytics_enabled():
+    """Ensure DAFT_ANALYTICS_ENABLED is not set to 0 for tests."""
+    # Store original value
+    original_value = os.environ.get("DAFT_ANALYTICS_ENABLED")
+
+    # Set to a non-zero value
+    if original_value == "0":
+        os.environ.pop("DAFT_ANALYTICS_ENABLED", None)
+
+    yield
+
+    # Restore original value after test
+    if original_value is not None:
+        os.environ["DAFT_ANALYTICS_ENABLED"] = original_value
+    else:
+        os.environ.pop("DAFT_ANALYTICS_ENABLED", None)
+
+
 @pytest.mark.parametrize(
     "telemetry_fn,endpoint,extra_params",
     [
@@ -17,8 +36,8 @@ from daft.scarf_telemetry import track_import_on_scarf, track_runner_on_scarf
         (track_import_on_scarf, "daft-import", None),
     ],
 )
-@patch("daft.scarf_telemetry.get_build_type")
-@patch("daft.scarf_telemetry.get_version")
+@patch("daft.get_build_type")
+@patch("daft.get_version")
 @patch("urllib.request.urlopen")
 def test_scarf_telemetry_basic(
     mock_urlopen: MagicMock,
@@ -27,6 +46,7 @@ def test_scarf_telemetry_basic(
     telemetry_fn,
     endpoint,
     extra_params,
+    ensure_analytics_enabled,
 ):
     # Test basic functionality of scarf_telemetry verify that analytics are successfully sent and url is properly formatted with all required parameters
 
@@ -64,13 +84,14 @@ def test_scarf_telemetry_basic(
         (track_import_on_scarf, None),
     ],
 )
-@patch("daft.scarf_telemetry.get_build_type")
-@patch("daft.scarf_telemetry.get_version")
+@patch("daft.get_build_type")
+@patch("daft.get_version")
 def test_scarf_telemetry_dev_build(
     mock_version: MagicMock,
     mock_build_type: MagicMock,
     telemetry_fn,
     extra_params,
+    ensure_analytics_enabled,
 ):
     # Test that analytics are not sent for dev builds, function returns None for both status and runner type
 
@@ -93,8 +114,8 @@ def test_scarf_telemetry_dev_build(
         (track_import_on_scarf, None),
     ],
 )
-@patch("daft.scarf_telemetry.get_build_type")
-@patch("daft.scarf_telemetry.get_version")
+@patch("daft.get_build_type")
+@patch("daft.get_version")
 @patch("urllib.request.urlopen")
 def test_scarf_telemetry_opt_out_with_scarf_analytics(
     mock_urlopen: MagicMock,
@@ -102,6 +123,7 @@ def test_scarf_telemetry_opt_out_with_scarf_analytics(
     mock_build_type: MagicMock,
     telemetry_fn,
     extra_params,
+    ensure_analytics_enabled,
 ):
     mock_version.return_value = "0.0.0"
     mock_build_type.return_value = "release"
@@ -127,8 +149,8 @@ def test_scarf_telemetry_opt_out_with_scarf_analytics(
         (track_import_on_scarf, None),
     ],
 )
-@patch("daft.scarf_telemetry.get_build_type")
-@patch("daft.scarf_telemetry.get_version")
+@patch("daft.get_build_type")
+@patch("daft.get_version")
 @patch("urllib.request.urlopen")
 def test_scarf_telemetry_opt_out_with_do_not_track(
     mock_urlopen: MagicMock,
@@ -136,6 +158,7 @@ def test_scarf_telemetry_opt_out_with_do_not_track(
     mock_build_type: MagicMock,
     telemetry_fn,
     extra_params,
+    ensure_analytics_enabled,
 ):
     mock_version.return_value = "0.0.0"
     mock_build_type.return_value = "release"
@@ -161,8 +184,8 @@ def test_scarf_telemetry_opt_out_with_do_not_track(
         (track_import_on_scarf, None),
     ],
 )
-@patch("daft.scarf_telemetry.get_build_type")
-@patch("daft.scarf_telemetry.get_version")
+@patch("daft.get_build_type")
+@patch("daft.get_version")
 @patch("urllib.request.urlopen")
 def test_scarf_telemetry_error_handling(
     mock_urlopen: MagicMock,
@@ -170,6 +193,7 @@ def test_scarf_telemetry_error_handling(
     mock_build_type: MagicMock,
     telemetry_fn,
     extra_params,
+    ensure_analytics_enabled,
 ):
     # Test error handling in scarf_telemetry, verifies that network errors are caught, function returns error message and None for runner type
 
