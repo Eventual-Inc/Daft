@@ -6,22 +6,19 @@ use aws_config::{
     meta::credentials::CredentialsProviderChain, retry::RetryMode, timeout::TimeoutConfig,
     SdkConfig,
 };
-use aws_credential_types::{
-    cache::{CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache},
-    provider::error::CredentialsError,
-};
+use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_s3::{
-    self as s3, error::ProvideErrorMetadata, operation::put_object::PutObjectError,
+    self as s3,
+    config::{http::HttpResponse, ProvideCredentials, SharedCredentialsProvider},
+    error::ProvideErrorMetadata,
+    operation::put_object::PutObjectError,
     primitives::ByteStreamError,
 };
-use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
 use common_runtime::get_io_pool_num_threads;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
-use reqwest::StatusCode;
 use s3::{
-    client::customize::Response,
     config::{Credentials, Region},
     error::{DisplayErrorContext, SdkError},
     operation::{
@@ -57,7 +54,7 @@ enum Error {
     #[snafu(display("Unable to open {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToOpenFile {
         path: String,
-        source: SdkError<GetObjectError, Response>,
+        source: SdkError<GetObjectError, HttpResponse>,
     },
 
     #[snafu(display(
@@ -67,19 +64,19 @@ enum Error {
     ))]
     UnableToPutFile {
         path: String,
-        source: SdkError<PutObjectError, Response>,
+        source: SdkError<PutObjectError, HttpResponse>,
     },
 
     #[snafu(display("Unable to head {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToHeadFile {
         path: String,
-        source: SdkError<HeadObjectError, Response>,
+        source: SdkError<HeadObjectError, HttpResponse>,
     },
 
     #[snafu(display("Unable to list {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToListObjects {
         path: String,
-        source: SdkError<ListObjectsV2Error, Response>,
+        source: SdkError<ListObjectsV2Error, HttpResponse>,
     },
 
     #[snafu(display("Unable missing header: {header} when performing request for: {path}"))]
@@ -304,8 +301,8 @@ pub async fn s3_config_from_env() -> super::Result<S3Config> {
     let default_s3_config = S3Config::default();
     let (anonymous, s3_conf) = build_s3_conf(&default_s3_config, None).await?;
     let creds = s3_conf
-        .credentials_cache()
-        .provide_cached_credentials()
+        .credentials_provider()
+        .provide_credentials()
         .await
         .with_context(|_| UnableToLoadCredentialsSnafu {})?;
     let key_id = Some(creds.access_key_id().to_string());
@@ -363,29 +360,30 @@ fn handle_https_client_settings(
         http_connector,
         tls_connector.into(),
     ));
-    use aws_smithy_client::{http_connector::ConnectorSettings, hyper_ext};
-    let smithy_client = hyper_ext::Adapter::builder()
-        .connector_settings(
-            ConnectorSettings::builder()
-                .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
-                .read_timeout(Duration::from_millis(config.read_timeout_ms))
-                .build(),
-        )
-        .build(https_connector);
-    let builder = builder.http_connector(smithy_client);
+    use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
+    // let smithy_client = hyper_ext::Adapter::builder()
+    //     .connector_settings(
+    //         ConnectorSettings::builder()
+    //             .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+    //             .read_timeout(Duration::from_millis(config.read_timeout_ms))
+    //             .build(),
+    //     )
+    //     .build(https_connector);
+    let hyper_client = HyperClientBuilder::new().build(https_connector);
+    let builder = builder.http_client(hyper_client);
     Ok(builder)
 }
 
 async fn build_s3_conf(
     config: &S3Config,
-    credentials_cache: Option<SharedCredentialsCache>,
+    credentials_provider: Option<SharedCredentialsProvider>,
 ) -> super::Result<(bool, s3::Config)> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let mut anonymous = config.anonymous;
 
-    let cached_creds = if let Some(credentials_cache) = credentials_cache {
-        let creds = credentials_cache.provide_cached_credentials().await;
+    let cached_creds = if let Some(credentials_provider) = credentials_provider {
+        let creds = credentials_provider.provide_credentials().await;
         creds.ok()
     } else {
         None
@@ -875,38 +873,24 @@ impl S3LikeSource {
                     .next_continuation_token()
                     .map(std::string::ToString::to_string);
                 let mut total_len = 0;
-                if let Some(dirs) = dirs {
-                    total_len += dirs.len();
-                }
-                if let Some(files) = files {
-                    total_len += files.len();
-                }
+                total_len += dirs.len();
+                total_len += files.len();
                 let mut all_files = Vec::with_capacity(total_len);
-                if let Some(dirs) = dirs {
-                    for d in dirs {
-                        let fmeta = FileMetadata {
-                            filepath: format!(
-                                "{scheme}://{bucket}/{}",
-                                d.prefix().unwrap_or_default()
-                            ),
-                            size: None,
-                            filetype: FileType::Directory,
-                        };
-                        all_files.push(fmeta);
-                    }
+                for d in dirs {
+                    let fmeta = FileMetadata {
+                        filepath: format!("{scheme}://{bucket}/{}", d.prefix().unwrap_or_default()),
+                        size: None,
+                        filetype: FileType::Directory,
+                    };
+                    all_files.push(fmeta);
                 }
-                if let Some(files) = files {
-                    for f in files {
-                        let fmeta = FileMetadata {
-                            filepath: format!(
-                                "{scheme}://{bucket}/{}",
-                                f.key().unwrap_or_default()
-                            ),
-                            size: Some(f.size() as u64),
-                            filetype: FileType::File,
-                        };
-                        all_files.push(fmeta);
-                    }
+                for f in files {
+                    let fmeta = FileMetadata {
+                        filepath: format!("{scheme}://{bucket}/{}", f.key().unwrap_or_default()),
+                        size: f.size().map(|s| s as u64),
+                        filetype: FileType::File,
+                    };
+                    all_files.push(fmeta);
                 }
                 Ok(LSResult {
                     files: all_files,
@@ -914,9 +898,9 @@ impl S3LikeSource {
                 })
             }
             Err(SdkError::ServiceError(err)) => {
-                let bad_response = err.raw().http();
-                match bad_response.status() {
-                    StatusCode::MOVED_PERMANENTLY => {
+                let bad_response = err.raw();
+                match bad_response.status().as_u16() {
+                    301 => {
                         let headers = bad_response.headers();
                         let new_region =
                             headers.get(REGION_HEADER).ok_or(Error::MissingHeader {

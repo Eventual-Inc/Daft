@@ -2,12 +2,13 @@
 async-recursion = "1.0.4"
 async-stream = "0.3.6"
 async-trait = "0.1.79"
-aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-hyper", "credentials-sso"], default-features = false}
-aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default-features = false}
-aws-sig-auth = "0.55.3"
-aws-smithy-async = "0.55.3"
-aws-smithy-client = "0.55.3"
+aws-config = {version = "1.6.0"}
+aws-credential-types = {version = "1.2.2"}
+aws-sdk-s3 = {version = "1.79.0"}
+aws-sig-auth = "0.60.3"
+aws-smithy-async = "1.2.5"
+aws-smithy-client = "0.60.3"
+aws-smithy-runtime = "1.8.0"
 azure_core = "0.17.0"
 azure_identity = "0.17.0"
 azure_storage = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
