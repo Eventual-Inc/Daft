@@ -536,7 +536,6 @@ impl JoinGraph {
                 let mut left_cols = vec![];
                 let mut right_cols = vec![];
                 for cond in conds {
-                    // Check that the left and right conditions are valid.
                     left_cols.push(resolved_col(cond.left_on.clone()));
                     right_cols.push(resolved_col(cond.right_on.clone()));
                 }
