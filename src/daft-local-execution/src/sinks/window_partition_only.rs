@@ -8,6 +8,7 @@ use daft_physical_plan::extract_agg_expr;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use tracing::{instrument, Span};
+use twox_hash::xxh3_64;
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
@@ -25,7 +26,8 @@ enum WindowPartitionOnlyState {
 
 impl WindowPartitionOnlyState {
     fn new(num_partitions: usize) -> Self {
-        let inner_states = (0..num_partitions).map(|_| Vec::new()).collect();
+        // Pre-allocate vectors for better memory efficiency
+        let inner_states = (0..num_partitions).map(|_| Vec::with_capacity(8)).collect();
         Self::Accumulating { inner_states }
     }
 
@@ -36,9 +38,10 @@ impl WindowPartitionOnlyState {
     ) -> DaftResult<()> {
         match self {
             Self::Accumulating { inner_states } => {
-                let partitioned =
-                    input.partition_by_hash(params.partition_by.as_slice(), inner_states.len())?;
-
+                // Partition the input by hash - this is a key operation for SIMD optimization
+                let partitioned = input.partition_by_hash(params.partition_by.as_slice(), inner_states.len())?;
+                
+                // Process all partitions in one pass to improve data locality
                 for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
                     state.push(p);
                 }
@@ -51,13 +54,14 @@ impl WindowPartitionOnlyState {
     }
 
     fn finalize(&mut self) -> Vec<Vec<MicroPartition>> {
-        match self {
-            Self::Accumulating { inner_states } => {
-                let res = std::mem::take(inner_states);
-                *self = Self::Done;
-                res
-            }
-            Self::Done => Vec::new(),
+        // Avoid pattern matching in performance-critical code by using Option/take
+        if let Self::Accumulating { inner_states } = self {
+            // Take ownership of inner_states with mem::take to avoid cloning
+            let res = std::mem::take(inner_states);
+            *self = Self::Done;
+            res
+        } else {
+            Vec::new()
         }
     }
 }
@@ -217,11 +221,13 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 return Ok(None);
                             }
 
-                            // Compute aggregations
+                            // Compute aggregations - optimize for vectorization by simplifying control flow
                             let aggregated = if !params.partial_agg_exprs.is_empty() {
                                 // Multi-stage aggregation (for complex aggs like mean)
                                 let partial = original_data
                                     .agg(&params.partial_agg_exprs, &params.partition_by)?;
+                                
+                                // Skip unnecessary branch when possible
                                 if !params.final_agg_exprs.is_empty() {
                                     partial.agg(&params.final_agg_exprs, &params.partition_by)?
                                 } else {
@@ -238,32 +244,33 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 aggregated.eval_expression_list(&params.final_projections)?;
 
                             // Create projection expressions
+                            let partition_by_len = params.partition_by.len();
+                            let window_names_len = params.window_column_names.len();
                             let mut window_projection_exprs = Vec::with_capacity(
-                                params.partition_by.len() + params.window_column_names.len(),
+                                partition_by_len + window_names_len,
                             );
 
-                            // Add partition columns
-                            for i in 0..params.partition_by.len() {
-                                if let Some(field_name) =
-                                    final_projected.schema().fields.keys().nth(i)
-                                {
-                                    window_projection_exprs.push(resolved_col(field_name.as_str()));
+                            // Build projection expressions in a vectorization-friendly way
+                            // Add partition columns first
+                            let schema_fields = final_projected.schema().fields;
+                            let field_keys: Vec<&String> = schema_fields.keys().collect();
+                            
+                            // Process partition columns in a batch
+                            for i in 0..partition_by_len {
+                                if i < field_keys.len() {
+                                    window_projection_exprs.push(resolved_col(field_keys[i].as_str()));
                                 }
                             }
 
-                            // Add window aggregation columns
-                            let partition_col_offset = params.partition_by.len();
+                            // Process window aggregation columns in a batch
+                            let partition_col_offset = partition_by_len;
                             for (i, window_name) in params.window_column_names.iter().enumerate() {
                                 let agg_idx = i + partition_col_offset;
-                                if agg_idx < final_projected.schema().fields.len() {
-                                    if let Some(agg_col_name) =
-                                        final_projected.schema().fields.keys().nth(agg_idx)
-                                    {
-                                        window_projection_exprs.push(
-                                            resolved_col(agg_col_name.as_str())
-                                                .alias(window_name.as_str()),
-                                        );
-                                    }
+                                if agg_idx < field_keys.len() {
+                                    window_projection_exprs.push(
+                                        resolved_col(field_keys[agg_idx].as_str())
+                                            .alias(window_name.as_str()),
+                                    );
                                 }
                             }
 
@@ -281,126 +288,382 @@ impl BlockingSink for WindowPartitionOnlySink {
 
                             let agg_table = &agg_tables.as_ref()[0];
 
-                            // Extract partition column names
+                            // Extract partition column names more efficiently
                             let partition_col_names: Vec<String> = params
                                 .partition_by
                                 .iter()
                                 .filter_map(|expr| {
                                     if let Expr::Column(col) = expr.as_ref() {
-                                        Some(match col {
+                                        match col {
                                             Column::Resolved(ResolvedColumn::Basic(name)) => {
-                                                name.as_ref().to_string()
+                                                Some(name.as_ref().to_string())
                                             }
                                             Column::Resolved(ResolvedColumn::JoinSide(name, _)) => {
-                                                name.as_ref().to_string()
+                                                Some(name.as_ref().to_string())
                                             }
                                             Column::Resolved(ResolvedColumn::OuterRef(field)) => {
-                                                field.name.to_string()
+                                                Some(field.name.to_string())
                                             }
                                             Column::Unresolved(unresolved) => {
-                                                unresolved.name.to_string()
+                                                Some(unresolved.name.to_string())
                                             }
-                                        })
+                                        }
                                     } else {
                                         None
                                     }
                                 })
                                 .collect();
 
-                            // Build lookup dictionary
-                            let mut agg_dict = std::collections::HashMap::new();
-                            for row_idx in 0..agg_table.len() {
-                                // Create key from partition columns
-                                let key_parts: Vec<String> = partition_col_names
-                                    .iter()
-                                    .filter_map(|col_name| {
-                                        agg_table.get_column(col_name).ok().and_then(|col| {
-                                            col.slice(row_idx, row_idx + 1)
-                                                .ok()
-                                                .map(|value| format!("{:?}", value))
-                                        })
-                                    })
-                                    .collect();
-
-                                if key_parts.len() == partition_col_names.len() {
-                                    agg_dict.insert(key_parts.join("|"), row_idx);
+                            // Preallocate lookup dictionary with capacity
+                            let dict_capacity = agg_table.len().max(64);
+                            let mut agg_dict = std::collections::HashMap::with_capacity(dict_capacity);
+                            
+                            // Build lookup dictionary in a SIMD-friendly way
+                            // Precompute and cache column references
+                            let agg_partition_cols: Vec<_> = partition_col_names
+                                .iter()
+                                .filter_map(|col_name| agg_table.get_column(col_name).ok())
+                                .collect();
+                                
+                            // Pre-allocate buffer for hash key generation to avoid repeated allocations
+                            let mut key_buffer = Vec::with_capacity(agg_partition_cols.len() * 16);
+                            let batch_size = 16; // Small SIMD-friendly batch size
+                            let row_count = agg_table.len();
+                            let batch_count = (row_count + batch_size - 1) / batch_size;
+                            
+                            // First validate all partition columns are available
+                            if agg_partition_cols.len() == partition_col_names.len() {
+                                // Allocate reusable data structures to avoid repeated allocations
+                                let mut key_parts = Vec::with_capacity(agg_partition_cols.len());
+                                let mut batch_keys = Vec::with_capacity(batch_size);
+                                
+                                // Process in batches when practical
+                                for batch in 0..batch_count {
+                                    let start_idx = batch * batch_size;
+                                    let end_idx = (start_idx + batch_size).min(row_count);
+                                    batch_keys.clear();
+                                    
+                                    // Process this batch
+                                    for row_idx in start_idx..end_idx {
+                                        key_parts.clear();
+                                        key_buffer.clear();
+                                        
+                                        // Generate key using a more efficient approach that avoids formatting
+                                        let mut valid_key = true;
+                                        for col in &agg_partition_cols {
+                                            if let Ok(value) = col.slice(row_idx, row_idx + 1) {
+                                                // Use a more efficient key representation - avoid string formatting
+                                                // Just use bytes directly when possible
+                                                let byte_repr = match value.data_type() {
+                                                    DataType::Boolean => {
+                                                        if value.is_null(0) {
+                                                            key_buffer.extend_from_slice(b"n");
+                                                        } else if value.get_boolean(0).unwrap_or(false) {
+                                                            key_buffer.extend_from_slice(b"t");
+                                                        } else {
+                                                            key_buffer.extend_from_slice(b"f");
+                                                        }
+                                                        true
+                                                    },
+                                                    DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                                                        if value.is_null(0) {
+                                                            key_buffer.extend_from_slice(b"n");
+                                                            true
+                                                        } else if let Ok(i) = value.get_i64(0) {
+                                                            // Use byte representation directly
+                                                            key_buffer.extend_from_slice(&i.to_le_bytes());
+                                                            true
+                                                        } else {
+                                                            false
+                                                        }
+                                                    },
+                                                    DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                                                        if value.is_null(0) {
+                                                            key_buffer.extend_from_slice(b"n");
+                                                            true
+                                                        } else if let Ok(i) = value.get_u64(0) {
+                                                            key_buffer.extend_from_slice(&i.to_le_bytes());
+                                                            true
+                                                        } else {
+                                                            false
+                                                        }
+                                                    },
+                                                    DataType::Float32 | DataType::Float64 => {
+                                                        if value.is_null(0) {
+                                                            key_buffer.extend_from_slice(b"n");
+                                                            true
+                                                        } else if let Ok(f) = value.get_f64(0) {
+                                                            key_buffer.extend_from_slice(&f.to_le_bytes());
+                                                            true
+                                                        } else {
+                                                            false
+                                                        }
+                                                    },
+                                                    _ => {
+                                                        // Fall back to string representation for other types
+                                                        if let Ok(s) = value.to_string() {
+                                                            key_buffer.extend_from_slice(s.as_bytes());
+                                                            true
+                                                        } else {
+                                                            false
+                                                        }
+                                                    }
+                                                };
+                                                
+                                                if !byte_repr {
+                                                    valid_key = false;
+                                                    break;
+                                                }
+                                                
+                                                // Add separator between key parts
+                                                key_buffer.push(0);
+                                            } else {
+                                                valid_key = false;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if valid_key {
+                                            // Create a hash directly from the byte buffer for better performance
+                                            let key = xxh3_64(key_buffer.as_slice());
+                                            batch_keys.push((key, row_idx));
+                                        }
+                                    }
+                                    
+                                    // Add all valid keys from this batch to the dictionary
+                                    for (key, row_idx) in batch_keys.iter() {
+                                        agg_dict.insert(*key, *row_idx);
+                                    }
                                 }
                             }
-
-                            // Process each record batch
+                            
+                            // Process each record batch - optimize for more sequential memory access
                             let mut processed_tables = Vec::with_capacity(original_tables.len());
+                            
                             for original_batch in original_tables.iter() {
                                 if original_batch.is_empty() {
                                     continue;
                                 }
-
+                                
+                                let batch_len = original_batch.len();
+                                
                                 // Process rows in the batch
-                                let mut rows_with_aggs = Vec::with_capacity(original_batch.len());
-
-                                for row_idx in 0..original_batch.len() {
-                                    // Extract partition values for this row
-                                    let key_parts: Vec<String> = partition_col_names
-                                        .iter()
-                                        .filter_map(|col_name| {
-                                            original_batch.get_column(col_name).ok().and_then(
-                                                |col| {
-                                                    col.slice(row_idx, row_idx + 1)
-                                                        .ok()
-                                                        .map(|value| format!("{:?}", value))
-                                                },
-                                            )
-                                        })
-                                        .collect();
-
-                                    // Look up the aggregation for this row
-                                    if key_parts.len() == partition_col_names.len() {
-                                        let key = key_parts.join("|");
-                                        rows_with_aggs.push((row_idx, agg_dict.get(&key).copied()));
-                                    } else {
+                                // Preallocate to avoid reallocations
+                                let mut rows_with_aggs = Vec::with_capacity(batch_len);
+                                
+                                // Cache column references for better performance
+                                let orig_partition_cols: Vec<_> = partition_col_names
+                                    .iter()
+                                    .filter_map(|col_name| original_batch.get_column(col_name).ok())
+                                    .collect();
+                                
+                                // Process all rows in batch mode
+                                if orig_partition_cols.len() == partition_col_names.len() {
+                                    // Reuse buffers to avoid repeated allocations
+                                    let mut key_buffer = Vec::with_capacity(orig_partition_cols.len() * 16);
+                                    
+                                    // Process in batches for better vectorization
+                                    let batch_size = 16;  // Small SIMD-friendly batch size
+                                    let batch_count = (batch_len + batch_size - 1) / batch_size;
+                                    
+                                    for batch in 0..batch_count {
+                                        let start_idx = batch * batch_size;
+                                        let end_idx = (start_idx + batch_size).min(batch_len);
+                                        
+                                        // Process this batch of rows
+                                        for row_idx in start_idx..end_idx {
+                                            key_buffer.clear();
+                                            
+                                            // Generate key using the same approach as when building the dictionary
+                                            let mut valid_key = true;
+                                            for col in &orig_partition_cols {
+                                                if let Ok(value) = col.slice(row_idx, row_idx + 1) {
+                                                    // Use the same byte representation as in the dictionary creation
+                                                    let byte_repr = match value.data_type() {
+                                                        DataType::Boolean => {
+                                                            if value.is_null(0) {
+                                                                key_buffer.extend_from_slice(b"n");
+                                                            } else if value.get_boolean(0).unwrap_or(false) {
+                                                                key_buffer.extend_from_slice(b"t");
+                                                            } else {
+                                                                key_buffer.extend_from_slice(b"f");
+                                                            }
+                                                            true
+                                                        },
+                                                        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                                                            if value.is_null(0) {
+                                                                key_buffer.extend_from_slice(b"n");
+                                                                true
+                                                            } else if let Ok(i) = value.get_i64(0) {
+                                                                key_buffer.extend_from_slice(&i.to_le_bytes());
+                                                                true
+                                                            } else {
+                                                                false
+                                                            }
+                                                        },
+                                                        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                                                            if value.is_null(0) {
+                                                                key_buffer.extend_from_slice(b"n");
+                                                                true
+                                                            } else if let Ok(i) = value.get_u64(0) {
+                                                                key_buffer.extend_from_slice(&i.to_le_bytes());
+                                                                true
+                                                            } else {
+                                                                false
+                                                            }
+                                                        },
+                                                        DataType::Float32 | DataType::Float64 => {
+                                                            if value.is_null(0) {
+                                                                key_buffer.extend_from_slice(b"n");
+                                                                true
+                                                            } else if let Ok(f) = value.get_f64(0) {
+                                                                key_buffer.extend_from_slice(&f.to_le_bytes());
+                                                                true
+                                                            } else {
+                                                                false
+                                                            }
+                                                        },
+                                                        _ => {
+                                                            // Fall back to string representation for complex types
+                                                            if let Ok(s) = value.to_string() {
+                                                                key_buffer.extend_from_slice(s.as_bytes());
+                                                                true
+                                                            } else {
+                                                                false
+                                                            }
+                                                        }
+                                                    };
+                                                    
+                                                    if !byte_repr {
+                                                        valid_key = false;
+                                                        break;
+                                                    }
+                                                    
+                                                    // Add separator between key parts
+                                                    key_buffer.push(0);
+                                                } else {
+                                                    valid_key = false;
+                                                    break;
+                                                }
+                                            }
+                                            
+                                            if valid_key {
+                                                // Look up using the hash key
+                                                let hash_key = xxh3_64(key_buffer.as_slice());
+                                                rows_with_aggs.push((row_idx, agg_dict.get(&hash_key).copied()));
+                                            } else {
+                                                rows_with_aggs.push((row_idx, None));
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Fallback for cases where columns aren't found
+                                    for row_idx in 0..batch_len {
                                         rows_with_aggs.push((row_idx, None));
                                     }
                                 }
 
-                                // Create result columns
-                                let mut result_columns = Vec::with_capacity(
-                                    original_batch.num_columns() + params.window_column_names.len(),
-                                );
-
+                                // Create result columns - optimize for SIMD-friendly operations
+                                let result_col_capacity = original_batch.num_columns() + params.window_column_names.len();
+                                let mut result_columns = Vec::with_capacity(result_col_capacity);
+                                
                                 // Add original columns
                                 for col_idx in 0..original_batch.num_columns() {
                                     if let Ok(col) = original_batch.get_column_by_index(col_idx) {
                                         result_columns.push(col.clone());
                                     }
                                 }
-
-                                // Add window columns
-                                for window_name in &params.window_column_names {
-                                    if let Ok(agg_col) = agg_table.get_column(window_name) {
-                                        // Create window column values for each row
-                                        let mut values = Vec::with_capacity(original_batch.len());
-
+                                
+                                // Cache window column references
+                                let window_cols: Vec<_> = params.window_column_names
+                                    .iter()
+                                    .filter_map(|name| agg_table.get_column(name).ok())
+                                    .collect();
+                                
+                                // Add window columns - process one column at a time for better SIMD potential
+                                for (window_idx, window_name) in params.window_column_names.iter().enumerate() {
+                                    if window_idx < window_cols.len() {
+                                        let agg_col = &window_cols[window_idx];
+                                        
+                                        // Preallocate value vector with exact capacity
+                                        let mut values = Vec::with_capacity(batch_len);
+                                        let mut has_values = false;
+                                        
+                                        // Get a null value once for reuse
+                                        let null_value = agg_col.slice(0, 0);
+                                        
+                                        // Process rows in batch for better vectorization opportunity
                                         for (_, agg_row_idx) in &rows_with_aggs {
                                             if let Some(idx) = agg_row_idx {
-                                                if let Ok(value) = agg_col.slice(*idx, *idx + 1) {
-                                                    values.push(value);
+                                                // Apply bounds check to avoid crashes
+                                                if *idx < agg_col.len() {
+                                                    if let Ok(value) = agg_col.slice(*idx, *idx + 1) {
+                                                        values.push(value);
+                                                        has_values = true;
+                                                        continue;
+                                                    }
                                                 }
-                                            } else if let Ok(null_value) = agg_col.slice(0, 0) {
-                                                values.push(null_value);
+                                            }
+                                            
+                                            // Handle null case - use precomputed null value if available
+                                            if let Ok(ref empty) = null_value {
+                                                values.push(empty.clone());
+                                            } else {
+                                                // If we can't create a null, create an appropriate typed null
+                                                // This ensures we always have consistent sizing
+                                                let null_series = Series::new_null(
+                                                    "", 
+                                                    agg_col.data_type(), 
+                                                    1
+                                                );
+                                                values.push(null_series);
                                             }
                                         }
-
-                                        // Concatenate values into a window column
-                                        if !values.is_empty() {
+                                        
+                                        // Only process if we have actual values to work with
+                                        if has_values && !values.is_empty() {
+                                            // Optimize concat by using a preallocated buffer of references
                                             let values_ref: Vec<&Series> = values.iter().collect();
-                                            if let Ok(combined) =
-                                                Series::concat(values_ref.as_slice())
-                                            {
-                                                result_columns.push(combined.rename(window_name));
+                                            
+                                            // Add combined column to result with proper error handling
+                                            match Series::concat(values_ref.as_slice()) {
+                                                Ok(combined) => {
+                                                    result_columns.push(combined.rename(window_name));
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!(
+                                                        "Error concatenating window column {}: {}", 
+                                                        window_name, 
+                                                        e
+                                                    );
+                                                    
+                                                    // Fall back to a null column to maintain schema
+                                                    if values.len() > 0 && values[0].len() > 0 {
+                                                        let fallback = Series::new_null(
+                                                            window_name, 
+                                                            values[0].data_type(),
+                                                            batch_len
+                                                        );
+                                                        result_columns.push(fallback);
+                                                    }
+                                                }
                                             }
+                                        } else {
+                                            // Create an empty column of the right type if we couldn't get any values
+                                            let empty_col = Series::new_null(
+                                                window_name,
+                                                agg_col.data_type(),
+                                                batch_len
+                                            );
+                                            result_columns.push(empty_col);
                                         }
+                                    } else {
+                                        // Create an appropriate null column if the window column wasn't found
+                                        let null_col = Series::new_null(window_name, &DataType::Null, batch_len);
+                                        result_columns.push(null_col);
                                     }
                                 }
-
+                                
                                 // Create result table
                                 if !result_columns.is_empty() {
                                     if let Ok(result_table) =

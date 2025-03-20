@@ -17,53 +17,123 @@ fn hash_primitive<T: NativeType>(
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
     const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-    let hashes = if let Some(seed) = seed {
-        array
-            .iter()
-            .zip(seed.values_iter())
-            .map(|(v, s)| match v {
-                Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), *s),
-                None => NULL_HASH,
-            })
-            .collect::<Vec<_>>()
+    
+    // Preallocate output vector with capacity to avoid reallocations
+    let capacity = array.len();
+    let mut hashes = Vec::with_capacity(capacity);
+    
+    // Fast path for arrays without nulls
+    if array.null_count() == 0 {
+        if let Some(seed) = seed {
+            // Process with seed values
+            for (i, s) in seed.values_iter().enumerate().take(capacity) {
+                let v = unsafe { array.value_unchecked(i) };
+                hashes.push(xxh3_64_with_seed(v.to_le_bytes().as_ref(), *s));
+            }
+        } else {
+            // Process without seed - better vectorization potential
+            for i in 0..capacity {
+                let v = unsafe { array.value_unchecked(i) };
+                hashes.push(xxh3_64(v.to_le_bytes().as_ref()));
+            }
+        }
     } else {
-        array
-            .iter()
-            .map(|v| match v {
-                Some(v) => xxh3_64(v.to_le_bytes().as_ref()),
-                None => NULL_HASH,
-            })
-            .collect::<Vec<_>>()
-    };
+        // Path for arrays with potential nulls
+        let validity = array.validity();
+        
+        if let Some(seed) = seed {
+            // With seed values
+            for i in 0..capacity {
+                // If validity is None, all values are valid
+                // If validity is Some, check bitmap for validity at index i
+                if validity.map_or(true, |bitmap| bitmap.get_bit(i)) {
+                    let v = unsafe { array.value_unchecked(i) };
+                    hashes.push(xxh3_64_with_seed(v.to_le_bytes().as_ref(), *seed.value(i)));
+                } else {
+                    hashes.push(NULL_HASH);
+                }
+            }
+        } else {
+            // Without seed values
+            for i in 0..capacity {
+                if validity.map_or(true, |bitmap| bitmap.get_bit(i)) {
+                    let v = unsafe { array.value_unchecked(i) };
+                    hashes.push(xxh3_64(v.to_le_bytes().as_ref()));
+                } else {
+                    hashes.push(NULL_HASH);
+                }
+            }
+        }
+    }
+    
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
 fn hash_boolean(array: &BooleanArray, seed: Option<&PrimitiveArray<u64>>) -> PrimitiveArray<u64> {
     const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-
     const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
     const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
 
-    let hashes = if let Some(seed) = seed {
-        array
-            .iter()
-            .zip(seed.values_iter())
-            .map(|(v, s)| match v {
-                Some(true) => xxh3_64_with_seed(b"1", *s),
-                Some(false) => xxh3_64_with_seed(b"0", *s),
-                None => NULL_HASH,
-            })
-            .collect::<Vec<_>>()
+    // Preallocate with capacity to improve performance
+    let capacity = array.len();
+    let mut hashes = Vec::with_capacity(capacity);
+
+    // Separate paths for with/without nulls for better vectorization
+    if array.null_count() == 0 {
+        if let Some(seed) = seed {
+            // With seed values
+            for (i, s) in seed.values_iter().enumerate().take(capacity) {
+                if array.value(i) {
+                    hashes.push(xxh3_64_with_seed(b"1", *s));
+                } else {
+                    hashes.push(xxh3_64_with_seed(b"0", *s));
+                }
+            }
+        } else {
+            // No seed - use precomputed hashes for better vectorization
+            for i in 0..capacity {
+                if array.value(i) {
+                    hashes.push(TRUE_HASH);
+                } else {
+                    hashes.push(FALSE_HASH);
+                }
+            }
+        }
     } else {
-        array
-            .iter()
-            .map(|v| match v {
-                Some(true) => TRUE_HASH,
-                Some(false) => FALSE_HASH,
-                None => NULL_HASH,
-            })
-            .collect::<Vec<_>>()
-    };
+        // With potential nulls
+        let validity = array.validity();
+        
+        if let Some(seed) = seed {
+            // With seed values
+            for i in 0..capacity {
+                // If validity is None, all values are valid
+                // If validity is Some, check bitmap for validity at index i
+                if validity.map_or(true, |bitmap| bitmap.get_bit(i)) {
+                    if array.value(i) {
+                        hashes.push(xxh3_64_with_seed(b"1", *seed.value(i)));
+                    } else {
+                        hashes.push(xxh3_64_with_seed(b"0", *seed.value(i)));
+                    }
+                } else {
+                    hashes.push(NULL_HASH);
+                }
+            }
+        } else {
+            // Without seed values
+            for i in 0..capacity {
+                if validity.map_or(true, |bitmap| bitmap.get_bit(i)) {
+                    if array.value(i) {
+                        hashes.push(TRUE_HASH);
+                    } else {
+                        hashes.push(FALSE_HASH);
+                    }
+                } else {
+                    hashes.push(NULL_HASH);
+                }
+            }
+        }
+    }
+    
     PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
 }
 
