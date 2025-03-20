@@ -17,6 +17,7 @@ fn hash_primitive<T: NativeType>(
     seed: Option<&PrimitiveArray<u64>>,
 ) -> PrimitiveArray<u64> {
     const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
+    const BATCH_SIZE: usize = 16; // Optimal batch size for SIMD operations
     
     // Preallocate output vector with capacity to avoid reallocations
     let capacity = array.len();
@@ -25,16 +26,73 @@ fn hash_primitive<T: NativeType>(
     // Fast path for arrays without nulls
     if array.null_count() == 0 {
         if let Some(seed) = seed {
-            // Process with seed values
-            for (i, s) in seed.values_iter().enumerate().take(capacity) {
-                let v = unsafe { array.value_unchecked(i) };
-                hashes.push(xxh3_64_with_seed(v.to_le_bytes().as_ref(), *s));
+            // Process with seed values in batches for better SIMD utilization
+            let batch_count = (capacity + BATCH_SIZE - 1) / BATCH_SIZE;
+            
+            for batch_idx in 0..batch_count {
+                let start_idx = batch_idx * BATCH_SIZE;
+                let end_idx = (start_idx + BATCH_SIZE).min(capacity);
+                
+                // Process this batch
+                for i in start_idx..end_idx {
+                    let v = unsafe { array.value_unchecked(i) };
+                    let s = *seed.value(i);
+                    
+                    // Prefetch next values if possible
+                    #[cfg(feature = "nightly")]
+                    if i + 4 < end_idx {
+                        use std::intrinsics::prefetch_read_data;
+                        unsafe {
+                            // Prefetch next value for better cache utilization
+                            prefetch_read_data(
+                                array.values().as_ptr().add(i + 4) as *const i8,
+                                3  // Prefetch level
+                            );
+                            
+                            // Also prefetch seed value
+                            prefetch_read_data(
+                                seed.values().as_ptr().add(i + 4) as *const i8,
+                                3
+                            );
+                        }
+                    }
+                    
+                    hashes.push(xxh3_64_with_seed(v.to_le_bytes().as_ref(), s));
+                }
             }
         } else {
-            // Process without seed - better vectorization potential
-            for i in 0..capacity {
-                let v = unsafe { array.value_unchecked(i) };
-                hashes.push(xxh3_64(v.to_le_bytes().as_ref()));
+            // Process without seed - even better vectorization potential
+            // Use explicit batch processing for better SIMD utilization
+            let batch_count = (capacity + BATCH_SIZE - 1) / BATCH_SIZE;
+            
+            for batch_idx in 0..batch_count {
+                let start_idx = batch_idx * BATCH_SIZE;
+                let end_idx = (start_idx + BATCH_SIZE).min(capacity);
+                
+                // Pre-compute byte representations for the batch to improve memory access patterns
+                let mut batch_values = Vec::with_capacity(end_idx - start_idx);
+                
+                for i in start_idx..end_idx {
+                    let v = unsafe { array.value_unchecked(i) };
+                    batch_values.push(v.to_le_bytes());
+                    
+                    // Prefetch next values if possible (conditional compilation)
+                    #[cfg(feature = "nightly")]
+                    if i + 4 < end_idx {
+                        use std::intrinsics::prefetch_read_data;
+                        unsafe {
+                            prefetch_read_data(
+                                array.values().as_ptr().add(i + 4) as *const i8,
+                                3  // Prefetch level
+                            );
+                        }
+                    }
+                }
+                
+                // Process batch values with sequential memory access pattern
+                for bytes in batch_values {
+                    hashes.push(xxh3_64(bytes.as_ref()));
+                }
             }
         }
     } else {
@@ -42,24 +100,66 @@ fn hash_primitive<T: NativeType>(
         let validity = array.validity();
         
         if let Some(seed) = seed {
-            // With seed values
-            for i in 0..capacity {
-                // If validity is None, all values are valid
-                // If validity is Some, check bitmap for validity at index i
-                if validity.map_or(true, |bitmap| bitmap.get_bit(i)) {
-                    let v = unsafe { array.value_unchecked(i) };
-                    hashes.push(xxh3_64_with_seed(v.to_le_bytes().as_ref(), *seed.value(i)));
-                } else {
-                    hashes.push(NULL_HASH);
+            // With seed values - process in batches
+            let batch_count = (capacity + BATCH_SIZE - 1) / BATCH_SIZE;
+            
+            for batch_idx in 0..batch_count {
+                let start_idx = batch_idx * BATCH_SIZE;
+                let end_idx = (start_idx + BATCH_SIZE).min(capacity);
+                
+                // Process this batch
+                for i in start_idx..end_idx {
+                    // If validity is None, all values are valid
+                    // If validity is Some, check bitmap for validity at index i
+                    if validity.map_or(true, |bitmap| bitmap.get_bit(i)) {
+                        let v = unsafe { array.value_unchecked(i) };
+                        hashes.push(xxh3_64_with_seed(v.to_le_bytes().as_ref(), *seed.value(i)));
+                    } else {
+                        hashes.push(NULL_HASH);
+                    }
+                    
+                    // Prefetch next values if possible
+                    #[cfg(feature = "nightly")]
+                    if i + 4 < end_idx {
+                        use std::intrinsics::prefetch_read_data;
+                        unsafe {
+                            prefetch_read_data(
+                                array.values().as_ptr().add(i + 4) as *const i8,
+                                3  // Prefetch level
+                            );
+                        }
+                    }
                 }
             }
         } else {
-            // Without seed values
-            for i in 0..capacity {
-                if validity.map_or(true, |bitmap| bitmap.get_bit(i)) {
+            // Without seed values - process in batches
+            let batch_count = (capacity + BATCH_SIZE - 1) / BATCH_SIZE;
+            
+            for batch_idx in 0..batch_count {
+                let start_idx = batch_idx * BATCH_SIZE;
+                let end_idx = (start_idx + BATCH_SIZE).min(capacity);
+                
+                // Create small batch arrays to reduce branch prediction misses
+                let mut valid_indices = Vec::with_capacity(BATCH_SIZE);
+                let mut null_indices = Vec::with_capacity(BATCH_SIZE);
+                
+                // First, categorize each item in batch as valid or null
+                for i in start_idx..end_idx {
+                    if validity.map_or(true, |bitmap| bitmap.get_bit(i)) {
+                        valid_indices.push(i);
+                    } else {
+                        null_indices.push(i);
+                    }
+                }
+                
+                // Process valid values with no branching - good for SIMD
+                for &i in &valid_indices {
                     let v = unsafe { array.value_unchecked(i) };
                     hashes.push(xxh3_64(v.to_le_bytes().as_ref()));
-                } else {
+                }
+                
+                // Process null values - simple constant assignment, also good for SIMD
+                for _ in &null_indices {
                     hashes.push(NULL_HASH);
                 }
             }
