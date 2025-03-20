@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::join::JoinType;
 use daft_dsl::{optimization::replace_columns_with_expressions, resolved_col, ExprRef};
 
@@ -537,18 +537,6 @@ impl JoinGraph {
                 let mut right_cols = vec![];
                 for cond in conds {
                     // Check that the left and right conditions are valid.
-                    if !left_builder.plan.schema().has_field(&cond.left_on) {
-                        return Err(DaftError::FieldNotFound(format!(
-                            "Join on left field ({}) not found in left plan",
-                            cond.left_on
-                        )));
-                    }
-                    if !right_builder.plan.schema().has_field(&cond.right_on) {
-                        return Err(DaftError::FieldNotFound(format!(
-                            "Join on right field ({}) not found in right plan",
-                            cond.right_on
-                        )));
-                    }
                     left_cols.push(resolved_col(cond.left_on.clone()));
                     right_cols.push(resolved_col(cond.right_on.clone()));
                 }
