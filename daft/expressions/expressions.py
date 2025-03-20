@@ -1511,7 +1511,7 @@ class Expression:
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
-    def encode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+    def encode(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
         Example:
@@ -1553,7 +1553,7 @@ class Expression:
         expr = native.encode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-    def decode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+    def decode(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
         Example:

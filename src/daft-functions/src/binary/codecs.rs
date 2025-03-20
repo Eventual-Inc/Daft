@@ -40,7 +40,7 @@ impl TryFrom<&str> for Codec {
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         match s.to_lowercase().as_str() {
             "deflate" => Ok(Self::Deflate),
-            "gzip" => Ok(Self::Gzip),
+            "gzip" | "gz" => Ok(Self::Gzip),
             "zlib" => Ok(Self::Zlib),
             _ => Err(DaftError::not_implemented(format!(
                 "unsupported codec: {}",
@@ -129,6 +129,8 @@ mod tests {
     fn test_codec_from_str() {
         assert_eq!(Codec::try_from("DEFLATE").unwrap(), Codec::Deflate);
         assert_eq!(Codec::try_from("deflate").unwrap(), Codec::Deflate);
+        assert_eq!(Codec::try_from("gz").unwrap(), Codec::Gzip);
+        assert_eq!(Codec::try_from("GZ").unwrap(), Codec::Gzip);
         assert_eq!(Codec::try_from("gzip").unwrap(), Codec::Gzip);
         assert_eq!(Codec::try_from("GZIP").unwrap(), Codec::Gzip);
         assert_eq!(Codec::try_from("GzIp").unwrap(), Codec::Gzip);
