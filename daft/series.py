@@ -10,6 +10,38 @@ from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 
+class SeriesIterable:
+    """Iterable wrapper for Series that efficiently handles different data types."""
+
+    def __init__(self, series: Series):
+        self.series = series
+
+    def __iter__(self) -> Iterator[Any]:
+        dt = self.series.datatype()
+        if dt == DataType.python():
+
+            def yield_pylist():
+                yield from self.series._series.to_pylist()
+
+            return yield_pylist()
+        elif dt._should_cast_to_python():
+
+            def yield_pylist():
+                yield from self.series._series.cast(DataType.python()._dtype).to_pylist()
+
+            return yield_pylist()
+        else:
+
+            def arrow_to_py():
+                # We directly call .to_arrow() on the internal PySeries object since the case
+                # above has already captured the fixed shape tensor case.
+                arrow_data = self.series._series.to_arrow()
+                for item in arrow_data:
+                    yield None if item is None else item.as_py()
+
+            return arrow_to_py()
+
+
 class Series:
     """A Daft Series is an array of data of a single type, and is usually a column in a DataFrame."""
 
@@ -20,15 +52,8 @@ class Series:
 
     def __iter__(self) -> Iterator[Any]:
         """Return an iterator over the elements of the Series."""
-        dt = self.datatype()
-        if dt == DataType.python():
-            yield from self.to_pylist()
-        elif dt._should_cast_to_python():
-            yield from self.cast(DataType.python()._dtype).to_pylist()
-        else:
-            arrow_data = self.to_arrow()
-            for item in arrow_data:
-                yield None if item is None else item.as_py()
+        iterable = SeriesIterable(self)
+        return iterable.__iter__()
 
     @staticmethod
     def _from_pyseries(pyseries: PySeries) -> Series:

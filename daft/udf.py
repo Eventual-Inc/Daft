@@ -413,7 +413,7 @@ def udf(
     In the example below, we create a UDF that:
 
     1. Receives data under the argument name ``x``
-    2. Iterates over the ``x`` Daft Series (via a zero-copy iterator)
+    2. Iterates over the ``x`` Daft Series
     3. Adds a Python constant value ``c`` to every element in ``x``
     4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
     5. We can call our UDF on a dataframe using any of the dataframe projection operations (:meth:`df.with_column() <daft.DataFrame.with_column>`,
