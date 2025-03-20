@@ -3622,7 +3622,7 @@ class GroupedDataFrame:
             >>>
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
-            ...     return [statistics.stdev(data.to_pylist())]
+            ...     return [statistics.stdev(data)]
             >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df.show()

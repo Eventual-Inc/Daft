@@ -1309,7 +1309,7 @@ class Expression:
         inferred_return_dtype = DataType._infer_type(return_dtype)
 
         def batch_func(self_series):
-            return [func(x) for x in self_series.to_pylist()]
+            return [func(x) for x in self_series]
 
         name = getattr(func, "__module__", "")  # type: ignore[call-overload]
         if name:

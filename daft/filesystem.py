@@ -379,7 +379,7 @@ def overwrite_files(
     if overwrite_partitions:
         # Get all files in ONLY the directories that were written to.
 
-        written_dirs = set(str(pathlib.Path(path).parent) for path in written_file_paths.to_pylist())
+        written_dirs = set(str(pathlib.Path(path).parent) for path in written_file_paths)
         for dir in written_dirs:
             file_selector = pafs.FileSelector(dir, recursive=True)
             try:

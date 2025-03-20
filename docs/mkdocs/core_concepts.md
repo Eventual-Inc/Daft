@@ -2134,7 +2134,7 @@ For example, let's try writing a function that will crop all our images in the `
     @daft.udf(return_dtype=daft.DataType.python())
     def crop_images(images, crops, padding=0):
         cropped = []
-        for img, crop in zip(images.to_pylist(), crops.to_pylist()):
+        for img, crop in zip(images, crops):
             x1, x2, y1, y2 = crop
             cropped_img = img[x1:x2 + padding, y1:y2 + padding]
             cropped.append(cropped_img)
@@ -2313,8 +2313,7 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
             self.model.eval().to(torch.device("cpu"))
 
         def __call__(self, images_urls):
-            uris = images_urls.to_pylist()
-            batch = torch.cat([self.utils.prepare_input_from_uri(uri) for uri in uris]).to(torch.device("cpu"))
+            batch = torch.cat([self.utils.prepare_input_from_uri(uri) for uri in images_urls]).to(torch.device("cpu"))
 
             with torch.no_grad():
                 output = torch.nn.functional.softmax(self.model(batch), dim=1)

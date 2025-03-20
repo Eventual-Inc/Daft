@@ -1,13 +1,45 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Literal, TypeVar
+from typing import Any, Iterator, Literal, TypeVar
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
 from daft.datatype import DataType, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
+
+
+class SeriesIterable:
+    """Iterable wrapper for Series that efficiently handles different data types."""
+
+    def __init__(self, series: Series):
+        self.series = series
+
+    def __iter__(self) -> Iterator[Any]:
+        dt = self.series.datatype()
+        if dt == DataType.python():
+
+            def yield_pylist():
+                yield from self.series._series.to_pylist()
+
+            return yield_pylist()
+        elif dt._should_cast_to_python():
+
+            def yield_pylist():
+                yield from self.series._series.cast(DataType.python()._dtype).to_pylist()
+
+            return yield_pylist()
+        else:
+
+            def arrow_to_py():
+                # We directly call .to_arrow() on the internal PySeries object since the case
+                # above has already captured the fixed shape tensor case.
+                arrow_data = self.series._series.to_arrow()
+                for item in arrow_data:
+                    yield None if item is None else item.as_py()
+
+            return arrow_to_py()
 
 
 class Series:
@@ -17,6 +49,11 @@ class Series:
 
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Series via __init__ ")
+
+    def __iter__(self) -> Iterator[Any]:
+        """Return an iterator over the elements of the Series."""
+        iterable = SeriesIterable(self)
+        return iterable.__iter__()
 
     @staticmethod
     def _from_pyseries(pyseries: PySeries) -> Series:
