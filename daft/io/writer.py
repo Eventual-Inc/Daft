@@ -53,7 +53,7 @@ class FileWriterBase(ABC):
         self.partition_values = partition_values
         if self.partition_values is not None:
             self.partition_strings = {
-                key: values.to_pylist()[0]
+                key: next(iter(values.to_pylist()))
                 for key, values in partition_values_to_str_mapping(self.partition_values).items()
             }
             self.dir_path = partition_strings_to_path(
