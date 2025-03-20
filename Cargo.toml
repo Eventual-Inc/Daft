@@ -12,7 +12,7 @@ common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
-daft-cli = {path = "src/daft-cli", default-features = false, optional = true}
+daft-cli = {path = "src/daft-cli", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-connect = {path = "src/daft-connect", optional = true}
 daft-context = {path = "src/daft-context", default-features = false}
@@ -62,7 +62,7 @@ python = [
   "common-scan-info/python",
   "common-system-info/python",
   "daft-catalog/python",
-  "daft-cli",
+  "daft-cli/python",
   "daft-connect/python",
   "daft-context/python",
   "daft-core/python",

@@ -756,7 +756,7 @@ jobs:
       with:
         tool-cache: false
     - name: Generate code coverage
-      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude spark-connect daft-cli --lcov --output-path ./report-output/lcov.info
+      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude spark-connect --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
