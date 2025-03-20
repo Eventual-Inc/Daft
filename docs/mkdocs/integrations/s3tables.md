@@ -10,13 +10,60 @@ from daft import Catalog
 catalog = Catalog.from_arn("arn:aws:s3tables:<region>:<account>:bucket/<bucket>")
 
 # verify we are connected
-catalog.list_tables()
+catalog.list_tables("demo")
+"""
+['demo.points']
+"""
 
 # read some table
 catalog.read_table("my_namespace.my_table").show()
+"""
+╭─────────┬───────┬──────╮
+│ x       ┆ y     ┆ z    │
+│ ---     ┆ ---   ┆ ---  │
+│ Boolean ┆ Int64 ┆ Utf8 │
+╞═════════╪═══════╪══════╡
+│ true    ┆ 1     ┆ a    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ true    ┆ 2     ┆ b    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ false   ┆ 3     ┆ c    │
+╰─────────┴───────┴──────╯
+
+(Showing first 3 of 3 rows)
+"""
 
 # write dataframe to table
-catalog.write_table("my_namespace.my_table", daft.read_csv("/path/to/file.csv"))
+catalog.write_table(
+    "demo.points",
+    daft.from_pydict(
+        {
+            "x": [True],
+            "y": [4],
+            "z": ["d"],
+        }
+    ),
+)
+
+# check that the data was written
+catalog.read_table("my_namespace.my_table").show()
+"""
+╭─────────┬───────┬──────╮
+│ x       ┆ y     ┆ z    │
+│ ---     ┆ ---   ┆ ---  │
+│ Boolean ┆ Int64 ┆ Utf8 │
+╞═════════╪═══════╪══════╡
+│ true    ┆ 4     ┆ d    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ true    ┆ 1     ┆ a    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ true    ┆ 2     ┆ b    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ false   ┆ 3     ┆ c    │
+╰─────────┴───────┴──────╯
+
+(Showing first 4 of 4 rows)
+"""
 ```
 
 ### S3 Tables AWS API
