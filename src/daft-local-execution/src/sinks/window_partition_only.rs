@@ -46,12 +46,7 @@ impl WindowPartitionOnlyState {
         };
 
         // Keep using partition_by_value as it's critical for window functions
-        let (partitioned, partition_values) = input.partition_by_value(&params.partition_by)?;
-        println!(
-            "Partitioned into {} partitions with values: {:?}",
-            partitioned.len(),
-            partition_values
-        );
+        let (partitioned, _partition_values) = input.partition_by_value(&params.partition_by)?;
 
         for (partition_idx, mp) in partitioned.into_iter().enumerate() {
             if partition_idx >= inner_states.len() {
@@ -83,17 +78,12 @@ fn compute_partition_key_hash(
     row_idx: usize,
 ) -> Option<u64> {
     let mut key_hasher = DefaultHasher::new();
-    let mut key_parts = Vec::new();
 
     for col_name in partition_col_names {
         if let Ok(col) = batch.get_column(col_name) {
             if let Ok(value) = col.slice(row_idx, row_idx + 1) {
-                // For debugging, capture the string representation
-                let value_str = value.to_string();
-                key_parts.push(format!("{}={}", col_name, value_str));
-
                 // Use a stable string representation for hashing
-                value_str.hash(&mut key_hasher);
+                value.to_string().hash(&mut key_hasher);
             } else {
                 return None;
             }
@@ -103,7 +93,6 @@ fn compute_partition_key_hash(
     }
 
     let hash_value = key_hasher.finish();
-    println!("Hash value {} for key parts: {:?}", hash_value, key_parts);
     Some(hash_value)
 }
 
@@ -254,12 +243,7 @@ impl BlockingSink for WindowPartitionOnlySink {
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.window_partition_only_params.clone();
-        let num_partitions = self.num_partitions();
-        println!("==== PLATFORM INFO: {} ====", std::env::consts::OS);
-        println!(
-            "Finalizing window partition sink with {} partitions",
-            num_partitions
-        );
+        let _num_partitions = self.num_partitions();
 
         spawner
             .spawn(
