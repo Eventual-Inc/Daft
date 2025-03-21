@@ -11,7 +11,7 @@ use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use tracing::{debug, info, instrument, Span};
+use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
@@ -79,36 +79,36 @@ fn compute_partition_key_hash(
 ) -> Option<u64> {
     let mut key_hasher = DefaultHasher::new();
 
-    debug!(
-        "Computing hash for batch {:?}, row {}",
+    println!(
+        "Computing hash for batch columns: {:?}, row {}",
         batch.schema.fields.keys().collect::<Vec<_>>(),
         row_idx
     );
 
     let mut key_parts = Vec::new();
     for col_name in partition_col_names {
-        debug!("Processing partition column: {}", col_name);
+        println!("Processing partition column: {}", col_name);
         if let Ok(col) = batch.get_column(col_name) {
             if let Ok(value) = col.slice(row_idx, row_idx + 1) {
                 // For debugging, capture the string representation
                 let value_str = value.to_string();
-                debug!("  Column {} value: {:?}", col_name, value_str);
+                println!("  Column {} value: {}", col_name, value_str);
                 key_parts.push(format!("{}={}", col_name, value_str));
 
                 // Use a stable string representation for hashing
                 value_str.hash(&mut key_hasher);
             } else {
-                debug!("  Failed to slice column {}", col_name);
+                println!("  Failed to slice column {}", col_name);
                 return None;
             }
         } else {
-            debug!("  Column {} not found in batch", col_name);
+            println!("  Column {} not found in batch", col_name);
             return None;
         }
     }
 
     let hash_value = key_hasher.finish();
-    debug!(
+    println!(
         "Generated hash {} for key parts: {:?}",
         hash_value, key_parts
     );
@@ -263,7 +263,8 @@ impl BlockingSink for WindowPartitionOnlySink {
     ) -> BlockingSinkFinalizeResult {
         let params = self.window_partition_only_params.clone();
         let num_partitions = self.num_partitions();
-        info!(
+        println!("==== PLATFORM INFO: {} ====", std::env::consts::OS);
+        println!(
             "Finalizing window partition sink with {} partitions",
             num_partitions
         );
@@ -367,17 +368,17 @@ impl BlockingSink for WindowPartitionOnlySink {
 
                             let partition_col_names =
                                 extract_partition_column_names(&params.partition_by);
-                            info!("Partition columns: {:?}", partition_col_names);
+                            println!("Partition columns: {:?}", partition_col_names);
 
                             let mut agg_dict = std::collections::HashMap::new();
-                            info!("Processing aggregate table with {} rows", agg_table.len());
+                            println!("Processing aggregate table with {} rows", agg_table.len());
                             for row_idx in 0..agg_table.len() {
                                 if let Some(key_hash) = compute_partition_key_hash(
                                     agg_table,
                                     &partition_col_names,
                                     row_idx,
                                 ) {
-                                    debug!(
+                                    println!(
                                         "Adding hash {} -> row {} to aggregate dictionary",
                                         key_hash, row_idx
                                     );
@@ -385,26 +386,26 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 }
                             }
 
-                            info!(
+                            println!(
                                 "Built aggregate dictionary with {} entries: {:?}",
                                 agg_dict.len(),
                                 agg_dict.keys().collect::<Vec<_>>()
                             );
 
                             let mut processed_tables = Vec::with_capacity(original_tables.len());
-                            info!("Processing {} original tables", original_tables.len());
+                            println!("Processing {} original tables", original_tables.len());
                             for (table_idx, original_batch) in original_tables.iter().enumerate() {
                                 if original_batch.is_empty() {
-                                    debug!("Skipping empty original batch {}", table_idx);
+                                    println!("Skipping empty original batch {}", table_idx);
                                     continue;
                                 }
 
-                                info!(
+                                println!(
                                     "Processing original batch {} with {} rows",
                                     table_idx,
                                     original_batch.len()
                                 );
-                                debug!(
+                                println!(
                                     "Original batch columns: {:?}",
                                     original_batch.schema.fields.keys().collect::<Vec<_>>()
                                 );
@@ -412,7 +413,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 // Debug print first few rows partition columns
                                 for col_name in &partition_col_names {
                                     if let Ok(col) = original_batch.get_column(col_name) {
-                                        debug!("  Column {}: {}", col_name, col);
+                                        println!("  Column {}: {}", col_name, col);
                                     }
                                 }
 
@@ -423,11 +424,11 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 )
                                 .and_then(|key_hash| {
                                     let idx = agg_dict.get(&key_hash).copied();
-                                    debug!("Lookup hash {} -> row idx {:?}", key_hash, idx);
+                                    println!("Lookup hash {} -> row idx {:?}", key_hash, idx);
                                     idx
                                 });
 
-                                debug!("Found row_idx {:?} for batch {}", row_idx, table_idx);
+                                println!("Found row_idx {:?} for batch {}", row_idx, table_idx);
 
                                 let window_cols = params
                                     .window_column_names
