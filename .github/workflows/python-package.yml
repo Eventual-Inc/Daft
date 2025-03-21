@@ -15,6 +15,7 @@ on:
 env:
   DAFT_ANALYTICS_ENABLED: '0'
   UV_SYSTEM_PYTHON: 1
+  RUST_BACKTRACE: 1
 
 jobs:
 

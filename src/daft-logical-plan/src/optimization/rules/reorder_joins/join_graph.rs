@@ -6,7 +6,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_core::join::JoinType;
-use daft_dsl::{optimization::replace_columns_with_expressions, resolved_col, ExprRef};
+use daft_dsl::{optimization::replace_columns_with_expressions, resolved_col, Expr, ExprRef};
 
 use crate::{
     ops::{Filter, Join, Project},
@@ -770,9 +770,20 @@ impl JoinGraphBuilder {
                 LogicalPlan::Filter(Filter { input, .. }) => plan = input,
                 // Since we hit a join, we need to process the linear chain of Projects and Filters that were encountered starting
                 // from the plan at the root of the linear chain to the current plan.
+                // We only process joins with predicates that are all columns.
+                // TODO: Figure out how to handle joins with non-column predicates, such as aliases.
                 LogicalPlan::Join(Join {
-                    left_on, join_type, ..
-                }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
+                    left_on,
+                    join_type,
+                    right_on,
+                    ..
+                }) if *join_type == JoinType::Inner
+                    && !left_on.is_empty()
+                    && left_on
+                        .iter()
+                        .chain(right_on.iter())
+                        .all(|c| matches!(c.as_ref(), Expr::Column(_))) =>
+                {
                     self.process_linear_chain(root_plan, plan);
                     break;
                 }
