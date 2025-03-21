@@ -69,10 +69,7 @@ impl JoinOrderTree {
             (
                 JoinOrderTree::Join(left1, right1, _, _),
                 JoinOrderTree::Join(left2, right2, _, _),
-            ) => {
-                (Self::order_eq(left1, left2) && Self::order_eq(right1, right2))
-                    || (Self::order_eq(left1, right2) && Self::order_eq(right1, left2))
-            }
+            ) => (Self::order_eq(left1, left2) && Self::order_eq(right1, right2)),
             _ => false,
         }
     }
@@ -530,7 +527,7 @@ impl JoinGraph {
     /// Returns a tuple of the logical plan builder consisting of joins, and a bitmask indicating the plan IDs
     /// that are contained within the current logical plan builder. The bitmask is used for determining join
     /// conditions to use when logical plan builders are joined together.
-    fn build_joins_from_join_order(
+    pub(crate) fn build_joins_from_join_order(
         &self,
         join_order: &JoinOrderTree,
     ) -> DaftResult<LogicalPlanRef> {
@@ -592,7 +589,8 @@ impl JoinGraph {
     pub(super) fn could_reorder(&self) -> bool {
         // For this join graph to reorder joins, there must be at least 3 relations to join. Otherwise
         // there is only one join to perform and no reordering is needed.
-        self.adj_list.max_id >= 3
+        // TODO: We should raise the limit once we implement a DP-based join ordering algorithm.
+        self.adj_list.max_id >= 3 && self.adj_list.max_id <= 7
     }
 
     /// Test helper function to get the number of edges that the current graph contains.

@@ -49,7 +49,7 @@ def _build_segment_batch_payload(
                 "timestamp": event.event_time.isoformat(),
                 "context": {
                     "app": {
-                        "name": "getdaft",
+                        "name": "daft",
                         "version": daft_version,
                         "build": daft_build_type,
                     },
@@ -112,7 +112,7 @@ class AnalyticsClient:
                 AnalyticsEvent(
                     session_id=self._session_key,
                     event_name=event_name,
-                    event_time=datetime.datetime.utcnow(),
+                    event_time=datetime.datetime.now(datetime.timezone.utc),
                     data=data,
                 )
             )

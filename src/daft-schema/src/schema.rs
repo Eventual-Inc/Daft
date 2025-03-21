@@ -82,6 +82,10 @@ impl Schema {
         }
     }
 
+    pub fn get_fields(&self) -> Vec<Field> {
+        self.fields.values().cloned().collect()
+    }
+
     pub fn has_field(&self, name: &str) -> bool {
         self.fields.contains_key(name)
     }

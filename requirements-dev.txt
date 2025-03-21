@@ -36,13 +36,16 @@ opencv-python==4.10.0.84
 tiktoken==0.7.0
 duckdb==1.1.2
 
+# TQDM
+tqdm
+
 # Pyarrow
 pyarrow==16.0.0
 # Ray
 ray[data, client]==2.34.0
 
 # Lance
-lancedb>=0.6.10
+pylance>=0.10.12
 
 #Iceberg
 pyiceberg==0.7.0
@@ -70,8 +73,9 @@ pyodbc==5.1.0
 s3fs==2023.12.0
 # on old versions of s3fs's pinned botocore, they neglected to pin urllib3<2 which leads to:
 # "ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'"
-boto3==1.34.51
-moto[s3,server]==5.0.26
+boto3==1.36.20
+boto3-stubs[essential,s3,s3tables]==1.36.20
+moto[s3,server]==5.1.1
 
 # Azure
 adlfs==2024.7.0

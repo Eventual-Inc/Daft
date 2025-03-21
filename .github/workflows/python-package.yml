@@ -165,9 +165,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -185,7 +184,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       matrix:
         python-version: ['3.9']
@@ -226,7 +225,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -297,9 +296,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-io:
     runs-on: ubuntu-latest
@@ -307,7 +305,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -380,9 +378,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
   integration-test-io-credentialed:
@@ -392,7 +389,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -483,9 +480,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-iceberg:
     runs-on: ubuntu-latest
@@ -493,7 +489,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -567,9 +563,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-sql:
     runs-on: ubuntu-latest
@@ -577,7 +572,7 @@ jobs:
     needs:
     - integration-test-build
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -650,9 +645,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
 
   integration-tests:
@@ -676,10 +670,8 @@ jobs:
     runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 30
     env:
-      package-name: getdaft
+      package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
-    strategy:
-      fail-fast: false
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -737,9 +729,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   rust-tests-platform:
     runs-on: ${{ matrix.os }}-latest
@@ -787,9 +778,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   rust-tests:
     runs-on: ubuntu-latest
@@ -891,9 +881,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   test-imports-platform:
     runs-on: ${{ matrix.os }}-latest
@@ -972,9 +961,8 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   test-imports:
     runs-on: ubuntu-latest
@@ -1039,6 +1027,5 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook

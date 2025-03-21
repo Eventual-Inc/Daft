@@ -371,10 +371,10 @@ impl MicroPartition {
         }
     }
 
-    /// Create a new "loaded" MicroPartition using the materialized tables
+    /// Create a new "loaded" MicroPartition using the materialized record batches.
     ///
     /// Schema invariants:
-    /// 1. `schema` must match each Table's schema exactly
+    /// 1. `schema` must match each record batch's schema exactly
     /// 2. If `statistics` is provided, each Loaded column statistic must be castable to the corresponding column in the MicroPartition's schema
     #[must_use]
     pub fn new_loaded(
@@ -383,10 +383,10 @@ impl MicroPartition {
         statistics: Option<TableStatistics>,
     ) -> Self {
         // Check and validate invariants with asserts
-        for table in record_batches.iter() {
+        for batch in record_batches.iter() {
             assert!(
-                table.schema == schema,
-                "Loaded MicroPartition's tables' schema must match its own schema exactly"
+                batch.schema == schema,
+                "Loaded MicroPartition's batch schema must match its own schema exactly"
             );
         }
 
@@ -395,7 +395,9 @@ impl MicroPartition {
                 .cast_to_schema(schema.clone())
                 .expect("Statistics cannot be casted to schema")
         });
-        let tables_len_sum = record_batches
+
+        // micropartition length is the length of all batches combined
+        let length = record_batches
             .iter()
             .map(daft_recordbatch::RecordBatch::len)
             .sum();
@@ -403,11 +405,19 @@ impl MicroPartition {
         Self {
             schema,
             state: Mutex::new(TableState::Loaded(record_batches)),
-            metadata: TableMetadata {
-                length: tables_len_sum,
-            },
+            metadata: TableMetadata { length },
             statistics,
         }
+    }
+
+    pub fn from_arrow<S: Into<SchemaRef>>(
+        schema: S,
+        arrays: Vec<Box<dyn arrow2::array::Array>>,
+    ) -> DaftResult<Self> {
+        let schema = schema.into();
+        let batch = RecordBatch::from_arrow(schema.clone(), arrays)?;
+        let batches = Arc::new(vec![batch]);
+        Ok(Self::new_loaded(schema, batches, None))
     }
 
     pub fn from_scan_task(scan_task: Arc<ScanTask>, io_stats: IOStatsRef) -> crate::Result<Self> {
@@ -794,6 +804,41 @@ pub fn read_json_into_micropartition(
     }
 }
 
+pub fn read_warc_into_micropartition(
+    uris: &[&str],
+    schema: SchemaRef,
+    io_config: Arc<IOConfig>,
+    multithreaded_io: bool,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<MicroPartition> {
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config)?;
+    let convert_options = WarcConvertOptions {
+        limit: None,
+        include_columns: None,
+        schema: schema.clone(),
+        predicate: None,
+    };
+
+    match uris {
+        [] => Ok(MicroPartition::empty(None)),
+        uris => {
+            // Perform a bulk read of URIs, materializing a table per URI.
+            let tables = daft_warc::read_warc_bulk(
+                uris,
+                convert_options,
+                io_client,
+                io_stats,
+                multithreaded_io,
+                None,
+                8,
+            )
+            .context(DaftCoreComputeSnafu)?;
+
+            // Construct MicroPartition from tables and unioned schema
+            Ok(MicroPartition::new_loaded(schema, Arc::new(tables), None))
+        }
+    }
+}
 fn get_file_column_names<'a>(
     columns: Option<&'a [&'a str]>,
     partition_spec: Option<&PartitionSpec>,

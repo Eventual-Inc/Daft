@@ -326,18 +326,18 @@ class UDF:
         """Override the concurrency of this UDF, which tells Daft how many instances of your UDF to run concurrently.
 
         Example:
-        >>> import daft
-        >>>
-        >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
-        ... class MyGpuUdf:
-        ...     def __init__(self, text=" world"):
-        ...         self.text = text
-        ...
-        ...     def __call__(self, data):
-        ...         return [x + self.text for x in data.to_pylist()]
-        >>>
-        >>> # New UDF that will have 8 concurrent running instances (will require 8 total GPUs)
-        >>> MyGpuUdf_8_concurrency = MyGpuUdf.with_concurrency(8)
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
+            ... class MyGpuUdf:
+            ...     def __init__(self, text=" world"):
+            ...         self.text = text
+            ...
+            ...     def __call__(self, data):
+            ...         return [x + self.text for x in data]
+            >>>
+            >>> # New UDF that will have 8 concurrent running instances (will require 8 total GPUs)
+            >>> MyGpuUdf_8_concurrency = MyGpuUdf.with_concurrency(8)
         """
         return dataclasses.replace(self, concurrency=concurrency)
 
@@ -345,36 +345,36 @@ class UDF:
         """Replace initialization arguments for a class UDF when calling `__init__` at runtime on each instance of the UDF.
 
         Example:
-        >>> import daft
-        >>>
-        >>> @daft.udf(return_dtype=daft.DataType.string())
-        ... class MyUdfWithInit:
-        ...     def __init__(self, text=" world"):
-        ...         self.text = text
-        ...
-        ...     def __call__(self, data):
-        ...         return [x + self.text for x in data.to_pylist()]
-        >>>
-        >>> # Create a customized version of MyUdfWithInit by overriding the init args
-        >>> MyUdfWithInit_CustomInitArgs = MyUdfWithInit.with_init_args(text=" my old friend")
-        >>>
-        >>> df = daft.from_pydict({"foo": ["hello", "hello", "hello"]})
-        >>> df = df.with_column("bar_world", MyUdfWithInit(df["foo"]))
-        >>> df = df.with_column("bar_custom", MyUdfWithInit_CustomInitArgs(df["foo"]))
-        >>> df.show()
-        ╭───────┬─────────────┬─────────────────────╮
-        │ foo   ┆ bar_world   ┆ bar_custom          │
-        │ ---   ┆ ---         ┆ ---                 │
-        │ Utf8  ┆ Utf8        ┆ Utf8                │
-        ╞═══════╪═════════════╪═════════════════════╡
-        │ hello ┆ hello world ┆ hello my old friend │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ hello ┆ hello world ┆ hello my old friend │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ hello ┆ hello world ┆ hello my old friend │
-        ╰───────┴─────────────┴─────────────────────╯
-        <BLANKLINE>
-        (Showing first 3 of 3 rows)
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string())
+            ... class MyUdfWithInit:
+            ...     def __init__(self, text=" world"):
+            ...         self.text = text
+            ...
+            ...     def __call__(self, data):
+            ...         return [x + self.text for x in data]
+            >>>
+            >>> # Create a customized version of MyUdfWithInit by overriding the init args
+            >>> MyUdfWithInit_CustomInitArgs = MyUdfWithInit.with_init_args(text=" my old friend")
+            >>>
+            >>> df = daft.from_pydict({"foo": ["hello", "hello", "hello"]})
+            >>> df = df.with_column("bar_world", MyUdfWithInit(df["foo"]))
+            >>> df = df.with_column("bar_custom", MyUdfWithInit_CustomInitArgs(df["foo"]))
+            >>> df.show()
+            ╭───────┬─────────────┬─────────────────────╮
+            │ foo   ┆ bar_world   ┆ bar_custom          │
+            │ ---   ┆ ---         ┆ ---                 │
+            │ Utf8  ┆ Utf8        ┆ Utf8                │
+            ╞═══════╪═════════════╪═════════════════════╡
+            │ hello ┆ hello world ┆ hello my old friend │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ hello ┆ hello world ┆ hello my old friend │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ hello ┆ hello world ┆ hello my old friend │
+            ╰───────┴─────────────┴─────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
         """
         if not isinstance(self.inner, type):
             raise ValueError("Function UDFs cannot have init args.")
@@ -413,7 +413,7 @@ def udf(
     In the example below, we create a UDF that:
 
     1. Receives data under the argument name ``x``
-    2. Converts the ``x`` Daft Series into a Python list using :meth:`x.to_pylist() <daft.Series.to_pylist>`
+    2. Iterates over the ``x`` Daft Series
     3. Adds a Python constant value ``c`` to every element in ``x``
     4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
     5. We can call our UDF on a dataframe using any of the dataframe projection operations (:meth:`df.with_column() <daft.DataFrame.with_column>`,
@@ -423,7 +423,7 @@ def udf(
         >>> import daft
         >>> @daft.udf(return_dtype=daft.DataType.int64())
         ... def add_constant(x: daft.Series, c=10):
-        ...     return [v + c for v in x.to_pylist()]
+        ...     return [v + c for v in x]
         >>>
         >>> df = daft.from_pydict({"x": [1, 2, 3]})
         >>> df = df.with_column("new_x", add_constant(df["x"], c=20))

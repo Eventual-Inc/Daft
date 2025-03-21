@@ -22,6 +22,13 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
+  - SQL Reference:
+    - Overview: sql/overview.md
+    - Statements:
+      - SELECT: sql/statements/select.md
+      - SHOW: sql/statements/show.md
+      - USE: sql/statements/use.md
+    - Data Types: sql/datatypes.md
   - Sessions: sessions.md
   - Catalogs: catalogs.md
   - Spark Connect: spark_connect.md
@@ -39,6 +46,7 @@ nav:
     - Amazon Web Services: integrations/aws.md
     - SQL: integrations/sql.md
     - Hugging Face Datasets: integrations/huggingface.md
+    - S3 Tables: integrations/s3tables.md
   - Resources:
     - Architecture: resources/architecture.md
     - DataFrame Comparison: resources/dataframe_comparison.md

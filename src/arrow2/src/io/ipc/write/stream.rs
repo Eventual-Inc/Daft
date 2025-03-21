@@ -32,6 +32,8 @@ pub struct StreamWriter<W: Write> {
     dictionary_tracker: DictionaryTracker,
 
     ipc_fields: Option<Vec<IpcField>>,
+
+    bytes_written: usize,
 }
 
 impl<W: Write> StreamWriter<W> {
@@ -46,6 +48,7 @@ impl<W: Write> StreamWriter<W> {
                 cannot_replace: false,
             },
             ipc_fields: None,
+            bytes_written: 0,
         }
     }
 
@@ -62,7 +65,8 @@ impl<W: Write> StreamWriter<W> {
             ipc_message: schema_to_bytes(schema, self.ipc_fields.as_ref().unwrap()),
             arrow_data: vec![],
         };
-        write_message(&mut self.writer, &encoded_message)?;
+        let (metadata_len, data_len) = write_message(&mut self.writer, &encoded_message)?;
+        self.bytes_written += metadata_len + data_len;
         Ok(())
     }
 
@@ -91,11 +95,17 @@ impl<W: Write> StreamWriter<W> {
         )?;
 
         for encoded_dictionary in encoded_dictionaries {
-            write_message(&mut self.writer, &encoded_dictionary)?;
+            let (metadata_len, data_len) = write_message(&mut self.writer, &encoded_dictionary)?;
+            self.bytes_written += metadata_len + data_len;
         }
 
-        write_message(&mut self.writer, &encoded_message)?;
+        let (metadata_len, data_len) = write_message(&mut self.writer, &encoded_message)?;
+        self.bytes_written += metadata_len + data_len;
         Ok(())
+    }
+
+    pub fn bytes_written(&self) -> usize {
+        self.bytes_written
     }
 
     /// Write continuation bytes, and mark the stream as done

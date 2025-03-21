@@ -48,13 +48,15 @@ impl MicroPartitionSet {
         Self::default()
     }
 
-    pub fn from_tables(id: PartitionId, tables: Vec<RecordBatch>) -> DaftResult<Self> {
-        if tables.is_empty() {
+    pub fn from_record_batches(
+        id: PartitionId,
+        record_batches: Vec<RecordBatch>,
+    ) -> DaftResult<Self> {
+        if record_batches.is_empty() {
             return Ok(Self::empty());
         }
-
-        let schema = &tables[0].schema;
-        let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(tables), None);
+        let schema = &record_batches[0].schema;
+        let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(record_batches), None);
         Ok(Self::new(vec![(id, Arc::new(mp))]))
     }
 }

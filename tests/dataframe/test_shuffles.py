@@ -1,9 +1,11 @@
-import os
 import random
+import tempfile
+from contextlib import contextmanager
 from functools import partial
 from typing import Callable
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 import daft
@@ -15,7 +17,10 @@ from tests.conftest import get_tests_daft_runner_name
 def generate(num_rows: int, bytes_per_row: int):
     data = {
         "ints": np.random.randint(0, num_rows, num_rows, dtype=np.uint64),
-        "bytes": [os.urandom(bytes_per_row) for _ in range(num_rows)],
+        "bytes": pa.array(
+            [np.random.bytes(bytes_per_row) for _ in range(num_rows)],
+            type=pa.binary(bytes_per_row),
+        ),
     }
     yield RecordBatch.from_pydict(data)
 
@@ -37,6 +42,21 @@ def pre_shuffle_merge_ctx():
 
     def _ctx(threshold: int | None = None):
         return daft.execution_config_ctx(shuffle_algorithm="pre_shuffle_merge", pre_shuffle_merge_threshold=threshold)
+
+    return _ctx
+
+
+@pytest.fixture(scope="function")
+def flight_shuffle_ctx():
+    """Fixture that provides a context manager for flight shuffle testing with a temporary directory."""
+
+    @contextmanager
+    def _ctx():
+        # Create a temporary directory that automatically cleans up
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Use the temporary directory for flight shuffle
+            with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
+                yield ctx
 
     return _ctx
 
@@ -141,6 +161,40 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
                     [
                         ("ints", daft.DataType.uint64()),
                         ("bytes", daft.DataType.binary()),
+                    ]
+                ),
+            )
+            .repartition(output_partitions, "ints")
+            .collect()
+        )
+        assert len(df) == input_partitions * output_partitions
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+@pytest.mark.parametrize(
+    "input_partitions, output_partitions",
+    [(100, 100), (100, 1), (100, 50), (100, 200)],
+)
+def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions):
+    """Test that flight shuffle is working."""
+
+    def num_rows_fn():
+        return output_partitions
+
+    def bytes_per_row_fn():
+        return 200
+
+    with flight_shuffle_ctx():
+        df = (
+            read_generator(
+                generator(input_partitions, num_rows_fn, bytes_per_row_fn),
+                schema=daft.Schema._from_field_name_and_types(
+                    [
+                        ("ints", daft.DataType.uint64()),
+                        ("bytes", daft.DataType.fixed_size_binary(200)),
                     ]
                 ),
             )

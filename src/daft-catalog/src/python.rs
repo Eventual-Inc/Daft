@@ -43,7 +43,14 @@ impl PyCatalogWrapper {
 
 impl Catalog for PyCatalogWrapper {
     fn name(&self) -> String {
-        todo!("Catalogs do not currently hold their names")
+        Python::with_gil(|py| {
+            // catalog = 'python catalog object'
+            let catalog = self.0.bind(py);
+            // name = catalog.name
+            let name = catalog.getattr("name").expect(".name should never fail");
+            let name: String = name.extract().expect("name must be a string");
+            name
+        })
     }
 
     fn get_table(&self, ident: &Identifier) -> Result<Option<Box<dyn Table>>> {
@@ -61,6 +68,22 @@ impl Catalog for PyCatalogWrapper {
                 // ignore table not found to make this optional
                 Ok(None)
             }
+        })
+    }
+
+    fn list_tables(&self, pattern: Option<String>) -> Result<Vec<Identifier>> {
+        Python::with_gil(|py| {
+            // catalog = 'python catalog object'
+            let catalog = self.0.bind(py);
+            // call the list_tables method with the pattern
+            let tables = catalog.getattr("list_tables")?.call1((pattern,))?;
+            // convert the Python list of strings to Vec<Identifier>
+            let tables: Vec<String> = tables.extract()?;
+            let identifiers = tables
+                .into_iter()
+                .map(|table| Identifier::from_sql(&table, false))
+                .collect::<std::result::Result<Vec<Identifier>, _>>()?;
+            Ok(identifiers)
         })
     }
 

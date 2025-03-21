@@ -17,6 +17,7 @@ from daft.io._lance import read_lance
 from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
+from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
 
@@ -29,6 +30,7 @@ __all__ = [
     "IOConfig",
     "S3Config",
     "S3Credentials",
+    "_range",
     "from_glob_path",
     "read_csv",
     "read_deltalake",

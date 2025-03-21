@@ -12,10 +12,10 @@ Daft currently supports:
 
 ## Installing Daft with SQL Support
 
-Install Daft with the `getdaft[sql]` extra, or manually install the required packages: [ConnectorX](https://sfu-db.github.io/connector-x/databases.html), [SQLAlchemy](https://docs.sqlalchemy.org/en/20/orm/quickstart.html) and [SQLGlot](https://sqlglot.com/sqlglot.html).
+Install Daft with the `daft[sql]` extra, or manually install the required packages: [ConnectorX](https://sfu-db.github.io/connector-x/databases.html), [SQLAlchemy](https://docs.sqlalchemy.org/en/20/orm/quickstart.html) and [SQLGlot](https://sqlglot.com/sqlglot.html).
 
 ```bash
-pip install -U "getdaft[sql]"
+pip install -U "daft[sql]"
 ```
 
 ## Reading a SQL query

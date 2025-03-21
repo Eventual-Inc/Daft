@@ -108,6 +108,8 @@ impl Series {
 
     /// Creates a Series given an Arrow [`arrow2::array::Array`]
     ///
+    /// TODO chore: consider accepting Into<FieldRef>
+    ///
     /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
     /// the provided [`arrow2::array::Array`] for compatibility, and returns an error if they do not match.
     pub fn from_arrow(

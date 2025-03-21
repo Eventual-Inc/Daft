@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use common_error::DaftResult;
-use common_partitioning::Partition;
+use common_partitioning::{Partition, PartitionId, PartitionSet};
 use daft_core::{
     join::JoinSide,
     prelude::*,
@@ -22,6 +22,7 @@ use snafu::ResultExt;
 
 use crate::{
     micropartition::{MicroPartition, TableState},
+    partitioning::MicroPartitionSet,
     DaftCoreComputeSnafu, PyIOSnafu,
 };
 
@@ -762,6 +763,48 @@ impl PyMicroPartition {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (
+        uri,
+        io_config=None,
+        multithreaded_io=None
+    ))]
+    pub fn read_warc(
+        py: Python,
+        uri: &str,
+        io_config: Option<IOConfig>,
+        multithreaded_io: Option<bool>,
+    ) -> PyResult<Self> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("WARC-Record-ID", daft_core::prelude::DataType::Utf8),
+            Field::new("WARC-Type", daft_core::prelude::DataType::Utf8),
+            Field::new(
+                "WARC-Date",
+                daft_core::prelude::DataType::Timestamp(
+                    TimeUnit::Nanoseconds,
+                    Some("Etc/UTC".to_string()),
+                ),
+            ),
+            Field::new("Content-Length", daft_core::prelude::DataType::Int64),
+            Field::new(
+                "WARC-Identified-Payload-Type",
+                daft_core::prelude::DataType::Utf8,
+            ),
+            Field::new("warc_content", daft_core::prelude::DataType::Binary),
+            Field::new("warc_headers", daft_core::prelude::DataType::Utf8),
+        ])?);
+        let mp = py.allow_threads(|| {
+            crate::micropartition::read_warc_into_micropartition(
+                &[uri],
+                schema.into(),
+                io_config.unwrap_or_default().config.into(),
+                multithreaded_io.unwrap_or(true),
+                None,
+            )
+        })?;
+        Ok(mp.into())
+    }
+
+    #[staticmethod]
     pub fn _from_unloaded_table_state(
         schema_bytes: &[u8],
         loading_scan_task_bytes: &[u8],
@@ -1106,7 +1149,66 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
+/// TODO chore: cutover LocalPartitionSet to use this pyclass.
+#[pyclass(module = "daft.daft")]
+#[derive(Clone, Debug)]
+pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
+
+#[pymethods]
+impl PyMicroPartitionSet {
+    fn get_partition(&self, idx: PartitionId) -> PyResult<PyMicroPartition> {
+        Ok(self.0.get_partition(&idx)?.into())
+    }
+
+    fn set_partition(&mut self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
+        Ok(self.0.set_partition(idx, &part.inner)?)
+    }
+
+    fn delete_partition(&mut self, idx: PartitionId) -> PyResult<()> {
+        Ok(self.0.delete_partition(&idx)?)
+    }
+
+    fn has_partition(&self, idx: PartitionId) -> PyResult<bool> {
+        Ok(self.0.has_partition(&idx))
+    }
+
+    fn __len__(&self) -> PyResult<usize> {
+        Ok(self.0.len())
+    }
+
+    fn size_bytes(&self) -> PyResult<usize> {
+        Ok(self.0.size_bytes()?)
+    }
+
+    fn num_partitions(&self) -> PyResult<usize> {
+        Ok(self.0.num_partitions())
+    }
+
+    fn wait(&self) -> PyResult<()> {
+        Ok(())
+    }
+}
+
+impl From<MicroPartitionSet> for PyMicroPartitionSet {
+    fn from(value: MicroPartitionSet) -> Self {
+        Arc::new(value).into()
+    }
+}
+
+impl From<Arc<MicroPartitionSet>> for PyMicroPartitionSet {
+    fn from(value: Arc<MicroPartitionSet>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<PyMicroPartitionSet> for Arc<MicroPartitionSet> {
+    fn from(value: PyMicroPartitionSet) -> Self {
+        value.0
+    }
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyMicroPartition>()?;
+    parent.add_class::<PyMicroPartitionSet>()?;
     Ok(())
 }

@@ -18,19 +18,19 @@ maintainers = [
   {name = "Sammy Sidhu", email = "sammy@eventualcomputing.com"},
   {name = "Jay Chia", email = "jay@eventualcomputing.com"}
 ]
-name = "getdaft"
+name = "daft"
 readme = "README.rst"
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
+all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
 aws = ["boto3"]
 azure = []
-deltalake = ["deltalake"]
+deltalake = ["deltalake", "packaging"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
 iceberg = ["pyiceberg >= 0.7.0", "packaging"]
-lance = ["lancedb"]
+lance = ["pylance"]
 numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
@@ -53,7 +53,7 @@ repository = "https://github.com/Eventual-Inc/Daft"
 [tool.codespell]
 check-filenames = true
 check-hidden = true
-ignore-words-list = "crate,arithmetics,ser"
+ignore-words-list = "crate,arithmetics,ser,acter"
 # Feel free to un-skip examples, and experimental, you will just need to
 # work through many typos (--write-changes and --interactive will help)
 skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken,*.sql,tests/table/utf8/*,tests/table/binary/*,*.warc"

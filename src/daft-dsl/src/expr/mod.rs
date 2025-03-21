@@ -1309,6 +1309,7 @@ impl Expr {
             },
             Self::ScalarFunction(func) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
+                "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {
@@ -1626,14 +1627,16 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
             let right_selectivity = estimated_selectivity(right, schema);
             match op {
                 // Fixed selectivity for all common comparisons
-                Operator::Eq => 0.05,
-                Operator::EqNullSafe => 0.05,
-                Operator::NotEq => 0.95,
-                Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.5,
+                Operator::Eq => 0.2,
+                Operator::EqNullSafe => 0.2,
+                Operator::NotEq => 0.8,
+                Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq => 0.3,
 
                 // Logical operators with fixed estimates
-                // P(A and B) = P(A) * P(B)
-                Operator::And => left_selectivity * right_selectivity,
+                // Use the minimum selectivity of the two operands for AND
+                // This is a more conservative estimate than the product of the two selectivities,
+                // because we cannot assume independence between the two operands.
+                Operator::And => left_selectivity.min(right_selectivity),
                 // P(A or B) = P(A) + P(B) - P(A and B)
                 Operator::Or => left_selectivity
                     .mul_add(-right_selectivity, left_selectivity + right_selectivity),

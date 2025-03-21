@@ -2,16 +2,17 @@
 
 pub mod error;
 pub mod functions;
-mod modules;
 
+mod exec;
+mod modules;
 mod planner;
 mod schema;
 mod statement;
-pub use planner::*;
+mod table_provider;
 
+pub use planner::*;
 #[cfg(feature = "python")]
 pub mod python;
-mod table_provider;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -22,6 +23,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::sql_exec, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_expr, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::sql_datatype, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::list_sql_functions, parent)?)?;
     Ok(())
 }

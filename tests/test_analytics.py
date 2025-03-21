@@ -36,7 +36,7 @@ def mock_analytics() -> tuple[AnalyticsClient, MagicMock]:
 
 @patch("daft.analytics.datetime")
 def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics: tuple[AnalyticsClient, MagicMock]):
-    mock_datetime.datetime.utcnow.return_value = MOCK_DATETIME
+    mock_datetime.datetime.now.return_value = MOCK_DATETIME
     analytics_client, mock_publish = mock_analytics
 
     # Run track_import
@@ -61,7 +61,7 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
                     "timestamp": MOCK_DATETIME.isoformat(),
                     "context": {
                         "app": {
-                            "name": "getdaft",
+                            "name": "daft",
                             "version": daft.get_version(),
                             "build": daft.get_build_type(),
                         },
@@ -125,7 +125,7 @@ def test_analytics_client_disabled(
 def test_analytics_client_track_dataframe_method(
     mock_datetime: MagicMock, mock_analytics: tuple[AnalyticsClient, MagicMock]
 ):
-    mock_datetime.datetime.utcnow.return_value = MOCK_DATETIME
+    mock_datetime.datetime.now.return_value = MOCK_DATETIME
     analytics_client, mock_publish = mock_analytics
 
     # Run track_df_method_call
@@ -154,7 +154,7 @@ def test_analytics_client_track_dataframe_method(
                     "timestamp": MOCK_DATETIME.isoformat(),
                     "context": {
                         "app": {
-                            "name": "getdaft",
+                            "name": "daft",
                             "version": daft.get_version(),
                             "build": daft.get_build_type(),
                         },

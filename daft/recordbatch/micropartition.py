@@ -524,3 +524,18 @@ class MicroPartition:
                 multithreaded_io=multithreaded_io,
             )
         )
+
+    @classmethod
+    def read_warc(
+        cls,
+        path: str,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(
+            _PyMicroPartition.read_warc(
+                uri=path,
+                io_config=io_config,
+                multithreaded_io=multithreaded_io,
+            )
+        )

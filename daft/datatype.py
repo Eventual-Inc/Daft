@@ -273,7 +273,7 @@ class DataType:
         """Create a Struct DataType: a nested type which has names mapped to child types.
 
         Example:
-        >>> DataType.struct({"name": DataType.string(), "age": DataType.int64()})
+            >>> DataType.struct({"name": DataType.string(), "age": DataType.int64()})
 
         Args:
             fields: Nested fields of the Struct
@@ -365,6 +365,7 @@ class DataType:
         cls,
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
+        use_offset_indices: bool = False,
     ) -> DataType:
         """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided ``shape``.
 
@@ -373,15 +374,23 @@ class DataType:
         If ``shape`` is not given, the ndarrays in the column can have different shapes. This is much more flexible,
         but will result in a less compact representation and may be make some operations less efficient.
 
+        The ``use_offset_indices`` parameter determines how the indices of the SparseTensor are stored:
+        - ``False`` (default): Indices represent the actual positions of nonzero values.
+        - ``True``: Indices represent the offsets between consecutive nonzero values.
+        This can improve compression efficiency, especially when nonzero values are clustered together,
+        as offsets between them are often zero, making them easier to compress.
+
         Args:
             dtype: The type of the data contained within the tensor elements.
             shape: The shape of each SparseTensor in the column. This is ``None`` by default, which allows the shapes of
                 each tensor element to vary.
+            use_offset_indices: Determines how indices are represented.
+                Defaults to `False` (storing actual indices). If `True`, stores offsets between nonzero indices.
         """
         if shape is not None:
             if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
                 raise ValueError("SparseTensor shape must be a non-empty tuple of ints, but got: ", shape)
-        return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape))
+        return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape, use_offset_indices))
 
     @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
@@ -574,7 +583,7 @@ class DataType:
 
 
 # Type alias for a union of types that can be inferred into a DataType
-DataTypeLike = Union[DataType, type]
+DataTypeLike = Union[DataType, type, str]
 
 
 _EXT_TYPE_REGISTRATION_LOCK = threading.Lock()

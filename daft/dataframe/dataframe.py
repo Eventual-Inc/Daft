@@ -315,14 +315,14 @@ class DataFrame:
             The default value is the total number of CPUs available on the current machine.
 
         Example:
-        >>> import daft
-        >>>
-        >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
-        >>> for row in df.iter_rows():
-        ...     print(row)
-        {'foo': 1, 'bar': 'a'}
-        {'foo': 2, 'bar': 'b'}
-        {'foo': 3, 'bar': 'c'}
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
+            >>> for row in df.iter_rows():
+            ...     print(row)
+            {'foo': 1, 'bar': 'a'}
+            {'foo': 2, 'bar': 'b'}
+            {'foo': 3, 'bar': 'c'}
 
 
         Args:
@@ -543,7 +543,7 @@ class DataFrame:
             )
 
         data_micropartition = MicroPartition.from_pydict(data)
-        return cls._from_tables(data_micropartition)
+        return cls._from_micropartitions(data_micropartition)
 
     @classmethod
     def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"], Iterable["pyarrow.Table"]]) -> "DataFrame":
@@ -552,20 +552,20 @@ class DataFrame:
             data = list(data)
         if not isinstance(data, list):
             data = [data]
-        data_micropartitions = [MicroPartition.from_arrow(table) for table in data]
-        return cls._from_tables(*data_micropartitions)
+        parts = [MicroPartition.from_arrow(table) for table in data]
+        return cls._from_micropartitions(*parts)
 
     @classmethod
     def _from_pandas(cls, data: Union["pandas.DataFrame", List["pandas.DataFrame"]]) -> "DataFrame":
         """Creates a Daft DataFrame from a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__."""
         if not isinstance(data, list):
             data = [data]
-        data_micropartitions = [MicroPartition.from_pandas(df) for df in data]
-        return cls._from_tables(*data_micropartitions)
+        parts = [MicroPartition.from_pandas(df) for df in data]
+        return cls._from_micropartitions(*parts)
 
     @classmethod
-    def _from_tables(cls, *parts: MicroPartition) -> "DataFrame":
-        """Creates a Daft DataFrame from a single RecordBatch.
+    def _from_micropartitions(cls, *parts: MicroPartition) -> "DataFrame":
+        """Creates a Daft DataFrame from MicroPartition(s).
 
         Args:
             parts: The Tables that we wish to convert into a Daft DataFrame.
@@ -969,6 +969,22 @@ class DataFrame:
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
+        def _create_metadata_param(metadata: Optional[Dict[str, str]]):
+            """From deltalake>=0.20.0 onwards, custom_metadata has to be passed as CommitProperties.
+
+            Args:
+                metadata
+
+            Returns:
+                DataFrame: metadata for deltalake<0.20.0, otherwise CommitProperties with custom_metadata
+            """
+            if parse(deltalake.__version__) < parse("0.20.0"):
+                return metadata
+            else:
+                from deltalake import CommitProperties
+
+                return CommitProperties(custom_metadata=metadata)
+
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
 
@@ -1113,8 +1129,9 @@ class DataFrame:
                     rows.append(old_actions_dict["num_records"][i])
                     sizes.append(old_actions_dict["size_bytes"][i])
 
+            metadata_param = _create_metadata_param(custom_metadata)
             table._table.create_write_transaction(
-                add_actions, mode, partition_cols or [], delta_schema, None, custom_metadata
+                add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
             )
             table.update_incremental()
 
@@ -1148,50 +1165,46 @@ class DataFrame:
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Example:
-        --------
-        >>> import daft
-        >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
-        >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
-        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
-        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
-        │ ---           ┆ ---              ┆ ---             ┆ ---     │
-        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
-        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
-        │ 1             ┆ 0                ┆ 1               ┆ 1       │
-        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
-        <BLANKLINE>
-        (Showing first 1 of 1 rows)
-
-        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
-        ╭───────╮
-        │ a     │
-        │ ---   │
-        │ Int64 │
-        ╞═══════╡
-        │ 1     │
-        ├╌╌╌╌╌╌╌┤
-        │ 2     │
-        ├╌╌╌╌╌╌╌┤
-        │ 3     │
-        ├╌╌╌╌╌╌╌┤
-        │ 4     │
-        ╰───────╯
-        <BLANKLINE>
-        (Showing first 4 of 4 rows)
-
-
-        # Pass additional keyword arguments to the Lance writer
-        # All additional keyword arguments are passed to `lance.write_fragments`
-        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
-        ╭───────────────┬──────────────────┬─────────────────┬─────────╮
-        │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
-        │ ---           ┆ ---              ┆ ---             ┆ ---     │
-        │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
-        ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
-        │ 1             ┆ 0                ┆ 1               ┆ 2       │
-        ╰───────────────┴──────────────────┴─────────────────┴─────────╯
-        <BLANKLINE>
-        (Showing first 1 of 1 rows)
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
+            >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
+            ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+            │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+            │ ---           ┆ ---              ┆ ---             ┆ ---     │
+            │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+            ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+            │ 1             ┆ 0                ┆ 1               ┆ 1       │
+            ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+            >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
+            ╭───────╮
+            │ a     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+            >>> # Pass additional keyword arguments to the Lance writer
+            >>> # All additional keyword arguments are passed to `lance.write_fragments`
+            >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
+            ╭───────────────┬──────────────────┬─────────────────┬─────────╮
+            │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
+            │ ---           ┆ ---              ┆ ---             ┆ ---     │
+            │ Int64         ┆ Int64            ┆ Int64           ┆ Int64   │
+            ╞═══════════════╪══════════════════╪═════════════════╪═════════╡
+            │ 1             ┆ 0                ┆ 1               ┆ 2       │
+            ╰───────────────┴──────────────────┴─────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         from daft import from_pydict
         from daft.io.object_store_options import io_config_to_storage_options
@@ -1201,7 +1214,7 @@ class DataFrame:
             import pyarrow as pa
 
         except ImportError:
-            raise ImportError("lance is not installed. Please install lance using `pip install getdaft[lance]`")
+            raise ImportError("lance is not installed. Please install lance using `pip install daft[lance]`")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -2109,6 +2122,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
+            >>> import daft
             >>> df = daft.from_pydict({"a": [1.6, 2.5, 3.3, float("nan")]})
             >>> df.drop_nan("a").collect()  # drops rows where column a contains NaN values
             ╭─────────╮
@@ -3608,7 +3622,7 @@ class GroupedDataFrame:
             >>>
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
-            ...     return [statistics.stdev(data.to_pylist())]
+            ...     return [statistics.stdev(data)]
             >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df.show()

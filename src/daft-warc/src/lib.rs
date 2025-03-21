@@ -8,10 +8,9 @@ use common_runtime::{get_compute_runtime, get_io_runtime};
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::ExprRef;
-use daft_io::{GetResult, IOClient, IOStatsRef};
+use daft_io::{CountingReader, GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use snafu::{futures::try_future::TryFutureExt, Snafu};
 use tokio::{
     fs::File,
@@ -92,6 +91,7 @@ struct WarcHeaderState {
     record_id: Option<Uuid>,
     warc_date: Option<DateTime<Utc>>,
     warc_type: Option<WarcType>,
+    warc_identified_payload_type: Option<String>,
     header_lines: Vec<(String, String)>,
 }
 
@@ -101,6 +101,7 @@ impl WarcHeaderState {
         self.record_id = None;
         self.warc_date = None;
         self.warc_type = None;
+        self.warc_identified_payload_type = None;
         self.header_lines.clear();
     }
 }
@@ -112,6 +113,7 @@ struct WarcRecordBatchBuilder {
     warc_type_array: MutableUtf8Array<i64>,
     warc_date_array: MutablePrimitiveArray<i64>,
     warc_content_length_array: MutablePrimitiveArray<i64>,
+    warc_identified_payload_type_array: MutableUtf8Array<i64>,
     content_array: MutableBinaryArray<i64>,
     header_array: MutableUtf8Array<i64>,
     rows_processed: usize,
@@ -123,7 +125,7 @@ struct WarcRecordBatchBuilder {
 
 impl WarcRecordBatchBuilder {
     const DEFAULT_STRING_LENGTH: usize = 20;
-    const DEFAULT_CONTENT_LENGTH: usize = 100;
+    const DEFAULT_CONTENT_LENGTH: usize = 27282; // 27282 is the average content length of a WARC file sampled from 100 Common Crawl WARC files.
 
     fn new(chunk_size: usize, schema: SchemaRef) -> Self {
         Self {
@@ -139,6 +141,10 @@ impl WarcRecordBatchBuilder {
             ),
             warc_date_array: MutablePrimitiveArray::with_capacity(chunk_size),
             warc_content_length_array: MutablePrimitiveArray::with_capacity(chunk_size),
+            warc_identified_payload_type_array: MutableUtf8Array::with_capacities(
+                chunk_size,
+                Self::DEFAULT_STRING_LENGTH * chunk_size,
+            ),
             content_array: MutableBinaryArray::with_capacities(
                 chunk_size,
                 Self::DEFAULT_CONTENT_LENGTH * chunk_size,
@@ -161,12 +167,15 @@ impl WarcRecordBatchBuilder {
         warc_type: Option<&str>,
         warc_date: Option<i64>,
         warc_content_length: Option<i64>,
+        warc_identified_payload_type: Option<&str>,
         header: Option<&str>,
     ) {
         self.record_id_array.push(record_id);
         self.warc_type_array.push(warc_type);
         self.warc_date_array.push(warc_date);
         self.warc_content_length_array.push(warc_content_length);
+        self.warc_identified_payload_type_array
+            .push(warc_identified_payload_type);
         self.header_array.push(header);
         // book keeping
         self.rows_processed += 1;
@@ -192,6 +201,7 @@ impl WarcRecordBatchBuilder {
                     self.warc_type_array.as_box(),
                     self.warc_date_array.as_box(),
                     self.warc_content_length_array.as_box(),
+                    self.warc_identified_payload_type_array.as_box(),
                     self.content_array.as_box(),
                     self.header_array.as_box(),
                 ],
@@ -210,6 +220,8 @@ impl WarcRecordBatchBuilder {
                 MutableUtf8Array::with_capacities(chunk_size, avg_warc_type_size * chunk_size);
             self.warc_date_array = MutablePrimitiveArray::with_capacity(chunk_size);
             self.warc_content_length_array = MutablePrimitiveArray::with_capacity(chunk_size);
+            self.warc_identified_payload_type_array =
+                MutableUtf8Array::with_capacities(chunk_size, avg_warc_type_size * chunk_size);
 
             let avg_content_size = self.content_bytes_so_far / rows_processed;
 
@@ -248,6 +260,7 @@ impl WarcRecordBatchIterator {
                 record_id: None,
                 warc_date: None,
                 warc_type: None,
+                warc_identified_payload_type: None,
                 header_lines: Vec::new(),
             },
             rb_builder: WarcRecordBatchBuilder::new(chunk_size, schema),
@@ -300,6 +313,7 @@ impl WarcRecordBatchIterator {
                             .warc_date
                             .and_then(|d| d.timestamp_nanos_opt()),
                         self.header_state.content_length.map(|len| len as i64),
+                        self.header_state.warc_identified_payload_type.as_deref(),
                         Some(&header_json),
                     );
 
@@ -354,6 +368,9 @@ impl WarcRecordBatchIterator {
                                     self.header_state.warc_date = Some(date.with_timezone(&Utc));
                                 }
                             }
+                            "WARC-Identified-Payload-Type" => {
+                                self.header_state.warc_identified_payload_type = Some(value);
+                            }
                             _ => {
                                 // Store non-mandatory headers.
                                 self.header_state.header_lines.push((key, value));
@@ -404,7 +421,7 @@ pub fn read_warc_bulk(
                 io_stats.clone(),
             );
             tokio::task::spawn(async move {
-                read_warc_single_into_table(
+                read_warc_single_into_tables(
                     uri.as_str(),
                     convert_options,
                     io_client,
@@ -426,8 +443,10 @@ pub fn read_warc_bulk(
                     // Limit has been met, early-terminate.
                     (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
                     // Limit has not yet been met, update remaining limit slack and continue.
-                    (Ok(table), Some(rows_left)) => {
-                        remaining_rows = Some(rows_left - table.len() as i64);
+                    (Ok(tables), Some(rows_left)) => {
+                        for table in tables {
+                            remaining_rows = Some(rows_left - table.len() as i64);
+                        }
                         futures::future::ready(Ok(true))
                     }
                     // (1) No limit, never early-terminate.
@@ -435,22 +454,21 @@ pub fn read_warc_bulk(
                     (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
                 }
             })
+            .map_ok(|tables| tables.into_iter().flatten().collect::<Vec<_>>())
             .try_collect::<Vec<_>>()
             .await
     })?;
 
-    tables.into_iter().collect::<DaftResult<Vec<_>>>()
+    Ok(tables.into_iter().flatten().collect::<Vec<_>>())
 }
 
-async fn read_warc_single_into_table(
+async fn read_warc_single_into_tables(
     uri: &str,
     convert_options: WarcConvertOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<RecordBatch> {
-    let limit = convert_options.limit;
-    let schema = convert_options.schema.clone();
+) -> DaftResult<Vec<RecordBatch>> {
     let record_batch_stream = stream_warc(
         uri,
         io_client,
@@ -459,24 +477,12 @@ async fn read_warc_single_into_table(
         max_chunks_in_flight,
     )
     .await?;
-    let tables = Box::pin(record_batch_stream);
-    let collected_tables = tables
+    let collected_tables = record_batch_stream
         .try_collect::<Vec<_>>()
         .await?
         .into_iter()
         .collect::<Vec<_>>();
-    if collected_tables.is_empty() {
-        RecordBatch::empty(Some(schema))
-    } else {
-        let concated_table = tables_concat(collected_tables)?;
-        if let Some(limit) = limit
-            && concated_table.len() > limit
-        {
-            concated_table.head(limit)
-        } else {
-            Ok(concated_table)
-        }
-    }
+    Ok(collected_tables)
 }
 
 pub async fn stream_warc(
@@ -501,14 +507,15 @@ pub async fn stream_warc(
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
-            .single_url_get(uri.to_string(), None, io_stats)
+            .single_url_get(uri.to_string(), None, io_stats.clone())
             .await?
         {
             GetResult::File(file) => {
                 let buffer_size = 256 * 1024;
                 let file_reader = File::open(file.path).await?;
+                let counting_reader = CountingReader::new(file_reader, io_stats);
                 (
-                    Box::new(BufReader::with_capacity(buffer_size, file_reader)),
+                    Box::new(BufReader::with_capacity(buffer_size, counting_reader)),
                     buffer_size,
                     64,
                 )
@@ -607,41 +614,67 @@ fn combine_stream<T, E>(
     })
 }
 
-// TODO(desmond): This can be deduped for all the different file format readers.
-fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBatch> {
-    if tables.is_empty() {
-        return Err(DaftError::ValueError(
-            "Need at least 1 Table to perform concat".to_string(),
-        ));
-    }
-    if tables.len() == 1 {
-        return Ok(tables.pop().unwrap());
-    }
-    let first_table = tables.as_slice().first().unwrap();
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
 
-    let first_schema = &first_table.schema;
-    for tab in tables.iter().skip(1) {
-        if tab.schema.as_ref() != first_schema.as_ref() {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Table concat requires all schemas to match, {} vs {}",
-                first_schema, tab.schema
-            )));
-        }
+    use common_error::DaftResult;
+    use daft_core::prelude::{Field, Schema, TimeUnit};
+    use daft_io::{IOConfig, IOStatsContext};
+
+    use crate::{read_warc_bulk, WarcConvertOptions};
+
+    #[test]
+    fn test_warc_read_iostats() -> DaftResult<()> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("WARC-Record-ID", daft_core::prelude::DataType::Utf8),
+            Field::new("WARC-Type", daft_core::prelude::DataType::Utf8),
+            Field::new(
+                "WARC-Date",
+                daft_core::prelude::DataType::Timestamp(
+                    TimeUnit::Nanoseconds,
+                    Some("Etc/UTC".to_string()),
+                ),
+            ),
+            Field::new("Content-Length", daft_core::prelude::DataType::Int64),
+            Field::new(
+                "WARC-Identified-Payload-Type",
+                daft_core::prelude::DataType::Utf8,
+            ),
+            Field::new("warc_content", daft_core::prelude::DataType::Binary),
+            Field::new("warc_headers", daft_core::prelude::DataType::Utf8),
+        ])?);
+        let io_config = Arc::new(IOConfig::default());
+        let io_client = daft_io::get_io_client(true, io_config)?;
+        let io_stats = IOStatsContext::new("test_warc_read");
+        let warc_file = format!("{}/test/example.warc", env!("CARGO_MANIFEST_DIR"),);
+        let warc_gz_file = format!("{}/test/example.warc.gz", env!("CARGO_MANIFEST_DIR"),);
+
+        let convert_options = WarcConvertOptions {
+            schema: schema.clone(),
+            predicate: None,
+            include_columns: None,
+            limit: None,
+        };
+
+        let _ = read_warc_bulk(
+            &[&warc_file, &warc_gz_file],
+            convert_options,
+            io_client,
+            Some(io_stats.clone()),
+            true,
+            None,
+            8,
+        )?;
+
+        let warc_file_size = std::fs::metadata(&warc_file)?.len() as usize;
+        let warc_gz_file_size = std::fs::metadata(&warc_gz_file)?.len() as usize;
+        let bytes_read = io_stats.load_bytes_read();
+        assert_eq!(
+            bytes_read,
+            warc_file_size + warc_gz_file_size,
+            "IO stats should record the bytes read correctly"
+        );
+        Ok(())
     }
-    let num_columns = first_table.num_columns();
-    let new_series = (0..num_columns)
-        .into_par_iter()
-        .map(|i| {
-            let series_to_cat: Vec<&Series> = tables
-                .iter()
-                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
-                .collect();
-            Series::concat(series_to_cat.as_slice())
-        })
-        .collect::<DaftResult<Vec<_>>>()?;
-    RecordBatch::new_with_size(
-        first_table.schema.clone(),
-        new_series,
-        tables.iter().map(daft_recordbatch::RecordBatch::len).sum(),
-    )
 }
