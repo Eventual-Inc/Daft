@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+from daft.scarf_telemetry import track_import_on_scarf
+
 ###
 # Set up code coverage for when running code coverage with ray
 ###
@@ -52,6 +54,7 @@ from daft.analytics import init_analytics
 user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
 analytics_client = init_analytics(get_version(), get_build_type(), user_opted_out)
 analytics_client.track_import()
+track_import_on_scarf()
 
 ###
 # Warn if using the old package name
