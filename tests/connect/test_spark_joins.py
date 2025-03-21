@@ -43,7 +43,21 @@ def test_columns_after_join(make_spark_df):
 
     assert set(joined_df1.schema().column_names()) == set(["A", "B", "right.A"])
 
-    assert set(joined_df2.schema().column_names()) == set(["A", "B"])
+    assert set(joined_df2.schema().column_names()) == set(["A", "B", "right.A"])
+
+
+def test_using_columns(make_spark_df):
+    df1 = make_spark_df(
+        {
+            "A": [1, 2, 3],
+        },
+    )
+    df2 = make_spark_df({"A": [1, 2, 3], "B": [1, 2, 3]})
+
+    joined_df = df1.join(df2, "A")
+    joined_df = spark_to_daft(joined_df)
+
+    assert set(joined_df.schema().column_names()) == set(["A", "B"])
 
 
 def test_rename_join_keys_in_dataframe(make_spark_df):
@@ -55,8 +69,8 @@ def test_rename_join_keys_in_dataframe(make_spark_df):
     joined_df1 = spark_to_daft(joined_df1)
     joined_df2 = spark_to_daft(joined_df2)
 
-    assert set(joined_df1.schema().column_names()) == set(["A", "B"])
-    assert set(joined_df2.schema().column_names()) == set(["A", "B"])
+    assert set(joined_df1.schema().column_names()) == set(["A", "B", "right.A"])
+    assert set(joined_df2.schema().column_names()) == set(["A", "B", "right.A"])
 
 
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])

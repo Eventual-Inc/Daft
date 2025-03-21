@@ -39,8 +39,8 @@ mod test {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions, LogicalPlan,
-        LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
+        LogicalPlanRef, SourceInfo,
     };
 
     fn plan_1() -> LogicalPlanRef {
@@ -101,11 +101,11 @@ mod test {
         let plan = LogicalPlanBuilder::from(subplan)
             .join(
                 subplan2,
-                vec![resolved_col("id")],
-                vec![resolved_col("id")],
+                None,
+                vec!["id".to_string()],
                 JoinType::Inner,
                 None,
-                JoinOptions::default().merge_matching_join_keys(true),
+                Default::default(),
             )?
             .filter(resolved_col("first_name").eq(lit("hello")))?
             .select(vec![resolved_col("first_name")])?
@@ -120,7 +120,7 @@ Project1["Project: col(first_name)"]
 Filter2["Filter: col(first_name) == lit('hello')"]
 Join3["Join: Type = Inner
 Strategy = Auto
-On = col(id)
+On = col(left.id#Int32) == col(right.id#Int32)
 Output schema = id#Int32, text#Utf8, id2#UInt64, first_name#Utf8, last_name#Utf8"]
 Filter4["Filter: col(id) == lit(1)"]
 Source5["PlaceHolder:
@@ -170,14 +170,13 @@ Project1 --> Limit0
             .build();
 
         let plan = LogicalPlanBuilder::from(subplan)
-            .join_with_null_safe_equal(
+            .join(
                 subplan2,
-                vec![resolved_col("id")],
-                vec![resolved_col("id")],
-                Some(vec![true]),
+                None,
+                vec!["id".to_string()],
                 JoinType::Inner,
                 None,
-                JoinOptions::default().merge_matching_join_keys(true),
+                Default::default(),
             )?
             .filter(resolved_col("first_name").eq(lit("hello")))?
             .select(vec![resolved_col("first_name")])?

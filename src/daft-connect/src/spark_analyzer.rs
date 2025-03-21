@@ -6,11 +6,11 @@ pub(crate) mod expr_analyzer;
 use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
 
 use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
-use daft_core::{join::JoinSide, series::Series};
-use daft_dsl::{unresolved_col, Column, Expr, ExprRef, Operator, PlanRef, UnresolvedColumn};
+use daft_core::series::Series;
+use daft_dsl::unresolved_col;
 use daft_logical_plan::{
     ops::{SetQuantifier, UnionStrategy},
-    JoinOptions, JoinType, LogicalPlanBuilder, PyLogicalPlanBuilder,
+    JoinType, LogicalPlanBuilder, PyLogicalPlanBuilder,
 };
 use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::RecordBatch;
@@ -832,179 +832,15 @@ impl SparkAnalyzer<'_> {
             SparkJoinType::Cross => JoinType::Inner,
         };
 
-        fn process_join_on(
-            join_cond: ExprRef,
-            left_on: &mut Vec<ExprRef>,
-            right_on: &mut Vec<ExprRef>,
-            left_plan: &LogicalPlanBuilder,
-            right_plan: &LogicalPlanBuilder,
-        ) -> ConnectResult<()> {
-            match join_cond.as_ref() {
-                Expr::BinaryOp {
-                    op: Operator::Eq,
-                    left,
-                    right,
-                } => {
-                    let mut left_expr_join_side = None;
-                    let mut right_expr_join_side = None;
-
-                    // check what side left is on
-                    if let Expr::Column(Column::Unresolved(UnresolvedColumn {
-                        name,
-                        plan_ref,
-                        plan_schema: _,
-                    })) = left.as_ref()
-                    {
-                        match plan_ref {
-                            PlanRef::Id(plan_id) => {
-                                if left_plan
-                                    .plan
-                                    .clone()
-                                    .get_schema_for_id(*plan_id)?
-                                    .is_some()
-                                {
-                                    left_on.push(unresolved_col(name.clone()));
-                                    left_expr_join_side = Some(JoinSide::Left);
-                                } else if right_plan
-                                    .plan
-                                    .clone()
-                                    .get_schema_for_id(*plan_id)?
-                                    .is_some()
-                                {
-                                    right_on.push(unresolved_col(name.clone()));
-                                    left_expr_join_side = Some(JoinSide::Right);
-                                } else {
-                                    internal_err!("plan not found");
-                                }
-                            }
-                            _ => {
-                                // check if the column is in the left or right plan
-                                let left_schema = left_plan.schema();
-                                let right_schema = right_plan.schema();
-                                if left_schema.has_field(name) && right_schema.has_field(name) {
-                                    internal_err!("ambiguous column name");
-                                } else if left_schema.has_field(name) {
-                                    left_on.push(unresolved_col(name.clone()));
-                                    left_expr_join_side = Some(JoinSide::Left);
-                                } else if right_schema.has_field(name) {
-                                    right_on.push(unresolved_col(name.clone()));
-                                    left_expr_join_side = Some(JoinSide::Right);
-                                } else {
-                                    internal_err!("column not found");
-                                }
-                            }
-                        }
-                    }
-
-                    // check what side right is on
-                    if let Expr::Column(Column::Unresolved(UnresolvedColumn {
-                        name,
-                        plan_ref,
-                        plan_schema: _,
-                    })) = right.as_ref()
-                    {
-                        match plan_ref {
-                            PlanRef::Id(plan_id) => {
-                                if left_plan
-                                    .plan
-                                    .clone()
-                                    .get_schema_for_id(*plan_id)?
-                                    .is_some()
-                                {
-                                    left_on.push(unresolved_col(name.clone()));
-                                    right_expr_join_side = Some(JoinSide::Left);
-                                } else if right_plan
-                                    .plan
-                                    .clone()
-                                    .get_schema_for_id(*plan_id)?
-                                    .is_some()
-                                {
-                                    right_on.push(unresolved_col(name.clone()));
-                                    right_expr_join_side = Some(JoinSide::Right);
-                                } else {
-                                    internal_err!("plan not found");
-                                }
-                            }
-                            _ => {
-                                // check if the column is in the left or right plan
-                                let left_schema = left_plan.schema();
-                                let right_schema = right_plan.schema();
-                                if left_schema.has_field(name) && right_schema.has_field(name) {
-                                    internal_err!("ambiguous column name");
-                                } else if left_schema.has_field(name) {
-                                    left_on.push(unresolved_col(name.clone()));
-                                    right_expr_join_side = Some(JoinSide::Left);
-                                } else if right_schema.has_field(name) {
-                                    right_on.push(unresolved_col(name.clone()));
-                                    right_expr_join_side = Some(JoinSide::Right);
-                                } else {
-                                    internal_err!("column not found");
-                                }
-                            }
-                        }
-                    }
-
-                    // make sure the join condition is valid
-                    // any non-column expression should also be handled here.
-                    // ex: col(z) = 1
-                    // if the column (z) is on the left side, then the right side should be the literal and vice versa
-                    // ensuring that there is an expression on both sides
-                    match (left_expr_join_side, right_expr_join_side) {
-                        (None, Some(JoinSide::Right)) => left_on.push(left.clone()),
-                        (Some(JoinSide::Left), None) => right_on.push(right.clone()),
-                        (Some(JoinSide::Right), None) => left_on.push(right.clone()),
-                        (None, Some(JoinSide::Left)) => right_on.push(left.clone()),
-                        (Some(JoinSide::Left), Some(JoinSide::Right))
-                        | (Some(JoinSide::Right), Some(JoinSide::Left)) => {}
-                        _ => {
-                            internal_err!("both sides of join condition are on the same side");
-                        }
-                    }
-                }
-                Expr::BinaryOp {
-                    op: Operator::And,
-                    left,
-                    right,
-                } => {
-                    process_join_on(left.clone(), left_on, right_on, left_plan, right_plan)?;
-                    process_join_on(right.clone(), left_on, right_on, left_plan, right_plan)?;
-                }
-                _ => {
-                    not_yet_implemented!("join condition");
-                }
-            }
-            Ok(())
-        }
-
-        let mut left_on = vec![];
-        let mut right_on = vec![];
-        if let Some(join_cond) = join_condition {
-            let join_cond = analyze_expr(&join_cond)?;
-            process_join_on(
-                join_cond,
-                &mut left_on,
-                &mut right_on,
-                &left_plan,
-                &right_plan,
-            )?;
-        } else {
-            let using_columns: Vec<ExprRef> =
-                using_columns.into_iter().map(unresolved_col).collect();
-            left_on.clone_from(&using_columns);
-            right_on.clone_from(&using_columns);
-        }
+        let on = join_condition.as_ref().map(analyze_expr).transpose()?;
 
         let plan = left_plan.join(
             right_plan,
-            left_on,
-            right_on,
+            on,
+            using_columns,
             join_type,
             None,
-            JoinOptions {
-                prefix: None,
-                suffix: None,
-                merge_matching_join_keys: true,
-            },
+            Default::default(),
         )?;
         Ok(plan)
     }

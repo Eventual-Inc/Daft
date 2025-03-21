@@ -2663,7 +2663,6 @@ dependencies = [
  "common-error",
  "common-io-config",
  "common-runtime",
- "daft-algebra",
  "daft-catalog",
  "daft-context",
  "daft-core",
