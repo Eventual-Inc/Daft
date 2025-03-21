@@ -801,10 +801,21 @@ impl JoinGraphBuilder {
                 LogicalPlan::Filter(Filter { input, .. }) => plan = input,
                 // Since we hit a join, we need to process the linear chain of Projects and Filters that were encountered starting
                 // from the plan at the root of the linear chain to the current plan.
-                LogicalPlan::Join(Join { on, join_type, .. })
-                    if *join_type == JoinType::Inner && !on.equi_preds().0.is_empty() =>
-                {
-                    self.process_linear_chain(root_plan, plan);
+                LogicalPlan::Join(Join {
+                    on,
+                    join_type: JoinType::Inner,
+                    ..
+                }) => {
+                    let mut on = on.clone();
+                    let (left_on, _, _) = on.pop_equi_preds();
+
+                    if left_on.is_empty() || on.inner().is_some() {
+                        // Encountered a non-reorderable join. Add the root plan at the top of the current linear chain as a relation to join.
+                        self.add_relation(root_plan);
+                    } else {
+                        self.process_linear_chain(root_plan, plan);
+                    }
+
                     break;
                 }
                 _ => {
@@ -878,12 +889,15 @@ impl JoinGraphBuilder {
                 left,
                 right,
                 on,
-                join_type,
+                join_type: JoinType::Inner,
                 ..
-            }) if *join_type == JoinType::Inner
-                && let (left_on, right_on, _) = on.equi_preds()
-                && !left_on.is_empty() =>
-            {
+            }) => {
+                let mut on = on.clone();
+                let (left_on, right_on, _) = on.pop_equi_preds();
+                if left_on.is_empty() || on.inner().is_some() {
+                    unreachable!("JoinGraphBuilder::process_linear_chain should not be called with a join that is not orderable")
+                }
+
                 for l in &left_on {
                     let name = l.name();
                     let final_name = if let Some(final_name) = self.final_name_map.get(name) {
@@ -937,7 +951,7 @@ impl JoinGraphBuilder {
                 }
             }
             _ => {
-                panic!("Expected a join node")
+                panic!("Expected an inner join node")
             }
         }
     }
