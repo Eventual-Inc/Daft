@@ -92,6 +92,7 @@ def test_codec_deflate():
 def test_codec_gzip():
     import gzip
 
+    _test_codec("gz", buff=gzip.compress(UTF8))
     _test_codec("gzip", buff=gzip.compress(UTF8))
 
 

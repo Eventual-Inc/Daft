@@ -543,7 +543,7 @@ class DataFrame:
             )
 
         data_micropartition = MicroPartition.from_pydict(data)
-        return cls._from_tables(data_micropartition)
+        return cls._from_micropartitions(data_micropartition)
 
     @classmethod
     def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"], Iterable["pyarrow.Table"]]) -> "DataFrame":
@@ -552,20 +552,20 @@ class DataFrame:
             data = list(data)
         if not isinstance(data, list):
             data = [data]
-        data_micropartitions = [MicroPartition.from_arrow(table) for table in data]
-        return cls._from_tables(*data_micropartitions)
+        parts = [MicroPartition.from_arrow(table) for table in data]
+        return cls._from_micropartitions(*parts)
 
     @classmethod
     def _from_pandas(cls, data: Union["pandas.DataFrame", List["pandas.DataFrame"]]) -> "DataFrame":
         """Creates a Daft DataFrame from a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__."""
         if not isinstance(data, list):
             data = [data]
-        data_micropartitions = [MicroPartition.from_pandas(df) for df in data]
-        return cls._from_tables(*data_micropartitions)
+        parts = [MicroPartition.from_pandas(df) for df in data]
+        return cls._from_micropartitions(*parts)
 
     @classmethod
-    def _from_tables(cls, *parts: MicroPartition) -> "DataFrame":
-        """Creates a Daft DataFrame from a single RecordBatch.
+    def _from_micropartitions(cls, *parts: MicroPartition) -> "DataFrame":
+        """Creates a Daft DataFrame from MicroPartition(s).
 
         Args:
             parts: The Tables that we wish to convert into a Daft DataFrame.
@@ -1214,7 +1214,7 @@ class DataFrame:
             import pyarrow as pa
 
         except ImportError:
-            raise ImportError("lance is not installed. Please install lance using `pip install getdaft[lance]`")
+            raise ImportError("lance is not installed. Please install lance using `pip install daft[lance]`")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -3622,7 +3622,7 @@ class GroupedDataFrame:
             >>>
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
-            ...     return [statistics.stdev(data.to_pylist())]
+            ...     return [statistics.stdev(data)]
             >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df.show()

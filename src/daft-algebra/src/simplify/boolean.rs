@@ -246,7 +246,7 @@ fn simplify_or(expr: ExprRef, left: &ExprRef, right: &ExprRef) -> Transformed<Ex
     }
 }
 
-/// Simplify binary comparison ops (==, !=, >, <, >=, <=)
+/// Simplify binary comparison ops (==, !=)
 pub(crate) fn simplify_binary_compare(
     expr: ExprRef,
     schema: &SchemaRef,
@@ -273,7 +273,7 @@ pub(crate) fn simplify_binary_compare(
                 Transformed::yes(right.clone().not())
             }
             Operator::NotEq if is_true(right) && is_bool(left, schema)? => {
-                Transformed::yes(left.clone())
+                Transformed::yes(left.clone().not())
             }
             // false != e -> e
             Operator::NotEq if is_false(left) && is_bool(right, schema)? => {
@@ -287,4 +287,83 @@ pub(crate) fn simplify_binary_compare(
         },
         _ => Transformed::no(expr),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use common_treenode::Transformed;
+    use daft_dsl::{lit, Column, Expr, ExprRef, Operator, ResolvedColumn};
+    use daft_schema::{dtype::DataType, field::Field, schema::Schema};
+
+    use crate::simplify::boolean::simplify_binary_compare;
+
+    // Helper function to create a column reference.
+    fn col(name: &str) -> ExprRef {
+        Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::Basic(
+            Arc::<str>::from(name),
+        ))))
+    }
+
+    // Helper functions for various comparison operators.
+    fn eq(left: ExprRef, right: ExprRef) -> ExprRef {
+        Arc::new(Expr::BinaryOp {
+            op: Operator::Eq,
+            left,
+            right,
+        })
+    }
+
+    fn neq(left: ExprRef, right: ExprRef) -> ExprRef {
+        Arc::new(Expr::BinaryOp {
+            op: Operator::NotEq,
+            left,
+            right,
+        })
+    }
+    #[test]
+    fn test_simplify_binary_compare() -> DaftResult<()> {
+        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Boolean)])?);
+        let col_a = col("a");
+
+        // a == true
+        let expr = eq(col_a.clone(), lit(true));
+        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        assert_eq!(result, Transformed::yes(col_a.clone()));
+
+        let expr = eq(lit(true), col_a.clone());
+        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        assert_eq!(result, Transformed::yes(col_a.clone()));
+
+        // a == false
+        let expr = eq(col_a.clone(), lit(false));
+        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        assert_eq!(result, Transformed::yes(col_a.clone().not()));
+
+        let expr = eq(lit(false), col_a.clone());
+        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        assert_eq!(result, Transformed::yes(col_a.clone().not()));
+
+        // a != true
+        let expr = neq(col_a.clone(), lit(true));
+        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        assert_eq!(result, Transformed::yes(col_a.clone().not()));
+
+        let expr = neq(lit(true), col_a.clone());
+        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        assert_eq!(result, Transformed::yes(col_a.clone().not()));
+
+        // a != false
+        let expr = neq(col_a.clone(), lit(false));
+        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        assert_eq!(result, Transformed::yes(col_a.clone()));
+
+        let expr = neq(lit(false), col_a.clone());
+        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        assert_eq!(result, Transformed::yes(col_a.clone()));
+
+        Ok(())
+    }
 }

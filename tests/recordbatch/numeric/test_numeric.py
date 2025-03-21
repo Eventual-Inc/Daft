@@ -145,7 +145,8 @@ def test_table_floor_bad_input() -> None:
         table.eval_expression_list([col("a").floor()])
 
 
-def test_table_numeric_sign() -> None:
+@pytest.mark.parametrize(("fun"), ["sign", "signum"])
+def test_table_numeric_sign(fun: str) -> None:
     table = MicroPartition.from_pydict(
         {
             "a": [None, -1, -5, 0, 5, 2, None],
@@ -155,8 +156,8 @@ def test_table_numeric_sign() -> None:
     my_schema = pa.schema([pa.field("uint8", pa.uint8())])
     table_Unsign = MicroPartition.from_arrow(pa.Table.from_arrays([pa.array([None, 0, 1, 2, 3])], schema=my_schema))
 
-    sign_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
-    unsign_sign_table = table_Unsign.eval_expression_list([col("uint8").sign()])
+    sign_table = table.eval_expression_list([getattr(col("a"), fun)(), getattr(col("b"), fun)()])
+    unsign_sign_table = table_Unsign.eval_expression_list([getattr(col("uint8"), fun)()])
 
     def checkSign(val):
         if val < 0:
@@ -176,11 +177,49 @@ def test_table_numeric_sign() -> None:
     ] == unsign_sign_table.get_column("uint8").to_pylist()
 
 
-def test_table_sign_bad_input() -> None:
+@pytest.mark.parametrize(
+    ("fun"),
+    [
+        "sign",
+        "signum",
+        "negate",
+        "negative",
+    ],
+)
+def test_table_sign_bad_input(fun: str) -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    with pytest.raises(ValueError, match="Expected input to sign to be numeric"):
-        table.eval_expression_list([col("a").sign()])
+    mapping = {"negate": "negative", "signum": "sign"}
+    true_fun = mapping[fun] if fun in mapping else fun
+    with pytest.raises(ValueError, match=f"Expected input to {true_fun} to be numeric"):
+        table.eval_expression_list([getattr(col("a"), fun)()])
+
+
+@pytest.mark.parametrize(
+    ("fun"),
+    [
+        ("negate"),
+        ("negative"),
+    ],
+)
+def test_table_numeric_negative(fun: str) -> None:
+    table = MicroPartition.from_pydict(
+        {
+            "a": [None, -1, -5, 0, 5, 2, None],
+            "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None],
+        }
+    )
+    sign_table = table.eval_expression_list([getattr(col("a"), fun)(), getattr(col("b"), fun)()])
+
+    # Check signed integers
+    a_result = sign_table.to_pydict()["a"]
+    expected_a = [None, 1, 5, 0, -5, -2, None]
+    assert a_result == expected_a
+
+    # Check floating point
+    b_result = sign_table.to_pydict()["b"]
+    expected_b = [1.7, 1.5, 1.3, -0.3, -0.7, None, None]
+    assert b_result == expected_b
 
 
 @pytest.mark.parametrize(

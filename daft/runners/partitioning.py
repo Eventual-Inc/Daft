@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import pyarrow as pa
 
+    from daft.daft import PyMicroPartitionSet
     from daft.expressions.expressions import Expression
     from daft.logical.schema import Schema
 
@@ -275,6 +276,13 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
     def __init__(self) -> None:
         super().__init__()
         self._partitions = {}
+
+    @staticmethod
+    def _from_micropartition_set(pset: PyMicroPartitionSet) -> LocalPartitionSet:
+        s = LocalPartitionSet()
+        for idx in range(0, pset.num_partitions()):
+            s.set_partition_from_table(idx, MicroPartition._from_pymicropartition(pset.get_partition(idx)))
+        return s
 
     def items(self) -> list[tuple[PartID, MaterializedResult[MicroPartition]]]:
         return sorted(self._partitions.items())

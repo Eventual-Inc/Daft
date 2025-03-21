@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftPlanningConfig;
 use daft_catalog::TableSource;
@@ -9,8 +9,7 @@ use daft_session::{python::PySession, Session};
 use pyo3::{prelude::*, IntoPyObjectExt};
 
 use crate::{
-    error::PlannerError, functions::SQL_FUNCTIONS, planner::SQLPlanner, schema::try_parse_dtype,
-    statement::Statement,
+    exec::execute_statement, functions::SQL_FUNCTIONS, planner::SQLPlanner, schema::try_parse_dtype,
 };
 
 #[pyclass]
@@ -46,24 +45,13 @@ pub fn sql_exec(
     session: &PySession,
     config: PyDaftPlanningConfig,
 ) -> PyResult<Option<PyObject>> {
-    let sess: Rc<Session> = Rc::new(session.into());
-    let stmt = SQLPlanner::new(sess.clone()).plan(sql)?;
-    match stmt {
-        Statement::Select(select) => {
-            let builder = LogicalPlanBuilder::new(select, Some(config.config));
-            let builder = PyLogicalPlanBuilder::from(builder);
-            let builder = builder.into_py_any(py)?;
-            Ok(Some(builder))
-        }
-        Statement::Set(_) => Err(PlannerError::unsupported_sql(
-            "SET statement is not yet supported.".to_string(),
-        ))?,
-        Statement::Use(use_) => {
-            sess.set_catalog(Some(&use_.catalog))?;
-            sess.set_namespace(use_.namespace.as_ref())?;
-            Ok(None)
-        }
+    if let Some(plan) = execute_statement(session.into(), sql)? {
+        let builder = LogicalPlanBuilder::new(plan, Some(config.config));
+        let builder = PyLogicalPlanBuilder::from(builder);
+        let builder = builder.into_py_any(py)?;
+        return Ok(Some(builder));
     }
+    Ok(None)
 }
 
 #[pyfunction]

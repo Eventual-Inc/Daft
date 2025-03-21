@@ -30,14 +30,14 @@ jobs:
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       build_type: release
-      use_new_name: ${{ matrix.use_new_name }}
+      use_old_name: ${{ matrix.use_old_name }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, macos, windows]
         arch: [x86_64, aarch64]
         lts: [false, true]
-        use_new_name: [false, true]
+        use_old_name: [false, true]
 
         exclude:
         - os: windows
@@ -45,7 +45,7 @@ jobs:
         - lts: true
           arch: aarch64
         - lts: true
-          use_new_name: true
+          use_old_name: false
 
   publish:
     name: Publish wheels to S3
@@ -86,7 +86,7 @@ jobs:
     - name: Print install instructions
       run: |
         echo "To install the nightly build, run:"
-        echo "pip install getdaft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly"
+        echo "pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly"
 
   on-failure:
     name: Send Slack notification on failure
@@ -117,7 +117,7 @@ jobs:
     runs-on: ${{ matrix.runner-name }}
     timeout-minutes: 15
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -142,7 +142,7 @@ jobs:
 
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+        uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
         rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -181,7 +181,7 @@ jobs:
     runs-on: ${{ matrix.runner-name }}
     timeout-minutes: 30
     env:
-      package-name: getdaft
+      package-name: daft
     strategy:
       fail-fast: false
       matrix:
@@ -213,7 +213,7 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+        uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
         rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |

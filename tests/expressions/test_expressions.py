@@ -118,6 +118,33 @@ def test_repr_functions_sign() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_signum() -> None:
+    a = col("a")
+    y = a.signum()
+    repr_out = repr(y)
+    assert repr_out == "sign(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_negate() -> None:
+    a = col("a")
+    y = a.negate()
+    repr_out = repr(y)
+    assert repr_out == "negative(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_negative() -> None:
+    a = col("a")
+    y = a.negative()
+    repr_out = repr(y)
+    assert repr_out == "negative(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_round() -> None:
     a = col("a")
     y = a.round()

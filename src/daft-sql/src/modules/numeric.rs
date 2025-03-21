@@ -7,7 +7,7 @@ use daft_functions::numeric::{
     floor::floor,
     log::{ln, log, log10, log1p, log2},
     round::round,
-    sign::sign,
+    sign::{negative, sign},
     sqrt::sqrt,
     trigonometry::{
         arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cosh, cot, csc, degrees,
@@ -31,6 +31,9 @@ impl SQLModule for SQLModuleNumeric {
         parent.add_fn("ceil", SQLNumericExpr::Ceil);
         parent.add_fn("floor", SQLNumericExpr::Floor);
         parent.add_fn("sign", SQLNumericExpr::Sign);
+        parent.add_fn("signum", SQLNumericExpr::Signum);
+        parent.add_fn("negate", SQLNumericExpr::Negate);
+        parent.add_fn("negative", SQLNumericExpr::Negative);
         parent.add_fn("round", SQLNumericExpr::Round);
         parent.add_fn("clip", SQLNumericExpr::Clip);
         parent.add_fn("sqrt", SQLNumericExpr::Sqrt);
@@ -70,6 +73,9 @@ enum SQLNumericExpr {
     Round,
     Clip,
     Sign,
+    Signum,
+    Negate,
+    Negative,
     Sqrt,
     Sin,
     Cos,
@@ -116,6 +122,9 @@ impl SQLFunction for SQLNumericExpr {
             Self::Round => "Rounds a number to a specified number of decimal places.",
             Self::Clip => "Clips a number to a specified range. If left bound is None, no lower clipping is applied. If right bound is None, no upper clipping is applied. Panics if right bound < left bound.",
             Self::Sign => "Returns the sign of a number (-1, 0, or 1).",
+            Self::Signum => "Returns the signum of a number (-1, 0, or 1).",
+            Self::Negate => "Returns the negative of a number.",
+            Self::Negative => "Returns the negative of a number.",
             Self::Sqrt => "Calculates the square root of a number.",
             Self::Sin => "Calculates the sine of an angle in radians.",
             Self::Cos => "Calculates the cosine of an angle in radians.",
@@ -152,6 +161,9 @@ impl SQLFunction for SQLNumericExpr {
             | Self::Ceil
             | Self::Floor
             | Self::Sign
+            | Self::Signum
+            | Self::Negate
+            | Self::Negative
             | Self::Sqrt
             | Self::Sin
             | Self::Cos
@@ -201,6 +213,18 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
         SQLNumericExpr::Sign => {
             ensure!(args.len() == 1, "sign takes exactly one argument");
             Ok(sign(args[0].clone()))
+        }
+        SQLNumericExpr::Signum => {
+            ensure!(args.len() == 1, "signum takes exactly one argument");
+            Ok(sign(args[0].clone()))
+        }
+        SQLNumericExpr::Negate => {
+            ensure!(args.len() == 1, "negate takes exactly one argument");
+            Ok(negative(args[0].clone()))
+        }
+        SQLNumericExpr::Negative => {
+            ensure!(args.len() == 1, "negative takes exactly one argument");
+            Ok(negative(args[0].clone()))
         }
         SQLNumericExpr::Round => {
             ensure!(

@@ -16,6 +16,9 @@ pub trait Catalog: Sync + Send + std::fmt::Debug {
     /// Returns the given table if it exists.
     fn get_table(&self, ident: &Identifier) -> Result<Option<Box<dyn Table>>>;
 
+    /// Returns a list of tables in the catalog matching this pattern.
+    fn list_tables(&self, pattern: Option<String>) -> Result<Vec<Identifier>>;
+
     /// Leverage dynamic dispatch to return the inner object for a PyCatalogImpl (generics?)
     #[cfg(feature = "python")]
     fn to_py(&self, _: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {

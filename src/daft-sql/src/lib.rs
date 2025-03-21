@@ -2,16 +2,17 @@
 
 pub mod error;
 pub mod functions;
-mod modules;
 
+mod exec;
+mod modules;
 mod planner;
 mod schema;
 mod statement;
-pub use planner::*;
+mod table_provider;
 
+pub use planner::*;
 #[cfg(feature = "python")]
 pub mod python;
-mod table_provider;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 
 from pyiceberg.catalog import Catalog as InnerCatalog
+from pyiceberg.catalog import load_catalog
 from pyiceberg.table import Table as InnerTable
 
 from daft.catalog import Catalog, Identifier, Table, TableSource
@@ -32,6 +33,12 @@ class IcebergCatalog(Catalog):
             c._inner = obj
             return c
         raise ValueError(f"Unsupported iceberg catalog type: {type(obj)}")
+
+    @staticmethod
+    def _load_catalog(name: str, **options) -> IcebergCatalog:
+        c = IcebergCatalog.__new__(IcebergCatalog)
+        c._inner = load_catalog(name, **options)
+        return c
 
     @property
     def name(self) -> str:
@@ -103,7 +110,7 @@ class IcebergCatalog(Catalog):
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         """List tables under the given namespace (pattern) in the catalog, or all tables if no namespace is provided."""
-        return [".".join(tup) for tup in self._inner.list_tables(pattern)]
+        return [".".join(tup) for tup in self._inner.list_tables(pattern or ())]
 
 
 class IcebergTable(Table):
