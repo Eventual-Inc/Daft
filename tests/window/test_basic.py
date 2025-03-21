@@ -153,7 +153,6 @@ def test_multiple_partition_columns(make_df):
     df = make_df(
         {
             "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
-            # "group": [1, 1, 2, 1, 22, 2, 2, 1],
             "group": [1, 1, 2, 1, 2, 2, 2, 1],
             "value": [10, 5, 15, 8, 12, 6, 9, 7],
         }
@@ -169,7 +168,6 @@ def test_multiple_partition_columns(make_df):
 
     expected = {
         "category": ["A", "A", "A", "B", "B", "B", "C", "C"],
-        # "group": [1, 1, 2, 1, 22, 1, 2, 2],
         "group": [1, 1, 2, 1, 2, 1, 2, 2],
         "value": [5, 8, 9, 10, 12, 7, 15, 6],
         "sum": [13, 13, 9, 17, 12, 17, 21, 21],

@@ -1,7 +1,11 @@
-use std::sync::Arc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
-use daft_core::prelude::SchemaRef;
+use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{resolved_col, Column, Expr, ExprRef, ResolvedColumn};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
@@ -65,6 +69,30 @@ impl WindowPartitionOnlyState {
         *self = Self::Done;
         res
     }
+}
+
+/// Helper function to compute a deterministic hash for partition keys
+fn compute_partition_key_hash(
+    batch: &RecordBatch,
+    partition_col_names: &[String],
+    row_idx: usize,
+) -> Option<u64> {
+    let mut key_hasher = DefaultHasher::new();
+
+    for col_name in partition_col_names {
+        if let Ok(col) = batch.get_column(col_name) {
+            if let Ok(value) = col.slice(row_idx, row_idx + 1) {
+                // Use a stable string representation for hashing
+                value.to_string().hash(&mut key_hasher);
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        }
+    }
+
+    Some(key_hasher.finish())
 }
 
 impl BlockingSinkState for WindowPartitionOnlyState {
@@ -142,6 +170,43 @@ impl WindowPartitionOnlySink {
     fn num_partitions(&self) -> usize {
         *NUM_CPUS
     }
+}
+
+/// Extract column names from partition expressions
+fn extract_partition_column_names(partition_by: &[ExprRef]) -> Vec<String> {
+    partition_by
+        .iter()
+        .filter_map(|expr| {
+            if let Expr::Column(col) = expr.as_ref() {
+                Some(match col {
+                    Column::Resolved(ResolvedColumn::Basic(name)) => name.as_ref().to_string(),
+                    Column::Resolved(ResolvedColumn::JoinSide(name, _)) => {
+                        name.as_ref().to_string()
+                    }
+                    Column::Resolved(ResolvedColumn::OuterRef(field)) => field.name.to_string(),
+                    Column::Unresolved(unresolved) => unresolved.name.to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Create window fields and batch from columns
+fn create_window_batch(
+    window_column_names: &[String],
+    window_cols: &[Series],
+    batch_len: usize,
+) -> DaftResult<RecordBatch> {
+    let window_fields = window_column_names
+        .iter()
+        .zip(window_cols.iter())
+        .map(|(name, col)| daft_core::prelude::Field::new(name, col.data_type().clone()))
+        .collect::<Vec<_>>();
+
+    let window_schema = daft_core::prelude::Schema::new(window_fields)?;
+    RecordBatch::new_with_size(Arc::new(window_schema), window_cols.to_vec(), batch_len)
 }
 
 impl BlockingSink for WindowPartitionOnlySink {
@@ -275,46 +340,17 @@ impl BlockingSink for WindowPartitionOnlySink {
 
                             let agg_table = &agg_tables.as_ref()[0];
 
-                            let partition_col_names = params
-                                .partition_by
-                                .iter()
-                                .filter_map(|expr| {
-                                    if let Expr::Column(col) = expr.as_ref() {
-                                        Some(match col {
-                                            Column::Resolved(ResolvedColumn::Basic(name)) => {
-                                                name.as_ref().to_string()
-                                            }
-                                            Column::Resolved(ResolvedColumn::JoinSide(name, _)) => {
-                                                name.as_ref().to_string()
-                                            }
-                                            Column::Resolved(ResolvedColumn::OuterRef(field)) => {
-                                                field.name.to_string()
-                                            }
-                                            Column::Unresolved(unresolved) => {
-                                                unresolved.name.to_string()
-                                            }
-                                        })
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect::<Vec<String>>();
+                            let partition_col_names =
+                                extract_partition_column_names(&params.partition_by);
 
                             let mut agg_dict = std::collections::HashMap::new();
                             for row_idx in 0..agg_table.len() {
-                                let key_parts: Vec<String> = partition_col_names
-                                    .iter()
-                                    .filter_map(|col_name| {
-                                        agg_table.get_column(col_name).ok().and_then(|col| {
-                                            col.slice(row_idx, row_idx + 1)
-                                                .ok()
-                                                .map(|value| format!("{:?}", value))
-                                        })
-                                    })
-                                    .collect();
-
-                                if key_parts.len() == partition_col_names.len() {
-                                    agg_dict.insert(key_parts.join("|"), row_idx);
+                                if let Some(key_hash) = compute_partition_key_hash(
+                                    agg_table,
+                                    &partition_col_names,
+                                    row_idx,
+                                ) {
+                                    agg_dict.insert(key_hash, row_idx);
                                 }
                             }
 
@@ -324,20 +360,12 @@ impl BlockingSink for WindowPartitionOnlySink {
                                     continue;
                                 }
 
-                                let key_parts: Vec<String> = partition_col_names
-                                    .iter()
-                                    .filter_map(|col_name| {
-                                        original_batch.get_column(col_name).ok().and_then(|col| {
-                                            col.slice(0, 1).ok().map(|value| format!("{:?}", value))
-                                        })
-                                    })
-                                    .collect();
-
-                                let row_idx = if key_parts.len() == partition_col_names.len() {
-                                    agg_dict.get(&key_parts.join("|")).copied()
-                                } else {
-                                    None
-                                };
+                                let row_idx = compute_partition_key_hash(
+                                    original_batch,
+                                    &partition_col_names,
+                                    0,
+                                )
+                                .and_then(|key_hash| agg_dict.get(&key_hash).copied());
 
                                 let window_cols = params
                                     .window_column_names
@@ -363,23 +391,9 @@ impl BlockingSink for WindowPartitionOnlySink {
                                     .collect::<Vec<_>>();
 
                                 if !window_cols.is_empty() {
-                                    let window_fields = params
-                                        .window_column_names
-                                        .iter()
-                                        .zip(window_cols.iter())
-                                        .map(|(name, col)| {
-                                            daft_core::prelude::Field::new(
-                                                name,
-                                                col.data_type().clone(),
-                                            )
-                                        })
-                                        .collect::<Vec<_>>();
-
-                                    let window_schema =
-                                        daft_core::prelude::Schema::new(window_fields)?;
-                                    let window_batch = RecordBatch::new_with_size(
-                                        Arc::new(window_schema),
-                                        window_cols,
+                                    let window_batch = create_window_batch(
+                                        &params.window_column_names,
+                                        &window_cols,
                                         original_batch.len(),
                                     )?;
 
