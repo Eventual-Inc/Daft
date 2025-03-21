@@ -18,8 +18,9 @@ def llm_generate(
     This UDF provides a flexible interface for text generation using various LLM providers.
     By default, it uses vLLM for efficient local inference.
 
-    Arguments:
-    ----------
+    Parameters:
+    -----------
+
     model: str, default="facebook/opt-125m"
         The model identifier to use for generation
     provider: str, default="vllm"
@@ -32,10 +33,11 @@ def llm_generate(
         The number of CPUs to use for the UDF
     num_gpus: float, default=None
         The number of GPUs to use for the UDF
-    **generation_config: dict, default={}
+    generation_config: dict, default={}
         Configuration parameters for text generation (e.g., temperature, max_tokens)
 
     Example:
+    --------
         >>> import daft
         >>> from daft import col
         >>> from daft.functions import llm_generate
@@ -44,7 +46,7 @@ def llm_generate(
         >>> df.collect()
 
     Notes:
-    -----
+    ------
     Make sure the required provider packages are installed (e.g. vllm, transformers).
     """
     if provider == "vllm":
