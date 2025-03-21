@@ -45,7 +45,7 @@ impl WindowPartitionOnlyState {
             panic!("WindowPartitionOnlySink should be in Accumulating state");
         };
 
-        // Partition by value ensures unique partition keys are separated correctly
+        // Keep using partition_by_value as it's critical for window functions
         let (partitioned, partition_values) = input.partition_by_value(&params.partition_by)?;
         println!(
             "Partitioned into {} partitions with values: {:?}",
@@ -264,8 +264,10 @@ impl BlockingSink for WindowPartitionOnlySink {
         spawner
             .spawn(
                 async move {
-                    // Collect all micropartitions from all states first
-                    let mut all_micropartitions = Vec::new();
+                    // Collect all micropartitions by their partition index
+                    let mut partitioned_data: Vec<Vec<MicroPartition>> = Vec::new();
+
+                    // Process each state and collect its partitions
                     for mut state in states {
                         let state_partitions = state
                             .as_any_mut()
@@ -273,152 +275,190 @@ impl BlockingSink for WindowPartitionOnlySink {
                             .expect("WindowPartitionOnlySink should have WindowPartitionOnlyState")
                             .finalize();
 
-                        for partition_group in state_partitions {
-                            all_micropartitions.extend(partition_group);
+                        // Ensure our partitioned_data vector is big enough
+                        if partitioned_data.len() < state_partitions.len() {
+                            partitioned_data.resize_with(state_partitions.len(), Vec::new);
+                        }
+
+                        // Add each partition's data to our collection
+                        for (idx, partition) in state_partitions.into_iter().enumerate() {
+                            partitioned_data[idx].extend(partition);
                         }
                     }
 
-                    if all_micropartitions.is_empty() {
+                    if partitioned_data.is_empty() {
                         return Ok(None);
                     }
 
-                    // Process all data in a single batch to ensure we capture all partitions
-                    let original_data = MicroPartition::concat(&all_micropartitions)?;
-                    let original_tables = original_data.get_tables()?;
-                    if original_tables.is_empty() {
-                        return Ok(None);
-                    }
+                    // Now process each partition's data in parallel
+                    let mut process_partition_tasks = tokio::task::JoinSet::new();
 
-                    let final_projected = if !params.partial_agg_exprs.is_empty() {
-                        let partial =
-                            original_data.agg(&params.partial_agg_exprs, &params.partition_by)?;
-
-                        let aggregated = if !params.final_agg_exprs.is_empty() {
-                            partial.agg(&params.final_agg_exprs, &params.partition_by)?
-                        } else {
-                            partial
-                        };
-
-                        aggregated.eval_expression_list(&params.final_projections)?
-                    } else {
-                        let aggregated = original_data
-                            .agg(&params.original_aggregations, &params.partition_by)?;
-                        aggregated.eval_expression_list(&params.final_projections)?
-                    };
-
-                    let mut window_projection_exprs = Vec::with_capacity(
-                        params.partition_by.len() + params.window_column_names.len(),
-                    );
-
-                    for i in 0..params.partition_by.len() {
-                        if let Some(field_name) = final_projected.schema().fields.keys().nth(i) {
-                            window_projection_exprs.push(resolved_col(field_name.as_str()));
-                        }
-                    }
-
-                    let partition_col_offset = params.partition_by.len();
-                    for (i, window_name) in params.window_column_names.iter().enumerate() {
-                        let agg_idx = i + partition_col_offset;
-                        if agg_idx < final_projected.schema().fields.len() {
-                            if let Some(agg_col_name) =
-                                final_projected.schema().fields.keys().nth(agg_idx)
-                            {
-                                window_projection_exprs.push(
-                                    resolved_col(agg_col_name.as_str()).alias(window_name.as_str()),
-                                );
-                            }
-                        }
-                    }
-
-                    if window_projection_exprs.is_empty() {
-                        return Ok(None);
-                    }
-
-                    let renamed_aggs =
-                        final_projected.eval_expression_list(&window_projection_exprs)?;
-                    let agg_tables = renamed_aggs.get_tables()?;
-                    if agg_tables.is_empty() {
-                        return Ok(None);
-                    }
-
-                    let agg_table = &agg_tables.as_ref()[0];
-
-                    let partition_col_names = extract_partition_column_names(&params.partition_by);
-                    println!("Partition columns: {:?}", partition_col_names);
-
-                    let mut agg_dict = std::collections::HashMap::new();
-                    for row_idx in 0..agg_table.len() {
-                        if let Some(key_hash) =
-                            compute_partition_key_hash(agg_table, &partition_col_names, row_idx)
-                        {
-                            agg_dict.insert(key_hash, row_idx);
-                        }
-                    }
-
-                    println!("Built aggregate dictionary with {} entries", agg_dict.len());
-
-                    let mut processed_tables = Vec::with_capacity(original_tables.len());
-                    for (table_idx, original_batch) in original_tables.iter().enumerate() {
-                        if original_batch.is_empty() {
+                    for partition_micropartitions in partitioned_data {
+                        if partition_micropartitions.is_empty() {
                             continue;
                         }
 
-                        let row_idx =
-                            compute_partition_key_hash(original_batch, &partition_col_names, 0)
-                                .and_then(|key_hash| {
-                                    let idx = agg_dict.get(&key_hash).copied();
-                                    println!("Lookup hash {} -> row idx {:?}", key_hash, idx);
-                                    idx
-                                });
+                        let params = params.clone();
+                        process_partition_tasks.spawn(async move {
+                            // Process this partition's data
+                            let original_data = MicroPartition::concat(&partition_micropartitions)?;
+                            let original_tables = original_data.get_tables()?;
+                            if original_tables.is_empty() {
+                                return Ok(None);
+                            }
 
-                        println!("Found row_idx {:?} for batch {}", row_idx, table_idx);
+                            // Compute window functions for this partition
+                            let final_projected = if !params.partial_agg_exprs.is_empty() {
+                                let partial = original_data
+                                    .agg(&params.partial_agg_exprs, &params.partition_by)?;
 
-                        let window_cols = params
-                            .window_column_names
-                            .iter()
-                            .filter_map(|window_name| {
-                                agg_table
-                                    .get_column(window_name.as_str())
-                                    .ok()
-                                    .and_then(|col| match row_idx {
-                                        Some(idx) => col
-                                            .slice(idx, idx + 1)
-                                            .and_then(|value| value.broadcast(original_batch.len()))
-                                            .ok(),
-                                        None => col
-                                            .slice(0, 0)
-                                            .and_then(|null_col| {
-                                                null_col.broadcast(original_batch.len())
-                                            })
-                                            .ok(),
+                                let aggregated = if !params.final_agg_exprs.is_empty() {
+                                    partial.agg(&params.final_agg_exprs, &params.partition_by)?
+                                } else {
+                                    partial
+                                };
+
+                                aggregated.eval_expression_list(&params.final_projections)?
+                            } else {
+                                let aggregated = original_data
+                                    .agg(&params.original_aggregations, &params.partition_by)?;
+                                aggregated.eval_expression_list(&params.final_projections)?
+                            };
+
+                            // Create window projections
+                            let mut window_projection_exprs = Vec::with_capacity(
+                                params.partition_by.len() + params.window_column_names.len(),
+                            );
+
+                            for i in 0..params.partition_by.len() {
+                                if let Some(field_name) =
+                                    final_projected.schema().fields.keys().nth(i)
+                                {
+                                    window_projection_exprs.push(resolved_col(field_name.as_str()));
+                                }
+                            }
+
+                            let partition_col_offset = params.partition_by.len();
+                            for (i, window_name) in params.window_column_names.iter().enumerate() {
+                                let agg_idx = i + partition_col_offset;
+                                if agg_idx < final_projected.schema().fields.len() {
+                                    if let Some(agg_col_name) =
+                                        final_projected.schema().fields.keys().nth(agg_idx)
+                                    {
+                                        window_projection_exprs.push(
+                                            resolved_col(agg_col_name.as_str())
+                                                .alias(window_name.as_str()),
+                                        );
+                                    }
+                                }
+                            }
+
+                            if window_projection_exprs.is_empty() {
+                                return Ok(None);
+                            }
+
+                            let renamed_aggs =
+                                final_projected.eval_expression_list(&window_projection_exprs)?;
+                            let agg_tables = renamed_aggs.get_tables()?;
+                            if agg_tables.is_empty() {
+                                return Ok(None);
+                            }
+
+                            let agg_table = &agg_tables.as_ref()[0];
+
+                            let partition_col_names =
+                                extract_partition_column_names(&params.partition_by);
+
+                            let mut agg_dict = std::collections::HashMap::new();
+                            for row_idx in 0..agg_table.len() {
+                                if let Some(key_hash) = compute_partition_key_hash(
+                                    agg_table,
+                                    &partition_col_names,
+                                    row_idx,
+                                ) {
+                                    agg_dict.insert(key_hash, row_idx);
+                                }
+                            }
+
+                            let mut processed_tables = Vec::with_capacity(original_tables.len());
+                            for original_batch in original_tables.iter() {
+                                if original_batch.is_empty() {
+                                    continue;
+                                }
+
+                                let row_idx = compute_partition_key_hash(
+                                    original_batch,
+                                    &partition_col_names,
+                                    0,
+                                )
+                                .and_then(|key_hash| agg_dict.get(&key_hash).copied());
+
+                                let window_cols = params
+                                    .window_column_names
+                                    .iter()
+                                    .filter_map(|window_name| {
+                                        agg_table.get_column(window_name.as_str()).ok().and_then(
+                                            |col| match row_idx {
+                                                Some(idx) => col
+                                                    .slice(idx, idx + 1)
+                                                    .and_then(|value| {
+                                                        value.broadcast(original_batch.len())
+                                                    })
+                                                    .ok(),
+                                                None => col
+                                                    .slice(0, 0)
+                                                    .and_then(|null_col| {
+                                                        null_col.broadcast(original_batch.len())
+                                                    })
+                                                    .ok(),
+                                            },
+                                        )
                                     })
-                            })
-                            .collect::<Vec<_>>();
+                                    .collect::<Vec<_>>();
 
-                        if !window_cols.is_empty() {
-                            let window_batch = create_window_batch(
-                                &params.window_column_names,
-                                &window_cols,
-                                original_batch.len(),
-                            )?;
+                                if !window_cols.is_empty() {
+                                    let window_batch = create_window_batch(
+                                        &params.window_column_names,
+                                        &window_cols,
+                                        original_batch.len(),
+                                    )?;
 
-                            processed_tables.push(original_batch.union(&window_batch)?);
-                        } else {
-                            processed_tables.push(original_batch.clone());
-                        }
+                                    processed_tables.push(original_batch.union(&window_batch)?);
+                                } else {
+                                    processed_tables.push(original_batch.clone());
+                                }
+                            }
+
+                            if processed_tables.is_empty() {
+                                return Ok(None);
+                            }
+
+                            let result = MicroPartition::new_loaded(
+                                processed_tables[0].schema.clone(),
+                                Arc::new(processed_tables),
+                                None,
+                            );
+
+                            Ok(Some(result))
+                        });
                     }
 
-                    if processed_tables.is_empty() {
+                    // Collect results from all partition tasks
+                    let results = process_partition_tasks
+                        .join_all()
+                        .await
+                        .into_iter()
+                        .collect::<DaftResult<Vec<_>>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>();
+
+                    if results.is_empty() {
                         return Ok(None);
                     }
 
-                    let result = MicroPartition::new_loaded(
-                        processed_tables[0].schema.clone(),
-                        Arc::new(processed_tables),
-                        None,
-                    );
-
-                    Ok(Some(Arc::new(result)))
+                    // Combine all processed partition results
+                    Ok(Some(Arc::new(MicroPartition::concat(&results)?)))
                 },
                 Span::current(),
             )
