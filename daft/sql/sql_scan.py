@@ -180,8 +180,8 @@ class SQLScanOperator(ScanOperator):
             raise ValueError("Failed to get partition bounds: partition_col must be specified to partition the data.")
 
         if not (
-            self._schema[self._partition_col].dtype._is_temporal_type()
-            or self._schema[self._partition_col].dtype._is_numeric_type()
+            self._schema[self._partition_col].dtype.is_temporal()
+            or self._schema[self._partition_col].dtype.is_numeric()
         ):
             raise ValueError(
                 f"Failed to get partition bounds: {self._partition_col} is not a numeric or temporal type, and cannot be used for partitioning."
