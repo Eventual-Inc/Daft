@@ -46,7 +46,12 @@ impl WindowPartitionOnlyState {
         };
 
         // Partition by value ensures unique partition keys are separated correctly
-        let (partitioned, _partition_values) = input.partition_by_value(&params.partition_by)?;
+        let (partitioned, partition_values) = input.partition_by_value(&params.partition_by)?;
+        println!(
+            "Partitioned into {} partitions with values: {:?}",
+            partitioned.len(),
+            partition_values
+        );
 
         for (partition_idx, mp) in partitioned.into_iter().enumerate() {
             if partition_idx >= inner_states.len() {
@@ -78,40 +83,27 @@ fn compute_partition_key_hash(
     row_idx: usize,
 ) -> Option<u64> {
     let mut key_hasher = DefaultHasher::new();
-
-    println!(
-        "Computing hash for batch columns: {:?}, row {}",
-        batch.schema.fields.keys().collect::<Vec<_>>(),
-        row_idx
-    );
-
     let mut key_parts = Vec::new();
+
     for col_name in partition_col_names {
-        println!("Processing partition column: {}", col_name);
         if let Ok(col) = batch.get_column(col_name) {
             if let Ok(value) = col.slice(row_idx, row_idx + 1) {
                 // For debugging, capture the string representation
                 let value_str = value.to_string();
-                println!("  Column {} value: {}", col_name, value_str);
                 key_parts.push(format!("{}={}", col_name, value_str));
 
                 // Use a stable string representation for hashing
                 value_str.hash(&mut key_hasher);
             } else {
-                println!("  Failed to slice column {}", col_name);
                 return None;
             }
         } else {
-            println!("  Column {} not found in batch", col_name);
             return None;
         }
     }
 
     let hash_value = key_hasher.finish();
-    println!(
-        "Generated hash {} for key parts: {:?}",
-        hash_value, key_parts
-    );
+    println!("Hash value {} for key parts: {:?}", hash_value, key_parts);
     Some(hash_value)
 }
 
@@ -371,50 +363,22 @@ impl BlockingSink for WindowPartitionOnlySink {
                             println!("Partition columns: {:?}", partition_col_names);
 
                             let mut agg_dict = std::collections::HashMap::new();
-                            println!("Processing aggregate table with {} rows", agg_table.len());
                             for row_idx in 0..agg_table.len() {
                                 if let Some(key_hash) = compute_partition_key_hash(
                                     agg_table,
                                     &partition_col_names,
                                     row_idx,
                                 ) {
-                                    println!(
-                                        "Adding hash {} -> row {} to aggregate dictionary",
-                                        key_hash, row_idx
-                                    );
                                     agg_dict.insert(key_hash, row_idx);
                                 }
                             }
 
-                            println!(
-                                "Built aggregate dictionary with {} entries: {:?}",
-                                agg_dict.len(),
-                                agg_dict.keys().collect::<Vec<_>>()
-                            );
+                            println!("Built aggregate dictionary with {} entries", agg_dict.len());
 
                             let mut processed_tables = Vec::with_capacity(original_tables.len());
-                            println!("Processing {} original tables", original_tables.len());
                             for (table_idx, original_batch) in original_tables.iter().enumerate() {
                                 if original_batch.is_empty() {
-                                    println!("Skipping empty original batch {}", table_idx);
                                     continue;
-                                }
-
-                                println!(
-                                    "Processing original batch {} with {} rows",
-                                    table_idx,
-                                    original_batch.len()
-                                );
-                                println!(
-                                    "Original batch columns: {:?}",
-                                    original_batch.schema.fields.keys().collect::<Vec<_>>()
-                                );
-
-                                // Debug print first few rows partition columns
-                                for col_name in &partition_col_names {
-                                    if let Ok(col) = original_batch.get_column(col_name) {
-                                        println!("  Column {}: {}", col_name, col);
-                                    }
                                 }
 
                                 let row_idx = compute_partition_key_hash(
