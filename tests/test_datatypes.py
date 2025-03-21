@@ -5,6 +5,8 @@ from typing import Dict, List
 
 import pytest
 
+import daft.datatype as dtypes
+from daft.daft import ImageMode
 from daft.datatype import DataType
 
 daft_int_types = [
@@ -25,6 +27,37 @@ daft_nonnull_types = (
     + daft_string_types
     + [DataType.bool(), DataType.binary(), DataType.fixed_size_binary(1), DataType.date()]
 )
+
+all_types = [
+    DataType.int8(),
+    DataType.int16(),
+    DataType.int32(),
+    DataType.int64(),
+    DataType.uint8(),
+    DataType.uint16(),
+    DataType.uint32(),
+    DataType.uint64(),
+    DataType.float32(),
+    DataType.float64(),
+    DataType.bool(),
+    DataType.string(),
+    DataType.binary(),
+    DataType.fixed_size_binary(1),
+    DataType.null(),
+    DataType.date(),
+    DataType.time("us"),
+    DataType.timestamp("us"),
+    DataType.duration("us"),
+    DataType.interval(),
+    DataType.list(DataType.int32()),
+    DataType.fixed_size_list(DataType.int32(), 10),
+    DataType.map(DataType.int32(), DataType.string()),
+    DataType.struct({"a": DataType.int32(), "b": DataType.string()}),
+    DataType.embedding(DataType.int32(), 10),
+    DataType.image("RGB"),
+    DataType.tensor(DataType.float32()),
+    DataType.sparse_tensor(DataType.float32()),
+]
 
 
 @pytest.mark.parametrize("dtype", daft_nonnull_types)
@@ -83,3 +116,645 @@ def test_subscripted_datatype_parsing(source, expected):
 )
 def test_legacy_subscripted_datatype_parsing(source, expected):
     assert DataType._infer_type(source) == expected
+
+
+@pytest.mark.parametrize(
+    ["source", "expected"],
+    [
+        (DataType.int8(), dtypes.Int8Type),
+        (DataType.int16(), dtypes.Int16Type),
+        (DataType.int32(), dtypes.Int32Type),
+        (DataType.int64(), dtypes.Int64Type),
+        (DataType.uint8(), dtypes.UInt8Type),
+        (DataType.uint16(), dtypes.UInt16Type),
+        (DataType.uint32(), dtypes.UInt32Type),
+        (DataType.uint64(), dtypes.UInt64Type),
+        (DataType.float32(), dtypes.Float32Type),
+        (DataType.float64(), dtypes.Float64Type),
+        (DataType.bool(), dtypes.BooleanType),
+        (DataType.string(), dtypes.StringType),
+        (DataType.binary(), dtypes.BinaryType),
+        (DataType.fixed_size_binary(1), dtypes.FixedSizeBinaryType),
+        (DataType.null(), dtypes.NullType),
+        (DataType.decimal128(10, 2), dtypes.DecimalType),
+        (DataType.date(), dtypes.DateType),
+        (DataType.time("us"), dtypes.TimeType),
+        (DataType.timestamp("us"), dtypes.TimestampType),
+        (DataType.duration("us"), dtypes.DurationType),
+        (DataType.interval(), dtypes.IntervalType),
+        (DataType.list(DataType.int32()), dtypes.ListType),
+        (DataType.fixed_size_list(DataType.int32(), 10), dtypes.FixedSizeListType),
+        (DataType.map(DataType.int32(), DataType.string()), dtypes.MapType),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), dtypes.StructType),
+        (DataType.embedding(DataType.int32(), 10), dtypes.EmbeddingType),
+        (DataType.image("RGB"), dtypes.ImageType),
+        (DataType.image("RGBA", 2, 2), dtypes.FixedShapeImageType),
+        (DataType.tensor(DataType.float32()), dtypes.TensorType),
+        (DataType.tensor(DataType.float32(), (2, 2)), dtypes.FixedShapeTensorType),
+        (DataType.sparse_tensor(DataType.float32()), dtypes.SparseTensorType),
+        (DataType.sparse_tensor(DataType.float32(), (2, 2)), dtypes.FixedShapeSparseTensorType),
+    ],
+)
+def test_dtype_subclass(source, expected):
+    assert isinstance(source, expected)
+
+
+@pytest.mark.parametrize(
+    ["source", "expected"],
+    [
+        (DataType.int8(), "Int8Type"),
+        (DataType.int16(), "Int16Type"),
+        (DataType.int32(), "Int32Type"),
+        (DataType.int64(), "Int64Type"),
+        (DataType.uint8(), "UInt8Type"),
+        (DataType.uint16(), "UInt16Type"),
+        (DataType.uint32(), "UInt32Type"),
+        (DataType.uint64(), "UInt64Type"),
+        (DataType.float32(), "Float32Type"),
+        (DataType.float64(), "Float64Type"),
+        (DataType.bool(), "BooleanType"),
+        (DataType.string(), "StringType"),
+        (DataType.binary(), "BinaryType"),
+        (DataType.fixed_size_binary(1), "FixedSizeBinaryType(size=1)"),
+        (DataType.null(), "NullType"),
+        (DataType.decimal128(10, 2), "DecimalType(precision=10, scale=2)"),
+        (DataType.date(), "DateType"),
+        (DataType.time("us"), "TimeType(timeunit=TimeUnit.us)"),
+        (DataType.timestamp("us"), "TimestampType(timeunit=TimeUnit.us, timezone=None)"),
+        (DataType.timestamp("us", "UTC"), "TimestampType(timeunit=TimeUnit.us, timezone='UTC')"),
+        (DataType.duration("us"), "DurationType(timeunit=TimeUnit.us)"),
+        (DataType.interval(), "IntervalType"),
+        (DataType.list(DataType.int32()), "ListType(Int32Type)"),
+        (DataType.fixed_size_list(DataType.int32(), 10), "FixedSizeListType(Int32Type, size=10)"),
+        (DataType.map(DataType.int32(), DataType.string()), "MapType(Int32Type, StringType)"),
+        (
+            DataType.struct({"a": DataType.int32(), "b": DataType.string()}),
+            "StructType({'a': Int32Type, 'b': StringType})",
+        ),
+        (DataType.embedding(DataType.int32(), 10), "EmbeddingType(Int32Type, size=10)"),
+        (DataType.image("RGB"), "ImageType(mode=ImageMode.RGB)"),
+        (DataType.image("RGBA", 2, 2), "FixedShapeImageType(mode=ImageMode.RGBA, height=2, width=2)"),
+        (DataType.tensor(DataType.float32()), "TensorType(Float32Type)"),
+        (DataType.tensor(DataType.float32(), (2, 2)), "FixedShapeTensorType(Float32Type, shape=(2, 2))"),
+        (DataType.sparse_tensor(DataType.float32()), "SparseTensorType(Float32Type, use_offset_indices=False)"),
+    ],
+)
+def test_dtype_subclass_repr(source, expected):
+    assert repr(source) == expected
+
+
+@pytest.mark.parametrize(
+    ["source", "expected"],
+    [
+        (DataType.fixed_size_binary(1).size, 1),
+        (DataType.decimal128(10, 2).precision, 10),
+        (DataType.decimal128(10, 2).scale, 2),
+        (DataType.list(DataType.int32()).inner, DataType.int32()),
+        (DataType.fixed_size_list(DataType.int32(), 10).size, 10),
+        (DataType.fixed_size_list(DataType.int32(), 10).inner, DataType.int32()),
+        (DataType.map(DataType.int32(), DataType.string()).key, DataType.int32()),
+        (DataType.map(DataType.int32(), DataType.string()).value, DataType.string()),
+        (DataType.embedding(DataType.int32(), 10).size, 10),
+        (DataType.embedding(DataType.int32(), 10).dtype, DataType.int32()),
+        (DataType.image("RGB").mode, ImageMode.RGB),
+        (DataType.image("RGBA", 2, 2).mode, ImageMode.RGBA),
+        (DataType.image("RGBA", 2, 2).height, 2),
+        (DataType.image("RGBA", 2, 2).width, 2),
+        (DataType.tensor(DataType.float32()).dtype, DataType.float32()),
+        (
+            DataType.struct({"a": DataType.int32(), "b": DataType.string()}).fields,
+            {"a": DataType.int32(), "b": DataType.string()},
+        ),
+    ],
+)
+def test_nested_properties_subclass(source, expected):
+    assert source == expected
+
+
+def test_timestamp_type():
+    ts = DataType.timestamp("us", "UTC")
+    assert str(ts.timeunit) == "us"
+    assert ts.timezone == "UTC"
+    assert repr(ts) == "TimestampType(timeunit=TimeUnit.us, timezone='UTC')"
+
+
+def test_duration_type():
+    ts = DataType.duration("us")
+    assert str(ts.timeunit) == "us"
+    assert repr(ts) == "DurationType(timeunit=TimeUnit.us)"
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), True),
+        (DataType.int16(), True),
+        (DataType.int32(), True),
+        (DataType.int64(), True),
+        (DataType.uint8(), True),
+        (DataType.uint16(), True),
+        (DataType.uint32(), True),
+        (DataType.uint64(), True),
+        (DataType.float32(), True),
+        (DataType.float64(), True),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+    ],
+)
+def test_is_numeric(dtype, expected):
+    assert dtype.is_numeric() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), True),
+        (DataType.float64(), True),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+    ],
+)
+def test_is_float(dtype, expected):
+    assert dtype.is_float() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), True),
+        (DataType.int16(), True),
+        (DataType.int32(), True),
+        (DataType.int64(), True),
+        (DataType.uint8(), True),
+        (DataType.uint16(), True),
+        (DataType.uint32(), True),
+        (DataType.uint64(), True),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+    ],
+)
+def test_is_integer(dtype, expected):
+    assert dtype.is_integer() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), True),
+        (DataType.image("RGBA", 2, 2), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+    ],
+)
+def test_is_image(dtype, expected):
+    assert dtype.is_image() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.image("RGBA", 2, 2), True),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+    ],
+)
+def test_is_fixed_size_image(dtype, expected):
+    assert dtype.is_fixed_shape_image() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), True),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.image("RGBA", 2, 2), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+    ],
+)
+def test_is_list(dtype, expected):
+    assert dtype.is_list() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.image("RGBA", 2, 2), False),
+        (DataType.tensor(DataType.float32()), True),
+        (DataType.sparse_tensor(DataType.float32()), False),
+    ],
+)
+def test_is_tensor(dtype, expected):
+    assert dtype.is_tensor() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.image("RGBA", 2, 2), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.tensor(DataType.float32(), (2, 2)), True),
+        (DataType.sparse_tensor(DataType.float32()), False),
+    ],
+)
+def test_is_fixed_tensor(dtype, expected):
+    assert dtype.is_fixed_shape_tensor() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.image("RGBA", 2, 2), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.tensor(DataType.float32(), (2, 2)), False),
+        (DataType.sparse_tensor(DataType.float32()), True),
+    ],
+)
+def test_is_sparse_tensor(dtype, expected):
+    assert dtype.is_sparse_tensor() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.image("RGBA", 2, 2), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.tensor(DataType.float32(), (2, 2)), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32(), (2, 2)), True),
+    ],
+)
+def test_is_fixed_sparse_tensor(dtype, expected):
+    assert dtype.is_fixed_shape_sparse_tensor() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), True),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.image("RGBA", 2, 2), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.tensor(DataType.float32(), (2, 2)), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32(), (2, 2)), False),
+    ],
+)
+def test_is_bool(dtype, expected):
+    assert dtype.is_boolean() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), True),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), False),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), False),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.image("RGBA", 2, 2), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.tensor(DataType.float32(), (2, 2)), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32(), (2, 2)), False),
+    ],
+)
+def test_is_string(dtype, expected):
+    assert dtype.is_string() == expected
+
+
+@pytest.mark.parametrize(
+    ["dtype", "expected"],
+    [
+        (DataType.int8(), False),
+        (DataType.int16(), False),
+        (DataType.int32(), False),
+        (DataType.int64(), False),
+        (DataType.uint8(), False),
+        (DataType.uint16(), False),
+        (DataType.uint32(), False),
+        (DataType.uint64(), False),
+        (DataType.float32(), False),
+        (DataType.float64(), False),
+        (DataType.bool(), False),
+        (DataType.string(), False),
+        (DataType.binary(), False),
+        (DataType.fixed_size_binary(1), False),
+        (DataType.null(), False),
+        (DataType.date(), True),
+        (DataType.time("us"), False),
+        (DataType.timestamp("us"), True),
+        (DataType.duration("us"), False),
+        (DataType.interval(), False),
+        (DataType.list(DataType.int32()), False),
+        (DataType.fixed_size_list(DataType.int32(), 10), False),
+        (DataType.map(DataType.int32(), DataType.string()), False),
+        (DataType.struct({"a": DataType.int32(), "b": DataType.string()}), False),
+        (DataType.embedding(DataType.int32(), 10), False),
+        (DataType.image("RGB"), False),
+        (DataType.image("RGBA", 2, 2), False),
+        (DataType.tensor(DataType.float32()), False),
+        (DataType.tensor(DataType.float32(), (2, 2)), False),
+        (DataType.sparse_tensor(DataType.float32()), False),
+        (DataType.sparse_tensor(DataType.float32(), (2, 2)), False),
+    ],
+)
+def test_is_temporal(dtype, expected):
+    assert dtype.is_temporal() == expected
+
+
+def test_is_timestamp():
+    assert DataType.timestamp("us").is_timestamp()
+    assert not DataType.int32().is_timestamp()
+
+
+def test_is_logical():
+    assert not DataType.bool().is_logical()
+    assert DataType.embedding(DataType.int32(), 10).is_logical()
+
+
+def test_is_map():
+    assert DataType.map(DataType.int32(), DataType.string()).is_map()
+    assert not DataType.int32().is_map()

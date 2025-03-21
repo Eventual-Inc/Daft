@@ -53,6 +53,7 @@ impl PyTimeUnit {
             _ => Err(pyo3::exceptions::PyNotImplementedError::new_err(())),
         }
     }
+
     #[must_use]
     pub fn __hash__(&self) -> u64 {
         use std::{
@@ -360,6 +361,10 @@ impl PyDataType {
         Ok(self.dtype.is_numeric())
     }
 
+    pub fn is_float(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_floating())
+    }
+
     pub fn is_integer(&self) -> PyResult<bool> {
         Ok(self.dtype.is_integer())
     }
@@ -410,6 +415,9 @@ impl PyDataType {
 
     pub fn is_temporal(&self) -> PyResult<bool> {
         Ok(self.dtype.is_temporal())
+    }
+    pub fn is_timestamp(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_timestamp())
     }
 
     pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {
