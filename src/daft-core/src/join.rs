@@ -49,6 +49,20 @@ impl JoinType {
         ];
         JOIN_TYPES.iter()
     }
+
+    pub fn left_produces_nulls(&self) -> bool {
+        match self {
+            Self::Right | Self::Outer => true,
+            Self::Inner | Self::Left | Self::Anti | Self::Semi => false,
+        }
+    }
+
+    pub fn right_produces_nulls(&self) -> bool {
+        match self {
+            Self::Left | Self::Outer => true,
+            Self::Inner | Self::Right | Self::Anti | Self::Semi => false,
+        }
+    }
 }
 
 impl FromStr for JoinType {
