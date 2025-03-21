@@ -15,3 +15,4 @@ Sequence Functions
    :toctree: doc_gen/function_methods
 
    monotonically_increasing_id
+   llm_generate
