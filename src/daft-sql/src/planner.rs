@@ -353,6 +353,7 @@ impl<'a> SQLPlanner<'a> {
 
         // GROUP BY
         let mut groupby_exprs = Vec::new();
+        let mut rollup = false;
 
         match &selection.group_by {
             GroupByExpr::All(s) => {
@@ -361,10 +362,23 @@ impl<'a> SQLPlanner<'a> {
                 }
             }
             GroupByExpr::Expressions(expressions, _) => {
-                groupby_exprs = expressions
-                    .iter()
-                    .map(|expr| self.plan_expr(expr))
-                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                groupby_exprs = match expressions.as_slice() {
+                    [sqlparser::ast::Expr::Rollup(exprs)] => {
+                        rollup = true;
+                        let mut out = Vec::new();
+                        for expr_list in exprs {
+                            if expr_list.len() > 1 {
+                                unsupported_sql_err!("nested ROLLUP's are not supported");
+                            }
+                            out.push(self.plan_expr(&expr_list[0])?);
+                        }
+                        out
+                    }
+                    exprs => exprs
+                        .iter()
+                        .map(|expr| self.plan_expr(expr))
+                        .collect::<SQLPlannerResult<Vec<_>>>()?,
+                };
             }
         }
 
@@ -390,7 +404,7 @@ impl<'a> SQLPlanner<'a> {
                 .map(|h| self.plan_expr(h))
                 .transpose()?;
 
-            self.plan_aggregate_query(projections, order_by, groupby_exprs, having)?;
+            self.plan_aggregate_query(projections, order_by, groupby_exprs, having, rollup)?;
         } else {
             self.plan_non_agg_query(projections, order_by)?;
         }
@@ -443,6 +457,7 @@ impl<'a> SQLPlanner<'a> {
         order_by: Option<OrderByExprs>,
         groupby_exprs: Vec<Arc<Expr>>,
         having: Option<Arc<Expr>>,
+        rollup: bool,
     ) -> Result<(), PlannerError> {
         let mut aggs = HashSet::new();
 
@@ -505,7 +520,45 @@ impl<'a> SQLPlanner<'a> {
             },
         );
 
-        self.update_plan(|plan| plan.aggregate(aggs.into_iter().collect(), groupby_exprs))?;
+        if rollup {
+            let mut plans = Vec::new();
+            for i in (0..=groupby_exprs.len()).rev() {
+                let current_groups = groupby_exprs[0..i].to_vec();
+
+                let next_agg = self
+                    .current_plan_ref()
+                    .clone()
+                    .aggregate(aggs.clone().into_iter().collect(), current_groups.clone())?;
+                plans.push(next_agg);
+            }
+            let mut plans = plans.into_iter();
+            let first = plans.next().unwrap();
+            let first_schema = first.schema();
+            self.update_plan(|_| SQLPlannerResult::Ok(first))?;
+
+            for next in plans {
+                let next_schema = next.schema();
+                let nulled_cols = first_schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        if next_schema.has_field(f.0) {
+                            unresolved_col(f.0.clone())
+                        } else {
+                            null_lit().alias(f.0.clone()).cast(&f.1.dtype)
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                let next = next.select(nulled_cols)?;
+
+                self.update_plan(|plan| {
+                    plan.union(&next, SetQuantifier::All, UnionStrategy::Positional)
+                })?;
+            }
+        } else {
+            self.update_plan(|plan| plan.aggregate(aggs.into_iter().collect(), groupby_exprs))?;
+        }
 
         if let Some(having) = having {
             self.update_plan(|plan| plan.filter(having))?;
@@ -521,7 +574,6 @@ impl<'a> SQLPlanner<'a> {
         }
 
         self.update_plan(|plan| plan.select(projections))?;
-
         Ok(())
     }
 
