@@ -59,15 +59,17 @@ def test_scarf_telemetry_basic(
 
     # Test basic analytics call
     if extra_params:
-        response_status, extra_value = telemetry_fn(**extra_params)
+        request_thread, result_container = telemetry_fn(**extra_params)
     else:
-        response_status, extra_value = telemetry_fn()
+        request_thread, result_container = telemetry_fn()
 
-    assert response_status == "Response status: 200"
+    request_thread.join()
+
+    assert result_container["response_status"] == "Response status: 200"
     if extra_params and "runner" in extra_params:
-        assert extra_value == extra_params["runner"]
+        assert result_container["extra_value"] == extra_params["runner"]
     else:
-        assert extra_value is None
+        assert result_container["extra_value"] is None
 
     # Verify URL format and parameters
     called_url = mock_urlopen.call_args[0][0]
@@ -99,12 +101,13 @@ def test_scarf_telemetry_dev_build(
     mock_build_type.return_value = "dev"
 
     if extra_params:
-        response_status, extra_value = telemetry_fn(**extra_params)
+        request_thread, result_container = telemetry_fn(**extra_params)
     else:
-        response_status, extra_value = telemetry_fn()
+        request_thread, result_container = telemetry_fn()
 
-    assert response_status is None
-    assert extra_value is None
+    assert request_thread is None
+    assert result_container["response_status"] is None
+    assert result_container["extra_value"] is None
 
 
 @pytest.mark.parametrize(
@@ -133,12 +136,13 @@ def test_scarf_telemetry_opt_out_with_scarf_analytics(
     os.environ["SCARF_NO_ANALYTICS"] = "true"
 
     if extra_params:
-        response_status, extra_value = telemetry_fn(**extra_params)
+        request_thread, result_container = telemetry_fn(**extra_params)
     else:
-        response_status, extra_value = telemetry_fn()
+        request_thread, result_container = telemetry_fn()
 
-    assert response_status is None
-    assert extra_value is None
+    assert request_thread is None
+    assert result_container["response_status"] is None
+    assert result_container["extra_value"] is None
     mock_urlopen.assert_not_called()
 
 
@@ -168,12 +172,13 @@ def test_scarf_telemetry_opt_out_with_do_not_track(
     os.environ["DO_NOT_TRACK"] = "true"
 
     if extra_params:
-        response_status, extra_value = telemetry_fn(**extra_params)
+        request_thread, result_container = telemetry_fn(**extra_params)
     else:
-        response_status, extra_value = telemetry_fn()
+        request_thread, result_container = telemetry_fn()
 
-    assert response_status is None
-    assert extra_value is None
+    assert request_thread is None
+    assert result_container["response_status"] is None
+    assert result_container["extra_value"] is None
     mock_urlopen.assert_not_called()
 
 
@@ -206,9 +211,10 @@ def test_scarf_telemetry_error_handling(
     mock_urlopen.side_effect = urllib.error.URLError(socket.timeout("Timeout"))
 
     if extra_params:
-        response_status, extra_value = telemetry_fn(**extra_params)
+        request_thread, result_container = telemetry_fn(**extra_params)
     else:
-        response_status, extra_value = telemetry_fn()
+        request_thread, result_container = telemetry_fn()
 
-    assert response_status.startswith("Analytics error:")
-    assert extra_value is None
+    request_thread.join()
+
+    assert result_container["response_status"].startswith("Analytics error:")
