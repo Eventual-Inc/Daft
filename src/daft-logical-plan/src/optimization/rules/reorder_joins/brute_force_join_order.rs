@@ -36,24 +36,33 @@ impl BruteForceJoinOrderer {
                 && let Some((right_cost, right_join_order_tree)) =
                     Self::find_min_cost_order(graph, right)
             {
-                let (connections, total_domain) = graph
-                    .adj_list
-                    .get_connections(&left_join_order_tree, &right_join_order_tree);
+                let left_cardinality = left_join_order_tree.get_cardinality();
+                let right_cardinality = right_join_order_tree.get_cardinality();
+                // Ensure that the left subtree always has the smaller cardinality.
+                let (left, right, left_cardinality, right_cardinality) =
+                    if left_cardinality > right_cardinality {
+                        (
+                            right_join_order_tree,
+                            left_join_order_tree,
+                            right_cardinality,
+                            left_cardinality,
+                        )
+                    } else {
+                        (
+                            left_join_order_tree,
+                            right_join_order_tree,
+                            left_cardinality,
+                            right_cardinality,
+                        )
+                    };
+                let (connections, total_domain) = graph.adj_list.get_connections(&left, &right);
                 if !connections.is_empty() {
                     // If there is a connection between the left and right subgraphs, we compute the cardinality of the
                     // joined graph as the product of all the cardinalities of the relations in the left and right subgraphs,
                     // divided by the selectivity of the join.
                     // Assuming that join keys are uniformly distributed and independent, the selectivity is computed as the reciprocal
                     // of the product of the largest total domains that form a minimum spanning tree of the relations.
-                    let left_cardinality = left_join_order_tree.get_cardinality();
-                    let right_cardinality = right_join_order_tree.get_cardinality();
                     let cardinality = left_cardinality * right_cardinality / total_domain;
-                    // Ensure that the left subtree always has the smaller cardinality.
-                    let (left, right) = if left_cardinality > right_cardinality {
-                        (right_join_order_tree, left_join_order_tree)
-                    } else {
-                        (left_join_order_tree, right_join_order_tree)
-                    };
                     // The cost of the join is the sum of the cardinalities of the left and right subgraphs, plus the cardinality of the joined graph.
                     let cur_cost = cardinality + left_cost + right_cost;
                     // Take the join with the lowest summed cardinality.
@@ -190,9 +199,13 @@ mod tests {
         )
     }
 
-    fn create_scan_node(name: &str, size: Option<usize>) -> LogicalPlanRef {
+    fn create_scan_node(size: Option<usize>, columns: &Vec<&str>) -> LogicalPlanRef {
+        let fields = columns
+            .iter()
+            .map(|&col_name| Field::new(col_name, DataType::Int64))
+            .collect();
         let plan = dummy_scan_node_with_pushdowns(
-            dummy_scan_operator_with_size(vec![Field::new(name, DataType::Int64)], size),
+            dummy_scan_operator_with_size(fields, size),
             Pushdowns::default(),
         )
         .build();
@@ -232,7 +245,7 @@ mod tests {
         ($nodes:expr, $edges:expr, $orderer:expr, $optimal_order:expr) => {
             let plans: Vec<LogicalPlanRef> = $nodes
                 .iter()
-                .map(|(name, size)| create_scan_node(name, Some(*size)))
+                .map(|(_, size, columns)| create_scan_node(Some(*size), columns))
                 .collect();
             let num_edges = $edges.len();
             let graph = create_join_graph_with_edges(plans.clone(), $edges);
@@ -240,20 +253,26 @@ mod tests {
             assert!(JoinOrderTree::order_eq(&order, &$optimal_order));
             // Check that the number of join conditions does not increase due to join edge inference.
             assert!(JoinOrderTree::num_join_conditions(&order) <= num_edges);
+            let build_result = graph.build_joins_from_join_order(&order);
+            assert!(build_result.is_ok(), "Failed to build joins from join order: {:?}", build_result);
         };
     }
 
-    fn node_to_id_map(nodes: Vec<(&str, usize)>) -> HashMap<String, usize> {
+    fn node_to_id_map(nodes: Vec<(&str, usize, Vec<&str>)>) -> HashMap<String, usize> {
         nodes
             .into_iter()
             .enumerate()
-            .map(|(id, (name, _))| (name.to_string(), id))
+            .map(|(id, (name, _, _))| (name.to_string(), id))
             .collect()
     }
 
     #[test]
     fn test_brute_force_order_minimal() {
-        let nodes = vec![("medium", 1_000), ("large", 500_000), ("small", 500)];
+        let nodes = vec![
+            ("medium", 1_000, vec!["m_medium", "m_small"]),
+            ("large", 500_000, vec!["l_medium", "l_small"]),
+            ("small", 500, vec!["s_small"]),
+        ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
             JoinEdge {
@@ -291,12 +310,12 @@ mod tests {
     #[test]
     fn test_brute_force_order_mock_tpch_q5() {
         let nodes = vec![
-            ("region", 1),
-            ("nation", 25),
-            ("customer", 1_500_000),
-            ("orders", 3_000_000),
-            ("lineitem", 60_000_000),
-            ("supplier", 100_000),
+            ("region", 1, vec!["r_regionkey"]),
+            ("nation", 25, vec!["n_regionkey", "n_nationkey"]),
+            ("customer", 1_500_000, vec!["c_custkey", "c_nationkey"]),
+            ("orders", 3_000_000, vec!["o_custkey", "o_orderkey"]),
+            ("lineitem", 60_000_000, vec!["l_orderkey", "l_suppkey"]),
+            ("supplier", 100_000, vec!["s_suppkey", "s_nationkey"]),
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
@@ -365,10 +384,10 @@ mod tests {
     #[test]
     fn test_brute_force_order_mock_tpch_sub_q9() {
         let nodes = vec![
-            ("nation", 25),
-            ("supplier", 100_000),
-            ("part", 100_000),
-            ("partsupp", 8_000_000),
+            ("nation", 25, vec!["n_nationkey"]),
+            ("supplier", 100_000, vec!["s_nationkey", "s_suppkey"]),
+            ("part", 100_000, vec!["p_partkey"]),
+            ("partsupp", 8_000_000, vec!["ps_partkey", "ps_suppkey"]),
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
@@ -410,12 +429,16 @@ mod tests {
     #[test]
     fn test_brute_force_order_mock_tpch_q9() {
         let nodes = vec![
-            ("nation", 22),
-            ("orders", 1_350_000),
-            ("lineitem", 4_374_885),
-            ("supplier", 8_100),
-            ("part", 18_000),
-            ("partsupp", 648_000),
+            ("nation", 22, vec!["n_nationkey"]),
+            ("orders", 1_350_000, vec!["o_custkey", "o_orderkey"]),
+            (
+                "lineitem",
+                4_374_885,
+                vec!["l_orderkey", "l_suppkey", "l_partkey"],
+            ),
+            ("supplier", 8_100, vec!["s_suppkey", "s_nationkey"]),
+            ("part", 18_000, vec!["p_partkey"]),
+            ("partsupp", 648_000, vec!["ps_partkey", "ps_suppkey"]),
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
@@ -497,10 +520,10 @@ mod tests {
     #[test]
     fn test_brute_force_order_star_schema() {
         let nodes = vec![
-            ("fact", 10_000_000),
-            ("dim1", 100),
-            ("dim2", 500),
-            ("dim3", 50),
+            ("fact", 10_000_000, vec!["f_dim1", "f_dim2", "f_dim3"]),
+            ("dim1", 100, vec!["d_dim1"]),
+            ("dim2", 500, vec!["d_dim2"]),
+            ("dim3", 50, vec!["d_dim3"]),
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
@@ -542,11 +565,11 @@ mod tests {
     #[test]
     fn test_brute_force_order_snowflake_schema() {
         let nodes = vec![
-            ("fact", 50_000_000),
-            ("dim1", 50_000),
-            ("dim2", 500),
-            ("dim3", 500),
-            ("dim4", 25),
+            ("fact", 50_000_000, vec!["f_dim1", "f_dim2"]),
+            ("dim1", 50_000, vec!["d_dim1"]),
+            ("dim2", 500, vec!["d_dim2", "d_dim3", "d_dim4"]),
+            ("dim3", 500, vec!["d_dim3"]),
+            ("dim4", 25, vec!["d_dim4"]),
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![
@@ -598,10 +621,10 @@ mod tests {
     #[test]
     fn test_brute_force_order_bushy_join() {
         let nodes = vec![
-            ("table1", 10_000),
-            ("table2", 1_000_000),
-            ("table3", 10_000),
-            ("table4", 1_000_000),
+            ("table1", 10_000, vec!["t1_t2"]),
+            ("table2", 1_000_000, vec!["t2_t2", "t2_t3"]),
+            ("table3", 10_000, vec!["t3_t3", "t3_t4"]),
+            ("table4", 1_000_000, vec!["t4_t4"]),
         ];
         let name_to_id = node_to_id_map(nodes.clone());
         let edges = vec![

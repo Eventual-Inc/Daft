@@ -517,7 +517,7 @@ impl JoinGraph {
     /// Returns a tuple of the logical plan builder consisting of joins, and a bitmask indicating the plan IDs
     /// that are contained within the current logical plan builder. The bitmask is used for determining join
     /// conditions to use when logical plan builders are joined together.
-    fn build_joins_from_join_order(
+    pub(crate) fn build_joins_from_join_order(
         &self,
         join_order: &JoinOrderTree,
     ) -> DaftResult<LogicalPlanBuilder> {
