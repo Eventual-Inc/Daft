@@ -44,7 +44,9 @@ impl PushDownLimit {
                     // Naive commuting with unary ops.
                     //
                     // Limit-UnaryOp -> UnaryOp-Limit
-                    LogicalPlan::Repartition(_) | LogicalPlan::Project(_) => {
+                    LogicalPlan::Repartition(_)
+                    | LogicalPlan::Project(_)
+                    | LogicalPlan::ActorPoolProject(_) => {
                         let new_limit = plan
                             .with_new_children(&[input.arc_children()[0].clone()])
                             .into();
@@ -131,7 +133,10 @@ mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::unresolved_col;
+    use daft_dsl::{
+        functions::{python::PythonUDF, FunctionExpr},
+        unresolved_col, Expr,
+    };
     #[cfg(feature = "python")]
     use pyo3::Python;
     use rstest::rstest;
@@ -139,8 +144,9 @@ mod tests {
     use crate::{
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::PushDownLimit,
+            rules::{PushDownLimit, SplitActorPoolProjects},
             test::assert_optimized_plan_with_rules_eq,
+            Optimizer,
         },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan, LogicalPlanBuilder,
@@ -157,7 +163,10 @@ mod tests {
             plan,
             expected,
             vec![RuleBatch::new(
-                vec![Box::new(PushDownLimit::new())],
+                vec![
+                    Box::new(SplitActorPoolProjects::new()),
+                    Box::new(PushDownLimit::new()),
+                ],
                 RuleExecutionStrategy::Once,
             )],
         )
@@ -337,6 +346,51 @@ mod tests {
         .select(proj)?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit commutes with ActorPoolProject.
+    ///
+    /// Limit-ActorPoolProject-Source -> ActorPoolProject-Source[with_limit]
+    #[test]
+    fn limit_commutes_with_actor_pool_project() -> DaftResult<()> {
+        let limit = 5;
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+
+        // Create an actor pool project expression.
+        let actor_pool_expr = Arc::new(Expr::Function {
+            func: FunctionExpr::Python(PythonUDF::new_testing_udf()),
+            inputs: vec![unresolved_col("a")],
+        });
+
+        // Create a plan with Select using actor pool project followed by Limit.
+        let plan = dummy_scan_node(scan_op.clone())
+            .select(vec![actor_pool_expr.clone()])?
+            .limit(limit, false)?
+            .build();
+
+        // Expected optimized plan should have Limit pushed down.
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(limit as usize)),
+        )
+        .limit(limit, false)?
+        .select(vec![actor_pool_expr])?
+        .build();
+
+        // We manually apply the SplitActorPoolProjects rule to the expected plan.
+        let optimizer = Optimizer::with_rule_batches(
+            vec![RuleBatch::new(
+                vec![Box::new(SplitActorPoolProjects::new())],
+                RuleExecutionStrategy::Once,
+            )],
+            Default::default(),
+        );
+        let split_expected = optimizer
+            .optimize_with_rules(optimizer.rule_batches[0].rules.as_slice(), expected)?
+            .data;
+
+        assert_optimized_plan_eq(plan, split_expected)?;
         Ok(())
     }
 }
