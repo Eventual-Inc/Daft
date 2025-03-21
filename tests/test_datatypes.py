@@ -162,50 +162,6 @@ def test_dtype_subclass(source, expected):
 @pytest.mark.parametrize(
     ["source", "expected"],
     [
-        (DataType.int8(), "Int8Type"),
-        (DataType.int16(), "Int16Type"),
-        (DataType.int32(), "Int32Type"),
-        (DataType.int64(), "Int64Type"),
-        (DataType.uint8(), "UInt8Type"),
-        (DataType.uint16(), "UInt16Type"),
-        (DataType.uint32(), "UInt32Type"),
-        (DataType.uint64(), "UInt64Type"),
-        (DataType.float32(), "Float32Type"),
-        (DataType.float64(), "Float64Type"),
-        (DataType.bool(), "BooleanType"),
-        (DataType.string(), "StringType"),
-        (DataType.binary(), "BinaryType"),
-        (DataType.fixed_size_binary(1), "FixedSizeBinaryType(size=1)"),
-        (DataType.null(), "NullType"),
-        (DataType.decimal128(10, 2), "DecimalType(precision=10, scale=2)"),
-        (DataType.date(), "DateType"),
-        (DataType.time("us"), "TimeType(timeunit=TimeUnit.us)"),
-        (DataType.timestamp("us"), "TimestampType(timeunit=TimeUnit.us, timezone=None)"),
-        (DataType.timestamp("us", "UTC"), "TimestampType(timeunit=TimeUnit.us, timezone='UTC')"),
-        (DataType.duration("us"), "DurationType(timeunit=TimeUnit.us)"),
-        (DataType.interval(), "IntervalType"),
-        (DataType.list(DataType.int32()), "ListType(Int32Type)"),
-        (DataType.fixed_size_list(DataType.int32(), 10), "FixedSizeListType(Int32Type, size=10)"),
-        (DataType.map(DataType.int32(), DataType.string()), "MapType(Int32Type, StringType)"),
-        (
-            DataType.struct({"a": DataType.int32(), "b": DataType.string()}),
-            "StructType({'a': Int32Type, 'b': StringType})",
-        ),
-        (DataType.embedding(DataType.int32(), 10), "EmbeddingType(Int32Type, size=10)"),
-        (DataType.image("RGB"), "ImageType(mode=ImageMode.RGB)"),
-        (DataType.image("RGBA", 2, 2), "FixedShapeImageType(mode=ImageMode.RGBA, height=2, width=2)"),
-        (DataType.tensor(DataType.float32()), "TensorType(Float32Type)"),
-        (DataType.tensor(DataType.float32(), (2, 2)), "FixedShapeTensorType(Float32Type, shape=(2, 2))"),
-        (DataType.sparse_tensor(DataType.float32()), "SparseTensorType(Float32Type, use_offset_indices=False)"),
-    ],
-)
-def test_dtype_subclass_repr(source, expected):
-    assert repr(source) == expected
-
-
-@pytest.mark.parametrize(
-    ["source", "expected"],
-    [
         (DataType.fixed_size_binary(1).size, 1),
         (DataType.decimal128(10, 2).precision, 10),
         (DataType.decimal128(10, 2).scale, 2),
@@ -235,13 +191,11 @@ def test_timestamp_type():
     ts = DataType.timestamp("us", "UTC")
     assert str(ts.timeunit) == "us"
     assert ts.timezone == "UTC"
-    assert repr(ts) == "TimestampType(timeunit=TimeUnit.us, timezone='UTC')"
 
 
 def test_duration_type():
     ts = DataType.duration("us")
     assert str(ts.timeunit) == "us"
-    assert repr(ts) == "DurationType(timeunit=TimeUnit.us)"
 
 
 @pytest.mark.parametrize(

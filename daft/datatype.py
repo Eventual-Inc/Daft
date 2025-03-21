@@ -119,6 +119,34 @@ class DataType:
     def _from_pydatatype(pydt: PyDataType) -> DataType:
         dt = DataType.__new__(DataType)
         dt._dtype = pydt
+        if dt == DataType.int8():
+            return Int8Type()
+        elif dt == DataType.int16():
+            return Int16Type()
+        elif dt == DataType.int32():
+            return Int32Type()
+        elif dt == DataType.int64():
+            return Int64Type()
+        elif dt == DataType.uint8():
+            return UInt8Type()
+        elif dt == DataType.uint16():
+            return UInt16Type()
+        elif dt == DataType.uint32():
+            return UInt32Type()
+        elif dt == DataType.uint64():
+            return UInt64Type()
+        elif dt == DataType.float32():
+            return Float32Type()
+        elif dt == DataType.float64():
+            return Float64Type()
+        elif dt == DataType.string():
+            return StringType()
+        elif dt == DataType.binary():
+            return BinaryType()
+        elif dt == DataType.null():
+            return NullType()
+        elif dt == DataType.bool():
+            return BooleanType()
         return dt
 
     @classmethod
@@ -510,63 +538,22 @@ class DataType:
         """Create a Python DataType: a type which refers to an arbitrary Python object."""
         return cls._from_pydatatype(PyDataType.python())
 
-    def _is_python_type(self) -> builtins.bool:
+    def is_python(self) -> builtins.bool:
+        """Returns whether the DataType is a Python object type."""
         # NOTE: This is currently used in a few places still. We can get rid of it once these are refactored away. To be discussed.
         # 1. Visualizations - we can get rid of it if we do all our repr and repr_html logic in a Series instead of in Python
         # 2. Hypothesis test data generation - we can get rid of it if we allow for creation of Series from a Python list and DataType
 
         return self == DataType.python()
 
-    def _is_tensor_type(self) -> builtins.bool:
-        return self._dtype.is_tensor()
-
-    def _is_fixed_shape_tensor_type(self) -> builtins.bool:
-        return self._dtype.is_fixed_shape_tensor()
-
-    def _is_sparse_tensor_type(self) -> builtins.bool:
-        return self._dtype.is_sparse_tensor()
-
-    def _is_fixed_shape_sparse_tensor_type(self) -> builtins.bool:
-        return self._dtype.is_fixed_shape_sparse_tensor()
-
-    def _is_image_type(self) -> builtins.bool:
-        return self._dtype.is_image()
-
-    def _is_fixed_shape_image_type(self) -> builtins.bool:
-        return self._dtype.is_fixed_shape_image()
-
-    def _is_numeric_type(self) -> builtins.bool:
-        return self._dtype.is_numeric()
-
-    def _is_integer(self) -> builtins.bool:
-        return self._dtype.is_integer()
-
-    def _is_list(self) -> builtins.bool:
-        return self._dtype.is_list()
-
-    def _is_boolean(self) -> builtins.bool:
-        return self._dtype.is_boolean()
-
-    def _is_string(self) -> builtins.bool:
-        return self._dtype.is_string()
-
-    def _is_map(self) -> builtins.bool:
-        return self._dtype.is_map()
-
-    def _is_logical_type(self) -> builtins.bool:
-        return self._dtype.is_logical()
-
-    def _is_temporal_type(self) -> builtins.bool:
-        return self._dtype.is_temporal()
-
     def _should_cast_to_python(self) -> builtins.bool:
         # NOTE: This is used to determine if we should cast a column to a Python object type when converting to PyList.
         # Map is a logical type, but we don't want to cast it to Python because the underlying physical type is a List,
         # which we can handle without casting to Python.
-        return self._is_logical_type() and not self._is_map()
+        return self.is_logical() and not self.is_map()
 
     def __repr__(self) -> str:
-        return self.__class__.__name__
+        return self._dtype.__repr__()
 
     def __eq__(self, other: object) -> builtins.bool:
         return isinstance(other, DataType) and self._dtype.is_equal(other._dtype)
@@ -729,10 +716,6 @@ class FixedSizeBinaryType(DataType):
         self._dtype = PyDataType.fixed_size_binary(size)
         self.size = size
 
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}(size={self.size})"
-
 
 class NullType(DataType):
     """Null type."""
@@ -750,10 +733,6 @@ class DecimalType(DataType):
         self._dtype = PyDataType.decimal128(precision, scale)
         self.precision = precision
         self.scale = scale
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}(precision={self.precision}, scale={self.scale})"
 
 
 class DateType(DataType):
@@ -773,10 +752,6 @@ class TimeType(DataType):
         self._dtype = PyDataType.time(timeunit._timeunit)
         self.timeunit = timeunit
 
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}(timeunit={self.timeunit!r})"
-
 
 class TimestampType(DataType):
     """Timestamp type."""
@@ -792,10 +767,6 @@ class TimestampType(DataType):
         self.timezone = timezone
         self._dtype = PyDataType.timestamp(timeunit._timeunit, timezone)
 
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}(timeunit={self.timeunit!r}, timezone={self.timezone!r})"
-
 
 class DurationType(DataType):
     """Duration type."""
@@ -807,10 +778,6 @@ class DurationType(DataType):
             timeunit = TimeUnit.from_str(timeunit)
         self._dtype = PyDataType.duration(timeunit._timeunit)
         self.timeunit = timeunit
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}(timeunit={self.timeunit!r})"
 
 
 class IntervalType(DataType):
@@ -828,10 +795,6 @@ class ListType(DataType):
         self.inner = dtype
         self._dtype = PyDataType.list(dtype._dtype)
 
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r})"
-
 
 class FixedSizeListType(DataType):
     """Fixed-size list type."""
@@ -843,10 +806,6 @@ class FixedSizeListType(DataType):
         self.inner = dtype
         self.size = size
         self._dtype = PyDataType.fixed_size_list(dtype._dtype, size)
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r}, size={self.size})"
 
 
 class MapType(DataType):
@@ -860,10 +819,6 @@ class MapType(DataType):
         self.value = value_type
         self._dtype = PyDataType.map(key_type._dtype, value_type._dtype)
 
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.key!r}, {self.value!r})"
-
 
 class StructType(DataType):
     """Struct type."""
@@ -873,10 +828,6 @@ class StructType(DataType):
     def __init__(self, fields: dict[str, DataType]) -> None:
         self.fields = fields
         self._dtype = PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()})
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.fields!r})"
 
 
 class ExtensionType(DataType):
@@ -906,10 +857,6 @@ class EmbeddingType(DataType):
         self.dtype = dtype
         self.size = size
 
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.dtype!r}, size={self.size})"
-
 
 class ImageType(DataType):
     """Image type."""
@@ -919,10 +866,6 @@ class ImageType(DataType):
     def __init__(self, mode: ImageMode | None = None) -> None:
         self._dtype = PyDataType.image(mode)
         self.mode = mode
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}(mode={self.mode!r})"
 
 
 class FixedShapeImageType(DataType):
@@ -938,10 +881,6 @@ class FixedShapeImageType(DataType):
         self.height = height
         self.width = width
 
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}(mode={self.mode!r}, height={self.height}, width={self.width})"
-
 
 class TensorType(DataType):
     """Tensor type."""
@@ -951,10 +890,6 @@ class TensorType(DataType):
     def __init__(self, dtype: DataType) -> None:
         self._dtype = PyDataType.tensor(dtype._dtype)
         self.dtype = dtype
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.dtype!r})"
 
 
 class FixedShapeTensorType(DataType):
@@ -970,10 +905,6 @@ class FixedShapeTensorType(DataType):
         self.dtype = dtype
         self.shape = shape
 
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.dtype!r}, shape={self.shape})"
-
 
 class SparseTensorType(DataType):
     """SparseTensor type."""
@@ -985,10 +916,6 @@ class SparseTensorType(DataType):
         self._dtype = PyDataType.sparse_tensor(dtype._dtype, shape=None, use_offset_indices=use_offset_indices)
         self.dtype = dtype
         self.use_offset_indices = use_offset_indices
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.dtype!r}, use_offset_indices={self.use_offset_indices})"
 
 
 class FixedShapeSparseTensorType(DataType):
@@ -1008,10 +935,6 @@ class FixedShapeSparseTensorType(DataType):
         self.dtype = dtype
         self.shape = shape
         self.use_offset_indices = use_offset_indices
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.dtype!r}, shape={self.shape}, use_offset_indices={self.use_offset_indices})"
 
 
 # Type alias for a union of types that can be inferred into a DataType

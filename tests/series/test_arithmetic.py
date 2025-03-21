@@ -339,5 +339,5 @@ def test_mod_series(l_dtype, r_dtype) -> None:
 
     mod = left % right
     assert mod.name() == left.name()
-    assert mod.datatype()._is_integer()
+    assert mod.datatype().is_integer()
     assert mod.to_pylist() == [0, 2, 0, None, None, None]
