@@ -27,7 +27,7 @@ pyo3 = {workspace = true, optional = true}
 spark-connect = {workspace = true}
 textwrap = "0.16.1"
 tokio = {version = "1.40.0", features = ["full"]}
-tonic = "0.12.3"
+tonic = {workspace = true}
 tracing = {workspace = true}
 uuid = {version = "1.10.0", features = ["v4"]}
 snafu.workspace = true
