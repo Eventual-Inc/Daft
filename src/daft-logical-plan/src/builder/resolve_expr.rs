@@ -127,53 +127,55 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
 }
 
 fn resolve_unresolved_columns(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<ExprRef> {
-    Ok(expr.transform(|e| {
-        if let Expr::Column(Column::Unresolved(UnresolvedColumn {
-            name,
-            plan_ref,
-            plan_schema
-        })) = e.as_ref() {
-            match plan_ref {
-                PlanRef::Alias(alias) => {
-                    if let Some(schema) = plan.clone().get_schema_for_alias(alias)? {
-                        // make sure column exists in schema
-                        schema.get_field(name)?;
+    Ok(expr
+        .transform(|e| {
+            if let Expr::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref,
+                plan_schema,
+            })) = e.as_ref()
+            {
+                let resolves_to_current_scope = match plan_ref {
+                    PlanRef::Alias(alias) => {
+                        if let Some(schema) = plan.clone().get_schema_for_alias(alias)? {
+                            // make sure column exists in schema
+                            schema.get_field(name)?;
 
-                        Ok(Transformed::yes(resolved_col(name.clone())))
-                    } else if let Some(schema) = plan_schema {
-                        Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(schema.get_field(name)?.clone()))))))
-                    } else {
-                        Err(DaftError::FieldNotFound(format!("Column {alias}.{name} is an outer column but does not have an associated schema.")))
+                            true
+                        } else {
+                            false
+                        }
                     }
-                }
-                PlanRef::Id(id) => {
-                    if let Some(schema) = plan.clone().get_schema_for_id(*id)? {
-                        // make sure column exists in schema
-                        schema.get_field(name)?;
+                    PlanRef::Id(id) => {
+                        if let Some(schema) = plan.clone().get_schema_for_id(*id)? {
+                            // make sure column exists in schema
+                            schema.get_field(name)?;
 
-                        Ok(Transformed::yes(resolved_col(name.clone())))
-                    } else if let Some(schema) = plan_schema {
-                        Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(schema.get_field(name)?.clone()))))))
-                    } else {
-                        Err(DaftError::FieldNotFound(format!("Column {id}.{name} is an outer column but does not have an associated schema.")))
+                            true
+                        } else {
+                            false
+                        }
                     }
+                    PlanRef::Unqualified => plan.schema().has_field(name),
+                };
+
+                if resolves_to_current_scope {
+                    Ok(Transformed::yes(resolved_col(name.clone())))
+                } else if let Some(schema) = plan_schema {
+                    // Couldn't find in current scope, but schema exists. May be an outer column in a subquery.
+                    Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(
+                        ResolvedColumn::OuterRef(schema.get_field(name)?.clone(), plan_ref.clone()),
+                    )))))
+                } else {
+                    Err(DaftError::FieldNotFound(format!(
+                        "Could not resolve column {e}."
+                    )))
                 }
-                PlanRef::Unqualified => {
-                    if plan.schema().has_field(name) {
-                        Ok(Transformed::yes(resolved_col(name.clone())))
-                    } else if let Some(schema) = plan_schema {
-                        Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(schema.get_field(name)?.clone()))))))
-                    } else {
-                        Err(DaftError::FieldNotFound(format!(
-                            "Column {name} is an outer column but does not have an associated schema."
-                        )))
-                    }
-                },
+            } else {
+                Ok(Transformed::no(e))
             }
-        } else {
-            Ok(Transformed::no(e))
-        }
-    })?.data)
+        })?
+        .data)
 }
 
 fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
