@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from daft import Window, col
 
@@ -246,7 +245,6 @@ def test_null_partition_values(make_df):
             ), f"Incorrect sum for category {category}: {actual_sums} != {expected_sum}"
 
 
-@pytest.mark.skip(reason="Skipping this test, issues with multiple window functions")
 def test_multiple_window_functions(make_df):
     """Test multiple window functions in the same query."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})

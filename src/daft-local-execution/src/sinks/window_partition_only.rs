@@ -1,5 +1,5 @@
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -110,6 +110,7 @@ struct WindowPartitionOnlyParams {
     final_agg_exprs: Vec<ExprRef>,
     final_projections: Vec<ExprRef>,
     window_column_names: Vec<String>,
+    window_column_mapping: Vec<(String, String)>,
 }
 
 pub struct WindowPartitionOnlySink {
@@ -136,12 +137,74 @@ impl WindowPartitionOnlySink {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let (partial_aggs, final_aggs, final_projections) =
+        let (partial_aggs, final_aggs, mut final_projections) =
             daft_physical_plan::populate_aggregation_stages(&aggregations, schema, partition_by);
 
-        let window_column_names = (0..aggregations.len())
-            .map(|i| format!("window_{}", i))
+        // For window functions, we need to ensure each output column has a unique name
+        // These will be used as internal column names during processing
+        let window_column_names = aggregations
+            .iter()
+            .enumerate()
+            .map(|(i, agg_expr)| {
+                // Use the aggregation operation type as part of the name
+                let operation_name = match agg_expr {
+                    daft_dsl::AggExpr::Sum(_) => "sum",
+                    daft_dsl::AggExpr::Min(_) => "min",
+                    daft_dsl::AggExpr::Max(_) => "max",
+                    daft_dsl::AggExpr::Mean(_) => "mean",
+                    daft_dsl::AggExpr::Count(_, _) => "count",
+                    _ => "agg",
+                };
+
+                // Get the column being aggregated if applicable
+                let col_name = match agg_expr {
+                    daft_dsl::AggExpr::Sum(e)
+                    | daft_dsl::AggExpr::Min(e)
+                    | daft_dsl::AggExpr::Max(e)
+                    | daft_dsl::AggExpr::Mean(e)
+                    | daft_dsl::AggExpr::Count(e, _) => {
+                        // Try to extract the column name from the expression
+                        if let Ok(field) = e.to_field(schema) {
+                            field.name
+                        } else {
+                            format!("expr_{}", i)
+                        }
+                    }
+                    _ => format!("expr_{}", i),
+                };
+
+                // Create a unique name that includes the operation, column name, and index
+                format!("{}_{}_window_{}", operation_name, col_name, i)
+            })
             .collect::<Vec<_>>();
+
+        // Determine the expected output column names for each window function
+        // This maps from the expected window output column name to our internal window column name
+        let mut window_column_mapping = Vec::new();
+
+        // We need to extract what alias the user expects for each window function
+        // Then make sure our final projection maps to these names
+        for (i, _expr) in aggregations.iter().enumerate() {
+            // The last column in the window output should correspond to the window function i
+            let internal_name = &window_column_names[i];
+
+            // The logical plan expects window_0, window_1, etc.
+            let expected_name = format!("window_{}", i);
+
+            window_column_mapping.push((expected_name, internal_name.clone()));
+        }
+
+        // Replace the final projections with ones that have our unique window column names as aliases
+        // Skip the partition columns in final_projections
+        let partition_col_count = partition_by.len();
+        for (i, window_name) in window_column_names.iter().enumerate() {
+            let idx = i + partition_col_count;
+            if idx < final_projections.len() {
+                // Replace the projection with an aliased version to ensure unique names during processing
+                let proj = final_projections[idx].clone().alias(window_name.as_str());
+                final_projections[idx] = proj;
+            }
+        }
 
         let partial_agg_exprs = partial_aggs
             .into_values()
@@ -164,6 +227,7 @@ impl WindowPartitionOnlySink {
                 final_agg_exprs,
                 final_projections,
                 window_column_names,
+                window_column_mapping,
             }),
         })
     }
@@ -196,18 +260,28 @@ fn extract_partition_column_names(partition_by: &[ExprRef]) -> Vec<String> {
 
 /// Create window fields and batch from columns
 fn create_window_batch(
-    window_column_names: &[String],
+    window_column_mapping: &[(String, String)],
     window_cols: &[Series],
     batch_len: usize,
 ) -> DaftResult<RecordBatch> {
-    let window_fields = window_column_names
+    // Create renamed series that have the expected names (window_0, window_1, etc.)
+    let renamed_window_cols: Vec<Series> = window_cols
         .iter()
-        .zip(window_cols.iter())
-        .map(|(name, col)| daft_core::prelude::Field::new(name, col.data_type().clone()))
+        .zip(window_column_mapping.iter())
+        .map(|(col, (expected_name, _))| col.rename(expected_name))
+        .collect();
+
+    // Create fields with the expected names
+    let window_fields = window_column_mapping
+        .iter()
+        .zip(renamed_window_cols.iter())
+        .map(|((expected_name, _), col)| {
+            daft_core::prelude::Field::new(expected_name, col.data_type().clone())
+        })
         .collect::<Vec<_>>();
 
     let window_schema = daft_core::prelude::Schema::new(window_fields)?;
-    RecordBatch::new_with_size(Arc::new(window_schema), window_cols.to_vec(), batch_len)
+    RecordBatch::new_with_size(Arc::new(window_schema), renamed_window_cols, batch_len)
 }
 
 impl BlockingSink for WindowPartitionOnlySink {
@@ -314,6 +388,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 params.partition_by.len() + params.window_column_names.len(),
                             );
 
+                            // First add all partition columns
                             for i in 0..params.partition_by.len() {
                                 if let Some(field_name) =
                                     final_projected.schema().fields.keys().nth(i)
@@ -322,6 +397,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 }
                             }
 
+                            // Then add each window function result with its unique name
                             let partition_col_offset = params.partition_by.len();
                             for (i, window_name) in params.window_column_names.iter().enumerate() {
                                 let agg_idx = i + partition_col_offset;
@@ -329,6 +405,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                                     if let Some(agg_col_name) =
                                         final_projected.schema().fields.keys().nth(agg_idx)
                                     {
+                                        // Use a unique window column name to avoid conflicts
                                         window_projection_exprs.push(
                                             resolved_col(agg_col_name.as_str())
                                                 .alias(window_name.as_str()),
@@ -401,9 +478,57 @@ impl BlockingSink for WindowPartitionOnlySink {
                                     .collect::<Vec<_>>();
 
                                 if !window_cols.is_empty() {
+                                    // We need to exclude any columns from the window batch that would be duplicates
+                                    // Get the original batch column names
+                                    let original_col_names: HashSet<String> =
+                                        original_batch.column_names().into_iter().collect();
+
+                                    // Filter out any window columns that would clash with original columns
+                                    let filtered_window_mapping: Vec<(String, String)> = params
+                                        .window_column_mapping
+                                        .iter()
+                                        .filter(|(user_name, _)| {
+                                            !original_col_names.contains(user_name)
+                                        })
+                                        .cloned()
+                                        .collect();
+
+                                    // Only include window columns that don't clash
+                                    let filtered_window_cols: Vec<Series> =
+                                        if filtered_window_mapping.len()
+                                            < params.window_column_mapping.len()
+                                        {
+                                            // If we have fewer columns after filtering, we need to only include those columns
+                                            // that don't create duplicates
+                                            let keep_indices: HashSet<usize> =
+                                                filtered_window_mapping
+                                                    .iter()
+                                                    .filter_map(|(_, internal_name)| {
+                                                        params
+                                                            .window_column_names
+                                                            .iter()
+                                                            .position(|n| n == internal_name)
+                                                    })
+                                                    .collect();
+
+                                            window_cols
+                                                .into_iter()
+                                                .enumerate()
+                                                .filter_map(|(i, col)| {
+                                                    if keep_indices.contains(&i) {
+                                                        Some(col)
+                                                    } else {
+                                                        None
+                                                    }
+                                                })
+                                                .collect()
+                                        } else {
+                                            window_cols
+                                        };
+
                                     let window_batch = create_window_batch(
-                                        &params.window_column_names,
-                                        &window_cols,
+                                        &filtered_window_mapping,
+                                        &filtered_window_cols,
                                         original_batch.len(),
                                     )?;
 
