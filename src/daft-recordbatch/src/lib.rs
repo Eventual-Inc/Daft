@@ -691,8 +691,8 @@ impl RecordBatch {
             Expr::Exists(_subquery) => Err(DaftError::ComputeError(
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
-            Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }))) => Err(DaftError::ComputeError(
-                format!("Outer reference columns should be eliminated before evaluation. This indicates either that column {name} does not exist in the table, or there is a bug in the query optimizer."),
+            Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(..))) => Err(DaftError::ComputeError(
+                format!("Column {expr} could not be resolved. This indicates either that the column is referencing a different table from the one it is being used in, or a bug in the query optimizer."),
             )),
             Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(..))) => Err(DaftError::ComputeError(
                 "Join side columns cannot be evaluated directly. This indicates a bug in the executor.".to_string(),
