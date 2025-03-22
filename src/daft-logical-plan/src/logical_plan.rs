@@ -39,6 +39,7 @@ pub enum LogicalPlan {
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     SubqueryAlias(SubqueryAlias),
+    Window(Window),
 }
 
 pub type LogicalPlanRef = Arc<LogicalPlan>;
@@ -104,6 +105,7 @@ impl LogicalPlan {
                 schema.clone()
             }
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.schema(),
+            Self::Window(Window { schema, .. }) => schema.clone(),
         }
     }
 
@@ -207,6 +209,16 @@ impl LogicalPlan {
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
+            Self::Window(window) => {
+                let res = window
+                    .window_spec
+                    .partition_by
+                    .iter()
+                    .chain(window.window_spec.order_by.iter())
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
         }
     }
 
@@ -232,6 +244,7 @@ impl LogicalPlan {
             Self::Sample(..) => "Sample",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
             Self::SubqueryAlias(..) => "Alias",
+            Self::Window(..) => "Window",
         }
     }
 
@@ -253,9 +266,8 @@ impl LogicalPlan {
             | Self::Join(Join { stats_state, .. })
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
-            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. }) => {
-                stats_state
-            }
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
+            | Self::Window(Window { stats_state, .. }) => stats_state,
             Self::Intersect(_) => {
                 panic!("Intersect nodes should be optimized away before stats are materialized")
             }
@@ -304,6 +316,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(plan) => {
                 Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
             }
+            Self::Window(plan) => Self::Window(plan.with_materialized_stats()),
         }
     }
 
@@ -331,6 +344,7 @@ impl LogicalPlan {
                 monotonically_increasing_id.multiline_display()
             }
             Self::SubqueryAlias(alias) => alias.multiline_display(),
+            Self::Window(window) => window.multiline_display(),
         }
     }
 
@@ -358,6 +372,7 @@ impl LogicalPlan {
                 vec![input]
             }
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => vec![input],
+            Self::Window(Window { input, .. }) => vec![input],
         }
     }
 
@@ -387,6 +402,11 @@ impl LogicalPlan {
                 Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
                 Self::Union(_) => panic!("Union ops should never have only one input, but got one"),
                 Self::Join(_) => panic!("Join ops should never have only one input, but got one"),
+                Self::Window(Window { window_functions, window_spec, .. }) => Self::Window(Window::try_new(
+                    input.clone(),
+                    window_functions.clone(),
+                    window_spec.clone(),
+                ).unwrap()),
             },
             [input1, input2] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
@@ -529,7 +549,8 @@ impl LogicalPlan {
             | Self::Sink(Sink { plan_id, .. })
             | Self::Sample(Sample { plan_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
-            | Self::SubqueryAlias(SubqueryAlias { plan_id, .. }) => plan_id,
+            | Self::SubqueryAlias(SubqueryAlias { plan_id, .. })
+            | Self::Window(Window { plan_id, .. }) => plan_id,
         }
     }
 
@@ -563,6 +584,7 @@ impl LogicalPlan {
                 )
             }
             Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.clone().with_plan_id(plan_id)),
+            Self::Window(window) => window.with_plan_id(Some(plan_id)),
         }
     }
 }

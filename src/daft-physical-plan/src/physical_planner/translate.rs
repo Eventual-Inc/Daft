@@ -517,6 +517,11 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
             "Alias should already be optimized away".to_string(),
         )),
+        // Window functions are handled in the local and distributed runners
+        LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
+            "Window functions are not implemented. Use the native runner to execute this plan."
+                .to_string(),
+        )),
     }?;
     // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
     // different size estimations depending on when the approximation is computed. Once we fix
