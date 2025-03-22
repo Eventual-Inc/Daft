@@ -516,7 +516,8 @@ pub(super) fn translate_single_logical_node(
         )),
         // Window functions are handled in the local and distributed runners
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
-            "Window functions are not yet implemented".to_string(),
+            "Window functions are not implemented. Use the native runner to execute this plan."
+                .to_string(),
         )),
     }?;
     // TODO(desmond): We can't perform this check for now because ScanTasks currently provide

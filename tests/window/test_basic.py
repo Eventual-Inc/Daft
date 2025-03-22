@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from daft import Window, col
+from tests.conftest import get_tests_daft_runner_name
 
 # from daft.expressions import count, max, mean, min, sum
 
@@ -32,6 +34,7 @@ def assert_equal_ignoring_order(result_dict, expected_dict):
 
 
 # @pytest.mark.skip(reason="Skipping this test (currently hardcoded to pass in pipeline.rs)")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_single_partition_sum(make_df):
     """Stage: PARTITION BY-Only Window Aggregations.
 
@@ -58,6 +61,7 @@ def test_single_partition_sum(make_df):
 
 
 # @pytest.mark.skip(reason="Skipping this test (currently hardcoded to pass in pipeline.rs)")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_single_partition_min(make_df):
     """Test min over a single partition column."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
@@ -78,6 +82,7 @@ def test_single_partition_min(make_df):
     assert_equal_ignoring_order(result.to_pydict(), expected)
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_single_partition_max(make_df):
     """Test max over a single partition column."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
@@ -98,6 +103,7 @@ def test_single_partition_max(make_df):
     assert_equal_ignoring_order(result.to_pydict(), expected)
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_single_partition_mean(make_df):
     """Test mean over a single partition column."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
@@ -128,6 +134,7 @@ def test_single_partition_mean(make_df):
     assert_equal_ignoring_order(result.to_pydict(), expected)
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_single_partition_count(make_df):
     """Test count over a single partition column."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
@@ -148,6 +155,7 @@ def test_single_partition_count(make_df):
     assert_equal_ignoring_order(result.to_pydict(), expected)
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_multiple_partition_columns(make_df):
     """Test sum over multiple partition columns."""
     df = make_df(
@@ -176,6 +184,7 @@ def test_multiple_partition_columns(make_df):
     assert_equal_ignoring_order(result.to_pydict(), expected)
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_similar_partition_keys(make_df):
     """Test partition keys with similar string/number combinations that might cause hash collisions."""
     df = make_df(
@@ -204,6 +213,7 @@ def test_similar_partition_keys(make_df):
         ), f"Hash collision detected for keys {expected_dict['key1'][i]}/{expected_dict['key2'][i]}"
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_null_partition_values(make_df):
     """Test window functions with null values in partition columns."""
     df = make_df(
@@ -245,6 +255,7 @@ def test_null_partition_values(make_df):
             ), f"Incorrect sum for category {category}: {actual_sums} != {expected_sum}"
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_multiple_window_functions(make_df):
     """Test multiple window functions in the same query."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
@@ -282,6 +293,7 @@ def test_multiple_window_functions(make_df):
     assert_equal_ignoring_order(result.to_pydict(), expected)
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_many_partitions(make_df):
     """Test window functions with a large number of partitions."""
     # Create a dataset with 100 unique partition keys
