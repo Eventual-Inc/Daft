@@ -441,13 +441,18 @@ mod tests {
     }
 
     #[rstest]
-    #[case::basic("select utf8 from tbl1 where i64 > (select max(id) from tbl2 where id = i32)")]
+    #[case::basic(
+        "select utf8 from tbl1 where i64 > (select max(id) from tbl2 where id = i32)",
+        PlanRef::Unqualified
+    )]
     #[case::compound(
-        "select utf8 from tbl1 where i64 > (select max(id) from tbl2 where id = tbl1.i32)"
+        "select utf8 from tbl1 where i64 > (select max(id) from tbl2 where id = tbl1.i32)",
+        PlanRef::Alias("tbl1".into())
     )]
     fn test_correlated_subquery(
         mut planner: SQLPlanner,
         #[case] query: &str,
+        #[case] plan_ref: PlanRef,
         tbl_1: LogicalPlanRef,
         tbl_2: LogicalPlanRef,
     ) -> SQLPlannerResult<()> {
@@ -457,7 +462,7 @@ mod tests {
 
         let outer_col = Arc::new(Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(
             Field::new("i32", DataType::Int32),
-            PlanRef::Unqualified,
+            plan_ref,
         ))));
         let subquery = LogicalPlanBuilder::from(tbl_2)
             .alias("tbl2")
