@@ -1,0 +1,13 @@
+[dependencies]
+clap = {version = "4.4", features = ["derive"], optional = true}
+daft-dashboard = {path = "../daft-dashboard", optional = true}
+pyo3 = {workspace = true, optional = true}
+
+[features]
+default = ["python"]
+python = ["dep:pyo3", "dep:clap", "dep:daft-dashboard"]
+
+[package]
+name = "daft-cli"
+edition.workspace = true
+version.workspace = true

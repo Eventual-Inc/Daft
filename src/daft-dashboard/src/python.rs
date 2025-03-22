@@ -33,7 +33,7 @@ impl ConnectionHandle {
 }
 
 #[pyfunction]
-pub(crate) fn launch(noop_if_initialized: bool, py: Python) -> PyResult<ConnectionHandle> {
+pub fn launch(noop_if_initialized: bool, py: Python) -> PyResult<ConnectionHandle> {
     match (make_listener(), noop_if_initialized) {
         (Err(_), true) => Ok(ConnectionHandle {
             shutdown_signal: None,
