@@ -42,7 +42,7 @@ tqdm
 # Pyarrow
 pyarrow==16.0.0
 # Ray
-ray[data, client]==2.34.0
+ray[data, client]==2.43.0
 
 # Lance
 pylance>=0.10.12
