@@ -668,7 +668,7 @@ jobs:
       run: exit 1
 
   benchmark-codspeed:
-    runs-on: buildjet-8vcpu-ubuntu-2204
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     timeout-minutes: 30
     env:
       package-name: daft
