@@ -1,7 +1,10 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use daft_dsl::{functions::python::get_resource_request, ExprRef};
+use daft_dsl::{
+    functions::python::{get_batch_size, get_resource_request},
+    ExprRef,
+};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -10,7 +13,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionTaskSpawner, NUM_CPUS};
+use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner, NUM_CPUS};
 
 fn num_parallel_exprs(projection: &[ExprRef]) -> usize {
     max(
@@ -24,6 +27,7 @@ pub struct ProjectOperator {
     max_concurrency: usize,
     parallel_exprs: usize,
     memory_request: u64,
+    batch_size: Option<usize>,
 }
 
 impl ProjectOperator {
@@ -33,11 +37,13 @@ impl ProjectOperator {
             .map(|m| m as u64)
             .unwrap_or(0);
         let (max_concurrency, parallel_exprs) = Self::get_optimal_allocation(&projection)?;
+        let batch_size = get_batch_size(&projection);
         Ok(Self {
             projection: Arc::new(projection),
             memory_request,
             max_concurrency,
             parallel_exprs,
+            batch_size,
         })
     }
 
@@ -139,5 +145,10 @@ impl IntermediateOperator for ProjectOperator {
 
     fn max_concurrency(&self) -> DaftResult<usize> {
         Ok(self.max_concurrency)
+    }
+
+    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
+        self.batch_size
+            .or_else(|| Some(runtime_handle.default_morsel_size()))
     }
 }
