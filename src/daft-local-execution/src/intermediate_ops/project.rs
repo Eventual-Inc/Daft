@@ -2,7 +2,7 @@ use std::{cmp::max, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_dsl::{
-    functions::python::{get_batch_size, get_resource_request},
+    functions::python::{get_resource_request, try_get_batch_size_from_udf},
     ExprRef,
 };
 use daft_micropartition::MicroPartition;
@@ -37,7 +37,7 @@ impl ProjectOperator {
             .map(|m| m as u64)
             .unwrap_or(0);
         let (max_concurrency, parallel_exprs) = Self::get_optimal_allocation(&projection)?;
-        let batch_size = get_batch_size(&projection);
+        let batch_size = try_get_batch_size_from_udf(&projection).unwrap_or(None);
         Ok(Self {
             projection: Arc::new(projection),
             memory_request,
