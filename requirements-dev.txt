@@ -99,4 +99,4 @@ grpcio==1.68.1
 grpcio-status==1.67.0
 
 # ai
-vllm>=0.7.3
+vllm==0.7.3
