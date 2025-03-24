@@ -15,27 +15,27 @@ These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps 
 
 ## Numeric Types
 
-| Type         | Name                       | Aliases           | Description             |
-| ------------ | -------------------------- | ----------------- | ----------------------- |
-| `int8`       | `TINYINT`                  | `INT1`            | 8-bit signed integer    |
-| `int16`      | `SMALLINT`                 | `INT2`, `INT16`   | 16-bit signed integer   |
-| `int32`      | `INT`, `INTEGER`           | `INT4`, `INT32`   | 32-bit signed integer   |
-| `int64`      | `BIGINT`                   | `INT8`, `INT64`   | 64-bit signed integer   |
-| `uint8`      | `TINYINT UNSIGNED`         | `UINT1`           | 8-bit unsigned integer  |
-| `uint16`     | `SMALLINT UNSIGNED`        | `UINT2`, `UINT16` | 16-bit unsigned integer |
-| `uint32`     | `INT UNSIGNED`             | `UINT4`, `UINT32` | 32-bit unsigned integer |
-| `uint64`     | `BIGINT UNSIGNED`          | `UINT8`, `UINT64` | 64-bit unsigned integer |
-| `float32`    | `REAL`                     | `FLOAT(p)`        | 32-bit floating point   |
-| `float64`    | `DOUBLE [PRECISION]`       | `FLOAT(p)`        | 64-bit floating point   |
-| `decimal128` | `DEC(p,s)`, `DECIMAL(p,s)` | `NUMERIC(p,s)`    | Fixed-point number      |
+| Type         | Name                       | Aliases                         | Description             |
+| ------------ | -------------------------- | ------------------------------- | ----------------------- |
+| `int8`       | `TINYINT`                  | `INT1`                          | 8-bit signed integer    |
+| `int16`      | `SMALLINT`                 | `INT2`, `INT16`                 | 16-bit signed integer   |
+| `int32`      | `INT`, `INTEGER`           | `INT4`, `INT32`                 | 32-bit signed integer   |
+| `int64`      | `BIGINT`                   | `INT8`, `INT64`                 | 64-bit signed integer   |
+| `uint8`      | `TINYINT UNSIGNED`         | `UINT1`                         | 8-bit unsigned integer  |
+| `uint16`     | `SMALLINT UNSIGNED`        | `UINT2`, `UINT16`               | 16-bit unsigned integer |
+| `uint32`     | `INT UNSIGNED`             | `UINT4`, `UINT32`               | 32-bit unsigned integer |
+| `uint64`     | `BIGINT UNSIGNED`          | `UINT8`, `UINT64`               | 64-bit unsigned integer |
+| `float32`    | `REAL`                     | `FLOAT(p)`, `FLOAT32`           | 32-bit floating point   |
+| `float64`    | `DOUBLE [PRECISION]`       | `FLOAT(p)`, `FLOAT64` , `FLOAT` | 64-bit floating point   |
+| `decimal128` | `DEC(p,s)`, `DECIMAL(p,s)` | `NUMERIC(p,s)`                  | Fixed-point number      |
 
 
 ## Text Types
 
-| Type     | Name      | Aliases               | Description                          |
-| -------- | --------- | --------------------- | ------------------------------------ |
-| `string` | `CHAR`    | `CHARACTER`           | Variable-length string (see warning) |
-| `string` | `VARCHAR` | `CHAR[ACTER] VARYING` | Variable-length string               |
+| Type     | Name      | Aliases                                 | Description                          |
+| -------- | --------- | --------------------------------------- | ------------------------------------ |
+| `string` | `CHAR`    | `CHARACTER`                             | Variable-length string (see warning) |
+| `string` | `VARCHAR` | `CHAR[ACTER] VARYING`, `STRING`, `TEXT` | Variable-length string               |
 
 !!! warning "Warning"
 
