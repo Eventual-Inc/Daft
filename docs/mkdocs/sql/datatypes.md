@@ -26,7 +26,7 @@ These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps 
 | `uint32`     | `INT UNSIGNED`             | `UINT4`, `UINT32`               | 32-bit unsigned integer |
 | `uint64`     | `BIGINT UNSIGNED`          | `UINT8`, `UINT64`               | 64-bit unsigned integer |
 | `float32`    | `REAL`                     | `FLOAT(p)`, `FLOAT32`           | 32-bit floating point   |
-| `float64`    | `DOUBLE [PRECISION]`       | `FLOAT(p)`, `FLOAT64` , `FLOAT` | 64-bit floating point   |
+| `float64`    | `DOUBLE`, `DOUBLE p`       | `FLOAT(p)`, `FLOAT64` , `FLOAT` | 64-bit floating point   |
 | `decimal128` | `DEC(p,s)`, `DECIMAL(p,s)` | `NUMERIC(p,s)`                  | Fixed-point number      |
 
 
@@ -34,8 +34,7 @@ These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps 
 
 | Type     | Name      | Aliases                                 | Description                          |
 | -------- | --------- | --------------------------------------- | ------------------------------------ |
-| `string` | `CHAR`    | `CHARACTER`                             | Variable-length string (see warning) |
-| `string` | `VARCHAR` | `CHAR[ACTER] VARYING`, `STRING`, `TEXT` | Variable-length string               |
+| `string` | `VARCHAR` | `STRING`, `TEXT`                        | Variable-length string (see warning) |
 
 !!! warning "Warning"
 
