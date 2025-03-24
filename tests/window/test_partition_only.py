@@ -318,3 +318,63 @@ def test_many_partitions(make_df):
         assert (
             result_dict["sum"][i] == result_dict["value"][i]
         ), f"Expected sum equal to value for single-row partition {result_dict['category'][i]}"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_window_mean_minus_value(make_df):
+    """Test arithmetic with window mean and value."""
+    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+
+    window = Window.partition_by("category")
+    result = df.select(
+        col("category"),
+        col("value"),
+        (col("value").mean().over(window) - col("value")).alias("mean_minus_value"),
+    ).collect()
+
+    expected = {
+        "category": ["A", "A", "A", "B", "B", "B", "C", "C"],
+        "value": [5, 8, 9, 7, 10, 12, 6, 15],
+        "mean_minus_value": [
+            2.333333333333333,
+            -0.666666666666667,
+            -1.666666666666667,
+            2.666666666666666,
+            -0.3333333333333339,
+            -2.333333333333334,
+            4.5,
+            -4.5,
+        ],
+    }
+
+    assert_equal_ignoring_order(result.to_pydict(), expected)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_window_value_over_sum(make_df):
+    """Test division with value and window sum."""
+    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+
+    window = Window.partition_by("category")
+    result = df.select(
+        col("category"),
+        col("value"),
+        (col("value") / col("value").sum().over(window)).alias("value_over_sum"),
+    ).collect()
+
+    expected = {
+        "category": ["A", "A", "A", "B", "B", "B", "C", "C"],
+        "value": [5, 8, 9, 7, 10, 12, 6, 15],
+        "value_over_sum": [
+            0.22727272727272727,
+            0.36363636363636365,
+            0.4090909090909091,
+            0.2413793103448276,
+            0.3448275862068966,
+            0.41379310344827586,
+            0.2857142857142857,
+            0.7142857142857143,
+        ],
+    }
+
+    assert_equal_ignoring_order(result.to_pydict(), expected)
