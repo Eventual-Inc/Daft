@@ -33,7 +33,7 @@ dev = [
   "tqdm",
   "pyarrow==16.0.0",
   "ray[data, client]==2.34.0",
-  "pylance>=0.10.12",
+  "pylance>=0.10.12; platform_system != \"Windows\"",
   "pyiceberg==0.7.0",
   "tenacity==8.2.3",
   "deltalake==0.5.8; platform_system == \"Windows\"",

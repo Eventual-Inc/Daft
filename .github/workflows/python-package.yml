@@ -76,18 +76,11 @@ jobs:
           pyproject.toml
 
     - name: Setup Virtual Env
-      run: |2
-
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+      run: |
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
         pip install uv
 
     - name: Install dependencies
-      if: ${{ (runner.os != 'Windows') }}
-      run: |
-        uv sync --no-install-project
-
-    - name: Install dependencies (Windows)
-      if: ${{ (runner.os == 'Windows') }}
       run: |
         uv sync --no-install-project
 
@@ -258,7 +251,7 @@ jobs:
     - name: Setup Virtual Env
       run: |
         python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
         pip install uv
 
     - name: Install Daft and dev dependencies
@@ -337,7 +330,7 @@ jobs:
     - name: Setup Virtual Env
       run: |
         python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
         pip install uv
     - name: Install Daft and dev dependencies
       run: |
@@ -425,9 +418,8 @@ jobs:
         path: dist
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
         uv sync --no-install-project
@@ -519,9 +511,8 @@ jobs:
         path: dist
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
         uv sync --no-install-project
@@ -602,9 +593,8 @@ jobs:
         path: dist
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
         uv sync --no-install-project
@@ -690,8 +680,8 @@ jobs:
     - name: Install dependencies
       run: |
         pip install uv
-        uv sync --no-install-project
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        uv sync --no-install-project
     - name: Build Rust Library
       run: |
         source .venv/bin/activate

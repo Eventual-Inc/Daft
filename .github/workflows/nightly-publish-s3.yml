@@ -138,7 +138,7 @@ jobs:
     - name: Setup Virtual Env
       run: |
         uv venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
     - name: Install Daft and dev dependencies
       run: |
@@ -211,7 +211,7 @@ jobs:
     - name: Setup Virtual Env
       run: |
         uv venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
         uv sync --no-install-project
