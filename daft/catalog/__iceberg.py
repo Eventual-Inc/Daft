@@ -111,8 +111,12 @@ class IcebergCatalog(Catalog):
     def list_tables(self, pattern: str | None = None) -> list[str]:
         """List tables under the given namespace (pattern) in the catalog, or all tables if no namespace is provided."""
         if pattern is None:
-            pattern = tuple(str(ns) for ns in self.list_namespaces())
-        return [".".join(tup) for tup in self._inner.list_tables(pattern)]
+            tables = []
+            for ns in self.list_namespaces():
+                tables.extend(self._inner.list_tables(str(ns)))
+            return tables
+        else:
+            return [".".join(tup) for tup in self._inner.list_tables(pattern)]
 
 
 class IcebergTable(Table):

@@ -125,6 +125,52 @@ def test_create_table(catalog: Catalog):
     c.drop_namespace(n)
 
 
+def test_list_tables(catalog: Catalog):
+    c = catalog
+
+    # create a few namespaces
+    n1 = "test_list_tables_a"
+    n2 = "test_list_tables_b"
+    n3 = "test_list_tables_c"
+    c.create_namespace(n1)
+    c.create_namespace(n2)
+    c.create_namespace(n3)
+
+    # no tables in any namespace
+    assert len(c.list_tables()) == 1  # default
+    assert len(c.list_tables(n1)) == 0
+    assert len(c.list_tables(n2)) == 0
+    assert len(c.list_tables(n3)) == 0
+
+    # create a few tables in each namespace
+    c.create_table(f"{n1}.tbl1_1", schema({"a": dt.bool()}))
+
+    c.create_table(f"{n2}.tbl2_1", schema({"a": dt.bool()}))
+    c.create_table(f"{n2}.tbl2_2", schema({"a": dt.bool()}))
+
+    c.create_table(f"{n3}.tbl3_1", schema({"a": dt.bool()}))
+    c.create_table(f"{n3}.tbl3_2", schema({"a": dt.bool()}))
+    c.create_table(f"{n3}.tbl3_3", schema({"a": dt.bool()}))
+
+    # list all tables
+    assert len(c.list_tables()) == 7  # default + 6
+    assert len(c.list_tables(n1)) == 1
+    assert len(c.list_tables(n2)) == 2
+    assert len(c.list_tables(n3)) == 3
+
+    # # cleanup
+    c.drop_table(f"{n1}.tbl1_1")
+    c.drop_table(f"{n2}.tbl2_1")
+    c.drop_table(f"{n2}.tbl2_2")
+    c.drop_table(f"{n3}.tbl3_1")
+    c.drop_table(f"{n3}.tbl3_2")
+    c.drop_table(f"{n3}.tbl3_3")
+
+    c.drop_namespace(n3)
+    c.drop_namespace(n2)
+    c.drop_namespace(n1)
+
+
 ###
 # read tests
 ###
