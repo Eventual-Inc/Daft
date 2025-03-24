@@ -1,26 +1,25 @@
 # Contributing to Docs
 
-## Building the mkdocs
+## Build Daft documentation
 
 1. Go to the `/` folder (project root)
 2. `make docs`
 3. `python -m http.server`
-3. open `localhost:8000/docs/site`
+3. open `localhost:8000/site`
 
-## Building sphinx docs locally
+## Run the build in development server
 
-1. Go to the `docs/` folder
-2. `make clean`
-3. `make docs`
-3. open `docs/site/index.html` to view static pages
+1. Go to the `/` folder (project root)
+2. `make serve`
+3. open `http://127.0.0.1:8000/projects/docs/en/stable/`
 
-## To create a new directory level:
+## Add a new page to User Guide:
 
-- Create a folder under `sphinx/source`
-- Add an `index.rst`, follow template from other `index.rst` files
-- Add new folder name to `toctree` at the end of `sphinx/source/index.rst`
+1. Create a `.md` file in `docs` or add to relevant folder in `docs`
+2. Add file to `mkdocs.yml` navigation under `Daft User Guide`
 
-## To add a new page to User Guide:
+## Add a new page to API Docs:
 
-- Create a `.md` file in `docs/mkdocs` or add to relevant folder in `docs/mkdocs`
-- Add file to `docs/mkdocs.yml` navigation
+1. Create a `.md` file in `docs/api_docs` or add to relevant folder in `docs/user_guide`
+2. Add file to `mkdocs.yml` navigation under `API Docs`
+

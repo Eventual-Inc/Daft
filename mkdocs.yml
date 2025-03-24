@@ -16,44 +16,44 @@ repo_url: https://github.com/Eventual-Inc/Daft
 # Sitemap
 nav:
 - Daft User Guide:
-  - Overview: user_guide/index.md
-  - Terminology: user_guide/terms.md
-  - Installation: user_guide/install.md
-  - Quickstart: user_guide/quickstart.md
-  - Core Concepts: user_guide/core_concepts.md
+  - Overview: index.md
+  - Terminology: terms.md
+  - Installation: install.md
+  - Quickstart: quickstart.md
+  - Core Concepts: core_concepts.md
   - SQL Reference:
-    - Overview: user_guide/sql/overview.md
+    - Overview: sql/overview.md
     - Statements:
-      - SELECT: user_guide/sql/statements/select.md
+      - SELECT: sql/statements/select.md
       - SHOW: sql/statements/show.md
-      - USE: user_guide/sql/statements/use.md
-    - Data Types: user_guide/sql/datatypes.md
-  - Sessions: user_guide/sessions.md
-  - Catalogs: user_guide/catalogs.md
-  - Spark Connect: user_guide/spark_connect.md
-  - Distributed Computing: user_guide/distributed.md
+      - USE: sql/statements/use.md
+    - Data Types: sql/datatypes.md
+  - Sessions: sessions.md
+  - Catalogs: catalogs.md
+  - Spark Connect: spark_connect.md
+  - Distributed Computing: distributed.md
   - Advanced:
-    - Managing Memory Usage: user_guide/advanced/memory.md
-    - Partitioning: user_guide/advanced/partitioning.md
+    - Managing Memory Usage: advanced/memory.md
+    - Partitioning: advanced/partitioning.md
   - Integrations:
-    - Ray: user_guide/integrations/ray.md
-    - Unity Catalog: user_guide/integrations/unity_catalog.md
-    - Apache Iceberg: user_guide/integrations/iceberg.md
-    - Delta Lake: user_guide/integrations/delta_lake.md
-    - Apache Hudi: user_guide/integrations/hudi.md
-    - Microsoft Azure: user_guide/integrations/azure.md
-    - Amazon Web Services: user_guide/integrations/aws.md
-    - SQL: user_guide/integrations/sql.md
-    - Hugging Face Datasets: user_guide/integrations/huggingface.md
-    - S3 Tables: user_guide/integrations/s3tables.md
+    - Ray: integrations/ray.md
+    - Unity Catalog: integrations/unity_catalog.md
+    - Apache Iceberg: integrations/iceberg.md
+    - Delta Lake: integrations/delta_lake.md
+    - Apache Hudi: integrations/hudi.md
+    - Microsoft Azure: integrations/azure.md
+    - Amazon Web Services: integrations/aws.md
+    - SQL: integrations/sql.md
+    - Hugging Face Datasets: integrations/huggingface.md
+    - S3 Tables: integrations/s3tables.md
   - Resources:
-    - Architecture: user_guide/resources/architecture.md
-    - DataFrame Comparison: user_guide/resources/dataframe_comparison.md
-    - Tutorials: user_guide/resources/tutorials.md
-    - Benchmarks: user_guide/resources/benchmarks/tpch.md # Benchmarks can expand into a folder once we have more
-    - Telemetry: user_guide/resources/telemetry.md
+    - Architecture: resources/architecture.md
+    - DataFrame Comparison: resources/dataframe_comparison.md
+    - Tutorials: resources/tutorials.md
+    - Benchmarks: resources/benchmarks/tpch.md # Benchmarks can expand into a folder once we have more
+    - Telemetry: resources/telemetry.md
   - Migration Guide:
-    - Coming from Dask: user_guide/migration/dask_migration.md
+    - Coming from Dask: migration/dask_migration.md
 - API Docs:
   - Overview: api_docs/index.md
   - DataFrame Creation: api_docs/dataframe_creation.md
