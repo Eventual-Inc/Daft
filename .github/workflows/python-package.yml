@@ -76,21 +76,19 @@ jobs:
           pyproject.toml
 
     - name: Setup Virtual Env
-      run: |
-        python -m venv venv
+      run: |2
+
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
 
     - name: Install dependencies
       if: ${{ (runner.os != 'Windows') }}
       run: |
-        activate
         uv sync --no-install-project
 
     - name: Install dependencies (Windows)
       if: ${{ (runner.os == 'Windows') }}
       run: |
-        .\venv\Scripts\activate
         uv sync --no-install-project
 
     - name: Override pyarrow
@@ -104,7 +102,7 @@ jobs:
     - name: Build library and Test with pytest (unix)
       if: ${{ (runner.os != 'Windows') }}
       run: |
-        source activate
+        source .venv/bin/activate
         export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
         cargo llvm-cov clean --workspace
         maturin develop
@@ -129,7 +127,7 @@ jobs:
     - name: Build library and Test with pytest (Windows)
       if: ${{ (runner.os == 'Windows') }}
       run: |
-        .\venv\Scripts\activate
+        .\.venv\Scripts\activate
         # source <(cargo llvm-cov show-env --export-prefix)
         # export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
         # export CARGO_INCREMENTAL=1
@@ -830,6 +828,7 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
+          requirements-dev.txt
     - name: Setup Virtual Env
       run: |
         python -m venv venv
