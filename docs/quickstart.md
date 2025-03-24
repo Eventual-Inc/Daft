@@ -1,3 +1,11 @@
+<!-- Hides Quickstart headers in nav -->
+<style>
+   .md-nav--primary .md-nav__link[for=__toc] > .md-nav__icon,
+   .md-nav--primary .md-nav__link[for=__toc] ~ .md-nav {
+     display: none;
+   }
+</style>
+
 # Quickstart
 
 <!--
