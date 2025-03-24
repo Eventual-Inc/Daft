@@ -36,7 +36,6 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-          requirements-dev.txt
     - name: Setup Virtual Env
       run: |
         python -m venv venv
@@ -45,7 +44,7 @@ jobs:
     - name: Install dependencies
       run: |
         source venv/bin/activate
-        uv pip install -r requirements-dev.txt
+        uv sync --no-install-project
     - name: Build Daft in development mode and generate docs
       # TODO: Break on any Sphinx warnings with nitpicks
       # make html SPHINXOPTS="-W --keep-going -n"

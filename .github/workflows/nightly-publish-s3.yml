@@ -142,7 +142,8 @@ jobs:
 
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+        uv sync --no-install-project
+        uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
         rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -213,7 +214,8 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+        uv sync --no-install-project
+        uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
         rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
