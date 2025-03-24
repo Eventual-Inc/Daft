@@ -64,7 +64,7 @@ nav:
   - Session: api_docs/sessions.md
   - Catalogs & Tables: api_docs/catalogs_tables.md
   - Schema: api_docs/schema.md
-  - DataTypes: api_docs/data_types.md
+  - DataTypes: api_docs/datatypes.md
   - Groupby: api_docs/groupby.md
   - User-Defined Functions: api_docs/udf.md
   - Series: api_docs/series.md

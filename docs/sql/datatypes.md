@@ -1,10 +1,10 @@
 # SQL Data Types
 
-These tables define how Daft's [DataType](../../api_docs/datatype.html) maps to the common SQL types and aliases.
+These tables define how Daft's [DataType](../api_docs/datatypes.md) maps to the common SQL types and aliases.
 
 !!! note "Note"
 
-    In these tables, the **Type** column identifies the Daft [DataType](../../api_docs/datatype.html), whereas the **Name** and **Aliases** columns represent supported SQL syntax.
+    In these tables, the **Type** column identifies the Daft [DataType](../api_docs/datatypes.md), whereas the **Name** and **Aliases** columns represent supported SQL syntax.
 
 ## Boolean Type
 
