@@ -733,3 +733,9 @@ def test_cast_sql_string(sql, actual):
     df = daft.from_pydict({"a": [1, 2, 3]}).select(expr)
     actual_df = daft.from_pydict({"a": [1, 2, 3]}).select(actual)
     assert df.schema() == actual_df.schema()
+
+pytest.mark.parametrize("sql", ["char", "character", "char varying", "character varying"])
+def test_cast_sql_string_failing(sql):
+    with pytest.raises(Exception):
+        expr =col("a").cast(sql)
+        daft.from_pydict({"a": [1, 2, 3]}).select(expr)
