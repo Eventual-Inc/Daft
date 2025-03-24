@@ -45,7 +45,7 @@ nav:
     - Amazon Web Services: user_guide/integrations/aws.md
     - SQL: user_guide/integrations/sql.md
     - Hugging Face Datasets: user_guide/integrations/huggingface.md
-    - S3 Tables: integrations/s3tables.md
+    - S3 Tables: user_guide/integrations/s3tables.md
   - Resources:
     - Architecture: user_guide/resources/architecture.md
     - DataFrame Comparison: user_guide/resources/dataframe_comparison.md
