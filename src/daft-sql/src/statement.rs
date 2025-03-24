@@ -11,6 +11,8 @@ pub enum Statement {
     Select(Select),
     /// set a session variable
     Set(Set),
+    /// list tables in a catalog
+    ShowTables(ShowTables),
     /// use a catalog and optional namespace
     Use(Use),
 }
@@ -23,6 +25,13 @@ pub type Select = LogicalPlanRef;
 pub struct Set {
     pub option: String,
     pub value: String,
+}
+
+/// SHOW TABLES [ {FROM|IN} <catalog> ] [ LIKE <pattern> ]
+#[derive(Debug, Clone)]
+pub struct ShowTables {
+    pub catalog: Option<String>,
+    pub pattern: Option<String>,
 }
 
 /// USE <catalog> [. <namespace>]
@@ -62,6 +71,12 @@ impl SQLPlanner<'_> {
             ast::Statement::SetVariable { .. } => {
                 todo!("set_variable")
             }
+            ast::Statement::ShowTables {
+                extended,
+                full,
+                db_name,
+                filter,
+            } => self.plan_show_tables(*extended, *full, db_name.as_ref(), filter.as_ref()),
             ast::Statement::Use(use_) => self.plan_use(use_),
             other => unsupported_sql_err!("unsupported statement, {}", other),
         }
@@ -134,6 +149,44 @@ impl SQLPlanner<'_> {
     #[allow(dead_code)]
     fn plan_set(&self, _: &ast::SetConfigValue) -> SQLPlannerResult<Statement> {
         unsupported_sql_err!("SET statement is not yet supported.")
+    }
+
+    fn plan_show_tables(
+        &self,
+        extended: bool,
+        full: bool,
+        catalog: Option<&ast::Ident>,
+        pattern: Option<&ast::ShowStatementFilter>,
+    ) -> SQLPlannerResult<Statement> {
+        if extended {
+            unsupported_sql_err!("SHOW EXTENDED is not supported.")
+        }
+        if full {
+            unsupported_sql_err!("SHOW FULL is not supported.")
+        }
+        let catalog = match catalog {
+            Some(ident) => {
+                if matches!(ident.quote_style, Some('\'')) {
+                    unsupported_sql_err!(
+                        "Expected catalog identifier, but received a string: {}",
+                        ident
+                    )
+                }
+                Some(ident.value.clone())
+            }
+            None => None,
+        };
+        let pattern = match pattern {
+            Some(ast::ShowStatementFilter::Like(pattern)) => Some(pattern.clone()),
+            Some(ast::ShowStatementFilter::Where(_)) => {
+                unsupported_sql_err!("SHOW TABLES WHERE is not supported.")
+            }
+            Some(ast::ShowStatementFilter::ILike(_)) => {
+                unsupported_sql_err!("SHOW TABLES ILIKE is not supported.")
+            }
+            None => None,
+        };
+        Ok(Statement::ShowTables(ShowTables { catalog, pattern }))
     }
 
     fn plan_use(&self, use_: &ast::Use) -> SQLPlannerResult<Statement> {

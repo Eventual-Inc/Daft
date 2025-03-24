@@ -595,6 +595,41 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr // self._expr)
 
+    def __getitem__(self, key) -> Expression:
+        """Syntactic sugar for `Expression.list.get` and `Expression.struct.get`.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}], "list": [[10, 20], [30, 40]]})
+            >>> df = df.select(df["struct"]["x"], df["list"][0].alias("first"))
+            >>> df.show()
+            ╭───────┬───────╮
+            │ x     ┆ first │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 10    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 30    │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        See Also:
+            `list.get`
+            `struct.get`
+        """
+        key_type = type(key)
+
+        if key_type is int:
+            return self.list.get(key)
+        elif key_type is str:
+            return self.struct.get(key)
+        else:
+            raise TypeError(
+                f"Argument of type {key_type} is not supported in Expression.__getitem__. Only int and string types are supported."
+            )
+
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name.
 
@@ -769,6 +804,21 @@ class Expression:
     def sign(self) -> Expression:
         """The sign of a numeric expression."""
         expr = native.sign(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def signum(self) -> Expression:
+        """The signum of a numeric expression."""
+        expr = native.signum(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def negate(self) -> Expression:
+        """The negative of a numeric expression."""
+        expr = native.negate(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def negative(self) -> Expression:
+        """The negative of a numeric expression."""
+        expr = native.negative(self._expr)
         return Expression._from_pyexpr(expr)
 
     def round(self, decimals: int = 0) -> Expression:
@@ -1294,7 +1344,7 @@ class Expression:
         inferred_return_dtype = DataType._infer_type(return_dtype)
 
         def batch_func(self_series):
-            return [func(x) for x in self_series.to_pylist()]
+            return [func(x) for x in self_series]
 
         name = getattr(func, "__module__", "")  # type: ignore[call-overload]
         if name:
@@ -1511,7 +1561,7 @@ class Expression:
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
-    def encode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+    def encode(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
         Example:
@@ -1553,7 +1603,7 @@ class Expression:
         expr = native.encode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-    def decode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+    def decode(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
         Example:
@@ -3638,7 +3688,7 @@ class ExpressionListNamespace(ExpressionNamespace):
 
 class ExpressionStructNamespace(ExpressionNamespace):
     def get(self, name: str) -> Expression:
-        """Retrieves one field from a struct column.
+        """Retrieves one field from a struct column, or all fields with "*".
 
         Args:
             name: the name of the field to retrieve

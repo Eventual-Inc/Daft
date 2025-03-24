@@ -1,10 +1,10 @@
 # SQL Data Types
 
-These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps to the common SQL types and aliases.
+These tables define how Daft's [DataType](../../api_docs/datatype.html) maps to the common SQL types and aliases.
 
 !!! note "Note"
 
-    In these tables, the **Type** column identifies the Daft [DataType](../{{ api_path }}/datatype.html), whereas the **Name** and **Aliases** columns represent supported SQL syntax.
+    In these tables, the **Type** column identifies the Daft [DataType](../../api_docs/datatype.html), whereas the **Name** and **Aliases** columns represent supported SQL syntax.
 
 ## Boolean Type
 
@@ -25,9 +25,9 @@ These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps 
 | `uint16`     | `SMALLINT UNSIGNED`        | `UINT2`, `UINT16` | 16-bit unsigned integer |
 | `uint32`     | `INT UNSIGNED`             | `UINT4`, `UINT32` | 32-bit unsigned integer |
 | `uint64`     | `BIGINT UNSIGNED`          | `UINT8`, `UINT64` | 64-bit unsigned integer |
-| `float32`    | `REAL`                     | `FLOAT(p)`        | 32-bit floating point   |
-| `float64`    | `DOUBLE [PRECISION]`       | `FLOAT(p)`        | 64-bit floating point   |
-| `decimal128` | `DEC(p,s)`, `DECIMAL(p,s)` | `NUMERIC(p,s)`    | Fixed-point number      |
+| `float32`    | `REAL`                     | `FLOAT(P)`        | 32-bit floating point   |
+| `float64`    | `DOUBLE [PRECISION]`       | `FLOAT(P)`        | 64-bit floating point   |
+| `decimal128` | `DEC(P,S)`, `DECIMAL(P,S)` | `NUMERIC(P,S)`    | Fixed-point number      |
 
 
 ## Text Types
@@ -82,7 +82,7 @@ These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps 
 | Type     | Syntax              | Example                 | Description                         |
 | -------- | ------------------- | ----------------------- | ----------------------------------- |
 | `map`    | `MAP(K, V)`         | `MAP(INT, BOOL)`        | Key-value pairs with the same types |
-| `struct` | `STRUCT(FIELDS...)` | `STRUCT(a INT, b BOOL)` | Named values of varying types       |
+| `struct` | `STRUCT(FIELDS...)` | `STRUCT(A INT, B BOOL)` | Named values of varying types       |
 
 
 ## Complex Types
@@ -106,7 +106,7 @@ TENSOR(INT, 10, 10, 10)
 
 ### Image Type
 
-The `IMAGE(mode, [dimensions])` type represents an array of pixels with designated pixel type. The supported modes are covered in [ImageMode](../{{ api_path }}/doc_gen/misc/daft.ImageMode.html). If the height, width, and mode are the same for all images in the array, specifying them when constructing this type is advised, since that will allow Daft to create a more optimized physical representation of the image array.
+The `IMAGE(mode, [dimensions])` type represents an array of pixels with designated pixel type. The supported modes are covered in [ImageMode](../../{{ api_path }}/misc/daft.ImageMode.html). If the height, width, and mode are the same for all images in the array, specifying them when constructing this type is advised, since that will allow Daft to create a more optimized physical representation of the image array.
 
 **Examples**
 

@@ -31,7 +31,7 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
 from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
-from daft.scarf_telemetry import scarf_telemetry
+from daft.scarf_telemetry import track_runner_on_scarf
 
 if TYPE_CHECKING:
     from daft.execution import physical_plan
@@ -346,7 +346,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             "Please report any issues at github.com/Eventual-Inc/Daft/issues",
         )
 
-        scarf_telemetry(runner=self.name)
+        track_runner_on_scarf(runner=self.name)
 
         # NOTE: Freeze and use this same execution config for the entire execution
         daft_execution_config = get_context().daft_execution_config

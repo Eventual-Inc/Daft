@@ -1947,6 +1947,7 @@ dependencies = [
  "daft-scan",
  "daft-scheduler",
  "daft-session",
+ "daft-shuffles",
  "daft-sql",
  "daft-stats",
  "daft-warc",
@@ -2493,6 +2494,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-io",
  "daft-logical-plan",
  "daft-schema",
  "itertools 0.11.0",
@@ -2625,6 +2627,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-shuffles"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-runtime",
+ "daft-dsl",
+ "daft-io",
+ "daft-micropartition",
+ "daft-recordbatch",
+ "daft-schema",
+ "daft-writers",
+ "futures",
+ "pyo3",
+ "tokio",
+]
+
+[[package]]
 name = "daft-sketch"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2639,17 +2658,20 @@ dependencies = [
 name = "daft-sql"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-daft-config",
  "common-error",
  "common-io-config",
  "common-runtime",
  "daft-algebra",
  "daft-catalog",
+ "daft-context",
  "daft-core",
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
  "daft-logical-plan",
+ "daft-micropartition",
  "daft-scan",
  "daft-session",
  "itertools 0.11.0",
@@ -2700,6 +2722,7 @@ dependencies = [
 name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-daft-config",
  "common-error",
  "common-file-formats",
@@ -4204,9 +4227,9 @@ dependencies = [
 
 [[package]]
 name = "kanal"
-version = "0.1.0-pre8"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b05d55519627edaf7fd0f29981f6dc03fb52df3f5b257130eb8d0bf2801ea1d7"
+checksum = "8b13526b910349296b1d3537ae62d5f83def9b6d6974e26d62b80ee2bb1b4794"
 dependencies = [
  "futures-core",
  "lock_api",

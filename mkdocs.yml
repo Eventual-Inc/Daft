@@ -25,6 +25,7 @@ nav:
     - Overview: user_guide/sql/overview.md
     - Statements:
       - SELECT: user_guide/sql/statements/select.md
+      - SHOW: sql/statements/show.md
       - USE: user_guide/sql/statements/use.md
     - Data Types: user_guide/sql/datatypes.md
   - Sessions: user_guide/sessions.md
@@ -44,6 +45,7 @@ nav:
     - Amazon Web Services: user_guide/integrations/aws.md
     - SQL: user_guide/integrations/sql.md
     - Hugging Face Datasets: user_guide/integrations/huggingface.md
+    - S3 Tables: integrations/s3tables.md
   - Resources:
     - Architecture: user_guide/resources/architecture.md
     - DataFrame Comparison: user_guide/resources/dataframe_comparison.md

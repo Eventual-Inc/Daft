@@ -484,7 +484,7 @@ Adding a new column can be achieved with [`df.with_column()`]({{ api_path }}/dat
 
 #### Selecting Columns Using Wildcards
 
-We can select multiple columns at once using wildcards. The expression [`.col(*)`]({{ api_path }}/expression_methods/daft.col.html) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
+We can select multiple columns at once using wildcards. The expression [`col("*")`]({{ api_path }}/expression_methods/daft.col.html) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
 
 === "🐍 Python"
     ``` python
@@ -506,7 +506,7 @@ We can select multiple columns at once using wildcards. The expression [`.col(*)
 ╰───────┴───────╯
 ```
 
-We can also select multiple columns within structs using `col("struct.*")`:
+We can also select multiple columns within structs using [`col("struct")["*"]`]({{ api_path }}/expression_methods/daft.Expression.__getitem__.html):
 
 === "🐍 Python"
     ``` python
@@ -516,7 +516,7 @@ We can also select multiple columns within structs using `col("struct.*")`:
             {"B": 3, "C": 4}
         ]
     })
-    df.select(col("A.*")).show()
+    df.select(col("A")["*"]).show()
     ```
 
 ``` {title="Output"}
@@ -764,7 +764,7 @@ Wildcards also work very well for accessing all members of a struct column:
     })
 
     # Access all fields of the 'person' struct
-    df.select(col("person.*")).show()
+    df.select(col("person")["*"]).show()
     ```
 
 === "⚙️ SQL"
@@ -2134,7 +2134,7 @@ For example, let's try writing a function that will crop all our images in the `
     @daft.udf(return_dtype=daft.DataType.python())
     def crop_images(images, crops, padding=0):
         cropped = []
-        for img, crop in zip(images.to_pylist(), crops.to_pylist()):
+        for img, crop in zip(images, crops):
             x1, x2, y1, y2 = crop
             cropped_img = img[x1:x2 + padding, y1:y2 + padding]
             cropped.append(cropped_img)
@@ -2313,8 +2313,7 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
             self.model.eval().to(torch.device("cpu"))
 
         def __call__(self, images_urls):
-            uris = images_urls.to_pylist()
-            batch = torch.cat([self.utils.prepare_input_from_uri(uri) for uri in uris]).to(torch.device("cpu"))
+            batch = torch.cat([self.utils.prepare_input_from_uri(uri) for uri in images_urls]).to(torch.device("cpu"))
 
             with torch.no_grad():
                 output = torch.nn.functional.softmax(self.model(batch), dim=1)

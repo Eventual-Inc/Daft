@@ -334,7 +334,7 @@ class UDF:
             ...         self.text = text
             ...
             ...     def __call__(self, data):
-            ...         return [x + self.text for x in data.to_pylist()]
+            ...         return [x + self.text for x in data]
             >>>
             >>> # New UDF that will have 8 concurrent running instances (will require 8 total GPUs)
             >>> MyGpuUdf_8_concurrency = MyGpuUdf.with_concurrency(8)
@@ -353,7 +353,7 @@ class UDF:
             ...         self.text = text
             ...
             ...     def __call__(self, data):
-            ...         return [x + self.text for x in data.to_pylist()]
+            ...         return [x + self.text for x in data]
             >>>
             >>> # Create a customized version of MyUdfWithInit by overriding the init args
             >>> MyUdfWithInit_CustomInitArgs = MyUdfWithInit.with_init_args(text=" my old friend")
@@ -399,6 +399,7 @@ def udf(
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
     batch_size: int | None = None,
+    concurrency: int | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
     """`@udf` Decorator to convert a Python function/class into a `UDF`.
 
@@ -413,7 +414,7 @@ def udf(
     In the example below, we create a UDF that:
 
     1. Receives data under the argument name ``x``
-    2. Converts the ``x`` Daft Series into a Python list using :meth:`x.to_pylist() <daft.Series.to_pylist>`
+    2. Iterates over the ``x`` Daft Series
     3. Adds a Python constant value ``c`` to every element in ``x``
     4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
     5. We can call our UDF on a dataframe using any of the dataframe projection operations (:meth:`df.with_column() <daft.DataFrame.with_column>`,
@@ -423,7 +424,7 @@ def udf(
         >>> import daft
         >>> @daft.udf(return_dtype=daft.DataType.int64())
         ... def add_constant(x: daft.Series, c=10):
-        ...     return [v + c for v in x.to_pylist()]
+        ...     return [v + c for v in x]
         >>>
         >>> df = daft.from_pydict({"x": [1, 2, 3]})
         >>> df = df.with_column("new_x", add_constant(df["x"], c=20))
@@ -446,7 +447,7 @@ def udf(
     -----------------
 
     You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 2 CPUs to run. On a
-    machine/cluster with 8 CPUs, Daft will be able to run up to 4 instances of this UDF at once, giving you a concurrency of 4!
+    machine/cluster with 8 CPUs, Daft will be able to run up to 4 instances of this UDF at once!
 
     >>> import daft
     >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
@@ -507,6 +508,9 @@ def udf(
         memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
             this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
         batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
+        concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
+            UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
+            loading model weights for model batch inference.
 
     Returns:
         Callable[[UserDefinedPyFuncLike], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
@@ -538,6 +542,7 @@ def udf(
             return_dtype=inferred_return_dtype,
             resource_request=resource_request,
             batch_size=batch_size,
+            concurrency=concurrency,
         )
 
     return _udf

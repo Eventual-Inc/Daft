@@ -123,6 +123,13 @@ impl FileWriter for PartitionedWriter {
             .sum::<usize>()
     }
 
+    fn bytes_per_file(&self) -> Vec<usize> {
+        self.per_partition_writers
+            .values()
+            .flat_map(|writer| writer.bytes_per_file())
+            .collect()
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         let mut results = vec![];
         for (_, mut writer) in self.per_partition_writers.drain() {

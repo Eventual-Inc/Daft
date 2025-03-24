@@ -6,7 +6,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_core::join::JoinType;
-use daft_dsl::{optimization::replace_columns_with_expressions, resolved_col, ExprRef};
+use daft_dsl::{optimization::replace_columns_with_expressions, resolved_col, Expr, ExprRef};
 
 use crate::{
     ops::{Filter, Join, Project},
@@ -66,10 +66,7 @@ impl JoinOrderTree {
             (
                 JoinOrderTree::Join(left1, right1, _, _),
                 JoinOrderTree::Join(left2, right2, _, _),
-            ) => {
-                (Self::order_eq(left1, left2) && Self::order_eq(right1, right2))
-                    || (Self::order_eq(left1, right2) && Self::order_eq(right1, left2))
-            }
+            ) => (Self::order_eq(left1, left2) && Self::order_eq(right1, right2)),
             _ => false,
         }
     }
@@ -520,7 +517,7 @@ impl JoinGraph {
     /// Returns a tuple of the logical plan builder consisting of joins, and a bitmask indicating the plan IDs
     /// that are contained within the current logical plan builder. The bitmask is used for determining join
     /// conditions to use when logical plan builders are joined together.
-    fn build_joins_from_join_order(
+    pub(crate) fn build_joins_from_join_order(
         &self,
         join_order: &JoinOrderTree,
     ) -> DaftResult<LogicalPlanBuilder> {
@@ -561,7 +558,8 @@ impl JoinGraph {
     pub(super) fn could_reorder(&self) -> bool {
         // For this join graph to reorder joins, there must be at least 3 relations to join. Otherwise
         // there is only one join to perform and no reordering is needed.
-        self.adj_list.max_id >= 3
+        // TODO: We should raise the limit once we implement a DP-based join ordering algorithm.
+        self.adj_list.max_id >= 3 && self.adj_list.max_id <= 7
     }
 
     /// Test helper function to get the number of edges that the current graph contains.
@@ -772,9 +770,20 @@ impl JoinGraphBuilder {
                 LogicalPlan::Filter(Filter { input, .. }) => plan = input,
                 // Since we hit a join, we need to process the linear chain of Projects and Filters that were encountered starting
                 // from the plan at the root of the linear chain to the current plan.
+                // We only process joins with predicates that are all columns.
+                // TODO: Figure out how to handle joins with non-column predicates, such as aliases.
                 LogicalPlan::Join(Join {
-                    left_on, join_type, ..
-                }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
+                    left_on,
+                    join_type,
+                    right_on,
+                    ..
+                }) if *join_type == JoinType::Inner
+                    && !left_on.is_empty()
+                    && left_on
+                        .iter()
+                        .chain(right_on.iter())
+                        .all(|c| matches!(c.as_ref(), Expr::Column(_))) =>
+                {
                     self.process_linear_chain(root_plan, plan);
                     break;
                 }

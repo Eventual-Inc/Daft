@@ -10,18 +10,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize, Deserialize, Default, Debug, Eq, PartialEq)]
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
-    pub enable_join_reordering: bool,
+    pub disable_join_reordering: bool,
 }
 
 impl DaftPlanningConfig {
     #[must_use]
     pub fn from_env() -> Self {
         let mut cfg: Self = Default::default();
-        let join_reordering_var_name = "DAFT_DEV_ENABLE_JOIN_REORDERING";
-        if let Ok(val) = std::env::var(join_reordering_var_name)
+        let disable_join_reordering_var_name = "DAFT_DEV_DISABLE_JOIN_REORDERING";
+        if let Ok(val) = std::env::var(disable_join_reordering_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
-            cfg.enable_join_reordering = true;
+            cfg.disable_join_reordering = true;
         }
         cfg
     }
@@ -61,6 +61,7 @@ pub struct DaftExecutionConfig {
     pub default_morsel_size: usize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
+    pub flight_shuffle_dirs: Vec<String>,
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
 }
@@ -91,6 +92,7 @@ impl Default for DaftExecutionConfig {
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
+            flight_shuffle_dirs: vec!["/tmp".to_string()],
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
         }
