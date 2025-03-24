@@ -714,8 +714,17 @@ def test_list_value_counts_degenerate():
     [
         ("int32", DataType.int32()),
         ("int64", DataType.int64()),
+        ("float32", DataType.float32()),
+        ("real", DataType.float32()),
+        ("float(5)", DataType.float32()),
         ("float64", DataType.float64()),
+        ("float", DataType.float64()),
+        ("double", DataType.float64()),
+        ("double 10", DataType.float64()),
+        ("float(30)", DataType.float64()),
         ("text", DataType.string()),
+        ("string", DataType.string()),
+        ("varchar", DataType.string()),
     ],
 )
 def test_cast_sql_string(sql, actual):
