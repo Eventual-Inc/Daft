@@ -114,9 +114,9 @@ class IcebergCatalog(Catalog):
             tables = []
             for ns in self.list_namespaces():
                 tables.extend(self._inner.list_tables(str(ns)))
-            return tables
         else:
-            return [".".join(tup) for tup in self._inner.list_tables(pattern)]
+            tables = self._inner.list_tables(pattern)
+        return [".".join(tup) for tup in tables]
 
 
 class IcebergTable(Table):

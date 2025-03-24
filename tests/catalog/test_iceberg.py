@@ -125,7 +125,7 @@ def test_create_table(catalog: Catalog):
     c.drop_namespace(n)
 
 
-def test_list_tables(catalog: Catalog):
+def test_list_tables(catalog: Catalog, sess: Session):
     c = catalog
 
     # create a few namespaces
@@ -157,6 +157,16 @@ def test_list_tables(catalog: Catalog):
     assert len(c.list_tables(n1)) == 1
     assert len(c.list_tables(n2)) == 2
     assert len(c.list_tables(n3)) == 3
+
+    # show tables
+    res = sess.sql("SHOW TABLES").to_pydict()
+    assert len(res["table"]) == 7
+    assert "tbl1_1" in res["table"]
+    assert "tbl2_1" in res["table"]
+    assert "tbl2_2" in res["table"]
+    assert "tbl3_1" in res["table"]
+    assert "tbl3_2" in res["table"]
+    assert "tbl3_3" in res["table"]
 
     # # cleanup
     c.drop_table(f"{n1}.tbl1_1")
