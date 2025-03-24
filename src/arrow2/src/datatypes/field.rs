@@ -1,6 +1,7 @@
 use super::{DataType, Metadata};
 
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde_types")]
+use serde_derive::{Deserialize, Serialize};
 
 /// Represents Arrow's metadata of a "column".
 ///
@@ -10,7 +11,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// Almost all IO in this crate uses [`Field`] to represent logical information about the data
 /// to be serialized.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
 pub struct Field {
     /// Its name
     pub name: String,
@@ -48,5 +50,47 @@ impl Field {
     #[inline]
     pub fn data_type(&self) -> &DataType {
         &self.data_type
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<Field> for arrow_schema::Field {
+    fn from(value: Field) -> Self {
+        Self::new(value.name, value.data_type.into(), value.is_nullable)
+            .with_metadata(value.metadata.into_iter().collect())
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<arrow_schema::Field> for Field {
+    fn from(value: arrow_schema::Field) -> Self {
+        (&value).into()
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<&arrow_schema::Field> for Field {
+    fn from(value: &arrow_schema::Field) -> Self {
+        let data_type = value.data_type().clone().into();
+        let metadata = value
+            .metadata()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        Self::new(value.name(), data_type, value.is_nullable()).with_metadata(metadata)
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<arrow_schema::FieldRef> for Field {
+    fn from(value: arrow_schema::FieldRef) -> Self {
+        value.as_ref().into()
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<&arrow_schema::FieldRef> for Field {
+    fn from(value: &arrow_schema::FieldRef) -> Self {
+        value.as_ref().into()
     }
 }

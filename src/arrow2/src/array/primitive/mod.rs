@@ -13,6 +13,8 @@ use crate::{
 use super::Array;
 use either::Either;
 
+#[cfg(feature = "arrow")]
+mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from_natural;

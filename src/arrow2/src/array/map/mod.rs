@@ -6,6 +6,8 @@ use crate::{
     offset::OffsetsBuffer,
 };
 
+#[cfg(feature = "arrow")]
+mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;

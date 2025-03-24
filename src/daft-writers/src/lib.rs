@@ -153,7 +153,7 @@ pub fn make_ipc_writer(
     let base_writer_factory = IPCWriterFactory::new(dir.to_string(), partition_idx, compression);
     let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
         target_filesize,
-        if compression.is_some() { 1.0 } else { 2.0 },
+        if compression.is_some() { 2.0 } else { 1.0 },
     );
     let file_writer_factory = TargetFileSizeWriterFactory::new(
         Arc::new(base_writer_factory),
