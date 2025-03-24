@@ -54,7 +54,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv pip install -r requirements-dev.txt
+        uv sync --no-install-project
 
     - name: Build Rust Library
       run: |

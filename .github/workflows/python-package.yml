@@ -86,13 +86,13 @@ jobs:
       if: ${{ (runner.os != 'Windows') }}
       run: |
         activate
-        uv pip install -r requirements-dev.txt
+        uv sync --no-install-project
 
     - name: Install dependencies (Windows)
       if: ${{ (runner.os == 'Windows') }}
       run: |
         .\venv\Scripts\activate
-        uv pip install -r requirements-dev.txt
+        uv sync --no-install-project
 
     - name: Override pyarrow
       if: ${{ (matrix.pyarrow-version) && (runner.os != 'Windows') }}
@@ -267,7 +267,8 @@ jobs:
 
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv sync --no-install-project
+        uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -345,7 +346,8 @@ jobs:
         pip install uv
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv sync --no-install-project
+        uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -434,7 +436,8 @@ jobs:
         pip install uv
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv sync --no-install-project
+        uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -528,7 +531,8 @@ jobs:
         pip install uv
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv sync --no-install-project
+        uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - uses: docker/setup-buildx-action@v3
     - uses: docker/build-push-action@v5
@@ -611,7 +615,8 @@ jobs:
         pip install uv
     - name: Install Daft and dev dependencies
       run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        uv sync --no-install-project
+        uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - name: Install ODBC Driver 18 for SQL Server
       run: |
@@ -697,7 +702,7 @@ jobs:
         pip install uv
     - name: Install dependencies
       run: |
-        uv pip install -r requirements-dev.txt
+        uv sync --no-install-project
     - name: Build Rust Library
       run: |
         source activate
@@ -839,7 +844,7 @@ jobs:
         pip install uv
     - name: Install dependencies
       run: |
-        uv pip install -r requirements-dev.txt
+        uv sync --no-install-project
     - name: Run doctests
       run: |
         source activate

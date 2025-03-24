@@ -31,9 +31,6 @@ log/
 # pytest benchmarks
 .benchmarks
 
-# Added by pyenv
-.python-version
-
 
 # Zed editor
 .zed/

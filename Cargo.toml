@@ -373,5 +373,9 @@ wildcard_imports = "allow"
 zero_sized_map_values = "allow"
 
 [workspace.package]
+description = "Daft is a data processing framework for Python"
+documentation = "https://www.getdaft.io/projects/docs/en/stable/"
 edition = "2021"
+homepage = "https://getdaft.io"
+license = "apache-2.0"
 version = "0.3.0-dev0"
