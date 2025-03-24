@@ -32,21 +32,18 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
-
     - name: Install dependencies
       run: |
+        pip install uv
         uv sync --no-install-project
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
     - name: Build Rust Library
       run: |
-        source activate
+        source .venv/bin/activate
         maturin develop --release
 
     - uses: actions/cache@v4

@@ -186,4 +186,5 @@ testpaths = [
 ]
 
 [tool.uv]
+config-settings = {build-args = '--profile=dev'}
 default-groups = ["dev", "docs"]

@@ -687,17 +687,14 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12' # Codspeed requires Python 3.12
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
     - name: Install dependencies
       run: |
+        pip install uv
         uv sync --no-install-project
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Build Rust Library
       run: |
-        source activate
+        source .venv/bin/activate
         maturin develop --profile dev-bench
     - uses: actions/cache@v4
       env:
@@ -826,20 +823,15 @@ jobs:
       with:
         python-version: ${{ env.python-version }}
         cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        cache-dependency-path: pyproject.toml
     - name: Install dependencies
       run: |
+        pip install uv
         uv sync --no-install-project
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Run doctests
       run: |
-        source activate
+        source .venv/bin/activate
         maturin develop
         pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py
       env:

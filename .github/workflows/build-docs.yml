@@ -36,20 +36,17 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
     - name: Install dependencies
       run: |
-        source venv/bin/activate
+        pip install uv
         uv sync --no-install-project
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+
     - name: Build Daft in development mode and generate docs
       # TODO: Break on any Sphinx warnings with nitpicks
       # make html SPHINXOPTS="-W --keep-going -n"
       run: |
-        source activate
+        source .venv/bin/activate
         maturin develop
         cd docs/
         make html SPHINXOPTS="-W --keep-going"
