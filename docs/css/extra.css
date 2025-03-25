@@ -22,10 +22,20 @@
   --md-typeset-a-color: #7862FF;
 }
 
-/* use a daft color for note admonitions */
+/* use daft purple for note admonitions */
 .md-typeset .admonition.note,
 .md-typeset details.note {
-  border-color: #7862FF;
+  border-color: rgb(120,98,255)
+}
+
+.md-typeset .note > .admonition-title,
+.md-typeset .note > summary {
+  background-color: rgb(120,98,255, 0.1);
+}
+
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before {
+  background-color: rgb(120,98,255);
 }
 
 /* use 100% width for tables */
