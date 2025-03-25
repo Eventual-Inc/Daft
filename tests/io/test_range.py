@@ -36,3 +36,9 @@ def test_with_start_end_and_step_kwargs():
 def test_with_no_args_raises_error():
     with pytest.raises(TypeError):
         daft.range()
+
+
+def test_range_called_multiple_times():
+    df = daft.range(10)
+    assert df.count_rows() == 10
+    assert df.count_rows() == 10
