@@ -212,7 +212,7 @@ def test_try_decode_utf8():
     assert result.to_pydict() == expected
 
 
-@pytest.mark.skipped("sanity perf checking")
+@pytest.mark.skip("sanity perf checking")
 def test_try_decode_utf8_perf():
     from daft import DataType as dt
 
