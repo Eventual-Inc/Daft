@@ -59,7 +59,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.daft import FileFormat, IOConfig, JoinType
+    from daft.daft import FileFormat, IOConfig, JoinType, WriteMode
     from daft.logical.schema import Schema
 
 
@@ -92,6 +92,7 @@ def partition_read(
 
 def file_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
+    write_mode: WriteMode,
     file_format: FileFormat,
     schema: Schema,
     root_dir: str | pathlib.Path,
@@ -103,6 +104,7 @@ def file_write(
     yield from (
         step.add_instruction(
             execution_step.WriteFile(
+                write_mode=write_mode,
                 file_format=file_format,
                 schema=schema,
                 root_dir=root_dir,

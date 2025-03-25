@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask, WriteMode
     from daft.logical.map_partition_ops import MapPartitionOp
     from daft.logical.schema import Schema
 
@@ -396,6 +396,7 @@ class EmptyScan(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class WriteFile(SingleOutputInstruction):
+    write_mode: WriteMode
     file_format: FileFormat
     schema: Schema
     root_dir: str | pathlib.Path
@@ -427,6 +428,7 @@ class WriteFile(SingleOutputInstruction):
             input,
             path=self.root_dir,
             schema=self.schema,
+            write_mode=self.write_mode,
             file_format=self.file_format,
             compression=self.compression,
             partition_cols=self.partition_cols,

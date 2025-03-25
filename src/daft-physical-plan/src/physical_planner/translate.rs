@@ -435,6 +435,7 @@ pub(super) fn translate_single_logical_node(
             schema, sink_info, ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
+            println!("/Users/corygrinstead/Development/Daft/src/daft-physical-plan/src/physical_planner/translate.rs:438");
             match sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(file_info @ OutputFileInfo { file_format, .. }) => {
                     match file_format {

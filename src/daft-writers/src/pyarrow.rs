@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_file_formats::WriteMode;
 use daft_micropartition::{python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
 use pyo3::{types::PyAnyMethods, PyObject, Python};
@@ -16,6 +17,7 @@ pub struct PyArrowWriter {
 impl PyArrowWriter {
     pub fn new_parquet_writer(
         root_dir: &str,
+        write_mode: WriteMode,
         file_idx: usize,
         compression: Option<&String>,
         io_config: Option<&daft_io::IOConfig>,
@@ -38,6 +40,7 @@ impl PyArrowWriter {
 
             let py_writer = file_writer_class.call1((
                 root_dir,
+                write_mode,
                 file_idx,
                 partition_values,
                 compression.map(|c| c.as_str()),
@@ -55,6 +58,7 @@ impl PyArrowWriter {
 
     pub fn new_csv_writer(
         root_dir: &str,
+        write_mode: WriteMode,
         file_idx: usize,
         io_config: Option<&daft_io::IOConfig>,
         partition_values: Option<&RecordBatch>,
@@ -75,6 +79,7 @@ impl PyArrowWriter {
             };
             let py_writer = file_writer_class.call1((
                 root_dir,
+                write_mode,
                 file_idx,
                 partition_values,
                 io_config.map(|cfg| daft_io::python::IOConfig {

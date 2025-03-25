@@ -2,13 +2,14 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
-from daft.daft import IOConfig
+from daft.daft import IOConfig, WriteMode
 from daft.delta_lake.delta_lake_write import make_deltalake_add_action, make_deltalake_fs, sanitize_table_for_deltalake
 from daft.dependencies import pa, pacsv, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
     get_protocol_from_path,
+    overwrite_files,
 )
 from daft.iceberg.iceberg_write import (
     coerce_pyarrow_table_to_schema,
@@ -32,6 +33,7 @@ class FileWriterBase(ABC):
     def __init__(
         self,
         root_dir: str,
+        write_mode: WriteMode,
         file_idx: int,
         file_format: str,
         partition_values: Optional[RecordBatch] = None,
@@ -40,7 +42,9 @@ class FileWriterBase(ABC):
         version: Optional[int] = None,
         default_partition_fallback: Optional[str] = None,
     ):
-        resolved_path, self.fs = self.resolve_path_and_fs(root_dir, io_config=io_config)
+        self.write_mode = write_mode
+
+        self.resolved_path, self.fs = self.resolve_path_and_fs(root_dir, io_config=io_config)
         self.protocol = get_protocol_from_path(root_dir)
         canonicalized_protocol = canonicalize_protocol(self.protocol)
         is_local_fs = canonicalized_protocol == "file"
@@ -57,7 +61,7 @@ class FileWriterBase(ABC):
                 for key, values in partition_values_to_str_mapping(self.partition_values).items()
             }
             self.dir_path = partition_strings_to_path(
-                resolved_path,
+                self.resolved_path,
                 self.partition_strings,
                 (
                     default_partition_fallback
@@ -67,7 +71,7 @@ class FileWriterBase(ABC):
             )
         else:
             self.partition_strings = {}
-            self.dir_path = f"{resolved_path}"
+            self.dir_path = f"{self.resolved_path}"
 
         self.full_path = f"{self.dir_path}/{self.file_name}"
         if is_local_fs:
@@ -75,6 +79,7 @@ class FileWriterBase(ABC):
 
         self.compression = compression if compression is not None else "none"
         self.position = 0
+        self.io_config = io_config
 
     def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
         [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
@@ -101,11 +106,21 @@ class FileWriterBase(ABC):
         """
         pass
 
+    def overwrite_files_helper(self, metadata):
+        written_file_paths = metadata["path"].to_pylist()
+        if self.write_mode == WriteMode.Overwrite:
+            overwrite_partitions = False
+            overwrite_files(written_file_paths, self.resolved_path, self.fs, overwrite_partitions)
+        elif self.write_mode == WriteMode.OverwritePartitions:
+            overwrite_partitions = True
+            overwrite_files(written_file_paths, self.resolved_path, self.fs, overwrite_partitions)
+
 
 class ParquetFileWriter(FileWriterBase):
     def __init__(
         self,
         root_dir: str,
+        write_mode: WriteMode,
         file_idx: int,
         partition_values: Optional[RecordBatch] = None,
         compression: Optional[str] = None,
@@ -117,6 +132,7 @@ class ParquetFileWriter(FileWriterBase):
         super().__init__(
             root_dir=root_dir,
             file_idx=file_idx,
+            write_mode=write_mode,
             file_format="parquet",
             partition_values=partition_values,
             compression=compression,
@@ -161,6 +177,7 @@ class ParquetFileWriter(FileWriterBase):
         if self.partition_values is not None:
             for col_name in self.partition_values.column_names():
                 metadata[col_name] = self.partition_values.get_column(col_name)
+        self.overwrite_files_helper(metadata)
         return RecordBatch.from_pydict(metadata)
 
 
@@ -168,6 +185,7 @@ class CSVFileWriter(FileWriterBase):
     def __init__(
         self,
         root_dir: str,
+        write_mode: WriteMode,
         file_idx: int,
         partition_values: Optional[RecordBatch] = None,
         io_config: Optional[IOConfig] = None,
@@ -175,6 +193,7 @@ class CSVFileWriter(FileWriterBase):
         super().__init__(
             root_dir=root_dir,
             file_idx=file_idx,
+            write_mode=write_mode,
             file_format="csv",
             partition_values=partition_values,
             io_config=io_config,
@@ -182,6 +201,7 @@ class CSVFileWriter(FileWriterBase):
         self.file_handle = None
         self.current_writer: Optional[pacsv.CSVWriter] = None
         self.is_closed = False
+        self.write_mode = write_mode
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
         self.file_handle = self.fs.open_output_stream(self.full_path)
@@ -211,6 +231,9 @@ class CSVFileWriter(FileWriterBase):
         if self.partition_values is not None:
             for col_name in self.partition_values.column_names():
                 metadata[col_name] = self.partition_values.get_column(col_name)
+
+        self.overwrite_files_helper(metadata)
+
         return RecordBatch.from_pydict(metadata)
 
 

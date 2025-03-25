@@ -1,7 +1,7 @@
 use std::{future::ready, rc::Rc, sync::Arc};
 
 use common_error::DaftResult;
-use common_file_formats::FileFormat;
+use common_file_formats::{FileFormat, WriteMode};
 use daft_catalog::TableSource;
 use daft_context::get_context;
 use daft_dsl::LiteralValue;
@@ -131,15 +131,13 @@ impl ConnectSession {
                     write_op.options
                 );
             }
+            Ok(())
 
-            let mode = SaveMode::try_from(write_op.mode)
-                .map_err(|_| Status::internal("invalid write mode"))?;
-
-            if mode == SaveMode::Unspecified {
-                Ok(())
-            } else {
-                not_yet_implemented!("save mode: {}", mode.as_str_name())
-            }
+            // if mode == SaveMode::Unspecified {
+            //     Ok(())
+            // } else {
+            //     not_yet_implemented!("save mode: {}", mode.as_str_name())
+            // }
         }
 
         let finished = res.result_complete_response();
@@ -147,7 +145,8 @@ impl ConnectSession {
         let (tx, rx) = tokio::sync::mpsc::channel::<ConnectResult<ExecutePlanResponse>>(1);
 
         let this = self.clone();
-
+        let mode = SaveMode::try_from(operation.mode)
+            .map_err(|_| Status::internal("invalid write mode"))?;
         self.compute_runtime.runtime.spawn(async move {
             let result = async {
                 check_write_operation(&operation)?;
@@ -176,8 +175,15 @@ impl ConnectSession {
                 let translator = SparkAnalyzer::new(&this);
 
                 let plan = translator.to_logical_plan(input).await?;
+                let write_mode = match mode {
+                    SaveMode::Unspecified => WriteMode::Append,
+                    SaveMode::Append => WriteMode::Append,
+                    SaveMode::Overwrite => WriteMode::Overwrite,
+                    SaveMode::ErrorIfExists => not_yet_implemented!("ErrorIfExists"),
+                    SaveMode::Ignore => not_yet_implemented!("Ignore"),
+                };
 
-                let plan = plan.table_write(&path, file_format, None, None, None)?;
+                let plan = plan.table_write(&path, write_mode, file_format, None, None, None)?;
 
                 let mut result_stream = this.run_query(plan).await?;
 
@@ -186,7 +192,9 @@ impl ConnectSession {
                 //
                 // an example where this is important is if we write to a parquet file
                 // and then read immediately after, we need to wait for the write to finish
-                while let Some(_result) = result_stream.next().await {}
+                while let Some(_result) = result_stream.next().await {
+                    println!("result: {:?}", _result);
+                }
 
                 Ok(())
             };

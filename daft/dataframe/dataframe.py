@@ -33,7 +33,7 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -660,9 +660,13 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
+        write_mode = WriteMode.from_str(write_mode)
+        print("write_mode", write_mode)
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
+            write_mode=write_mode,
             file_format=FileFormat.Parquet,
             compression=compression,
             io_config=io_config,
@@ -672,10 +676,14 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
-        if write_mode == "overwrite":
-            overwrite_files(write_df, root_dir, io_config, False)
-        elif write_mode == "overwrite-partitions":
-            overwrite_files(write_df, root_dir, io_config, True)
+        runner = get_context().get_or_create_runner()
+        # todo: other runners should natively handle overwriting files too
+        if runner.name != "native":
+            files_to_overwrite = write_df._result._get_merged_micropartition().get_column("path")
+            if write_mode == "overwrite":
+                overwrite_files(files_to_overwrite, root_dir, io_config, False)
+            elif write_mode == "overwrite-partitions":
+                overwrite_files(files_to_overwrite, root_dir, io_config, True)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -733,9 +741,12 @@ class DataFrame:
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
+        write_mode = WriteMode.from_str(write_mode)
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
+            write_mode=write_mode,
             file_format=FileFormat.Csv,
             io_config=io_config,
         )
@@ -744,11 +755,11 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-
-        if write_mode == "overwrite":
-            overwrite_files(write_df, root_dir, io_config, False)
-        elif write_mode == "overwrite-partitions":
-            overwrite_files(write_df, root_dir, io_config, True)
+        print(write_df)
+        # if write_mode == "overwrite":
+        #     overwrite_files(write_df, root_dir, io_config, False)
+        # elif write_mode == "overwrite-partitions":
+        #     overwrite_files(write_df, root_dir, io_config, True)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
