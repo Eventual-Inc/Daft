@@ -3,7 +3,7 @@ mod udf;
 
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
@@ -131,7 +131,8 @@ pub fn get_concurrency(exprs: &[ExprRef]) -> usize {
 }
 
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
-pub fn get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
+/// Errors if no UDF is found
+pub fn try_get_batch_size_from_udf(exprs: &[ExprRef]) -> DaftResult<Option<usize>> {
     let mut projection_batch_size = None;
     for expr in exprs {
         let mut found_udf = false;
@@ -151,7 +152,14 @@ pub fn get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
             break;
         }
     }
-    projection_batch_size.expect("get_batch_size expects one UDF")
+    if let Some(batch_size) = projection_batch_size {
+        Ok(batch_size)
+    } else {
+        Err(DaftError::ValueError(format!(
+            "No UDF with batch size found in expressions: {:?}",
+            exprs
+        )))
+    }
 }
 
 #[cfg(feature = "python")]

@@ -137,6 +137,7 @@ pub mod pylib {
         daft_image::python::register_modules(m)?;
 
         daft_dashboard::register_modules(m)?;
+        daft_cli::register_modules(m)?;
         Ok(())
     }
 }

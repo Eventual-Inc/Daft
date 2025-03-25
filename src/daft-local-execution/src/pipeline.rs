@@ -154,7 +154,12 @@ pub fn physical_plan_to_pipeline(
             stats_state,
             ..
         }) => {
-            let proj_op = ActorPoolProjectOperator::new(projection.clone());
+            let proj_op =
+                ActorPoolProjectOperator::try_new(projection.clone()).with_context(|_| {
+                    PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    }
+                })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node], stats_state.clone()).boxed()
         }

@@ -1,10 +1,10 @@
 # SQL Data Types
 
-These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps to the common SQL types and aliases.
+These tables define how Daft's [DataType](../../api_docs/datatype.html) maps to the common SQL types and aliases.
 
 !!! note "Note"
 
-    In these tables, the **Type** column identifies the Daft [DataType](../{{ api_path }}/datatype.html), whereas the **Name** and **Aliases** columns represent supported SQL syntax.
+    In these tables, the **Type** column identifies the Daft [DataType](../../api_docs/datatype.html), whereas the **Name** and **Aliases** columns represent supported SQL syntax.
 
 ## Boolean Type
 
@@ -81,7 +81,7 @@ These tables define how Daft's [DataType](../{{ api_path }}/datatype.html) maps 
 | Type     | Syntax              | Example                 | Description                         |
 | -------- | ------------------- | ----------------------- | ----------------------------------- |
 | `map`    | `MAP(K, V)`         | `MAP(INT, BOOL)`        | Key-value pairs with the same types |
-| `struct` | `STRUCT(FIELDS...)` | `STRUCT(a INT, b BOOL)` | Named values of varying types       |
+| `struct` | `STRUCT(FIELDS...)` | `STRUCT(A INT, B BOOL)` | Named values of varying types       |
 
 
 ## Complex Types
@@ -105,7 +105,7 @@ TENSOR(INT, 10, 10, 10)
 
 ### Image Type
 
-The `IMAGE(mode, [dimensions])` type represents an array of pixels with designated pixel type. The supported modes are covered in [ImageMode](../{{ api_path }}/doc_gen/misc/daft.ImageMode.html). If the height, width, and mode are the same for all images in the array, specifying them when constructing this type is advised, since that will allow Daft to create a more optimized physical representation of the image array.
+The `IMAGE(mode, [dimensions])` type represents an array of pixels with designated pixel type. The supported modes are covered in [ImageMode](../../{{ api_path }}/misc/daft.ImageMode.html). If the height, width, and mode are the same for all images in the array, specifying them when constructing this type is advised, since that will allow Daft to create a more optimized physical representation of the image array.
 
 **Examples**
 
