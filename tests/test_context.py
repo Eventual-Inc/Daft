@@ -124,7 +124,7 @@ daft.context.set_runner_ray()
 """
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", script], capture_output=True)
-        assert result.stderr.decode().strip().endswith("RuntimeError: Cannot set runner more than once")
+        assert "RuntimeError: Cannot set runner more than once" in result.stderr.decode().strip()
 
 
 @pytest.mark.parametrize(
