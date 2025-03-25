@@ -21,7 +21,7 @@ use crate::invalid_argument_err;
 pub fn decode(input: ExprRef, codec: Codec) -> ExprRef {
     if codec == Codec::Utf8 {
         // special-case for decode('utf-8')
-        return ScalarFunction::new(AsUtf8 {}, vec![input]).into();
+        return input.cast(&DataType::Utf8)
     }
     ScalarFunction::new(Decode { codec }, vec![input]).into()
 }
@@ -30,7 +30,7 @@ pub fn decode(input: ExprRef, codec: Codec) -> ExprRef {
 pub fn try_decode(input: ExprRef, codec: Codec) -> ExprRef {
     if codec == Codec::Utf8 {
         // special-case for try_decode('utf-8')
-        return ScalarFunction::new(TryAsUtf8 {}, vec![input]).into();
+        return input.try_cast(&DataType::Utf8)
     }
     ScalarFunction::new(TryDecode { codec }, vec![input]).into()
 }
@@ -117,74 +117,6 @@ impl ScalarUDF for TryDecode {
                     CodecKind::Text => arg.try_decode(self.codec.decoder())?.into_series(),
                 };
                 Ok(res)
-            }
-            _ => unreachable!("type checking handled in to_field"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct AsUtf8 {}
-
-#[typetag::serde]
-impl ScalarUDF for AsUtf8 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn name(&self) -> &'static str {
-        "decode" // it's a special-case (lowered) of the decode method
-    }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        to_field(inputs, schema, DataType::Utf8)
-    }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs[0].data_type() {
-            DataType::Binary => {
-                let arg = inputs[0].downcast::<BinaryArray>()?;
-                let res = arg.as_utf8()?;
-                Ok(res.into_series())
-            }
-            DataType::FixedSizeBinary(_) => {
-                let arg = inputs[0].downcast::<FixedSizeBinaryArray>()?;
-                let res = arg.as_utf8()?;
-                Ok(res.into_series())
-            }
-            _ => unreachable!("type checking handled in to_field"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct TryAsUtf8 {}
-
-#[typetag::serde]
-impl ScalarUDF for TryAsUtf8 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn name(&self) -> &'static str {
-        "try_decode" // it's a special-case (lowered) of the try_decode method
-    }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        to_field(inputs, schema, DataType::Utf8)
-    }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs[0].data_type() {
-            DataType::Binary => {
-                let arg = inputs[0].downcast::<BinaryArray>()?;
-                let res = arg.try_as_utf8()?;
-                Ok(res.into_series())
-            }
-            DataType::FixedSizeBinary(_) => {
-                let arg = inputs[0].downcast::<FixedSizeBinaryArray>()?;
-                let res = arg.try_as_utf8()?;
-                Ok(res.into_series())
             }
             _ => unreachable!("type checking handled in to_field"),
         }
