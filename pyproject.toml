@@ -90,7 +90,8 @@ dependencies = [
   "fsspec",
   "tqdm",
   "typing-extensions >= 4.0.0; python_version < '3.10'",
-  "importlib-metadata; python_version < '3.10'"
+  "importlib-metadata; python_version < '3.10'",
+  "vllm>=0.7.2"
 ]
 description = "Distributed Dataframes for Multimodal Data"
 dynamic = ["version"]
