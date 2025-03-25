@@ -36,3 +36,13 @@ def test_with_start_end_and_step_kwargs():
 def test_with_no_args_raises_error():
     with pytest.raises(TypeError):
         daft.range()
+
+
+def test_range_can_consume_multiple_times():
+    df = daft.range(start=0, end=10, step=1, partitions=2)
+    assert df.num_partitions() == 2
+    assert df.num_partitions() == 2
+    assert df.count_rows() == 10
+    assert df.count_rows() == 10
+    assert df.to_pydict() == {"id": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]}
+    assert df.to_pydict() == {"id": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]}

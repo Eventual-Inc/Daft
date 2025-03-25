@@ -9,7 +9,7 @@ from typing import overload
 
 from daft import DataType
 from daft.api_annotations import PublicAPI
-from daft.daft import ScanOperatorHandle
+from daft.daft import Pushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
 from daft.io._generator import GeneratorScanOperator
 from daft.logical.builder import LogicalPlanBuilder
@@ -143,9 +143,6 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
 def _range_generators(
     start: int, end: int, step: int, partitions: int
 ) -> Iterator[Callable[[], Iterator[RecordBatch]]]:
-    # TODO: Partitioning with range scan is currently untested and unused.
-    # There may be issues with balanced partitions and step size.
-
     # Calculate partition bounds upfront
     partition_size = (end - start) // partitions
     partition_bounds = [
@@ -164,8 +161,31 @@ def _range_generators(
         yield partial(generator, partition_idx)
 
 
+def _generator_factory_function(func: Callable[[], Iterator[RecordBatch]]) -> Iterator[PyRecordBatch]:
+    for table in func():
+        yield table._table
+
+
 class RangeScanOperator(GeneratorScanOperator):
     def __init__(self, start: int, end: int, step: int = 1, partitions: int = 1) -> None:
         schema = Schema._from_field_name_and_types([("id", DataType.int64())])
-
+        self.start = start
+        self.end = end
+        self.step = step
+        self.partitions = partitions
         super().__init__(schema=schema, generators=_range_generators(start, end, step, partitions))
+
+    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+        for generator in self._generators:
+            yield ScanTask.python_factory_func_scan_task(
+                module=_generator_factory_function.__module__,
+                func_name=_generator_factory_function.__name__,
+                func_args=(generator,),
+                schema=self.schema()._schema,
+                num_rows=None,
+                size_bytes=None,
+                pushdowns=pushdowns,
+                stats=None,
+            )
+        # reset the state after it's been consumed
+        self._generators = _range_generators(self.start, self.end, self.step, self.partitions)
