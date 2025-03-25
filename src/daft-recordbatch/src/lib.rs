@@ -584,6 +584,7 @@ impl RecordBatch {
             Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
             Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
+            Expr::TryCast(child, dtype) => self.eval_expression(child)?.try_cast(dtype),
             // TODO: remove ability to evaluate on unresolved col once we fix all tests
             Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) | Expr::Column(Column::Unresolved(UnresolvedColumn { name, plan_ref: PlanRef::Unqualified, plan_schema: None })) => self.get_column(name).cloned(),
             Expr::Not(child) => !(self.eval_expression(child)?),

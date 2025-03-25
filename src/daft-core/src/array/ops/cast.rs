@@ -9,7 +9,7 @@ use arrow2::{
     bitmap::utils::SlicesIterator,
     compute::{
         self,
-        cast::{can_cast_types, cast, CastOptions},
+        cast::{can_cast_types, cast},
     },
     offset::Offsets,
 };
@@ -49,107 +49,120 @@ use crate::{
     with_match_numeric_daft_types,
 };
 
+/// Daft cast options
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CastOptions {
+    /// deafult to false
+    /// whether to insert null if the cast fails
+    permissive: bool,
+}
+
+impl CastOptions {
+    /// Options for the try_cast
+    pub fn permissive() -> Self {
+        Self { permissive: true }
+    }
+
+    /// These options are sent to the arrow2 cast kernels
+    pub fn to_arrow(&self) -> arrow2::compute::cast::CastOptions {
+        arrow2::compute::cast::CastOptions {
+            wrapped: true,
+            partial: false,
+            permissive,
+        }
+    }
+}
+
 impl<T> DataArray<T>
 where
     T: DaftArrowBackedType,
 {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match dtype {
-            #[cfg(feature = "python")]
-            DataType::Python => {
-                use pyo3::prelude::*;
-
-                use crate::python::PySeries;
-                // Convert something to Python.
-
-                // Use the existing logic on the Python side of the PyO3 layer
-                // to create a Python list out of this series.
-                let old_pyseries =
-                    PySeries::from(Series::try_from((self.name(), self.data.clone()))?);
-
-                let new_pyseries: PySeries = Python::with_gil(|py| -> PyResult<PySeries> {
-                    PyModule::import(py, pyo3::intern!(py, "daft.series"))?
-                        .getattr(pyo3::intern!(py, "Series"))?
-                        .getattr(pyo3::intern!(py, "_from_pyseries"))?
-                        .call1((old_pyseries,))?
-                        .call_method0(pyo3::intern!(py, "_cast_to_python"))?
-                        .getattr(pyo3::intern!(py, "_series"))?
-                        .extract()
-                })?;
-                Ok(new_pyseries.into())
-            }
-            _ => {
-                // Cast from DataArray to the target DataType
-                // by using Arrow's casting mechanisms.
-
-                if !dtype.is_arrow() || !self.data_type().is_arrow() {
-                    return Err(DaftError::TypeError(format!(
-                        "Can not cast {:?} to type: {:?}: not convertible to Arrow",
-                        self.data_type(),
-                        dtype
-                    )));
-                }
-                let target_physical_type = dtype.to_physical();
-                let target_arrow_type = dtype.to_arrow()?;
-                let target_arrow_physical_type = target_physical_type.to_arrow()?;
-                let self_physical_type = self.data_type().to_physical();
-                let self_arrow_type = self.data_type().to_arrow()?;
-                let self_physical_arrow_type = self_physical_type.to_arrow()?;
-
-                let result_array = if target_arrow_physical_type == target_arrow_type {
-                    if !can_cast_types(&self_arrow_type, &target_arrow_type) {
-                        return Err(DaftError::TypeError(format!(
-                            "can not cast {:?} to type: {:?}: Arrow types not castable, {:?}, {:?}",
-                            self.data_type(),
-                            dtype,
-                            self_arrow_type,
-                            target_arrow_type,
-                        )));
-                    }
-                    cast(
-                        self.data(),
-                        &target_arrow_type,
-                        CastOptions {
-                            wrapped: true,
-                            partial: false,
-                        },
-                    )?
-                } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
-                    // Cast from logical Arrow2 type to logical Arrow2 type.
-                    cast(
-                        self.data(),
-                        &target_arrow_type,
-                        CastOptions {
-                            wrapped: true,
-                            partial: false,
-                        },
-                    )?
-                } else if can_cast_types(&self_physical_arrow_type, &target_arrow_physical_type) {
-                    // Cast from physical Arrow2 type to physical Arrow2 type.
-                    cast(
-                        self.data(),
-                        &target_arrow_physical_type,
-                        CastOptions {
-                            wrapped: true,
-                            partial: false,
-                        },
-                    )?
-                } else {
-                    return Err(DaftError::TypeError(format!(
-                        "can not cast {:?} to type: {:?}: Arrow types not castable.\n{:?}, {:?},\nPhysical types: {:?}, {:?}",
-                        self.data_type(),
-                        dtype,
-                        self_arrow_type,
-                        target_arrow_type,
-                        self_physical_arrow_type,
-                        target_arrow_physical_type,
-                    )));
-                };
-
-                let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
-                Series::from_arrow(new_field, result_array)
-            }
+    fn cast_with_options(&self, target_type: &DataType, options: Options) -> DaftResult<Series> {
+        #[cfg(feature = "python")]
+        if target_type == DataType::Python {
+            return self.cast_to_python();
         }
+
+        // source_type = typeof(self)
+        let source_type = self.data_type();
+        let source_type_arrow = source_type.to_arrow()?;
+        let source_type_physical = source_type.to_physical();
+        let source_type_physical_arrow = source_type_physical.to_arrow()?;
+
+        // cast(_ as target_type)
+        let target_type_arrow = target_type.to_arrow()?;
+        let target_type_physical = target_type.to_physical();
+        let target_type_physical_arrow = target_type_physical.to_arrow()?;
+
+        if !target_type.is_arrow() || !source.is_arrow() {
+            return Err(DaftError::TypeError(format!(
+                "Can not cast {:?} to type: {:?}: not convertible to Arrow",
+                self.data_type(),
+                target_type
+            )));
+        }
+
+        let array = if target_type_physical_arrow == target_type_arrow {
+            if !can_cast_types(&source_type_arrow, &target_type_arrow) {
+                return Err(DaftError::TypeError(format!(
+                    "can not cast {:?} to type: {:?}: Arrow types not castable, {:?}, {:?}",
+                    self.data_type(),
+                    target_type,
+                    source_type_arrow,
+                    target_type_arrow,
+                )));
+            }
+            cast(self.data(), &target_type_arrow, options.to_arrow())?
+        } else if can_cast_types(&source_type_arrow, &target_type_arrow) {
+            // Cast from logical Arrow2 type to logical Arrow2 type.
+            cast(self.data(), &target_type_arrow, options.to_arrow())?
+        } else if can_cast_types(&source_type_physical_arrow, &target_type_physical_arrow) {
+            // Cast from physical Arrow2 type to physical Arrow2 type.
+            cast(self.data(), &target_type_physical_arrow, options.to_arrow())?
+        } else {
+            return Err(DaftError::TypeError(format!(
+                "can not cast {:?} to type: {:?}: Arrow types not castable.\n{:?}, {:?},\nPhysical types: {:?}, {:?}",
+                self.data_type(),
+                target_type,
+                source_type_arrow,
+                target_type_arrow,
+                source_type_physical_arrow,
+                target_type_physical_arrow,
+            )));
+        };
+
+        let field = Arc::new(Field::new(self.name(), target_type.clone()));
+        Series::from_arrow(field, array)
+    }
+
+    /// Cast with default daft options.
+    pub fn cast(&self, target_type: &DataType) -> DaftResult<Series> {
+        self.cast_with_options(target_type, CastOptions::default())
+    }
+
+    /// Cast with permissive option, insert null on failures.
+    pub fn try_cast(&self, target: &DataType) -> DaftResult<Series> {
+        self.cast_with_options(target_type, CastOptions::permissive())
+    }
+
+    /// Cast to python object delegates to existing python series cast logic.
+    #[cfg(feature = "python")]
+    fn cast_to_python(&self) -> DaftResult<Series> {
+        use pyo3::prelude::*;
+
+        use crate::python::PySeries;
+
+        let old_pyseries = PySeries::from(Series::try_from((self.name(), self.data.clone()))?);
+        let new_pyseries = Python::with_gil(|py| -> PyResult<PySeries> {
+            PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+                .getattr(pyo3::intern!(py, "Series"))?
+                .getattr(pyo3::intern!(py, "_from_pyseries"))?
+                .call1((old_pyseries,))?
+                .call_method0(pyo3::intern!(py, "_cast_to_python"))?
+                .getattr(pyo3::intern!(py, "_series"))?
+                .extract()
+        })?;
+        Ok(new_pyseries.into())
     }
 }
 
@@ -403,10 +416,7 @@ impl DurationArray {
         let days_i32 = cast(
             days.data(),
             &arrow2::datatypes::DataType::Int32,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
+            CastOptions::default().to_arrow(),
         )?;
         Int32Array::from_arrow(Field::new(self.name(), DataType::Int32).into(), days_i32)
     }
@@ -993,6 +1003,12 @@ fn extract_python_like_to_tensor_array<
 
 #[cfg(feature = "python")]
 impl PythonArray {
+
+    pub fn try_cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        // TODO try_cast with python
+        self.cast(dtype)
+    }
+
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         use pyo3::prelude::*;
 

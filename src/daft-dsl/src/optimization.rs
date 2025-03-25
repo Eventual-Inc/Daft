@@ -24,6 +24,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         Expr::Agg(..)
         | Expr::BinaryOp { .. }
         | Expr::Cast(..)
+        | Expr::TryCast(..)
         | Expr::Function { .. }
         | Expr::ScalarFunction { .. }
         | Expr::Not(..)

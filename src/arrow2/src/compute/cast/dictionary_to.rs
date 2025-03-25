@@ -58,6 +58,7 @@ pub fn wrapping_dictionary_to_dictionary_values<K: DictionaryKey>(
         CastOptions {
             wrapped: true,
             partial: false,
+            permissive: false,
         },
     )?;
     assert_eq!(values.len(), length); // this is guaranteed by `cast`

@@ -31,6 +31,9 @@ pub struct CastOptions {
     /// default to false
     /// whether to cast to an integer at the best-effort
     pub partial: bool,
+    /// default to false
+    /// whether to insert null if the cast fails
+    pub permissive: bool,
 }
 
 impl CastOptions {

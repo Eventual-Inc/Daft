@@ -252,6 +252,13 @@ fn replace_column_with_semantic_id(
                         |_| e.clone(),
                     )
             }
+            Expr::TryCast(child, datatype) => {
+                replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_child| Expr::TryCast(transformed_child, datatype.clone()).into(),
+                        |_| e.clone(),
+                    )
+            }
             Expr::Not(child) => {
                 replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                     .map_yes_no(
