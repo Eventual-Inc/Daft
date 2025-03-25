@@ -2,7 +2,7 @@ use std::iter;
 
 use arrow2::{
     array::BinaryArray as ArrowBinaryArray,
-    bitmap::utils::{BitmapIter, ZipValidity},
+    bitmap::{utils::{BitmapIter, ZipValidity}, MutableBitmap},
     datatypes::DataType as ArrowType,
     offset::Offsets,
 };
@@ -274,7 +274,7 @@ impl BinaryArray {
             offsets.try_push(bytes.len() as i64)?;
             values.extend(bytes);
         }
-        //
+        // create daft BinaryArray from the arrow BinaryArray<i64>
         let array = ArrowBinaryArray::new(
             ArrowType::LargeBinary,
             offsets.into(),
@@ -286,11 +286,42 @@ impl BinaryArray {
     }
 
     /// For binary-to-binary transformations, but inserts null on failures.
-    pub fn try_transform<Transform>(&self, _: Transform) -> DaftResult<Self>
+    pub fn try_transform<Transform>(&self, transform: Transform) -> DaftResult<Self>
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        todo!("try_transform")
+        let input = self.as_arrow();
+        let buffer = input.values();
+        let mut validity = match input.validity() {
+            Some(bitmap) => bitmap.clone().make_mut(),
+            None => MutableBitmap::from_len_set(input.len()),
+        };
+        // 
+        let mut values = Vec::<u8>::new();
+        let mut offsets = Offsets::<i64>::new();
+        for (i, span) in input.offsets().windows(2).enumerate() {
+            let s = span[0] as usize;
+            let e = span[1] as usize;
+            match transform(&buffer[s..e]) {
+                Ok(bytes) => {
+                    offsets.try_push(bytes.len() as i64)?;
+                    values.extend(bytes);
+                }
+                Err(_) => {
+                    offsets.try_push(0)?;
+                    validity.set(i, false);
+                }
+            }
+        }
+        //
+        let array = ArrowBinaryArray::new(
+            ArrowType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            Some(validity.into()),
+        );
+        let array = Box::new(array);
+        Ok(Self::from((self.name(), array)))
     }
 
     /// For binary-to-text decoding.
@@ -307,16 +338,6 @@ impl BinaryArray {
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
         unreachable!("there are currently no text codecs other than the utf-8 special case.")
-    }
-
-    /// Special binary-to-text decoding optimization where the bytes are cast as utf-8.
-    pub fn as_utf8(&self) -> DaftResult<Utf8Array> {
-        todo!("as_utf8")
-    }
-
-    /// Special binary-to-text decoding optimization where the bytes are cast as utf-8, but inserts null on failures.
-    pub fn try_as_utf8(&self) -> DaftResult<Utf8Array> {
-        todo!("as_utf8")
     }
 }
 
@@ -392,10 +413,10 @@ impl FixedSizeBinaryArray {
         for i in 0..chunks {
             let s = i * size;
             let e = s + size;
-            let transformed = transform(&buffer[s..e])?;
+            let bytes = transform(&buffer[s..e])?;
             //
-            offsets.try_push(transformed.len() as i64)?;
-            values.extend(transformed);
+            offsets.try_push(bytes.len() as i64)?;
+            values.extend(bytes);
         }
         //
         let array = ArrowBinaryArray::new(
@@ -409,11 +430,44 @@ impl FixedSizeBinaryArray {
     }
 
     /// For binary-to-binary transformations, but inserts null on failures.
-    pub fn try_transform<Transform>(&self, _: Transform) -> DaftResult<BinaryArray>
+    pub fn try_transform<Transform>(&self, transform: Transform) -> DaftResult<BinaryArray>
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        todo!("try_transform")
+        let input = self.as_arrow();
+        let size = input.size();
+        let buffer = input.values();
+        let chunks = buffer.len() / size;
+        let mut validity = match input.validity() {
+            Some(bitmap) => bitmap.clone().make_mut(),
+            None => MutableBitmap::from_len_set(input.len()),
+        };
+        // 
+        let mut values = Vec::<u8>::new();
+        let mut offsets = Offsets::<i64>::new();
+        for i in 0..chunks {
+            let s = i * size;
+            let e = s + size;
+            match transform(&buffer[s..e]) {
+                Ok(bytes) => {
+                    offsets.try_push(bytes.len() as i64)?;
+                    values.extend(bytes);
+                }
+                Err(_) => {
+                    offsets.try_push(0)?;
+                    validity.set(i, false);
+                }
+            }
+        }
+        //
+        let array = ArrowBinaryArray::new(
+            ArrowType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            Some(validity.into()),
+        );
+        let array = Box::new(array);
+        Ok(BinaryArray::from((self.name(), array)))
     }
 
     /// For binary-to-text decoding.

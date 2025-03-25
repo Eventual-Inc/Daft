@@ -7,7 +7,7 @@ from daft import col
 #  - https://docs.python.org/3/library/codecs.html#text-encodings
 #  - https://docs.python.org/3/library/codecs.html#binary-transforms
 
-UTF8 = b"""
+TEXT = b"""
 Every great magic trick consists of three parts or acts. The first part is
 called "The Pledge". The magician shows you something ordinary: a deck of
 cards, a bird or a man. He shows you this object. Perhaps he asks you to
@@ -31,9 +31,9 @@ def _assert_eq(actual, expect):
 
 
 def _test_codec(codec: str, buff: bytes):
-    _test_encode(codec, input=UTF8, output=buff)
-    _test_decode(codec, input=buff, output=UTF8)
-    _test_roundtrip(codec, input=UTF8)
+    _test_encode(codec, input=TEXT, output=buff)
+    _test_decode(codec, input=buff, output=TEXT)
+    _test_roundtrip(codec, input=TEXT)
 
 
 def _test_encode(codec: str, input: bytes, output: bytes):
@@ -60,8 +60,8 @@ def test_null_handling():
     import zlib
 
     #
-    df1 = daft.from_pydict({"v": [None, zlib.compress(UTF8)]})
-    df2 = daft.from_pydict({"v": [zlib.compress(UTF8), None]})
+    df1 = daft.from_pydict({"v": [None, zlib.compress(TEXT)]})
+    df2 = daft.from_pydict({"v": [zlib.compress(TEXT), None]})
     result1 = df1.select(col("v").decode("zlib")).to_pydict()
     result2 = df2.select(col("v").decode("zlib")).to_pydict()
     #
@@ -73,7 +73,7 @@ def test_null_handling():
 def test_with_strings():
     import zlib
 
-    _test_encode("zlib", input=str(UTF8), output=zlib.compress(UTF8))
+    _test_encode("zlib", input=str(TEXT), output=zlib.compress(TEXT))
 
 
 ###
@@ -86,20 +86,20 @@ def test_codec_deflate():
 
     # https://stackoverflow.com/questions/1089662/python-inflate-and-deflate-implementations
     # strip 2-byte zlib header and the 4-byte checksum
-    _test_codec("deflate", buff=zlib.compress(UTF8)[2:-4])
+    _test_codec("deflate", buff=zlib.compress(TEXT)[2:-4])
 
 
 def test_codec_gzip():
     import gzip
 
-    _test_codec("gz", buff=gzip.compress(UTF8))
-    _test_codec("gzip", buff=gzip.compress(UTF8))
+    _test_codec("gz", buff=gzip.compress(TEXT))
+    _test_codec("gzip", buff=gzip.compress(TEXT))
 
 
 def test_codec_zlib():
     import zlib
 
-    _test_codec("zlib", buff=zlib.compress(UTF8))
+    _test_codec("zlib", buff=zlib.compress(TEXT))
 
 
 def test_codec_base64():
@@ -115,3 +115,46 @@ def test_codec_zstd():
 def test_codec_bz2():
     with pytest.raises(Exception, match="unsupported codec"):
         _test_codec("bz2", None)
+
+###
+# utf-8 special handling
+###
+
+def test_decode_utf8():
+    df = daft.from_pydict({"bytes": [None, TEXT]})
+    actual = df.select(col("bytes").decode("utf-8"))
+    expect = {"bytes": [None, TEXT.decode("utf-8")]}
+    assert actual.to_pydict() == expect
+
+###
+# try_ tests
+###
+
+def test_try_encode():
+    pass
+
+def test_try_decode():
+    import zlib
+    import gzip
+
+    df = daft.from_pydict(
+        {
+            "bytes": [
+                None,
+                zlib.compress(TEXT),
+                gzip.compress(TEXT),
+                TEXT,
+            ]
+        }
+    )
+    actual = df.select(
+        col("bytes").try_decode("zlib").alias("try_zlib"),
+        col("bytes").try_decode("gzip").alias("try_gzip"),
+    )
+    expect = {
+        "try_zlib": [ None, TEXT, None, None ],
+        "try_gzip": [ None, None, TEXT, None ],
+    }
+    assert actual.to_pydict() == expect
+
+
