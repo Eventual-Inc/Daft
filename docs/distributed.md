@@ -276,16 +276,6 @@ df = daft.from_pydict({"nums": [1,2,3]})
 df.agg(daft.col("nums").mean()).show()
 ```
 
-#### Example Daft Script
-
-```python
-import daft
-
-# Ray context is automatically set by Daft CLI
-df = daft.from_pydict({"nums": [1,2,3]})
-df.agg(daft.col("nums").mean()).show()
-```
-
 ## SQL Query Support
 
 Daft supports running SQL queries against your data using the postgres dialect:
