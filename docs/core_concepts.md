@@ -1,3 +1,9 @@
+<style>
+   .md-nav--secondary .md-nav {
+     display: none;
+   }
+</style>
+
 # Core Concepts
 
 Learn about the core concepts that Daft is built on!

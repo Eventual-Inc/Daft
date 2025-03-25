@@ -1,3 +1,9 @@
+<style>
+   .md-nav--secondary .md-nav {
+     display: none;
+   }
+</style>
+
 # Distributed Computing
 
 By default, Daft runs using your local machine's resources and your operations are thus limited by the CPUs, memory and GPUs available to you in your single local development machine.
