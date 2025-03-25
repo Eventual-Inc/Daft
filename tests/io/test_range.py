@@ -42,3 +42,4 @@ def test_range_called_multiple_times():
     df = daft.range(10)
     assert df.count_rows() == 10
     assert df.count_rows() == 10
+    assert df.count_rows() == 10
