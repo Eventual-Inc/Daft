@@ -164,7 +164,7 @@ extra_css:
 markdown_extensions:
 - admonition
 - toc:
-    toc_depth: 3
+    toc_depth: 2
     permalink: "#"
 - pymdownx.tabbed:
     alternate_style: true
