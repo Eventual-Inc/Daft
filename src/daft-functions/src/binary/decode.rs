@@ -21,17 +21,18 @@ use crate::invalid_argument_err;
 pub fn decode(input: ExprRef, codec: Codec) -> ExprRef {
     if codec == Codec::Utf8 {
         // special-case for decode('utf-8')
-        return input.cast(&DataType::Utf8)
+        return input.cast(&DataType::Utf8);
     }
     ScalarFunction::new(Decode { codec }, vec![input]).into()
 }
 
 #[must_use]
 pub fn try_decode(input: ExprRef, codec: Codec) -> ExprRef {
-    if codec == Codec::Utf8 {
-        // special-case for try_decode('utf-8')
-        return input.try_cast(&DataType::Utf8)
-    }
+    // TODO this path requires try_cast, for now use a binary-to-text decode
+    // if codec == Codec::Utf8 {
+    //     // special-case for try_decode('utf-8')
+    //     return input.try_cast(&DataType::Utf8)
+    // }
     ScalarFunction::new(TryDecode { codec }, vec![input]).into()
 }
 

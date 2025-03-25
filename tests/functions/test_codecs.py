@@ -116,9 +116,11 @@ def test_codec_bz2():
     with pytest.raises(Exception, match="unsupported codec"):
         _test_codec("bz2", None)
 
+
 ###
 # utf-8 special handling
 ###
+
 
 def test_decode_utf8():
     df = daft.from_pydict({"bytes": [None, TEXT]})
@@ -126,16 +128,172 @@ def test_decode_utf8():
     expect = {"bytes": [None, TEXT.decode("utf-8")]}
     assert actual.to_pydict() == expect
 
+
+def test_try_decode_utf8():
+    # source
+    # https://stackoverflow.com/questions/1301402/example-invalid-utf8-string
+    # https://www.php.net/manual/en/reference.pcre.pattern.modifiers.php#54805
+    valid_ascii = b"a"
+    valid_2_octet = b"\xc3\xb1"
+    invalid_2_octet = b"\xc3\x28"
+    invalid_seq_id = b"\xa0\xa1"
+    valid_3_octet = b"\xe2\x82\xa1"
+    invalid_3_octet_2nd = b"\xe2\x28\xa1"
+    invalid_3_octet_3rd = b"\xe2\x82\x28"
+    valid_4_octet = b"\xf0\x90\x8c\xbc"
+    invalid_4_octet_2nd = b"\xf0\x28\x8c\xbc"
+    invalid_4_octet_3rd = b"\xf0\x90\x28\xbc"
+    invalid_4_octet_4th = b"\xf0\x28\x8c\x28"
+    valid_5_octet = b"\xf8\xa1\xa1\xa1\xa1"
+    valid_6_octet = b"\xfc\xa1\xa1\xa1\xa1\xa1"
+
+    df = daft.from_pydict(
+        {
+            "bytes": [
+                None,
+                TEXT,
+                valid_ascii,
+                valid_2_octet,
+                invalid_2_octet,
+                invalid_seq_id,
+                valid_3_octet,
+                invalid_3_octet_2nd,
+                invalid_3_octet_3rd,
+                valid_4_octet,
+                invalid_4_octet_2nd,
+                invalid_4_octet_3rd,
+                invalid_4_octet_4th,
+                valid_5_octet,
+                valid_6_octet,
+            ],
+            "note": [
+                "None",
+                "Valid TEXT",
+                "Valid ASCII",
+                "Valid 2 Octet Sequence",
+                "Invalid 2 Octet Sequence",
+                "Invalid Sequence Identifier",
+                "Valid 3 Octet Sequence",
+                "Invalid 3 Octet Sequence (in 2nd Octet)",
+                "Invalid 3 Octet Sequence (in 3rd Octet)",
+                "Valid 4 Octet Sequence",
+                "Invalid 4 Octet Sequence (in 2nd Octet)",
+                "Invalid 4 Octet Sequence (in 3rd Octet)",
+                "Invalid 4 Octet Sequence (in 4th Octet)",
+                "Valid 5 Octet Sequence (but not Unicode!)",
+                "Valid 6 Octet Sequence (but not Unicode!)",
+            ],
+        }
+    )
+
+    result = df.select(col("bytes").try_decode("utf-8").alias("decoded"), col("note"))
+
+    expected = {
+        "decoded": [
+            None,
+            TEXT.decode("utf-8"),
+            str(valid_ascii, "utf-8"),
+            str(valid_2_octet, "utf-8"),
+            None,  # Invalid 2 Octet Sequence
+            None,  # Invalid Sequence Identifier
+            str(valid_3_octet, "utf-8"),
+            None,  # Invalid 3 Octet Sequence (in 2nd Octet)
+            None,  # Invalid 3 Octet Sequence (in 3rd Octet)
+            str(valid_4_octet, "utf-8"),
+            None,  # Invalid 4 Octet Sequence (in 2nd Octet)
+            None,  # Invalid 4 Octet Sequence (in 3rd Octet)
+            None,  # Invalid 4 Octet Sequence (in 4th Octet)
+            None,  # Valid 5 Octet Sequence (but not Unicode!)
+            None,  # Valid 6 Octet Sequence (but not Unicode!)
+        ],
+        "note": df.to_pydict()["note"],
+    }
+
+    assert result.to_pydict() == expected
+
+
+@pytest.mark.skipped("sanity perf checking")
+def test_try_decode_utf8_perf():
+    from daft import DataType as dt
+
+    @daft.udf(return_dtype=dt.string())
+    def try_decode_utf8_udf(binary_series):
+        strings = []
+        for binary in binary_series:
+            try:
+                string = binary.decode("utf-8")
+                strings.append(string)
+            except UnicodeDecodeError:
+                strings.append(None)
+        return strings
+
+    # Create a large dataset with valid and invalid UTF-8 strings
+    n = 1_000_000
+    valid_data = [TEXT] * (n // 2)
+    invalid_data = [b"\xc3\x28"] * (n // 2)  # Invalid UTF-8 sequence
+    mixed_data = valid_data + invalid_data
+
+    df = daft.from_pydict({"bytes": mixed_data})
+
+    import statistics
+    import time
+
+    # run tests multiple times for statistical significance
+    udf_times = []
+    native_times = []
+    iterations = 11  # first one is warm-up
+
+    for i in range(iterations):
+        # test udf
+        start = time.time()
+        _ = df.select(try_decode_utf8_udf(col("bytes")).alias("decoded")).collect()
+        elapsed = time.time() - start
+        if i > 0:  # Skip the first iteration (warm-up)
+            udf_times.append(elapsed)
+        # test try_decode('utf-8')
+        start = time.time()
+        _ = df.select(col("bytes").try_decode("utf-8").alias("decoded")).collect()
+        elapsed = time.time() - start
+        if i > 0:  # Skip the first iteration (warm-up)
+            native_times.append(elapsed)
+
+    udf_time = sum(udf_times) / len(udf_times)
+    native_time = sum(native_times) / len(native_times)
+
+    # Statistical summary
+    udf_stats = {
+        "mean": udf_time,
+        "median": statistics.median(udf_times),
+        "min": min(udf_times),
+        "max": max(udf_times),
+        "stdev": statistics.stdev(udf_times) if len(udf_times) > 1 else 0,
+    }
+
+    native_stats = {
+        "mean": native_time,
+        "median": statistics.median(native_times),
+        "min": min(native_times),
+        "max": max(native_times),
+        "stdev": statistics.stdev(native_times) if len(native_times) > 1 else 0,
+    }
+
+    print(f"Native try_decode stats (seconds): {native_stats}")
+    print(f"UDF try_decode stats (seconds): {udf_stats}")
+    print(f"Average speedup: {udf_time / native_time:.2f}x")
+
+
 ###
 # try_ tests
 ###
 
+
 def test_try_encode():
     pass
 
+
 def test_try_decode():
-    import zlib
     import gzip
+    import zlib
 
     df = daft.from_pydict(
         {
@@ -152,9 +310,7 @@ def test_try_decode():
         col("bytes").try_decode("gzip").alias("try_gzip"),
     )
     expect = {
-        "try_zlib": [ None, TEXT, None, None ],
-        "try_gzip": [ None, None, TEXT, None ],
+        "try_zlib": [None, TEXT, None, None],
+        "try_gzip": [None, None, TEXT, None],
     }
     assert actual.to_pydict() == expect
-
-
