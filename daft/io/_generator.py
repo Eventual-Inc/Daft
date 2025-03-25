@@ -76,7 +76,7 @@ class GeneratorScanOperator(ScanOperator):
         generators: Iterator[Callable[[], Iterator["RecordBatch"]]],
         schema: Schema,
     ):
-        self._generators = generators
+        self._generators = list(generators)
         self._schema = schema
 
     def name(self) -> str:
