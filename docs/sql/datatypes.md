@@ -8,33 +8,33 @@ These tables define how Daft's [DataType](../api_docs/datatypes.md) maps to the 
 
 ## Boolean Type
 
-| Type   | Name      | Aliases | Description       |
-| ------ | --------- | ------- | ----------------- |
-| `bool` | `BOOLEAN` | `BOOL`  | `TRUE` or `FALSE` |
+| Type                                  | Name      | Aliases | Description       |
+| ------------------------------------- | --------- | ------- | ----------------- |
+| [`bool`][daft.datatype.DataType.bool] | `BOOLEAN` | `BOOL`  | `TRUE` or `FALSE` |
 
 
 ## Numeric Types
 
-| Type         | Name                       | Aliases                         | Description             |
-| ------------ | -------------------------- | ------------------------------- | ----------------------- |
-| `int8`       | `TINYINT`                  | `INT1`                          | 8-bit signed integer    |
-| `int16`      | `SMALLINT`                 | `INT2`, `INT16`                 | 16-bit signed integer   |
-| `int32`      | `INT`, `INTEGER`           | `INT4`, `INT32`                 | 32-bit signed integer   |
-| `int64`      | `BIGINT`                   | `INT8`, `INT64`                 | 64-bit signed integer   |
-| `uint8`      | `TINYINT UNSIGNED`         | `UINT1`                         | 8-bit unsigned integer  |
-| `uint16`     | `SMALLINT UNSIGNED`        | `UINT2`, `UINT16`               | 16-bit unsigned integer |
-| `uint32`     | `INT UNSIGNED`             | `UINT4`, `UINT32`               | 32-bit unsigned integer |
-| `uint64`     | `BIGINT UNSIGNED`          | `UINT8`, `UINT64`               | 64-bit unsigned integer |
-| `float32`    | `REAL`                     | `FLOAT(P)`, `FLOAT32`           | 32-bit floating point   |
-| `float64`    | `DOUBLE [PRECISION]`       | `FLOAT(P)`, `FLOAT64` , `FLOAT` | 64-bit floating point   |
-| `decimal128` | `DEC(P,S)`, `DECIMAL(P,S)` | `NUMERIC(P,S)`                  | Fixed-point number      |
+| Type                                              | Name                       | Aliases                         | Description             |
+| ------------------------------------------------- | -------------------------- | ------------------------------- | ----------------------- |
+| [`int8`][daft.datatype.DataType.int8]             | `TINYINT`                  | `INT1`                          | 8-bit signed integer    |
+| [`int16`][daft.datatype.DataType.int16]           | `SMALLINT`                 | `INT2`, `INT16`                 | 16-bit signed integer   |
+| [`int32`][daft.datatype.DataType.int32]           | `INT`, `INTEGER`           | `INT4`, `INT32`                 | 32-bit signed integer   |
+| [`int64`][daft.datatype.DataType.int64]           | `BIGINT`                   | `INT8`, `INT64`                 | 64-bit signed integer   |
+| [`uint8`][daft.datatype.DataType.uint8]           | `TINYINT UNSIGNED`         | `UINT1`                         | 8-bit unsigned integer  |
+| [`uint16`][daft.datatype.DataType.uint16]         | `SMALLINT UNSIGNED`        | `UINT2`, `UINT16`               | 16-bit unsigned integer |
+| [`uint32`][daft.datatype.DataType.uint32]         | `INT UNSIGNED`             | `UINT4`, `UINT32`               | 32-bit unsigned integer |
+| [`uint64`][daft.datatype.DataType.uint64]         | `BIGINT UNSIGNED`          | `UINT8`, `UINT64`               | 64-bit unsigned integer |
+| [`float32`][daft.datatype.DataType.float32]       | `REAL`                     | `FLOAT(P)`, `FLOAT32`           | 32-bit floating point   |
+| [`float64`][daft.datatype.DataType.float64]       | `DOUBLE [PRECISION]`       | `FLOAT(P)`, `FLOAT64` , `FLOAT` | 64-bit floating point   |
+| [`decimal128`][daft.datatype.DataType.decimal128] | `DEC(P,S)`, `DECIMAL(P,S)` | `NUMERIC(P,S)`                  | Fixed-point number      |
 
 
 ## Text Types
 
-| Type     | Name      | Aliases                                 | Description                          |
-| -------- | --------- | --------------------------------------- | ------------------------------------ |
-| `string` | `VARCHAR` | `STRING`, `TEXT`                        | Variable-length string (see warning) |
+| Type                                      | Name      | Aliases                                 | Description                          |
+| ----------------------------------------- | --------- | --------------------------------------- | ------------------------------------ |
+| [`string`][daft.datatype.DataType.string] | `VARCHAR` | `STRING`, `TEXT`                        | Variable-length string (see warning) |
 
 !!! warning "Warning"
 
@@ -43,10 +43,10 @@ These tables define how Daft's [DataType](../api_docs/datatypes.md) maps to the 
 
 ## Binary Types
 
-| Type                | Name        | Aliases    | Description                 |
-| ------------------- | ----------- | ---------- | --------------------------- |
-| `binary`            | `BINARY`    | `BYTES`    | Variable-length byte string |
-| `fixed_size_binary` | `BINARY(N)` | `BYTES(N)` | Fixed-length byte string    |
+| Type                                                            | Name        | Aliases    | Description                 |
+| --------------------------------------------------------------- | ----------- | ---------- | --------------------------- |
+| [`binary`][daft.datatype.DataType.binary]                       | `BINARY`    | `BYTES`    | Variable-length byte string |
+| [`fixed_size_binary`][daft.datatype.DataType.fixed_size_binary] | `BINARY(N)` | `BYTES(N)` | Fixed-length byte string    |
 
 !!! warning "Warning"
 
@@ -55,13 +55,13 @@ These tables define how Daft's [DataType](../api_docs/datatypes.md) maps to the 
 
 ## Datetime Types
 
-| Type        | Names       | Aliases | Description             |
-| ----------- | ----------- | ------- | ----------------------- |
-| `date`      | `DATE`      |         | Date without Time       |
-| `time`      | `TIME`      |         | Time without Date       |
-| `timestamp` | `TIMESTAMP` |         | Date with Time          |
-| `interval`  | `INTERVAL`  |         | Time Interval (YD & DT) |
-| `duration`  | -           |         | Time Duration           |
+| Type                                            | Names       | Aliases | Description             |
+| ----------------------------------------------- | ----------- | ------- | ----------------------- |
+| [`date`][daft.datatype.DataType.date]           | `DATE`      |         | Date without Time       |
+| [`time`][daft.datatype.DataType.time]           | `TIME`      |         | Time without Date       |
+| [`timestamp`][daft.datatype.DataType.timestamp] | `TIMESTAMP` |         | Date with Time          |
+| [`interval`][daft.datatype.DataType.interval]   | `INTERVAL`  |         | Time Interval (YD & DT) |
+| [`duration`][daft.datatype.DataType.duration]   | -           |         | Time Duration           |
 
 !!! warning "Warning"
 
@@ -70,27 +70,27 @@ These tables define how Daft's [DataType](../api_docs/datatypes.md) maps to the 
 
 ## Array Types
 
-| Type              | Name         | Aliases | Description                      |
-| ----------------- | ------------ | ------- | -------------------------------- |
-| `list`            | `T ARRAY[]`  | `T[]`   | Variable-length list of elements |
-| `fixed_size_list` | `T ARRAY[N]` | `T[N]`  | Fixed-length list of elements    |
+| Type                                                        | Name         | Aliases | Description                      |
+| ----------------------------------------------------------- | ------------ | ------- | -------------------------------- |
+| [`list`][daft.datatype.DataType.list]                       | `T ARRAY[]`  | `T[]`   | Variable-length list of elements |
+| [`fixed_size_list`][daft.datatype.DataType.fixed_size_list] | `T ARRAY[N]` | `T[N]`  | Fixed-length list of elements    |
 
 
 ## Map & Struct Types
 
-| Type     | Syntax              | Example                 | Description                         |
-| -------- | ------------------- | ----------------------- | ----------------------------------- |
-| `map`    | `MAP(K, V)`         | `MAP(INT, BOOL)`        | Key-value pairs with the same types |
-| `struct` | `STRUCT(FIELDS...)` | `STRUCT(A INT, B BOOL)` | Named values of varying types       |
+| Type                                      | Syntax              | Example                 | Description                         |
+| ----------------------------------------- | ------------------- | ----------------------- | ----------------------------------- |
+| [`map`][daft.datatype.DataType.map]       | `MAP(K, V)`         | `MAP(INT, BOOL)`        | Key-value pairs with the same types |
+| [`struct`][daft.datatype.DataType.struct] | `STRUCT(FIELDS...)` | `STRUCT(A INT, B BOOL)` | Named values of varying types       |
 
 
 ## Complex Types
 
-| Type        | Syntax                      | Example                  | Description                |
-| ----------- | --------------------------- | ------------------------ | -------------------------- |
-| `tensor`    | `TENSOR(T, [shape...])`     | `TENSOR(INT)`            | Multi-dimensional array    |
-| `image`     | `IMAGE(mode, [dimensions])` | `IMAGE('RGB', 256, 256)` | Image data array           |
-| `embedding` | `EMBEDDING(T, N)`           | `EMBEDDING(INT, 100)`    | Fixed-length numeric array |
+| Type                                            | Syntax                      | Example                  | Description                |
+| ----------------------------------------------- | --------------------------- | ------------------------ | -------------------------- |
+| [`tensor`][daft.datatype.DataType.tensor]       | `TENSOR(T, [shape...])`     | `TENSOR(INT)`            | Multi-dimensional array    |
+| [`image`][daft.datatype.DataType.image]         | `IMAGE(mode, [dimensions])` | `IMAGE('RGB', 256, 256)` | Image data array           |
+| [`embedding`][daft.datatype.DataType.embedding] | `EMBEDDING(T, N)`           | `EMBEDDING(INT, 100)`    | Fixed-length numeric array |
 
 ### Tensor Type
 
@@ -105,7 +105,7 @@ TENSOR(INT, 10, 10, 10)
 
 ### Image Type
 
-The `IMAGE(mode, [dimensions])` type represents an array of pixels with designated pixel type. The supported modes are covered in [ImageMode](../../{{ api_path }}/misc/daft.ImageMode.html). If the height, width, and mode are the same for all images in the array, specifying them when constructing this type is advised, since that will allow Daft to create a more optimized physical representation of the image array.
+The `IMAGE(mode, [dimensions])` type represents an array of pixels with designated pixel type. The supported modes are covered in [ImageMode][daft.daft.ImageMode]. If the height, width, and mode are the same for all images in the array, specifying them when constructing this type is advised, since that will allow Daft to create a more optimized physical representation of the image array.
 
 **Examples**
 
