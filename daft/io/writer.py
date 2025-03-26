@@ -106,14 +106,6 @@ class FileWriterBase(ABC):
         """
         pass
 
-    def overwrite_files_helper(self, metadata):
-        written_file_paths = metadata["path"].to_pylist()
-        if self.write_mode == WriteMode.Overwrite:
-            overwrite_partitions = False
-            overwrite_files(written_file_paths, self.resolved_path, self.fs, overwrite_partitions)
-        elif self.write_mode == WriteMode.OverwritePartitions:
-            overwrite_partitions = True
-            overwrite_files(written_file_paths, self.resolved_path, self.fs, overwrite_partitions)
 
 
 class ParquetFileWriter(FileWriterBase):
@@ -177,7 +169,6 @@ class ParquetFileWriter(FileWriterBase):
         if self.partition_values is not None:
             for col_name in self.partition_values.column_names():
                 metadata[col_name] = self.partition_values.get_column(col_name)
-        self.overwrite_files_helper(metadata)
         return RecordBatch.from_pydict(metadata)
 
 
@@ -232,7 +223,7 @@ class CSVFileWriter(FileWriterBase):
             for col_name in self.partition_values.column_names():
                 metadata[col_name] = self.partition_values.get_column(col_name)
 
-        self.overwrite_files_helper(metadata)
+        # self.overwrite_files_helper(metadata)
 
         return RecordBatch.from_pydict(metadata)
 
