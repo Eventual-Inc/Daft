@@ -44,20 +44,20 @@ class UnityCatalog(Catalog):
     ###
 
     def create_namespace(self, identifier: Identifier | str):
-        raise ValueError("Unity create_namespace not yet supported.")
+        raise NotImplementedError("Unity create_namespace not yet supported.")
 
     def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
-        raise ValueError("Unity create_table not yet supported.")
+        raise NotImplementedError("Unity create_table not yet supported.")
 
     ###
     # drop_*
     ###
 
     def drop_namespace(self, identifier: Identifier | str):
-        raise ValueError("Unity drop_namespace not yet supported.")
+        raise NotImplementedError("Unity drop_namespace not yet supported.")
 
     def drop_table(self, identifier: Identifier | str):
-        raise ValueError("Unity drop_table not yet supported.")
+        raise NotImplementedError("Unity drop_table not yet supported.")
 
     ###
     # get_*
@@ -73,7 +73,7 @@ class UnityCatalog(Catalog):
     ###
 
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        raise ValueError("Unity list_namespaces not yet supported.")
+        raise NotImplementedError("Unity list_namespaces not yet supported.")
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         if pattern is None or pattern == "":
