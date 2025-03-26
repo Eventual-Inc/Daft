@@ -419,11 +419,13 @@ fn pull_up_correlated_cols(
                                 ))),
                                 Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(
                                     outer_field,
+                                    _,
                                 ))),
                             )
                             | (
                                 Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(
                                     outer_field,
+                                    _,
                                 ))),
                                 Expr::Column(Column::Resolved(ResolvedColumn::Basic(
                                     subquery_col_name,
@@ -581,7 +583,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::join::JoinType;
-    use daft_dsl::{unresolved_col, Column, Expr, ResolvedColumn, Subquery};
+    use daft_dsl::{unresolved_col, Column, Expr, PlanRef, ResolvedColumn, Subquery};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::{UnnestPredicateSubquery, UnnestScalarSubquery};
@@ -679,7 +681,10 @@ mod tests {
         let subquery = tbl2
             .filter(
                 unresolved_col("inner_key2").eq(Arc::new(Expr::Column(Column::Resolved(
-                    ResolvedColumn::OuterRef(Field::new("inner_key", DataType::Int64)),
+                    ResolvedColumn::OuterRef(
+                        Field::new("inner_key", DataType::Int64),
+                        PlanRef::Unqualified,
+                    ),
                 )))),
             )?
             .aggregate(vec![unresolved_col("outer_key").max()], vec![])?;
@@ -775,7 +780,10 @@ mod tests {
         let subquery = tbl2
             .filter(
                 unresolved_col("key2").eq(Arc::new(Expr::Column(Column::Resolved(
-                    ResolvedColumn::OuterRef(Field::new("key", DataType::Int64)),
+                    ResolvedColumn::OuterRef(
+                        Field::new("key", DataType::Int64),
+                        PlanRef::Unqualified,
+                    ),
                 )))),
             )?
             .build();

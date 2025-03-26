@@ -1395,7 +1395,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, resolved_col, unresolved_col};
+    use daft_dsl::{lit, resolved_col};
     use daft_logical_plan::LogicalPlanBuilder;
 
     use super::HashJoin;

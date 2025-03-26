@@ -761,7 +761,8 @@ impl LogicalPlanBuilder {
         std::thread::spawn(move || {
             let optimizer = OptimizerBuilder::default()
                 .when(
-                    cfg.as_ref().is_some_and(|conf| conf.enable_join_reordering),
+                    !cfg.as_ref()
+                        .is_some_and(|conf| conf.disable_join_reordering),
                     |builder| builder.reorder_joins(),
                 )
                 .simplify_expressions()
@@ -814,7 +815,8 @@ impl LogicalPlanBuilder {
 
         let optimizer = OptimizerBuilder::default()
             .when(
-                cfg.as_ref().is_some_and(|conf| conf.enable_join_reordering),
+                !cfg.as_ref()
+                    .is_some_and(|conf| conf.disable_join_reordering),
                 |builder| builder.reorder_joins(),
             )
             .simplify_expressions()

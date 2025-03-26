@@ -365,7 +365,7 @@ class Session:
             DataFrame:
 
         Raises:
-            ValueError: If the tables odes not exist.
+            ValueError: If the tables does not exist.
         """
         return self.get_table(identifier).read(**options)
 

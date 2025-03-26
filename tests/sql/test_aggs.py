@@ -112,3 +112,103 @@ def test_having_non_grouped():
     ).to_pydict()
 
     assert actual == {"count": [10]}
+
+
+def test_simple_rollup():
+    data = {"dept": ["IT", "IT", "HR", "HR"], "year": [2022, 2023, 2022, 2023], "cost": [100, 200, 300, 400]}
+    expected = {"dept": ["HR", "IT", None], "year": [None, None, None], "total": [700, 300, 1000]}
+    df = daft.from_pydict(data)
+    catalog = SQLCatalog({"df": df})
+    sql = """
+    SELECT
+        dept,
+        year,
+        SUM(cost) as total
+    FROM df
+    GROUP BY ROLLUP(dept, year)
+    HAVING year IS NULL
+    ORDER BY dept NULLS LAST
+    """
+    actual = daft.sql(sql, catalog).to_pydict()
+    assert actual == expected
+
+
+def test_rollup_null_handling():
+    data = {"dept": ["IT", "IT", "HR", "HR"], "year": [2022, 2023, 2022, 2023], "cost": [100, 200, 300, 400]}
+    expected = {"dept": ["HR", "IT", None], "year": [None, None, None], "total": [700, 300, 1000]}
+    df = daft.from_pydict(data)
+    catalog = SQLCatalog({"df": df})
+
+    sql = """
+    SELECT dept, year, SUM(cost) as total
+    FROM df
+    GROUP BY ROLLUP(dept, year)
+    HAVING year IS NULL
+    ORDER BY dept NULLS LAST
+    """
+    actual = daft.sql(sql, catalog).to_pydict()
+    assert actual == expected
+
+
+def test_rollup_multiple_aggs():
+    data = {
+        "region": ["East", "East", "West", "West"],
+        "product": ["A", "B", "A", "B"],
+        "qty": [10, 20, 30, 40],
+        "price": [5, 8, 6, 9],
+    }
+    expected = {"region": ["East", "West", None], "total_qty": [30, 70, 100], "avg_price": [6.5, 7.5, 7.0]}
+
+    df = daft.from_pydict(data)
+    catalog = SQLCatalog({"df": df})
+
+    sql = """
+    SELECT
+        region,
+        SUM(qty) as total_qty,
+        AVG(price) as avg_price
+    FROM df
+    GROUP BY ROLLUP(region, product)
+    HAVING product IS NULL
+    ORDER BY region NULLS LAST
+    """
+    actual = daft.sql(sql, catalog).to_pydict()
+    assert actual == expected
+
+
+def test_groupby_rollup():
+    data = {
+        "region": ["EMEA", "EMEA", "APAC", "APAC", "AMER", "AMER"],
+        "product": ["HW", "SW", "HW", "SW", "HW", "SW"],
+        "channel": ["Direct", "Partner", "Direct", "Partner", "Direct", "Partner"],
+        "sales": [100, 200, 300, 400, 500, 600],
+        "costs": [50, 80, 120, 160, 200, 240],
+    }
+    expected = {
+        "region": ["AMER", "All Regions"],
+        "product": ["All Products", "All Products"],
+        "channel": ["All Channels", "All Channels"],
+        "total_sales": [1100, 2100],
+        "total_costs": [440, 850],
+        "profit": [660, 1250],
+        "roi": [2.5, 2.4705882352941178],
+    }
+    df = daft.from_pydict(data)
+    catalog = SQLCatalog({"sales": df})
+
+    sql = """
+    SELECT
+        COALESCE(region, 'All Regions') as region,
+        COALESCE(product, 'All Products') as product,
+        COALESCE(channel, 'All Channels') as channel,
+        SUM(sales) as total_sales,
+        SUM(costs) as total_costs,
+        SUM(sales - costs) as profit,
+        SUM(sales) / SUM(costs) as roi
+    FROM df
+    GROUP BY ROLLUP(region, product, channel)
+    HAVING SUM(sales) > 1000
+    ORDER BY region, product, channel;
+    """
+    actual = daft.sql(sql, catalog).to_pydict()
+    assert actual == expected

@@ -5,7 +5,9 @@ use common_error::DaftResult;
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
     count_actor_pool_udfs,
-    functions::python::{get_batch_size, get_concurrency, get_resource_request, get_udf_names},
+    functions::python::{
+        get_concurrency, get_resource_request, get_udf_names, try_get_batch_size_from_udf,
+    },
     ExprRef,
 };
 #[cfg(feature = "python")]
@@ -20,10 +22,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
 
 struct ActorHandle {
     #[cfg(feature = "python")]
@@ -130,7 +129,7 @@ pub struct ActorPoolProjectOperator {
 }
 
 impl ActorPoolProjectOperator {
-    pub fn new(projection: Vec<ExprRef>) -> Self {
+    pub fn try_new(projection: Vec<ExprRef>) -> DaftResult<Self> {
         let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
 
         assert_eq!(
@@ -139,18 +138,18 @@ impl ActorPoolProjectOperator {
         );
 
         let concurrency = get_concurrency(&projection);
-        let batch_size = get_batch_size(&projection);
+        let batch_size = try_get_batch_size_from_udf(&projection)?;
 
         let memory_request = get_resource_request(&projection)
             .and_then(|req| req.memory_bytes())
             .map(|m| m as u64)
             .unwrap_or(0);
-        Self {
+        Ok(Self {
             projection,
             concurrency,
             batch_size,
             memory_request,
-        }
+        })
     }
 }
 
@@ -220,21 +219,8 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         Ok(self.concurrency)
     }
 
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                self.batch_size
-                    .unwrap_or_else(|| runtime_handle.default_morsel_size()),
-            )))
-        } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                self.batch_size
-                    .unwrap_or_else(|| runtime_handle.default_morsel_size()),
-            )))
-        }
+    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
+        self.batch_size
+            .or_else(|| Some(runtime_handle.default_morsel_size()))
     }
 }

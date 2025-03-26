@@ -484,7 +484,7 @@ Adding a new column can be achieved with [`df.with_column()`]({{ api_path }}/dat
 
 #### Selecting Columns Using Wildcards
 
-We can select multiple columns at once using wildcards. The expression [`.col(*)`]({{ api_path }}/expression_methods/daft.col.html) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
+We can select multiple columns at once using wildcards. The expression [`col("*")`]({{ api_path }}/expression_methods/daft.col.html) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
 
 === "🐍 Python"
     ``` python
@@ -506,7 +506,7 @@ We can select multiple columns at once using wildcards. The expression [`.col(*)
 ╰───────┴───────╯
 ```
 
-We can also select multiple columns within structs using `col("struct.*")`:
+We can also select multiple columns within structs using [`col("struct")["*"]`]({{ api_path }}/expression_methods/daft.Expression.__getitem__.html):
 
 === "🐍 Python"
     ``` python
@@ -516,7 +516,7 @@ We can also select multiple columns within structs using `col("struct.*")`:
             {"B": 3, "C": 4}
         ]
     })
-    df.select(col("A.*")).show()
+    df.select(col("A")["*"]).show()
     ```
 
 ``` {title="Output"}
@@ -764,7 +764,7 @@ Wildcards also work very well for accessing all members of a struct column:
     })
 
     # Access all fields of the 'person' struct
-    df.select(col("person.*")).show()
+    df.select(col("person")["*"]).show()
     ```
 
 === "⚙️ SQL"

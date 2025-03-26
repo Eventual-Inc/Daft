@@ -8,7 +8,7 @@ use common_error::DaftResult;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::JoinType;
 use daft_dsl::{
-    left_col, optimization::replace_columns_with_expressions, resolved_col, right_col, ExprRef,
+    left_col, optimization::replace_columns_with_expressions, resolved_col, right_col, Expr, ExprRef
 };
 
 use crate::{
@@ -801,15 +801,23 @@ impl JoinGraphBuilder {
                 LogicalPlan::Filter(Filter { input, .. }) => plan = input,
                 // Since we hit a join, we need to process the linear chain of Projects and Filters that were encountered starting
                 // from the plan at the root of the linear chain to the current plan.
+                // We only process joins with predicates that are all columns.
+                // TODO: Figure out how to handle joins with non-column predicates, such as aliases.
                 LogicalPlan::Join(Join {
                     on,
                     join_type: JoinType::Inner,
                     ..
                 }) => {
                     let mut on = on.clone();
-                    let (left_on, _, _) = on.pop_equi_preds();
+                    let (left_on, right_on, _) = on.pop_equi_preds();
 
-                    if left_on.is_empty() || on.inner().is_some() {
+                    if left_on.is_empty()
+                        || on.inner().is_some()
+                        || !left_on
+                            .iter()
+                            .chain(right_on.iter())
+                            .all(|c| matches!(c.as_ref(), Expr::Column(_)))
+                    {
                         // Encountered a non-reorderable join. Add the root plan at the top of the current linear chain as a relation to join.
                         self.add_relation(root_plan);
                     } else {

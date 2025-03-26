@@ -595,6 +595,41 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr // self._expr)
 
+    def __getitem__(self, key) -> Expression:
+        """Syntactic sugar for `Expression.list.get` and `Expression.struct.get`.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}], "list": [[10, 20], [30, 40]]})
+            >>> df = df.select(df["struct"]["x"], df["list"][0].alias("first"))
+            >>> df.show()
+            ╭───────┬───────╮
+            │ x     ┆ first │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 10    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 30    │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        See Also:
+            `list.get`
+            `struct.get`
+        """
+        key_type = type(key)
+
+        if key_type is int:
+            return self.list.get(key)
+        elif key_type is str:
+            return self.struct.get(key)
+        else:
+            raise TypeError(
+                f"Argument of type {key_type} is not supported in Expression.__getitem__. Only int and string types are supported."
+            )
+
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name.
 
@@ -632,7 +667,7 @@ class Expression:
 
         Note:
             - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
-            - If a string is provided, it will use the sql engine to parse the string into a data type. See the SQL documentation for more information.
+            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://www.getdaft.io/projects/docs/en/stable/sql/datatypes/) for supported datatypes.
             - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
 
         The following combinations of datatype casting is valid:
@@ -3653,7 +3688,7 @@ class ExpressionListNamespace(ExpressionNamespace):
 
 class ExpressionStructNamespace(ExpressionNamespace):
     def get(self, name: str) -> Expression:
-        """Retrieves one field from a struct column.
+        """Retrieves one field from a struct column, or all fields with "*".
 
         Args:
             name: the name of the field to retrieve
