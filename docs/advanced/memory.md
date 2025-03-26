@@ -63,4 +63,4 @@ There are some options available to you.
 
 5. Increase the number of partitions in your dataframe (hence making each partition smaller) using something like: `df.into_partitions(df.num_partitions() * 2)`
 
-If your workload continues to experience OOM issues, perhaps Daft could be better estimating the required memory to run certain steps in your workload. Please contact Daft developers on our forums!
+If your workload continues to experience OOM issues, perhaps Daft could be better estimating the required memory to run certain steps in your workload. Please contact Daft developers via our [Slack](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg) or [open an issue](https://github.com/Eventual-Inc/Daft/issues/new/choose)!

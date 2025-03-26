@@ -202,7 +202,7 @@ plugins:
       python:
         options:
           docstring_style: google
-          docstring_section_style: spacy
+          docstring_section_style: table
           heading_level: 2
           merge_init_into_class: true
           separate_signature: true
@@ -222,3 +222,6 @@ plugins:
           show_docstring_returns: true
           show_labels: true
           show_bases: false
+          summary:
+            functions: true
+            attributes: false
