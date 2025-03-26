@@ -667,7 +667,7 @@ class Expression:
 
         Note:
             - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
-            - If a string is provided, it will use the sql engine to parse the string into a data type. See the SQL documentation for more information.
+            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://www.getdaft.io/projects/docs/en/stable/sql/datatypes/) for supported datatypes.
             - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
 
         The following combinations of datatype casting is valid:
