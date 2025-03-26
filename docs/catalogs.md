@@ -2,7 +2,7 @@
 
 !!! warning "Warning"
 
-    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love hear want you would like, thank you! 🤘
+    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love hear what you would like, thank you! 🤘
 
 Catalogs are a centralized place to organize and govern your data. It is often responsible for creating objects such as tables and namespaces, managing transactions, and access control. Most importantly, the catalog abstracts away physical storage details, letting you focus on the logical structure of your data without worrying about file formats, partitioning schemes, or storage locations.
 
@@ -159,7 +159,7 @@ df = daft.read_table("my_temp_table")
 
     For complete documentation, please see the [Catalog & Table API docs](api_docs/catalog.html).
 
-* [Catalog](api_docs/catalog.html) - Interface for creating and accessing both tables and namespaces
-* [Identifier](api_docs/catalog.html#daft.Identifier) - Paths to objects e.g. `catalog.namespace.table`
-* [Table](api_docs/catalog.html#daft.Table) - Interface for reading and writing dataframes
-* [TableSource](api_docs/catalog.html#daft.TableSource) - Sources for table creation like a schema or dataframe.
+* [Catalog][daft.catalog.Catalog] - Interface for creating and accessing both tables and namespaces
+* [Identifier][daft.catalog.Identifier] - Paths to objects e.g. `catalog.namespace.table`
+* [Table][daft.catalog.Table] - Interface for reading and writing dataframes
+* [TableSource][daft.catalog.TableSource] - Sources for table creation like a schema or dataframe.

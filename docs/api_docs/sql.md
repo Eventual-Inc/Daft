@@ -8,8 +8,8 @@ Daft supports SQL as a way of constructing query plans and expressions as it can
 
 <!-- why are these not part of sql funcs? -->
 
-## SQL Functions
+<!-- ## SQL Functions
 
-This is a full list of functions that can be used from within SQL
+This is a full list of functions that can be used from within SQL -->
 
 <!-- wip -->

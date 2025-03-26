@@ -61,7 +61,7 @@ nav:
   - Expressions: api_docs/expressions.md
   - Functions: api_docs/functions.md
   - SQL: api_docs/sql.md
-  - Session: api_docs/sessions.md
+  - Sessions: api_docs/sessions.md
   - Catalogs & Tables: api_docs/catalogs_tables.md
   - Schema: api_docs/schema.md
   - DataTypes: api_docs/datatypes.md

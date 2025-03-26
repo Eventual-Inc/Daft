@@ -9,3 +9,15 @@ Daft integrates with various catalog implementations using its `Catalog` and `Ta
 <!-- add more pages to filters to include them, see dataframe for example -->
 
 <!-- fix: do we need class catalogs? -->
+
+::: daft.catalog.Identifier
+    options:
+        filters: ["!^_"]
+
+::: daft.catalog.Table
+    options:
+        filters: ["!^_"]
+
+::: daft.catalog.TableSource
+    options:
+        filters: ["!^_"]
