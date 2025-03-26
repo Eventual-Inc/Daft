@@ -10,6 +10,7 @@ import daft
 # CSV
 # ------
 
+
 def test_csv_basic_roundtrip(make_spark_df, assert_spark_equals, spark_session, tmp_path):
     df = make_spark_df({"id": [1, 2, 3]})
     csv_dir = os.path.join(tmp_path, "csv")
@@ -18,6 +19,7 @@ def test_csv_basic_roundtrip(make_spark_df, assert_spark_equals, spark_session, 
     spark_df_read = spark_session.read.option("header", True).csv(csv_dir)
     df_read = daft.read_csv(csv_dir)
     assert_spark_equals(df_read, spark_df_read)
+
 
 def test_csv_overwrite(make_spark_df, assert_spark_equals, spark_session, tmp_path):
     df = make_spark_df({"id": [1, 2, 3]})
@@ -58,9 +60,11 @@ def test_write_csv_with_null_value(spark_session, tmp_path):
 def test_write_csv_with_compression(spark_session, tmp_path):
     pass
 
+
 # -------
 # Parquet
 # -------
+
 
 @pytest.mark.skip(reason="TODO: investigate why this occasionally fails in CI")
 def test_write_parquet(spark_session, tmp_path):
