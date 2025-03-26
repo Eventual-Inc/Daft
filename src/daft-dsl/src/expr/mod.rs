@@ -1480,6 +1480,7 @@ impl Expr {
         binary_op(Operator::EqNullSafe, self, other)
     }
 
+    /// Convert all basic resolved columns to left join side columns
     pub fn to_left_cols(self: ExprRef, schema: SchemaRef) -> DaftResult<ExprRef> {
         Ok(self
             .transform(|e| match e.as_ref() {
@@ -1492,6 +1493,7 @@ impl Expr {
             .data)
     }
 
+    /// Convert all basic resolved columns to right join side columns
     pub fn to_right_cols(self: ExprRef, schema: SchemaRef) -> DaftResult<ExprRef> {
         Ok(self
             .transform(|e| match e.as_ref() {

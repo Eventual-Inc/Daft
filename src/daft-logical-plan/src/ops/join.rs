@@ -71,117 +71,116 @@ impl JoinPredicate {
         self.0.as_ref()
     }
 
-    /// Pop the equality predicates out of the conjunction where one side is all left and the other side is all right columns.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+
+    /// Split out the equality predicates where one side is all left and the other side is all right columns.
     ///
-    /// Returns (left keys, right keys, null equals null)
-    pub fn pop_equi_preds(&mut self) -> (Vec<ExprRef>, Vec<ExprRef>, Vec<bool>) {
+    /// Returns (remaining, left keys, right keys, null equals null)
+    pub fn split_eq_preds(&self) -> (Self, Vec<ExprRef>, Vec<ExprRef>, Vec<bool>) {
         let Some(pred) = &self.0 else {
-            return (vec![], vec![], vec![]);
+            return (Self::empty(), vec![], vec![], vec![]);
         };
+
+        fn replace_join_side_cols(expr: ExprRef) -> ExprRef {
+            expr.transform(|e| {
+                if let Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                    Field { name, .. },
+                    _,
+                ))) = e.as_ref()
+                {
+                    Ok(Transformed::yes(resolved_col(name.clone())))
+                } else {
+                    Ok(Transformed::no(e))
+                }
+            })
+            .unwrap()
+            .data
+        }
+
+        fn extract_equi_predicate(expr: &Expr) -> Option<(ExprRef, ExprRef, bool)> {
+            match expr {
+                Expr::BinaryOp { op, left, right }
+                    if matches!(op, Operator::Eq | Operator::EqNullSafe) =>
+                {
+                    let (left_has_left, left_has_right) = has_sides(left);
+                    let (right_has_left, right_has_right) = has_sides(right);
+
+                    let (left_expr, right_expr) = match (
+                        left_has_left,
+                        left_has_right,
+                        right_has_left,
+                        right_has_right,
+                    ) {
+                        (true, false, false, true) => (left, right),
+                        (false, true, true, false) => (right, left),
+                        _ => return None,
+                    };
+                    let left_cleaned = replace_join_side_cols(left_expr.clone());
+                    let right_cleaned = replace_join_side_cols(right_expr.clone());
+                    let is_null_safe = *op == Operator::EqNullSafe;
+                    Some((left_cleaned, right_cleaned, is_null_safe))
+                }
+                _ => None,
+            }
+        }
 
         let exprs = split_conjunction(pred);
 
+        let mut remaining_exprs = Vec::new();
         let mut left_keys = Vec::new();
         let mut right_keys = Vec::new();
         let mut null_equals_null = Vec::new();
 
-        let remaining = exprs.into_iter().filter(|e| match e.as_ref() {
-            Expr::BinaryOp { op, left, right }
-                if matches!(op, Operator::Eq | Operator::EqNullSafe) =>
-            {
-                let (left_has_left, left_has_right) = has_sides(left);
-                let (right_has_left, right_has_right) = has_sides(right);
-
-                let (left, right) = match (
-                    left_has_left,
-                    left_has_right,
-                    right_has_left,
-                    right_has_right,
-                ) {
-                    (true, false, false, true) => (left, right),
-                    (false, true, true, false) => (right, left),
-                    _ => {
-                        return true;
-                    }
-                };
-
-                fn replace_join_side_cols(expr: ExprRef) -> ExprRef {
-                    expr.transform(|e| {
-                        if let Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
-                            Field { name, .. },
-                            _,
-                        ))) = e.as_ref()
-                        {
-                            Ok(Transformed::yes(resolved_col(name.clone())))
-                        } else {
-                            Ok(Transformed::no(e))
-                        }
-                    })
-                    .unwrap()
-                    .data
-                }
-
-                let left = replace_join_side_cols(left.clone());
-                let right = replace_join_side_cols(right.clone());
-
-                left_keys.push(left);
-                right_keys.push(right);
-                null_equals_null.push(*op == Operator::EqNullSafe);
-
-                false
+        for e in exprs {
+            if let Some((left_expr, right_expr, is_null_safe)) = extract_equi_predicate(&e) {
+                left_keys.push(left_expr);
+                right_keys.push(right_expr);
+                null_equals_null.push(is_null_safe);
+            } else {
+                remaining_exprs.push(e);
             }
-            _ => true,
-        });
+        }
 
-        self.0 = combine_conjunction(remaining);
+        let remaining = Self(combine_conjunction(remaining_exprs));
 
-        (left_keys, right_keys, null_equals_null)
+        (remaining, left_keys, right_keys, null_equals_null)
     }
 
-    pub fn equi_preds(&self) -> (Vec<ExprRef>, Vec<ExprRef>, Vec<bool>) {
-        self.clone().pop_equi_preds()
-    }
-
-    /// Pop the predicates in the conjunction that only use columns from one side of the join.
+    /// Split out the predicates in the conjunction that only use columns from one side of the join.
     ///
-    /// Returns (left predicate, right predicate)
-    pub fn pop_side_only_preds(&mut self) -> (Option<ExprRef>, Option<ExprRef>) {
+    /// Returns (remaining, left predicate, right predicate)
+    pub fn split_side_only_preds(&self) -> (Self, Option<ExprRef>, Option<ExprRef>) {
         let Some(pred) = &self.0 else {
-            return (None, None);
+            return (Self::empty(), None, None);
         };
 
         let exprs = split_conjunction(pred);
 
+        let mut remaining_exprs = Vec::new();
         let mut left_preds = Vec::new();
         let mut right_preds = Vec::new();
 
-        let remaining = exprs.into_iter().filter(|e| {
-            let (has_left, has_right) = has_sides(e);
+        for e in exprs {
+            let (has_left, has_right) = has_sides(&e);
 
             if !has_right {
                 // put expressions that use neither side in left as well
-                left_preds.push(e.clone());
-
-                false
+                left_preds.push(e);
             } else if !has_left {
-                right_preds.push(e.clone());
-
-                false
+                right_preds.push(e);
             } else {
-                true
+                remaining_exprs.push(e);
             }
-        });
+        }
 
-        self.0 = combine_conjunction(remaining);
+        let remaining = Self(combine_conjunction(remaining_exprs));
 
         let left_pred = combine_conjunction(left_preds);
         let right_pred = combine_conjunction(right_preds);
 
-        (left_pred, right_pred)
-    }
-
-    pub fn side_only_preds(&self) -> (Option<ExprRef>, Option<ExprRef>) {
-        self.clone().pop_side_only_preds()
+        (remaining, left_pred, right_pred)
     }
 }
 

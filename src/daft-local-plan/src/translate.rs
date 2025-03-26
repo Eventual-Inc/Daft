@@ -147,10 +147,9 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
 
-            let mut on = join.on.clone();
-            let (left_on, right_on, null_equals_nulls) = on.pop_equi_preds();
+            let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
 
-            if on.inner().is_some() {
+            if !remaining_on.is_empty() {
                 return Err(DaftError::not_implemented("Execution of non-equality join"));
             }
 

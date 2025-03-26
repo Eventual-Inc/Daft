@@ -102,7 +102,7 @@ impl OptimizerRule for FilterNullJoinKey {
                 ..
             }) = node.as_ref()
             {
-                let (left_on, right_on, null_equals_nulls) = on.equi_preds();
+                let (_, left_on, right_on, null_equals_nulls) = on.split_eq_preds();
 
                 let (can_filter_left, can_filter_right) = match join_type {
                     JoinType::Inner => (true, true),

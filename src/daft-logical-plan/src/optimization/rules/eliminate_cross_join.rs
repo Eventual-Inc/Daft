@@ -36,11 +36,10 @@ fn is_rewriteable(plan: &LogicalPlan) -> bool {
         ..
     }) = plan
     {
-        let mut on = on.clone();
-        let (_, _, null_equals_null) = on.pop_equi_preds();
+        let (remaining_on, _, _, null_equals_null) = on.split_eq_preds();
 
         // TODO: consider support eliminate cross join with null_equals_nulls
-        null_equals_null.iter().all(|val| !val) && on.inner().is_none()
+        null_equals_null.iter().all(|val| !val) && remaining_on.is_empty()
     } else {
         false
     }
@@ -142,7 +141,7 @@ fn flatten_join_inputs(
         },
     ) = plan
     {
-        let (left_keys, right_keys, _) = join.on.equi_preds();
+        let (_, left_keys, right_keys, _) = join.on.split_eq_preds();
         let keys = left_keys.into_iter().zip(right_keys.into_iter());
 
         possible_join_keys.insert_all_owned(keys);
@@ -307,11 +306,15 @@ fn find_inner_join(
             all_join_keys.insert_all(join_keys.iter());
             let right_input = rights.remove(i);
 
-            let on_expr = combine_conjunction(join_keys.into_iter().map(|(l, r)| {
-                l.to_left_cols(left_input.schema())
-                    .unwrap()
-                    .eq(r.to_right_cols(right_input.schema()).unwrap())
-            }));
+            let on_expr = combine_conjunction(
+                join_keys
+                    .into_iter()
+                    .map(|(l, r)| {
+                        Ok(l.to_left_cols(left_input.schema())?
+                            .eq(r.to_right_cols(right_input.schema())?))
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?,
+            );
 
             let on = JoinPredicate::try_new(on_expr)?;
 

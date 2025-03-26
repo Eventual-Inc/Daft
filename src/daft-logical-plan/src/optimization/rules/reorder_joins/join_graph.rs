@@ -8,7 +8,8 @@ use common_error::DaftResult;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::JoinType;
 use daft_dsl::{
-    left_col, optimization::replace_columns_with_expressions, resolved_col, right_col, Expr, ExprRef
+    left_col, optimization::replace_columns_with_expressions, resolved_col, right_col, Expr,
+    ExprRef,
 };
 
 use crate::{
@@ -557,7 +558,7 @@ impl JoinGraph {
                             .expect("right_on to exist in right_plan schema")
                             .clone();
 
-                        left_col(left_field).and(right_col(right_field))
+                        left_col(left_field).eq(right_col(right_field))
                     }));
 
                 let join_plan = Join::try_new(
@@ -569,8 +570,6 @@ impl JoinGraph {
                 )?;
 
                 Ok(join_plan.into())
-
-                // Ok(left_builder.inner_join(right_builder, left_cols, right_cols)?)
             }
         }
     }
@@ -808,11 +807,10 @@ impl JoinGraphBuilder {
                     join_type: JoinType::Inner,
                     ..
                 }) => {
-                    let mut on = on.clone();
-                    let (left_on, right_on, _) = on.pop_equi_preds();
+                    let (remaining_on, left_on, right_on, _) = on.split_eq_preds();
 
                     if left_on.is_empty()
-                        || on.inner().is_some()
+                        || !remaining_on.is_empty()
                         || !left_on
                             .iter()
                             .chain(right_on.iter())
@@ -900,9 +898,8 @@ impl JoinGraphBuilder {
                 join_type: JoinType::Inner,
                 ..
             }) => {
-                let mut on = on.clone();
-                let (left_on, right_on, _) = on.pop_equi_preds();
-                if left_on.is_empty() || on.inner().is_some() {
+                let (remaining_on, left_on, right_on, _) = on.split_eq_preds();
+                if left_on.is_empty() || !remaining_on.is_empty() {
                     unreachable!("JoinGraphBuilder::process_linear_chain should not be called with a join that is not orderable")
                 }
 

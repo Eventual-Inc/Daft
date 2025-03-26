@@ -157,7 +157,10 @@ fn resolve_to_basic_and_outer_cols(expr: ExprRef, plan: &LogicalPlanRef) -> Daft
                 Ok(Transformed::yes(resolved_col(column.name.clone())))
             } else if let Some(schema) = &column.plan_schema {
                 Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(
-                    ResolvedColumn::OuterRef(schema.get_field(&column.name)?.clone(), column.plan_ref.clone()),
+                    ResolvedColumn::OuterRef(
+                        schema.get_field(&column.name)?.clone(),
+                        column.plan_ref.clone(),
+                    ),
                 )))))
             } else {
                 Err(DaftError::FieldNotFound(format!("Column {e} not found.")))

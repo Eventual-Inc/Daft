@@ -678,15 +678,13 @@ mod tests {
             Field::new("inner_key2", DataType::Int64),
         ]));
 
-        let subquery = tbl2
-            .filter(
-                unresolved_col("inner_key2").eq(Arc::new(Expr::Column(Column::Resolved(
-                    ResolvedColumn::OuterRef(
-                        Field::new("inner_key", DataType::Int64),
-                        PlanRef::Unqualified,
-                    ),
-                )))),
-            )?
+        let subquery =
+            tbl2.filter(unresolved_col("inner_key2").eq(Arc::new(Expr::Column(
+                Column::Resolved(ResolvedColumn::OuterRef(
+                    Field::new("inner_key", DataType::Int64),
+                    PlanRef::Unqualified,
+                )),
+            ))))?
             .aggregate(vec![unresolved_col("outer_key").max()], vec![])?;
         let subquery_expr = Arc::new(Expr::Subquery(Subquery {
             plan: subquery.build(),

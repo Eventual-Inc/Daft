@@ -1008,10 +1008,9 @@ fn translate_join(
     let mut right_physical = physical_children.pop().expect("requires 1 inputs");
     let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
-    let mut on = on.clone();
-    let (left_on, right_on, null_equals_nulls) = on.pop_equi_preds();
+    let (remaining_on, left_on, right_on, null_equals_nulls) = on.split_eq_preds();
 
-    if on.inner().is_some() {
+    if !remaining_on.is_empty() {
         return Err(DaftError::not_implemented("Execution of non-equality join"));
     }
 
