@@ -661,7 +661,6 @@ class DataFrame:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
         write_mode = WriteMode.from_str(write_mode)
-        print("write_mode", write_mode)
 
         builder = self._builder.write_tabular(
             root_dir=root_dir,
@@ -755,11 +754,6 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        print(write_df)
-        # if write_mode == "overwrite":
-        #     overwrite_files(write_df, root_dir, io_config, False)
-        # elif write_mode == "overwrite-partitions":
-        #     overwrite_files(write_df, root_dir, io_config, True)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame

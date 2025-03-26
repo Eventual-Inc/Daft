@@ -289,8 +289,6 @@ def write_tabular(
     compression: str | None = None,
     io_config: IOConfig | None = None,
 ) -> MicroPartition:
-    print("write_tabular")
-    print("write_mode = ", write_mode)
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
     if isinstance(path, pathlib.Path):
         path_str = str(path)

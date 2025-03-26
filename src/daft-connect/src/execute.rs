@@ -132,12 +132,6 @@ impl ConnectSession {
                 );
             }
             Ok(())
-
-            // if mode == SaveMode::Unspecified {
-            //     Ok(())
-            // } else {
-            //     not_yet_implemented!("save mode: {}", mode.as_str_name())
-            // }
         }
 
         let finished = res.result_complete_response();
@@ -192,9 +186,7 @@ impl ConnectSession {
                 //
                 // an example where this is important is if we write to a parquet file
                 // and then read immediately after, we need to wait for the write to finish
-                while let Some(_result) = result_stream.next().await {
-                    println!("result: {:?}", _result);
-                }
+                while let Some(_result) = result_stream.next().await {}
 
                 Ok(())
             };

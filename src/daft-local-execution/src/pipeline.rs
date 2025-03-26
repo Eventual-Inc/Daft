@@ -588,7 +588,6 @@ pub fn physical_plan_to_pipeline(
             stats_state,
             ..
         }) => {
-            println!("pipelined write");
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let writer_factory = make_physical_writer_factory(file_info, cfg);
             let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
