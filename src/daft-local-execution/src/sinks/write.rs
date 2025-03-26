@@ -151,12 +151,19 @@ impl BlockingSink for WriteSink {
                                     let file_paths =
                                         PyList::new(py, file_paths).expect("file_paths");
                                     let root_dir = file_info.root_dir.clone();
-                                    let io_config = file_info.io_config.clone();
-                                    
-                                    
-                                    let py_ioconfig = daft_io::python::IOConfig {
-                                        config: io_config.clone(),
-                                    }
+                                    let py_io_config = file_info.io_config.clone().map(|io_conf| {
+                                        daft_io::python::IOConfig { config: io_conf }
+                                    });
+                                    let overwrite_partitions = matches!(
+                                        file_info.write_mode,
+                                        WriteMode::OverwritePartitions
+                                    );
+                                    overwrite_files.call1((
+                                        file_paths,
+                                        root_dir,
+                                        py_io_config,
+                                        overwrite_partitions,
+                                    ))?;
 
                                     PyResult::Ok(())
                                 })

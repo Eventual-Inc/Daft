@@ -12,7 +12,7 @@ from typing import Any
 from daft.convert import from_pydict
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.dependencies import fsspec, pafs
-from daft.expressions.expressions import col
+from daft.expressions.expressions import col, lit
 from daft.recordbatch import MicroPartition
 
 logger = logging.getLogger(__name__)
@@ -363,10 +363,12 @@ def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
 
 def overwrite_files(
     written_file_paths: list[str],
-    resolved_path: str,
-    fs,
+    root_dir: str | pathlib.Path,
+    io_config: IOConfig | None,
     overwrite_partitions: bool,
 ) -> None:
+    [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+
     all_file_paths = []
     if overwrite_partitions:
         # Get all files in ONLY the directories that were written to.
@@ -395,7 +397,8 @@ def overwrite_files(
     all_file_paths_df = from_pydict({"path": all_file_paths})
 
     # Find the files that were not written to in this run and delete them.
-    to_delete = all_file_paths_df.where(~(col("path").is_in(written_file_paths)))
+    to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths))))
+
     # TODO: Look into parallelizing this
     for entry in to_delete:
         fs.delete_file(entry["path"])
