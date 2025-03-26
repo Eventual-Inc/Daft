@@ -16,7 +16,8 @@ Sequence Functions
 
    monotonically_increasing_id
    llm_generate
-   sum_horizontal
-   mean_horizontal
-   min_horizontal
-   max_horizontal
+   columns_sum
+   columns_mean
+   columns_avg
+   columns_min
+   columns_max

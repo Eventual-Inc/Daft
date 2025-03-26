@@ -2,18 +2,20 @@ from __future__ import annotations
 
 from .functions import (
     monotonically_increasing_id,
-    sum_horizontal,
-    mean_horizontal,
-    min_horizontal,
-    max_horizontal,
+    columns_sum,
+    columns_mean,
+    columns_avg,
+    columns_min,
+    columns_max,
 )
 from .llm_generate import llm_generate
 
 __all__ = [
+    "columns_avg",
+    "columns_max",
+    "columns_mean",
+    "columns_min",
+    "columns_sum",
     "llm_generate",
-    "max_horizontal",
-    "mean_horizontal",
-    "min_horizontal",
     "monotonically_increasing_id",
-    "sum_horizontal",
 ]

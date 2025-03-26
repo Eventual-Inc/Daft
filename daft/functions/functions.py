@@ -38,17 +38,17 @@ def monotonically_increasing_id() -> Expression:
     return Expression._from_pyexpr(native.monotonically_increasing_id())
 
 
-def sum_horizontal(*exprs: Expression | str) -> Expression:
-    """Sum values horizontally across columns.
+def columns_sum(*exprs: Expression | str) -> Expression:
+    """Sum values across columns.
 
     Args:
         exprs: The columns to sum.
 
     Example:
         >>> import daft
-        >>> from daft.functions import sum_horizontal
+        >>> from daft.functions import columns_sum
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> df = df.with_column("sum", sum_horizontal("a", "b"))
+        >>> df = df.with_column("sum", columns_sum("a", "b"))
         >>> df.show()
         ╭───────┬───────┬───────╮
         │ a     ┆ b     ┆ sum   │
@@ -65,21 +65,21 @@ def sum_horizontal(*exprs: Expression | str) -> Expression:
         (Showing first 3 of 3 rows)
     """
     if not exprs:
-        raise ValueError("sum_horizontal requires at least one expression")
-    return list_(*exprs).list.sum()
+        raise ValueError("columns_sum requires at least one expression")
+    return list_(*exprs).list.sum().alias("columns_sum")
 
 
-def mean_horizontal(*exprs: Expression | str) -> Expression:
-    """Average values horizontally across columns.
+def columns_mean(*exprs: Expression | str) -> Expression:
+    """Average values across columns. Akin to `columns_avg`.
 
     Args:
         exprs: The columns to average.
 
     Example:
         >>> import daft
-        >>> from daft.functions import mean_horizontal
+        >>> from daft.functions import columns_mean
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> df = df.with_column("mean", mean_horizontal("a", "b"))
+        >>> df = df.with_column("mean", columns_mean("a", "b"))
         >>> df.show()
         ╭───────┬───────┬─────────╮
         │ a     ┆ b     ┆ mean    │
@@ -96,21 +96,52 @@ def mean_horizontal(*exprs: Expression | str) -> Expression:
         (Showing first 3 of 3 rows)
     """
     if not exprs:
-        raise ValueError("mean_horizontal requires at least one expression")
-    return list_(*exprs).list.mean()
+        raise ValueError("columns_mean requires at least one expression")
+    return list_(*exprs).list.mean().alias("columns_mean")
 
 
-def min_horizontal(*exprs: Expression | str) -> Expression:
-    """Find the minimum value horizontally across columns.
+def columns_avg(*exprs: Expression | str) -> Expression:
+    """Average values across columns. Akin to `columns_mean`.
+
+    Args:
+        exprs: The columns to average across.
+
+    Example:
+        >>> import daft
+        >>> from daft.functions import columns_avg
+        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+        >>> df = df.with_column("avg", columns_avg("a", "b"))
+        >>> df.show()
+        ╭───────┬───────┬───────╮
+        │ a     ┆ b     ┆ avg   │
+        │ ---   ┆ ---   ┆ ---   │
+        │ Int64 ┆ Int64 ┆ Int64 │
+        ╞═══════╪═══════╪═══════╡
+        │ 1     ┆ 4     ┆ 2.5   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2     ┆ 5     ┆ 3.5   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 6     ┆ 4.5   │
+        ╰───────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    if not exprs:
+        raise ValueError("columns_avg requires at least one expression")
+    return list_(*exprs).list.mean().alias("columns_avg")
+
+
+def columns_min(*exprs: Expression | str) -> Expression:
+    """Find the minimum value across columns.
 
     Args:
         exprs: The columns to find the minimum of.
 
     Example:
         >>> import daft
-        >>> from daft.functions import min_horizontal
+        >>> from daft.functions import columns_min
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> df = df.with_column("min", min_horizontal("a", "b"))
+        >>> df = df.with_column("min", columns_min("a", "b"))
         >>> df.show()
         ╭───────┬───────┬───────╮
         │ a     ┆ b     ┆ min   │
@@ -127,21 +158,21 @@ def min_horizontal(*exprs: Expression | str) -> Expression:
         (Showing first 3 of 3 rows)
     """
     if not exprs:
-        raise ValueError("min_horizontal requires at least one expression")
-    return list_(*exprs).list.min()
+        raise ValueError("columns_min requires at least one expression")
+    return list_(*exprs).list.min().alias("columns_min")
 
 
-def max_horizontal(*exprs: Expression | str) -> Expression:
-    """Find the maximum value horizontally across columns.
+def columns_max(*exprs: Expression | str) -> Expression:
+    """Find the maximum value across columns.
 
     Args:
         exprs: The columns to find the maximum of.
 
     Example:
         >>> import daft
-        >>> from daft.functions import max_horizontal
+        >>> from daft.functions import columns_max
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> df = df.with_column("max", max_horizontal("a", "b"))
+        >>> df = df.with_column("max", columns_max("a", "b"))
         >>> df.show()
         ╭───────┬───────┬───────╮
         │ a     ┆ b     ┆ max   │
@@ -158,5 +189,5 @@ def max_horizontal(*exprs: Expression | str) -> Expression:
         (Showing first 3 of 3 rows)
     """
     if not exprs:
-        raise ValueError("max_horizontal requires at least one expression")
-    return list_(*exprs).list.max()
+        raise ValueError("columns_max requires at least one expression")
+    return list_(*exprs).list.max().alias("columns_max")
