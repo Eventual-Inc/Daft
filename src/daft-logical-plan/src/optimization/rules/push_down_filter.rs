@@ -266,6 +266,12 @@ impl PushDownFilter {
                 // Example:
                 //      For `foo JOIN bar ON foo.a == (bar.b + 2) WHERE a > 0`, the filter `a > 0` is pushed down to the left side, but can also be pushed down to the right side as `(b + 2) > 0`
 
+                // Left, right, and outer joins can be simplified if there is a filter on their null-producing side.
+                //
+                // Examples:
+                // 1. select * from A left join B where B.x > 0 -> select * from A inner join B where B.x > 0
+                // 2. select * from A full outer join B where B.x > 0 -> select * from A right join B where B.x > 0
+                // 3. select * from A full outer join B where A.x > 0 and B.y > 0 -> select * from A inner join B where A.x > 0 and B.y > 0
                 let simplified_join_type = if matches!(
                     join_type,
                     JoinType::Left | JoinType::Right | JoinType::Outer
@@ -1094,7 +1100,7 @@ mod tests {
     #[case(JoinType::Outer, resolved_col("a").eq(resolved_col("b")), JoinType::Inner)]
     #[case(JoinType::Outer, resolved_col("a"), JoinType::Left)]
     #[case(JoinType::Outer, resolved_col("b"), JoinType::Right)]
-    #[case(JoinType::Outer, resolved_col("a").or(resolved_col("b")), JoinType::Outer)]
+    #[case(JoinType::Outer, resolved_col("a").eq_null_safe(resolved_col("b")), JoinType::Outer)]
     fn join_type_simplifies(
         #[case] join_type: JoinType,
         #[case] filter_predicate: ExprRef,

@@ -135,7 +135,11 @@ fn apply_de_morgans(expr: ExprRef) -> Transformed<ExprRef> {
 /// Check if `expr`, if used as a filter predicate, would filter out nulls if all attributes in `to_null` are set to null.
 ///
 /// In other words, check if `expr` simplifies to false or null if all sub-expressions from `to_null` are set to the null literal.
-/// If this function returns true, the expression is guaranteed to be strong, however the inverse may not be true.
+/// If this function returns true, the expression is guaranteed to filter out nulls, however the inverse may not be true.
+///
+/// Examples:
+/// - (x > 0) AND (y > 0) would filter out nulls if either x or y are null, since if one side of an AND is null, the whole expression is null.
+/// - (x > 0) OR (y > 0) would filter out nulls if both x and y are null, but not necessarily if only one is null, since (null OR true) is true and not null.
 pub fn predicate_removes_nulls(
     expr: ExprRef,
     schema: &SchemaRef,
@@ -155,9 +159,9 @@ pub fn predicate_removes_nulls(
     let simplified = simplify_expr(nulled, schema)?.data;
 
     let simplified = if let Expr::Cast(inner, DataType::Boolean) = simplified.as_ref() {
-        inner.clone()
+        inner
     } else {
-        simplified
+        &simplified
     };
 
     Ok(matches!(
