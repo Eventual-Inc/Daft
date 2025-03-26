@@ -47,7 +47,7 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal, final
 
 from daft.logical.schema import Schema
 
@@ -196,6 +196,10 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
         name = "default"
     _ = attach_catalog(catalog, name)
     return name
+
+
+class NotFoundError(Exception):
+    """Raised when some catalog object is not able to be found."""
 
 
 class Catalog(ABC):
