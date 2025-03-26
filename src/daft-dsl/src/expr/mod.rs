@@ -111,6 +111,8 @@ pub enum Column {
 }
 
 /// Information about the logical plan node that a column comes from.
+///
+/// Used for resolving columns in the logical plan builder and subquery unnesting rule.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum PlanRef {
     /// Corresponds to a SubqueryAlias
@@ -154,16 +156,25 @@ pub enum ResolvedColumn {
     /// Column resolved to the scope of an outer plan of a subquery.
     ///
     /// This variant should only exist in subquery plans.
-    OuterRef(Field),
+    OuterRef(Field, PlanRef),
 }
 
 impl Display for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let name = match self {
+            Self::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Alias(plan_alias),
+                ..
+            }) => format!("{plan_alias}.{name}"),
             Self::Unresolved(UnresolvedColumn { name, .. }) => name.to_string(),
             Self::Resolved(ResolvedColumn::Basic(name)) => name.to_string(),
             Self::Resolved(ResolvedColumn::JoinSide(name, side)) => format!("{side}.{name}"),
-            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. })) => format!("outer.{name}"),
+            Self::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Alias(plan_alias),
+            )) => format!("{plan_alias}.{name}"),
+            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.to_string(),
         };
 
         write!(f, "col({name})")
@@ -851,9 +862,18 @@ impl Expr {
                 FieldID::new(format!("{side}.{name}"))
             }
 
-            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }))) => {
-                FieldID::new(format!("outer.{name}"))
-            }
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Alias(alias),
+            ))) => FieldID::new(format!("outer.{alias}.{name}")),
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Id(id),
+            ))) => FieldID::new(format!("outer.{id}.{name}")),
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Unqualified,
+            ))) => FieldID::new(format!("outer.{name}")),
 
             // Base case - literal.
             Self::Literal(value) => FieldID::new(format!("Literal({value:?})")),
@@ -1098,7 +1118,7 @@ impl Expr {
                 ))
             }
 
-            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(field))) => Ok(field.clone()),
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(field, _))) => Ok(field.clone()),
             Self::Not(expr) => {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
@@ -1278,7 +1298,7 @@ impl Expr {
             Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
             Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => name.as_ref(),
             Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, ..))) => name.as_ref(),
-            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }))) => {
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _))) => {
                 name.as_ref()
             }
             Self::Not(expr) => expr.name(),
