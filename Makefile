@@ -79,14 +79,6 @@ docs: .venv ## Build Daft documentation
 serve: .venv ## Run Daft documentation in development server
 	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs serve -f mkdocs.yml
 
-# .PHONY: docs
-# docs: .venv sphinx-docs ## Build both MkDocs and Sphinx documentation
-# 	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs build -f docs/mkdocs.yml
-
-# .PHONY: sphinx-docs
-# sphinx-docs: .venv ## Build Sphinx API documentation
-# 	uv run --with-requirements requirements-docs.txt sphinx-build -b html "docs/sphinx/source" "docs/sphinx/_build"
-
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
