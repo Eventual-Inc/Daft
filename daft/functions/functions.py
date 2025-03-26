@@ -123,7 +123,7 @@ def columns_avg(*exprs: Expression | str) -> Expression:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ 3     ┆ 6     ┆ 4.5     │
         ╰───────┴───────┴─────────╯
-
+        <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
     if not exprs:
