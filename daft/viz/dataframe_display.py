@@ -33,7 +33,7 @@ class DataFrameDisplay:
         res = "<div>\n"
 
         if self.preview.preview_partition is not None:
-            res += self.preview.preview_partition.to_table()._repr_html_()
+            res += self.preview.preview_partition.to_record_batch()._repr_html_()
         else:
             res += self.schema._truncated_table_html()
 
@@ -46,7 +46,7 @@ class DataFrameDisplay:
             return "(No data to display: Dataframe has no columns)"
 
         if self.preview.preview_partition is not None:
-            res = repr(self.preview.preview_partition.to_table())
+            res = repr(self.preview.preview_partition.to_record_batch())
         else:
             res = self.schema._truncated_table_string()
 

@@ -94,9 +94,14 @@ impl PyMicroPartition {
         match &tables[..] {
             [] => Ok(MicroPartition::empty(None).into()),
             [first, ..] => {
-                let tables = Arc::new(tables.iter().map(|t| t.table.clone()).collect::<Vec<_>>());
+                let tables = Arc::new(
+                    tables
+                        .iter()
+                        .map(|t| t.record_batch.clone())
+                        .collect::<Vec<_>>(),
+                );
                 Ok(MicroPartition::new_loaded(
-                    first.table.schema.clone(),
+                    first.record_batch.schema.clone(),
                     tables,
                     // Don't compute statistics if data is already materialized
                     None,
@@ -126,7 +131,7 @@ impl PyMicroPartition {
         let tables = record_batches
             .into_iter()
             .map(|rb| {
-                daft_recordbatch::ffi::record_batches_to_table(py, &[rb], schema.schema.clone())
+                daft_recordbatch::ffi::record_batch_from_arrow(py, &[rb], schema.schema.clone())
             })
             .collect::<PyResult<Vec<_>>>()?;
 
@@ -134,15 +139,15 @@ impl PyMicroPartition {
     }
 
     // Export Methods
-    pub fn to_table(&self, py: Python) -> PyResult<PyRecordBatch> {
+    pub fn to_record_batch(&self, py: Python) -> PyResult<PyRecordBatch> {
         let concatted = py.allow_threads(|| {
-            let io_stats = IOStatsContext::new("PyMicroPartition::to_table");
+            let io_stats = IOStatsContext::new("PyMicroPartition::to_record_batch");
             self.inner.concat_or_get(io_stats)
         })?;
         match &concatted.as_ref()[..] {
             [] => PyRecordBatch::empty(Some(self.schema()?)),
-            [table] => Ok(PyRecordBatch {
-                table: table.clone(),
+            [batch] => Ok(PyRecordBatch {
+                record_batch: batch.clone(),
             }),
             [..] => unreachable!("concat_or_get should return one or none"),
         }
@@ -502,7 +507,11 @@ impl PyMicroPartition {
         py.allow_threads(|| {
             Ok(self
                 .inner
-                .partition_by_range(exprs.as_slice(), &boundaries.table, descending.as_slice())?
+                .partition_by_range(
+                    exprs.as_slice(),
+                    &boundaries.record_batch,
+                    descending.as_slice(),
+                )?
                 .into_iter()
                 .map(std::convert::Into::into)
                 .collect::<Vec<Self>>())
@@ -842,7 +851,7 @@ impl PyMicroPartition {
             .map(|p| {
                 Ok(p.getattr(py, pyo3::intern!(py, "_table"))?
                     .extract::<PyRecordBatch>(py)?
-                    .table)
+                    .record_batch)
             })
             .collect::<PyResult<Vec<_>>>()?;
 
@@ -869,7 +878,9 @@ impl PyMicroPartition {
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
                 .getattr(pyo3::intern!(py, "_from_pytable"))?;
 
-            let pytables = tables.iter().map(|t| PyRecordBatch { table: t.clone() });
+            let pytables = tables.iter().map(|t| PyRecordBatch {
+                record_batch: t.clone(),
+            });
             let pyobjs = pytables
                 .map(|pt| _from_pytable.call1((pt,)))
                 .collect::<PyResult<Vec<_>>>()?;
@@ -1077,7 +1088,7 @@ pub fn read_pyfunc_into_table_iter(
                                 .map(|tbl| {
                                     tbl.extract::<daft_recordbatch::python::PyRecordBatch>()
                                         .expect("Must be a PyRecordBatch")
-                                        .table
+                                        .record_batch
                                 })
                                 .with_context(|_| PyIOSnafu)
                         })
