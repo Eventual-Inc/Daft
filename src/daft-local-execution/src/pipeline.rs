@@ -15,6 +15,7 @@ use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
     Project, Sample, Sort, UnGroupedAggregate, Unpivot, WindowPartitionOnly,
+    WindowPartitionOrderBy,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -49,6 +50,7 @@ use crate::{
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
         window_partition_only::WindowPartitionOnlySink,
+        window_partition_order_by::WindowPartitionOrderBySink,
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
@@ -135,6 +137,28 @@ pub fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
+            BlockingSinkNode::new(Arc::new(agg_sink), input_node, stats_state.clone()).boxed()
+        }
+        LocalPhysicalPlan::WindowPartitionOrderBy(WindowPartitionOrderBy {
+            input,
+            partition_by,
+            order_by,
+            ascending,
+            schema,
+            stats_state,
+            aggregations,
+        }) => {
+            let input_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let agg_sink = WindowPartitionOrderBySink::new(
+                aggregations,
+                partition_by,
+                order_by,
+                ascending,
+                schema,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             BlockingSinkNode::new(Arc::new(agg_sink), input_node, stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, stats_state }) => {

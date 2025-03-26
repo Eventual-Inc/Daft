@@ -47,6 +47,7 @@ pub enum LocalPhysicalPlan {
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
     WindowPartitionOnly(WindowPartitionOnly),
+    WindowPartitionOrderBy(WindowPartitionOrderBy),
 }
 
 impl LocalPhysicalPlan {
@@ -86,6 +87,7 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
             Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. }) => stats_state,
+            Self::WindowPartitionOrderBy(WindowPartitionOrderBy { stats_state, .. }) => stats_state,
         }
     }
 
@@ -240,6 +242,27 @@ impl LocalPhysicalPlan {
         Self::WindowPartitionOnly(WindowPartitionOnly {
             input,
             partition_by,
+            schema,
+            stats_state,
+            aggregations,
+        })
+        .arced()
+    }
+
+    pub(crate) fn window_partition_order_by(
+        input: LocalPhysicalPlanRef,
+        partition_by: Vec<ExprRef>,
+        order_by: Vec<ExprRef>,
+        ascending: Vec<bool>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        aggregations: Vec<ExprRef>,
+    ) -> LocalPhysicalPlanRef {
+        Self::WindowPartitionOrderBy(WindowPartitionOrderBy {
+            input,
+            partition_by,
+            order_by,
+            ascending,
             schema,
             stats_state,
             aggregations,
@@ -478,6 +501,7 @@ impl LocalPhysicalPlan {
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
+            Self::WindowPartitionOrderBy(WindowPartitionOrderBy { schema, .. }) => schema,
         }
     }
 }
@@ -671,6 +695,17 @@ pub struct LanceWrite {
 pub struct WindowPartitionOnly {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<ExprRef>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub aggregations: Vec<ExprRef>,
+}
+
+#[derive(Debug)]
+pub struct WindowPartitionOrderBy {
+    pub input: LocalPhysicalPlanRef,
+    pub partition_by: Vec<ExprRef>,
+    pub order_by: Vec<ExprRef>,
+    pub ascending: Vec<bool>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub aggregations: Vec<ExprRef>,

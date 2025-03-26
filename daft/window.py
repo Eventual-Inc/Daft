@@ -54,8 +54,7 @@ class Window:
         window._spec = window._spec.with_partition_by([col(c)._expr for c in flat_cols])
         return window
 
-    @classmethod
-    def order_by(cls, *cols: str | list[str], ascending: bool | list[bool] = True) -> Window:
+    def order_by(self, *cols: str | list[str], ascending: bool | list[bool] = True) -> Window:
         """Orders rows within each partition by specified columns.
 
         Args:
@@ -81,10 +80,9 @@ class Window:
                 raise ValueError("Length of ascending flags must match number of order by columns")
             asc_flags = ascending
 
-        # Create new Window with updated spec
-        window = cls()
-        window._spec = window._spec.with_order_by([col(c)._expr for c in flat_cols], asc_flags)
-        return window
+        # Update the existing window spec
+        self._spec = self._spec.with_order_by([col(c)._expr for c in flat_cols], asc_flags)
+        return self
 
     def rows_between(
         self,
@@ -114,10 +112,9 @@ class Window:
             end=end,
         )
 
-        # Create new Window with updated spec
-        new_window = Window()
-        new_window._spec = self._spec.with_frame(frame).with_min_periods(min_periods)
-        return new_window
+        # Update the existing window spec
+        self._spec = self._spec.with_frame(frame).with_min_periods(min_periods)
+        return self
 
     def range_between(
         self,

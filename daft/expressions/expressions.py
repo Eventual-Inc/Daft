@@ -1145,6 +1145,11 @@ class Expression:
         expr = self._expr.agg_concat()
         return Expression._from_pyexpr(expr)
 
+    def rank(self) -> Expression:
+        """Compute the rank of each value in a group."""
+        expr = self._expr.rank()
+        return Expression._from_pyexpr(expr)
+
     def _explode(self) -> Expression:
         expr = native.explode(self._expr)
         return Expression._from_pyexpr(expr)

@@ -185,6 +185,9 @@ pub enum Expr {
     #[display("{_0}")]
     Agg(AggExpr),
 
+    #[display("{_0}")]
+    Window(WindowExpr),
+
     #[display("{}", display::expr_binary_op_display_without_formatter(op, left, right)?)]
     BinaryOp {
         op: Operator,
@@ -201,7 +204,6 @@ pub enum Expr {
         inputs: Vec<ExprRef>,
     },
 
-    // add window function variant here (or it will be a function itself)
     #[display("not({_0})")]
     Not(ExprRef),
 
@@ -311,6 +313,12 @@ pub enum AggExpr {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
+}
+
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum WindowExpr {
+    #[display("rank()")]
+    Rank(ExprRef),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -631,6 +639,43 @@ impl AggExpr {
     }
 }
 
+impl WindowExpr {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Rank(expr) => expr.name(),
+        }
+    }
+
+    pub fn semantic_id(&self, schema: &Schema) -> FieldID {
+        match self {
+            Self::Rank(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.rank()"))
+            }
+        }
+    }
+
+    pub fn children(&self) -> Vec<ExprRef> {
+        match self {
+            Self::Rank(expr) => vec![expr.clone()],
+        }
+    }
+
+    pub fn with_new_children(&self, mut children: Vec<ExprRef>) -> Self {
+        assert_eq!(children.len(), 1);
+        let first_child = children.pop().unwrap();
+        match self {
+            Self::Rank(_) => Self::Rank(first_child),
+        }
+    }
+
+    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+        match self {
+            Self::Rank(expr) => expr.to_field(schema)?.to_list_field(),
+        }
+    }
+}
+
 impl From<&AggExpr> for ExprRef {
     fn from(agg_expr: &AggExpr) -> Self {
         Self::new(Expr::Agg(agg_expr.clone()))
@@ -750,6 +795,10 @@ impl Expr {
         Arc::new(Self::Agg(AggExpr::BoolOr(self)))
     }
 
+    pub fn rank(self: ExprRef) -> ExprRef {
+        Self::Window(WindowExpr::Rank(self)).into()
+    }
+
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
         Self::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
     }
@@ -822,6 +871,7 @@ impl Expr {
     pub fn gt_eq(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::GtEq, self, other)
     }
+
     pub fn in_subquery(self: ExprRef, subquery: Subquery) -> ExprRef {
         Self::InSubquery(self, subquery).into()
     }
@@ -924,6 +974,7 @@ impl Expr {
             Self::Alias(expr, ..) => expr.semantic_id(schema),
             // Agg: Separate path.
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
+            Self::Window(window_expr) => window_expr.semantic_id(schema),
             Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
             Self::Subquery(subquery) => subquery.semantic_id(),
             Self::InSubquery(expr, subquery) => {
@@ -955,6 +1006,7 @@ impl Expr {
                 vec![expr.clone()]
             }
             Self::Agg(agg_expr) => agg_expr.children(),
+            Self::Window(window_expr) => window_expr.children(),
 
             // Multiple children.
             Self::Function { inputs, .. } => inputs.clone(),
@@ -1049,6 +1101,7 @@ impl Expr {
             },
             // N-ary
             Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
+            Self::Window(window_expr) => Self::Window(window_expr.with_new_children(children)),
             Self::Function {
                 func,
                 inputs: old_children,
@@ -1080,6 +1133,7 @@ impl Expr {
         match self {
             Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
+            Self::Window(window_expr) => window_expr.to_field(schema),
             Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
@@ -1273,6 +1327,7 @@ impl Expr {
         match self {
             Self::Alias(.., name) => name.as_ref(),
             Self::Agg(agg_expr) => agg_expr.name(),
+            Self::Window(window_expr) => window_expr.name(),
             Self::Cast(expr, ..) => expr.name(),
             Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
             Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => name.as_ref(),
@@ -1375,6 +1430,7 @@ impl Expr {
                 // TODO: Implement SQL translations for these expressions if possible
                 Expr::IfElse { .. }
                 | Expr::Agg(..)
+                | Expr::Window(..)
                 | Expr::Cast(..)
                 | Expr::IsIn(..)
                 | Expr::List(..)
@@ -1423,6 +1479,7 @@ impl Expr {
             Self::Function { .. } => true,
             Self::ScalarFunction(..) => true,
             Self::Agg(_) => true,
+            Self::Window(..) => true,
             Self::IsIn(..) => true,
             Self::Between(..) => true,
             Self::BinaryOp { .. } => true,
@@ -1654,6 +1711,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         // Everything else doesn't filter
         Expr::Subquery(_) => 1.0,
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
+        Expr::Window(_) => panic!("Window expressions are not allowed in WHERE clauses"), // TODO: unsure if this is correct
         Expr::List(_) => 1.0,
     };
 

@@ -4,7 +4,8 @@ use common_error::DaftResult;
 use common_treenode::Transformed;
 use daft_core::prelude::*;
 use daft_dsl::{
-    optimization, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
+    expr::WindowExpr, optimization, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr,
+    ExprRef,
 };
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -236,6 +237,15 @@ fn replace_column_with_semantic_id(
             )
             .map_yes_no(
                 |transformed_child| Expr::Agg(transformed_child).into(),
+                |_| e,
+            ),
+            Expr::Window(window_expr) => replace_column_with_semantic_id_windowexpr(
+                window_expr.clone(),
+                subexprs_to_replace,
+                schema,
+            )
+            .map_yes_no(
+                |transformed_child| Expr::Window(transformed_child).into(),
                 |_| e,
             ),
             Expr::Alias(child, name) => {
@@ -539,6 +549,19 @@ fn replace_column_with_semantic_id_aggexpr(
                     inputs: transforms.iter().map(|t| t.data.clone()).collect(),
                 })
             }
+        }
+    }
+}
+
+fn replace_column_with_semantic_id_windowexpr(
+    e: WindowExpr,
+    subexprs_to_replace: &IndexSet<FieldID>,
+    schema: &Schema,
+) -> Transformed<WindowExpr> {
+    match e {
+        WindowExpr::Rank(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(WindowExpr::Rank, |_| e)
         }
     }
 }

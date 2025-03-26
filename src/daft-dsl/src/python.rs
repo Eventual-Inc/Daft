@@ -377,6 +377,10 @@ impl PyExpr {
         Ok(self.expr.clone().agg_concat().into())
     }
 
+    pub fn rank(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().rank().into())
+    }
+
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
         Ok(crate::binary_op(crate::Operator::Plus, self.into(), other.expr.clone()).into())
     }

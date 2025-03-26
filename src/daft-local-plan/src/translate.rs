@@ -116,9 +116,22 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     window.stats_state.clone(),
                     window.window_functions.clone(),
                 ))
+            } else if !window.window_spec.partition_by.is_empty()
+                && !window.window_spec.order_by.is_empty()
+            {
+                // Handle partition-by + order-by case for ranking functions
+                Ok(LocalPhysicalPlan::window_partition_order_by(
+                    input,
+                    window.window_spec.partition_by.clone(),
+                    window.window_spec.order_by.clone(),
+                    window.window_spec.ascending.clone(),
+                    window.schema.clone(),
+                    window.stats_state.clone(),
+                    window.window_functions.clone(),
+                ))
             } else {
                 Err(DaftError::not_implemented(
-                    "Window with order by or frame not yet implemented",
+                    "Window with frame or without partition-by not yet implemented",
                 ))
             }
         }
