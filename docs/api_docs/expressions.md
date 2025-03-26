@@ -12,8 +12,7 @@ Daft Expressions allow you to express some computation that needs to happen in a
         filters: ["!^_"]
 
 <!-- add more pages to filters to include them, see dataframe for example -->
-<!--
-::: daft.expressions.expressions.ExpressionUrlNamespace
+<!-- todo(docs - cc): need help with flattening namespaces, the following is not on api docs
 ::: daft.expressions.expressions.ExpressionUrlNamespace
 ::: daft.expressions.expressions.ExpressionFloatNamespace
 ::: daft.expressions.expressions.ExpressionDatetimeNamespace
