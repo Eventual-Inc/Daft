@@ -1,7 +1,7 @@
 import pytest
 
 import daft
-from daft.catalog import Catalog, Identifier, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, Table
 from daft.session import Session
 
 ###
@@ -200,3 +200,49 @@ def test_sql():
     sess.sql("USE cat2.a.b")
     assert sess.current_catalog() == cat2
     assert sess.current_namespace() == Identifier("a", "b")
+
+
+###
+# exception testing
+###
+
+
+def test_exception_surfacing():
+    class ThrowingCatalog(Catalog):
+        @property
+        def name(self):
+            return "throwing"
+
+        def create_namespace(self, identifier):
+            raise NotImplementedError
+
+        def create_table(self, identifier, source):
+            raise NotImplementedError
+
+        def drop_namespace(self, identifier):
+            raise NotImplementedError
+
+        def drop_table(self, identifier):
+            raise NotImplementedError
+
+        def get_table(self, identifier):
+            if str(identifier) == "boom":
+                raise RuntimeError("something went wrong")
+            raise NotFoundError(f"Table {identifier} not found")
+
+        def list_namespaces(self, pattern=None):
+            raise NotImplementedError
+
+        def list_tables(self, pattern=None):
+            raise NotImplementedError
+
+    sess = Session()
+    sess.attach(ThrowingCatalog())
+
+    # the session should
+    with pytest.raises(Exception, match="not found"):
+        sess.read_table("test")
+
+    # some internal error should be surfaced in the runtime exception
+    with pytest.raises(Exception, match="something went wrong"):
+        sess.read_table("boom")

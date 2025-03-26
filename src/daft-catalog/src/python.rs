@@ -60,13 +60,21 @@ impl Catalog for PyCatalogWrapper {
             // TODO chore: create a python identifier here.
             let identifier = ident.to_string();
             // table = catalog.get_table(ident)
-            if let Ok(table) = catalog.getattr("get_table")?.call1((identifier,)) {
-                // wrap py table object so it's an impl Table
+            let result = catalog.getattr("get_table")?.call1((identifier,));
+            // wrap py table object so it's an impl Table
+            if let Ok(table) = result {
                 let table = PyTableWrapper::from(table.unbind());
-                Ok(Some(Box::new(table) as Box<dyn Table>))
-            } else {
-                // ignore table not found to make this optional
+                return Ok(Some(Box::new(table) as Box<dyn Table>));
+            }
+            // check if NotFounderError otherwise return the python error.
+            let err = result.unwrap_err();
+            let table_not_found_error = py
+                .import(intern!(py, "daft.catalog"))?
+                .getattr(intern!(py, "NotFoundError"))?;
+            if err.is_instance(py, &table_not_found_error) {
                 Ok(None)
+            } else {
+                Err(err.into())
             }
         })
     }
