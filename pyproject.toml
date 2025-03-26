@@ -44,6 +44,9 @@ sql = ["connectorx", "sqlalchemy", "sqlglot"]
 unity = ["unitycatalog"]
 viz = []
 
+[project.scripts]
+daft = "daft.cli:main"
+
 [project.urls]
 homepage = "https://www.getdaft.io"
 repository = "https://github.com/Eventual-Inc/Daft"

@@ -99,4 +99,4 @@ grpcio==1.68.1
 grpcio-status==1.67.0
 
 # ai
-vllm
+vllm; platform_system == "Linux" # for other systems, see install instructions: https://docs.vllm.ai/en/latest/getting_started/installation.html

@@ -59,19 +59,19 @@ pub trait IntermediateOperator: Send + Sync {
         Ok(*NUM_CPUS)
     }
 
+    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
+        Some(runtime_handle.default_morsel_size())
+    }
+
     fn dispatch_spawner(
         &self,
         runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Arc::new(RoundRobinDispatcher::new(self.morsel_size(runtime_handle)))
         } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Arc::new(UnorderedDispatcher::new(self.morsel_size(runtime_handle)))
         }
     }
 }
