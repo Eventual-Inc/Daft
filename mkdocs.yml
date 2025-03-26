@@ -41,8 +41,8 @@ nav:
     - Apache Iceberg: integrations/iceberg.md
     - Delta Lake: integrations/delta_lake.md
     - Apache Hudi: integrations/hudi.md
-    - Microsoft Azure: integrations/azure.md
     - Amazon Web Services: integrations/aws.md
+    - Microsoft Azure: integrations/azure.md
     - SQL: integrations/sql.md
     - Hugging Face Datasets: integrations/huggingface.md
     - S3 Tables: integrations/s3tables.md

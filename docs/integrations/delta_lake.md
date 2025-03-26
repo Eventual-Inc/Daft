@@ -6,7 +6,7 @@ Daft currently supports:
 
 1. **Parallel + Distributed Reads:** Daft parallelizes Delta Lake table reads over all cores of your machine, if using the default multithreading runner, or all cores + machines of your Ray cluster, if using the [distributed Ray runner](../distributed.md).
 
-2. **Skipping Filtered Data:** Daft ensures that only data that matches your [`df.where(...)`](../{{ api_path }}/dataframe_methods/daft.DataFrame.where.html) filter will be read, often skipping entire files/partitions.
+2. **Skipping Filtered Data:** Daft ensures that only data that matches your [`df.where()`][daft.DataFrame.where] filter will be read, often skipping entire files/partitions.
 
 3. **Multi-cloud Support:** Daft supports reading Delta Lake tables from AWS S3, Azure Blob Store, and GCS, as well as local files.
 
@@ -20,7 +20,7 @@ pip install -U "daft[deltalake]"
 
 ## Reading a Table
 
-A Delta Lake table can be read by providing [`daft.read_deltalake`](../{{ api_path }}/io_functions/daft.read_deltalake.html) with the URI for your table.
+A Delta Lake table can be read by providing [`daft.read_deltalake`][daft.read_deltalake] with the URI for your table.
 
 The below example uses the [deltalake](https://pypi.org/project/deltalake/) Python package to create a local Delta Lake table for Daft to read, but Daft can also read Delta Lake tables from all of the major cloud stores.
 
@@ -76,7 +76,7 @@ Filters on non-partition columns will still benefit from automatic file pruning 
 
 ## Write to Delta Lake
 
-You can use [`df.write_deltalake`](../{{ api_path }}/dataframe_methods/daft.DataFrame.write_deltalake.html) to write a Daft DataFrame to a Delta table:
+You can use [`df.write_deltalake()`][daft.DataFrame.write_deltalake] to write a Daft DataFrame to a Delta table:
 
 === "🐍 Python"
 
@@ -84,7 +84,7 @@ You can use [`df.write_deltalake`](../{{ api_path }}/dataframe_methods/daft.Data
     df.write_deltalake("tmp/daft-recordbatch", mode="overwrite")
     ```
 
-Daft supports multiple write modes. See the API docs for [`daft.DataFrame.write_deltalake`](../{{ api_path }}/dataframe_methods/daft.DataFrame.write_deltalake.html) for more details.
+Daft supports multiple write modes. See the API docs for [`df.write_deltalake()`][daft.DataFrame.write_deltalake] for more details.
 
 ## Type System
 
@@ -92,26 +92,26 @@ Daft and Delta Lake have compatible type systems. Here are how types are convert
 
 When reading from a Delta Lake table into Daft:
 
-| Delta Lake               | Daft                          |
-| --------------------- | ----------------------------- |
+| Delta Lake                  | Daft                          |
+| --------------------------- | ----------------------------- |
 | **Primitive Types** |
-| `boolean` | [`daft.DataType.bool()`](../api_docs/datatype.html) |
-| `byte` | [`daft.DataType.int8()`](../api_docs/datatype.html#daft.DataType.int8) |
-| `short` | [`daft.DataType.int16()`](../api_docs/datatype.html#daft.DataType.int16)|
-| `int` | [`daft.DataType.int32()`](../api_docs/datatype.html#daft.DataType.int32) |
-| `long` | [`daft.DataType.int64()`](../api_docs/datatype.html#daft.DataType.int64) |
-| `float` | [`daft.DataType.float32()`](../api_docs/datatype.html#daft.DataType.float32) |
-| `double` | [`daft.DataType.float64()`](../api_docs/datatype.html#daft.DataType.float64) |
-| `decimal(precision, scale)` | [`daft.DataType.decimal128(precision, scale)`](../api_docs/datatype.html#daft.DataType.decimal128) |
-| `date` | [`daft.DataType.date()`](../api_docs/datatype.html#daft.DataType.date) |
-| `timestamp` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](../api_docs/datatype.html#daft.DataType.timestamp) |
-| `timestampz`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](../api_docs/datatype.html#daft.DataType.timestamp) |
-| `string` | [`daft.DataType.string()`](../api_docs/datatype.html#daft.DataType.string) |
-| `binary` | [`daft.DataType.binary()`](../api_docs/datatype.html#daft.DataType.binary) |
+| `boolean`                   | [`daft.DataType.bool()`][daft.datatype.DataType.bool] |
+| `byte`                      | [`daft.DataType.int8()`][daft.datatype.DataType.int8] |
+| `short`                     | [`daft.DataType.int16()`][daft.datatype.DataType.int16]|
+| `int`                       | [`daft.DataType.int32()`][daft.datatype.DataType.int32] |
+| `long`                      | [`daft.DataType.int64()`][daft.datatype.DataType.int64] |
+| `float`                     | [`daft.DataType.float32()`][daft.datatype.DataType.float32] |
+| `double`                    | [`daft.DataType.float64()`][daft.datatype.DataType.float64] |
+| `decimal(precision, scale)` | [`daft.DataType.decimal128(precision, scale)`][daft.datatype.DataType.decimal128] |
+| `date`                      | [`daft.DataType.date()`][daft.datatype.DataType.date] |
+| `timestamp`                 | [`daft.DataType.timestamp(timeunit="us", timezone=None)`][daft.datatype.DataType.timestamp] |
+| `timestampz`                | [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`][daft.datatype.DataType.timestamp] |
+| `string`                    | [`daft.DataType.string()`][daft.datatype.DataType.string] |
+| `binary`                    | [`daft.DataType.binary()`][daft.datatype.DataType.binary] |
 | **Nested Types** |
-| `struct(fields)` | [`daft.DataType.struct(fields)`](../api_docs/datatype.html#daft.DataType.struct) |
-| `list(child_type)` | [`daft.DataType.list(child_type)`](../api_docs/datatype.html#daft.DataType.list) |
-| `map(K, V)` | [`daft.DataType.struct({"key": K, "value": V})`](../api_docs/datatype.html#daft.DataType.struct) |
+| `struct(fields)`            | [`daft.DataType.struct(fields)`][daft.datatype.DataType.struct] |
+| `list(child_type)`          | [`daft.DataType.list(child_type)`][daft.datatype.DataType.list] |
+| `map(K, V)`                 | [`daft.DataType.struct({"key": K, "value": V})`][daft.datatype.DataType.struct] |
 
 ## Roadmap
 
@@ -122,7 +122,5 @@ Here are Delta Lake features that are on our roadmap. Please let us know if you 
 2. Read support for [column mappings](https://docs.delta.io/latest/delta-column-mapping.html) ([issue](https://github.com/Eventual-Inc/Daft/issues/1955)).
 
 3. Writing new Delta Lake tables ([issue](https://github.com/Eventual-Inc/Daft/issues/1967)).
-
-<!-- todo(docs - jay): ^ this needs to be updated, issue is already closed -->
 
 4. Writing back to an existing table with appends, overwrites, upserts, or deletes ([issue](https://github.com/Eventual-Inc/Daft/issues/1968)).

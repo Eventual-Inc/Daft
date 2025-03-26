@@ -157,9 +157,9 @@ df = daft.read_table("my_temp_table")
 
 !!! note "Note"
 
-    For complete documentation, please see the [Catalog & Table API docs](api_docs/catalog.html).
+    For complete documentation, please see the [Catalog & Table API docs](api_docs/catalog.md).
 
 * [Catalog][daft.catalog.Catalog] - Interface for creating and accessing both tables and namespaces
 * [Identifier][daft.catalog.Identifier] - Paths to objects e.g. `catalog.namespace.table`
 * [Table][daft.catalog.Table] - Interface for reading and writing dataframes
-* [TableSource][daft.catalog.TableSource] - Sources for table creation like a schema or dataframe.
+* [TableSource][daft.catalog.TableSource] - Sources for table creation like a schema or dataframe
