@@ -25,9 +25,9 @@ These tables define how Daft's [DataType](../../api_docs/datatype.html) maps to 
 | `uint16`     | `SMALLINT UNSIGNED`        | `UINT2`, `UINT16`               | 16-bit unsigned integer |
 | `uint32`     | `INT UNSIGNED`             | `UINT4`, `UINT32`               | 32-bit unsigned integer |
 | `uint64`     | `BIGINT UNSIGNED`          | `UINT8`, `UINT64`               | 64-bit unsigned integer |
-| `float32`    | `REAL`                     | `FLOAT(p)`, `FLOAT32`           | 32-bit floating point   |
-| `float64`    | `DOUBLE [PRECISION]`       | `FLOAT(p)`, `FLOAT64` , `FLOAT` | 64-bit floating point   |
-| `decimal128` | `DEC(p,s)`, `DECIMAL(p,s)` | `NUMERIC(p,s)`                  | Fixed-point number      |
+| `float32`    | `REAL`                     | `FLOAT(P)`, `FLOAT32`           | 32-bit floating point   |
+| `float64`    | `DOUBLE [PRECISION]`       | `FLOAT(P)`, `FLOAT64` , `FLOAT` | 64-bit floating point   |
+| `decimal128` | `DEC(P,S)`, `DECIMAL(P,S)` | `NUMERIC(P,S)`                  | Fixed-point number      |
 
 
 ## Text Types
