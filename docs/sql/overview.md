@@ -45,7 +45,7 @@ sess.sql("SELECT * FROM T, S").show()
 
 ### SQL with DataFrames
 
-Daft's [`daft.sql`](../api_docs/sql.html#daft.sql) function automatically detects any [`daft.DataFrame`](../{{ api_path }}/dataframe_methods/daft.DataFrame.html) objects in your current Python environment to let you query them easily by name.
+Daft's [`daft.sql`][daft.sql.sql.sql] function automatically detects any [`daft.DataFrame`][daft.DataFrame] objects in your current Python environment to let you query them easily by name.
 
 === "⚙️ SQL"
     ```python
@@ -126,7 +126,7 @@ In the above query, both the SQL version of the query and the DataFrame version 
 
 Under the hood, they run the same Expression `col("A") + col("B")`!
 
-One really cool trick you can do is to use the [`daft.sql_expr`](../api_docs/sql.html#daft.sql_expr) function as a helper to easily create Expressions. The following are equivalent:
+One really cool trick you can do is to use the [`daft.sql_expr`][daft.sql.sql.sql_expr] function as a helper to easily create Expressions. The following are equivalent:
 
 === "⚙️ SQL"
     ```python
@@ -187,7 +187,7 @@ Pretty sweet! Of course, this support for running Expressions on your columns ex
 
 ### SQL Functions
 
-SQL also has access to all of Daft's powerful [`daft.Expression`](../{{ api_path }}/dataframe_methods/daft.DataFrame.html#daft.DataFrame) functionality through SQL functions.
+SQL also has access to all of Daft's powerful [`daft.Expression`][daft.Expression] functionality through SQL functions.
 
 However, unlike the Python Expression API which encourages method-chaining (e.g. `col("a").url.download().image.decode()`), in SQL you have to do function nesting instead (e.g. `"image_decode(url_download(a))"`).
 
