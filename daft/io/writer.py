@@ -2,7 +2,7 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
-from daft.daft import IOConfig, WriteMode
+from daft.daft import IOConfig
 from daft.delta_lake.delta_lake_write import make_deltalake_add_action, make_deltalake_fs, sanitize_table_for_deltalake
 from daft.dependencies import pa, pacsv, pq
 from daft.filesystem import (
@@ -32,7 +32,6 @@ class FileWriterBase(ABC):
     def __init__(
         self,
         root_dir: str,
-        write_mode: WriteMode,
         file_idx: int,
         file_format: str,
         partition_values: Optional[RecordBatch] = None,
@@ -107,7 +106,6 @@ class ParquetFileWriter(FileWriterBase):
     def __init__(
         self,
         root_dir: str,
-        write_mode: WriteMode,
         file_idx: int,
         partition_values: Optional[RecordBatch] = None,
         compression: Optional[str] = None,
@@ -119,7 +117,6 @@ class ParquetFileWriter(FileWriterBase):
         super().__init__(
             root_dir=root_dir,
             file_idx=file_idx,
-            write_mode=write_mode,
             file_format="parquet",
             partition_values=partition_values,
             compression=compression,
@@ -171,7 +168,6 @@ class CSVFileWriter(FileWriterBase):
     def __init__(
         self,
         root_dir: str,
-        write_mode: WriteMode,
         file_idx: int,
         partition_values: Optional[RecordBatch] = None,
         io_config: Optional[IOConfig] = None,
@@ -179,7 +175,6 @@ class CSVFileWriter(FileWriterBase):
         super().__init__(
             root_dir=root_dir,
             file_idx=file_idx,
-            write_mode=write_mode,
             file_format="csv",
             partition_values=partition_values,
             io_config=io_config,

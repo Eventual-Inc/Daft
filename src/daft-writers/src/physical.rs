@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_file_formats::{FileFormat, WriteMode};
+use common_file_formats::FileFormat;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -37,7 +37,6 @@ impl WriterFactory for PhysicalWriterFactory {
             false => {
                 let writer = create_pyarrow_file_writer(
                     &self.output_file_info.root_dir,
-                    self.output_file_info.write_mode,
                     file_idx,
                     self.output_file_info.compression.as_ref(),
                     self.output_file_info.io_config.as_ref(),
@@ -52,7 +51,6 @@ impl WriterFactory for PhysicalWriterFactory {
 
 pub fn create_pyarrow_file_writer(
     root_dir: &str,
-    write_mode: WriteMode,
     file_idx: usize,
     compression: Option<&String>,
     io_config: Option<&daft_io::IOConfig>,
@@ -63,7 +61,6 @@ pub fn create_pyarrow_file_writer(
         #[cfg(feature = "python")]
         FileFormat::Parquet => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(
             root_dir,
-            write_mode,
             file_idx,
             compression,
             io_config,
@@ -71,7 +68,7 @@ pub fn create_pyarrow_file_writer(
         )?)),
         #[cfg(feature = "python")]
         FileFormat::Csv => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_csv_writer(
-            root_dir, write_mode, file_idx, io_config, partition,
+            root_dir, file_idx, io_config, partition,
         )?)),
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for physical write".to_string(),
