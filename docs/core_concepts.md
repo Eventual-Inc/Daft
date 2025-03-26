@@ -300,7 +300,7 @@ The following statement will [`df.show()`][daft.DataFrame.show] a DataFrame that
 
 !!! info "Info"
 
-    A common pattern is to create a new columns using [`DataFrame.with_column`]({{ api_path }}/dataframe_methods/daft.DataFrame.with_column.html):
+    A common pattern is to create a new columns using [`DataFrame.with_column`][daft.DataFrame.with_column]:
 
     === "🐍 Python"
         ``` python
@@ -490,7 +490,7 @@ Adding a new column can be achieved with [`df.with_column()`][daft.DataFrame.wit
 
 #### Selecting Columns Using Wildcards
 
-We can select multiple columns at once using wildcards. The expression [`col("*")`]({{ api_path }}/expression_methods/daft.col.html) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
+We can select multiple columns at once using wildcards. The expression [`col("*")`][daft.col] selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
 
 === "🐍 Python"
     ``` python
@@ -512,7 +512,7 @@ We can select multiple columns at once using wildcards. The expression [`col("*"
 ╰───────┴───────╯
 ```
 
-We can also select multiple columns within structs using [`col("struct")["*"]`]({{ api_path }}/expression_methods/daft.Expression.__getitem__.html):
+We can also select multiple columns within structs using `col("struct")["*"]`:
 
 === "🐍 Python"
     ``` python
@@ -703,7 +703,7 @@ The above code will create an expression representing "the column named 'x' incr
 
 #### Literals
 
-You may find yourself needing to hardcode a "single value" oftentimes as an expression. Daft provides a [`lit()`]({{ api_path }}/expression_methods/daft.lit.html) helper to do so:
+You may find yourself needing to hardcode a "single value" oftentimes as an expression. Daft provides a [`lit()`][daft.expressions.lit] helper to do so:
 
 === "🐍 Python"
     ``` python
@@ -727,7 +727,7 @@ This special :func:`~daft.expressions.lit` expression we just created evaluates 
 
 #### Wildcard Expressions
 
-You can create expressions on multiple columns at once using a wildcard. The expression [`col("*")`]({{ api_path }}/expression_methods/daft.col.html)) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
+You can create expressions on multiple columns at once using a wildcard. The expression [`col("*")`][daft.expressions.col] selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
 
 === "🐍 Python"
     ``` python
@@ -1126,7 +1126,7 @@ Other useful comparisons can be found in the [Expressions API Reference](api_doc
 
 ### If Else Pattern
 
-The [`.if_else()`]({{ api_path }}/expression_methods/daft.Expression.if_else.html) method is a useful expression to have up your sleeve for choosing values between two other expressions based on a logical expression:
+The [`.if_else()`][daft.expressions.Expression.if_else] method is a useful expression to have up your sleeve for choosing values between two other expressions based on a logical expression:
 
 === "🐍 Python"
     ``` python
@@ -1380,6 +1380,8 @@ You can parse strings as timestamps with time zones and convert between differen
 
 The [`.dt.truncate()`]({{ api_path }}/expression_methods/daft.Expression.dt.truncate.html) method allows you to truncate timestamps to specific time units. This can be useful for grouping data by time periods. For example, to truncate timestamps to the nearest hour:
 
+<!-- todo(docs - cc): add relative path to dt.truncate after figure out datetime namespace-->
+
 === "🐍 Python"
     ``` python
     df = daft.from_pydict({
@@ -1423,7 +1425,7 @@ Daft can read data from a variety of sources, and write data to many destination
 
 ## Built-in Functions
 
-Daft provides built-in functions for common data operations. Currently, we support [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
+Daft provides built-in functions for common data operations. Currently, we support [`monotonically_increasing_id()`][daft.functions.monotonically_increasing_id], which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
 
 - Using the **upper 28 bits** for the partition number
 - Using the **lower 36 bits** for the row number within each partition
@@ -1444,7 +1446,7 @@ This allows for:
 
 !!! note "Note"
 
-    The `NativeRunner` does not support repartitioning. If you attempt to use [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) with the `NativeRunner`, it will assign sequential IDs without considering partitions. For distributed workloads, always use the `RayRunner`:
+    The `NativeRunner` does not support repartitioning. If you attempt to use [`monotonically_increasing_id()`][daft.functions.monotonically_increasing_id] with the `NativeRunner`, it will assign sequential IDs without considering partitions. For distributed workloads, always use the `RayRunner`:
 
     ```python
     daft.context.set_runner_ray()
@@ -1452,7 +1454,7 @@ This allows for:
 
 #### Example: Assigning Unique IDs
 
-To use [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) effectively, ensure you're using the `RayRunner`, as the `NativeRunner` does not support repartitioning.
+To use [`monotonically_increasing_id()`][daft.functions.monotonically_increasing_id] effectively, ensure you're using the `RayRunner`, as the `NativeRunner` does not support repartitioning.
 
 ```python
 import daft
@@ -2115,9 +2117,9 @@ Let's first create a dataframe that will be used as a running example throughout
     ```
 
 
-### Per-column per-row functions using [`.apply`]({{ api_path }}/expression_methods/daft.Expression.apply.html)
+### Per-column per-row functions using [`.apply()`][daft.expressions.Expression.apply]
 
-You can use [`.apply`]({{ api_path }}/expression_methods/daft.Expression.apply.html) to run a Python function on every row in a column.
+You can use [`.apply()`][daft.expressions.Expression.apply] to run a Python function on every row in a column.
 
 For example, the following example creates a new `flattened_image` column by calling `.flatten()` on every object in the `image` column.
 
@@ -2150,7 +2152,7 @@ Note here that we use the `return_dtype` keyword argument to specify that our re
 
 ### Multi-column per-partition functions using [`@udf`](api_docs/udf.md#creating-udfs)
 
-[`.apply`]({{ api_path }}/expression_methods/daft.Expression.apply.html) is great for convenience, but has two main limitations:
+[`.apply()`][daft.expressions.Expression.apply] is great for convenience, but has two main limitations:
 
 1. It can only run on single columns
 2. It can only run on single items at a time
@@ -2391,6 +2393,8 @@ Daft is built to work comfortably with multimodal data types, including URLs and
 ```
 
 Let’s turn the bytes into human-readable images using [`image.decode()`]({{ api_path }}/expression_methods/daft.Expression.image.decode.html):
+
+<!-- todo(docs - cc): add relative path to image.decode after figure out image namespace-->
 
 === "🐍 Python"
 
