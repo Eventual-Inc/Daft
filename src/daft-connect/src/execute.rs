@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_file_formats::{FileFormat, WriteMode};
 use daft_catalog::TableSource;
 use daft_context::get_context;
-use daft_dsl::{unresolved_col, LiteralValue};
+use daft_dsl::LiteralValue;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -149,20 +149,8 @@ impl ConnectSession {
                     input,
                     source,
                     save_type,
-                    partitioning_columns,
                     ..
                 } = operation;
-
-                let partitioning_columns = if partitioning_columns.is_empty() {
-                    None
-                } else {
-                    Some(
-                        partitioning_columns
-                            .into_iter()
-                            .map(unresolved_col)
-                            .collect::<Vec<_>>(),
-                    )
-                };
 
                 let input = input.required("input")?;
                 let source = source.required("source")?;
@@ -189,14 +177,7 @@ impl ConnectSession {
                     SaveMode::Ignore => not_yet_implemented!("Ignore"),
                 };
 
-                let plan = plan.table_write(
-                    &path,
-                    write_mode,
-                    file_format,
-                    partitioning_columns,
-                    None,
-                    None,
-                )?;
+                let plan = plan.table_write(&path, write_mode, file_format, None, None, None)?;
 
                 let mut result_stream = this.run_query(plan).await?;
                 // TODO: this should be handled by the runner's write implementation.
