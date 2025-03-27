@@ -52,7 +52,7 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
     1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
 
-    2. [API Documentation](api_docs/index.html): Searchable documentation and reference material to Daft’s public API.
+    2. [API Documentation](api_docs/index.md): Searchable documentation and reference material to Daft’s public API.
 
 ### Get Started
 

@@ -956,7 +956,7 @@ You may find a full list of string operations in the [Expressions API Reference]
 
 One special case of a String column you may find yourself working with is a column of URL strings.
 
-Daft provides the [`.url.*`](api_docs/expressions.html#url-expressions) method namespace with functionality for working with URL strings. For example, to download data from URLs:
+Daft provides the [`.url.*`](api_docs/expressions.md#urls) method namespace with functionality for working with URL strings. For example, to download data from URLs:
 
 <!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
@@ -1012,7 +1012,7 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 
 #### JSON Expressions
 
-If you have a column of JSON strings, Daft provides the [`.json.*`](api_docs/expressions.html#json) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
+If you have a column of JSON strings, Daft provides the [`.json.*`](api_docs/expressions.md#json) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
 
 <!-- todo(docs - cc): add relative path to .json after figure out json namespace-->
 
@@ -1120,7 +1120,7 @@ For example, here we can compare if each element in column "A" is equal to eleme
 (Showing first 3 of 3 rows)
 ```
 
-Other useful comparisons can be found in the [Expressions API Reference](api_docs/expressions.md#numeric).
+Other useful comparisons can be found in the [Expressions API Reference](api_docs/expressions.html#numeric).
 
 <!-- todo(docs - cc): current expressions api docs is not separated by sections, so how to reference numeric section? -->
 
@@ -1562,7 +1562,7 @@ Daft also provides an easy utility to create a DataFrame from globbing a path. Y
     #   ...
     ```
 
-This is especially useful for reading things such as a folder of images or documents into Daft. A common pattern is to then download data from these files into your DataFrame as bytes, using the [`.url.download()`]({{ api_path }}/expression_methods/daft.Expression.url.download.html) method.
+This is especially useful for reading things such as a folder of images or documents into Daft. A common pattern is to then download data from these files into your DataFrame as bytes, using the [`.url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] method.
 
 <!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
@@ -1600,7 +1600,7 @@ To learn more, consult the [`SQL Integration Page`](integrations/sql.md) or the 
 
 ### Reading a column of URLs
 
-Daft provides a convenient way to read data from a column of URLs using the [`.url.download()`]({{ api_path }}/expression_methods/daft.Expression.url.download.html#daft.Expression.url.download) method. This is particularly useful when you have a DataFrame with a column containing URLs pointing to external resources that you want to fetch and incorporate into your DataFrame.
+Daft provides a convenient way to read data from a column of URLs using the [`.url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] method. This is particularly useful when you have a DataFrame with a column containing URLs pointing to external resources that you want to fetch and incorporate into your DataFrame.
 
 <!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
@@ -1668,7 +1668,7 @@ Daft provides simple DataTypes that are ubiquituous in many DataFrames such as n
 
 !!! tip "Tip"
 
-    For a full overview on all the DataTypes that Daft supports, see the [DataType API Reference](api_docs/datatype.md).
+    For a full overview on all the DataTypes that Daft supports, see the [DataType API Reference](api_docs/datatypes.md).
 
 
 ### Numeric DataTypes
@@ -1749,7 +1749,7 @@ Daft supports many more interesting complex DataTypes, for example:
 * [`DataType.embedding()`][daft.datatype.DataType.embedding]: Lower-dimensional vector representation of data (e.g. words)
 * [`DataType.image()`][daft.datatype.DataType.image]: NHWC images
 
-Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the [image expressions API reference](api_docs/expressions.html#api-expressions-images). For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
+Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the [image expressions API reference](api_docs/expressions.md#image). For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
 
 <!-- todo(docs - cc): add relative path to expressions image page after figure out image namespace-->
 
@@ -2153,7 +2153,7 @@ Now you're ready to call this function on the `urls` column and store the output
 
 ## Multimodal Data
 
-Daft is built to work comfortably with multimodal data types, including URLs and images. You can use the [`url.download()`]({{ api_path }}/expression_methods/daft.Expression.url.download.html) expression to download the bytes from a URL. Let's store them in a new column using the [`df.with_column()`][daft.DataFrame.with_column] method:
+Daft is built to work comfortably with multimodal data types, including URLs and images. You can use the [`url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] expression to download the bytes from a URL. Let's store them in a new column using the [`df.with_column()`][daft.DataFrame.with_column] method:
 
 <!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
@@ -2178,7 +2178,7 @@ Daft is built to work comfortably with multimodal data types, including URLs and
 (Showing first 5 of 5 rows)
 ```
 
-Let’s turn the bytes into human-readable images using [`image.decode()`]({{ api_path }}/expression_methods/daft.Expression.image.decode.html):
+Let’s turn the bytes into human-readable images using [`image.decode()`][daft.expressions.expressions.ExpressionImageNamespace.decode]:
 
 <!-- todo(docs - cc): add relative path to image.decode after figure out image namespace-->
 

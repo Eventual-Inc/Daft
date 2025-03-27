@@ -9,8 +9,10 @@ Learn more about [UDFs](../core_concepts.md#user-defined-functions-udf) in Daft 
 ## Creating UDFs
 
 ::: daft.udf.udf
+    options:
+        heading_level: 3
 
-<!-- this function needs serious reformatting with the example and resource request section should be a heading -->
+<!-- this function needs serious reformatting with the example and resource request section should not be a heading -->
 
 ## Using UDFs
 

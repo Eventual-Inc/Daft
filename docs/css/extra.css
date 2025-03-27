@@ -48,6 +48,6 @@
 }
 
 /* method label */
-.doc-symbol-method::after {
+code.doc-symbol-method::after {
   content: "method";
 }

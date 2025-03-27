@@ -2,10 +2,19 @@
 
 Daft Expressions allow you to express some computation that needs to happen in a DataFrame. This page provides an overview of all the functionality that is provided by Daft Expressions. Learn more about [Expressions](../core_concepts.md#expressions) in Daft User Guide.
 
+## Constructors
+
 ::: daft.expressions.col
 ::: daft.expressions.lit
 ::: daft.expressions.list_
 ::: daft.expressions.struct
+
+<!--
+## Generic
+## Numeric
+## Logical
+## Aggregation
+-->
 
 ::: daft.expressions.Expression
     options:
@@ -18,9 +27,13 @@ Daft Expressions allow you to express some computation that needs to happen in a
         filters: ["!^_"]
         summary: false -->
 
-## Strings
+<!-- ## Strings
 
-The following methods are available under the `expr.str` attribute.
+The following methods are available under the `expr.str` attribute. -->
+
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.str.[method]
+::: daft.expressions.expressions.ExpressionStringNamespace
+    filters: ["!^_"] -->
 
 ## Binary
 
@@ -81,13 +94,21 @@ The following methods are available under the `expr.float` attribute.
         heading: Expression.struct.float.fill_nan
         heading_level: 3
 
-## Temporal
+<!-- ## Temporal
 
-The following methods are available under the `expr.dt` attribute.
+The following methods are available under the `expr.dt` attribute. -->
 
-## List
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.dt.[method]
+::: daft.expressions.expressions.ExpressionDatetimeNamespace
+    filters: ["!^_"] -->
 
-The following methods are available under the `expr.list` attribute.
+<!-- ## List
+
+The following methods are available under the `expr.list` attribute. -->
+
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.list.[method]
+::: daft.expressions.expressions.ExpressionListNamespace
+    filters: ["!^_"] -->
 
 ## Struct
 

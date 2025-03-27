@@ -8,7 +8,7 @@ Daft also exposes a [`SQL`](core_concepts.md#sql) interface which interoperates 
 
 ## DataFrames
 
-The [`DataFrame`]({{ api_path }}/dataframe_methods/daft.DataFrame.html) is the core concept in Daft. Think of it as a table with rows and columns, similar to a spreadsheet or a database table. It's designed to handle large amounts of data efficiently.
+The [`DataFrame`][daft.DataFrame] is the core concept in Daft. Think of it as a table with rows and columns, similar to a spreadsheet or a database table. It's designed to handle large amounts of data efficiently.
 
 Daft DataFrames are lazy. This means that calling most methods on a DataFrame will not execute that operation immediately - instead, DataFrames expose explicit methods such as [`daft.DataFrame.show()`][daft.DataFrame.show] and [`daft.DataFrame.write_parquet()`][daft.DataFrame.write_parquet] which will actually trigger computation of the DataFrame.
 
