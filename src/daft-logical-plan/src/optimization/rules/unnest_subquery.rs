@@ -535,7 +535,8 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Pivot(..)
         | LogicalPlan::Concat(..)
         | LogicalPlan::Join(..)
-        | LogicalPlan::Sink(..) => {
+        | LogicalPlan::Sink(..)
+        | LogicalPlan::Window(..) => {
             if subquery_on.is_empty() {
                 Ok((plan.clone(), vec![], vec![]))
             } else {

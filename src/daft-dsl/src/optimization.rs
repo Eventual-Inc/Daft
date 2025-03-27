@@ -22,6 +22,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         Expr::Alias(child, _) => requires_computation(child),
         Expr::Column(..) | Expr::Literal(_) => false,
         Expr::Agg(..)
+        | Expr::Window(..)
         | Expr::BinaryOp { .. }
         | Expr::Cast(..)
         | Expr::Function { .. }
