@@ -40,7 +40,7 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
     Read a local LanceDB table:
         >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
         >>> df.show()
-    
+
     Read a LanceDB table from a public S3 bucket:
         >>> from daft.io import S3Config
         >>> s3_config = S3Config(region="us-west-2", anonymous=True)
