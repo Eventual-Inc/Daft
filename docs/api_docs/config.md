@@ -32,19 +32,18 @@ These configurations are most often used as inputs to Daft DataFrame reading I/O
     options:
         filters: ["!^_"]
 
-<!-- fix the following: -->
-<!-- ::: daft.io.S3Config
+::: daft.io.S3Config
     options:
-        filters: ["!^_"] -->
+        filters: ["!^_"]
 
-<!-- ::: daft.io.S3Credentials
+::: daft.io.S3Credentials
     options:
-        filters: ["!^_"] -->
+        filters: ["!^_"]
 
-<!-- ::: daft.io.GCSConfig
+::: daft.io.GCSConfig
     options:
-        filters: ["!^_"] -->
+        filters: ["!^_"]
 
-<!-- ::: daft.io.AzureConfig
+::: daft.io.AzureConfig
     options:
-        filters: ["!^_"] -->
+        filters: ["!^_"]

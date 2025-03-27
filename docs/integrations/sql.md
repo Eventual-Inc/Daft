@@ -1,6 +1,6 @@
 # SQL
 
-You can read the results of SQL queries from databases, data warehouses, and query engines, into a Daft DataFrame via the [`daft.read_sql()`](../{{ api_path }}/io_functions/daft.read_sql.html#daft.read_sql) function.
+You can read the results of SQL queries from databases, data warehouses, and query engines, into a Daft DataFrame via the [`daft.read_sql()`][daft.read_sql] function.
 
 Daft currently supports:
 
@@ -8,7 +8,7 @@ Daft currently supports:
 
 2. **Parallel + Distributed Reads:** Daft parallelizes SQL reads by using all local machine cores with its default multithreading runner, or all cores across multiple machines if using the [distributed Ray runner](../distributed.md).
 
-3. **Skipping Filtered Data:** Daft ensures that only data that matches your [`df.select(...)`](../{{ api_path }}/dataframe_methods/daft.DataFrame.select.html), [`df.limit(...)`](../{{ api_path }}/dataframe_methods/daft.DataFrame.limit.html), and [`df.where(...)`](../{{ api_path }}/dataframe_methods/daft.DataFrame.where.html) expressions will be read, often skipping entire partitions/columns.
+3. **Skipping Filtered Data:** Daft ensures that only data that matches your [`df.select()`][daft.DataFrame.select], [`df.limit()`][daft.DataFrame.limit], and [`df.where()`][daft.DataFrame.where] expressions will be read, often skipping entire partitions/columns.
 
 ## Installing Daft with SQL Support
 
@@ -20,7 +20,7 @@ pip install -U "daft[sql]"
 
 ## Reading a SQL query
 
-To read a SQL query, provide [`daft.read_sql()`](../{{ api_path }}/io_functions/daft.read_sql.html) with the **SQL query** and a **URL** for the data source.
+To read a SQL query, provide [`daft.read_sql()`][daft.read_sql] with the **SQL query** and a **URL** for the data source.
 
 The example below creates a local SQLite table for Daft to read.
 
@@ -82,7 +82,7 @@ You can also directly provide a SQL alchemy connection via a **connection factor
 
 For large datasets, Daft can parallelize SQL reads by using all local machine cores with its default multithreading runner, or all cores across multiple machines if using the [distributed Ray runner](../distributed.md).
 
-Supply the [`daft.read_sql()`](../{{ api_path }}/io_functions/daft.read_sql.html) function with a **partition column** and optionally the **number of partitions** to enable parallel reads.
+Supply the [`daft.read_sql()`][daft.read_sql] function with a **partition column** and optionally the **number of partitions** to enable parallel reads.
 
 === "🐍 Python"
 
@@ -106,7 +106,7 @@ Behind the scenes, Daft will partition the data by appending a `WHERE col > ... 
 
 Filter, projection, and limit pushdown optimizations can be used to reduce the amount of data read from the database.
 
-In the example below, Daft reads the top ranked terms from the BigQuery Google Trends dataset. The `where` and `select` expressions in this example will be pushed down into the SQL query itself, we can see this by calling the [`df.explain()`](../{{ api_path }}/dataframe_methods/daft.DataFrame.explain.html) method.
+In the example below, Daft reads the top ranked terms from the BigQuery Google Trends dataset. The `where` and `select` expressions in this example will be pushed down into the SQL query itself, we can see this by calling the [`df.explain()`][daft.DataFrame.explain] method.
 
 === "🐍 Python"
 

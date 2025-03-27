@@ -28,11 +28,11 @@ If instead you wish to have Daft use credentials from the "driver", you may wish
 
 ### Manually specify credentials
 
-You may also choose to pass these values into your Daft I/O function calls using an [`daft.io.AzureConfig`](../{{ api_path }}/io_configs/daft.io.AzureConfig.html) config object.
+You may also choose to pass these values into your Daft I/O function calls using an [`daft.io.AzureConfig`][daft.io.AzureConfig] config object.
 
 <!-- todo(docs - jay): add SQL AzureConfig https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/sql_funcs/daft.sql._sql_funcs.AzureConfig.html#daft.sql._sql_funcs.AzureConfig -->
 
-[`daft.set_planning_config`](../{{ api_path }}/configuration_functions/daft.set_planning_config.html) is a convenient way to set your [`daft.io.IOConfig`](../{{ api_path }}/io_configs/daft.io.IOConfig.html) as the default config to use on any subsequent Daft method calls.
+[`daft.set_planning_config`][daft.context.set_planning_config] is a convenient way to set your [`daft.io.IOConfig`][daft.io.IOConfig] as the default config to use on any subsequent Daft method calls.
 
 === "🐍 Python"
 
@@ -49,7 +49,7 @@ You may also choose to pass these values into your Daft I/O function calls using
     df = daft.read_parquet("az://my_container/my_path/**/*")
     ```
 
-Alternatively, Daft supports overriding the default IOConfig per-operation by passing it into the `io_config=` keyword argument. This is extremely flexible as you can pass a different [`daft.io.AzureConfig`](../{{ api_path }}/io_configs/daft.io.AzureConfig.html) per function call if you wish!
+Alternatively, Daft supports overriding the default IOConfig per-operation by passing it into the `io_config=` keyword argument. This is extremely flexible as you can pass a different [`daft.io.AzureConfig`][daft.io.AzureConfig] per function call if you wish!
 
 === "🐍 Python"
 
@@ -60,7 +60,7 @@ Alternatively, Daft supports overriding the default IOConfig per-operation by pa
 
 ### Connect to Microsoft Fabric/OneLake
 
-If you are connecting to storage in OneLake or another Microsoft Fabric service, set the `use_fabric_endpoint` parameter to `True` in the [`daft.io.AzureConfig`](../{{ api_path }}/io_configs/daft.io.AzureConfig.html) object.
+If you are connecting to storage in OneLake or another Microsoft Fabric service, set the `use_fabric_endpoint` parameter to `True` in the [`daft.io.AzureConfig`][daft.io.AzureConfig] object.
 
 === "🐍 Python"
 

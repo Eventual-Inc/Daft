@@ -2,7 +2,7 @@
 
 Daft is able to read datasets directly from Hugging Face via the `hf://datasets/` protocol.
 
-Since Hugging Face will [automatically convert](https://huggingface.co/docs/dataset-viewer/en/parquet) all public datasets to parquet format, we can read these datasets using the [`daft.read_parquet()`](../{{ api_path }}/io_functions/daft.read_parquet.html) method.
+Since Hugging Face will [automatically convert](https://huggingface.co/docs/dataset-viewer/en/parquet) all public datasets to parquet format, we can read these datasets using the [`daft.read_parquet()`][daft.read_parquet] method.
 
 !!! warning "Warning"
 
