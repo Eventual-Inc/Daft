@@ -1,4 +1,3 @@
 sphinx/_build
 sphinx/source/doc_gen/
 site
-mkdocs/api_docs

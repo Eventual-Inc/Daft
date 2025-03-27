@@ -1,0 +1,53 @@
+/*https://github.com/squidfunk/mkdocs-material/issues/2574#issuecomment-821979698*/
+[data-md-toggle="search"]:not(:checked) ~ .md-header .md-search__form::after {
+    position: absolute;
+    top: .3rem;
+    right: .3rem;
+    display: block;
+    padding: .1rem .4rem;
+    color: var(--md-default-bg-color);
+    font-weight: bold;
+    font-size: .8rem;
+    border: .05rem solid var(--md-default-bg-color--lighter);
+    border-radius: .1rem;
+    content: "/";
+}
+
+:root {
+  --md-primary-fg-color: #532687;
+  --md-accent-fg-color: #ad9fff;
+}
+
+[data-md-color-scheme=slate][data-md-color-primary=black], [data-md-color-scheme=default] {
+  --md-typeset-a-color: #7862FF;
+}
+
+/* use daft purple for note admonitions */
+.md-typeset .admonition.note,
+.md-typeset details.note {
+  border-color: rgb(120,98,255)
+}
+
+.md-typeset .note > .admonition-title,
+.md-typeset .note > summary {
+  background-color: rgb(120,98,255, 0.1);
+}
+
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before {
+  background-color: rgb(120,98,255);
+}
+
+/* use 100% width for tables */
+.md-typeset__table {
+  width: 100%;
+}
+
+.md-typeset__table table:not([class]) {
+  display: table
+}
+
+/* method label */
+code.doc-symbol-method::after {
+  content: "method";
+}
