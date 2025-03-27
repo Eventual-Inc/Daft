@@ -201,24 +201,22 @@ plugins:
           docstring_style: google
           docstring_section_style: table
           heading_level: 2
-          merge_init_into_class: true
-          separate_signature: true
-          show_signature_annotations: true
           line_length: 60
-          show_root_heading: true
+          merge_init_into_class: true
+          members_order: alphabetical # or source
+          separate_signature: true
+          show_bases: false
+          show_docstring_examples: true
+          show_docstring_returns: true
+          show_if_no_docstring: true
           show_root_full_path: false
-          show_object_full_path: false
+          show_root_heading: true
+          show_signature_annotations: true
           show_source: true
           show_symbol_type_heading: true
           show_symbol_type_toc: true
           signature_crossrefs: true
           unwrap_annotated: true
-          show_if_no_docstring: true
-          members_order: alphabetical # or source
-          show_docstring_examples: true
-          show_docstring_returns: true
-          show_labels: true
-          show_bases: false
           summary:
-            functions: true
             attributes: false
+            functions: true

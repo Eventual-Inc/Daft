@@ -11,7 +11,7 @@ build:
 
 python:
   install:
-  - requirements: requirements-dev.txt
+  - requirements: requirements-docs.txt
 
 mkdocs:
   configuration: mkdocs.yml
