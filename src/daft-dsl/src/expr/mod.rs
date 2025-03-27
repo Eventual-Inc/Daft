@@ -14,7 +14,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
-use common_treenode::TreeNode;
+use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
         try_mean_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
@@ -151,7 +151,11 @@ pub enum ResolvedColumn {
     /// Column resolved to the scope of either the left or right input of a join.
     ///
     /// This variant should only exist in join predicates.
-    JoinSide(Arc<str>, JoinSide),
+    ///
+    /// TODO: Once we support identifying columns by ordinals, join-side columns
+    /// should just be normal resolved columns, where ordinal < (# left schema fields) means
+    /// it's from the left side, and otherwise right side. This is similar to Substrait.
+    JoinSide(Field, JoinSide),
 
     /// Column resolved to the scope of an outer plan of a subquery.
     ///
@@ -329,17 +333,27 @@ pub enum SketchType {
 
 /// Unresolved column with no associated plan ID or schema.
 pub fn unresolved_col(name: impl Into<Arc<str>>) -> ExprRef {
-    Expr::Column(Column::Unresolved(UnresolvedColumn {
+    UnresolvedColumn {
         name: name.into(),
         plan_ref: PlanRef::Unqualified,
         plan_schema: None,
-    }))
+    }
     .into()
 }
 
 /// Basic resolved column, refers to a singular input scope
 pub fn resolved_col<S: Into<Arc<str>>>(name: S) -> ExprRef {
-    Expr::Column(Column::Resolved(ResolvedColumn::Basic(name.into()))).into()
+    ResolvedColumn::Basic(name.into()).into()
+}
+
+/// Resolved column referring to the left side of a join
+pub fn left_col(field: Field) -> ExprRef {
+    ResolvedColumn::JoinSide(field, JoinSide::Left).into()
+}
+
+/// Resolved column referring to the right side of a join
+pub fn right_col(field: Field) -> ExprRef {
+    ResolvedColumn::JoinSide(field, JoinSide::Right).into()
 }
 
 pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
@@ -1112,10 +1126,8 @@ impl Expr {
             Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
                 schema.get_field(name).cloned()
             }
-            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(..))) => {
-                Err(DaftError::InternalError(
-                    "Cannot resolve join side column field with Expr::to_field".to_string(),
-                ))
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(field, ..))) => {
+                Ok(field.clone())
             }
 
             Self::Column(Column::Resolved(ResolvedColumn::OuterRef(field, _))) => Ok(field.clone()),
@@ -1297,7 +1309,9 @@ impl Expr {
             Self::Cast(expr, ..) => expr.name(),
             Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
             Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => name.as_ref(),
-            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, ..))) => name.as_ref(),
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(Field { name, .. }, ..))) => {
+                name.as_ref()
+            }
             Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _))) => {
                 name.as_ref()
             }
@@ -1464,6 +1478,32 @@ impl Expr {
 
     pub fn eq_null_safe(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::EqNullSafe, self, other)
+    }
+
+    /// Convert all basic resolved columns to left join side columns
+    pub fn to_left_cols(self: ExprRef, schema: SchemaRef) -> DaftResult<ExprRef> {
+        Ok(self
+            .transform(|e| match e.as_ref() {
+                Self::Column(Column::Resolved(ResolvedColumn::Basic(name)))
+                | Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                    Ok(Transformed::yes(left_col(schema.get_field(name)?.clone())))
+                }
+                _ => Ok(Transformed::no(e)),
+            })?
+            .data)
+    }
+
+    /// Convert all basic resolved columns to right join side columns
+    pub fn to_right_cols(self: ExprRef, schema: SchemaRef) -> DaftResult<ExprRef> {
+        Ok(self
+            .transform(|e| match e.as_ref() {
+                Self::Column(Column::Resolved(ResolvedColumn::Basic(name)))
+                | Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                    Ok(Transformed::yes(right_col(schema.get_field(name)?.clone())))
+                }
+                _ => Ok(Transformed::no(e)),
+            })?
+            .data)
     }
 }
 
