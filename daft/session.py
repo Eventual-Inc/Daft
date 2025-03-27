@@ -168,12 +168,53 @@ class Session:
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace(identifier)
 
-    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
-        """Creates a table in the current catalog."""
+    def create_namespace_if_not_exists(self, identifier: Identifier | str):
+        """Creates a namespace in the current catalog if it does not already exist."""
         if not (catalog := self.current_catalog()):
+            raise ValueError("Cannot create a namespace without a current catalog")
+        return catalog.create_namespace_if_not_exists(identifier)
+
+    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+        """Creates a table in the current catalog.
+
+        If no namespace is specified, the current namespace is used.
+
+        Returns:
+            Table: the newly created table instance.
+        """
+        if not (catalog := self.current_catalog()):
+            # TODO relax this constraint by joining with the catalog name
             raise ValueError("Cannot create a table without a current catalog")
-        # TODO join the identifier with the current namespace
+
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if len(identifier) == 1:
+            if ns := self.current_namespace():
+                identifier = ns + identifier
+
         return catalog.create_table(identifier, source)
+
+    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+        """Creates a table in the current catalog if it does not already exist.
+
+        If no namespace is specified, the current namespace is used.
+
+        Returns:
+            Table: the newly created instance, or the existing table instance.
+        """
+        if not (catalog := self.current_catalog()):
+            # TODO relax this constraint by joining with the catalog name
+            raise ValueError("Cannot create a table without a current catalog")
+
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if len(identifier) == 1:
+            if ns := self.current_namespace():
+                identifier = ns + identifier
+
+        return catalog.create_table_if_not_exists(identifier, source)
 
     def create_temp_table(self, identifier: str, source: TableSource | object = None) -> Table:
         """Creates a temp table scoped to this session's lifetime.
@@ -487,14 +528,24 @@ def detach_table(alias: str):
 ###
 
 
-def create_namespace(self, identifier: Identifier | str):
+def create_namespace(identifier: Identifier | str):
     """Creates a namespace in the current session's active catalog."""
     return _session().create_namespace(identifier)
 
 
-def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+def create_namespace_if_not_exists(identifier: Identifier | str):
+    """Creates a namespace in the current session's active catalog if it does not already exist."""
+    return _session().create_namespace_if_not_exists(identifier)
+
+
+def create_table(identifier: Identifier | str, source: TableSource | object) -> Table:
     """Creates a table in the current session's active catalog and namespace."""
     return _session().create_table(identifier, source)
+
+
+def create_table_if_not_exists(identifier: Identifier | str, source: TableSource | object) -> Table:
+    """Creates a table in the current session's active catalog and namespace if it does not already exist."""
+    return _session().create_table_if_not_exists(identifier, source)
 
 
 def create_temp_table(identifier: str, source: object | TableSource = None) -> Table:
