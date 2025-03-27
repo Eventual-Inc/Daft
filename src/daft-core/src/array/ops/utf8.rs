@@ -1428,6 +1428,7 @@ impl Utf8Array {
         Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
 
+    /// For text-to-binary encoding.
     pub fn encode<Encoder>(&self, encoder: Encoder) -> DaftResult<BinaryArray>
     where
         Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
@@ -1455,6 +1456,14 @@ impl Utf8Array {
         );
         let array = Box::new(array);
         Ok(BinaryArray::from((self.name(), array)))
+    }
+
+    /// For text-to-binary encoding, but inserts nulls on failures.
+    pub fn try_encode<Encoder>(&self, _: Encoder) -> DaftResult<BinaryArray>
+    where
+        Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
+    {
+        todo!("try_encode")
     }
 }
 

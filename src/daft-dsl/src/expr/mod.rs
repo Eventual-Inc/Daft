@@ -208,6 +208,9 @@ pub enum Expr {
     #[display("cast({_0} as {_1})")]
     Cast(ExprRef, DataType),
 
+    #[display("cast({_0} as {_1})")]
+    TryCast(ExprRef, DataType),
+
     #[display("{}", function_display_without_formatter(func, inputs)?)]
     Function {
         func: FunctionExpr,
@@ -704,6 +707,10 @@ impl Expr {
         Self::Cast(self, dtype.clone()).into()
     }
 
+    pub fn try_cast(self: ExprRef, dtype: &DataType) -> ExprRef {
+        Self::TryCast(self, dtype.clone()).into()
+    }
+
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
         Self::Agg(AggExpr::Count(self, mode)).into()
     }
@@ -897,6 +904,10 @@ impl Expr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.cast({dtype})"))
             }
+            Self::TryCast(expr, dtype) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.try_cast({dtype})"))
+            }
             Self::Not(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.not()"))
@@ -981,6 +992,7 @@ impl Expr {
             | Self::IsNull(expr)
             | Self::NotNull(expr)
             | Self::Cast(expr, ..)
+            | Self::TryCast(expr, ..)
             | Self::Alias(expr, ..)
             | Self::InSubquery(expr, _) => {
                 vec![expr.clone()]
@@ -1029,6 +1041,10 @@ impl Expr {
                 Self::NotNull(children.first().expect("Should have 1 child").clone())
             }
             Self::Cast(.., dtype) => Self::Cast(
+                children.first().expect("Should have 1 child").clone(),
+                dtype.clone(),
+            ),
+            Self::TryCast(.., dtype) => Self::TryCast(
                 children.first().expect("Should have 1 child").clone(),
                 dtype.clone(),
             ),
@@ -1112,6 +1128,7 @@ impl Expr {
             Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
             Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
+            Self::TryCast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
                 plan_schema: Some(plan_schema),
@@ -1307,6 +1324,7 @@ impl Expr {
             Self::Alias(.., name) => name.as_ref(),
             Self::Agg(agg_expr) => agg_expr.name(),
             Self::Cast(expr, ..) => expr.name(),
+            Self::TryCast(expr, ..) => expr.name(),
             Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
             Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => name.as_ref(),
             Self::Column(Column::Resolved(ResolvedColumn::JoinSide(Field { name, .. }, ..))) => {
@@ -1411,6 +1429,7 @@ impl Expr {
                 Expr::IfElse { .. }
                 | Expr::Agg(..)
                 | Expr::Cast(..)
+                | Expr::TryCast(..)
                 | Expr::IsIn(..)
                 | Expr::List(..)
                 | Expr::Between(..)
@@ -1462,6 +1481,7 @@ impl Expr {
             Self::BinaryOp { .. } => true,
             Self::Alias(expr, ..) => expr.has_compute(),
             Self::Cast(expr, ..) => expr.has_compute(),
+            Self::TryCast(expr, ..) => expr.has_compute(),
             Self::Not(expr) => expr.has_compute(),
             Self::IsNull(expr) => expr.has_compute(),
             Self::NotNull(expr) => expr.has_compute(),
@@ -1691,7 +1711,9 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::IsIn(_, _) | Expr::Between(_, _, _) | Expr::InSubquery(_, _) | Expr::Exists(_) => 0.2,
 
         // Pass through for expressions that wrap other expressions
-        Expr::Cast(expr, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
+        Expr::Cast(expr, _)
+        | Expr::TryCast(expr, _)
+        | Expr::Alias(expr, _)  => estimated_selectivity(expr, schema),
 
         // Boolean literals
         Expr::Literal(lit) => match lit {

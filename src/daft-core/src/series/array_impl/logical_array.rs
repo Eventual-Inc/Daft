@@ -56,6 +56,10 @@ macro_rules! impl_series_like_for_logical_array {
                 self.0.cast(datatype)
             }
 
+            fn try_cast(&self, datatype: &DataType) -> DaftResult<Series> {
+                self.0.try_cast(datatype)
+            }
+
             fn data_type(&self) -> &DataType {
                 self.0.data_type()
             }

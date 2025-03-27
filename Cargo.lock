@@ -2189,6 +2189,7 @@ dependencies = [
  "paste",
  "pyo3",
  "serde",
+ "simdutf8",
  "snafu",
  "tiktoken-rs",
  "tokio",

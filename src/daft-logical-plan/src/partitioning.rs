@@ -253,6 +253,10 @@ fn translate_clustering_spec_expr(
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
             Ok(newchild.cast(dtype))
         }
+        Expr::TryCast(child, dtype) => {
+            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
+            Ok(newchild.try_cast(dtype))
+        }
         Expr::Function { func, inputs } => {
             let new_inputs = inputs
                 .iter()

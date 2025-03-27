@@ -20,6 +20,7 @@ pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn broadcast(&self, num: usize) -> DaftResult<Series>;
     fn cast(&self, datatype: &DataType) -> DaftResult<Series>;
+    fn try_cast(&self, datatype: &DataType) -> DaftResult<Series>;
     fn filter(&self, mask: &BooleanArray) -> DaftResult<Series>;
     fn if_else(&self, other: &Series, predicate: &Series) -> DaftResult<Series>;
     fn data_type(&self) -> &DataType;
