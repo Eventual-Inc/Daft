@@ -1,5 +1,54 @@
+use comfy_table::Table as ComfyTable;
 use daft_core::{datatypes::ExtensionArray, prelude::DataType, series::Series};
 
+use crate::RecordBatch;
+
+/// The .show() options for formatting.
+#[derive(Debug)]
+pub struct ShowOptions {
+    format: ShowFormat,
+    header: HeaderOptions,
+    columns: Vec<ColumnOptions>,
+    /// null string like 'None' or 'NULL'
+    null: String,
+}
+
+/// The .show() table format for box drawing.
+#[derive(Debug)]
+pub enum ShowFormat {
+    /// Fancy box drawing (default).
+    Fancy,
+    /// No box drawing.
+    Plain,
+    /// Pandoc simple_tables with only a header underline.
+    Simple,
+    /// Grid table with single-line box characters.
+    Grid,
+    /// Markdown formatted table, github flavor.
+    Markdown,
+    /// Latex formatted table.
+    Latex,
+}
+
+/// The .show() options for header formatting.
+#[derive(Debug)]
+pub struct HeaderOptions {
+    with_types: bool,
+}
+
+/// The .show() options for column formatting.
+#[derive(Debug)]
+pub struct ColumnOptions {
+    
+}
+
+///
+pub fn format(preview: &RecordBatch, options: ShowOptions) -> ComfyTable {
+
+    todo!()
+}
+
+/// Returns a series' values as a valid HTML string.
 pub fn html_value(s: &Series, idx: usize) -> String {
     match s.data_type() {
         DataType::Image(_) => {

@@ -32,7 +32,7 @@ pub mod ffi;
 mod growable;
 mod ops;
 mod probeable;
-mod repr_html;
+mod repr;
 
 pub use growable::GrowableRecordBatch;
 pub use probeable::{make_probeable_builder, ProbeState, Probeable, ProbeableBuilder};
@@ -42,7 +42,7 @@ pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 use rand::seq::index::sample;
-use repr_html::html_value;
+use repr::html_value;
 
 #[macro_export]
 macro_rules! value_err {
