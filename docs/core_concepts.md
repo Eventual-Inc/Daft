@@ -606,6 +606,8 @@ Rows in a DataFrame can be reordered based on some column using [`df.sort()`][da
 (Showing first 3 rows)
 ```
 
+### Identifying Rows
+
 ### Exploding Columns
 
 The [`df.explode()`][daft.DataFrame.explode] method can be used to explode a column containing a list of values into multiple rows. All other rows will be **duplicated**.
@@ -1427,7 +1429,7 @@ Daft can read data from a variety of sources, and write data to many destination
 
 <!-- todo(docs - cc): this section needs an update since we have more functions besides monotonically_increasing_id (according to functions.rst) -->
 
-Daft provides built-in functions for common data operations. For example, we support [`monotonically_increasing_id()`][daft.functions.monotonically_increasing_id], which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
+Daft provides built-in functions for common data operations. Currently, we support [`monotonically_increasing_id()`][daft.functions.monotonically_increasing_id], which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
 
 - Using the **upper 28 bits** for the partition number
 - Using the **lower 36 bits** for the row number within each partition
@@ -1516,8 +1518,6 @@ df.show()
 │ 4     ┆ 68719476737 │
 ╰───────┴─────────────╯
 ```
-
-For a full list of available functions, see [Functions API Docs](api_docs/functions.md).
 
 ## Reading Data
 

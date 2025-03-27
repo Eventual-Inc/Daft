@@ -73,11 +73,11 @@ dsdgen: .venv ## Generate TPC-DS data
 
 .PHONY: docs
 docs: .venv ## Build Daft documentation
-	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-dev.txt mkdocs build -f mkdocs.yml
+	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs build -f mkdocs.yml
 
 .PHONY: serve
-serve: .venv ## Run Daft documentation in development server
-	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-dev.txt mkdocs serve -f mkdocs.yml
+serve: .venv ## Build Daft documentation in development server
+	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs serve -f mkdocs.yml
 
 .PHONY: clean
 clean:
