@@ -55,6 +55,8 @@ from daft.series import Series, item_to_series
 if TYPE_CHECKING:
     from daft.io import IOConfig
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
+    from daft.window import Window
+
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
 elif os.getenv("DAFT_SPHINX_BUILD") == "1":
@@ -1654,6 +1656,17 @@ class Expression:
 
     def _initialize_udfs(self) -> Expression:
         return Expression._from_pyexpr(initialize_udfs(self._expr))
+
+    def over(self, window: Window) -> Expression:
+        """Apply this expression as a window function over the specified window.
+
+        Args:
+            window: Window specification defining partitioning and ordering
+
+        Returns:
+            Expression: A new expression representing the window function result
+        """
+        return Expression._from_pyexpr(self._expr.over(window._spec))
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")

@@ -1,3 +1,5 @@
+pub mod window;
+
 mod display;
 #[cfg(test)]
 mod tests;
@@ -210,6 +212,7 @@ pub enum Expr {
         inputs: Vec<ExprRef>,
     },
 
+    // add window function variant here (or it will be a function itself)
     #[display("not({_0})")]
     Not(ExprRef),
 
