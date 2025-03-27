@@ -35,8 +35,16 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
 
         To ensure that this is installed with Daft, you may install: ``pip install daft[lance]``
 
-    Example:
+    Examples
+    --------
+    Read a local LanceDB table:
         >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
+        >>> df.show()
+    
+    Read a LanceDB table from a public S3 bucket:
+        >>> from daft.io import S3Config
+        >>> s3_config = S3Config(region="us-west-2", anonymous=True)
+        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
         >>> df.show()
 
     Args:
