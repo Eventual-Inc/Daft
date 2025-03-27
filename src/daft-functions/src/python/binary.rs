@@ -16,3 +16,13 @@ pub fn encode(input: PyExpr, codec: &str) -> PyResult<PyExpr> {
 pub fn decode(input: PyExpr, codec: &str) -> PyResult<PyExpr> {
     Ok(binary::decode::decode(input.expr, Codec::try_from(codec)?).into())
 }
+
+#[pyfunction]
+pub fn try_encode(input: PyExpr, codec: &str) -> PyResult<PyExpr> {
+    Ok(binary::encode::try_encode(input.expr, Codec::try_from(codec)?).into())
+}
+
+#[pyfunction]
+pub fn try_decode(input: PyExpr, codec: &str) -> PyResult<PyExpr> {
+    Ok(binary::decode::try_decode(input.expr, Codec::try_from(codec)?).into())
+}

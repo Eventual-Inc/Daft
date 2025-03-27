@@ -16,3 +16,8 @@ Sequence Functions
 
    monotonically_increasing_id
    llm_generate
+   columns_sum
+   columns_mean
+   columns_avg
+   columns_min
+   columns_max

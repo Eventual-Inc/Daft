@@ -54,6 +54,20 @@ class MemoryCatalog(Catalog):
         raise NotImplementedError("Memory drop_table not yet supported.")
 
     ###
+    # has_*
+    ###
+
+    def has_namespace(self, identifier: Identifier | str):
+        prefix = str(identifier)
+        for ident in self._tables.keys():
+            if ident.startswith(prefix):
+                return True
+        return False
+
+    def has_table(self, identifier: Identifier | str):
+        return str(identifier) in self._tables
+
+    ###
     # list_*
     ###
 
