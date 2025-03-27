@@ -335,6 +335,21 @@ class Catalog(ABC):
     def create_table(self, identifier: Identifier | str, source: TableSource) -> Table: ...
 
     ###
+    # has_*
+    ###
+
+    def has_namespace(self, identifier: Identifier | str):
+        raise NotImplementedError(f"Catalog implementation {type(self)} does not support has_namespace")
+
+    def has_table(self, identifier: Identifier | str):
+        """Returns True if the table exists, otherwise False."""
+        try:
+            _ = self.get_table(identifier)
+            return True
+        except NotFoundError:
+            return False
+
+    ###
     # drop_*
     ###
 

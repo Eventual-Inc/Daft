@@ -27,6 +27,7 @@ __all__ = [
     "get_catalog",
     "get_table",
     "has_catalog",
+    "has_namespace",
     "has_table",
     "list_catalogs",
     "list_namespaces",
@@ -310,6 +311,12 @@ class Session:
         """Returns true if a catalog with the given identifier exists."""
         return self._session.has_catalog(identifier)
 
+    def has_namespace(self, identifier: Identifier | str) -> bool:
+        """Returns true if a namespace with the given identifier exists."""
+        if not (catalog := self.current_catalog()):
+            raise ValueError("Cannot call has_namespace without a current catalog")
+        return catalog.has_namespace(identifier)
+
     def has_table(self, identifier: Identifier | str) -> bool:
         """Returns true if a table with the given identifier exists."""
         if isinstance(identifier, str):
@@ -553,6 +560,11 @@ def get_table(identifier: Identifier | str) -> Table:
 def has_catalog(identifier: str) -> bool:
     """Returns true if a catalog with the given identifier exists in the current session."""
     return _session().has_catalog(identifier)
+
+
+def has_namespace(identifier: Identifier | str) -> bool:
+    """Returns true if a namespace with the given identifier exists in the current session."""
+    return _session().has_namespace(identifier)
 
 
 def has_table(identifier: Identifier | str) -> bool:

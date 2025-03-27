@@ -5,10 +5,16 @@ import pytest
 
 import daft
 from daft import Catalog, Session
+from daft.catalog import NotFoundError
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Field, Schema
 
 CATALOG_ALIAS = "_test_catalog_iceberg"
+
+# skip if pyarrow < 9
+pyiceberg = pytest.importorskip("pyiceberg")
+PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
+pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="iceberg not supported on old versions of pyarrow")
 
 
 @pytest.fixture(scope="session")
@@ -85,6 +91,11 @@ def test_create_namespace(catalog: Catalog):
     # assert len(c.list_namespaces(f"{n}")) == 3
     assert len(c.list_namespaces(f"{n}.a")) == 1
     assert len(c.list_namespaces(f"{n}.b")) == 1
+
+    # existence checks
+    assert c.has_namespace(n)
+    assert not c.has_namespace("x")
+
     #
     # err! should not exist
     with pytest.raises(Exception, match="does not exist"):
@@ -98,7 +109,8 @@ def test_create_table(catalog: Catalog):
     c = catalog
     n = "test_create_table"
     c.create_namespace(n)
-    #
+
+    # create table with daft schema
     c.create_table(
         f"{n}.tbl1",
         schema(
@@ -109,20 +121,45 @@ def test_create_table(catalog: Catalog):
             }
         ),
     )
-    # TODO create table as source (CTAS)
-    # c.create_table(
-    #     f"{n}.tbl2",
-    #     daft.from_pydict({"a": [True, True, False], "b": [1, 2, 3], "c": ["x", "y", "z"]}),
-    # )
-    #
+
+    # test get_table
     assert c.get_table(f"{n}.tbl1")
-    # assert c.get_table(f"{n}.tbl2")
     assert len(c.list_tables(n)) == 1
-    #
+
+    # test has_table
+    assert c.has_table(f"{n}.tbl1")
+    assert not c.has_table(f"{n}.does_not_exist")
+
+    # test exception
+    with pytest.raises(NotFoundError):
+        c.get_table(f"{n}.does_not_exist")
+
     # cleanup
     c.drop_table(f"{n}.tbl1")
-    # c.drop_table(f"{n}.tbl2")
     c.drop_namespace(n)
+
+
+def test_create_table_as_select(catalog: Catalog):
+    cat = catalog
+    ns = "test_create_table_as_select"
+    table_name = f"{ns}.tbl"
+    df = daft.from_pydict({"a": [True, True, False], "b": [1, 2, 3], "c": ["x", "y", "z"]})
+
+    # create_table with dataframe
+    cat.create_namespace(ns)
+    cat.create_table(table_name, df)
+
+    # test get_table
+    tbl = cat.get_table(table_name)
+    assert tbl is not None
+    assert len(cat.list_tables(ns)) == 1
+
+    # validate the data
+    assert tbl.read().to_pydict() == df.to_pydict()
+
+    # cleanup
+    cat.drop_table(table_name)
+    cat.drop_namespace(ns)
 
 
 def test_list_tables(catalog: Catalog, sess: Session):
