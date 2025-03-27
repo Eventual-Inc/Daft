@@ -10,3 +10,4 @@ pymdown-extensions
 mkdocs-material[imaging]
 mkdocstrings-python
 ruff # for mkdocstring formatting
+mkdocs-minify-plugin

@@ -91,6 +91,7 @@ theme:
   - navigation.tabs   # moves nav bar to top, with secondary left-hand menu
   - navigation.tabs.sticky   # top nav bar remains visible when scrolling down
   - navigation.top   # back-to-top button
+  - navigation.instant
     # - navigation.sections # fixed sections
     # - navigation.expand # drop down sections
     # - navigation.path # breadcrumb navigation is rendered above title of each page
@@ -194,6 +195,9 @@ plugins:
 #       background_color: "#532687"
 #     cards_dir: social
 - autorefs
+- minify:
+    minify_html: true
+    minify_css: true
 - mkdocstrings:
     handlers:
       python:
