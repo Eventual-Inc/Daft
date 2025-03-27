@@ -189,9 +189,6 @@ plugins:
 - search:
     separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
 - macros
-# - mkdocs-simple-hooks:
-#     hooks:
-#       on_pre_build: "docs.hooks:make_api_docs"
 # - social:
 #     cards_layout_options:
 #       background_color: "#532687"

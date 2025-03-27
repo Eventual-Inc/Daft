@@ -1425,7 +1425,9 @@ Daft can read data from a variety of sources, and write data to many destination
 
 ## Built-in Functions
 
-Daft provides built-in functions for common data operations. Currently, we support [`monotonically_increasing_id()`][daft.functions.monotonically_increasing_id], which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
+<!-- todo(docs - cc): this section needs an update since we have more functions besides monotonically_increasing_id (according to functions.rst) -->
+
+Daft provides built-in functions for common data operations. For example, we support [`monotonically_increasing_id()`][daft.functions.monotonically_increasing_id], which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
 
 - Using the **upper 28 bits** for the partition number
 - Using the **lower 36 bits** for the row number within each partition
@@ -1515,6 +1517,8 @@ df.show()
 ╰───────┴─────────────╯
 ```
 
+For a full list of available functions, see [Functions API Docs](api_docs/functions.md).
+
 ## Reading Data
 
 ### From Files
@@ -1524,6 +1528,7 @@ DataFrames can be loaded from file(s) on some filesystem, commonly your local fi
 Additionally, Daft can read data from a variety of container file formats, including CSV, line-delimited JSON and Parquet.
 
 Daft supports file paths to a single file, a directory of files, and wildcards. It also supports paths to remote object storage such as AWS S3.
+
 === "🐍 Python"
     ```python
     import daft

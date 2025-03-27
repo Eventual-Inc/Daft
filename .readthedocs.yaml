@@ -11,10 +11,10 @@ build:
 
 python:
   install:
-  - requirements: requirements-docs.txt
+  - requirements: requirements-dev.txt
 
 mkdocs:
-  configuration: docs/mkdocs.yml
+  configuration: mkdocs.yml
 
 formats:
 - htmlzip
