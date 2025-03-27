@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pyarrow
 import pyarrow as pa
 import pytest
 
@@ -117,16 +118,9 @@ def test_create_table(catalog: Catalog):
         ),
     )
 
-    # create table as select
-    c.create_table(
-        f"{n}.tbl2",
-        daft.from_pydict({"a": [True, True, False], "b": [1, 2, 3], "c": ["x", "y", "z"]}),
-    )
-
     # test get_table
     assert c.get_table(f"{n}.tbl1")
-    assert c.get_table(f"{n}.tbl2")
-    assert len(c.list_tables(n)) == 2
+    assert len(c.list_tables(n)) == 1
 
     # test has_table
     assert c.has_table(f"{n}.tbl1")
@@ -138,8 +132,31 @@ def test_create_table(catalog: Catalog):
 
     # cleanup
     c.drop_table(f"{n}.tbl1")
-    c.drop_table(f"{n}.tbl2")
     c.drop_namespace(n)
+
+
+@pytest.mark.skipif(pyarrow.__version__ < "12.0.1", reason="Requires pyarrow >= 12.0.1")
+def test_create_table_as_select(catalog: Catalog):
+    cat = catalog
+    ns = "test_create_table_as_select"
+    table_name = f"{ns}.tbl"
+    df = daft.from_pydict({"a": [True, True, False], "b": [1, 2, 3], "c": ["x", "y", "z"]})
+
+    # create_table with dataframe
+    cat.create_namespace(ns)
+    cat.create_table(table_name, df)
+
+    # test get_table
+    tbl = cat.get_table(table_name)
+    assert tbl is not None
+    assert len(cat.list_tables(ns)) == 1
+
+    # validate the data
+    assert tbl.read().to_pydict() == df.to_pydict()
+
+    # cleanup
+    cat.drop_table(table_name)
+    cat.drop_namespace(ns)
 
 
 def test_list_tables(catalog: Catalog, sess: Session):
