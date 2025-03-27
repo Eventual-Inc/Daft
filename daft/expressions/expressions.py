@@ -146,7 +146,7 @@ def lit(value: object) -> Expression:
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
-    See `Column Wildcards <../../../core_concepts/#selecting-columns-using-wildcards>`_ for details on wildcards.
+    See `Column Wildcards <https://www.getdaft.io/projects/docs/en/stable/core_concepts/#selecting-columns-using-wildcards>`_ for details on wildcards.
 
     Example:
         >>> import daft
@@ -1563,8 +1563,13 @@ class Expression:
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
-    def encode(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+    def encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
+
+        Note:
+            This inputs either a string or binary and returns a binary.
+            If the input value is a string and 'utf-8' is the codec, then it's just a cast to binary.
+            If the input value is a binary and 'utf-8' is the codec, we verify the bytes are valid utf-8.
 
         Example:
             >>> import daft
@@ -1600,13 +1605,17 @@ class Expression:
             codec (str): encoding codec (deflate, gzip, zlib)
 
         Returns:
-            Expression: A new expression with the encoded values.
+            Expression: A new expression, of type `binary`, with the encoded value.
         """
         expr = native.encode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-    def decode(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+    def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
+
+        Note:
+            This inputs a binary and returns either a binary or string. For now,
+            only decoding with 'utf-8' returns a string.
 
         Example:
             >>> import daft
@@ -1631,6 +1640,16 @@ class Expression:
             Expression: A new expression with the decoded values.
         """
         expr = native.decode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
+
+    def try_encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+        """Encodes or returns null, see `Expression.encode`."""
+        expr = native.try_encode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
+
+    def try_decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+        """Decodes or returns null, see `Expression.decode`."""
+        expr = native.try_decode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:

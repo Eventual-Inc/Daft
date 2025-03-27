@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
+use daft_algebra::boolean::combine_conjunction;
 use daft_core::{count_mode::CountMode, join::JoinType, utils::supertype::get_supertype};
-use daft_dsl::{lit, null_lit, resolved_col, ExprRef};
+use daft_dsl::{left_col, lit, null_lit, resolved_col, right_col, ExprRef};
 use daft_functions::list::{explode, list_fill};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
 use snafu::ResultExt;
 
-use super::{Aggregate, Concat, Distinct, Filter, Project};
+use super::{join::JoinPredicate, Aggregate, Concat, Distinct, Filter, Project};
 use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -46,28 +47,17 @@ fn intersect_or_except_plan(
     rhs: Arc<LogicalPlan>,
     join_type: JoinType,
 ) -> logical_plan::Result<LogicalPlan> {
-    let left_on = lhs
-        .schema()
-        .fields
-        .keys()
-        .map(|k| resolved_col(k.clone()))
-        .collect::<Vec<ExprRef>>();
-    let left_on_size = left_on.len();
-    let right_on = rhs
-        .schema()
-        .fields
-        .keys()
-        .map(|k| resolved_col(k.clone()))
-        .collect::<Vec<ExprRef>>();
-    let join = logical_plan::Join::try_new(
-        lhs,
-        rhs,
-        left_on,
-        right_on,
-        Some(vec![true; left_on_size]),
-        join_type,
-        None,
+    let on_expr = combine_conjunction(
+        lhs.schema()
+            .fields
+            .values()
+            .zip(rhs.schema().fields.values())
+            .map(|(l, r)| left_col(l.clone()).eq_null_safe(right_col(r.clone()))),
     );
+
+    let on = JoinPredicate::try_new(on_expr)?;
+
+    let join = logical_plan::Join::try_new(lhs, rhs, on, join_type, None);
     join.map(|j| Distinct::new(j.into()).into())
 }
 

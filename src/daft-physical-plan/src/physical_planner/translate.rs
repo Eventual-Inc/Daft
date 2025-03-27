@@ -995,10 +995,8 @@ fn translate_join(
     let LogicalJoin {
         left,
         right,
-        left_on,
-        right_on,
+        on,
         join_type,
-        null_equals_nulls,
         join_strategy,
         ..
     } = match join_plan {
@@ -1013,12 +1011,14 @@ fn translate_join(
     let mut right_physical = physical_children.pop().expect("requires 1 inputs");
     let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
-    let (left_on, right_on) = normalize_join_keys(
-        left_on.clone(),
-        right_on.clone(),
-        left.schema(),
-        right.schema(),
-    )?;
+    let (remaining_on, left_on, right_on, null_equals_nulls) = on.split_eq_preds();
+
+    if !remaining_on.is_empty() {
+        return Err(DaftError::not_implemented("Execution of non-equality join"));
+    }
+
+    let (left_on, right_on) =
+        normalize_join_keys(left_on, right_on, left.schema(), right.schema())?;
 
     let left_clustering_spec = left_physical.clustering_spec();
     let right_clustering_spec = right_physical.clustering_spec();
@@ -1074,9 +1074,7 @@ fn translate_join(
     } else {
         is_right_hash_partitioned || is_right_sort_partitioned
     };
-    let has_null_safe_equals = null_equals_nulls
-        .as_ref()
-        .is_some_and(|v| v.iter().any(|b| *b));
+    let has_null_safe_equals = null_equals_nulls.iter().any(|b| *b);
     let join_strategy = join_strategy.unwrap_or_else(|| {
         if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
             return JoinStrategy::Cross;
@@ -1160,7 +1158,7 @@ fn translate_join(
                     right_physical,
                     left_on,
                     right_on,
-                    null_equals_nulls.clone(),
+                    Some(null_equals_nulls),
                     *join_type,
                     is_swapped,
                 ))
@@ -1353,7 +1351,7 @@ fn translate_join(
                     right_physical,
                     left_on,
                     right_on,
-                    null_equals_nulls.clone(),
+                    Some(null_equals_nulls),
                     *join_type,
                 ))
                 .arced(),
@@ -1556,6 +1554,7 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]));
+
         let logical_plan = force_repartition(logical_plan, left_partitions)?
             .select(vec![
                 resolved_col("a"),
@@ -1564,8 +1563,8 @@ mod tests {
             ])?
             .join(
                 join_node,
-                vec![resolved_col("a"), resolved_col("b")],
-                vec![resolved_col("a"), resolved_col("b")],
+                None,
+                vec!["a".to_string(), "b".to_string()],
                 JoinType::Inner,
                 Some(JoinStrategy::Hash),
                 Default::default(),

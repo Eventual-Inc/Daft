@@ -5,19 +5,12 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{struct_::StructExpr, FunctionExpr},
-    has_agg, is_actor_pool_udf, resolved_col, AggExpr, Column, Expr, ExprRef, PlanRef,
-    ResolvedColumn, UnresolvedColumn,
+    has_agg, is_actor_pool_udf, left_col, resolved_col, right_col, AggExpr, Column, Expr, ExprRef,
+    PlanRef, ResolvedColumn, UnresolvedColumn,
 };
 use typed_builder::TypedBuilder;
 
 use crate::LogicalPlanRef;
-
-fn contains_monotonic_id(expr: &ExprRef) -> bool {
-    expr.exists(|e| match e.as_ref() {
-        Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
-        _ => false,
-    })
-}
 
 /// Duplicate an expression tree for each wildcard match in a column or struct get.
 fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
@@ -126,56 +119,57 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
     }
 }
 
-fn resolve_unresolved_columns(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<ExprRef> {
-    Ok(expr
-        .transform(|e| {
-            if let Expr::Column(Column::Unresolved(UnresolvedColumn {
-                name,
-                plan_ref,
-                plan_schema,
-            })) = e.as_ref()
-            {
-                let resolves_to_current_scope = match plan_ref {
-                    PlanRef::Alias(alias) => {
-                        if let Some(schema) = plan.clone().get_schema_for_alias(alias)? {
-                            // make sure column exists in schema
-                            schema.get_field(name)?;
+/// Check if you can resolve an unresolved column to the provided plan
+fn col_resolves_to_plan(column: &UnresolvedColumn, plan: &LogicalPlanRef) -> DaftResult<bool> {
+    let plan_schema = plan.schema();
 
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    PlanRef::Id(id) => {
-                        if let Some(schema) = plan.clone().get_schema_for_id(*id)? {
-                            // make sure column exists in schema
-                            schema.get_field(name)?;
+    Ok(match &column.plan_ref {
+        PlanRef::Alias(alias) => {
+            if let Some(schema) = plan.get_schema_for_alias(alias)? {
+                // make sure column exists in schemas
+                schema.get_field(&column.name)?;
+                plan_schema.get_field(&column.name)?;
 
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    PlanRef::Unqualified => plan.schema().has_field(name),
-                };
-
-                if resolves_to_current_scope {
-                    Ok(Transformed::yes(resolved_col(name.clone())))
-                } else if let Some(schema) = plan_schema {
-                    // Couldn't find in current scope, but schema exists. May be an outer column in a subquery.
-                    Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(
-                        ResolvedColumn::OuterRef(schema.get_field(name)?.clone(), plan_ref.clone()),
-                    )))))
-                } else {
-                    Err(DaftError::FieldNotFound(format!(
-                        "Could not resolve column {e}."
-                    )))
-                }
+                true
             } else {
-                Ok(Transformed::no(e))
+                false
             }
-        })?
-        .data)
+        }
+        PlanRef::Id(id) => {
+            if let Some(schema) = plan.get_schema_for_id(*id)? {
+                // make sure column exists in schemas
+                schema.get_field(&column.name)?;
+                plan_schema.get_field(&column.name)?;
+
+                true
+            } else {
+                false
+            }
+        }
+        PlanRef::Unqualified => plan.schema().has_field(&column.name),
+    })
+}
+
+fn resolve_to_basic_and_outer_cols(expr: ExprRef, plan: &LogicalPlanRef) -> DaftResult<ExprRef> {
+    expr.transform(|e| {
+        if let Expr::Column(Column::Unresolved(column)) = e.as_ref() {
+            if col_resolves_to_plan(column, plan)? {
+                Ok(Transformed::yes(resolved_col(column.name.clone())))
+            } else if let Some(schema) = &column.plan_schema {
+                Ok(Transformed::yes(Arc::new(Expr::Column(Column::Resolved(
+                    ResolvedColumn::OuterRef(
+                        schema.get_field(&column.name)?.clone(),
+                        column.plan_ref.clone(),
+                    ),
+                )))))
+            } else {
+                Err(DaftError::FieldNotFound(format!("Column {e} not found.")))
+            }
+        } else {
+            Ok(Transformed::no(e))
+        }
+    })
+    .map(|res| res.data)
 }
 
 fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
@@ -219,22 +213,33 @@ pub struct ExprResolver<'a> {
 }
 
 impl ExprResolver<'_> {
-    fn resolve_helper(&self, expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
+    fn check_expr(&self, expr: &ExprRef) -> DaftResult<()> {
         if !self.allow_actor_pool_udf && expr.exists(is_actor_pool_udf) {
             return Err(DaftError::ValueError(format!(
                 "UDFs with concurrency set are only allowed in projections: {expr}"
             )));
         }
 
-        if !self.allow_monotonic_id && contains_monotonic_id(&expr) {
+        if !self.allow_monotonic_id
+            && expr.exists(|e| match e.as_ref() {
+                Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
+                _ => false,
+            })
+        {
             return Err(DaftError::ValueError(
                 "monotonically_increasing_id() is only allowed in projections".to_string(),
             ));
         }
 
+        Ok(())
+    }
+
+    fn resolve_helper(&self, expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
+        self.check_expr(&expr)?;
+
         expand_wildcard(expr, plan.clone())?
             .into_iter()
-            .map(|e| resolve_unresolved_columns(e, plan.clone()))
+            .map(|e| resolve_to_basic_and_outer_cols(e, &plan))
             .map(|e| {
                 if self.in_agg_context {
                     self.validate_expr_in_agg(e?)
@@ -266,6 +271,41 @@ impl ExprResolver<'_> {
                 resolved_exprs.len()
             ))),
         }
+    }
+
+    /// Resolve expression in `ON` clause of join
+    pub fn resolve_join_on(
+        &self,
+        expr: ExprRef,
+        left_plan: LogicalPlanRef,
+        right_plan: LogicalPlanRef,
+    ) -> DaftResult<ExprRef> {
+        self.check_expr(&expr)?;
+
+        expr.transform(|e| {
+            if let Expr::Column(Column::Unresolved(column)) = e.as_ref() {
+                let resolves_left = col_resolves_to_plan(column, &left_plan)?;
+                let resolves_right = col_resolves_to_plan(column, &right_plan)?;
+
+                match (resolves_left, resolves_right) {
+                    (true, true) => Err(DaftError::ValueError(format!(
+                        "Ambiguous column reference in join predicate: {e}"
+                    ))),
+                    (true, false) => Ok(Transformed::yes(left_col(
+                        left_plan.schema().get_field(&column.name)?.clone(),
+                    ))),
+                    (false, true) => Ok(Transformed::yes(right_col(
+                        right_plan.schema().get_field(&column.name)?.clone(),
+                    ))),
+                    (false, false) => {
+                        Err(DaftError::FieldNotFound(format!("Column {e} not found.")))
+                    }
+                }
+            } else {
+                Ok(Transformed::no(e))
+            }
+        })
+        .map(|res| res.data)
     }
 
     fn validate_expr(&self, expr: ExprRef) -> DaftResult<ExprRef> {
