@@ -18,7 +18,6 @@ from daft.daft import (
     JsonParseOptions,
     JsonReadOptions,
     StorageConfig,
-    WriteMode,
 )
 from daft.dependencies import pa, pacsv, pads, pq
 from daft.expressions import ExpressionsProjection, col
@@ -281,7 +280,6 @@ class TabularWriteVisitors:
 
 def write_tabular(
     table: MicroPartition,
-    write_mode: WriteMode,
     file_format: FileFormat,
     path: str | pathlib.Path,
     schema: Schema,

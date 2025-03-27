@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Generic, Protocol
 from daft.context import get_context
 from daft.daft import JoinSide, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
+from daft.filesystem import overwrite_files
 from daft.recordbatch import MicroPartition, recordbatch_io
 from daft.runners.partitioning import (
     Boundaries,
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask, WriteMode
+    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
     from daft.logical.map_partition_ops import MapPartitionOp
     from daft.logical.schema import Schema
 
@@ -396,7 +397,6 @@ class EmptyScan(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class WriteFile(SingleOutputInstruction):
-    write_mode: WriteMode
     file_format: FileFormat
     schema: Schema
     root_dir: str | pathlib.Path
@@ -428,12 +428,33 @@ class WriteFile(SingleOutputInstruction):
             input,
             path=self.root_dir,
             schema=self.schema,
-            write_mode=self.write_mode,
             file_format=self.file_format,
             compression=self.compression,
             partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
+
+
+@dataclass(frozen=True)
+class OverwriteFiles(SingleOutputInstruction):
+    overwrite_partitions: bool
+    root_dir: str | pathlib.Path
+    io_config: IOConfig | None
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        files_to_overwrite = []
+        for input in inputs:
+            files_to_overwrite.extend(input.get_column("path").to_pylist())
+        overwrite_files(
+            files_to_overwrite,
+            self.root_dir,
+            self.io_config,
+            self.overwrite_partitions,
+        )
+        return [MicroPartition.concat(inputs)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        return input_metadatas
 
 
 @dataclass(frozen=True)

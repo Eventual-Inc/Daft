@@ -39,7 +39,6 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.filesystem import overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
@@ -675,14 +674,14 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
-        runner = get_context().get_or_create_runner()
-        # todo: other runners should natively handle overwriting files too
-        if runner.name != "native":
-            files_to_overwrite = write_df._result._get_merged_micropartition().get_column("path").to_pylist()
-            if write_mode == WriteMode.Overwrite:
-                overwrite_files(files_to_overwrite, root_dir, io_config, False)
-            elif write_mode == WriteMode.OverwritePartitions:
-                overwrite_files(files_to_overwrite, root_dir, io_config, True)
+        # runner = get_context().get_or_create_runner()
+        # # todo: other runners should natively handle overwriting files too
+        # if runner.name != "native":
+        #     files_to_overwrite = write_df._result._get_merged_micropartition().get_column("path").to_pylist()
+        #     if write_mode == WriteMode.Overwrite:
+        #         overwrite_files(files_to_overwrite, root_dir, io_config, False)
+        #     elif write_mode == WriteMode.OverwritePartitions:
+        #         overwrite_files(files_to_overwrite, root_dir, io_config, True)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -756,13 +755,13 @@ class DataFrame:
         assert write_df._result is not None
 
         # todo: other runners should natively handle overwriting files too
-        runner = get_context().get_or_create_runner()
-        if runner.name != "native":
-            files_to_overwrite = write_df._result._get_merged_micropartition().get_column("path").to_pylist()
-            if write_mode == WriteMode.Overwrite:
-                overwrite_files(files_to_overwrite, root_dir, io_config, False)
-            elif write_mode == WriteMode.OverwritePartitions:
-                overwrite_files(files_to_overwrite, root_dir, io_config, True)
+        # runner = get_context().get_or_create_runner()
+        # if runner.name != "native":
+        #     files_to_overwrite = write_df._result._get_merged_micropartition().get_column("path").to_pylist()
+        #     if write_mode == WriteMode.Overwrite:
+        #         overwrite_files(files_to_overwrite, root_dir, io_config, False)
+        #     elif write_mode == WriteMode.OverwritePartitions:
+        #         overwrite_files(files_to_overwrite, root_dir, io_config, True)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
