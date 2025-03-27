@@ -183,7 +183,7 @@ impl ConnectSession {
                 // TODO: this should be handled by the runner's write implementation.
                 // Ray runner doesn't internally handle overwriting files, so we need to manually do it here.
                 if write_mode == WriteMode::Overwrite
-                    && get_context().get_or_create_runner()?.is_ray()
+                    && !get_context().get_or_create_runner()?.is_native()
                 {
                     let mut files = vec![];
                     while let Some(result) = result_stream.next().await {
