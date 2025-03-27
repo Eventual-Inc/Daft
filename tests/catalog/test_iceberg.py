@@ -5,6 +5,7 @@ import pytest
 
 import daft
 from daft import Catalog, Session
+from daft.catalog import NotFoundError
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Field, Schema
 
@@ -85,6 +86,11 @@ def test_create_namespace(catalog: Catalog):
     # assert len(c.list_namespaces(f"{n}")) == 3
     assert len(c.list_namespaces(f"{n}.a")) == 1
     assert len(c.list_namespaces(f"{n}.b")) == 1
+
+    # existence checks
+    assert c.has_namespace(n)
+    assert not c.has_namespace("x")
+
     #
     # err! should not exist
     with pytest.raises(Exception, match="does not exist"):
@@ -98,7 +104,8 @@ def test_create_table(catalog: Catalog):
     c = catalog
     n = "test_create_table"
     c.create_namespace(n)
-    #
+
+    # create table with daft schema
     c.create_table(
         f"{n}.tbl1",
         schema(
@@ -109,19 +116,29 @@ def test_create_table(catalog: Catalog):
             }
         ),
     )
-    # TODO create table as source (CTAS)
-    # c.create_table(
-    #     f"{n}.tbl2",
-    #     daft.from_pydict({"a": [True, True, False], "b": [1, 2, 3], "c": ["x", "y", "z"]}),
-    # )
-    #
+
+    # create table as select
+    c.create_table(
+        f"{n}.tbl2",
+        daft.from_pydict({"a": [True, True, False], "b": [1, 2, 3], "c": ["x", "y", "z"]}),
+    )
+
+    # test get_table
     assert c.get_table(f"{n}.tbl1")
-    # assert c.get_table(f"{n}.tbl2")
-    assert len(c.list_tables(n)) == 1
-    #
+    assert c.get_table(f"{n}.tbl2")
+    assert len(c.list_tables(n)) == 2
+
+    # test has_table
+    assert c.has_table(f"{n}.tbl1")
+    assert not c.has_table(f"{n}.does_not_exist")
+
+    # test exception
+    with pytest.raises(NotFoundError):
+        c.get_table(f"{n}.does_not_exist")
+
     # cleanup
     c.drop_table(f"{n}.tbl1")
-    # c.drop_table(f"{n}.tbl2")
+    c.drop_table(f"{n}.tbl2")
     c.drop_namespace(n)
 
 

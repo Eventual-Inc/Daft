@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Table, TableSource
+from botocore.exceptions import ClientError
+
+from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
 from daft.catalog.__iceberg import IcebergCatalog
 from daft.dataframe import DataFrame
 from daft.io import read_iceberg
@@ -127,7 +129,7 @@ class S3Catalog(Catalog):
                 namespace=path._parts,
             )
         except Exception as e:
-            raise ValueError(f"Failed to create namespace: {e}")
+            raise ValueError(f"Failed to create namespace: {e}") from e
 
     def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
         if isinstance(source, Schema):
@@ -154,7 +156,24 @@ class S3Catalog(Catalog):
             )
             return self.get_table(ident)
         except Exception as e:
-            raise ValueError(f"Failed to create table: {e}")
+            raise ValueError(f"Failed to create table: {e}") from e
+
+    ###
+    # has_*
+    ###
+
+    def has_namespace(self, identifier: Identifier | str):
+        try:
+            _ = self._client.get_namespace(
+                namespace=str(identifier),
+                tableBucketARN=self._table_bucket_arn,
+            )
+            return True
+        except ClientError as ex:
+            if ex.response["Error"]["Code"] == "NotFoundException":
+                return False
+            else:
+                raise ex
 
     ###
     # drop_*
@@ -163,19 +182,17 @@ class S3Catalog(Catalog):
     def drop_namespace(self, identifier: Identifier | str):
         """Drops a namespace from the S3 Tables catalog."""
         path = S3Path.from_ident(identifier)
-
         try:
             self._client.delete_namespace(
                 tableBucketARN=self._table_bucket_arn,
                 namespace=str(path),
             )
         except Exception as e:
-            raise ValueError(f"Failed to drop namespace: {e}")
+            raise ValueError(f"Failed to drop namespace: {e}") from e
 
     def drop_table(self, identifier: Identifier | str):
         """Drops a table from the S3 Tables catalog."""
         path = S3Path.from_ident(identifier)
-
         try:
             self._client.delete_table(
                 tableBucketARN=self._table_bucket_arn,
@@ -183,7 +200,7 @@ class S3Catalog(Catalog):
                 name=path.name,
             )
         except Exception as e:
-            raise ValueError(f"Failed to drop table: {e}")
+            raise ValueError(f"Failed to drop table: {e}") from e
 
     ###
     # get_*
@@ -191,12 +208,18 @@ class S3Catalog(Catalog):
 
     def get_table(self, identifier: Identifier | str) -> S3Table:
         path = S3Path.from_ident(identifier)
-        res = self._client.get_table(
-            name=path.name,
-            namespace=str(path.parent),
-            tableBucketARN=self._table_bucket_arn,
-        )
-        return S3Table(self, path, res.get("metadataLocation"))
+        try:
+            res = self._client.get_table(
+                name=path.name,
+                namespace=str(path.parent),
+                tableBucketARN=self._table_bucket_arn,
+            )
+            return S3Table(self, path, res.get("metadataLocation"))
+        except ClientError as ex:
+            if ex.response["Error"]["Code"] == "NotFoundException":
+                raise NotFoundError(f"Table {identifier} not found")
+            else:
+                raise ex
 
     ###
     # list_*
@@ -265,7 +288,7 @@ class S3Catalog(Catalog):
                     break
             return tables
         except Exception as e:
-            raise ValueError(f"Failed to list tables: {e}")
+            raise ValueError(f"Failed to list tables: {e}") from e
 
     ###
     # private methods
