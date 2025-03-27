@@ -919,7 +919,7 @@ There are also many string operators that are accessed through a separate [`.str
 <!-- todo(docs - cc): add relative path to .str after figure out str namespace-->
 
 
-For example, to check if each element in column "B" contains the substring "a", we can use the [`.str.contains`]({{ api_path }}/expression_methods/daft.Expression.str.contains.html) method:
+For example, to check if each element in column "B" contains the substring "a", we can use the [`.str.contains()`]({{ api_path }}/expression_methods/daft.Expression.str.contains.html) method:
 
 <!-- todo(docs - cc): add relative path to .str after figure out str namespace-->
 
@@ -950,7 +950,7 @@ For example, to check if each element in column "B" contains the substring "a", 
 (Showing first 3 rows)
 ```
 
-You may find a full list of string operations in the [Expressions API Reference](api_docs/expressions.html).
+You may find a full list of string operations in the [Expressions API Reference](api_docs/expressions.md).
 
 #### URL Expressions
 
@@ -1120,7 +1120,7 @@ For example, here we can compare if each element in column "A" is equal to eleme
 (Showing first 3 of 3 rows)
 ```
 
-Other useful comparisons can be found in the [Expressions API Reference](api_docs/expressions.html#numeric).
+Other useful comparisons can be found in the [Expressions API Reference](api_docs/expressions.md#numeric).
 
 <!-- todo(docs - cc): current expressions api docs is not separated by sections, so how to reference numeric section? -->
 

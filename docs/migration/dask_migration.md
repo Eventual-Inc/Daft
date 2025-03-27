@@ -27,7 +27,7 @@ The following sections explain conceptual and technical differences between Dask
 
 Dask aims for as much feature-parity with pandas as possible, including maintaining the presence of an Index in the DataFrame. But keeping an Index is difficult when moving to a distributed computing environment. Dask doesn’t support row-based positional indexing (with .iloc) because it does not track the length of its partitions. It also does not support pandas MultiIndex. The argument for keeping the Index is that it makes some operations against the sorted index column very fast. In reality, resetting the Index forces a data shuffle and is an expensive operation.
 
-Daft drops the need for an Index to make queries more readable and consistent. How you write a query should not change because of the state of an index or a reset_index call. In our opinion, eliminating the index makes things simpler, more explicit, more readable and therefore less error-prone. Daft achieves this by using the [Expressions API](..//api_docs/expressions.html).
+Daft drops the need for an Index to make queries more readable and consistent. How you write a query should not change because of the state of an index or a reset_index call. In our opinion, eliminating the index makes things simpler, more explicit, more readable and therefore less error-prone. Daft achieves this by using the [Expressions API](../api_docs/expressions.md).
 
 In Dask you would index your DataFrame to return row `b` as follows:
 
@@ -125,7 +125,7 @@ Cloud support for both Dask and Daft is the same.
 
 Dask does not natively provide full support for running SQL queries. You can use pandas-like code to write SQL-equivalent queries, or use the external [dask-sql library](https://dask-sql.readthedocs.io/en/latest/).
 
-Daft provides a [`read_sql()`](../{{ api_path }}/io_functions/daft.read_sql.html) method to read SQL queries into a DataFrame. Daft uses SQLGlot to build SQL queries, so it supports all databases that SQLGlot supports. Daft pushes down operations such as filtering, projections, and limits into the SQL query when possible. Full-featured support for SQL queries (as opposed to a DataFrame API) is in progress.
+Daft provides a [`daft.read_sql()`][daft.read_sql] method to read SQL queries into a DataFrame. Daft uses SQLGlot to build SQL queries, so it supports all databases that SQLGlot supports. Daft pushes down operations such as filtering, projections, and limits into the SQL query when possible. Full-featured support for SQL queries (as opposed to a DataFrame API) is in progress.
 
 ## Daft combines Python with Rust and Pyarrow for optimal performance
 

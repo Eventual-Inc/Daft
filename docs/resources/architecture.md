@@ -81,7 +81,7 @@ This is useful for a few reasons:
 
 Partitioning is most often inherited from the data source that Daft is reading from. For example, if read from a directory of files, each file naturally is read as a single partition. If reading from a data catalog service such as Apache Iceberg or Delta Lake, Daft will inherit the partitioning scheme as informed by these services.
 
-When querying a DataFrame, global operations will also require a repartitioning of the data, depending on the operation. For instance, sorting a DataFrame on [`col(x)`](../{{ api_path }}/expression_methods/daft.col.html) will require repartitioning by range on [`col(x)`](../{{ api_path }}/expression_methods/daft.col.html), so that a local sort on each partition will provide a globally sorted DataFrame.
+When querying a DataFrame, global operations will also require a repartitioning of the data, depending on the operation. For instance, sorting a DataFrame on [`daft.col(x)`][daft.col]will require repartitioning by range on [`daft.col(x)`][daft.col], so that a local sort on each partition will provide a globally sorted DataFrame.
 
 ## In-Memory Data Representation
 
