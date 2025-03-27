@@ -19,7 +19,7 @@ not really looking. You don't really want to know. You want to be fooled.
 But you wouldn't clap yet. Because making something disappear isn't enough;
 you have to bring it back. That's why every magic trick has a third act,
 the hardest part, the part we call "The Prestige". - Christopher Priest.
-"""
+""" + bytes("🔥", encoding="utf-8")
 
 ###
 # helpers

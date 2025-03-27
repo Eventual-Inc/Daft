@@ -102,7 +102,7 @@ fn gzip_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
 
 #[inline]
 fn utf8_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
-    if is_valid_utf8(input) {
+    if input.is_ascii() || from_utf8(input).is_ok() {
         Ok(input.to_vec())
     } else {
         Err(DaftError::InternalError(
@@ -149,7 +149,8 @@ fn gzip_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
 
 #[inline]
 fn utf8_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
-    if is_valid_utf8(input) {
+    // zero-copy utf-8 validation using simdutf8
+    if input.is_ascii() || from_utf8(input).is_ok() {
         Ok(input.to_vec())
     } else {
         Err(DaftError::InternalError(
@@ -167,12 +168,6 @@ fn zlib_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     let mut decoded = Vec::new();
     decoder.read_to_end(&mut decoded)?;
     Ok(decoded)
-}
-
-/// zero-copy utf-8 validation using simdutf8
-#[inline]
-fn is_valid_utf8(input: &[u8]) -> bool {
-    from_utf8(input).is_ok()
 }
 
 #[cfg(test)]
