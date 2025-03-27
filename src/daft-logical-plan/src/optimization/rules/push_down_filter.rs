@@ -881,7 +881,7 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
 
-        let pred = resolved_col("b").lt(lit(2));
+        let pred = resolved_col("b").is_null();
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,
@@ -984,7 +984,7 @@ mod tests {
             unresolved_col("b").eq(unresolved_col("right.b"))
         };
 
-        let pred = resolved_col("c").lt(lit(2.0));
+        let pred = resolved_col("c").is_null();
         let plan = left_scan_plan
             .join(
                 &right_scan_plan,
