@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
+import daft
+
 
 def test_show_default(make_df, valid_data):
     df = make_df(valid_data)
@@ -72,3 +76,44 @@ def test_show_not_from_cached_repr(make_df, valid_data, data_source):
     assert len(df_display.preview.preview_partition) == len(valid_data)
     assert df_display.preview.dataframe_num_rows == 3
     assert df_display.num_rows == 3
+
+
+@pytest.mark.skip("how to test?")
+def test_format(make_df, valid_data):
+    df = make_df(valid_data)
+    df.show(format="markdown", max_width=12)
+
+
+@pytest.mark.skip("how to test?")
+def test_format_with_options():
+    df = daft.from_pydict(
+        {
+            "A": [1, 2, 3, 4],
+            "B": [1.5, 2.5, 3.5, 4.5],
+            "C": [True, True, False, False],
+            "D": [None, None, None, None],
+        }
+    )
+    df.show()
+    df.show(format="default", null="NULL")
+    df.show(format="default")
+    df.show(format="html")
+
+
+@pytest.mark.skip("how to test?")
+def test_format_with_wide_column():
+    df = daft.from_pydict(
+        {
+            "A": [
+                "This is a very long text that exceeds 120 characters. It contains a lot of information that would typically be truncated when displayed in a table format with limited width settings."
+                * 2
+            ],
+            "B": [
+                "Another extremely long piece of text that also exceeds 120 characters. This demonstrates how the show method handles wide columns with extensive content that needs to be properly formatted."
+                * 2
+            ],
+        }
+    )
+    df.show()
+    df.show(max_width=30)
+    df.show(max_width=None)
