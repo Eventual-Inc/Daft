@@ -1963,7 +1963,7 @@ class InProgressShuffleCache:
     @staticmethod
     def try_new(
         num_partitions: int,
-        dir: str,
+        dirs: list[str],
         target_filesize: int,
         compression: str | None = None,
         partition_by: list[PyExpr] | None = None,

@@ -135,7 +135,6 @@ pub fn make_physical_writer_factory(
 
 pub fn make_ipc_writer(
     dir: &str,
-    partition_idx: usize,
     target_filesize: usize,
     compression: Option<&str>,
 ) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
@@ -150,7 +149,7 @@ pub fn make_ipc_writer(
         }
         None => None,
     };
-    let base_writer_factory = IPCWriterFactory::new(dir.to_string(), partition_idx, compression);
+    let base_writer_factory = IPCWriterFactory::new(dir.to_string(), compression);
     let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
         target_filesize,
         if compression.is_some() { 1.0 } else { 2.0 },

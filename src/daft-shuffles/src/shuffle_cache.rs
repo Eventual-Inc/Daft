@@ -28,22 +28,37 @@ pub struct InProgressShuffleCache {
 impl InProgressShuffleCache {
     pub fn try_new(
         num_partitions: usize,
-        dir: &str,
+        dirs: &[String],
         target_filesize: usize,
         compression: Option<&str>,
         partition_by: Option<Vec<ExprRef>>,
     ) -> DaftResult<Self> {
-        let (source_type, _) = parse_url(dir)?;
-        if source_type != SourceType::File {
-            return Err(DaftError::ValueError(format!(
-                "ShuffleCache only supports file paths, got: {}",
-                dir
-            )));
+        for dir in dirs {
+            // Check that the dir is a file
+            let (source_type, _) = parse_url(dir)?;
+            if source_type != SourceType::File {
+                return Err(DaftError::ValueError(format!(
+                    "ShuffleCache only supports file paths, got: {}",
+                    dir
+                )));
+            }
+
+            // If it does not exist, create it
+            if !std::path::Path::new(dir).exists() {
+                std::fs::create_dir_all(dir)?;
+            }
         }
 
-        let partition_writers = (0..num_partitions)
-            .map(|partition_idx| make_ipc_writer(dir, partition_idx, target_filesize, compression))
-            .collect::<DaftResult<Vec<_>>>()?;
+        let mut partition_writers = Vec::with_capacity(num_partitions);
+        for partition_idx in 0..num_partitions {
+            let dir = &dirs[partition_idx % dirs.len()];
+            let partition_dir = format!("{}/partition_{}", dir, partition_idx);
+            if !std::path::Path::new(&partition_dir).exists() {
+                std::fs::create_dir_all(&partition_dir)?;
+            }
+            let partition_writer = make_ipc_writer(&partition_dir, target_filesize, compression)?;
+            partition_writers.push(partition_writer);
+        }
 
         let mut writer_tasks = Vec::with_capacity(num_partitions);
         let mut writer_senders = Vec::with_capacity(num_partitions);

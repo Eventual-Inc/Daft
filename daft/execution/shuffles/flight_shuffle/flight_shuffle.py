@@ -29,32 +29,14 @@ except ImportError:
     raise
 
 
-def get_shuffle_dir_path(
+def get_shuffle_dirs(
     shuffle_dirs: list[str],
     node_id: str,
     shuffle_stage_id: int,
-):
+) -> list[str]:
     if not shuffle_dirs:
         raise ValueError("No shuffle directories provided")
-
-    # Find directory with most available space
-    max_space = -1
-    selected_dir = None
-
-    for directory in shuffle_dirs:
-        if os.path.exists(directory):
-            try:
-                free_space = shutil.disk_usage(directory).free
-                if free_space > max_space:
-                    max_space = free_space
-                    selected_dir = directory
-            except OSError:
-                continue
-
-    if selected_dir is None:
-        selected_dir = random.choice(shuffle_dirs)
-
-    return f"{selected_dir}/daft_shuffle/node_{node_id}/shuffle_stage_{shuffle_stage_id}"
+    return [f"{dir}/daft_shuffle/node_{node_id}/shuffle_stage_{shuffle_stage_id}" for dir in shuffle_dirs]
 
 
 @ray.remote(num_cpus=0)
@@ -195,14 +177,14 @@ class ShuffleActor:
         self.node_id = ray.get_runtime_context().get_node_id()
         self.host = ray.util.get_node_ip_address()
 
-        self.shuffle_dir = get_shuffle_dir_path(shuffle_dirs, self.node_id, shuffle_stage_id)
+        self.shuffle_dirs = get_shuffle_dirs(shuffle_dirs, self.node_id, shuffle_stage_id)
         self.num_output_partitions = num_output_partitions
         self.partition_by = partition_by
 
         # create a shuffle cache to store the partitions
         self.in_progress_shuffle_cache = InProgressShuffleCache.try_new(
             num_output_partitions,
-            self.shuffle_dir,
+            self.shuffle_dirs,
             target_filesize=1024 * 1024 * 10,
             compression=None,
             partition_by=partition_by,
@@ -215,12 +197,6 @@ class ShuffleActor:
         # create a threadpool to push partitions to the shuffle cache
         self.push_partition_executor = concurrent.futures.ThreadPoolExecutor()
         self.push_partition_futures = []
-
-        # clean up any existing shuffle files
-        os.makedirs(self.shuffle_dir, exist_ok=True)
-        for partition_idx in range(self.num_output_partitions):
-            dir = os.path.join(self.shuffle_dir, f"partition_{partition_idx}")
-            os.makedirs(dir, exist_ok=True)
 
     def get_address(self):
         return f"grpc://{self.host}:{self.port}"
@@ -246,7 +222,8 @@ class ShuffleActor:
 
     # Clean up the shuffle files for the given partition
     def clear_partition(self, partition_idx: int):
-        path = os.path.join(self.shuffle_dir, f"partition_{partition_idx}")
+        for shuffle_dir in self.shuffle_dirs:
+            path = os.path.join(shuffle_dir, f"partition_{partition_idx}")
         try:
             if os.path.exists(path):
                 shutil.rmtree(path)
@@ -257,8 +234,9 @@ class ShuffleActor:
     def shutdown(self):
         self.server.shutdown()
         try:
-            if os.path.exists(self.shuffle_dir):
-                shutil.rmtree(self.shuffle_dir)
+            for shuffle_dir in self.shuffle_dirs:
+                if os.path.exists(shuffle_dir):
+                    shutil.rmtree(shuffle_dir)
         except Exception as e:
             print(f"failed to clean up shuffle files: {e}")
 

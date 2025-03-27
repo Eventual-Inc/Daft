@@ -18,17 +18,17 @@ pub struct PyInProgressShuffleCache {
 #[pymethods]
 impl PyInProgressShuffleCache {
     #[staticmethod]
-    #[pyo3(signature = (num_partitions, dir, target_filesize, compression=None, partition_by=None))]
+    #[pyo3(signature = (num_partitions, dirs, target_filesize, compression=None, partition_by=None))]
     pub fn try_new(
         num_partitions: usize,
-        dir: &str,
+        dirs: Vec<String>,
         target_filesize: usize,
         compression: Option<&str>,
         partition_by: Option<Vec<PyExpr>>,
     ) -> PyResult<Self> {
         let shuffle_cache = InProgressShuffleCache::try_new(
             num_partitions,
-            dir,
+            dirs.as_slice(),
             target_filesize,
             compression,
             partition_by.map(|partition_by| partition_by.into_iter().map(|p| p.into()).collect()),
