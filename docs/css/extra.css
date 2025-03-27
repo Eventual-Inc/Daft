@@ -18,7 +18,7 @@
   --md-accent-fg-color: #ad9fff;
 }
 
-[data-md-color-scheme=slate][data-md-color-primary=black] {
+[data-md-color-scheme=slate][data-md-color-primary=black], [data-md-color-scheme=default] {
   --md-typeset-a-color: #7862FF;
 }
 
@@ -45,4 +45,9 @@
 
 .md-typeset__table table:not([class]) {
   display: table
+}
+
+/* method label */
+.doc-symbol-method::after {
+  content: "method";
 }
