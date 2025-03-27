@@ -37,9 +37,6 @@ class Builder:
 
     def local(self):
         self._connection = connect_start()
-        import daft
-
-        daft.context.set_runner_native()
 
         url = f"sc://0.0.0.0:{self._connection.port()}"
         self._builder = PySparkSession.builder.remote(url)
