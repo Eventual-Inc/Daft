@@ -72,7 +72,7 @@ You can use the S3 Tables AWS API via a `boto3` client or `boto3` session.
 
 ### S3 Tables Iceberg REST API
 
-The S3 Tables service supports
+S3 Tables offers an [Iceberg REST compatible endpoint](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-integrating-open-source.html) which Daft uses when you create a catalog via [`from_s3tables`][daft.Catalog.from_s3tables].
 
 > You can connect your Iceberg REST client to the Amazon S3 Tables Iceberg REST endpoint and make REST API calls to create, update, or query tables in S3 table buckets. The endpoint implements a set of standardized Iceberg REST APIs specified in the Apache Iceberg REST Catalog Open API specification. The endpoint works by translating Iceberg REST API operations into corresponding S3 Tables operations.
 

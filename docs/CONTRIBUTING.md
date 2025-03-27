@@ -22,4 +22,3 @@
 
 1. Create a `.md` file in `docs/api_docs` or add to relevant folder in `docs/user_guide`
 2. Add file to `mkdocs.yml` navigation under `API Docs`
-
