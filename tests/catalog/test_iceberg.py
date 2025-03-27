@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pyarrow
 import pyarrow as pa
 import pytest
 
@@ -11,6 +10,11 @@ from daft.logical.schema import DataType as dt
 from daft.logical.schema import Field, Schema
 
 CATALOG_ALIAS = "_test_catalog_iceberg"
+
+# skip if pyarrow < 9
+pyiceberg = pytest.importorskip("pyiceberg")
+PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
+pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="iceberg not supported on old versions of pyarrow")
 
 
 @pytest.fixture(scope="session")
@@ -135,7 +139,6 @@ def test_create_table(catalog: Catalog):
     c.drop_namespace(n)
 
 
-@pytest.mark.skipif(pyarrow.__version__ < "12.0.1", reason="Requires pyarrow >= 12.0.1")
 def test_create_table_as_select(catalog: Catalog):
     cat = catalog
     ns = "test_create_table_as_select"
