@@ -43,7 +43,7 @@ from daft.filesystem import overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
-from daft.viz import DataFrameDisplay
+from daft.viz import DataFrameDisplay, ShowFormat
 
 if TYPE_CHECKING:
     import dask
@@ -3075,7 +3075,7 @@ class DataFrame:
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
 
     @DataframePublicAPI
-    def show(self, n: int = 8) -> None:
+    def show(self, n: int = 8, format: ShowFormat | None = None, **options) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
 
         If IPython is installed, this will use IPython's `display` utility to pretty-print in a
@@ -3084,10 +3084,35 @@ class DataFrame:
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
 
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> df.show()  # Default display
+            >>> df.show(format="markdown")  # Display as markdown table
+            >>> df.show(format="html")  # Display as HTML table
+            >>> df.show(null="NULL")  # Custom null value representation
+            >>> df.show(max_width=50)  # Control column width
+            >>> df.show(align=["left", "right", "center"])  # Control column alignment
+            >>> df.show(schema=True)  # Show data types in column headers
+
+        Options:
+            schema (bool): If True, includes data types in column headers. Defaults to False.
+            null (str): String representation for null values. Defaults to "None".
+            max_width (int): Maximum width for column values before truncation. Defaults to 30.
+            align (str | list[str]): Column alignment. Can be a single value ("left", "right", "center")
+                applied to all columns or a list with alignment for each column. Defaults to "left".
+
         Args:
             n: number of rows to show. Defaults to 8.
+            format (ShowFormat | None): Format to use for the table display.
+                Supported formats include: default, plain, simple, asciidoc, markdown,
+                jira, mediawiki, html, latex, csv, tsv, rst.
         """
         dataframe_display = self._construct_show_display(n)
+
+        # TODO feat: consider `.format(..) -> str` as a __repr__ that takes options
+        if format is not None or options:
+            dataframe_display = dataframe_display._format(format or "default", **options)
 
         try:
             from IPython.display import display
