@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_file_formats::{FileFormat, WriteMode};
 use daft_catalog::TableSource;
 use daft_context::get_context;
-use daft_dsl::LiteralValue;
+use daft_dsl::{unresolved_col, LiteralValue};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -149,8 +149,20 @@ impl ConnectSession {
                     input,
                     source,
                     save_type,
+                    partitioning_columns,
                     ..
                 } = operation;
+
+                let partitioning_columns = if partitioning_columns.is_empty() {
+                    None
+                } else {
+                    Some(
+                        partitioning_columns
+                            .into_iter()
+                            .map(unresolved_col)
+                            .collect::<Vec<_>>(),
+                    )
+                };
 
                 let input = input.required("input")?;
                 let source = source.required("source")?;
@@ -177,17 +189,52 @@ impl ConnectSession {
                     SaveMode::Ignore => not_yet_implemented!("Ignore"),
                 };
 
-                let plan = plan.table_write(&path, write_mode, file_format, None, None, None)?;
+                let plan = plan.table_write(
+                    &path,
+                    write_mode,
+                    file_format,
+                    partitioning_columns,
+                    None,
+                    None,
+                )?;
 
                 let mut result_stream = this.run_query(plan).await?;
+                // TODO: this should be handled by the runner's write implementation.
+                // Ray runner doesn't internally handle overwriting files, so we need to manually do it here.
+                if write_mode == WriteMode::Overwrite
+                    && get_context().get_or_create_runner()?.is_ray()
+                {
+                    let mut files = vec![];
+                    while let Some(result) = result_stream.next().await {
+                        let result = result?;
+                        let tables = result.get_tables()?;
+                        for table in tables.as_slice() {
+                            let path = table.get_column("path").unwrap();
+                            let path = path.utf8().unwrap();
+                            files.extend(path.into_iter().flatten().map(|p| p.to_string()));
+                        }
+                    }
 
-                // this is so we make sure the operation is actually done
-                // before we return
-                //
-                // an example where this is important is if we write to a parquet file
-                // and then read immediately after, we need to wait for the write to finish
-                while let Some(_result) = result_stream.next().await {}
+                    use pyo3::prelude::*;
+                    Python::with_gil(|py| {
+                        let fs = py.import("daft.filesystem")?;
+                        let overwrite_files = fs.getattr("overwrite_files")?;
+                        let file_paths = pyo3::types::PyList::new(py, files)?;
+                        let root_dir = path.clone();
+                        let overwrite_partitions = false;
+                        let py_io_config: Option<daft_io::python::IOConfig> = None;
+                        overwrite_files.call1((
+                            file_paths,
+                            root_dir,
+                            py_io_config,
+                            overwrite_partitions,
+                        ))?;
 
+                        DaftResult::Ok(())
+                    })?;
+                } else {
+                    while let Some(_result) = result_stream.next().await {}
+                }
                 Ok(())
             };
 

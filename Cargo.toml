@@ -213,6 +213,7 @@ daft-dsl = {path = "src/daft-dsl"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json"}
 daft-hash = {path = "src/daft-hash"}
+daft-io = {path = "src/daft-io"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-micropartition = {path = "src/daft-micropartition"}
