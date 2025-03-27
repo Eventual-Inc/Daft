@@ -7,7 +7,13 @@ Daft integrates with [S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/use
 ```python
 from daft import Catalog
 
-catalog = Catalog.from_arn("arn:aws:s3tables:<region>:<account>:bucket/<bucket>")
+# ensure your aws credentials are configure, for example:
+# import os
+# os.environ["AWS_ACCESS_KEY_ID"] = "<access-id>"
+# os.environ["AWS_SECRET_ACCESS_KEY"] = "<access-key>"
+# os.environ["AWS_DEFAULT_REGION"] = "<region>"
+
+catalog = Catalog.from_s3tables("arn:aws:s3tables:<region>:<account>:bucket/<bucket>")
 
 # verify we are connected
 catalog.list_tables("demo")
