@@ -378,3 +378,80 @@ def test_window_value_over_sum(make_df):
     }
 
     assert_equal_ignoring_order(result.to_pydict(), expected)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_partition_by_with_expressions(make_df):
+    """Test window functions with expressions in partition_by clause."""
+    df = make_df({"num": [1, 2, 3, 4, 5, 6, 7, 8], "value": [10, 20, 30, 40, 50, 60, 70, 80]})
+
+    # First add the expression as a column to the dataframe
+    df = df.with_column("parity", col("num") % 2)
+
+    # Use the column in partition_by as an expression
+    parity_expr = col("parity")
+    window = Window.partition_by(parity_expr)
+
+    result = df.select(
+        col("num"),
+        col("value"),
+        col("parity"),
+        col("value").sum().over(window).alias("sum"),
+    ).collect()
+
+    result_dict = result.to_pydict()
+
+    # Group by parity and check sums
+    odd_values = [result_dict["value"][i] for i, p in enumerate(result_dict["parity"]) if p == 1]
+    even_values = [result_dict["value"][i] for i, p in enumerate(result_dict["parity"]) if p == 0]
+
+    odd_sum = sum(odd_values)
+    even_sum = sum(even_values)
+
+    # Verify each group has the correct sum
+    for i, parity in enumerate(result_dict["parity"]):
+        expected_sum = odd_sum if parity == 1 else even_sum
+        assert result_dict["sum"][i] == expected_sum, f"Row {i} has incorrect sum for parity {parity}"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_order_by_with_expressions(make_df):
+    """Test window functions with expressions in order_by clause."""
+    df = make_df({"num": [1, 2, 3, 4, 5, 6, 7, 8], "value": [80, 70, 60, 50, 40, 30, 20, 10]})
+
+    # First add the expression as a column to the dataframe
+    df = df.with_column("neg_value", -col("value"))
+
+    # Use the column in order_by as an expression
+    window = Window.order_by(col("neg_value"))
+
+    # Test with a cumulative sum window function
+    result = df.select(
+        col("num"),
+        col("value"),
+        col("neg_value"),
+        col("value").sum().over(window).alias("cumulative_sum"),
+    ).collect()
+
+    # Convert to dictionary for easier processing
+    result_dict = result.to_pydict()
+
+    # Values should be ordered by neg_value, which means descending value
+    expected_order = sorted(range(len(result_dict["value"])), key=lambda i: result_dict["neg_value"][i])
+
+    # Calculate expected cumulative sums
+    sorted_values = [result_dict["value"][i] for i in expected_order]
+    expected_cumulative_sums = []
+    running_sum = 0
+    for val in sorted_values:
+        running_sum += val
+        expected_cumulative_sums.append(running_sum)
+
+    # Map back to original order
+    expected_sums = [0] * len(result_dict["value"])
+    for i, orig_idx in enumerate(expected_order):
+        expected_sums[orig_idx] = expected_cumulative_sums[i]
+
+    # Verify cumulative sums
+    for i, (actual, expected) in enumerate(zip(result_dict["cumulative_sum"], expected_sums)):
+        assert actual == expected, f"Row {i} has incorrect cumulative sum: {actual} != {expected}"
