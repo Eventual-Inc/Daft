@@ -268,30 +268,33 @@ sess.sql("SELECT * FROM example.tbl, temp LIMIT 1").show()
 
 For complete documentation, please see the [Session API docs](api_docs/sessions.md).
 
-| Method                                                | Description                                                        |
-| ----------------------------------------------------- | ------------------------------------------------------------------ |
-| [`attach`][daft.Session.attach]                       | Attaches a catalog or table to this session.                       |
-| [`attach_catalog`][daft.Session.attach_catalog]       | Attaches (or creates) a catalog to this session                    |
-| [`attach_table`][daft.Session.attach_table]           | Attaches (or creates) a table to this session                      |
-| [`create_namespace`][daft.Session.create_namespace]   | Creates a new namespace                                            |
-| [`create_table`][daft.Session.create_table]           | Creates a new table from the source                                |
-| [`create_temp_table`][daft.Session.create_temp_table] | Creates a temp table scoped to this session from an existing view. |
-| [`current_catalog`][daft.Session.current_catalog]     | Returns the session's current catalog.                             |
-| [`current_namespace`][daft.Session.current_namespace] | Returns the session's current namespace.                           |
-| [`detach_catalog`][daft.Session.detach_catalog]       | Detaches the catalog from this session                             |
-| [`detach_table`][daft.Session.detach_table]           | Detaches the table from this session                               |
-| [`drop_namespace`][daft.Session.drop_namespace]       | Drop the namespace in the session's current catalog                |
-| [`drop_table`][daft.Session.drop_table]               | Drop the table in the session's current catalog                    |
-| [`get_catalog`][daft.Session.get_catalog]             | Returns the catalog or an object not found error.                  |
-| [`get_table`][daft.Session.get_table]                 | Returns the table or an object not found error.                    |
-| [`has_catalog`][daft.Session.has_catalog]             | Returns true iff the session has access to a matching catalog.     |
-| [`has_table`][daft.Session.has_table]                 | Returns true iff the session has access to a matching table.       |
-| [`list_catalogs`][daft.Session.list_catalogs]         | Lists all catalogs matching the pattern.                           |
-| [`list_namespaces`][daft.Session.list_namespaces]     | Lists all namespaces matching the pattern.                         |
-| [`list_tables`][daft.Session.list_tables]             | Lists all tables matching the pattern.                             |
-| [`read_table`][daft.Session.read_table]               | Reads a table from the session.                                    |
-| [`write_table`][daft.Session.write_table]             | Writes a dataframe to the table.                                   |
-| [`set_catalog`][daft.Session.set_catalog]             | Sets the current catalog.                                          |
-| [`set_namespace`][daft.Session.set_namespace]         | Sets the current namespace.                                        |
-| [`sql`][daft.Session.sql]                             | Executes SQL against the session.                                  |
-| [`use`][daft.Session.use]                             | Sets the current catalog and namespace.                            |
+| Method                                                                                                                                  | Description                                                        |
+|-----------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------|
+| [`attach`][daft.Session.attach]                                                 | Attaches a catalog or table to this session.                       |
+| [`attach_catalog`][daft.Session.attach_catalog]                                 | Attaches (or creates) a catalog to this session                    |
+| [`attach_table`][daft.Session.attach_table]                                     | Attaches (or creates) a table to this session                      |
+| [`create_namespace`][daft.Session.create_namespace]                             | Creates a new namespace                                            |
+| [`create_namespace_if_not_exists`][daft.Session.create_namespace_if_not_exists] | Creates a new namespace if it doesn't already exist                |
+| [`create_table`][daft.Session.create_table]                                     | Creates a new table from the source                                |
+| [`create_table_if_not_exists`][daft.Session.create_table_if_not_exists]         | Creates a new table from the source if it doesn't already exist    |
+| [`create_temp_table`][daft.Session.create_temp_table]                           | Creates a temp table scoped to this session from an existing view. |
+| [`current_catalog`][daft.Session.current_catalog]                               | Returns the session's current catalog.                             |
+| [`current_namespace`][daft.Session.current_namespace]                           | Returns the session's current namespace.                           |
+| [`detach_catalog`][daft.Session.detach_catalog]                                 | Detaches the catalog from this session                             |
+| [`detach_table`][daft.Session.detach_table]                                     | Detaches the table from this session                               |
+| [`drop_namespace`][daft.Session.drop_namespace]                                 | Drop the namespace in the session's current catalog                |
+| [`drop_table`][daft.Session.drop_table]                                         | Drop the table in the session's current catalog                    |
+| [`get_catalog`][daft.Session.get_catalog]                                       | Returns the catalog or an object not found error.                  |
+| [`get_table`][daft.Session.get_table]                                           | Returns the table or an object not found error.                    |
+| [`has_catalog`][daft.Session.has_catalog]                                       | Returns true iff the session has access to a matching catalog.     |
+| [`has_namespace`][daft.Session.has_namespace]                                   | Returns true iff the session has access to a matching namespace.   |
+| [`has_table`][daft.Session.has_table]                                           | Returns true iff the session has access to a matching table.       |
+| [`list_catalogs`][daft.Session.list_catalogs]                                   | Lists all catalogs matching the pattern.                           |
+| [`list_namespaces`][daft.Session.list_namespaces]                               | Lists all namespaces matching the pattern.                         |
+| [`list_tables`][daft.Session.list_tables]                                       | Lists all tables matching the pattern.                             |
+| [`read_table`][daft.Session.read_table]                                         | Reads a table from the session.                                    |
+| [`write_table`][daft.Session.write_table]                                       | Writes a dataframe to the table.                                   |
+| [`set_catalog`][daft.Session.set_catalog]                                       | Sets the current catalog.                                          |
+| [`set_namespace`][daft.Session.set_namespace]                                   | Sets the current namespace.                                        |
+| [`sql`][daft.Session.sql]                                                       | Executes SQL against the session.                                  |
+| [`use`][daft.Session.use]                                                       | Sets the current catalog and namespace.                              |
