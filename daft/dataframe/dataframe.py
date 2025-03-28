@@ -508,13 +508,13 @@ class DataFrame:
     @DataframePublicAPI
     def __repr__(self) -> str:
         self._populate_preview()
-        preview = PreviewFormatter(self._preview)
-        return self._preview.__repr__()
+        preview = PreviewFormatter(self._preview, self.schema())
+        return preview.__repr__()
 
     @DataframePublicAPI
     def _repr_html_(self) -> str:
         self._populate_preview()
-        preview = PreviewFormatter(self._preview)
+        preview = PreviewFormatter(self._preview, self.schema())
         return preview._repr_html_()
 
     ###

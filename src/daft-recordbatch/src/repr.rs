@@ -28,6 +28,8 @@ pub enum ShowFormat {
     Markdown,
     /// Latex formatted table.
     Latex,
+    /// HTML formmated table.
+    Html,
 }
 
 /// The .show() options for header formatting.
@@ -39,7 +41,7 @@ pub struct HeaderOptions {
 /// The .show() options for column formatting.
 #[derive(Debug)]
 pub struct ColumnOptions {
-    
+
 }
 
 ///
