@@ -3084,15 +3084,24 @@ class DataFrame:
             >>> #
             >>> df.show()
             >>> df.show(format="markdown")  # print as markdown
-            >>> df.show(null="NULL")  # set null value repr
             >>> df.show(max_width=50)  # set all columns max_width
             >>> df.show(align="left")  # set all columns alignment
-            >>> df.show(align=["left", "right", "center"])  # set each column max_width
-            >>> df.show(max_width=[10, 20, 30])  # set each column alignment
 
         Args:
             n: number of rows to show. Defaults to 8.
-            format (ShowFormat | None): Defaults to None.
+            format (PreviewFormat): the box-drawing format e.g. "fancy" or "markdown".
+            **options: keyword arguments to modify the formatting, please see the options section.
+
+        Usage:
+            - If columns are given, their length MUST match the schema.
+            - If columns are given, their settings override any global settings.
+
+        Options:
+            verbose     (bool)                      : verbose will print header info
+            max_width   (int)                       : global max column width
+            align       (PreviewAlign)              : global column align
+            columns     (list[PreviewColumn])       : column overrides
+
         """
         schema = self.schema()
         preview = self._construct_show_preview(n)
