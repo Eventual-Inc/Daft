@@ -544,6 +544,10 @@ impl PushDownProjection {
                 // Cannot push down past a Pivot/MonotonicallyIncreasingId because it changes the schema.
                 Ok(Transformed::no(plan))
             }
+            LogicalPlan::Window(_) => {
+                // Cannot push down past a Window because it changes the window calculation results
+                Ok(Transformed::no(plan))
+            }
             LogicalPlan::Sink(_) => {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
