@@ -14,7 +14,7 @@ use daft_dsl::{join::get_common_join_cols, resolved_col};
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, UnGroupedAggregate, Unpivot,
+    Project, Sample, Sort, UnGroupedAggregate, Unpivot, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -48,6 +48,7 @@ use crate::{
         pivot::PivotSink,
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
+        window_partition_only::WindowPartitionOnlySink,
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
@@ -121,6 +122,27 @@ pub fn physical_plan_to_pipeline(
             let scan_task_source =
                 ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
             SourceNode::new(scan_task_source.arced(), stats_state.clone()).boxed()
+        }
+        LocalPhysicalPlan::WindowPartitionOnly(WindowPartitionOnly {
+            input,
+            partition_by,
+            schema,
+            stats_state,
+            aggregations,
+        }) => {
+            let input_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let window_partition_only_sink =
+                WindowPartitionOnlySink::new(aggregations, partition_by, schema).with_context(
+                    |_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    },
+                )?;
+            BlockingSinkNode::new(
+                Arc::new(window_partition_only_sink),
+                input_node,
+                stats_state.clone(),
+            )
+            .boxed()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, stats_state }) => {
             let cache_key: Arc<str> = info.cache_key.clone().into();

@@ -103,11 +103,24 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 ))
             }
         }
-        LogicalPlan::Window(_) => {
-            // Will be handled in PR3
-            Err(DaftError::not_implemented(
-                "Window functions not yet implemented",
-            ))
+        LogicalPlan::Window(window) => {
+            let input = translate(&window.input)?;
+            if !window.window_spec.partition_by.is_empty()
+                && window.window_spec.order_by.is_empty()
+                && window.window_spec.frame.is_none()
+            {
+                Ok(LocalPhysicalPlan::window_partition_only(
+                    input,
+                    window.window_spec.partition_by.clone(),
+                    window.schema.clone(),
+                    window.stats_state.clone(),
+                    window.window_functions.clone(),
+                ))
+            } else {
+                Err(DaftError::not_implemented(
+                    "Window with order by or frame not yet implemented",
+                ))
+            }
         }
         LogicalPlan::Unpivot(unpivot) => {
             let input = translate(&unpivot.input)?;

@@ -11,4 +11,5 @@ pub mod outer_hash_join_probe;
 pub mod pivot;
 pub mod sort;
 pub mod streaming_sink;
+pub mod window_partition_only;
 pub mod write;
