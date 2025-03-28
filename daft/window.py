@@ -121,9 +121,9 @@ class Window:
         """
         # Convert integer offsets to WindowBoundary
         if isinstance(start, int):
-            start = _WindowBoundary.Preceding(-start) if start < 0 else _WindowBoundary.Following(start)
+            start = _WindowBoundary.Offset(start)
         if isinstance(end, int):
-            end = _WindowBoundary.Preceding(-end) if end < 0 else _WindowBoundary.Following(end)
+            end = _WindowBoundary.Offset(end)
 
         frame = _WindowFrame(
             frame_type=_WindowFrameType.Rows(),

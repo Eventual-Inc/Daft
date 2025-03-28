@@ -699,16 +699,9 @@ impl WindowBoundary {
     }
 
     #[staticmethod]
-    pub fn Preceding(n: u64) -> Self {
+    pub fn Offset(n: i64) -> Self {
         Self {
-            boundary: crate::expr::window::WindowBoundary::preceding(n),
-        }
-    }
-
-    #[staticmethod]
-    pub fn Following(n: u64) -> Self {
-        Self {
-            boundary: crate::expr::window::WindowBoundary::following(n),
+            boundary: crate::expr::window::WindowBoundary::offset(n),
         }
     }
 }

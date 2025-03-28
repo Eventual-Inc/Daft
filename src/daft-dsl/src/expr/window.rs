@@ -38,14 +38,12 @@ impl WindowBoundary {
         Self::Offset(0)
     }
 
-    /// Helper to create a PRECEDING boundary with a positive number of rows
-    pub fn preceding(n: u64) -> Self {
-        Self::Offset(-(n as i64))
-    }
-
-    /// Helper to create a FOLLOWING boundary with a positive number of rows
-    pub fn following(n: u64) -> Self {
-        Self::Offset(n as i64)
+    /// Helper to create a row offset boundary directly
+    /// - 0 for CURRENT ROW
+    /// - Negative for PRECEDING
+    /// - Positive for FOLLOWING
+    pub fn offset(n: i64) -> Self {
+        Self::Offset(n)
     }
 }
 
