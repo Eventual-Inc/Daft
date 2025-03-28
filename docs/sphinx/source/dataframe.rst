@@ -60,12 +60,13 @@ Filtering Rows
     :toctree: doc_gen/dataframe_methods
 
     DataFrame.distinct
-    DataFrame.filter
-    DataFrame.where
-    DataFrame.limit
-    DataFrame.sample
     DataFrame.drop_nan
     DataFrame.drop_null
+    DataFrame.filter
+    DataFrame.limit
+    DataFrame.sample
+    DataFrame.unique
+    DataFrame.where
 
 Reordering
 **********
