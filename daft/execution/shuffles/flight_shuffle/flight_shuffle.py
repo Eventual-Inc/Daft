@@ -66,7 +66,6 @@ class ShuffleActorManager:
         self.all_actors: dict[str, ShuffleActor] = {}
         self.active_actors: dict[str, ShuffleActor] = {}
 
-        self.push_partition_futures = []
         self.clear_partition_futures = []
 
         # Eagerly create actors for all nodes that are currently available
@@ -127,15 +126,12 @@ class ShuffleActorManager:
                     [node_id] = object_location["node_ids"]
                 objects_to_push_per_node[node_id].append(object)
 
-        self.push_partition_futures.extend(
-            self._push_objects_to_actor(node_id, objects) for node_id, objects in objects_to_push_per_node.items()
+        ray.get(
+            [self._push_objects_to_actor(node_id, objects) for node_id, objects in objects_to_push_per_node.items()]
         )
 
     # Wait for all shuffle actors to finish pushing objects to the cache
     def finish_push_objects(self):
-        ray.get(self.push_partition_futures)
-        self.push_partition_futures.clear()
-
         ray.get([actor.finish_push_partitions.remote() for actor in self.active_actors.values()])
 
     # Clear the given partitions from the shuffle actors
@@ -194,30 +190,17 @@ class ShuffleActor:
         self.server = FlightServer(self.host, self.node_id)
         self.port = self.server.get_port()
 
-        # create a threadpool to push partitions to the shuffle cache
-        self.push_partition_executor = concurrent.futures.ThreadPoolExecutor()
-        self.push_partition_futures = []
-
     def get_address(self):
         return f"grpc://{self.host}:{self.port}"
 
     # Push a partition to the shuffle cache, do this in a threadpool so we return immediately
-    def push_partitions(self, *partitions: MicroPartition):
-        self.push_partition_futures.extend(
-            self.push_partition_executor.submit(
-                self.in_progress_shuffle_cache.push_partition, partition._micropartition
-            )
-            for partition in partitions
-        )
+    async def push_partitions(self, *partitions: MicroPartition):
+        await self.in_progress_shuffle_cache.push_partitions([partition._micropartition for partition in partitions])
 
     # Wait for all the push partition futures to complete
-    def finish_push_partitions(self):
-        for future in concurrent.futures.as_completed(self.push_partition_futures):
-            future.result()
-        self.push_partition_futures.clear()
-        self.push_partition_executor.shutdown()
-
-        self.server.set_shuffle_cache(self.in_progress_shuffle_cache.close())
+    async def finish_push_partitions(self):
+        shuffle_cache = await self.in_progress_shuffle_cache.close()
+        self.server.set_shuffle_cache(shuffle_cache)
         self.in_progress_shuffle_cache = None
 
     # Clean up the shuffle files for the given partition
@@ -371,19 +354,15 @@ def run_map_phase(
         else:
             yield step
 
-    push_objects_futures = []
     while pending_map_tasks or in_flight_map_tasks:
         # Get all the map tasks that are done
         done_ids = [id for id in in_flight_map_tasks.keys() if in_flight_map_tasks[id].done()]
 
         # If there are any map tasks that are done, push them to the actor manager
         if len(done_ids) > 0:
-            done_partitions = []
-            for id in done_ids:
-                materialization = in_flight_map_tasks.pop(id)
-                done_partitions.append(materialization.partition())
-
-            push_objects_futures.append(shuffle_actor_manager.push_objects.remote(done_partitions))
+            done_partitions = [in_flight_map_tasks.pop(id).partition() for id in done_ids]
+            ray.get(shuffle_actor_manager.push_objects.remote(done_partitions))
+            del done_partitions
         # If there are no map tasks that are done, try to emit more map tasks. Else, yield None to indicate to the scheduler that we need to wait
         else:
             # Max number of maps to emit per wave
@@ -396,10 +375,6 @@ def run_map_phase(
                     yield map_task
             else:
                 yield None
-
-    # All the map tasks have been emitted, so wait for the actor manager to finish pushing them to the actors
-    ray.get(push_objects_futures)
-    del push_objects_futures
 
     # Wait for all actors to complete the map phase
     ray.get(shuffle_actor_manager.finish_push_objects.remote())

@@ -1,4 +1,6 @@
-use common_runtime::get_compute_runtime;
+use std::sync::{Arc, LazyLock};
+
+use common_runtime::RuntimeRef;
 use daft_dsl::python::PyExpr;
 use daft_micropartition::python::PyMicroPartition;
 use daft_schema::python::schema::PySchema;
@@ -10,9 +12,12 @@ use pyo3::{
 
 use crate::shuffle_cache::{InProgressShuffleCache, ShuffleCache};
 
+static LOCAL_THREAD_RUNTIME: LazyLock<RuntimeRef> =
+    LazyLock::new(|| common_runtime::get_local_thread_runtime());
+
 #[pyclass(module = "daft.daft", name = "InProgressShuffleCache", frozen)]
 pub struct PyInProgressShuffleCache {
-    cache: InProgressShuffleCache,
+    cache: Arc<InProgressShuffleCache>,
 }
 
 #[pymethods]
@@ -33,23 +38,33 @@ impl PyInProgressShuffleCache {
             compression,
             partition_by.map(|partition_by| partition_by.into_iter().map(|p| p.into()).collect()),
         )?;
+        pyo3_async_runtimes::tokio::init_with_runtime(&LOCAL_THREAD_RUNTIME.runtime).unwrap();
         Ok(Self {
-            cache: shuffle_cache,
+            cache: Arc::new(shuffle_cache),
         })
     }
 
-    pub fn push_partition(&self, py: Python, input_partition: PyMicroPartition) -> PyResult<()> {
-        py.allow_threads(|| {
-            get_compute_runtime()
-                .block_on_current_thread(self.cache.push_partition(input_partition.into()))?;
+    pub fn push_partitions<'a>(
+        &self,
+        py: Python<'a>,
+        input_partitions: Vec<PyMicroPartition>,
+    ) -> PyResult<Bound<'a, pyo3::PyAny>> {
+        let cache = self.cache.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            cache
+                .push_partitions(input_partitions.into_iter().map(|p| p.into()).collect())
+                .await?;
             Ok(())
         })
     }
 
-    pub fn close(&self) -> PyResult<PyShuffleCache> {
-        let shuffle_cache = get_compute_runtime().block_on_current_thread(self.cache.close())?;
-        Ok(PyShuffleCache {
-            cache: shuffle_cache,
+    pub fn close<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
+        let cache = self.cache.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let shuffle_cache = cache.close().await?;
+            Ok(PyShuffleCache {
+                cache: shuffle_cache,
+            })
         })
     }
 }

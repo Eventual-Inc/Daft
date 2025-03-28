@@ -25,6 +25,7 @@ static COMPUTE_RUNTIME_MAX_BLOCKING_THREADS: LazyLock<usize> = LazyLock::new(|| 
 static THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 static SINGLE_THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 static COMPUTE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
+static LOCAL_THREAD_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 
 pub type RuntimeRef = Arc<Runtime>;
 
@@ -32,6 +33,7 @@ pub type RuntimeRef = Arc<Runtime>;
 enum PoolType {
     Compute,
     IO,
+    LocalThread,
 }
 
 // A spawned task on a Runtime that can be awaited
@@ -178,6 +180,21 @@ fn init_io_runtime(multi_thread: bool) -> RuntimeRef {
     .unwrap()
 }
 
+fn init_local_thread_runtime() -> RuntimeRef {
+    std::thread::spawn(move || {
+        Runtime::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap(),
+            PoolType::LocalThread,
+        )
+    })
+    .join()
+    .unwrap()
+}
+
 pub fn get_compute_runtime() -> RuntimeRef {
     COMPUTE_RUNTIME.get_or_init(init_compute_runtime).clone()
 }
@@ -192,6 +209,12 @@ pub fn get_io_runtime(multi_thread: bool) -> RuntimeRef {
             .get_or_init(|| init_io_runtime(true))
             .clone()
     }
+}
+
+pub fn get_local_thread_runtime() -> RuntimeRef {
+    LOCAL_THREAD_RUNTIME
+        .get_or_init(|| init_local_thread_runtime())
+        .clone()
 }
 
 #[must_use]
