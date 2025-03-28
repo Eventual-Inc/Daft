@@ -3,7 +3,9 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard},
 };
 
-use common_runtime::RuntimeRef;
+use common_error::DaftResult;
+use common_runtime::{get_io_runtime, RuntimeRef};
+use daft_io::{s3_config_from_env, AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
 use daft_session::Session;
 use uuid::Uuid;
 
@@ -60,5 +62,199 @@ impl ConnectSession {
     /// get a mutable reference to the session
     pub fn session_mut(&self) -> std::sync::RwLockWriteGuard<'_, Session> {
         self.session.write().expect("catalog lock poisoned")
+    }
+
+    pub fn get_io_config(&self) -> DaftResult<IOConfig> {
+        Ok(IOConfig {
+            s3: self.s3_config_helper()?,
+            azure: self.azure_config_helper()?,
+            gcs: self.gcs_config_helper()?,
+            http: self.http_config_helper()?,
+        })
+    }
+
+    fn s3_config_helper(&self) -> DaftResult<S3Config> {
+        let rt = get_io_runtime(false);
+        let mut default_s3_conf =
+            rt.block_on_current_thread(async { DaftResult::Ok(s3_config_from_env().await?) })?;
+
+        macro_rules! set_opt_str {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.s3.", stringify!($field)))
+                    .map(|s| s.to_string())
+                {
+                    default_s3_conf.$field = Some(value);
+                }
+            };
+        }
+        macro_rules! set_from_config {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.s3.", stringify!($field)))
+                    .map(|s| s.parse().ok())
+                    .flatten()
+                {
+                    default_s3_conf.$field = value;
+                }
+            };
+        }
+        macro_rules! set_opt_from_config {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.s3.", stringify!($field)))
+                    .map(|s| s.parse().ok())
+                {
+                    default_s3_conf.$field = value;
+                }
+            };
+        }
+
+        set_opt_str!(region_name);
+        set_opt_str!(endpoint_url);
+        set_opt_str!(key_id);
+        set_opt_from_config!(session_token);
+        set_opt_from_config!(access_key);
+        set_opt_from_config!(buffer_time);
+        set_from_config!(max_connections_per_io_thread);
+        set_from_config!(retry_initial_backoff_ms);
+        set_from_config!(connect_timeout_ms);
+        set_from_config!(read_timeout_ms);
+        set_from_config!(num_tries);
+        set_opt_str!(retry_mode);
+        set_from_config!(anonymous);
+        set_from_config!(use_ssl);
+        set_from_config!(verify_ssl);
+        set_from_config!(check_hostname_ssl);
+        set_from_config!(requester_pays);
+        set_from_config!(force_virtual_addressing);
+        set_opt_from_config!(profile_name);
+
+        Ok(default_s3_conf)
+    }
+
+    fn azure_config_helper(&self) -> DaftResult<AzureConfig> {
+        let mut azure_conf = AzureConfig::default();
+
+        macro_rules! set_opt_str {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.azure.", stringify!($field)))
+                    .map(|s| s.to_string())
+                {
+                    azure_conf.$field = Some(value);
+                }
+            };
+        }
+        macro_rules! set_from_config {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.azure.", stringify!($field)))
+                    .map(|s| s.parse().ok())
+                    .flatten()
+                {
+                    azure_conf.$field = value;
+                }
+            };
+        }
+        macro_rules! set_opt_from_config {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.azure.", stringify!($field)))
+                    .map(|s| s.parse().ok())
+                {
+                    azure_conf.$field = value;
+                }
+            };
+        }
+        set_opt_str!(storage_account);
+        set_opt_from_config!(access_key);
+        set_opt_str!(sas_token);
+        set_opt_str!(bearer_token);
+        set_opt_str!(tenant_id);
+        set_opt_str!(client_id);
+        set_opt_from_config!(client_secret);
+        set_from_config!(use_fabric_endpoint);
+        set_from_config!(anonymous);
+        set_opt_str!(endpoint_url);
+        set_from_config!(use_ssl);
+
+        Ok(azure_conf)
+    }
+
+    fn gcs_config_helper(&self) -> DaftResult<GCSConfig> {
+        let mut gcs_conf = GCSConfig::default();
+        macro_rules! set_opt_str {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.gcs.", stringify!($field)))
+                    .map(|s| s.to_string())
+                {
+                    gcs_conf.$field = Some(value);
+                }
+            };
+        }
+        macro_rules! set_from_config {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.gcs.", stringify!($field)))
+                    .map(|s| s.parse().ok())
+                    .flatten()
+                {
+                    gcs_conf.$field = value;
+                }
+            };
+        }
+        macro_rules! set_opt_from_config {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.gcs.", stringify!($field)))
+                    .map(|s| s.parse().ok())
+                {
+                    gcs_conf.$field = value;
+                }
+            };
+        }
+        set_opt_str!(project_id);
+        set_opt_from_config!(credentials);
+        set_opt_str!(token);
+        set_from_config!(anonymous);
+        set_from_config!(max_connections_per_io_thread);
+        set_from_config!(retry_initial_backoff_ms);
+        set_from_config!(connect_timeout_ms);
+        set_from_config!(read_timeout_ms);
+        set_from_config!(num_tries);
+
+        Ok(gcs_conf)
+    }
+
+    fn http_config_helper(&self) -> DaftResult<HTTPConfig> {
+        let mut http_conf = HTTPConfig::default();
+        if let Some(value) = self
+            .config_values
+            .get("daft.io.http.user_agent")
+            .map(|s| s.to_string())
+        {
+            http_conf.user_agent = value;
+        }
+
+        if let Some(value) = self
+            .config_values
+            .get("daft.io.http.bearer_token")
+            .map(|s| s.to_string())
+        {
+            http_conf.bearer_token = Some(value.into());
+        }
+
+        Ok(http_conf)
     }
 }

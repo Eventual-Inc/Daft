@@ -27,12 +27,13 @@ pub mod python;
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-pub use common_io_config::{AzureConfig, IOConfig, S3Config};
+pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
 use futures::stream::BoxStream;
 use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, GetResult};
 #[cfg(feature = "python")]
 pub use python::register_modules;
+pub use s3_like::s3_config_from_env;
 use s3_like::S3LikeSource;
 use snafu::{prelude::*, Snafu};
 pub use stats::{IOStatsContext, IOStatsRef};

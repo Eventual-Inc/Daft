@@ -13,6 +13,7 @@ daft-context = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
 daft-functions = {workspace = true, optional = true, features = ["python"]}
+daft-io = {path = "../daft-io", optional = true, features = ["python"]}
 daft-logical-plan = {workspace = true, optional = true, features = ["python"]}
 daft-micropartition = {workspace = true, optional = true, features = [
   "python"
@@ -43,6 +44,7 @@ python = [
   "dep:common-file-formats",
   "dep:daft-core",
   "dep:daft-dsl",
+  "dep:daft-io",
   "dep:daft-logical-plan",
   "dep:daft-micropartition",
   "dep:daft-scan",

@@ -2018,6 +2018,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
