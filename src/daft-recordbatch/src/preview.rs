@@ -135,7 +135,7 @@ impl Default for PreviewOptions {
     fn default() -> Self {
         Self {
             columns: None,
-            verbose: true,
+            verbose: false,
             null: "None".to_string(),
             max_width: Some(30),
             align: Some(PreviewAlign::Left),
