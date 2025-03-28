@@ -183,6 +183,15 @@ class FileFormat(Enum):
 
     def ext(self): ...
 
+class WriteMode(Enum):
+    """Mode for writing data to a file."""
+
+    Overwrite: int
+    OverwritePartitions: int
+    Append: int
+
+    def from_str(mode: str) -> WriteMode: ...
+
 class ParquetSourceConfig:
     """Configuration of a Parquet data source."""
 
@@ -1724,6 +1733,7 @@ class LogicalPlanBuilder:
     def table_write(
         self,
         root_dir: str,
+        write_mode: WriteMode,
         file_format: FileFormat,
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
