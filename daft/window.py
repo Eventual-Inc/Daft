@@ -22,9 +22,9 @@ class Window:
     """
 
     # Class-level constants for frame boundaries
-    unbounded_preceding = _WindowBoundary.UnboundedPreceding()
-    unbounded_following = _WindowBoundary.UnboundedFollowing()
-    current_row = _WindowBoundary.CurrentRow()
+    unbounded_preceding = _WindowBoundary.unbounded_preceding()
+    unbounded_following = _WindowBoundary.unbounded_following()
+    current_row = _WindowBoundary.current_row()
 
     def __init__(self):
         self._spec = _WindowSpec.new()
@@ -121,12 +121,12 @@ class Window:
         """
         # Convert integer offsets to WindowBoundary
         if isinstance(start, int):
-            start = _WindowBoundary.Offset(start)
+            start = _WindowBoundary.offset(start)
         if isinstance(end, int):
-            end = _WindowBoundary.Offset(end)
+            end = _WindowBoundary.offset(end)
 
         frame = _WindowFrame(
-            frame_type=_WindowFrameType.Rows(),
+            frame_type=_WindowFrameType.rows(),
             start=start,
             end=end,
         )
