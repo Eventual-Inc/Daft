@@ -249,7 +249,7 @@ def test_from_ray_dataset_preview(n_partitions: int):
 
     df = daft.from_ray_dataset(ds)
     assert len(df) == 3
-    assert len(df._preview.preview_partition) == 3
+    assert len(df._preview.partition) == 3
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
@@ -259,4 +259,4 @@ def test_from_ray_dataset_data_longer_than_preview(n_partitions: int):
 
     df = daft.from_ray_dataset(ds)
     assert len(df) == 10
-    assert len(df._preview.preview_partition) == 8
+    assert len(df._preview.partition) == 8

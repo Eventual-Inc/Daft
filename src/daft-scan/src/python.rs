@@ -375,7 +375,7 @@ pub mod pylib {
                 && let Some(Some(ref partition_filters)) =
                     pushdowns.as_ref().map(|p| &p.0.partition_filters)
             {
-                let table = &pvalues.table;
+                let table = &pvalues.record_batch;
                 let eval_pred = table.eval_expression_list(&[partition_filters.clone()])?;
                 assert_eq!(eval_pred.num_columns(), 1);
                 let series = eval_pred.get_column_by_index(0)?;
@@ -392,10 +392,10 @@ pub mod pylib {
 
             let pspec = PartitionSpec {
                 keys: partition_values
-                    .map_or_else(|| RecordBatch::empty(None).unwrap(), |p| p.table),
+                    .map_or_else(|| RecordBatch::empty(None).unwrap(), |p| p.record_batch),
             };
             let statistics = stats
-                .map(|s| TableStatistics::from_stats_table(&s.table))
+                .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
 
             let metadata = num_rows.map(|n| TableMetadata { length: n as usize });
@@ -445,7 +445,7 @@ pub mod pylib {
             stats: Option<PyRecordBatch>,
         ) -> PyResult<Self> {
             let statistics = stats
-                .map(|s| TableStatistics::from_stats_table(&s.table))
+                .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
             let data_source = DataSource::Database {
                 path: url,
@@ -488,7 +488,7 @@ pub mod pylib {
             stats: Option<PyRecordBatch>,
         ) -> PyResult<Self> {
             let statistics = stats
-                .map(|s| TableStatistics::from_stats_table(&s.table))
+                .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
             let data_source = DataSource::PythonFactoryFunction {
                 module,
