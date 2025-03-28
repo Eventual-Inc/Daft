@@ -7,6 +7,7 @@ from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.recordbatch import MicroPartition
+import json
 
 
 @dataclass(frozen=True)
@@ -21,42 +22,74 @@ PreviewFormat = Literal[
     "simple",
     "grid",
     "markdown",
-    "latex",
-    "html",
+    # TODO "latex"
+    # TODO "html"
 ]
 
 
+PreviewAlign = Literal[
+    "left",
+    "center",
+    "right",
+]
+
+
+class PreviewColumn(TypedDict, total=False):
+    header: str
+    info: str
+    max_width: int
+    align: PreviewAlign
+    fmt: str
+
+
 class PreviewOptions:
-    _normalized: dict[str,any]
+    """Preview options for show formatting.
 
-    def __init__(self) -> None:
-        raise ValueError("Cannot call __init__ directly.")
+    Usage:
+        - If columns are given, their length MUST match the schema.
+        - If columns are given, their settings override any global settings.
 
-    @staticmethod
-    def from_options(schema: Schema, **options) -> PreviewOptions:
-        pass
+    Options:
+        verbose     (bool)                      : verbose will print header info
+        null        (str)                       : null string, default is 'None'
+        max_width   (int)                       : global max column width
+        align       (PreviewAlign)              : global column align
+        columns     (list[PreviewColumn]|None)  : column overrides
+    
+    """
+    _options: dict[str,object] # normalized options
 
-    def serialize() -> str:
-        pass
+    def __init__(self, **options) -> None:
+        self._options = {
+            "verbose": options.get("verbose", False),
+            "null": options.get("null", "None"),
+            "max_width": options.get("max_width", 30),
+            "align": options.get("align", "Left"),
+            "columns": options.get("columns")
+        }
+
+    def serialize(self) -> str:
+        """This lowers the burden to interop with the rust formatter."""
+        return json.dumps(self._options)
 
 
 class PreviewFormatter:
-    _preview: Preview | None
+    _preview: Preview
     _schema: Schema
-    _format: PreviewFormat
-    _options: PreviewOptions
+    _format: PreviewFormat | None
+    _options: PreviewOptions | None
 
     def __init__(
         self,
         preview: Preview,
         schema: Schema,
-        format: PreviewFormat = None,
-        options: PreviewOptions = None,
+        format: PreviewFormat | None = None,
+        **options,
     ) -> None:
         self._preview = preview
         self._schema = schema
         self._format = format
-        self._options = options
+        self._options = PreviewOptions(**options)
 
     def _get_user_message(self) -> str:
         if self._preview.partition is None:
@@ -64,7 +97,7 @@ class PreviewFormatter:
         if self._preview.num_rows == 0:
             return "(No data to display: Materialized dataframe has no rows)"
         if self._preview.num_rows is None:
-            first_rows = min(self._preview.num_rows, len(self._preview.partition))
+            first_rows = len(self._preview.partition)
             return f"(Showing first {first_rows} rows)"
         else:
             first_rows = min(self._preview.num_rows, len(self._preview.partition))

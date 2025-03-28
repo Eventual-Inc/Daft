@@ -3100,9 +3100,8 @@ class DataFrame:
             format (ShowFormat | None): Defaults to None.
         """
         schema = self.schema()
-        options = PreviewOptions.from_options(schema, **options)
         preview = self._construct_show_preview(n)
-        preview = PreviewFormatter(preview, schema, format, options)
+        preview = PreviewFormatter(preview, schema, format, **options)
 
         try:
             from IPython.display import display

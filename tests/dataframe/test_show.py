@@ -94,9 +94,13 @@ def test_show_with_options():
             "D": [None, None, None, None],
         }
     )
-    df.show(format="markdown", null="NULL")
-    # df.show(format="default")
-    # df.show(format="html")
+    print()
+    # df.show(format="markdown", null="NULL", verbose=True)
+    df.show(format="fancy", verbose=True)
+    # df.show(format="plain")
+    df.show(format="simple")
+    # df.show(format="grid")
+    # df.show(format="markdown")
 
 
 @pytest.mark.skip("how to test?")
