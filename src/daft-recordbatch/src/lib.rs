@@ -31,8 +31,8 @@ use num_traits::ToPrimitive;
 pub mod ffi;
 mod growable;
 mod ops;
-mod probeable;
 mod preview;
+mod probeable;
 mod repr_html;
 
 pub use growable::GrowableRecordBatch;

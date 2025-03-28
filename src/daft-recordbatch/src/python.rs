@@ -9,7 +9,11 @@ use daft_logical_plan::FileInfos;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
-use crate::{ffi, preview::{Preview, PreviewFormat, PreviewOptions}, RecordBatch};
+use crate::{
+    ffi,
+    preview::{Preview, PreviewFormat, PreviewOptions},
+    RecordBatch,
+};
 
 #[pyclass]
 #[derive(Clone)]
@@ -197,11 +201,13 @@ impl PyRecordBatch {
         })
     }
 
+    /// Helper to create a rust Preview and use its Display impl.
     #[pyo3(signature = (format, options))]
     pub fn preview(&self, format: &str, options: Option<&str>) -> PyResult<String> {
         let format = PreviewFormat::try_from(format)?;
         let options = match options {
-            Some(json) => serde_json::from_str::<PreviewOptions>(json).expect("PreviewOptions produced invalid json."),
+            Some(json) => serde_json::from_str::<PreviewOptions>(json)
+                .expect("PreviewOptions produced invalid json."),
             None => PreviewOptions::default(),
         };
         let preview = self.record_batch.clone();

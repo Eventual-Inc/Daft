@@ -91,7 +91,7 @@ def test_repr_with_non_default_preview_rows(make_df, num_preview_rows):
     df.collect(num_preview_rows=num_preview_rows)
     df.__repr__()
 
-    assert df._preview.num_rows == 10
+    assert df._preview.total_rows == 10
     assert len(df._preview.partition) == (num_preview_rows if num_preview_rows is not None else 10)
 
 

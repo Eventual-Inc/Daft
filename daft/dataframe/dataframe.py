@@ -34,7 +34,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType
-from daft.dataframe.preview import Preview, PreviewFormat, PreviewFormatter, PreviewOptions
+from daft.dataframe.preview import Preview, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
@@ -126,7 +126,7 @@ class DataFrame:
 
         self.__builder = builder
         self._result_cache: Optional[PartitionCacheEntry] = None
-        self._preview = Preview(partition=None, num_rows=None)
+        self._preview = Preview(partition=None, total_rows=None)
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
 
     @property
@@ -502,7 +502,7 @@ class DataFrame:
             preview_partition = preview_results._get_merged_micropartition()
             self._preview = Preview(
                 partition=preview_partition,
-                num_rows=len(self),
+                total_rows=len(self),
             )
 
     @DataframePublicAPI
@@ -3026,9 +3026,9 @@ class DataFrame:
         return self
 
     def _construct_show_preview(self, n: int) -> "Preview":
-        """Helper for .show() which will construct the underlying DataFramePreview object."""
+        """Helper for .show() which will construct the underlying Preview object."""
         preview_partition = self._preview.partition
-        total_rows = self._preview.num_rows
+        total_rows = self._preview.total_rows
 
         # Truncate n to the length of the DataFrame, if we have it.
         if total_rows is not None and n > total_rows:
@@ -3057,14 +3057,14 @@ class DataFrame:
                 total_rows = n = len(preview_partition)
             preview = Preview(
                 partition=preview_partition,
-                num_rows=total_rows,
+                total_rows=total_rows,
             )
         elif len(preview_partition) > n:
             # Preview partition is cached but has more rows that we need, so use the appropriate slice.
             truncated_preview_partition = preview_partition.slice(0, n)
             preview = Preview(
                 partition=truncated_preview_partition,
-                num_rows=total_rows,
+                total_rows=total_rows,
             )
         else:
             assert len(preview_partition) == n
@@ -3342,7 +3342,7 @@ class DataFrame:
         preview_partition = preview_results._get_merged_micropartition()
         df._preview = Preview(
             partition=preview_partition,
-            num_rows=dataframe_num_rows,
+            total_rows=dataframe_num_rows,
         )
         return df
 
@@ -3434,7 +3434,7 @@ class DataFrame:
         preview_partition = preview_results._get_merged_micropartition()
         df._preview = Preview(
             partition=preview_partition,
-            num_rows=dataframe_num_rows,
+            total_rows=dataframe_num_rows,
         )
         return df
 

@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 
-use comfy_table::{Cell, Table as ComfyTable};
+use comfy_table::{Cell, CellAlignment, Table as ComfyTable};
+use common_display::table_display::StrValue;
 use common_error::DaftError;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +20,7 @@ pub struct Preview {
 
 /// The .show() table format for box drawing.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PreviewFormat {
     /// Fancy box drawing (default).
     Fancy,
@@ -36,9 +38,11 @@ pub enum PreviewFormat {
     Html,
 }
 
-/// The column alignment of some 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// The column alignment, auto is right for numbers otherwise left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PreviewAlign {
+    Auto,
     Left,
     Center,
     Right,
@@ -46,6 +50,7 @@ pub enum PreviewAlign {
 
 /// The .show() options for column formatting.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct PreviewColumn {
     /// Column header text.
     header: Option<String>,
@@ -61,6 +66,7 @@ pub struct PreviewColumn {
 
 /// The .show() options for formatting.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct PreviewOptions {
     /// Verbose will show info in the header.
     verbose: bool,
@@ -78,7 +84,11 @@ pub struct PreviewOptions {
 impl Preview {
     /// Create preview with options.
     pub fn new(preview: RecordBatch, format: PreviewFormat, options: PreviewOptions) -> Self {
-        Self { batch: preview, format, options }
+        Self {
+            batch: preview,
+            format,
+            options,
+        }
     }
 
     /// Create preview with default options.
@@ -91,7 +101,6 @@ impl Preview {
         }
     }
 }
-
 
 impl PreviewOptions {
     /// Get the column preview settings or None.
@@ -113,7 +122,10 @@ impl TryFrom<&str> for PreviewFormat {
             "markdown" => Ok(Self::Markdown),
             "latex" => Ok(Self::Latex),
             "html" => Ok(Self::Html),
-            _ => Err(DaftError::ValueError(format!("Unknown preview format: {}", s))),
+            _ => Err(DaftError::ValueError(format!(
+                "Unknown preview format: {}",
+                s
+            ))),
         }
     }
 }
@@ -137,7 +149,8 @@ impl Display for Preview {
             todo!("latex preview not yet supported.")
         }
         if self.format == PreviewFormat::Html {
-            todo!("html preview not yet supported.")
+            // repr_html means we are ignoring options..
+            return write!(f, "{}", self.batch.repr_html());
         }
         self.create_table().fmt(f)
     }
@@ -147,7 +160,6 @@ impl Display for Preview {
 impl Preview {
     /// Create a ComfyTable.
     fn create_table(&self) -> ComfyTable {
-        // 
         let mut table = ComfyTable::new();
         self.load_preset(&mut table);
         self.push_header(&mut table);
@@ -170,36 +182,98 @@ impl Preview {
 
     /// Push the header row to the table.
     fn push_header(&self, table: &mut ComfyTable) {
-        let row: Vec<Cell> = self.batch.schema.fields.iter().enumerate().map(|(i, field)| {
-            //
-            let mut text = field.1.name.to_string();
-            let mut info = field.1.dtype.to_string();
-            //
-            if let Some(col) = self.options.column(i) {
-                text = col.header.clone().unwrap_or(text);
-                info = col.info.clone().unwrap_or(info);
-            }
-            // 
-            self.create_header_cell(text, info)
-        }).collect();
+        let row: Vec<Cell> = self
+            .batch
+            .schema
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(idx, field)| {
+                // Use schema for default header.
+                let mut text = field.1.name.to_string();
+                let mut info = field.1.dtype.to_string();
+                // Use column overrides if any.
+                if let Some(overrides) = self.options.column(idx) {
+                    text = overrides.header.clone().unwrap_or(text);
+                    info = overrides.info.clone().unwrap_or(info);
+                }
+                // Create header cell with possible info.
+                if !self.options.verbose {
+                    Cell::new(text)
+                } else if self.format == PreviewFormat::Fancy {
+                    Cell::new(format!("{}\n---\n{}", text, info))
+                } else {
+                    Cell::new(format!("{} ({})", text, info))
+                }
+            })
+            .collect();
         table.set_header(row);
     }
 
     /// Push the body rows to the table.
-    fn push_body(&self, _: &mut ComfyTable) {
-        // no-op
-    }
+    fn push_body(&self, table: &mut ComfyTable) {
+        for o in 0..self.batch.len() {
+            let row: Vec<Cell> = self
+                .batch
+                .columns
+                .iter()
+                .enumerate()
+                .map(|(idx, series)| {
+                    // Unfortunately actually plumbing the formatting would make this too much work right now.
+                    let mut text = series.str_value(o);
+                    let mut alignment = CellAlignment::Left;
 
-    /// Create a ComfyTable header cell.
-    fn create_header_cell(&self, text: String, info: String) -> Cell {
-        if !self.options.verbose {
-            Cell::new(text)
-        } else if self.format == PreviewFormat::Fancy {
-            Cell::new(format!("{}\n---\n{}", text, info))
-        } else {
-            Cell::new(format!("{} ({})", text, info))
+                    // Use column overrides if any, falling back to the global settings.
+                    let mut max_width = self.options.max_width;
+                    let mut align: Option<PreviewAlign> = self.options.align;
+                    if let Some(overrides) = self.options.column(idx) {
+                        max_width = overrides.max_width.or(max_width);
+                        align = overrides.align.or(align);
+                    }
+
+                    // Truncate cell content if over max length.
+                    if let Some(max_width) = max_width {
+                        text = truncate(text, max_width, magic::DOTS);
+                    }
+
+                    // If some alignment, translate to comfy_table
+                    if let Some(align) = &align {
+                        alignment = match align {
+                            PreviewAlign::Auto => CellAlignment::Left,
+                            PreviewAlign::Left => CellAlignment::Left,
+                            PreviewAlign::Center => CellAlignment::Center,
+                            PreviewAlign::Right => CellAlignment::Right,
+                        };
+                    }
+
+                    // Use global overrides
+                    Cell::new(text).set_alignment(alignment)
+                })
+                .collect();
+            table.add_row(row);
         }
     }
+}
+
+/// Truncate a string, appending the
+fn truncate(text: String, max_width: usize, suffix: &str) -> String {
+    if text.len() < max_width {
+        return text;
+    }
+    format!(
+        "{}{suffix}",
+        &text
+            .char_indices()
+            .take(max_width - suffix.len())
+            .map(|(_, c)| c)
+            .collect::<String>()
+    )
+}
+
+/// Formatting magic strings.
+mod magic {
+    /// Fancy dots aka ellipse for truncated columns.
+    pub const DOTS: &str = "…";
 }
 
 /// Preset strings for the text art tables.
