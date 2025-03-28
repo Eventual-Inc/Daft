@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, Iterable
 
 from daft.daft import WindowBoundary as _WindowBoundary
 from daft.daft import WindowFrame as _WindowFrame
 from daft.daft import WindowFrameType as _WindowFrameType
 from daft.daft import WindowSpec as _WindowSpec
-from daft.expressions import col
+from daft.expressions import Expression, col
+
+# Import column input types from DataFrame for type checking
+if TYPE_CHECKING:
+    from daft.dataframe.dataframe import ColumnInputType, ManyColumnsInputType
 
 
 class Window:
@@ -25,12 +29,27 @@ class Window:
     def __init__(self):
         self._spec = _WindowSpec.new()
 
+    @staticmethod
+    def _is_column_input(x: Any) -> bool:
+        return isinstance(x, str) or isinstance(x, Expression)
+
+    @staticmethod
+    def _column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expression]:
+        """Inputs can be passed in as individual arguments or an iterable.
+
+        In addition, they may be strings or Expressions.
+        This method normalizes the inputs to a list of Expressions.
+        """
+        column_iter: Iterable[ColumnInputType] = [columns] if Window._is_column_input(columns) else columns  # type: ignore
+        return [col(c) if isinstance(c, str) else c for c in column_iter]
+
     @classmethod
-    def partition_by(cls, *cols: str | list[str]) -> Window:
-        """Partitions the dataset by one or more columns.
+    def partition_by(cls, *cols: ManyColumnsInputType) -> Window:
+        """Partitions the dataset by one or more columns or expressions.
 
         Args:
-            cols: Columns on which to partition data.
+            *cols: Columns or expressions on which to partition data.
+                   Can be column names as strings, Expression objects, or iterables of these.
 
         Returns:
             Window: A window specification with the given partitioning.
@@ -41,49 +60,47 @@ class Window:
         if not cols:
             raise ValueError("At least one partition column must be specified")
 
-        # Flatten list arguments
-        flat_cols = []
+        # Handle column inputs similar to DataFrame methods
+        expressions = []
         for c in cols:
-            if isinstance(c, list):
-                flat_cols.extend(c)
-            else:
-                flat_cols.append(c)
+            expressions.extend(cls._column_inputs_to_expressions(c))
+
+        if not expressions:
+            raise ValueError("At least one partition column must be specified")
 
         # Create new Window with updated spec
         window = cls()
-        window._spec = window._spec.with_partition_by([col(c)._expr for c in flat_cols])
+        window._spec = window._spec.with_partition_by([expr._expr for expr in expressions])
         return window
 
     @classmethod
-    def order_by(cls, *cols: str | list[str], ascending: bool | list[bool] = True) -> Window:
-        """Orders rows within each partition by specified columns.
+    def order_by(cls, *cols: ManyColumnsInputType, ascending: bool | list[bool] = True) -> Window:
+        """Orders rows within each partition by specified columns or expressions.
 
         Args:
-            cols: Columns to determine ordering within the partition.
+            *cols: Columns or expressions to determine ordering within the partition.
+                   Can be column names as strings, Expression objects, or iterables of these.
             ascending: Sort ascending (True) or descending (False).
 
         Returns:
             Window: A window specification with the given ordering.
         """
-        # Flatten list arguments
-        flat_cols = []
+        # Handle column inputs similar to DataFrame methods
+        expressions = []
         for c in cols:
-            if isinstance(c, list):
-                flat_cols.extend(c)
-            else:
-                flat_cols.append(c)
+            expressions.extend(cls._column_inputs_to_expressions(c))
 
         # Handle ascending parameter
         if isinstance(ascending, bool):
-            asc_flags = [ascending] * len(flat_cols)
+            asc_flags = [ascending] * len(expressions)
         else:
-            if len(ascending) != len(flat_cols):
+            if len(ascending) != len(expressions):
                 raise ValueError("Length of ascending flags must match number of order by columns")
             asc_flags = ascending
 
         # Create new Window with updated spec
         window = cls()
-        window._spec = window._spec.with_order_by([col(c)._expr for c in flat_cols], asc_flags)
+        window._spec = window._spec.with_order_by([expr._expr for expr in expressions], asc_flags)
         return window
 
     def rows_between(
