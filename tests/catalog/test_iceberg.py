@@ -105,6 +105,23 @@ def test_create_namespace(catalog: Catalog):
     c.drop_namespace(n)
 
 
+def test_create_namespace_if_exists(catalog: Catalog):
+    c = catalog
+    n = "test_create_namespace_if_exists"
+
+    # test when namespace doesn't exist
+    assert not c.has_namespace(n)
+    c.create_namespace_if_not_exists(n)
+    assert c.has_namespace(n)
+
+    # should not raise an exception
+    c.create_namespace_if_not_exists(n)
+    assert c.has_namespace(n)
+
+    # cleanup
+    c.drop_namespace(n)
+
+
 def test_create_table(catalog: Catalog):
     c = catalog
     n = "test_create_table"
@@ -135,6 +152,42 @@ def test_create_table(catalog: Catalog):
         c.get_table(f"{n}.does_not_exist")
 
     # cleanup
+    c.drop_table(f"{n}.tbl1")
+    c.drop_namespace(n)
+
+
+def test_create_table_if_not_exists(catalog: Catalog):
+    c = catalog
+    n = "test_create_table_if_not_exists"
+    c.create_namespace(n)
+
+    assert not c.has_table(f"{n}.tbl1")
+    c.create_table_if_not_exists(
+        f"{n}.tbl1",
+        schema(
+            {
+                "a": dt.bool(),
+                "b": dt.int64(),
+                "c": dt.string(),
+            }
+        ),
+    )
+    assert c.has_table(f"{n}.tbl1")
+
+    # should not raise an exception
+    c.create_table_if_not_exists(
+        f"{n}.tbl1",
+        schema(
+            {
+                "a": dt.bool(),
+                "b": dt.int64(),
+                "c": dt.string(),
+            }
+        ),
+    )
+    assert c.has_table(f"{n}.tbl1")
+
+    # Cleanup
     c.drop_table(f"{n}.tbl1")
     c.drop_namespace(n)
 

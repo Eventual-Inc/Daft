@@ -9,7 +9,7 @@ use std::{
 use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
+use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use daft_algebra::boolean::combine_conjunction;
@@ -637,6 +637,7 @@ impl LogicalPlanBuilder {
     pub fn table_write(
         &self,
         root_dir: &str,
+        write_mode: WriteMode,
         file_format: FileFormat,
         partition_cols: Option<Vec<ExprRef>>,
         compression: Option<String>,
@@ -650,6 +651,7 @@ impl LogicalPlanBuilder {
 
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
             root_dir.into(),
+            write_mode,
             file_format,
             partition_cols,
             compression,
@@ -1152,6 +1154,7 @@ impl PyLogicalPlanBuilder {
 
     #[pyo3(signature = (
         root_dir,
+        write_mode,
         file_format,
         partition_cols=None,
         compression=None,
@@ -1160,6 +1163,7 @@ impl PyLogicalPlanBuilder {
     pub fn table_write(
         &self,
         root_dir: &str,
+        write_mode: WriteMode,
         file_format: FileFormat,
         partition_cols: Option<Vec<PyExpr>>,
         compression: Option<String>,
@@ -1169,6 +1173,7 @@ impl PyLogicalPlanBuilder {
             .builder
             .table_write(
                 root_dir,
+                write_mode,
                 file_format,
                 partition_cols.map(pyexprs_to_exprs),
                 compression,
