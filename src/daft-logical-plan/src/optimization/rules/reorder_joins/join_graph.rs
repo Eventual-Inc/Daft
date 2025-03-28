@@ -5,11 +5,15 @@ use std::{
 };
 
 use common_error::DaftResult;
+use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::JoinType;
-use daft_dsl::{optimization::replace_columns_with_expressions, resolved_col, Expr, ExprRef};
+use daft_dsl::{
+    left_col, optimization::replace_columns_with_expressions, resolved_col, right_col, Expr,
+    ExprRef,
+};
 
 use crate::{
-    ops::{Filter, Join, Project},
+    ops::{join::JoinPredicate, Filter, Join, Project},
     LogicalPlan, LogicalPlanBuilder, LogicalPlanRef,
 };
 
@@ -66,7 +70,7 @@ impl JoinOrderTree {
             (
                 JoinOrderTree::Join(left1, right1, _, _),
                 JoinOrderTree::Join(left2, right2, _, _),
-            ) => (Self::order_eq(left1, left2) && Self::order_eq(right1, right2)),
+            ) => Self::order_eq(left1, left2) && Self::order_eq(right1, right2),
             _ => false,
         }
     }
@@ -487,30 +491,37 @@ impl JoinGraph {
         }
     }
 
-    fn apply_projections_and_filters_to_plan_builder(
+    fn apply_projections_and_filters_to_plan(
         &mut self,
-        mut plan_builder: LogicalPlanBuilder,
-    ) -> DaftResult<LogicalPlanBuilder> {
+        mut plan: LogicalPlanRef,
+    ) -> DaftResult<LogicalPlanRef> {
         // Apply projections and filters in post-traversal order.
         while let Some(projection_or_filter) = self.final_projections_and_filters.pop() {
             let is_last = self.final_projections_and_filters.is_empty();
 
             match projection_or_filter {
                 ProjectionOrFilter::Projection(projections) => {
-                    if is_last {
+                    let projections = if is_last {
                         // The final projection is the output projection, so here we select the final projection.
-                        plan_builder = plan_builder.select(projections)?;
+                        projections
                     } else {
-                        // Intermediate projections might only transform a subset of columns, so we use `with_columns()` instead of `select()`.
-                        plan_builder = plan_builder.with_columns(projections)?;
-                    }
+                        // Intermediate projections might only transform a subset of columns, so we keep all original columns.
+                        plan.schema()
+                            .names()
+                            .into_iter()
+                            .map(resolved_col)
+                            .chain(projections)
+                            .collect()
+                    };
+
+                    plan = Project::try_new(plan, projections)?.into();
                 }
                 ProjectionOrFilter::Filter(predicate) => {
-                    plan_builder = plan_builder.filter(predicate)?;
+                    plan = Filter::try_new(plan, predicate)?.into();
                 }
             }
         }
-        Ok(plan_builder)
+        Ok(plan)
     }
 
     /// Converts a `JoinOrderTree` into a tree of inner joins.
@@ -520,7 +531,7 @@ impl JoinGraph {
     pub(crate) fn build_joins_from_join_order(
         &self,
         join_order: &JoinOrderTree,
-    ) -> DaftResult<LogicalPlanBuilder> {
+    ) -> DaftResult<LogicalPlanRef> {
         match join_order {
             JoinOrderTree::Relation(id, ..) => {
                 let relation = self
@@ -528,18 +539,37 @@ impl JoinGraph {
                     .id_to_plan
                     .get(id)
                     .expect("Join order contains non-existent plan id 1");
-                Ok(LogicalPlanBuilder::from(relation.clone()))
+                Ok(relation.clone())
             }
             JoinOrderTree::Join(left_tree, right_tree, conds, _) => {
-                let left_builder = self.build_joins_from_join_order(left_tree)?;
-                let right_builder = self.build_joins_from_join_order(right_tree)?;
-                let mut left_cols = vec![];
-                let mut right_cols = vec![];
-                for cond in conds {
-                    left_cols.push(resolved_col(cond.left_on.clone()));
-                    right_cols.push(resolved_col(cond.right_on.clone()));
-                }
-                Ok(left_builder.inner_join(right_builder, left_cols, right_cols)?)
+                let left_plan = self.build_joins_from_join_order(left_tree)?;
+                let right_plan = self.build_joins_from_join_order(right_tree)?;
+
+                let on =
+                    combine_conjunction(conds.iter().map(|JoinCondition { left_on, right_on }| {
+                        let left_field = left_plan
+                            .schema()
+                            .get_field(left_on)
+                            .expect("left_on to exist in left_plan schema")
+                            .clone();
+                        let right_field = right_plan
+                            .schema()
+                            .get_field(right_on)
+                            .expect("right_on to exist in right_plan schema")
+                            .clone();
+
+                        left_col(left_field).eq(right_col(right_field))
+                    }));
+
+                let join_plan = Join::try_new(
+                    left_plan,
+                    right_plan,
+                    JoinPredicate::try_new(on)?,
+                    JoinType::Inner,
+                    None,
+                )?;
+
+                Ok(join_plan.into())
             }
         }
     }
@@ -550,9 +580,9 @@ impl JoinGraph {
         &mut self,
         join_order: JoinOrderTree,
     ) -> DaftResult<LogicalPlanRef> {
-        let mut plan_builder = self.build_joins_from_join_order(&join_order)?;
-        plan_builder = self.apply_projections_and_filters_to_plan_builder(plan_builder)?;
-        Ok(plan_builder.build())
+        let mut plan = self.build_joins_from_join_order(&join_order)?;
+        plan = self.apply_projections_and_filters_to_plan(plan)?;
+        Ok(plan)
     }
 
     pub(super) fn could_reorder(&self) -> bool {
@@ -773,18 +803,25 @@ impl JoinGraphBuilder {
                 // We only process joins with predicates that are all columns.
                 // TODO: Figure out how to handle joins with non-column predicates, such as aliases.
                 LogicalPlan::Join(Join {
-                    left_on,
-                    join_type,
-                    right_on,
+                    on,
+                    join_type: JoinType::Inner,
                     ..
-                }) if *join_type == JoinType::Inner
-                    && !left_on.is_empty()
-                    && left_on
-                        .iter()
-                        .chain(right_on.iter())
-                        .all(|c| matches!(c.as_ref(), Expr::Column(_))) =>
-                {
-                    self.process_linear_chain(root_plan, plan);
+                }) => {
+                    let (remaining_on, left_on, right_on, _) = on.split_eq_preds();
+
+                    if left_on.is_empty()
+                        || !remaining_on.is_empty()
+                        || !left_on
+                            .iter()
+                            .chain(right_on.iter())
+                            .all(|c| matches!(c.as_ref(), Expr::Column(_)))
+                    {
+                        // Encountered a non-reorderable join. Add the root plan at the top of the current linear chain as a relation to join.
+                        self.add_relation(root_plan);
+                    } else {
+                        self.process_linear_chain(root_plan, plan);
+                    }
+
                     break;
                 }
                 _ => {
@@ -857,12 +894,16 @@ impl JoinGraphBuilder {
             LogicalPlan::Join(Join {
                 left,
                 right,
-                left_on,
-                right_on,
-                join_type,
+                on,
+                join_type: JoinType::Inner,
                 ..
-            }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
-                for l in left_on {
+            }) => {
+                let (remaining_on, left_on, right_on, _) = on.split_eq_preds();
+                if left_on.is_empty() || !remaining_on.is_empty() {
+                    unreachable!("JoinGraphBuilder::process_linear_chain should not be called with a join that is not orderable")
+                }
+
+                for l in &left_on {
                     let name = l.name();
                     let final_name = if let Some(final_name) = self.final_name_map.get(name) {
                         final_name.name()
@@ -882,7 +923,7 @@ impl JoinGraphBuilder {
                 for _ in 0..left_on.len() {
                     ready_left.push(self.join_conds_to_resolve.pop().unwrap());
                 }
-                for r in right_on {
+                for r in &right_on {
                     let name = r.name();
                     let final_name = if let Some(final_name) = self.final_name_map.get(name) {
                         final_name.name()
@@ -915,7 +956,7 @@ impl JoinGraphBuilder {
                 }
             }
             _ => {
-                panic!("Expected a join node")
+                panic!("Expected an inner join node")
             }
         }
     }
@@ -1017,17 +1058,13 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
+            .inner_join(scan_b, unresolved_col("a").eq(unresolved_col("b")))
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
+            .inner_join(scan_d, unresolved_col("c").eq(unresolved_col("d")))
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(
-                join_plan_r,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("d")],
-            )
+            .inner_join(join_plan_r, unresolved_col("a").eq(unresolved_col("d")))
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();
@@ -1087,17 +1124,13 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
+            .inner_join(scan_b, unresolved_col("a").eq(unresolved_col("b")))
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
+            .inner_join(scan_d, unresolved_col("c").eq(unresolved_col("d")))
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(
-                join_plan_r,
-                vec![unresolved_col("b")],
-                vec![unresolved_col("d")],
-            )
+            .inner_join(join_plan_r, unresolved_col("b").eq(unresolved_col("d")))
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();
@@ -1156,11 +1189,7 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_1 = scan_a
-            .inner_join(
-                scan_b,
-                vec![unresolved_col("a_alpha")],
-                vec![unresolved_col("b")],
-            )
+            .inner_join(scan_b, unresolved_col("a_alpha").eq(unresolved_col("b")))
             .unwrap()
             .select(vec![
                 unresolved_col("a_alpha").alias("a_beta"),
@@ -1168,11 +1197,7 @@ mod tests {
             ])
             .unwrap();
         let join_plan_2 = join_plan_1
-            .inner_join(
-                scan_c,
-                vec![unresolved_col("a_beta")],
-                vec![unresolved_col("c")],
-            )
+            .inner_join(scan_c, unresolved_col("a_beta").eq(unresolved_col("c")))
             .unwrap();
         let original_plan = join_plan_2.build();
         let scan_materializer = MaterializeScans::new();
@@ -1232,17 +1257,13 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
+            .inner_join(scan_b, unresolved_col("a").eq(unresolved_col("b")))
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
+            .inner_join(scan_d, unresolved_col("c").eq(unresolved_col("d")))
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(
-                join_plan_r,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("d")],
-            )
+            .inner_join(join_plan_r, unresolved_col("a").eq(unresolved_col("d")))
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();
@@ -1324,22 +1345,18 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
+            .inner_join(scan_b, unresolved_col("a").eq(unresolved_col("b")))
             .unwrap();
         let quad_proj = unresolved_col("double")
             .add(unresolved_col("double"))
             .alias("quad");
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
+            .inner_join(scan_d, unresolved_col("c").eq(unresolved_col("d")))
             .unwrap()
             .select(vec![unresolved_col("d"), quad_proj.clone()])
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(
-                join_plan_r,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("d")],
-            )
+            .inner_join(join_plan_r, unresolved_col("a").eq(unresolved_col("d")))
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();
@@ -1420,17 +1437,13 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .inner_join(scan_b, vec![unresolved_col("a")], vec![unresolved_col("b")])
+            .inner_join(scan_b, unresolved_col("a").eq(unresolved_col("b")))
             .unwrap();
         let join_plan_r = scan_c
-            .inner_join(scan_d, vec![unresolved_col("c")], vec![unresolved_col("d")])
+            .inner_join(scan_d, unresolved_col("c").eq(unresolved_col("d")))
             .unwrap();
         let join_plan = join_plan_l
-            .inner_join(
-                join_plan_r,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("d")],
-            )
+            .inner_join(join_plan_r, unresolved_col("a").eq(unresolved_col("d")))
             .unwrap();
         let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();

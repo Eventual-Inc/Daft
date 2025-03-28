@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Table, TableSource
+from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
 
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import DataFrame
@@ -38,20 +38,34 @@ class MemoryCatalog(Catalog):
     ###
 
     def create_namespace(self, identifier: Identifier | str):
-        raise ValueError("Memory create_namespace not yet supported.")
+        raise NotImplementedError("Memory create_namespace not yet supported.")
 
     def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
-        raise ValueError("Memory create_table not yet supported.")
+        raise NotImplementedError("Memory create_table not yet supported.")
 
     ###
     # drop_*
     ###
 
     def drop_namespace(self, identifier: Identifier | str):
-        raise ValueError("Memory drop_namespace not yet supported.")
+        raise NotImplementedError("Memory drop_namespace not yet supported.")
 
     def drop_table(self, identifier: Identifier | str):
-        raise ValueError("Memory drop_table not yet supported.")
+        raise NotImplementedError("Memory drop_table not yet supported.")
+
+    ###
+    # has_*
+    ###
+
+    def has_namespace(self, identifier: Identifier | str):
+        prefix = str(identifier)
+        for ident in self._tables.keys():
+            if ident.startswith(prefix):
+                return True
+        return False
+
+    def has_table(self, identifier: Identifier | str):
+        return str(identifier) in self._tables
 
     ###
     # list_*
@@ -80,7 +94,7 @@ class MemoryCatalog(Catalog):
     def get_table(self, identifier: str | Identifier) -> Table:
         path = str(identifier)
         if path not in self._tables:
-            raise ValueError(f"Table {path} does not exist.")
+            raise NotFoundError(f"Table {path} does not exist.")
         return self._tables[path]
 
 
@@ -110,4 +124,4 @@ class MemoryTable(Table):
     ###
 
     def write(self, df: DataFrame | object, mode: str = "append", **options):
-        raise ValueError("Writes to in-memory tables are not yet supported.")
+        raise NotImplementedError("Writes to in-memory tables are not yet supported.")

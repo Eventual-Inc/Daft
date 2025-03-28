@@ -5,7 +5,9 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Table, TableSource
+from unitycatalog import NotFoundError as UnityNotFoundError
+
+from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
 from daft.io._deltalake import read_deltalake
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
@@ -44,20 +46,20 @@ class UnityCatalog(Catalog):
     ###
 
     def create_namespace(self, identifier: Identifier | str):
-        raise ValueError("Unity create_namespace not yet supported.")
+        raise NotImplementedError("Unity create_namespace not yet supported.")
 
     def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
-        raise ValueError("Unity create_table not yet supported.")
+        raise NotImplementedError("Unity create_table not yet supported.")
 
     ###
     # drop_*
     ###
 
     def drop_namespace(self, identifier: Identifier | str):
-        raise ValueError("Unity drop_namespace not yet supported.")
+        raise NotImplementedError("Unity drop_namespace not yet supported.")
 
     def drop_table(self, identifier: Identifier | str):
-        raise ValueError("Unity drop_table not yet supported.")
+        raise NotImplementedError("Unity drop_table not yet supported.")
 
     ###
     # get_*
@@ -66,14 +68,17 @@ class UnityCatalog(Catalog):
     def get_table(self, ident: Identifier | str) -> UnityTable:
         if isinstance(ident, Identifier):
             ident = ".".join(ident)  # TODO unity qualified identifiers
-        return UnityTable(self._inner.load_table(ident))
+        try:
+            return UnityTable(self._inner.load_table(ident))
+        except UnityNotFoundError:
+            return NotFoundError(f"Table {ident} not found!")
 
     ###
     # list_.*
     ###
 
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        raise ValueError("Unity list_namespaces not yet supported.")
+        raise NotImplementedError("Unity list_namespaces not yet supported.")
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         if pattern is None or pattern == "":

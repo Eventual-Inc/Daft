@@ -12,8 +12,9 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
-use daft_dsl::{resolved_col, ExprRef};
+use daft_dsl::{left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
 use resolve_expr::ExprResolver;
@@ -30,7 +31,11 @@ use {
 
 use crate::{
     logical_plan::{LogicalPlan, SubqueryAlias},
-    ops::{self, join::JoinOptions, SetQuantifier, UnionStrategy},
+    ops::{
+        self,
+        join::{JoinOptions, JoinPredicate},
+        SetQuantifier, UnionStrategy,
+    },
     optimization::OptimizerBuilder,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
@@ -513,16 +518,16 @@ impl LogicalPlanBuilder {
     }
 
     // Helper function to create inner joins more ergonimically.
+    #[cfg(test)]
     pub(crate) fn inner_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
-        left_on: Vec<ExprRef>,
-        right_on: Vec<ExprRef>,
+        on: ExprRef,
     ) -> DaftResult<Self> {
         self.join(
             right,
-            left_on,
-            right_on,
+            Some(on),
+            vec![],
             JoinType::Inner,
             None,
             Default::default(),
@@ -533,30 +538,8 @@ impl LogicalPlanBuilder {
     pub fn join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
-        left_on: Vec<ExprRef>,
-        right_on: Vec<ExprRef>,
-        join_type: JoinType,
-        join_strategy: Option<JoinStrategy>,
-        options: JoinOptions,
-    ) -> DaftResult<Self> {
-        self.join_with_null_safe_equal(
-            right,
-            left_on,
-            right_on,
-            None,
-            join_type,
-            join_strategy,
-            options,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn join_with_null_safe_equal<Right: Into<LogicalPlanRef>>(
-        &self,
-        right: Right,
-        left_on: Vec<ExprRef>,
-        right_on: Vec<ExprRef>,
-        null_equals_nulls: Option<Vec<bool>>,
+        on: Option<ExprRef>,
+        using: Vec<String>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
         options: JoinOptions,
@@ -565,24 +548,39 @@ impl LogicalPlanBuilder {
         let right_plan = right.into();
 
         let expr_resolver = ExprResolver::default();
+        let on = on
+            .map(|expr| expr_resolver.resolve_join_on(expr, left_plan.clone(), right_plan.clone()))
+            .transpose()?;
 
-        let left_on = expr_resolver.resolve(left_on, left_plan.clone())?;
-        let right_on = expr_resolver.resolve(right_on, right_plan.clone())?;
-
-        let (left_plan, right_plan, left_on, right_on) = ops::join::Join::deduplicate_join_columns(
-            left_plan, right_plan, left_on, right_on, join_type, options,
+        let (left_plan, right_plan, on) = ops::join::Join::deduplicate_join_columns(
+            left_plan, right_plan, on, &using, join_type, options,
         )?;
 
-        let logical_plan: LogicalPlan = ops::Join::try_new(
-            left_plan,
-            right_plan,
-            left_on,
-            right_on,
-            null_equals_nulls,
-            join_type,
-            join_strategy,
-        )?
-        .into();
+        let left_schema = left_plan.schema();
+        let right_schema = right_plan.schema();
+
+        let using_expr = combine_conjunction(
+            using
+                .into_iter()
+                .map(|name| {
+                    let left_field = left_schema.get_field(&name)?;
+                    let right_field = right_schema.get_field(&name)?;
+
+                    Ok(left_col(left_field.clone()).eq(right_col(right_field.clone())))
+                })
+                .collect::<DaftResult<Vec<_>>>()?,
+        );
+
+        let combined_on = match (using_expr, on) {
+            (Some(u), Some(o)) => Some(u.and(o)),
+            (using_expr, on) => using_expr.or(on),
+        };
+
+        let combined_on = JoinPredicate::try_new(combined_on)?;
+
+        let logical_plan: LogicalPlan =
+            ops::Join::try_new(left_plan, right_plan, combined_on, join_type, join_strategy)?
+                .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -591,7 +589,7 @@ impl LogicalPlanBuilder {
         right: Right,
         options: JoinOptions,
     ) -> DaftResult<Self> {
-        self.join(right, vec![], vec![], JoinType::Inner, None, options)
+        self.join(right, None, vec![], JoinType::Inner, None, options)
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
@@ -1062,9 +1060,9 @@ impl PyLogicalPlanBuilder {
         left_on,
         right_on,
         join_type,
-        join_strategy=None,
-        prefix=None,
-        suffix=None,
+        join_strategy,
+        prefix,
+        suffix
     ))]
     pub fn join(
         &self,
@@ -1076,19 +1074,41 @@ impl PyLogicalPlanBuilder {
         prefix: Option<String>,
         suffix: Option<String>,
     ) -> PyResult<Self> {
+        let left_on = left_on.into_iter().map(|expr| expr.expr);
+        let right_on = right_on.into_iter().map(|expr| expr.expr);
+
+        let mut on_exprs = Vec::new();
+        let mut using = Vec::new();
+
+        // special logic to maintain DataFrame join behavior
+        // TODO: remove this once we add plan IDs to DataFrame
+        for (l, r) in left_on.zip(right_on) {
+            if let (
+                Expr::Column(Column::Unresolved(UnresolvedColumn { name: l_name, .. })),
+                Expr::Column(Column::Unresolved(UnresolvedColumn { name: r_name, .. })),
+            ) = (l.as_ref(), r.as_ref())
+                && l_name == r_name
+            {
+                using.push(l_name.to_string());
+            } else {
+                let l = l.to_left_cols(self.builder.schema())?;
+                let r = r.to_right_cols(right.builder.schema())?;
+
+                on_exprs.push(l.eq(r));
+            }
+        }
+
+        let on = combine_conjunction(on_exprs);
+
         Ok(self
             .builder
             .join(
                 &right.builder,
-                pyexprs_to_exprs(left_on),
-                pyexprs_to_exprs(right_on),
+                on,
+                using,
                 join_type,
                 join_strategy,
-                JoinOptions {
-                    prefix,
-                    suffix,
-                    merge_matching_join_keys: true,
-                },
+                JoinOptions { prefix, suffix },
             )?
             .into())
     }

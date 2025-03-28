@@ -97,17 +97,12 @@ impl OptimizerRule for FilterNullJoinKey {
             if let LogicalPlan::Join(Join {
                 left,
                 right,
-                left_on,
-                right_on,
-                null_equals_nulls,
+                on,
                 join_type,
                 ..
             }) = node.as_ref()
             {
-                let mut null_equals_nulls_iter = null_equals_nulls.as_ref().map_or_else(
-                    || Box::new(std::iter::repeat(false)) as Box<dyn Iterator<Item = bool>>,
-                    |x| Box::new(x.clone().into_iter()),
-                );
+                let (_, left_on, right_on, null_equals_nulls) = on.split_eq_preds();
 
                 let (can_filter_left, can_filter_right) = match join_type {
                     JoinType::Inner => (true, true),
@@ -120,11 +115,11 @@ impl OptimizerRule for FilterNullJoinKey {
 
                 let left_null_pred = if can_filter_left {
                     combine_conjunction(
-                        null_equals_nulls_iter
-                            .by_ref()
+                        null_equals_nulls
+                            .iter()
                             .zip(left_on)
-                            .filter(|(null_eq_null, _)| !null_eq_null)
-                            .map(|(_, left_key)| left_key.clone().is_null().not()),
+                            .filter(|(null_eq_null, _)| !*null_eq_null)
+                            .map(|(_, left_key)| left_key.is_null().not()),
                     )
                 } else {
                     None
@@ -132,11 +127,11 @@ impl OptimizerRule for FilterNullJoinKey {
 
                 let right_null_pred = if can_filter_right {
                     combine_conjunction(
-                        null_equals_nulls_iter
-                            .by_ref()
+                        null_equals_nulls
+                            .iter()
                             .zip(right_on)
-                            .filter(|(null_eq_null, _)| !null_eq_null)
-                            .map(|(_, right_key)| right_key.clone().is_null().not()),
+                            .filter(|(null_eq_null, _)| !*null_eq_null)
+                            .map(|(_, right_key)| right_key.is_null().not()),
                     )
                 } else {
                     None
@@ -218,8 +213,8 @@ mod tests {
         let plan = left_scan
             .join(
                 right_scan.clone(),
-                vec![unresolved_col("a")],
-                vec![unresolved_col("c")],
+                unresolved_col("a").eq(unresolved_col("c")).into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -231,8 +226,8 @@ mod tests {
             .clone()
             .join(
                 right_scan.filter(unresolved_col("c").is_null().not())?,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("c")],
+                unresolved_col("a").eq(unresolved_col("c")).into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -259,19 +254,13 @@ mod tests {
         ]));
 
         let plan = left_scan
-            .join_with_null_safe_equal(
+            .join(
                 right_scan.clone(),
-                vec![
-                    unresolved_col("a"),
-                    unresolved_col("b"),
-                    unresolved_col("c"),
-                ],
-                vec![
-                    unresolved_col("d"),
-                    unresolved_col("e"),
-                    unresolved_col("f"),
-                ],
-                Some(vec![false, true, false]),
+                (unresolved_col("a").eq(unresolved_col("d")))
+                    .and(unresolved_col("b").eq_null_safe(unresolved_col("e")))
+                    .and(unresolved_col("c").eq(unresolved_col("f")))
+                    .into(),
+                vec![],
                 JoinType::Left,
                 None,
                 Default::default(),
@@ -285,19 +274,13 @@ mod tests {
 
         let expected = left_scan
             .clone()
-            .join_with_null_safe_equal(
+            .join(
                 right_scan.filter(expected_predicate)?,
-                vec![
-                    unresolved_col("a"),
-                    unresolved_col("b"),
-                    unresolved_col("c"),
-                ],
-                vec![
-                    unresolved_col("d"),
-                    unresolved_col("e"),
-                    unresolved_col("f"),
-                ],
-                Some(vec![false, true, false]),
+                (unresolved_col("a").eq(unresolved_col("d")))
+                    .and(unresolved_col("b").eq_null_safe(unresolved_col("e")))
+                    .and(unresolved_col("c").eq(unresolved_col("f")))
+                    .into(),
+                vec![],
                 JoinType::Left,
                 None,
                 Default::default(),
