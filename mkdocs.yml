@@ -1,5 +1,4 @@
 # Documentation: https://squidfunk.github.io/mkdocs-material/
-# Example: https://github.com/squidfunk/mkdocs-material/blob/master/mkdocs.yml
 
 # Project Information
 site_name: Daft Documentation
@@ -155,7 +154,7 @@ extra:
 
   # This is a macro you should use to refer to paths
   # When referring to methods, the syntax is {{ api_path }}/path/to/method
-  api_path: api_docs/doc_gen
+  # api_path: api_docs/doc_gen
 
 # Additional Style
 extra_css:
@@ -190,10 +189,6 @@ plugins:
 - search:
     separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
 - macros
-# - social:
-#     cards_layout_options:
-#       background_color: "#532687"
-#     cards_dir: social
 - autorefs
 - minify:
     minify_html: true

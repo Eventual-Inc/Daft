@@ -5,9 +5,7 @@ markdown-exec
 mkdocs-jupyter
 mkdocs-material
 mkdocs-macros-plugin
-mkdocs-simple-hooks
 pymdown-extensions
-mkdocs-material[imaging]
 mkdocstrings-python
 ruff # for mkdocstring formatting
 mkdocs-minify-plugin
