@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass, field
+from functools import reduce
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
@@ -454,7 +455,8 @@ class OverwriteFiles(SingleOutputInstruction):
         return [MicroPartition.concat(inputs)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        return input_metadatas
+        merged_meta = reduce(lambda a, b: a.merge_with_partial(b), input_metadatas)
+        return [merged_meta]
 
 
 @dataclass(frozen=True)
