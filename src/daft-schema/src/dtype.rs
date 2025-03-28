@@ -479,6 +479,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_timestamp(&self) -> bool {
+        matches!(self, Self::Timestamp(..))
+    }
+
+    #[inline]
     pub fn is_tensor(&self) -> bool {
         matches!(self, Self::Tensor(..))
     }

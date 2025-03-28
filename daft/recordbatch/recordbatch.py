@@ -91,10 +91,10 @@ class RecordBatch:
             field.name
             for field in schema
             if field.dtype == DataType.python()
-            or field.dtype._is_tensor_type()
-            or field.dtype._is_fixed_shape_tensor_type()
-            or field.dtype._is_sparse_tensor_type()
-            or field.dtype._is_fixed_shape_sparse_tensor_type()
+            or field.dtype.is_tensor()
+            or field.dtype.is_fixed_shape_tensor()
+            or field.dtype.is_sparse_tensor()
+            or field.dtype.is_fixed_shape_sparse_tensor()
         ]
         if non_native_fields:
             # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()
@@ -187,9 +187,9 @@ class RecordBatch:
         python_fields = set()
         tensor_fields = set()
         for field in self.schema():
-            if field.dtype._is_python_type():
+            if field.dtype.is_python():
                 python_fields.add(field.name)
-            elif field.dtype._is_tensor_type() or field.dtype._is_fixed_shape_tensor_type():
+            elif field.dtype.is_tensor() or field.dtype.is_fixed_shape_tensor():
                 tensor_fields.add(field.name)
 
         if python_fields or tensor_fields:
