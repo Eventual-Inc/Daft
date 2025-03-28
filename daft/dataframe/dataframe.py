@@ -3074,7 +3074,7 @@ class DataFrame:
         return preview
 
     @DataframePublicAPI
-    def show(self, n: int = 8, format: PreviewFormat | None = None, **options: PreviewOptions) -> None:
+    def show(self, n: int = 8, format: PreviewFormat | None = None, **options) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
 
         If IPython is installed, this will use IPython's `display` utility to pretty-print in a
@@ -3100,8 +3100,9 @@ class DataFrame:
             format (ShowFormat | None): Defaults to None.
         """
         schema = self.schema()
+        options = PreviewOptions.from_options(schema, **options)
         preview = self._construct_show_preview(n)
-        preview = PreviewFormatter(preview, schema, format, **options)
+        preview = PreviewFormatter(preview, schema, format, options)
 
         try:
             from IPython.display import display

@@ -8,7 +8,6 @@ from daft.logical.schema import Schema
 if TYPE_CHECKING:
     from daft.recordbatch import MicroPartition
 
-_NO_COLS = ""
 
 @dataclass(frozen=True)
 class Preview:
@@ -17,7 +16,7 @@ class Preview:
 
 
 PreviewFormat = Literal[
-    "default",
+    "fancy",
     "plain",
     "simple",
     "grid",
@@ -27,11 +26,18 @@ PreviewFormat = Literal[
 ]
 
 
-class PreviewOptions(TypedDict, total=False):
-    schema: bool
-    null: str
-    max_width: int | list[int]
-    align: str | list[str]
+class PreviewOptions:
+    _normalized: dict[str,any]
+
+    def __init__(self) -> None:
+        raise ValueError("Cannot call __init__ directly.")
+
+    @staticmethod
+    def from_options(schema: Schema, **options) -> PreviewOptions:
+        pass
+
+    def serialize() -> str:
+        pass
 
 
 class PreviewFormatter:
@@ -88,11 +94,11 @@ class PreviewFormatter:
     
     def _to_text(self) -> str:
         if self._preview.partition is not None:
-            # preview = self._preview.partition.to_record_batch()
-            # if self._format or self._options:
-            #     # TODO format via rust
-            #     raise ValueError("format options are not yet supported")
-            # else:
-            return self._preview.partition.to_record_batch().__repr__()
+            if self._options:
+                return self._preview.partition.to_record_batch()._table.preview(self._format, self._options.serialize())
+            elif self._format:
+                return self._preview.partition.to_record_batch()._table.preview(self._format, None)
+            else:
+                return self._preview.partition.to_record_batch().__repr__()
         else:
             return self._schema._truncated_table_string()

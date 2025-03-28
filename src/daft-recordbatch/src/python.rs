@@ -9,7 +9,7 @@ use daft_logical_plan::FileInfos;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
-use crate::{ffi, RecordBatch};
+use crate::{ffi, preview::{Preview, PreviewFormat, PreviewOptions}, RecordBatch};
 
 #[pyclass]
 #[derive(Clone)]
@@ -195,6 +195,18 @@ impl PyRecordBatch {
                 .explode(converted_to_explode.as_slice())?
                 .into())
         })
+    }
+
+    #[pyo3(signature = (format, options))]
+    pub fn preview(&self, format: &str, options: Option<&str>) -> PyResult<String> {
+        let format = PreviewFormat::try_from(format)?;
+        let options = match options {
+            Some(json) => serde_json::from_str::<PreviewOptions>(json).expect("PreviewOptions produced invalid json."),
+            None => PreviewOptions::default(),
+        };
+        let preview = self.record_batch.clone();
+        let preview = Preview::new(preview, format, options);
+        Ok(preview.to_string())
     }
 
     pub fn __repr__(&self) -> PyResult<String> {

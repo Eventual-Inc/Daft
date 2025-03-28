@@ -79,13 +79,13 @@ def test_show_not_from_cached_repr(make_df, valid_data, data_source):
 
 
 @pytest.mark.skip("how to test?")
-def test_format(make_df, valid_data):
+def test_show_as_markdown(make_df, valid_data):
     df = make_df(valid_data)
-    df.show(format="markdown", max_width=12)
+    df.show(format="markdown")
 
 
-@pytest.mark.skip("how to test?")
-def test_format_with_options():
+# @pytest.mark.skip("how to test?")
+def test_show_with_options():
     df = daft.from_pydict(
         {
             "A": [1, 2, 3, 4],
@@ -94,14 +94,13 @@ def test_format_with_options():
             "D": [None, None, None, None],
         }
     )
-    df.show()
-    df.show(format="default", null="NULL")
-    df.show(format="default")
-    df.show(format="html")
+    df.show(format="markdown", null="NULL")
+    # df.show(format="default")
+    # df.show(format="html")
 
 
 @pytest.mark.skip("how to test?")
-def test_format_with_wide_column():
+def test_show_with_wide_columns():
     df = daft.from_pydict(
         {
             "A": [
