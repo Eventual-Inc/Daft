@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
+use daft_algebra::boolean::combine_conjunction;
 use daft_core::{
     join::JoinType,
     prelude::{Schema, SchemaRef, TimeUnit},
@@ -12,7 +13,7 @@ use daft_schema::dtype::DataType;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Filter, Join, Project},
+    ops::{join::JoinPredicate, Filter, Join, Project},
     optimization::join_key_set::JoinKeySet,
     LogicalPlan, LogicalPlanRef,
 };
@@ -26,6 +27,24 @@ impl EliminateCrossJoin {
     }
 }
 
+/// Check if plan is a join that only has equality predicates without null equals null
+fn is_rewriteable(plan: &LogicalPlan) -> bool {
+    if let LogicalPlan::Join(Join {
+        join_type: JoinType::Inner,
+        join_strategy: None,
+        on,
+        ..
+    }) = plan
+    {
+        let (remaining_on, _, _, null_equals_null) = on.split_eq_preds();
+
+        // TODO: consider support eliminate cross join with null_equals_nulls
+        null_equals_null.iter().all(|val| !val) && remaining_on.is_empty()
+    } else {
+        false
+    }
+}
+
 impl OptimizerRule for EliminateCrossJoin {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         let schema = plan.schema();
@@ -36,17 +55,7 @@ impl OptimizerRule for EliminateCrossJoin {
         let parent_predicate = if let LogicalPlan::Filter(filter) = plan {
             // if input isn't a join that can potentially be rewritten
             // avoid unwrapping the input
-            let rewriteable = matches!(
-                filter.input.as_ref(),
-                LogicalPlan::Join(Join {
-                    join_type: JoinType::Inner,
-                    join_strategy: None,
-                    // TODO: consider support eliminate cross join with null_equals_nulls
-                    null_equals_nulls: None,
-                    ..
-                })
-            );
-            if !rewriteable {
+            if !is_rewriteable(&filter.input) {
                 return rewrite_children(self, Arc::new(LogicalPlan::Filter(filter)));
             }
             if !can_flatten_join_inputs(filter.input.as_ref()) {
@@ -62,16 +71,7 @@ impl OptimizerRule for EliminateCrossJoin {
             )?;
             extract_possible_join_keys(&predicate, &mut possible_join_keys);
             Some(predicate)
-        } else if matches!(
-            plan,
-            LogicalPlan::Join(Join {
-                join_type: JoinType::Inner,
-                join_strategy: None,
-                // TODO: consider support eliminate cross join with null_equals_nulls
-                null_equals_nulls: None,
-                ..
-            })
-        ) {
+        } else if is_rewriteable(&plan) {
             if !can_flatten_join_inputs(&plan) {
                 return Ok(Transformed::no(plan.arced()));
             }
@@ -141,7 +141,9 @@ fn flatten_join_inputs(
         },
     ) = plan
     {
-        let keys = join.left_on.into_iter().zip(join.right_on);
+        let (_, left_keys, right_keys, _) = join.on.split_eq_preds();
+        let keys = left_keys.into_iter().zip(right_keys.into_iter());
+
         possible_join_keys.insert_all_owned(keys);
         flatten_join_inputs(
             Arc::unwrap_or_clone(join.left),
@@ -304,14 +306,22 @@ fn find_inner_join(
             all_join_keys.insert_all(join_keys.iter());
             let right_input = rights.remove(i);
 
-            let (left_keys, right_keys) = join_keys.iter().cloned().unzip();
+            let on_expr = combine_conjunction(
+                join_keys
+                    .into_iter()
+                    .map(|(l, r)| {
+                        Ok(l.to_left_cols(left_input.schema())?
+                            .eq(r.to_right_cols(right_input.schema())?))
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?,
+            );
+
+            let on = JoinPredicate::try_new(on_expr)?;
 
             return Ok(LogicalPlan::Join(Join::try_new(
                 left_input,
                 right_input,
-                left_keys,
-                right_keys,
-                None,
+                on,
                 JoinType::Inner,
                 None,
             )?)
@@ -326,9 +336,7 @@ fn find_inner_join(
     Ok(LogicalPlan::Join(Join::try_new(
         left_input,
         right,
-        vec![],
-        vec![],
-        None,
+        JoinPredicate::empty(),
         JoinType::Inner,
         None,
     )?)
@@ -515,8 +523,10 @@ mod tests {
                     unresolved_col("b").alias("right.b"),
                     unresolved_col("c").alias("right.c"),
                 ])?,
-                vec![unresolved_col("a"), unresolved_col("b")],
-                vec![unresolved_col("right.a"), unresolved_col("right.b")],
+                (unresolved_col("a").eq(unresolved_col("right.a")))
+                    .and(unresolved_col("b").eq(unresolved_col("right.b")))
+                    .into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -548,7 +558,7 @@ mod tests {
                     unresolved_col("b").alias("right.b"),
                     unresolved_col("c").alias("right.c"),
                 ])?,
-                vec![],
+                None,
                 vec![],
                 JoinType::Inner,
                 None,
@@ -585,8 +595,8 @@ mod tests {
                     unresolved_col("b").alias("right.b"),
                     unresolved_col("c").alias("right.c"),
                 ])?,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("right.a")],
+                unresolved_col("a").eq(unresolved_col("right.a")).into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -618,8 +628,8 @@ mod tests {
                     unresolved_col("b").alias("right.b"),
                     unresolved_col("c").alias("right.c"),
                 ])?,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("right.a")],
+                unresolved_col("a").eq(unresolved_col("right.a")).into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -685,8 +695,8 @@ mod tests {
                     unresolved_col("b").alias("t2.b"),
                     unresolved_col("c").alias("t2.c"),
                 ])?,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("t2.a")],
+                unresolved_col("a").eq(unresolved_col("t2.a")).into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -705,8 +715,8 @@ mod tests {
                     unresolved_col("b").alias("t4.b"),
                     unresolved_col("c").alias("t4.c"),
                 ])?,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("t4.a")],
+                unresolved_col("a").eq(unresolved_col("t4.a")).into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 Default::default(),
@@ -729,8 +739,8 @@ mod tests {
         let expected = LogicalPlanBuilder::from(plan_1)
             .join(
                 plan_2,
-                vec![unresolved_col("a")],
-                vec![unresolved_col("t3.a")],
+                unresolved_col("a").eq(unresolved_col("t3.a")).into(),
+                vec![],
                 JoinType::Inner,
                 None,
                 Default::default(),

@@ -31,7 +31,7 @@ from typing import (
 )
 
 from daft.context import get_context
-from daft.daft import JoinSide, ResourceRequest
+from daft.daft import JoinSide, ResourceRequest, WriteMode
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -92,6 +92,7 @@ def partition_read(
 
 def file_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
+    write_mode: WriteMode,
     file_format: FileFormat,
     schema: Schema,
     root_dir: str | pathlib.Path,
@@ -100,21 +101,53 @@ def file_write(
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into files described by `write_info`."""
-    yield from (
-        step.add_instruction(
-            execution_step.WriteFile(
-                file_format=file_format,
-                schema=schema,
+    if write_mode == WriteMode.Overwrite or write_mode == WriteMode.OverwritePartitions:
+        stage_id = next(stage_id_counter)
+        write_tasks: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+        for step in child_plan:
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.add_instruction(
+                    execution_step.WriteFile(
+                        file_format=file_format,
+                        schema=schema,
+                        root_dir=root_dir,
+                        compression=compression,
+                        partition_cols=partition_cols,
+                        io_config=io_config,
+                    ),
+                ).finalize_partition_task_single_output(stage_id=stage_id)
+                write_tasks.append(step)
+            yield step
+        while any(not _.done() for _ in write_tasks):
+            yield None
+        partition_metadatas = []
+        inputs = []
+        for task in consume_deque(write_tasks):
+            inputs.append(task.partition())
+            partition_metadatas.append(task.partition_metadata())
+        yield PartitionTaskBuilder(inputs=inputs, partial_metadatas=partition_metadatas).add_instruction(
+            execution_step.OverwriteFiles(
+                overwrite_partitions=write_mode == WriteMode.OverwritePartitions,
                 root_dir=root_dir,
-                compression=compression,
-                partition_cols=partition_cols,
                 io_config=io_config,
-            ),
+            )
         )
-        if isinstance(step, PartitionTaskBuilder)
-        else step
-        for step in child_plan
-    )
+    else:
+        yield from (
+            step.add_instruction(
+                execution_step.WriteFile(
+                    file_format=file_format,
+                    schema=schema,
+                    root_dir=root_dir,
+                    compression=compression,
+                    partition_cols=partition_cols,
+                    io_config=io_config,
+                ),
+            )
+            if isinstance(step, PartitionTaskBuilder)
+            else step
+            for step in child_plan
+        )
 
 
 def iceberg_write(

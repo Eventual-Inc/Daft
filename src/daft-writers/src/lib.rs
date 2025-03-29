@@ -5,7 +5,6 @@ mod file;
 mod ipc;
 mod partition;
 mod physical;
-
 #[cfg(test)]
 mod test;
 
@@ -76,6 +75,7 @@ pub fn make_physical_writer_factory(
     cfg: &DaftExecutionConfig,
 ) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
     let base_writer_factory = PhysicalWriterFactory::new(file_info.clone());
+
     match file_info.file_format {
         FileFormat::Parquet => {
             let file_size_calculator = TargetInMemorySizeBytesCalculator::new(

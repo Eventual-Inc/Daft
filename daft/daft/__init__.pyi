@@ -183,6 +183,15 @@ class FileFormat(Enum):
 
     def ext(self): ...
 
+class WriteMode(Enum):
+    """Mode for writing data to a file."""
+
+    Overwrite: int
+    OverwritePartitions: int
+    Append: int
+
+    def from_str(mode: str) -> WriteMode: ...
+
 class ParquetSourceConfig:
     """Configuration of a Parquet data source."""
 
@@ -1246,6 +1255,8 @@ def binary_concat(left: PyExpr, right: PyExpr) -> PyExpr: ...
 def binary_slice(expr: PyExpr, start: PyExpr, length: PyExpr | None = None) -> PyExpr: ...
 def encode(expr: PyExpr, codec: str) -> PyExpr: ...
 def decode(expr: PyExpr, codec: str) -> PyExpr: ...
+def try_encode(expr: PyExpr, codec: str) -> PyExpr: ...
+def try_decode(expr: PyExpr, codec: str) -> PyExpr: ...
 
 class PyCatalog:
     @staticmethod
@@ -1722,6 +1733,7 @@ class LogicalPlanBuilder:
     def table_write(
         self,
         root_dir: str,
+        write_mode: WriteMode,
         file_format: FileFormat,
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
