@@ -213,7 +213,7 @@ pub fn get_io_runtime(multi_thread: bool) -> RuntimeRef {
 
 pub fn get_local_thread_runtime() -> RuntimeRef {
     LOCAL_THREAD_RUNTIME
-        .get_or_init(|| init_local_thread_runtime())
+        .get_or_init(init_local_thread_runtime)
         .clone()
 }
 

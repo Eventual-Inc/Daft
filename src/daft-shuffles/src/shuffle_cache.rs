@@ -426,7 +426,8 @@ mod tests {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
         // max num partitions before fail = num_cpu partitioners + num cpu partitioner sender capacity + 1 writer task + 1 writer sender
         let mut found_failure = false;
-        for _ in 0..(num_cpus + num_cpus + 1 + 1) {
+        let num_iterations = num_cpus + num_cpus + 1 + 1;
+        for _ in 0..num_iterations {
             let mp = make_dummy_mp(100);
             if let Err(err) = cache.push_partitions(vec![mp]).await {
                 // Verify the error message
@@ -444,7 +445,8 @@ mod tests {
         // Assert that the loop did not complete
         assert!(
             found_failure,
-            "Expected failure before completing all pushes",
+            "Expected failure before completing all pushes, num_iterations: {}",
+            num_iterations
         );
 
         // Assert that another push will fail
