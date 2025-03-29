@@ -89,21 +89,12 @@ impl FileWriter for IPCWriter {
 
 pub struct IPCWriterFactory {
     dir: String,
-    partition_idx: usize,
     compression: Option<arrow2::io::ipc::write::Compression>,
 }
 
 impl IPCWriterFactory {
-    pub fn new(
-        dir: String,
-        partition_idx: usize,
-        compression: Option<arrow2::io::ipc::write::Compression>,
-    ) -> Self {
-        Self {
-            dir,
-            partition_idx,
-            compression,
-        }
+    pub fn new(dir: String, compression: Option<arrow2::io::ipc::write::Compression>) -> Self {
+        Self { dir, compression }
     }
 }
 
@@ -116,10 +107,7 @@ impl WriterFactory for IPCWriterFactory {
         file_idx: usize,
         _partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
-        let file_path = format!(
-            "{}/partition_{}/{}.arrow",
-            self.dir, self.partition_idx, file_idx
-        );
+        let file_path = format!("{}/{}.arrow", self.dir, file_idx);
         let writer = IPCWriter::new(&file_path, self.compression);
         Ok(Box::new(writer))
     }
