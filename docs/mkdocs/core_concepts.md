@@ -600,6 +600,48 @@ Rows in a DataFrame can be reordered based on some column using [`df.sort()`]({{
 (Showing first 3 rows)
 ```
 
+### Numbering Rows
+
+Daft provides [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
+
+- Using the **upper 28 bits** for the partition number
+- Using the **lower 36 bits** for the row number within each partition
+
+This allows for up to 268 million partitions and 68 billion rows per partition. It's useful for creating unique IDs in distributed DataFrames, tracking row order after operations like sorting, and ensuring uniqueness across large datasets.
+
+```python
+import daft
+from daft.functions import monotonically_increasing_id
+
+# Initialize the RayRunner to run distributed
+daft.context.set_runner_ray()
+
+# Create a DataFrame and repartition it into 2 partitions
+df = daft.from_pydict({"A": [1, 2, 3, 4]}).into_partitions(2)
+
+# Add unique IDs
+df = df.with_column("id", monotonically_increasing_id())
+df.show()
+```
+
+``` {title="Output"}
+╭───────┬─────────────╮
+│ A     ┆ id          │
+│ ---   ┆ ---         │
+│ Int64 ┆ UInt64      │
+╞═══════╪═════════════╡
+│ 1     ┆ 0           │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2     ┆ 1           │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 3     ┆ 68719476736 │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4     ┆ 68719476737 │
+╰───────┴─────────────╯
+```
+
+In this example, rows in the first partition get IDs `0` and `1`, while rows in the second partition start at `2^36` (`68719476736`).
+
 ### Exploding Columns
 
 The [`df.explode()`]({{ api_path }}/dataframe_methods/daft.DataFrame.explode.html) method can be used to explode a column containing a list of values into multiple rows. All other rows will be **duplicated**.
@@ -1400,98 +1442,6 @@ The [`.dt.truncate()`]({{ api_path }}/expression_methods/daft.Expression.dt.trun
 <!-- todo(docs - jay): Should this section also have sql examples? -->
 
 Daft can read data from a variety of sources, and write data to many destinations.
-
-## Built-in Functions
-
-Daft provides built-in functions for common data operations. Currently, we support [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
-
-- Using the **upper 28 bits** for the partition number
-- Using the **lower 36 bits** for the row number within each partition
-
-This allows for:
-
-- Up to **268 million partitions**
-- Up to **68 billion rows per partition**
-
-
-### Use Cases
-
-1. **Unique IDs in Distributed DataFrames**: Ensures unique IDs across partitions without coordination.
-
-2. **Tracking Row Order**: Useful after sorting or joining to track original row positions.
-
-3. **Ensuring Uniqueness**: Guarantees unique IDs even in large, distributed datasets.
-
-!!! note "Note"
-
-    The `NativeRunner` does not support repartitioning. If you attempt to use [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) with the `NativeRunner`, it will assign sequential IDs without considering partitions. For distributed workloads, always use the `RayRunner`:
-
-    ```python
-    daft.context.set_runner_ray()
-    ```
-
-#### Example: Assigning Unique IDs
-
-To use [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) effectively, ensure you're using the `RayRunner`, as the `NativeRunner` does not support repartitioning.
-
-```python
-import daft
-from daft.functions import monotonically_increasing_id
-
-# Initialize the RayRunner
-daft.context.set_runner_ray()
-
-# Create a DataFrame and repartition it into 2 partitions
-df = daft.from_pydict({"A": [1, 2, 3, 4]}).into_partitions(2)
-
-# Add unique IDs
-df = df.with_column("id", monotonically_increasing_id())
-df.show()
-```
-
-``` {title="Output"}
-
-╭───────┬─────────────╮
-│ A     ┆ id          │
-│ ---   ┆ ---         │
-│ Int64 ┆ UInt64      │
-╞═══════╪═════════════╡
-│ 1     ┆ 0           │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 2     ┆ 1           │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 3     ┆ 68719476736 │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 4     ┆ 68719476737 │
-╰───────┴─────────────╯
-```
-
-**What Happened?**
-
-- Rows in the first partition get IDs `0` and `1`
-- Rows in the second partition start at `2^36` (`68719476736`)
-
-#### Example: Filtering by ID
-
-You can combine this function with other expressions. For example, filter rows where the ID is greater than `1`:
-
-```python
-df = df.filter(df["id"] > 1)
-df.show()
-```
-
-``` {title="Output"}
-
-╭───────┬─────────────╮
-│ A     ┆ id          │
-│ ---   ┆ ---         │
-│ Int64 ┆ UInt64      │
-╞═══════╪═════════════╡
-│ 3     ┆ 68719476736 │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 4     ┆ 68719476737 │
-╰───────┴─────────────╯
-```
 
 ## Reading Data
 
