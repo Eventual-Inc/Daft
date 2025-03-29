@@ -8,6 +8,10 @@ mod physical;
 #[cfg(test)]
 mod test;
 
+// Make test module public for use in other crates' tests
+#[cfg(not(test))]
+pub mod test;
+
 #[cfg(feature = "python")]
 mod catalog;
 #[cfg(feature = "python")]

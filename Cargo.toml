@@ -62,6 +62,7 @@ python = [
   "common-scan-info/python",
   "common-system-info/python",
   "daft-catalog/python",
+  "daft-cli/python",
   "daft-connect/python",
   "daft-context/python",
   "daft-core/python",
@@ -183,7 +184,8 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
-  "src/generated/spark-connect"
+  "src/generated/spark-connect",
+  "src/daft-cli"
 ]
 
 [workspace.dependencies]
