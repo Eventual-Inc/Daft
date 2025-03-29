@@ -77,8 +77,9 @@ impl OptimizerRule for DetectMonotonicId {
                 LogicalPlan::Project(project) => {
                     // Check if any expression contains monotonically_increasing_id()
                     if Self::contains_monotonic_id(project) {
-                        // Use a fixed column name for the monotonic ID
-                        let column_name = "id";
+                        // Use a unique fixed column name for the monotonic ID.
+                        // TODO: This is a hack to avoid collisions with other columns. We can eventually fix this with ordinals.
+                        let column_name = &format!("id-{}", uuid::Uuid::new_v4());
 
                         // Create a single MonotonicallyIncreasingId operation
                         let monotonic_plan = Arc::new(LogicalPlan::MonotonicallyIncreasingId(
@@ -108,5 +109,38 @@ impl OptimizerRule for DetectMonotonicId {
                 _ => Ok(Transformed::no(node)),
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use common_scan_info::Pushdowns;
+    use daft_functions::sequence::monotonically_increasing_id::monotonically_increasing_id;
+    use daft_schema::{dtype::DataType, field::Field};
+
+    use crate::{
+        ops::MonotonicallyIncreasingId,
+        optimization::rules::{DetectMonotonicId, OptimizerRule},
+        test::{dummy_scan_node_with_pushdowns, dummy_scan_operator},
+    };
+
+    #[test]
+    fn test_detect_monotonic_id_with_existing_id_column() -> DaftResult<()> {
+        let plan = dummy_scan_node_with_pushdowns(
+            // Create a source with an "id" column that matches the default for monotonically increasing id.
+            dummy_scan_operator(vec![Field::new(
+                MonotonicallyIncreasingId::DEFAULT_COLUMN_NAME,
+                DataType::Int64,
+            )]),
+            Pushdowns::default(),
+        )
+        .with_columns(vec![monotonically_increasing_id()])
+        .unwrap()
+        .build();
+        let optimizer = DetectMonotonicId::new();
+        // Ensure that this optimization rule does not throw an error.
+        let _ = optimizer.try_optimize(plan)?;
+        Ok(())
     }
 }
