@@ -119,9 +119,9 @@ class UnityCatalog:
                 )
         except unitycatalog.NotFoundError:
             if not new_table_storage_path:
-                raise ValueError(
-                    f"Table {table_name} is not an existing table. If a new table needs to be created, provide 'new_table_storage_path' value."
-                )
+                table_type = "MANAGED"
+            else:
+                table_type = "EXTERNAL"
             try:
                 three_part_namesplit = table_name.split(".")
                 if len(three_part_namesplit) != 3 or not all(three_part_namesplit):
@@ -135,7 +135,7 @@ class UnityCatalog:
                     "name": three_part_namesplit[2],
                     "columns": None,
                     "data_source_format": "DELTA",
-                    "table_type": "EXTERNAL",
+                    "table_type": table_type,
                     "storage_location": new_table_storage_path,
                     "comment": None,
                 }
