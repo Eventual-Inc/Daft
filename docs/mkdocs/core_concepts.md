@@ -2065,6 +2065,59 @@ To run multiple aggregations on a Grouped DataFrame, you can use the `agg` metho
 (Showing first 2 of 2 rows)
 ```
 
+### Cross Column Aggregations
+
+While standard aggregations like `sum` or `mean` work vertically on a single column, Daft also provides functions to operate horizontally across multiple columns for each row. These functions are part of the `daft.functions` module and include:
+
+- [`columns_min`]({{ api_path }}/function_methods/daft.functions.columns_min.html): Find the minimum value across specified columns for each row
+- [`columns_max`]({{ api_path }}/function_methods/daft.functions.columns_max.html): Find the maximum value across specified columns for each row
+- [`columns_mean`]({{ api_path }}/function_methods/daft.functions.columns_mean.html): Calculate the mean across specified columns for each row
+- [`columns_sum`]({{ api_path }}/function_methods/daft.functions.columns_sum.html): Calculate the sum across specified columns for each row
+- [`columns_avg`]({{ api_path }}/function_methods/daft.functions.columns_avg.html): Alias for `columns_mean`
+
+Here's a simple example showing these functions in action:
+
+=== "🐍 Python"
+    ``` python
+    import daft
+    from daft.functions import columns_min, columns_max, columns_mean, columns_sum
+
+    df = daft.from_pydict({
+        "a": [1, 2, 3],
+        "b": [4, 5, 6],
+        "c": [7, 8, 9]
+    })
+
+    # Create new columns with cross-column aggregations
+    df = df.with_columns({
+        "min_value": columns_min("a", "b", "c"),
+        "max_value": columns_max("a", "b", "c"),
+        "mean_value": columns_mean("a", "b", "c"),
+        "sum_value": columns_sum("a", "b", "c")
+    })
+
+    df.show()
+    ```
+
+``` {title="Output"}
+
+╭───────┬───────┬───────┬───────────┬───────────┬────────────┬───────────╮
+│ a     ┆ b     ┆ c     ┆ min_value ┆ max_value ┆ mean_value ┆ sum_value │
+│ ---   ┆ ---   ┆ ---   ┆ ---       ┆ ---       ┆ ---        ┆ ---       │
+│ Int64 ┆ Int64 ┆ Int64 ┆ Int64     ┆ Int64     ┆ Float64    ┆ Int64     │
+╞═══════╪═══════╪═══════╪═══════════╪═══════════╪════════════╪═══════════╡
+│ 1     ┆ 4     ┆ 7     ┆ 1         ┆ 7         ┆ 4          ┆ 12        │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2     ┆ 5     ┆ 8     ┆ 2         ┆ 8         ┆ 5          ┆ 15        │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ 3     ┆ 6     ┆ 9     ┆ 3         ┆ 9         ┆ 6          ┆ 18        │
+╰───────┴───────┴───────┴───────────┴───────────┴────────────┴───────────╯
+
+(Showing first 3 of 3 rows)
+```
+
+These functions are especially useful when you need to calculate statistics across related columns or find extreme values from multiple fields in your data.
+
 ## User-Defined Functions (UDF)
 
 A key piece of functionality in Daft is the ability to flexibly define custom functions that can run computations on any data in your dataframe. This section walks you through the different types of UDFs that Daft allows you to run.
@@ -2358,7 +2411,7 @@ Daft is built to work comfortably with multimodal data types, including URLs and
 (Showing first 5 of 5 rows)
 ```
 
-Let’s turn the bytes into human-readable images using [`image.decode()`]({{ api_path }}/expression_methods/daft.Expression.image.decode.html):
+Let's turn the bytes into human-readable images using [`image.decode()`]({{ api_path }}/expression_methods/daft.Expression.image.decode.html):
 
 === "🐍 Python"
 
