@@ -73,27 +73,27 @@ class WindowBoundary:
     """Represents a window frame boundary in window functions."""
 
     @staticmethod
-    def UnboundedPreceding() -> WindowBoundary:
+    def unbounded_preceding() -> WindowBoundary:
         """Represents UNBOUNDED PRECEDING boundary."""
         ...
 
     @staticmethod
-    def UnboundedFollowing() -> WindowBoundary:
+    def unbounded_following() -> WindowBoundary:
         """Represents UNBOUNDED FOLLOWING boundary."""
         ...
 
     @staticmethod
-    def CurrentRow() -> WindowBoundary:
+    def current_row() -> WindowBoundary:
         """Represents CURRENT ROW boundary."""
         ...
 
     @staticmethod
-    def Preceding(n: int) -> WindowBoundary:
+    def preceding(n: int) -> WindowBoundary:
         """Represents N PRECEDING boundary."""
         ...
 
     @staticmethod
-    def Following(n: int) -> WindowBoundary:
+    def following(n: int) -> WindowBoundary:
         """Represents N FOLLOWING boundary."""
         ...
 
@@ -101,12 +101,12 @@ class WindowFrameType:
     """Represents the type of window frame (ROWS or RANGE)."""
 
     @staticmethod
-    def Rows() -> WindowFrameType:
+    def rows() -> WindowFrameType:
         """Row-based window frame."""
         ...
 
     @staticmethod
-    def Range() -> WindowFrameType:
+    def range() -> WindowFrameType:
         """Range-based window frame."""
         ...
 

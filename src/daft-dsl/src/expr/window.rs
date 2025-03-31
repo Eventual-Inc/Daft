@@ -2,8 +2,12 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::DataType, prelude::*};
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use crate::python::PyExpr;
 use crate::{
     expr::Expr,
     functions::{FunctionEvaluator, FunctionExpr},
@@ -11,6 +15,7 @@ use crate::{
 
 /// Represents a window frame boundary
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum WindowBoundary {
     /// Represents UNBOUNDED PRECEDING or UNBOUNDED FOLLOWING
     UnboundedPreceding(),
@@ -22,44 +27,64 @@ pub enum WindowBoundary {
     Offset(i64),
 }
 
+#[cfg(feature = "python")]
+#[pymethods]
 impl WindowBoundary {
     /// Helper to create an UNBOUNDED PRECEDING boundary
+    #[staticmethod]
     pub fn unbounded_preceding() -> Self {
         Self::UnboundedPreceding()
     }
 
     /// Helper to create an UNBOUNDED FOLLOWING boundary
+    #[staticmethod]
     pub fn unbounded_following() -> Self {
         Self::UnboundedFollowing()
     }
 
     /// Helper to create a CURRENT ROW boundary
+    #[staticmethod]
     pub fn current_row() -> Self {
         Self::Offset(0)
     }
 
-    /// Helper to create a PRECEDING boundary with a positive number of rows
-    pub fn preceding(n: u64) -> Self {
-        Self::Offset(-(n as i64))
-    }
-
-    /// Helper to create a FOLLOWING boundary with a positive number of rows
-    pub fn following(n: u64) -> Self {
-        Self::Offset(n as i64)
+    /// Helper to create a row offset boundary directly
+    /// - 0 for CURRENT ROW
+    /// - Negative for PRECEDING
+    /// - Positive for FOLLOWING
+    #[staticmethod]
+    pub fn offset(n: i64) -> Self {
+        Self::Offset(n)
     }
 }
 
 /// Represents the type of window frame (ROWS or RANGE)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum WindowFrameType {
     /// Row-based window frame
-    Rows,
+    Rows(),
     /// Range-based window frame
-    Range,
+    Range(),
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl WindowFrameType {
+    #[staticmethod]
+    pub fn rows() -> Self {
+        Self::Rows()
+    }
+
+    #[staticmethod]
+    pub fn range() -> Self {
+        Self::Range()
+    }
 }
 
 /// Represents a window frame specification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct WindowFrame {
     /// Type of window frame (ROWS or RANGE)
     pub frame_type: WindowFrameType,
@@ -69,8 +94,22 @@ pub struct WindowFrame {
     pub end: WindowBoundary,
 }
 
+#[cfg(feature = "python")]
+#[pymethods]
+impl WindowFrame {
+    #[new]
+    pub fn new(frame_type: WindowFrameType, start: WindowBoundary, end: WindowBoundary) -> Self {
+        Self {
+            frame_type,
+            start,
+            end,
+        }
+    }
+}
+
 /// Represents a window specification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct WindowSpec {
     /// Partition by expressions
     pub partition_by: Vec<Arc<Expr>>,
@@ -84,8 +123,8 @@ pub struct WindowSpec {
     pub min_periods: i64,
 }
 
-impl WindowSpec {
-    pub fn new() -> Self {
+impl Default for WindowSpec {
+    fn default() -> Self {
         Self {
             partition_by: Vec::new(),
             order_by: Vec::new(),
@@ -94,21 +133,30 @@ impl WindowSpec {
             min_periods: 1,
         }
     }
+}
 
-    pub fn with_partition_by(&self, exprs: Vec<Arc<Expr>>) -> Self {
+#[cfg(feature = "python")]
+#[pymethods]
+impl WindowSpec {
+    #[staticmethod]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_partition_by(&self, exprs: Vec<PyExpr>) -> Self {
         let mut new_spec = self.clone();
-        new_spec.partition_by = exprs;
+        new_spec.partition_by = exprs.into_iter().map(|e| e.expr).collect();
         new_spec
     }
 
-    pub fn with_order_by(&self, exprs: Vec<Arc<Expr>>, ascending: Vec<bool>) -> Self {
+    pub fn with_order_by(&self, exprs: Vec<PyExpr>, ascending: Vec<bool>) -> Self {
         assert_eq!(
             exprs.len(),
             ascending.len(),
             "Order by expressions and ascending flags must have same length"
         );
         let mut new_spec = self.clone();
-        new_spec.order_by = exprs;
+        new_spec.order_by = exprs.into_iter().map(|e| e.expr).collect();
         new_spec.ascending = ascending;
         new_spec
     }
@@ -123,12 +171,6 @@ impl WindowSpec {
         let mut new_spec = self.clone();
         new_spec.min_periods = min_periods;
         new_spec
-    }
-}
-
-impl Default for WindowSpec {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
