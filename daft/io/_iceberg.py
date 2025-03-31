@@ -59,28 +59,28 @@ def read_iceberg(
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table.
 
-    Example:
-        >>> import pyiceberg
-        >>>
-        >>> table = pyiceberg.Table(...)
-        >>> df = daft.read_iceberg(table)
-        >>>
-        >>> # Filters on this dataframe can now be pushed into
-        >>> # the read operation from Iceberg
-        >>> df = df.where(df["foo"] > 5)
-        >>> df.show()
-
-    .. NOTE::
-        This function requires the use of `PyIceberg <https://py.iceberg.apache.org/>`_, which is the Apache Iceberg's
-        official project for Python.
-
     Args:
-        table (str or pyiceberg.table.Table): `PyIceberg Table <https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table>`__ created using the PyIceberg library
+        table (str or pyiceberg.table.Table): [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) created using the PyIceberg library
         snapshot_id (int, optional): Snapshot ID of the table to query
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table
+
+    !!! note "This function requires the use of [PyIceberg](https://py.iceberg.apache.org/), which is the Apache Iceberg's official project for Python."
+
+    Example:
+        ``` py linenums="1"
+        import pyiceberg
+
+        table = pyiceberg.Table(...)
+        df = daft.read_iceberg(table)
+
+        # Filters on this dataframe can now be pushed into
+        # the read operation from Iceberg
+        df = df.where(df["foo"] > 5)
+        df.show()
+        ```
     """
     import pyiceberg
 

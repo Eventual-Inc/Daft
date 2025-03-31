@@ -25,7 +25,7 @@
 /* use daft purple for note admonitions */
 .md-typeset .admonition.note,
 .md-typeset details.note {
-  border-color: rgb(120,98,255)
+  border-color: rgb(120,98,255);
 }
 
 .md-typeset .note > .admonition-title,
@@ -36,6 +36,27 @@
 .md-typeset .note > .admonition-title::before,
 .md-typeset .note > summary::before {
   background-color: rgb(120,98,255);
+}
+
+/* use blue for example admonitions */
+.md-typeset .admonition.example,
+.md-typeset details.example {
+  border-color: rgba(68, 138, 255);
+}
+
+.md-typeset .example > .admonition-title,
+.md-typeset .example > summary {
+  background-color: rgba(68, 138, 255, 0.1);
+}
+
+.md-typeset .example > .admonition-title::before,
+.md-typeset .example > summary::before {
+  background-color: rgba(68, 138, 255);
+}
+
+.md-typeset .example > .admonition-title::after,
+.md-typeset .example > summary::after {
+  background-color: rgba(68, 138, 255);
 }
 
 /* use 100% width for tables */
