@@ -357,69 +357,6 @@ impl PyDataType {
         }
     }
 
-    pub fn is_numeric(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_numeric())
-    }
-
-    pub fn is_float(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_floating())
-    }
-
-    pub fn is_integer(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_integer())
-    }
-
-    pub fn is_image(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_image())
-    }
-
-    pub fn is_fixed_shape_image(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_fixed_shape_image())
-    }
-
-    pub fn is_tensor(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_tensor())
-    }
-
-    pub fn is_fixed_shape_tensor(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_fixed_shape_tensor())
-    }
-
-    pub fn is_sparse_tensor(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_sparse_tensor())
-    }
-
-    pub fn is_fixed_shape_sparse_tensor(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_fixed_shape_sparse_tensor())
-    }
-
-    pub fn is_map(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_map())
-    }
-
-    pub fn is_list(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_list())
-    }
-
-    pub fn is_boolean(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_boolean())
-    }
-
-    pub fn is_string(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_string())
-    }
-
-    pub fn is_logical(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_logical())
-    }
-
-    pub fn is_temporal(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_temporal())
-    }
-    pub fn is_timestamp(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_timestamp())
-    }
-
     pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {
         if other.is_instance_of::<Self>() {
             let other = other.extract::<Self>()?;

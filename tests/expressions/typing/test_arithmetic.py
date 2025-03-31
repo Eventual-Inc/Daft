@@ -5,7 +5,7 @@ import operator as ops
 
 import pytest
 
-from daft.datatype import DataType
+from daft.datatype import DataType, TemporalType
 from daft.expressions import col
 from tests.expressions.typing.conftest import (
     assert_typing_resolve_vs_runtime_behavior,
@@ -44,7 +44,7 @@ def test_plus(binary_data_fixture):
 def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType, op: ops) -> bool:
     """Checks whether these input types are resolvable for arithmetic operations."""
     # (temporal - temporal = duration)
-    if lhs.is_temporal() and rhs.is_temporal() and lhs == rhs and op == ops.sub:
+    if isinstance(lhs, TemporalType) and isinstance(rhs, TemporalType) and lhs == rhs and op == ops.sub:
         return True
 
     # (numeric <op> numeric = numeric)
