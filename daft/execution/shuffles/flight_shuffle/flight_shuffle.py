@@ -29,6 +29,7 @@ except ImportError:
     raise
 
 
+# Get the shuffle directories for the given node and shuffle stage
 def get_shuffle_dirs(
     shuffle_dirs: list[str],
     node_id: str,
@@ -193,7 +194,7 @@ class ShuffleActor:
     def get_address(self):
         return f"grpc://{self.host}:{self.port}"
 
-    # Push a partition to the shuffle cache, do this in a threadpool so we return immediately
+    # Push a partition to the shuffle cache asynchronously
     async def push_partitions(self, *partitions: MicroPartition):
         await self.in_progress_shuffle_cache.push_partitions([partition._micropartition for partition in partitions])
 
@@ -366,7 +367,7 @@ def run_map_phase(
         # If there are no map tasks that are done, try to emit more map tasks. Else, yield None to indicate to the scheduler that we need to wait
         else:
             # Max number of maps to emit per wave
-            batch_size = next(_ray_num_cpus_provider()) * 2
+            batch_size = next(_ray_num_cpus_provider())
             available_to_yield = min(batch_size - len(in_flight_map_tasks), len(pending_map_tasks))
             if available_to_yield > 0:
                 for _ in range(available_to_yield):

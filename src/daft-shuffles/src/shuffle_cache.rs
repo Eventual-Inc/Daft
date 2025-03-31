@@ -10,6 +10,7 @@ use daft_schema::schema::SchemaRef;
 use daft_writers::{make_ipc_writer, FileWriter};
 use tokio::sync::Mutex;
 
+// Single threaded runtime used for shuffle cache tasks, e.g. partitioner and writer tasks
 static SHUFFLE_CACHE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 
 pub fn get_or_init_shuffle_cache_runtime() -> &'static RuntimeRef {
@@ -20,13 +21,19 @@ pub fn get_or_init_shuffle_cache_runtime() -> &'static RuntimeRef {
                 .enable_all()
                 .build()
                 .unwrap(),
-            common_runtime::PoolType::Compute,
+            common_runtime::PoolType::Custom("shuffle_cache".to_string()),
         )
     })
 }
 
-type WriterTaskResult = (Option<SchemaRef>, Vec<(usize, String)>);
+// Result of a writer task
+struct WriterTaskResult {
+    schema: Option<SchemaRef>,
+    bytes_per_file: Vec<usize>,
+    file_paths: Vec<String>,
+}
 type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
+
 struct InProgressShuffleCacheState {
     partitioner_sender: Option<async_channel::Sender<Arc<MicroPartition>>>,
     partitioner_tasks: Vec<RuntimeTask<DaftResult<()>>>,
@@ -91,7 +98,7 @@ impl InProgressShuffleCache {
         let (writer_tasks, writer_senders): (Vec<_>, Vec<_>) = writers
             .into_iter()
             .map(|writer| {
-                let (tx, rx) = async_channel::bounded(num_cpus);
+                let (tx, rx) = async_channel::bounded(num_cpus * 2);
                 let task = get_or_init_shuffle_cache_runtime()
                     .spawn(async move { writer_task(rx, writer).await });
                 (task, tx)
@@ -135,20 +142,24 @@ impl InProgressShuffleCache {
         &self,
         input_partitions: Vec<Arc<MicroPartition>>,
     ) -> DaftResult<()> {
-        let mut should_close = false;
-        if let Some(partitioner_sender) = &self.partitioner_sender_weak.upgrade() {
-            let send_futures = input_partitions
-                .into_iter()
-                .map(|partition| partitioner_sender.send(partition));
-            if futures::future::try_join_all(send_futures).await.is_err() {
-                should_close = true;
-            }
-        } else {
-            should_close = true;
-        }
+        // Try to get the partitioner sender from the weak reference
+        match self.partitioner_sender_weak.upgrade() {
+            Some(partitioner_sender) => {
+                // Create futures for sending each partition
+                let send_futures = input_partitions
+                    .into_iter()
+                    .map(|partition| partitioner_sender.send(partition));
 
-        if should_close {
-            self.close().await?;
+                // If any send fails, the receiver is dropped, so we need to close the shuffle cache to get the error
+                if futures::future::try_join_all(send_futures).await.is_err() {
+                    self.close().await?;
+                }
+            }
+            None => {
+                // If the partitioner sender is dropped, that means the shuffle cache is closed
+                // so we propagate the error from the close
+                self.close().await?;
+            }
         }
         Ok(())
     }
@@ -172,24 +183,18 @@ impl InProgressShuffleCache {
         }
 
         // All good, get the schema and results
-        let (schemas, writer_results): (Vec<Option<SchemaRef>>, Vec<Vec<(usize, String)>>) =
-            close_result.unwrap().into_iter().unzip();
+        let writer_results = close_result.unwrap();
 
-        let schema = schemas
-            .into_iter()
-            .find_map(|schema| schema)
+        let schema = writer_results
+            .iter()
+            .find_map(|result| result.schema.clone())
             .unwrap_or_else(|| {
                 panic!("No schema found in shuffle cache, this should never happen")
             });
-
-        let bytes_per_file_per_partition = writer_results
-            .iter()
-            .map(|partition| partition.iter().map(|(bytes, _)| *bytes).collect())
-            .collect();
-        let file_paths_per_partition = writer_results
-            .iter()
-            .map(|partition| partition.iter().map(|(_, path)| path.clone()).collect())
-            .collect();
+        let (bytes_per_file_per_partition, file_paths_per_partition) = writer_results
+            .into_iter()
+            .map(|result| (result.bytes_per_file, result.file_paths))
+            .unzip();
         Ok(ShuffleCache::new(
             schema,
             bytes_per_file_per_partition,
@@ -202,11 +207,16 @@ impl InProgressShuffleCache {
         partitioner_sender: async_channel::Sender<Arc<MicroPartition>>,
         writer_tasks: Vec<WriterTask>,
     ) -> DaftResult<Vec<WriterTaskResult>> {
+        // Drop the partitioner sender so that the partitioner tasks can exit
         drop(partitioner_sender);
+
+        // Wait for the partitioner tasks to exit
         futures::future::try_join_all(partitioner_tasks)
             .await?
             .into_iter()
             .collect::<DaftResult<()>>()?;
+
+        // Wait for the writer tasks to exit
         let results = futures::future::try_join_all(writer_tasks)
             .await?
             .into_iter()
@@ -215,6 +225,7 @@ impl InProgressShuffleCache {
     }
 }
 
+// Partitioner task that takes partitions from the partitioner sender, partitions them, and sends them to the writer tasks
 async fn partitioner_task(
     rx: async_channel::Receiver<Arc<MicroPartition>>,
     writer_senders: Vec<async_channel::Sender<Arc<MicroPartition>>>,
@@ -250,6 +261,7 @@ async fn partitioner_task(
     Ok(())
 }
 
+// Writer task that takes partitions from the partitioner sender, writes them to a file, and returns the schema and file paths
 async fn writer_task(
     rx: async_channel::Receiver<Arc<MicroPartition>>,
     mut writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
@@ -285,7 +297,11 @@ async fn writer_task(
 
     let bytes_per_file = writer.bytes_per_file();
     assert!(bytes_per_file.len() == file_paths.len());
-    Ok((schema, bytes_per_file.into_iter().zip(file_paths).collect()))
+    Ok(WriterTaskResult {
+        schema,
+        bytes_per_file,
+        file_paths,
+    })
 }
 
 #[derive(Debug)]
@@ -437,11 +453,10 @@ mod tests {
             None, // No partition by expressions
         )?;
 
-        // This should not fail on the first push
-        let num_cpus = std::thread::available_parallelism().unwrap().get();
-        // max num partitions before fail = num_cpu partitioners + num cpu partitioner sender capacity + 1 writer task + 1 writer sender
         let mut found_failure = false;
-        let num_iterations = num_cpus + num_cpus + 1 + 1;
+        // Technically, we can calculate the max number of iterations before failure, based on number of tasks and channel sizes,
+        // but 100 should be good enough based on our testing environment.
+        let num_iterations = 100;
         for _ in 0..num_iterations {
             let mp = make_dummy_mp(100);
             if let Err(err) = cache.push_partitions(vec![mp]).await {
