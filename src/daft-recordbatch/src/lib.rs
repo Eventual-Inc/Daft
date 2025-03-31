@@ -17,6 +17,7 @@ use common_runtime::get_compute_runtime;
 use daft_core::{
     array::ops::{
         full::FullNull, DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices,
+        IntoGroups,
     },
     prelude::*,
 };
@@ -578,11 +579,61 @@ impl RecordBatch {
         }
     }
 
+    fn eval_window_expression(&self, expr: &Expr) -> DaftResult<Series> {
+        // Extract the inner expression and window spec from the Window variant
+        if let Expr::Window(inner_expr, window_spec) = expr {
+            // If there's no partitioning, return an error (or handle as global window)
+            if window_spec.partition_by.is_empty() {
+                return Err(DaftError::NotImplemented(
+                    "Only partition-based window functions are currently supported".to_string(),
+                ));
+            }
+
+            // Evaluate each partition_by expression to get the grouping keys
+            let partition_keys: Vec<Series> = window_spec
+                .partition_by
+                .iter()
+                .map(|e| self.eval_expression(e))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            // Create a RecordBatch with just the partition columns
+            let groupby_table = Self::from_nonempty_columns(partition_keys)?;
+
+            // Use the make_groups method to get group indices
+            let (_, groupvals_indices) = groupby_table.make_groups()?;
+
+            // For now, we only support partitioning (no ordering or frames)
+            // In the future, we would use order_by and frame specs here
+            if !window_spec.order_by.is_empty() || window_spec.frame.is_some() {
+                return Err(DaftError::NotImplemented(
+                    "Window functions with ORDER BY or frames are not yet supported".to_string(),
+                ));
+            }
+
+            // Determine what kind of computation to perform based on the inner expression
+            match inner_expr.as_ref() {
+                // If inner expression is an aggregation function, compute it per partition
+                Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, Some(&groupvals_indices)),
+                // For other expressions, apply a different window computation
+                // (This part would expand as we support more window functions)
+                _ => Err(DaftError::NotImplemented(format!(
+                    "Unsupported window function type: {}",
+                    inner_expr
+                ))),
+            }
+        } else {
+            Err(DaftError::InternalError(
+                "eval_window_expression called with non-Window expression".to_string(),
+            ))
+        }
+    }
+
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
             Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
+            Expr::Window(..) => self.eval_window_expression(expr),
             Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             // TODO: remove ability to evaluate on unresolved col once we fix all tests
             Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) | Expr::Column(Column::Unresolved(UnresolvedColumn { name, plan_ref: PlanRef::Unqualified, plan_schema: None })) => self.get_column(name).cloned(),

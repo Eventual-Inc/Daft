@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{expr::window::WindowSpec, functions::FunctionExpr, resolved_col, Expr, ExprRef};
+use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr, ExprRef};
 
 use crate::{
     logical_plan::{LogicalPlan, Project},
@@ -30,11 +30,8 @@ impl ExtractWindowFunction {
     /// Helper function to detect if an expression is a window function call (i.e., has .over())
     fn is_window_function_expr(expr: &ExprRef) -> bool {
         let result = match expr.as_ref() {
-            // Check if this is a function expression with a window function evaluator
-            Expr::Function { func, .. } => {
-                let is_window = matches!(func, FunctionExpr::Window(_));
-                is_window
-            }
+            // Check if this is a window expression
+            Expr::Window(_, _) => true,
             // Recursively check children
             _ => expr.children().iter().any(Self::is_window_function_expr),
         };
@@ -60,11 +57,9 @@ impl ExtractWindowFunction {
     /// Helper function to recursively collect window functions from an expression
     fn collect_window_functions(expr: &ExprRef, result: &mut Vec<(ExprRef, WindowSpec)>) {
         match expr.as_ref() {
-            Expr::Function { func, .. } => {
-                // If this is a window function, extract its window spec
-                if let FunctionExpr::Window(window_func) = func {
-                    result.push((expr.clone(), window_func.window_spec.clone()));
-                }
+            Expr::Window(_inner_expr, window_spec) => {
+                // If this is a window expression, extract its window spec
+                result.push((expr.clone(), window_spec.clone()));
             }
             // Recursively check children
             _ => {

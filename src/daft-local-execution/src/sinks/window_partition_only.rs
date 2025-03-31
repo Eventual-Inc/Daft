@@ -83,16 +83,7 @@ impl WindowPartitionOnlySink {
         // Extract aggregation expressions from window functions
         let aggregations = aggregations
             .iter()
-            .map(|expr| match expr.as_ref() {
-                Expr::Function { func, inputs: _ } => {
-                    if let daft_dsl::functions::FunctionExpr::Window(window_func) = func {
-                        extract_agg_expr(&window_func.expr)
-                    } else {
-                        extract_agg_expr(expr)
-                    }
-                }
-                _ => extract_agg_expr(expr),
-            })
+            .map(extract_agg_expr)
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Get partial and final aggregation expressions
