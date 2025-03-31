@@ -147,6 +147,8 @@ class DataType:
             return NullType()
         elif dt == DataType.bool():
             return BooleanType()
+        elif dt == DataType.python():
+            return PythonType()
         return dt
 
     @classmethod
