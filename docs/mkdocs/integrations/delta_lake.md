@@ -110,7 +110,7 @@ When reading from a Delta Lake table into Daft:
 | `binary` | [`daft.DataType.binary()`](../api_docs/datatype.html#daft.DataType.binary) |
 | **Nested Types** |
 | `struct(fields)` | [`daft.DataType.struct(fields)`](../api_docs/datatype.html#daft.DataType.struct) |
-| `list(child_type)` | [`daft.DataType.list(child_type)`](../api_docs/datatype.html#daft.DataType.list) |
+| `array(element_type)` | [`daft.DataType.list(child_type)`](../api_docs/datatype.html#daft.DataType.list) |
 | `map(K, V)` | [`daft.DataType.struct({"key": K, "value": V})`](../api_docs/datatype.html#daft.DataType.struct) |
 
 ## Roadmap
