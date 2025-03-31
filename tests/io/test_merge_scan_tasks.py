@@ -96,7 +96,7 @@ def test_merge_scan_task_up_to_max_sources(csv_files):
 
 
 @pytest.mark.parametrize(
-    "size_byte_configs",
+    "min_size_bytes, max_size_bytes",
     [
         (0, 0),
         (0, 10000),
@@ -104,10 +104,10 @@ def test_merge_scan_task_up_to_max_sources(csv_files):
         (10000, 10000),
     ],
 )
-def test_merge_scan_tasks_does_not_merge_warc(size_byte_configs):
+def test_merge_scan_tasks_does_not_merge_warc(min_size_bytes, max_size_bytes):
     with daft.execution_config_ctx(
-        scan_tasks_min_size_bytes=size_byte_configs[0],
-        scan_tasks_max_size_bytes=size_byte_configs[1],
+        scan_tasks_min_size_bytes=min_size_bytes,
+        scan_tasks_max_size_bytes=max_size_bytes,
     ):
         path = ["tests/assets/example.warc"] * 3
         df = daft.read_warc(path)
