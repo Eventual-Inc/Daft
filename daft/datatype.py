@@ -152,7 +152,7 @@ class DataType:
         elif dt.is_time():
             return TimeType(TimeUnit._from_pytimeunit(dt.get_time_inner()))
         elif dt.is_timestamp():
-            (tz, unit) = dt.get_timestamp_inner()
+            (unit, tz) = dt.get_timestamp_inner()
             unit = TimeUnit._from_pytimeunit(unit)
             return TimestampType(unit, tz)
         elif dt.is_duration():
