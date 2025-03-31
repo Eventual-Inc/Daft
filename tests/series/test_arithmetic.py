@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 from daft import DataType, Series
+from daft.datatype import IntegerType
 
 arrow_int_types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(), pa.int64(), pa.uint64()]
 arrow_decimal_types = [pa.decimal128(4, 0), pa.decimal128(5, 1)]
@@ -339,5 +340,5 @@ def test_mod_series(l_dtype, r_dtype) -> None:
 
     mod = left % right
     assert mod.name() == left.name()
-    assert mod.datatype().is_integer()
+    assert isinstance(mod.datatype(), IntegerType)
     assert mod.to_pylist() == [0, 2, 0, None, None, None]
