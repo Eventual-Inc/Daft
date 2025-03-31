@@ -116,40 +116,91 @@ class DataType:
             raise ValueError(f"Unable to infer Daft DataType for provided value: {user_provided_type}")
 
     @staticmethod
-    def _from_pydatatype(pydt: PyDataType) -> DataType:
-        dt = DataType.__new__(DataType)
-        dt._dtype = pydt
-        if dt == DataType.int8():
+    def _from_pydatatype(dt: PyDataType) -> DataType:
+        if dt.is_equal(PyDataType.int8()):
             return Int8Type()
-        elif dt == DataType.int16():
+        elif dt.is_equal(PyDataType.int16()):
             return Int16Type()
-        elif dt == DataType.int32():
+        elif dt.is_equal(PyDataType.int32()):
             return Int32Type()
-        elif dt == DataType.int64():
+        elif dt.is_equal(PyDataType.int64()):
             return Int64Type()
-        elif dt == DataType.uint8():
+        elif dt.is_equal(PyDataType.uint8()):
             return UInt8Type()
-        elif dt == DataType.uint16():
+        elif dt.is_equal(PyDataType.uint16()):
             return UInt16Type()
-        elif dt == DataType.uint32():
+        elif dt.is_equal(PyDataType.uint32()):
             return UInt32Type()
-        elif dt == DataType.uint64():
+        elif dt.is_equal(PyDataType.uint64()):
             return UInt64Type()
-        elif dt == DataType.float32():
+        elif dt.is_equal(PyDataType.float32()):
             return Float32Type()
-        elif dt == DataType.float64():
+        elif dt.is_equal(PyDataType.float64()):
             return Float64Type()
-        elif dt == DataType.string():
+        elif dt.is_equal(PyDataType.string()):
             return StringType()
-        elif dt == DataType.binary():
+        elif dt.is_equal(PyDataType.binary()):
             return BinaryType()
-        elif dt == DataType.null():
+        elif dt.is_equal(PyDataType.null()):
             return NullType()
-        elif dt == DataType.bool():
+        elif dt.is_equal(PyDataType.bool()):
             return BooleanType()
-        elif dt == DataType.python():
+        elif dt.is_equal(PyDataType.python()):
             return PythonType()
-        return dt
+        elif dt.is_equal(PyDataType.date()):
+            return DateType()
+        elif dt.is_time():
+            return TimeType(TimeUnit._from_pytimeunit(dt.get_time_inner()))
+        elif dt.is_timestamp():
+            (tz, unit) = dt.get_timestamp_inner()
+            unit = TimeUnit._from_pytimeunit(unit)
+            return TimestampType(unit, tz)
+        elif dt.is_duration():
+            return DurationType(TimeUnit._from_pytimeunit(dt.get_duration_inner()))
+        elif dt.is_equal(PyDataType.interval()):
+            return IntervalType()
+        elif dt.is_list():
+            return ListType(DataType._from_pydatatype(dt.get_list_inner()))
+        elif dt.is_fixed_size_list():
+            (inner, size) = dt.get_fixed_size_list_inner()
+            return FixedSizeListType(DataType._from_pydatatype(inner), size)
+        elif dt.is_fixed_size_binary():
+            return FixedSizeBinaryType(dt.get_fixed_size_binary_inner())
+        elif dt.is_struct():
+            fields = dt.get_struct_inner()
+            return StructType({name: DataType._from_pydatatype(datatype) for name, datatype in fields.items()})
+        elif dt.is_map():
+            (key, value) = dt.get_map_inner()
+            return MapType(DataType._from_pydatatype(key), DataType._from_pydatatype(value))
+        elif dt.is_tensor():
+            inner = dt.get_tensor_inner()
+            return TensorType(DataType._from_pydatatype(inner))
+        elif dt.is_fixed_shape_tensor():
+            (inner, shape) = dt.get_fixed_shape_tensor_inner()
+            print(f"inner: {inner}, shape: {shape}")
+            return FixedShapeTensorType(dtype=DataType._from_pydatatype(inner), shape=shape)
+        elif dt.is_sparse_tensor():
+            (inner, shape, use_offset_indices) = dt.get_sparse_tensor_inner()
+            return SparseTensorType(DataType._from_pydatatype(inner), shape, use_offset_indices)
+        elif dt.is_fixed_shape_sparse_tensor():
+            (inner, shape, use_offset_indices) = dt.get_fixed_shape_sparse_tensor_inner()
+            return FixedShapeSparseTensorType(DataType._from_pydatatype(inner), shape, use_offset_indices)
+        elif dt.is_image():
+            mode = dt.get_image_inner()
+            return ImageType(mode)
+        elif dt.is_fixed_shape_image():
+            (mode, height, width) = dt.get_fixed_shape_image_inner()
+            return FixedShapeImageType(mode, height, width)
+        elif dt.is_embedding():
+            (inner, size) = dt.get_embedding_inner()
+            return EmbeddingType(DataType._from_pydatatype(inner), size)
+        elif dt.is_decimal():
+            (precision, scale) = dt.get_decimal_inner()
+            return DecimalType(precision, scale)
+        elif dt.is_extension():
+            (name, storage_dtype, metadata) = dt.get_extension_inner()
+            return ExtensionType(name, DataType._from_pydatatype(storage_dtype), metadata)
+        raise ValueError(f"Unhandled PyDataType: {dt}. This conversion should be exhaustive.")
 
     @classmethod
     def int8(cls) -> Int8Type:
@@ -855,8 +906,6 @@ class FixedShapeTensorType(LogicalType):
     shape: tuple[int, ...]
 
     def __init__(self, dtype: DataType, shape: tuple[int, ...]) -> None:
-        if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
-            raise ValueError("FixedShapeTensor shape must be a non-empty tuple of ints, but got: ", shape)
         self._dtype = PyDataType.tensor(dtype._dtype, shape)
         self.dtype = dtype
         self.shape = shape

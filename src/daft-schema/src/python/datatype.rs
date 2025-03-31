@@ -356,6 +356,308 @@ impl PyDataType {
             _ => ffi::dtype_to_py(py, &self.dtype.to_arrow()?, pyarrow),
         }
     }
+    pub fn is_numeric(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_numeric())
+    }
+
+    pub fn is_integer(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_integer())
+    }
+
+    pub fn is_image(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_image())
+    }
+    pub fn get_image_inner(&self) -> PyResult<Option<ImageMode>> {
+        match &self.dtype {
+            DataType::Image(mode) => Ok(*mode),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not an image, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_fixed_shape_image(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_fixed_shape_image())
+    }
+
+    pub fn get_fixed_shape_image_inner(&self) -> PyResult<(ImageMode, u32, u32)> {
+        match &self.dtype {
+            DataType::FixedShapeImage(mode, height, width) => Ok((*mode, *height, *width)),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a fixed-shape image, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_tensor())
+    }
+    pub fn get_tensor_inner(&self) -> PyResult<Self> {
+        match &self.dtype {
+            DataType::Tensor(data_type) => Ok(Self {
+                dtype: *data_type.clone(),
+            }),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a tensor, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_fixed_shape_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_fixed_shape_tensor())
+    }
+    fn get_fixed_shape_tensor_inner(&self) -> PyResult<(Self, Vec<u64>)> {
+        match &self.dtype {
+            DataType::FixedShapeTensor(data_type, shape) => Ok((
+                Self {
+                    dtype: *data_type.clone(),
+                },
+                shape.clone(),
+            )),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a fixed-shape tensor, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_sparse_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_sparse_tensor())
+    }
+    pub fn get_sparse_tensor_inner(&self) -> PyResult<(Self, bool)> {
+        match &self.dtype {
+            DataType::SparseTensor(data_type, use_offset_indices) => Ok((
+                Self {
+                    dtype: *data_type.clone(),
+                },
+                *use_offset_indices,
+            )),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a sparse tensor, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_fixed_shape_sparse_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_fixed_shape_sparse_tensor())
+    }
+    pub fn get_fixed_shape_sparse_tensor_inner(&self) -> PyResult<(Self, Vec<u64>, bool)> {
+        match &self.dtype {
+            DataType::FixedShapeSparseTensor(data_type, shape, use_offset_indices) => Ok((
+                Self {
+                    dtype: *data_type.clone(),
+                },
+                shape.clone(),
+                *use_offset_indices,
+            )),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a fixed-shape sparse tensor, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_boolean(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_boolean())
+    }
+
+    pub fn is_string(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_string())
+    }
+
+    pub fn is_logical(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_logical())
+    }
+
+    pub fn is_temporal(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_temporal())
+    }
+
+    pub fn is_duration(&self) -> PyResult<bool> {
+        Ok(matches!(self.dtype, DataType::Duration(_)))
+    }
+    pub fn is_embedding(&self) -> PyResult<bool> {
+        Ok(matches!(self.dtype, DataType::Embedding(_, _)))
+    }
+
+    pub fn get_embedding_inner(&self) -> PyResult<(Self, i64)> {
+        match &self.dtype {
+            DataType::Embedding(data_type, size) => Ok((
+                Self {
+                    dtype: *data_type.clone(),
+                },
+                i64::try_from(*size)?,
+            )),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not an embedding, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_decimal(&self) -> PyResult<bool> {
+        Ok(matches!(self.dtype, DataType::Decimal128(_, _)))
+    }
+
+    pub fn get_decimal_inner(&self) -> PyResult<(usize, usize)> {
+        match &self.dtype {
+            DataType::Decimal128(precision, scale) => Ok((*precision, *scale)),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a decimal, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn get_duration_inner(&self) -> PyResult<PyTimeUnit> {
+        match &self.dtype {
+            DataType::Duration(timeunit) => Ok(PyTimeUnit::from(*timeunit)),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a duration, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_timestamp(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_timestamp())
+    }
+
+    pub fn get_timestamp_inner(&self) -> PyResult<(Option<String>, PyTimeUnit)> {
+        match &self.dtype {
+            DataType::Timestamp(timeunit, timezone) => {
+                Ok((timezone.clone(), PyTimeUnit::from(*timeunit)))
+            }
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a timestamp, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+    pub fn is_time(&self) -> PyResult<bool> {
+        Ok(matches!(self.dtype, DataType::Time(_)))
+    }
+
+    pub fn get_time_inner(&self) -> PyResult<PyTimeUnit> {
+        match &self.dtype {
+            DataType::Time(timeunit) => Ok(PyTimeUnit::from(*timeunit)),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a time, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_fixed_size_binary(&self) -> PyResult<bool> {
+        Ok(matches!(self.dtype, DataType::FixedSizeBinary(_)))
+    }
+
+    pub fn get_fixed_size_binary_inner(&self) -> PyResult<i64> {
+        match &self.dtype {
+            DataType::FixedSizeBinary(size) => Ok(i64::try_from(*size)?),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a fixed-size binary, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_list(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_list())
+    }
+
+    pub fn get_list_inner(&self) -> PyResult<Self> {
+        match &self.dtype {
+            DataType::List(data_type) => Ok(Self {
+                dtype: *data_type.clone(),
+            }),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a list, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_fixed_size_list(&self) -> PyResult<bool> {
+        Ok(matches!(self.dtype, DataType::FixedSizeList(_, _)))
+    }
+
+    pub fn get_fixed_size_list_inner(&self) -> PyResult<(Self, i64)> {
+        match &self.dtype {
+            DataType::FixedSizeList(data_type, size) => Ok((
+                Self {
+                    dtype: *data_type.clone(),
+                },
+                i64::try_from(*size)?,
+            )),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a fixed-size list, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_map(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_map())
+    }
+
+    pub fn get_map_inner(&self) -> PyResult<(Self, Self)> {
+        match &self.dtype {
+            DataType::Map { key, value } => Ok((
+                Self {
+                    dtype: *key.clone(),
+                },
+                Self {
+                    dtype: *value.clone(),
+                },
+            )),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a map, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_struct(&self) -> PyResult<bool> {
+        Ok(matches!(self.dtype, DataType::Struct(_)))
+    }
+
+    pub fn get_struct_inner(&self) -> PyResult<IndexMap<String, Self>> {
+        match &self.dtype {
+            DataType::Struct(fields) => Ok(fields
+                .iter()
+                .map(|field| (field.name.to_string(), Self::from(field.dtype.clone())))
+                .collect()),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not a struct, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn is_extension(&self) -> PyResult<bool> {
+        Ok(matches!(self.dtype, DataType::Extension(_, _, _)))
+    }
+
+    pub fn get_extension_inner(&self) -> PyResult<(String, Self, Option<String>)> {
+        match &self.dtype {
+            DataType::Extension(name, storage_data_type, metadata) => Ok((
+                name.clone(),
+                Self {
+                    dtype: *storage_data_type.clone(),
+                },
+                metadata.clone(),
+            )),
+            _ => Err(PyValueError::new_err(format!(
+                "Data type is not an extension, but is: {}",
+                self.dtype
+            ))),
+        }
+    }
 
     pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {
         if other.is_instance_of::<Self>() {
