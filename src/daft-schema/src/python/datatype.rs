@@ -527,10 +527,10 @@ impl PyDataType {
         Ok(self.dtype.is_timestamp())
     }
 
-    pub fn get_timestamp_inner(&self) -> PyResult<(Option<String>, PyTimeUnit)> {
+    pub fn get_timestamp_inner(&self) -> PyResult<(PyTimeUnit, Option<String>)> {
         match &self.dtype {
             DataType::Timestamp(timeunit, timezone) => {
-                Ok((timezone.clone(), PyTimeUnit::from(*timeunit)))
+                Ok((PyTimeUnit::from(*timeunit), timezone.clone()))
             }
             _ => Err(PyValueError::new_err(format!(
                 "Data type is not a timestamp, but is: {}",

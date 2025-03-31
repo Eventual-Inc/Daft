@@ -713,11 +713,12 @@ class BinaryType(DataType):
 class FixedSizeBinaryType(DataType):
     """Fixed-size binary type."""
 
-    size: int
+    @property
+    def size(self) -> int:
+        return self._dtype.get_fixed_size_binary_inner()
 
     def __init__(self, size: int) -> None:
         self._dtype = PyDataType.fixed_size_binary(size)
-        self.size = size
 
 
 class NullType(DataType):
@@ -729,13 +730,16 @@ class NullType(DataType):
 class DecimalType(DataType):
     """128-bit decimal type."""
 
-    precision: int
-    scale: int
+    @property
+    def precision(self) -> int:
+        return self._dtype.get_decimal_inner()[0]
+
+    @property
+    def scale(self) -> int:
+        return self._dtype.get_decimal_inner()[1]
 
     def __init__(self, precision: int, scale: int) -> None:
         self._dtype = PyDataType.decimal128(precision, scale)
-        self.precision = precision
-        self.scale = scale
 
 
 class TemporalType(LogicalType):
@@ -751,40 +755,47 @@ class DateType(TemporalType):
 class TimeType(DataType):
     """Time type."""
 
-    timeunit: TimeUnit
+    @property
+    def timeunit(self) -> TimeUnit:
+        pytu = self._dtype.get_time_inner()
+        return TimeUnit._from_pytimeunit(pytu)
 
     def __init__(self, timeunit: TimeUnit | str) -> None:
         if isinstance(timeunit, str):
             timeunit = TimeUnit.from_str(timeunit)
         self._dtype = PyDataType.time(timeunit._timeunit)
-        self.timeunit = timeunit
 
 
 class TimestampType(TemporalType):
     """Timestamp type."""
 
-    timeunit: TimeUnit
-    timezone: str | None
+    @property
+    def timeunit(self) -> TimeUnit:
+        pytu = self._dtype.get_timestamp_inner()[0]
+        return TimeUnit._from_pytimeunit(pytu)
+
+    @property
+    def timezone(self) -> str | None:
+        return self._dtype.get_timestamp_inner()[1]
 
     def __init__(self, timeunit: TimeUnit | str, timezone: str | None = None) -> None:
         if isinstance(timeunit, str):
             timeunit = TimeUnit.from_str(timeunit)
-
-        self.timeunit = timeunit
-        self.timezone = timezone
         self._dtype = PyDataType.timestamp(timeunit._timeunit, timezone)
 
 
 class DurationType(LogicalType):
     """Duration type."""
 
-    timeunit: TimeUnit
+    @property
+    def timeunit(self) -> TimeUnit:
+        pytu = self._dtype.get_duration_inner()
+        return TimeUnit._from_pytimeunit(pytu)
 
     def __init__(self, timeunit: TimeUnit | str) -> None:
         if isinstance(timeunit, str):
             timeunit = TimeUnit.from_str(timeunit)
         self._dtype = PyDataType.duration(timeunit._timeunit)
-        self.timeunit = timeunit
 
 
 class IntervalType(DataType):
@@ -796,131 +807,160 @@ class IntervalType(DataType):
 class ListType(DataType):
     """List type."""
 
-    inner: DataType
+    @property
+    def inner(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_list_inner())
 
     def __init__(self, dtype: DataType) -> None:
-        self.inner = dtype
         self._dtype = PyDataType.list(dtype._dtype)
 
 
 class FixedSizeListType(DataType):
     """Fixed-size list type."""
 
-    inner: DataType
-    size: int
+    @property
+    def inner(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_fixed_size_list_inner()[0])
+
+    @property
+    def size(self) -> int:
+        return self._dtype.get_fixed_size_list_inner()[1]
 
     def __init__(self, dtype: DataType, size: int) -> None:
-        self.inner = dtype
-        self.size = size
         self._dtype = PyDataType.fixed_size_list(dtype._dtype, size)
 
 
 class MapType(LogicalType):
     """Map type."""
 
-    key: DataType
-    value: DataType
+    @property
+    def key(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_map_inner()[0])
+
+    @property
+    def value(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_map_inner()[1])
 
     def __init__(self, key_type: DataType, value_type: DataType) -> None:
-        self.key = key_type
-        self.value = value_type
         self._dtype = PyDataType.map(key_type._dtype, value_type._dtype)
 
 
 class StructType(DataType):
     """Struct type."""
 
-    fields: dict[str, DataType]
+    @property
+    def fields(self) -> dict[str, DataType]:
+        return {name: DataType._from_pydatatype(datatype) for name, datatype in self._dtype.get_struct_inner().items()}
 
     def __init__(self, fields: dict[str, DataType]) -> None:
-        self.fields = fields
         self._dtype = PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()})
 
 
 class ExtensionType(DataType):
     """Extension type."""
 
-    name: str
-    storage_dtype: DataType
-    metadata: str | None
+    @property
+    def name(self) -> str:
+        return self._dtype.get_extension_inner()[0]
+
+    @property
+    def storage_dtype(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_extension_inner()[1])
+
+    @property
+    def metadata(self) -> str | None:
+        return self._dtype.get_extension_inner()[2]
 
     def __init__(self, name: str, storage_dtype: DataType, metadata: str | None = None) -> None:
         self._dtype = PyDataType.extension(name, storage_dtype._dtype, metadata)
-        self.name = name
-        self.storage_dtype = storage_dtype
-        self.metadata = metadata
 
 
 class EmbeddingType(LogicalType):
     """Embedding type."""
 
-    dtype: DataType
-    size: int
+    @property
+    def dtype(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_embedding_inner()[0])
+
+    @property
+    def size(self) -> int:
+        return self._dtype.get_embedding_inner()[1]
 
     def __init__(self, dtype: DataType, size: int) -> None:
         if not isinstance(size, int) or size <= 0:
             raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
         self._dtype = PyDataType.embedding(dtype._dtype, size)
-        self.dtype = dtype
-        self.size = size
 
 
 class ImageType(LogicalType):
     """Image type."""
 
-    mode: ImageMode | None
+    @property
+    def mode(self) -> ImageMode | None:
+        return self._dtype.get_image_inner()
 
     def __init__(self, mode: ImageMode | None = None) -> None:
         self._dtype = PyDataType.image(mode)
-        self.mode = mode
 
 
 class FixedShapeImageType(LogicalType):
     """fixed shape Image type."""
 
-    mode: ImageMode
-    height: int
-    width: int
+    @property
+    def mode(self) -> ImageMode:
+        return self._dtype.get_fixed_shape_image_inner()[0]
+
+    @property
+    def height(self) -> int:
+        return self._dtype.get_fixed_shape_image_inner()[1]
+
+    @property
+    def width(self) -> int:
+        return self._dtype.get_fixed_shape_image_inner()[2]
 
     def __init__(self, mode: ImageMode, height: int, width: int) -> None:
         self._dtype = PyDataType.image(mode, height, width)
-        self.mode = mode
-        self.height = height
-        self.width = width
 
 
 class TensorType(LogicalType):
     """Tensor type."""
 
-    dtype: DataType
+    @property
+    def dtype(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_tensor_inner())
 
     def __init__(self, dtype: DataType) -> None:
         self._dtype = PyDataType.tensor(dtype._dtype)
-        self.dtype = dtype
 
 
 class FixedShapeTensorType(LogicalType):
     """Fixed Shape Tensor type."""
 
-    dtype: DataType
-    shape: tuple[int, ...]
+    @property
+    def dtype(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_fixed_shape_tensor_inner()[0])
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return self._dtype.get_fixed_shape_tensor_inner()[1]
 
     def __init__(self, dtype: DataType, shape: tuple[int, ...]) -> None:
         self._dtype = PyDataType.tensor(dtype._dtype, shape)
-        self.dtype = dtype
-        self.shape = shape
 
 
 class SparseTensorType(LogicalType):
     """SparseTensor type."""
 
-    dtype: DataType
-    use_offset_indices: bool
+    @property
+    def dtype(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_sparse_tensor_inner()[0])
+
+    @property
+    def use_offset_indices(self) -> bool:
+        return self._dtype.get_sparse_tensor_inner()[1]
 
     def __init__(self, dtype: DataType, use_offset_indices: bool = False) -> None:
         self._dtype = PyDataType.sparse_tensor(dtype._dtype, shape=None, use_offset_indices=use_offset_indices)
-        self.dtype = dtype
-        self.use_offset_indices = use_offset_indices
 
 
 class FixedShapeSparseTensorType(LogicalType):
@@ -930,6 +970,18 @@ class FixedShapeSparseTensorType(LogicalType):
     shape: tuple[int, ...]
     use_offset_indices: bool
 
+    @property
+    def dtype(self) -> DataType:
+        return DataType._from_pydatatype(self._dtype.get_fixed_shape_sparse_tensor_inner()[0])
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return self._dtype.get_fixed_shape_sparse_tensor_inner()[1]
+
+    @property
+    def use_offset_indices(self) -> bool:
+        return self._dtype.get_fixed_shape_sparse_tensor_inner()[2]
+
     def __init__(self, dtype: DataType, shape: tuple[int, ...], use_offset_indices: bool = False) -> None:
         if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
             raise ValueError("FixedShapeTensor shape must be a non-empty tuple of ints, but got: ", shape)
@@ -937,9 +989,6 @@ class FixedShapeSparseTensorType(LogicalType):
             if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
                 raise ValueError("SparseTensor shape must be a non-empty tuple of ints, but got: ", shape)
         self._dtype = PyDataType.sparse_tensor(dtype._dtype, shape, use_offset_indices)
-        self.dtype = dtype
-        self.shape = shape
-        self.use_offset_indices = use_offset_indices
 
 
 # Type alias for a union of types that can be inferred into a DataType
