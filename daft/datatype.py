@@ -542,7 +542,7 @@ class DataType:
         # NOTE: This is used to determine if we should cast a column to a Python object type when converting to PyList.
         # Map is a logical type, but we don't want to cast it to Python because the underlying physical type is a List,
         # which we can handle without casting to Python.
-        return self.is_logical() and not self.is_map()
+        return isinstance(self, LogicalType) and not isinstance(self, MapType)
 
     def __repr__(self) -> str:
         return self._dtype.__repr__()
@@ -556,19 +556,15 @@ class DataType:
     def __hash__(self) -> int:
         return self._dtype.__hash__()
 
-    def is_logical(self) -> builtins.bool:
-        """Returns whether the DataType is a logical type."""
-        return self._dtype.is_logical()
-
-    def is_temporal(self) -> builtins.bool:
-        """Returns whether the DataType is a temporal type."""
-        return self._dtype.is_temporal()
-
 
 class PythonType(DataType):
     """Python object type."""
 
     _dtype = PyDataType.python()
+
+
+class LogicalType(DataType):
+    """Logical types are types that are backed by a physical type, but have additional constraints or semantics."""
 
 
 class NumericType(DataType):
@@ -689,7 +685,7 @@ class DecimalType(DataType):
         self.scale = scale
 
 
-class TemporalType(DataType):
+class TemporalType(LogicalType):
     """Temporal subtypes."""
 
 
@@ -726,7 +722,7 @@ class TimestampType(TemporalType):
         self._dtype = PyDataType.timestamp(timeunit._timeunit, timezone)
 
 
-class DurationType(DataType):
+class DurationType(LogicalType):
     """Duration type."""
 
     timeunit: TimeUnit
@@ -766,7 +762,7 @@ class FixedSizeListType(DataType):
         self._dtype = PyDataType.fixed_size_list(dtype._dtype, size)
 
 
-class MapType(DataType):
+class MapType(LogicalType):
     """Map type."""
 
     key: DataType
@@ -802,7 +798,7 @@ class ExtensionType(DataType):
         self.metadata = metadata
 
 
-class EmbeddingType(DataType):
+class EmbeddingType(LogicalType):
     """Embedding type."""
 
     dtype: DataType
@@ -816,7 +812,7 @@ class EmbeddingType(DataType):
         self.size = size
 
 
-class ImageType(DataType):
+class ImageType(LogicalType):
     """Image type."""
 
     mode: ImageMode | None
@@ -826,7 +822,7 @@ class ImageType(DataType):
         self.mode = mode
 
 
-class FixedShapeImageType(DataType):
+class FixedShapeImageType(LogicalType):
     """fixed shape Image type."""
 
     mode: ImageMode
@@ -840,7 +836,7 @@ class FixedShapeImageType(DataType):
         self.width = width
 
 
-class TensorType(DataType):
+class TensorType(LogicalType):
     """Tensor type."""
 
     dtype: DataType
@@ -850,7 +846,7 @@ class TensorType(DataType):
         self.dtype = dtype
 
 
-class FixedShapeTensorType(DataType):
+class FixedShapeTensorType(LogicalType):
     """Fixed Shape Tensor type."""
 
     dtype: DataType
@@ -864,7 +860,7 @@ class FixedShapeTensorType(DataType):
         self.shape = shape
 
 
-class SparseTensorType(DataType):
+class SparseTensorType(LogicalType):
     """SparseTensor type."""
 
     dtype: DataType
@@ -876,7 +872,7 @@ class SparseTensorType(DataType):
         self.use_offset_indices = use_offset_indices
 
 
-class FixedShapeSparseTensorType(DataType):
+class FixedShapeSparseTensorType(LogicalType):
     """Fixed ShapeSparseTensor type."""
 
     dtype: DataType

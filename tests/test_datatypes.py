@@ -721,8 +721,8 @@ def test_is_timestamp():
 
 
 def test_is_logical():
-    assert not DataType.bool().is_logical()
-    assert DataType.embedding(DataType.int32(), 10).is_logical()
+    assert not isinstance(DataType.bool(), dtypes.LogicalType)
+    assert isinstance(DataType.embedding(DataType.int32(), 10), dtypes.LogicalType)
 
 
 def test_is_map():
