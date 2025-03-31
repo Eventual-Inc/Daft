@@ -81,7 +81,7 @@ class PreviewFormatter:
     _preview: Preview
     _schema: Schema
     _format: PreviewFormat | None
-    _options: PreviewOptions | None
+    _options: PreviewOptions
 
     def __init__(
         self,
@@ -93,7 +93,7 @@ class PreviewFormatter:
         self._preview = preview
         self._schema = schema
         self._format = format
-        self._options = PreviewOptions(**options) if options else None
+        self._options = PreviewOptions(**options)
 
     def _get_user_message(self) -> str:
         if self._preview.partition is None:
@@ -135,12 +135,8 @@ class PreviewFormatter:
             raise ValueError("Formatting options with HTML are not currently supported.")
 
         if self._preview.partition is not None:
-            if self._options:
-                return self._preview.partition.to_record_batch()._table.preview(
-                    self._format or "fancy", self._options.serialize()
-                )
-            elif self._format:
-                return self._preview.partition.to_record_batch()._table.preview(self._format, None)
+            if self._format:
+                return self._preview.partition.to_record_batch()._table.preview(self._format, self._options.serialize())
             else:
                 return self._preview.partition.to_record_batch().__repr__()
         else:
