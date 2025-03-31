@@ -126,6 +126,7 @@ fn rewrite_children(
     plan: Arc<LogicalPlan>,
 ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
     plan.map_children(|input| optimizer.try_optimize(input))
+        .map(Into::into)
 }
 
 fn flatten_join_inputs(

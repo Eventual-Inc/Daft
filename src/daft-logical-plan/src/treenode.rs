@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanState};
-use common_treenode::{DynTreeNode, Transformed, TreeNodeIterator};
+use common_treenode::{DynTreeNode, Transformed, TreeNodeMapIterator};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 
@@ -58,7 +58,7 @@ impl LogicalPlan {
             }) => projection
                 .iter()
                 .cloned()
-                .map_and_collect(|expr| f(expr, &input.schema()))?
+                .map_until_stop_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_projection| {
                     Self::Project(Project {
                         plan_id: *plan_id,
@@ -68,7 +68,8 @@ impl LogicalPlan {
                         stats_state: stats_state.clone(),
                     })
                     .into()
-                }),
+                })
+                .into(),
             Self::Filter(Filter {
                 plan_id,
                 input,
@@ -92,7 +93,7 @@ impl LogicalPlan {
                 RepartitionSpec::Hash(HashRepartitionConfig { num_partitions, by }) => by
                     .iter()
                     .cloned()
-                    .map_and_collect(|expr| f(expr, &input.schema()))?
+                    .map_until_stop_and_collect(|expr| f(expr, &input.schema()))?
                     .update_data(|expr| {
                         Self::Repartition(Repartition {
                             plan_id: *plan_id,
@@ -104,7 +105,8 @@ impl LogicalPlan {
                             stats_state: stats_state.clone(),
                         })
                         .into()
-                    }),
+                    })
+                    .into(),
                 _ => Transformed::no(self.clone()),
             },
             Self::ActorPoolProject(ActorPoolProject {
@@ -116,7 +118,7 @@ impl LogicalPlan {
             }) => projection
                 .iter()
                 .cloned()
-                .map_and_collect(|expr| f(expr, &input.schema()))?
+                .map_until_stop_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_projection| {
                     Self::ActorPoolProject(ActorPoolProject {
                         plan_id: *plan_id,
@@ -126,7 +128,8 @@ impl LogicalPlan {
                         stats_state: stats_state.clone(),
                     })
                     .into()
-                }),
+                })
+                .into(),
             Self::Sort(Sort {
                 plan_id,
                 input,
@@ -137,7 +140,7 @@ impl LogicalPlan {
             }) => sort_by
                 .iter()
                 .cloned()
-                .map_and_collect(|expr| f(expr, &input.schema()))?
+                .map_until_stop_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_sort_by| {
                     Self::Sort(Sort {
                         plan_id: *plan_id,
@@ -148,7 +151,8 @@ impl LogicalPlan {
                         stats_state: stats_state.clone(),
                     })
                     .into()
-                }),
+                })
+                .into(),
             Self::Explode(Explode {
                 plan_id,
                 input,
@@ -158,7 +162,7 @@ impl LogicalPlan {
             }) => to_explode
                 .iter()
                 .cloned()
-                .map_and_collect(|expr| f(expr, &input.schema()))?
+                .map_until_stop_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_to_explode| {
                     Self::Explode(Explode {
                         plan_id: *plan_id,
@@ -168,7 +172,8 @@ impl LogicalPlan {
                         stats_state: stats_state.clone(),
                     })
                     .into()
-                }),
+                })
+                .into(),
             Self::Source(Source {
                 plan_id,
                 output_schema,

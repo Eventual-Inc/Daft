@@ -2,7 +2,9 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::datatypes::Field;
-use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_dsl::common_treenode::{
+    TreeNodeRecursionNoRepeat, Transformed, TransformedNoRepeat, TreeNode, TreeNodeRecursion,
+};
 use daft_io::{IOClient, IOStatsRef};
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
 use parquet2::{read::deserialize_metadata, schema::types::ParquetType};
@@ -20,19 +22,19 @@ impl TreeNode for ParquetTypeWrapper {
     fn apply_children<F: FnMut(&Self) -> DaftResult<TreeNodeRecursion>>(
         &self,
         mut op: F,
-    ) -> DaftResult<TreeNodeRecursion> {
+    ) -> DaftResult<TreeNodeRecursionNoRepeat> {
         match &self.0 {
-            ParquetType::PrimitiveType(..) => Ok(TreeNodeRecursion::Jump),
+            ParquetType::PrimitiveType(..) => Ok(TreeNodeRecursionNoRepeat::Jump),
             ParquetType::GroupType { fields, .. } => {
                 for child in fields {
                     // TODO: Expensive clone here because of ParquetTypeWrapper type, can we get rid of this?
-                    match op(&Self(child.clone()))? {
-                        TreeNodeRecursion::Continue => {}
-                        TreeNodeRecursion::Jump => return Ok(TreeNodeRecursion::Continue),
-                        TreeNodeRecursion::Stop => return Ok(TreeNodeRecursion::Stop),
+                    match TreeNodeRecursion::visit_until_done(|| op(&Self(child.clone())))? {
+                        TreeNodeRecursionNoRepeat::Continue => {}
+                        TreeNodeRecursionNoRepeat::Jump => return Ok(TreeNodeRecursionNoRepeat::Continue),
+                        TreeNodeRecursionNoRepeat::Stop => return Ok(TreeNodeRecursionNoRepeat::Stop),
                     }
                 }
-                Ok(TreeNodeRecursion::Continue)
+                Ok(TreeNodeRecursionNoRepeat::Continue)
             }
         }
     }
@@ -40,17 +42,17 @@ impl TreeNode for ParquetTypeWrapper {
     fn map_children<F: FnMut(Self) -> DaftResult<Transformed<Self>>>(
         self,
         transform: F,
-    ) -> DaftResult<Transformed<Self>> {
+    ) -> DaftResult<TransformedNoRepeat<Self>> {
         let mut transform = transform;
 
         match self.0 {
-            ParquetType::PrimitiveType(..) => Ok(Transformed::no(self)),
+            ParquetType::PrimitiveType(..) => Ok(TransformedNoRepeat::no(self)),
             ParquetType::GroupType {
                 field_info,
                 logical_type,
                 converted_type,
                 fields,
-            } => Ok(Transformed::yes(Self(ParquetType::GroupType {
+            } => Ok(TransformedNoRepeat::yes(Self(ParquetType::GroupType {
                 fields: fields
                     .into_iter()
                     .map(|child| transform(Self(child)).map(|wrapper| wrapper.data.0))
