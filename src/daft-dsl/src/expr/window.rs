@@ -179,13 +179,6 @@ impl WindowSpec {
 pub struct WindowFunction {
     /// The expression to apply the window function to
     pub expr: Arc<Expr>,
-    /*
-    So if you look at how Expr::Function is defined,
-    it already has input expressions, so those should
-    be stored in there instead of here. (But again make
-    sure that window should live as a variant of
-    FunctionExpr first)
-     */
     /// The window specification
     pub window_spec: WindowSpec,
 }
