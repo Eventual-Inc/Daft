@@ -397,7 +397,7 @@ def test_is_image(dtype, expected):
         (DataType.sparse_tensor(DataType.float32()), False),
     ],
 )
-def test_is_fixed_size_image(dtype, expected):
+def test_is_fixed_shape_image(dtype, expected):
     assert isinstance(dtype, FixedShapeImageType) == expected
 
 
