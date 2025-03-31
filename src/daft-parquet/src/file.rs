@@ -6,7 +6,7 @@ use std::{
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with_options};
 use common_error::DaftResult;
-use common_runtime::get_compute_runtime;
+use common_runtime::{get_compute_runtime, get_io_runtime};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
@@ -503,9 +503,9 @@ impl ParquetFileReader {
                 (row_range, chunk_iter_task)
             });
 
-        let compute_runtime = get_compute_runtime();
+        let io_runtime = get_io_runtime(true);
         let uri = self.uri.clone();
-        let parquet_task = compute_runtime.spawn(async move {
+        let parquet_task = io_runtime.spawn(async move {
             let mut table_tasks = Vec::with_capacity(chunk_iter_handles.len());
             for ((row_range, chunk_iter_handle), output_sender) in chunk_iter_handles.zip(senders) {
                 // We want to ensure that the channel capacity can hold one morsel worth of data for better deserialization performance.
