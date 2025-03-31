@@ -6,7 +6,7 @@ use std::{
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with_options};
 use common_error::DaftResult;
-use common_runtime::{get_compute_runtime, get_io_runtime};
+use common_runtime::get_io_runtime;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
