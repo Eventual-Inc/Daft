@@ -34,7 +34,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
-from daft.dataframe.preview import Preview, PreviewFormat, PreviewFormatter
+from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
@@ -3069,7 +3069,14 @@ class DataFrame:
         return preview
 
     @DataframePublicAPI
-    def show(self, n: int = 8, format: Optional[PreviewFormat] = None, **options) -> None:
+    def show(
+        self,
+        n: int = 8,
+        format: Optional[PreviewFormat] = None,
+        max_width: int = 30,
+        align: PreviewAlign = "left",
+        columns: Optional[List[PreviewColumn]] = None,
+    ) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
 
         If IPython is installed, this will use IPython's `display` utility to pretty-print in a
@@ -3104,7 +3111,16 @@ class DataFrame:
         """
         schema = self.schema()
         preview = self._construct_show_preview(n)
-        preview = PreviewFormatter(preview, schema, format, **options)
+        preview = PreviewFormatter(
+            preview,
+            schema,
+            format,
+            **{
+                "max_width": max_width,
+                "align": align,
+                "columns": columns,
+            },
+        )
 
         try:
             from IPython.display import display

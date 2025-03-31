@@ -39,7 +39,6 @@ class PreviewColumn(TypedDict, total=False):
     info: str
     max_width: int
     align: PreviewAlign
-    fmt: str
 
 
 class PreviewOptions:
