@@ -17,6 +17,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Concatenate,
     Dict,
     Iterable,
     Iterator,
@@ -24,6 +25,8 @@ from typing import (
     Literal,
     Mapping,
     Optional,
+    ParamSpec,
+    Self,
     Set,
     Tuple,
     TypeVar,
@@ -64,6 +67,8 @@ ColumnInputType = Union[Expression, str]
 
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
+OutputType = TypeVar("OutputType")
+P = ParamSpec("P")
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
     """Creates a Daft DataFrame from a single RecordBatch.
@@ -2986,6 +2991,32 @@ class DataFrame:
         """
         builder = self._builder.except_all(other._builder)
         return DataFrame(builder)
+
+    @DataframePublicAPI
+    def pipe(
+        self,
+        function: Callable[Concatenate["DataFrame", P], OutputType],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> OutputType:
+        """Apply the function to this DataFrame.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [0, 1, 2]})
+            >>> def add_number(df, col, number):
+                    return df.with_column(daft.column(col) + number)
+            >>> assert df1.pipe(add_number, "A", number=5).to_pydict == {"a": [5, 6, 7]}
+
+        Args:
+            function (Callable[Concatenate["DataFrame", P], OutputType]): Function to apply.
+            *args: Positional arguments to pass to the function.
+            **kwargs: Keyword arguments to pass to the function.
+
+        Returns:
+            OutputType: Result of applying the function on this DataFrame.
+        """
+        return function(self, *args, **kwargs)
 
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
