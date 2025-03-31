@@ -99,6 +99,7 @@ class UnityCatalog:
         table_name: str,
         new_table_storage_path: str | None = None,
         operation: Literal["READ" | "READ_WRITE"] = "READ_WRITE",
+        table_type: Literal["EXTERNAL" | "MANAGED"] = "EXTERNAL",
     ) -> UnityCatalogTable:
         """Loads an existing Unity Catalog table. If the table is not found, and information is provided in the method to create a new table, a new table will be attempted to be registered.
 
@@ -106,7 +107,7 @@ class UnityCatalog:
             table_name (str): Name of the table in Unity Catalog in the form of dot-separated, 3-level namespace
             new_table_storage_path (str, optional): Cloud storage path URI to register a new external table using this path. Unity Catalog will validate if the path is valid and authorized for the principal, else will raise an exception.
             operation ("READ" or "READ_WRITE", optional): The intended use of the table, which impacts authorization. Defaults to "READ_WRITE".
-
+    	    table_type ("EXTERNAL" or "MANAGED", optional): The table type impacts the creation of the table if it does not exist. If "MANAGED" the table is created as managed table. If "EXTERNAL" the table is created based on the new_tabke_storage_path.
         Returns:
             UnityCatalogTable
         """
@@ -118,10 +119,14 @@ class UnityCatalog:
                     f"Table {table_name} is an existing storage table with a valid storage path. The 'new_table_storage_path' argument provided will be ignored."
                 )
         except unitycatalog.NotFoundError:
-            if not new_table_storage_path:
-                table_type = "MANAGED"
-            else:
-                table_type = "EXTERNAL"
+            if table_type == "EXTERNAL" and not new_table_storage_path:
+                raise ValueError(
+                    f"Table {table_name} is not an existing table. If a new table needs to be created, provide 'new_table_storage_path' value."
+                )
+            elif table_type == "MANAGED":
+                warnings.warn(
+                    f"Table {table_name} is being created as managed table in Unity Catalog."
+                )
             try:
                 three_part_namesplit = table_name.split(".")
                 if len(three_part_namesplit) != 3 or not all(three_part_namesplit):
