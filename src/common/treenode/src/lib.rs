@@ -541,12 +541,12 @@ pub enum TreeNodeRecursionNoRepeat {
     Stop,
 }
 
-impl Into<TreeNodeRecursion> for TreeNodeRecursionNoRepeat {
-    fn into(self) -> TreeNodeRecursion {
-        match self {
-            Self::Continue => TreeNodeRecursion::Continue,
-            Self::Jump => TreeNodeRecursion::Jump,
-            Self::Stop => TreeNodeRecursion::Stop,
+impl From<TreeNodeRecursionNoRepeat> for TreeNodeRecursion {
+    fn from(value: TreeNodeRecursionNoRepeat) -> Self {
+        match value {
+            TreeNodeRecursionNoRepeat::Continue => Self::Continue,
+            TreeNodeRecursionNoRepeat::Jump => Self::Jump,
+            TreeNodeRecursionNoRepeat::Stop => Self::Stop,
         }
     }
 }
@@ -557,7 +557,7 @@ impl TreeNodeRecursion {
     ) -> Result<TreeNodeRecursionNoRepeat> {
         let mut tnr = Self::Repeat;
         while tnr == Self::Repeat {
-            tnr = f()?
+            tnr = f()?;
         }
 
         Ok(tnr.into_no_repeat())
@@ -636,9 +636,9 @@ pub struct TransformedNoRepeat<T> {
     pub tnr: TreeNodeRecursionNoRepeat,
 }
 
-impl<T> Into<Transformed<T>> for TransformedNoRepeat<T> {
-    fn into(self) -> Transformed<T> {
-        Transformed::new(self.data, self.transformed, self.tnr.into())
+impl<T> From<TransformedNoRepeat<T>> for Transformed<T> {
+    fn from(val: TransformedNoRepeat<T>) -> Self {
+        Transformed::new(val.data, val.transformed, val.tnr.into())
     }
 }
 
