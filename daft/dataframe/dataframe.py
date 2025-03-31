@@ -35,7 +35,7 @@ from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
 from daft.dataframe.preview import DataFramePreview
-from daft.datatype import DataType
+from daft.datatype import DataType, PythonType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
@@ -382,7 +382,7 @@ class DataFrame:
     ) -> Iterator["pyarrow.RecordBatch"]:
         """Return an iterator of pyarrow recordbatches for this dataframe."""
         for name in self.schema().column_names():
-            if self.schema()[name].dtype.is_python():
+            if isinstance(self.schema()[name].dtype, PythonType):
                 raise ValueError(
                     f"Cannot convert column {name} to Arrow type, found Python type: {self.schema()[name].dtype}"
                 )
