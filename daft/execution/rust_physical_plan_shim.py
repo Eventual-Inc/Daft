@@ -11,6 +11,7 @@ from daft.daft import (
     PySchema,
     ResourceRequest,
     ScanTask,
+    WriteMode,
 )
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
@@ -325,6 +326,7 @@ def broadcast_join(
 
 def write_file(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    write_mode: WriteMode,
     file_format: FileFormat,
     schema: PySchema,
     root_dir: str,
@@ -338,6 +340,7 @@ def write_file(
         expr_projection = None
     return physical_plan.file_write(
         input,
+        write_mode,
         file_format,
         Schema._from_pyschema(schema),
         root_dir,

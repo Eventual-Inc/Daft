@@ -49,6 +49,7 @@ pylance>=0.10.12
 
 #Iceberg
 pyiceberg==0.7.0
+pydantic==2.10.6
 tenacity==8.2.3
 
 # Delta Lake
@@ -97,3 +98,6 @@ sphinx-tabs==3.4.5
 pyspark==3.5.3
 grpcio==1.68.1
 grpcio-status==1.67.0
+
+# ai
+vllm; platform_system == "Linux" # for other systems, see install instructions: https://docs.vllm.ai/en/latest/getting_started/installation.html

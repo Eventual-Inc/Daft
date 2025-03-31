@@ -47,7 +47,7 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal, final
 
 from daft.logical.schema import Schema
 
@@ -198,6 +198,10 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
     return name
 
 
+class NotFoundError(Exception):
+    """Raised when some catalog object is not able to be found."""
+
+
 class Catalog(ABC):
     """Interface for python catalog implementations."""
 
@@ -325,10 +329,40 @@ class Catalog(ABC):
     ###
 
     @abstractmethod
-    def create_namespace(self, identifier: Identifier | str): ...
+    def create_namespace(self, identifier: Identifier | str):
+        """Creates a namespace in this catalog."""
+
+    def create_namespace_if_not_exists(self, identifier: Identifier | str):
+        """Creates a namespace in this catalog if it does not already exist."""
+        if not self.has_namespace(identifier):
+            self.create_namespace(identifier)
 
     @abstractmethod
-    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table: ...
+    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
+        """Creates a table in this catalog."""
+
+    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource) -> Table:
+        """Creates a table in this catalog if it does not already exist."""
+        try:
+            if table := self.get_table(identifier):
+                return table
+        except NotFoundError:
+            return self.create_table(identifier, source)
+
+    ###
+    # has_*
+    ###
+
+    def has_namespace(self, identifier: Identifier | str):
+        raise NotImplementedError(f"Catalog implementation {type(self)} does not support has_namespace")
+
+    def has_table(self, identifier: Identifier | str):
+        """Returns True if the table exists, otherwise False."""
+        try:
+            _ = self.get_table(identifier)
+            return True
+        except NotFoundError:
+            return False
 
     ###
     # drop_*
@@ -521,6 +555,9 @@ class Identifier(Sequence):
 
     def __len__(self) -> int:
         return self._ident.__len__()
+
+    def __add__(self, suffix: Identifier) -> Identifier:
+        return Identifier(*(tuple(self) + tuple(suffix)))
 
     def __repr__(self) -> str:
         return f"Identifier('{self._ident.__repr__()}')"

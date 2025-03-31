@@ -12,6 +12,7 @@ common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
+daft-cli = {path = "src/daft-cli", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-connect = {path = "src/daft-connect", optional = true}
 daft-context = {path = "src/daft-context", default-features = false}
@@ -61,6 +62,7 @@ python = [
   "common-scan-info/python",
   "common-system-info/python",
   "daft-catalog/python",
+  "daft-cli/python",
   "daft-connect/python",
   "daft-context/python",
   "daft-core/python",
@@ -182,7 +184,8 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
-  "src/generated/spark-connect"
+  "src/generated/spark-connect",
+  "src/daft-cli"
 ]
 
 [workspace.dependencies]
@@ -204,6 +207,7 @@ common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
 common-runtime = {path = "src/common/runtime", default-features = false}
+daft-algebra = {path = "src/daft-algebra"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}

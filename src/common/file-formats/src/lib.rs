@@ -1,5 +1,5 @@
 mod file_format;
-pub use file_format::FileFormat;
+pub use file_format::{FileFormat, WriteMode};
 
 mod file_format_config;
 #[cfg(feature = "python")]

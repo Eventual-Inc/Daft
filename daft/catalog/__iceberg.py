@@ -6,9 +6,10 @@ import warnings
 
 from pyiceberg.catalog import Catalog as InnerCatalog
 from pyiceberg.catalog import load_catalog
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.table import Table as InnerTable
 
-from daft.catalog import Catalog, Identifier, Table, TableSource
+from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
 from daft.dataframe import DataFrame
 from daft.io._iceberg import read_iceberg
 from daft.logical.schema import Schema
@@ -92,13 +93,38 @@ class IcebergCatalog(Catalog):
         self._inner.drop_table(identifier)
 
     ###
+    # has_*
+    ###
+
+    def has_namespace(self, identifier: Identifier | str) -> bool:
+        if isinstance(identifier, Identifier):
+            identifier = tuple(identifier)  # type: ignore
+        try:
+            _ = self._inner.list_namespaces(identifier)
+            return True
+        except NoSuchNamespaceError:
+            return False
+
+    def has_table(self, identifier: Identifier | str) -> bool:
+        if isinstance(identifier, Identifier):
+            identifier = tuple(identifier)  # type: ignore
+        return self._inner.table_exists(identifier)
+
+    ###
     # get_*
     ###
 
     def get_table(self, identifier: Identifier | str) -> IcebergTable:
         if isinstance(identifier, Identifier):
             identifier = tuple(identifier)  # type: ignore
-        return IcebergTable._from_obj(self._inner.load_table(identifier))
+        try:
+            return IcebergTable._from_obj(self._inner.load_table(identifier))
+        except NoSuchTableError as ex:
+            # convert to not found because we want to (sometimes) ignore it internally
+            raise NotFoundError() from ex
+        except Exception as ex:
+            # wrap original exceptions
+            raise Exception("pyiceberg raised an exception while calling get_table") from ex
 
     ###
     # list_*
@@ -110,7 +136,13 @@ class IcebergCatalog(Catalog):
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         """List tables under the given namespace (pattern) in the catalog, or all tables if no namespace is provided."""
-        return [".".join(tup) for tup in self._inner.list_tables(pattern or ())]
+        if pattern is None:
+            tables = []
+            for ns in self.list_namespaces():
+                tables.extend(self._inner.list_tables(str(ns)))
+        else:
+            tables = self._inner.list_tables(pattern)
+        return [".".join(tup) for tup in tables]
 
 
 class IcebergTable(Table):

@@ -484,7 +484,7 @@ Adding a new column can be achieved with [`df.with_column()`]({{ api_path }}/dat
 
 #### Selecting Columns Using Wildcards
 
-We can select multiple columns at once using wildcards. The expression [`col(*)`]({{ api_path }}/expression_methods/daft.col.html) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
+We can select multiple columns at once using wildcards. The expression [`col("*")`]({{ api_path }}/expression_methods/daft.col.html) selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
 
 === "🐍 Python"
     ``` python

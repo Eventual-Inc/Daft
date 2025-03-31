@@ -36,3 +36,18 @@ def test_with_start_end_and_step_kwargs():
 def test_with_no_args_raises_error():
     with pytest.raises(TypeError):
         daft.range()
+
+
+def test_range_called_multiple_times():
+    df = daft.range(10)
+    assert df.count_rows() == 10
+    assert df.count_rows() == 10
+    assert len(df.collect()) == 10
+    assert len(df.collect()) == 10
+
+    # test with op
+    df_with_filter = df.filter(daft.col("id") >= 5)
+    assert df_with_filter.count_rows() == 5
+    assert df_with_filter.count_rows() == 5
+    assert len(df_with_filter.collect()) == 5
+    assert len(df_with_filter.collect()) == 5

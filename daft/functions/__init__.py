@@ -1,5 +1,21 @@
 from __future__ import annotations
 
-from .functions import monotonically_increasing_id
+from .functions import (
+    monotonically_increasing_id,
+    columns_sum,
+    columns_mean,
+    columns_avg,
+    columns_min,
+    columns_max,
+)
+from .llm_generate import llm_generate
 
-__all__ = ["monotonically_increasing_id"]
+__all__ = [
+    "columns_avg",
+    "columns_max",
+    "columns_mean",
+    "columns_min",
+    "columns_sum",
+    "llm_generate",
+    "monotonically_increasing_id",
+]

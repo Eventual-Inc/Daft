@@ -91,3 +91,11 @@ def test_identifier_drop():
     assert ident.drop(2) == Identifier("c")
     with pytest.raises(ValueError):
         ident.drop(3)
+
+
+def test_identifier_concat():
+    id1 = Identifier("a")
+    id2 = Identifier("b", "c")
+    id3 = id1 + id2
+    assert len(id3) == 3
+    assert id3 == Identifier("a", "b", "c")
