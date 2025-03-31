@@ -25,15 +25,14 @@ static COMPUTE_RUNTIME_MAX_BLOCKING_THREADS: LazyLock<usize> = LazyLock::new(|| 
 static THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 static SINGLE_THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 static COMPUTE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
-static LOCAL_THREAD_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 
 pub type RuntimeRef = Arc<Runtime>;
 
-#[derive(Debug, Clone, Copy)]
-enum PoolType {
+#[derive(Debug, Clone)]
+pub enum PoolType {
     Compute,
     IO,
-    LocalThread,
+    Custom(String),
 }
 
 // A spawned task on a Runtime that can be awaited
@@ -74,7 +73,7 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    pub(crate) fn new(runtime: tokio::runtime::Runtime, pool_type: PoolType) -> RuntimeRef {
+    pub fn new(runtime: tokio::runtime::Runtime, pool_type: PoolType) -> RuntimeRef {
         Arc::new(Self {
             runtime: Arc::new(runtime),
             pool_type,
@@ -115,7 +114,7 @@ impl Runtime {
         F::Output: Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
-        let pool_type = self.pool_type;
+        let pool_type = self.pool_type.clone();
         let _join_handle = self.spawn(async move {
             let task_output = Self::execute_task(future, pool_type).await;
             if tx.send(task_output).is_err() {
@@ -180,21 +179,6 @@ fn init_io_runtime(multi_thread: bool) -> RuntimeRef {
     .unwrap()
 }
 
-fn init_local_thread_runtime() -> RuntimeRef {
-    std::thread::spawn(move || {
-        Runtime::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(1)
-                .enable_all()
-                .build()
-                .unwrap(),
-            PoolType::LocalThread,
-        )
-    })
-    .join()
-    .unwrap()
-}
-
 pub fn get_compute_runtime() -> RuntimeRef {
     COMPUTE_RUNTIME.get_or_init(init_compute_runtime).clone()
 }
@@ -209,12 +193,6 @@ pub fn get_io_runtime(multi_thread: bool) -> RuntimeRef {
             .get_or_init(|| init_io_runtime(true))
             .clone()
     }
-}
-
-pub fn get_local_thread_runtime() -> RuntimeRef {
-    LOCAL_THREAD_RUNTIME
-        .get_or_init(init_local_thread_runtime)
-        .clone()
 }
 
 #[must_use]

@@ -1,6 +1,5 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
-use common_runtime::RuntimeRef;
 use daft_dsl::python::PyExpr;
 use daft_micropartition::python::PyMicroPartition;
 use daft_schema::python::schema::PySchema;
@@ -10,10 +9,9 @@ use pyo3::{
     Bound, PyResult, Python,
 };
 
-use crate::shuffle_cache::{InProgressShuffleCache, ShuffleCache};
-
-static LOCAL_THREAD_RUNTIME: LazyLock<RuntimeRef> =
-    LazyLock::new(|| common_runtime::get_local_thread_runtime());
+use crate::shuffle_cache::{
+    get_or_init_shuffle_cache_runtime, InProgressShuffleCache, ShuffleCache,
+};
 
 #[pyclass(module = "daft.daft", name = "InProgressShuffleCache", frozen)]
 pub struct PyInProgressShuffleCache {
@@ -38,7 +36,8 @@ impl PyInProgressShuffleCache {
             compression,
             partition_by.map(|partition_by| partition_by.into_iter().map(|p| p.into()).collect()),
         )?;
-        pyo3_async_runtimes::tokio::init_with_runtime(&LOCAL_THREAD_RUNTIME.runtime).unwrap();
+        pyo3_async_runtimes::tokio::init_with_runtime(&get_or_init_shuffle_cache_runtime().runtime)
+            .unwrap();
         Ok(Self {
             cache: Arc::new(shuffle_cache),
         })

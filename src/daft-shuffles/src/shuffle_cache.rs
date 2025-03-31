@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::{get_compute_runtime, get_local_thread_runtime, RuntimeTask};
+use common_runtime::{get_compute_runtime, RuntimeRef, RuntimeTask};
 use daft_dsl::ExprRef;
 use daft_io::{parse_url, SourceType};
 use daft_micropartition::MicroPartition;
@@ -9,6 +9,21 @@ use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use daft_writers::{make_ipc_writer, FileWriter};
 use tokio::sync::Mutex;
+
+static SHUFFLE_CACHE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
+
+pub fn get_or_init_shuffle_cache_runtime() -> &'static RuntimeRef {
+    SHUFFLE_CACHE_RUNTIME.get_or_init(|| {
+        common_runtime::Runtime::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap(),
+            common_runtime::PoolType::Compute,
+        )
+    })
+}
 
 type WriterTaskResult = (Option<SchemaRef>, Vec<(usize, String)>);
 type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
@@ -71,14 +86,14 @@ impl InProgressShuffleCache {
         partition_by: Option<Vec<ExprRef>>,
     ) -> DaftResult<Self> {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
-        let local_thread_runtime = get_local_thread_runtime();
 
         // Spawn the writer tasks
         let (writer_tasks, writer_senders): (Vec<_>, Vec<_>) = writers
             .into_iter()
             .map(|writer| {
                 let (tx, rx) = async_channel::bounded(num_cpus);
-                let task = local_thread_runtime.spawn(async move { writer_task(rx, writer).await });
+                let task = get_or_init_shuffle_cache_runtime()
+                    .spawn(async move { writer_task(rx, writer).await });
                 (task, tx)
             })
             .unzip();
@@ -90,7 +105,7 @@ impl InProgressShuffleCache {
                 let partitioner_receiver = partitioner_receiver.clone();
                 let writer_senders = writer_senders.clone();
                 let partition_by = partition_by.clone();
-                local_thread_runtime.spawn(async move {
+                get_or_init_shuffle_cache_runtime().spawn(async move {
                     partitioner_task(
                         partitioner_receiver,
                         writer_senders,
