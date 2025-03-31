@@ -121,7 +121,7 @@ class UnityCatalog:
         except unitycatalog.NotFoundError:
             if table_type == "EXTERNAL" and not new_table_storage_path:
                 raise ValueError(
-                    f"Table {table_name} is not an existing table. If a new table needs to be created, provide 'new_table_storage_path' value."
+                    f"Table {table_name} is not an existing table. If a new table needs to be created, provide 'new_table_storage_path' value or set table_type to 'MANAGED'."
                 )
             elif table_type == "MANAGED":
                 warnings.warn(
