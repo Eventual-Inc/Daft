@@ -34,7 +34,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
-from daft.dataframe.preview import DataFramePreview
+from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
@@ -42,7 +42,6 @@ from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
-from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
     import dask
@@ -126,7 +125,7 @@ class DataFrame:
 
         self.__builder = builder
         self._result_cache: Optional[PartitionCacheEntry] = None
-        self._preview = DataFramePreview(preview_partition=None, dataframe_num_rows=None)
+        self._preview = Preview(partition=None, total_rows=None)
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
 
     @property
@@ -492,7 +491,7 @@ class DataFrame:
             return
 
         preview_partition_invalid = (
-            self._preview.preview_partition is None or len(self._preview.preview_partition) < self._num_preview_rows
+            self._preview.partition is None or len(self._preview.partition) < self._num_preview_rows
         )
         if preview_partition_invalid:
             preview_parts = self._result._get_preview_micropartitions(self._num_preview_rows)
@@ -500,22 +499,22 @@ class DataFrame:
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
             preview_partition = preview_results._get_merged_micropartition()
-            self._preview = DataFramePreview(
-                preview_partition=preview_partition,
-                dataframe_num_rows=len(self),
+            self._preview = Preview(
+                partition=preview_partition,
+                total_rows=len(self),
             )
 
     @DataframePublicAPI
     def __repr__(self) -> str:
         self._populate_preview()
-        display = DataFrameDisplay(self._preview, self.schema())
-        return display.__repr__()
+        preview = PreviewFormatter(self._preview, self.schema())
+        return preview.__repr__()
 
     @DataframePublicAPI
     def _repr_html_(self) -> str:
         self._populate_preview()
-        display = DataFrameDisplay(self._preview, self.schema())
-        return display._repr_html_()
+        preview = PreviewFormatter(self._preview, self.schema())
+        return preview._repr_html_()
 
     ###
     # Creation methods
@@ -3021,10 +3020,10 @@ class DataFrame:
             self._num_preview_rows = dataframe_len
         return self
 
-    def _construct_show_display(self, n: int) -> "DataFrameDisplay":
-        """Helper for .show() which will construct the underlying DataFrameDisplay object."""
-        preview_partition = self._preview.preview_partition
-        total_rows = self._preview.dataframe_num_rows
+    def _construct_show_preview(self, n: int) -> "Preview":
+        """Helper for .show() which will construct the underlying Preview object."""
+        preview_partition = self._preview.partition
+        total_rows = self._preview.total_rows
 
         # Truncate n to the length of the DataFrame, if we have it.
         if total_rows is not None and n > total_rows:
@@ -3051,26 +3050,33 @@ class DataFrame:
             elif len(preview_partition) < n:
                 # Iterator short-circuited before reaching n, so we know that we have the full DataFrame.
                 total_rows = n = len(preview_partition)
-            preview = DataFramePreview(
-                preview_partition=preview_partition,
-                dataframe_num_rows=total_rows,
+            preview = Preview(
+                partition=preview_partition,
+                total_rows=total_rows,
             )
         elif len(preview_partition) > n:
             # Preview partition is cached but has more rows that we need, so use the appropriate slice.
             truncated_preview_partition = preview_partition.slice(0, n)
-            preview = DataFramePreview(
-                preview_partition=truncated_preview_partition,
-                dataframe_num_rows=total_rows,
+            preview = Preview(
+                partition=truncated_preview_partition,
+                total_rows=total_rows,
             )
         else:
             assert len(preview_partition) == n
             # Preview partition is cached and has exactly the number of rows that we need, so use it directly.
             preview = self._preview
 
-        return DataFrameDisplay(preview, self.schema(), num_rows=n)
+        return preview
 
     @DataframePublicAPI
-    def show(self, n: int = 8) -> None:
+    def show(
+        self,
+        n: int = 8,
+        format: Optional[PreviewFormat] = None,
+        max_width: int = 30,
+        align: PreviewAlign = "left",
+        columns: Optional[List[PreviewColumn]] = None,
+    ) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
 
         If IPython is installed, this will use IPython's `display` utility to pretty-print in a
@@ -3079,17 +3085,49 @@ class DataFrame:
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
 
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> df.show()  # doctest: +SKIP
+            >>> df.show(format="markdown")  # doctest: +SKIP
+            >>> df.show(max_width=50)  # doctest: +SKIP
+            >>> df.show(align="left")  # doctest: +SKIP
+
         Args:
             n: number of rows to show. Defaults to 8.
+            format (PreviewFormat): the box-drawing format e.g. "fancy" or "markdown".
+            **options: keyword arguments to modify the formatting, please see the options section.
+
+        Usage:
+            - If columns are given, their length MUST match the schema.
+            - If columns are given, their settings override any global settings.
+
+        Options:
+            verbose     (bool)                      : verbose will print header info
+            max_width   (int)                       : global max column width
+            align       (PreviewAlign)              : global column align
+            columns     (list[PreviewColumn])       : column overrides
+
         """
-        dataframe_display = self._construct_show_display(n)
+        schema = self.schema()
+        preview = self._construct_show_preview(n)
+        preview = PreviewFormatter(
+            preview,
+            schema,
+            format,
+            **{
+                "max_width": max_width,
+                "align": align,
+                "columns": columns,
+            },
+        )
 
         try:
             from IPython.display import display
 
-            display(dataframe_display, clear=True)
+            display(preview, clear=True)
         except ImportError:
-            print(dataframe_display)
+            print(preview)
         return None
 
     def __len__(self):
@@ -3321,9 +3359,9 @@ class DataFrame:
 
         # set preview
         preview_partition = preview_results._get_merged_micropartition()
-        df._preview = DataFramePreview(
-            preview_partition=preview_partition,
-            dataframe_num_rows=dataframe_num_rows,
+        df._preview = Preview(
+            partition=preview_partition,
+            total_rows=dataframe_num_rows,
         )
         return df
 
@@ -3413,9 +3451,9 @@ class DataFrame:
 
         # set preview
         preview_partition = preview_results._get_merged_micropartition()
-        df._preview = DataFramePreview(
-            preview_partition=preview_partition,
-            dataframe_num_rows=dataframe_num_rows,
+        df._preview = Preview(
+            partition=preview_partition,
+            total_rows=dataframe_num_rows,
         )
         return df
 
