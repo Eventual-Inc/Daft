@@ -129,23 +129,28 @@ class MicroPartition:
     ###
 
     def to_table(self) -> RecordBatch:
-        return RecordBatch._from_pytable(self._micropartition.to_table())
+        """DEPRECATED: Please use `to_record_batch`."""
+        return self.to_record_batch()
+
+    def to_record_batch(self) -> RecordBatch:
+        """Returns the MicroPartition as a RecordBatch."""
+        return RecordBatch._from_pytable(self._micropartition.to_record_batch())
 
     def to_arrow(self) -> pa.Table:
-        return self.to_table().to_arrow()
+        return self.to_record_batch().to_arrow()
 
     def to_pydict(self) -> dict[str, list]:
-        return self.to_table().to_pydict()
+        return self.to_record_batch().to_pydict()
 
     def to_pylist(self) -> list[dict[str, Any]]:
-        return self.to_table().to_pylist()
+        return self.to_record_batch().to_pylist()
 
     def to_pandas(
         self,
         schema: Schema | None = None,
         coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
-        return self.to_table().to_pandas(
+        return self.to_record_batch().to_pandas(
             schema=schema,
             coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )

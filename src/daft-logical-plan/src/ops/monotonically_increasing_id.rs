@@ -18,11 +18,13 @@ pub struct MonotonicallyIncreasingId {
 }
 
 impl MonotonicallyIncreasingId {
+    pub(crate) const DEFAULT_COLUMN_NAME: &str = "id";
+
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         column_name: Option<&str>,
     ) -> logical_plan::Result<Self> {
-        let column_name = column_name.unwrap_or("id");
+        let column_name = column_name.unwrap_or(Self::DEFAULT_COLUMN_NAME);
 
         let fields_with_id = std::iter::once(Field::new(column_name, DataType::UInt64))
             .chain(input.schema().fields.values().cloned())
