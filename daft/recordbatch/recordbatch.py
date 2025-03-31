@@ -22,7 +22,15 @@ from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
 from daft.daft import read_parquet_into_pyarrow_bulk as _read_parquet_into_pyarrow_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
-from daft.datatype import DataType, TimeUnit
+from daft.datatype import (
+    DataType,
+    FixedShapeSparseTensorType,
+    FixedShapeTensorType,
+    PythonType,
+    SparseTensorType,
+    TensorType,
+    TimeUnit,
+)
 from daft.dependencies import pa, pd
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
@@ -90,11 +98,10 @@ class RecordBatch:
         non_native_fields = [
             field.name
             for field in schema
-            if field.dtype == DataType.python()
-            or field.dtype.is_tensor()
-            or field.dtype.is_fixed_shape_tensor()
-            or field.dtype.is_sparse_tensor()
-            or field.dtype.is_fixed_shape_sparse_tensor()
+            if isinstance(
+                field.dtype,
+                (PythonType, TensorType, FixedShapeTensorType, SparseTensorType, FixedShapeSparseTensorType),
+            )
         ]
         if non_native_fields:
             # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()
@@ -187,9 +194,11 @@ class RecordBatch:
         python_fields = set()
         tensor_fields = set()
         for field in self.schema():
-            if field.dtype.is_python():
+            if isinstance(field.dtype, PythonType):
                 python_fields.add(field.name)
-            elif field.dtype.is_tensor() or field.dtype.is_fixed_shape_tensor():
+            elif isinstance(
+                field.dtype, (TensorType, FixedShapeTensorType, SparseTensorType, FixedShapeSparseTensorType)
+            ):
                 tensor_fields.add(field.name)
 
         if python_fields or tensor_fields:

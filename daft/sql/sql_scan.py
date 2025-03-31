@@ -15,6 +15,7 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
+from daft.datatype import NumericType, TemporalType
 from daft.expressions.expressions import lit
 from daft.io.common import _get_schema_from_dict
 from daft.io.scan import PartitionField, ScanOperator
@@ -179,10 +180,8 @@ class SQLScanOperator(ScanOperator):
         if self._partition_col is None:
             raise ValueError("Failed to get partition bounds: partition_col must be specified to partition the data.")
 
-        if not (
-            self._schema[self._partition_col].dtype.is_temporal()
-            or self._schema[self._partition_col].dtype.is_numeric()
-        ):
+        dtype = self._schema[self._partition_col].dtype
+        if not isinstance(dtype, (TemporalType, NumericType)):
             raise ValueError(
                 f"Failed to get partition bounds: {self._partition_col} is not a numeric or temporal type, and cannot be used for partitioning."
             )

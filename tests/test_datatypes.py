@@ -7,7 +7,23 @@ import pytest
 
 import daft.datatype as dtypes
 from daft.daft import ImageMode
-from daft.datatype import DataType
+from daft.datatype import (
+    BooleanType,
+    DataType,
+    FixedShapeImageType,
+    FixedShapeSparseTensorType,
+    FixedShapeTensorType,
+    FloatType,
+    ImageType,
+    IntegerType,
+    MapType,
+    NumericType,
+    SparseTensorType,
+    StringType,
+    TemporalType,
+    TensorType,
+    TimestampType,
+)
 
 daft_int_types = [
     DataType.int8(),
@@ -232,7 +248,7 @@ def test_duration_type():
     ],
 )
 def test_is_numeric(dtype, expected):
-    assert dtype.is_numeric() == expected
+    assert isinstance(dtype, NumericType) == expected
 
 
 @pytest.mark.parametrize(
@@ -269,7 +285,7 @@ def test_is_numeric(dtype, expected):
     ],
 )
 def test_is_float(dtype, expected):
-    assert dtype.is_float() == expected
+    assert isinstance(dtype, FloatType) == expected
 
 
 @pytest.mark.parametrize(
@@ -306,7 +322,7 @@ def test_is_float(dtype, expected):
     ],
 )
 def test_is_integer(dtype, expected):
-    assert dtype.is_integer() == expected
+    assert isinstance(dtype, IntegerType) == expected
 
 
 @pytest.mark.parametrize(
@@ -344,7 +360,7 @@ def test_is_integer(dtype, expected):
     ],
 )
 def test_is_image(dtype, expected):
-    assert dtype.is_image() == expected
+    assert isinstance(dtype, ImageType) == expected
 
 
 @pytest.mark.parametrize(
@@ -382,7 +398,7 @@ def test_is_image(dtype, expected):
     ],
 )
 def test_is_fixed_size_image(dtype, expected):
-    assert dtype.is_fixed_shape_image() == expected
+    assert isinstance(dtype, FixedShapeImageType) == expected
 
 
 @pytest.mark.parametrize(
@@ -420,7 +436,7 @@ def test_is_fixed_size_image(dtype, expected):
     ],
 )
 def test_is_list(dtype, expected):
-    assert dtype.is_list() == expected
+    assert isinstance(dtype, dtypes.ListType) == expected
 
 
 @pytest.mark.parametrize(
@@ -458,7 +474,7 @@ def test_is_list(dtype, expected):
     ],
 )
 def test_is_tensor(dtype, expected):
-    assert dtype.is_tensor() == expected
+    assert isinstance(dtype, TensorType) == expected
 
 
 @pytest.mark.parametrize(
@@ -497,7 +513,7 @@ def test_is_tensor(dtype, expected):
     ],
 )
 def test_is_fixed_tensor(dtype, expected):
-    assert dtype.is_fixed_shape_tensor() == expected
+    assert isinstance(dtype, FixedShapeTensorType) == expected
 
 
 @pytest.mark.parametrize(
@@ -536,7 +552,7 @@ def test_is_fixed_tensor(dtype, expected):
     ],
 )
 def test_is_sparse_tensor(dtype, expected):
-    assert dtype.is_sparse_tensor() == expected
+    assert isinstance(dtype, SparseTensorType) == expected
 
 
 @pytest.mark.parametrize(
@@ -576,7 +592,7 @@ def test_is_sparse_tensor(dtype, expected):
     ],
 )
 def test_is_fixed_sparse_tensor(dtype, expected):
-    assert dtype.is_fixed_shape_sparse_tensor() == expected
+    assert isinstance(dtype, FixedShapeSparseTensorType) == expected
 
 
 @pytest.mark.parametrize(
@@ -616,7 +632,7 @@ def test_is_fixed_sparse_tensor(dtype, expected):
     ],
 )
 def test_is_bool(dtype, expected):
-    assert dtype.is_boolean() == expected
+    assert isinstance(dtype, BooleanType) == expected
 
 
 @pytest.mark.parametrize(
@@ -656,7 +672,7 @@ def test_is_bool(dtype, expected):
     ],
 )
 def test_is_string(dtype, expected):
-    assert dtype.is_string() == expected
+    assert isinstance(dtype, StringType) == expected
 
 
 @pytest.mark.parametrize(
@@ -696,12 +712,12 @@ def test_is_string(dtype, expected):
     ],
 )
 def test_is_temporal(dtype, expected):
-    assert dtype.is_temporal() == expected
+    assert isinstance(dtype, TemporalType) == expected
 
 
 def test_is_timestamp():
-    assert DataType.timestamp("us").is_timestamp()
-    assert not DataType.int32().is_timestamp()
+    assert isinstance(DataType.timestamp("us"), TimestampType)
+    assert not isinstance(DataType.int32(), TimestampType)
 
 
 def test_is_logical():
@@ -710,5 +726,5 @@ def test_is_logical():
 
 
 def test_is_map():
-    assert DataType.map(DataType.int32(), DataType.string()).is_map()
-    assert not DataType.int32().is_map()
+    assert isinstance(DataType.map(DataType.int32(), DataType.string()), MapType)
+    assert not isinstance(DataType.int32(), MapType)

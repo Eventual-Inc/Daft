@@ -8,7 +8,7 @@ import pyarrow as pa
 import pytest
 import pytz
 
-from daft.datatype import DataType
+from daft.datatype import DataType, TemporalType
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch import MicroPartition
 from daft.series import Series
@@ -259,7 +259,7 @@ def is_comparable(dt: DataType):
         or dt == DataType.null()
         or dt == DataType.binary()
         or dt == DataType.fixed_size_binary(1)
-        or dt.is_temporal()
+        or isinstance(dt, TemporalType)
     )
 
 
@@ -295,12 +295,12 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
 
         # --- Within type hierarchies ---
         both_numeric = (is_numeric(x) and is_numeric(y)) or ((x == DataType.bool()) and is_numeric(y))
-        both_temporal = x.is_temporal() and y.is_temporal()
+        both_temporal = isinstance(x, TemporalType) and isinstance(y, TemporalType)
 
         # --- Across type hierarchies ---
         date_and_numeric = x == DataType.date() and is_numeric(y)
         time_and_numeric = x == (DataType.time("us") or DataType.time("ns")) and is_numeric(y)
-        timestamp_and_big_numeric = x.is_temporal() and is_numeric_bitwidth_gte_32(y)
+        timestamp_and_big_numeric = isinstance(x, TemporalType) and is_numeric_bitwidth_gte_32(y)
 
         if (
             either_null

@@ -534,17 +534,9 @@ class DataType:
         return self._dtype.to_arrow()
 
     @classmethod
-    def python(cls) -> DataType:
+    def python(cls) -> PythonType:
         """Create a Python DataType: a type which refers to an arbitrary Python object."""
-        return cls._from_pydatatype(PyDataType.python())
-
-    def is_python(self) -> builtins.bool:
-        """Returns whether the DataType is a Python object type."""
-        # NOTE: This is currently used in a few places still. We can get rid of it once these are refactored away. To be discussed.
-        # 1. Visualizations - we can get rid of it if we do all our repr and repr_html logic in a Series instead of in Python
-        # 2. Hypothesis test data generation - we can get rid of it if we allow for creation of Series from a Python list and DataType
-
-        return self == DataType.python()
+        return PythonType()
 
     def _should_cast_to_python(self) -> builtins.bool:
         # NOTE: This is used to determine if we should cast a column to a Python object type when converting to PyList.
@@ -564,126 +556,88 @@ class DataType:
     def __hash__(self) -> int:
         return self._dtype.__hash__()
 
-    def is_numeric(self) -> builtins.bool:
-        """Returns whether the DataType is a numeric type."""
-        return self._dtype.is_numeric()
-
-    def is_float(self) -> builtins.bool:
-        """Returns whether the DataType is a floating point type."""
-        return self._dtype.is_float()
-
-    def is_integer(self) -> builtins.bool:
-        """Returns whether the DataType is an integer type."""
-        return self._dtype.is_integer()
-
-    def is_image(self) -> builtins.bool:
-        """Returns whether the DataType is an image type."""
-        return self._dtype.is_image()
-
-    def is_fixed_shape_image(self) -> builtins.bool:
-        """Returns whether the DataType is a fixed shape image type."""
-        return self._dtype.is_fixed_shape_image()
-
-    def is_list(self) -> builtins.bool:
-        """Returns whether the DataType is a list type."""
-        return self._dtype.is_list()
-
-    def is_tensor(self) -> builtins.bool:
-        """Returns whether the DataType is a tensor type."""
-        return self._dtype.is_tensor()
-
-    def is_fixed_shape_tensor(self) -> builtins.bool:
-        """Returns whether the DataType is a fixed shape tensor type."""
-        return self._dtype.is_fixed_shape_tensor()
-
-    def is_sparse_tensor(self) -> builtins.bool:
-        """Returns whether the DataType is a sparse tensor type."""
-        return self._dtype.is_sparse_tensor()
-
-    def is_fixed_shape_sparse_tensor(self) -> builtins.bool:
-        """Returns whether the DataType is a fixed shape sparse tensor type."""
-        return self._dtype.is_fixed_shape_sparse_tensor()
-
-    def is_map(self) -> builtins.bool:
-        """Returns whether the DataType is a map type."""
-        return self._dtype.is_map()
-
     def is_logical(self) -> builtins.bool:
         """Returns whether the DataType is a logical type."""
         return self._dtype.is_logical()
-
-    def is_boolean(self) -> builtins.bool:
-        """Returns whether the DataType is a boolean type."""
-        return self._dtype.is_boolean()
-
-    def is_string(self) -> builtins.bool:
-        """Returns whether the DataType is a string type."""
-        return self._dtype.is_string()
 
     def is_temporal(self) -> builtins.bool:
         """Returns whether the DataType is a temporal type."""
         return self._dtype.is_temporal()
 
-    def is_timestamp(self) -> builtins.bool:
-        """Returns whether the DataType is a timestamp type."""
-        return self._dtype.is_timestamp()
+
+class PythonType(DataType):
+    """Python object type."""
+
+    _dtype = PyDataType.python()
 
 
-class Int8Type(DataType):
+class NumericType(DataType):
+    """Numeric subtypes."""
+
+
+class IntegerType(NumericType):
+    """Integer subtypes."""
+
+
+class Int8Type(IntegerType):
     """8-bit integer type."""
 
     _dtype = PyDataType.int8()
 
 
-class Int16Type(DataType):
+class Int16Type(IntegerType):
     """16-bit integer type."""
 
     _dtype = PyDataType.int16()
 
 
-class Int32Type(DataType):
+class Int32Type(IntegerType):
     """32-bit integer type."""
 
     _dtype = PyDataType.int32()
 
 
-class Int64Type(DataType):
+class Int64Type(IntegerType):
     """64-bit integer type."""
 
     _dtype = PyDataType.int64()
 
 
-class UInt8Type(DataType):
+class UInt8Type(IntegerType):
     """Unsigned 8-bit integer type."""
 
     _dtype = PyDataType.uint8()
 
 
-class UInt16Type(DataType):
+class UInt16Type(IntegerType):
     """Unsigned 16-bit integer type."""
 
     _dtype = PyDataType.uint16()
 
 
-class UInt32Type(DataType):
+class UInt32Type(IntegerType):
     """Unsigned 32-bit integer type."""
 
     _dtype = PyDataType.uint32()
 
 
-class UInt64Type(DataType):
+class UInt64Type(IntegerType):
     """Unsigned 64-bit integer type."""
 
     _dtype = PyDataType.uint64()
 
 
-class Float32Type(DataType):
+class FloatType(NumericType):
+    """Floating point subtypes."""
+
+
+class Float32Type(FloatType):
     """32-bit floating point type."""
 
     _dtype = PyDataType.float32()
 
 
-class Float64Type(DataType):
+class Float64Type(FloatType):
     """64-bit floating point type."""
 
     _dtype = PyDataType.float64()
@@ -735,7 +689,11 @@ class DecimalType(DataType):
         self.scale = scale
 
 
-class DateType(DataType):
+class TemporalType(DataType):
+    """Temporal subtypes."""
+
+
+class DateType(TemporalType):
     """Date type."""
 
     _dtype = PyDataType.date()
@@ -753,7 +711,7 @@ class TimeType(DataType):
         self.timeunit = timeunit
 
 
-class TimestampType(DataType):
+class TimestampType(TemporalType):
     """Timestamp type."""
 
     timeunit: TimeUnit

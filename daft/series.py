@@ -5,7 +5,7 @@ from typing import Any, Iterator, Literal, TypeVar
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
-from daft.datatype import DataType, _ensure_registered_super_ext_type
+from daft.datatype import DataType, FixedShapeTensorType, PythonType, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
@@ -254,7 +254,7 @@ class Series:
 
         # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
         # TODO: Push this down into self._series.to_arrow()?
-        if dtype.is_fixed_shape_tensor() and pyarrow_supports_fixed_shape_tensor():
+        if isinstance(dtype, FixedShapeTensorType) and pyarrow_supports_fixed_shape_tensor():
             pyarrow_dtype = dtype.to_arrow_dtype()
             arrow_series = self._series.to_arrow()
             return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
@@ -263,7 +263,7 @@ class Series:
 
     def to_pylist(self) -> list:
         """Convert this Series to a Python list."""
-        if self.datatype().is_python():
+        if isinstance(self.datatype(), PythonType):
             return self._series.to_pylist()
         elif self.datatype()._should_cast_to_python():
             return self._series.cast(DataType.python()._dtype).to_pylist()
@@ -712,7 +712,7 @@ class Series:
         return SeriesPartitioningNamespace.from_series(self)
 
     def __reduce__(self) -> tuple:
-        if self.datatype().is_python():
+        if isinstance(self.datatype(), PythonType):
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
         else:
             return (Series.from_arrow, (self.to_arrow(), self.name()))
