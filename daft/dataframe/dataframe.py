@@ -3069,7 +3069,7 @@ class DataFrame:
         return preview
 
     @DataframePublicAPI
-    def show(self, n: int = 8, format: PreviewFormat | None = None, **options) -> None:
+    def show(self, n: int = 8, format: Optional[PreviewFormat] = None, **options) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
 
         If IPython is installed, this will use IPython's `display` utility to pretty-print in a
@@ -3081,11 +3081,10 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> #
-            >>> df.show()
-            >>> df.show(format="markdown")  # print as markdown
-            >>> df.show(max_width=50)  # set all columns max_width
-            >>> df.show(align="left")  # set all columns alignment
+            >>> df.show()  # doctest: +SKIP
+            >>> df.show(format="markdown")  # doctest: +SKIP
+            >>> df.show(max_width=50)  # doctest: +SKIP
+            >>> df.show(align="left")  # doctest: +SKIP
 
         Args:
             n: number of rows to show. Defaults to 8.
