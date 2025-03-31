@@ -381,7 +381,6 @@ def test_window_value_over_sum(make_df):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
-@pytest.mark.skip(reason="Test needs updated window API from feat/window-definitions")
 def test_partition_by_with_expressions(make_df):
     """Test window functions with expressions in partition_by clause."""
     df = make_df({"num": [1, 2, 3, 4, 5, 6, 7, 8], "value": [10, 20, 30, 40, 50, 60, 70, 80]})
