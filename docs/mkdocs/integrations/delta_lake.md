@@ -104,8 +104,8 @@ When reading from a Delta Lake table into Daft:
 | `double` | [`daft.DataType.float64()`](../api_docs/datatype.html#daft.DataType.float64) |
 | `decimal(precision, scale)` | [`daft.DataType.decimal128(precision, scale)`](../api_docs/datatype.html#daft.DataType.decimal128) |
 | `date` | [`daft.DataType.date()`](../api_docs/datatype.html#daft.DataType.date) |
-| `timestamp` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](../api_docs/datatype.html#daft.DataType.timestamp) |
-| `timestampz`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](../api_docs/datatype.html#daft.DataType.timestamp) |
+| `timestamp_ntz` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](../api_docs/datatype.html#daft.DataType.timestamp) |
+| `timestamp`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](../api_docs/datatype.html#daft.DataType.timestamp) |
 | `string` | [`daft.DataType.string()`](../api_docs/datatype.html#daft.DataType.string) |
 | `binary` | [`daft.DataType.binary()`](../api_docs/datatype.html#daft.DataType.binary) |
 | **Nested Types** |
