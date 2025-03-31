@@ -28,11 +28,13 @@
   border-color: rgb(120,98,255);
 }
 
+/* heading background color for note admonitions */
 .md-typeset .note > .admonition-title,
 .md-typeset .note > summary {
   background-color: rgb(120,98,255, 0.1);
 }
 
+/* color of icon for note admonitions */
 .md-typeset .note > .admonition-title::before,
 .md-typeset .note > summary::before {
   background-color: rgb(120,98,255);
@@ -44,19 +46,24 @@
   border-color: rgba(68, 138, 255);
 }
 
+/* heading background color for example admonitions */
 .md-typeset .example > .admonition-title,
 .md-typeset .example > summary {
   background-color: rgba(68, 138, 255, 0.1);
 }
 
+/* colors of icon (before) & arrow (after) for example admonitions */
 .md-typeset .example > .admonition-title::before,
-.md-typeset .example > summary::before {
-  background-color: rgba(68, 138, 255);
-}
-
+.md-typeset .example > summary::before,
 .md-typeset .example > .admonition-title::after,
 .md-typeset .example > summary::after {
   background-color: rgba(68, 138, 255);
+}
+
+/* box shadow on click for expanding boxes for example admonitions */
+.md-typeset .admonition.example:focus-within,
+.md-typeset details.example:focus-within {
+  box-shadow: 0 0 0 .2rem rgba(68, 138, 255, 0.1)
 }
 
 /* use 100% width for tables */

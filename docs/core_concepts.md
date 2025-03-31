@@ -608,7 +608,7 @@ Rows in a DataFrame can be reordered based on some column using [`df.sort()`][da
 
 ### Numbering Rows
 
-Daft provides [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
+Daft provides [`monotonically_increasing_id()`][daft.functions.monotonically_increasing_id], which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
 
 - Using the **upper 28 bits** for the partition number
 - Using the **lower 36 bits** for the row number within each partition
@@ -1838,11 +1838,11 @@ To run multiple aggregations on a Grouped DataFrame, you can use the `agg` metho
 
 While standard aggregations like `sum` or `mean` work vertically on a single column, Daft also provides functions to operate horizontally across multiple columns for each row. These functions are part of the `daft.functions` module and include:
 
-- [`columns_min`]({{ api_path }}/function_methods/daft.functions.columns_min.html): Find the minimum value across specified columns for each row
-- [`columns_max`]({{ api_path }}/function_methods/daft.functions.columns_max.html): Find the maximum value across specified columns for each row
-- [`columns_mean`]({{ api_path }}/function_methods/daft.functions.columns_mean.html): Calculate the mean across specified columns for each row
-- [`columns_sum`]({{ api_path }}/function_methods/daft.functions.columns_sum.html): Calculate the sum across specified columns for each row
-- [`columns_avg`]({{ api_path }}/function_methods/daft.functions.columns_avg.html): Alias for `columns_mean`
+- [`columns_min`][daft.functions.columns_min]: Find the minimum value across specified columns for each row
+- [`columns_max`][daft.functions.columns_max]: Find the maximum value across specified columns for each row
+- [`columns_mean`][daft.functions.columns_mean]: Calculate the mean across specified columns for each row
+- [`columns_sum`][daft.functions.columns_sum]: Calculate the sum across specified columns for each row
+- [`columns_avg`][daft.functions.columns_avg]: Alias for `columns_mean`
 
 Here's a simple example showing these functions in action:
 
@@ -2182,7 +2182,7 @@ Daft is built to work comfortably with multimodal data types, including URLs and
 (Showing first 5 of 5 rows)
 ```
 
-Let's turn the bytes into human-readable images using [`image.decode()`]({{ api_path }}/expression_methods/daft.Expression.image.decode.html):
+Let's turn the bytes into human-readable images using [`image.decode()`][daft.expressions.expressions.ExpressionImageNamespace.decode]:
 
 === "🐍 Python"
 
