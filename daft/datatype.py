@@ -180,8 +180,8 @@ class DataType:
             print(f"inner: {inner}, shape: {shape}")
             return FixedShapeTensorType(dtype=DataType._from_pydatatype(inner), shape=shape)
         elif dt.is_sparse_tensor():
-            (inner, shape, use_offset_indices) = dt.get_sparse_tensor_inner()
-            return SparseTensorType(DataType._from_pydatatype(inner), shape, use_offset_indices)
+            (inner, use_offset_indices) = dt.get_sparse_tensor_inner()
+            return SparseTensorType(DataType._from_pydatatype(inner), use_offset_indices)
         elif dt.is_fixed_shape_sparse_tensor():
             (inner, shape, use_offset_indices) = dt.get_fixed_shape_sparse_tensor_inner()
             return FixedShapeSparseTensorType(DataType._from_pydatatype(inner), shape, use_offset_indices)
@@ -983,10 +983,8 @@ class FixedShapeSparseTensorType(LogicalType):
         return self._dtype.get_fixed_shape_sparse_tensor_inner()[2]
 
     def __init__(self, dtype: DataType, shape: tuple[int, ...], use_offset_indices: bool = False) -> None:
-        if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
-            raise ValueError("FixedShapeTensor shape must be a non-empty tuple of ints, but got: ", shape)
         if shape is not None:
-            if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
+            if not shape or any(not isinstance(n, int) for n in shape):
                 raise ValueError("SparseTensor shape must be a non-empty tuple of ints, but got: ", shape)
         self._dtype = PyDataType.sparse_tensor(dtype._dtype, shape, use_offset_indices)
 
