@@ -92,26 +92,32 @@ Daft and Delta Lake have compatible type systems. Here are how types are convert
 
 When reading from a Delta Lake table into Daft:
 
-| Delta Lake                  | Daft                          |
-| --------------------------- | ----------------------------- |
-| **Primitive Types** |
-| `boolean`                   | [`daft.DataType.bool()`][daft.datatype.DataType.bool] |
-| `byte`                      | [`daft.DataType.int8()`][daft.datatype.DataType.int8] |
-| `short`                     | [`daft.DataType.int16()`][daft.datatype.DataType.int16]|
-| `int`                       | [`daft.DataType.int32()`][daft.datatype.DataType.int32] |
-| `long`                      | [`daft.DataType.int64()`][daft.datatype.DataType.int64] |
-| `float`                     | [`daft.DataType.float32()`][daft.datatype.DataType.float32] |
-| `double`                    | [`daft.DataType.float64()`][daft.datatype.DataType.float64] |
-| `decimal(precision, scale)` | [`daft.DataType.decimal128(precision, scale)`][daft.datatype.DataType.decimal128] |
-| `date`                      | [`daft.DataType.date()`][daft.datatype.DataType.date] |
-| `timestamp`                 | [`daft.DataType.timestamp(timeunit="us", timezone=None)`][daft.datatype.DataType.timestamp] |
-| `timestampz`                | [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`][daft.datatype.DataType.timestamp] |
-| `string`                    | [`daft.DataType.string()`][daft.datatype.DataType.string] |
-| `binary`                    | [`daft.DataType.binary()`][daft.datatype.DataType.binary] |
-| **Nested Types** |
-| `struct(fields)`            | [`daft.DataType.struct(fields)`][daft.datatype.DataType.struct] |
-| `list(child_type)`          | [`daft.DataType.list(child_type)`][daft.datatype.DataType.list] |
-| `map(K, V)`                 | [`daft.DataType.struct({"key": K, "value": V})`][daft.datatype.DataType.struct] |
+| Delta Lake                          | Daft                                                                                         |
+| ----------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Primitive Types**                 |
+| `BOOLEAN`                           | [`daft.DataType.bool()`][daft.datatype.DataType.bool]                                        |
+| `BYTE`                              | [`daft.DataType.int8()`][daft.datatype.DataType.int8]                                        |
+| `SHORT`                             | [`daft.DataType.int16()`][daft.datatype.DataType.int16]                                      |
+| `INT`                               | [`daft.DataType.int32()`][daft.datatype.DataType.int32]                                      |
+| `LONG`                              | [`daft.DataType.int64()`][daft.datatype.DataType.int64]                                      |
+| `FLOAT`                             | [`daft.DataType.float32()`][daft.datatype.DataType.float32]                                  |
+| `DOUBLE`                            | [`daft.DataType.float64()`][daft.datatype.DataType.float64]                                  |
+| `DECIMAL(precision, scale)`         | [`daft.DataType.decimal128(precision, scale)`][daft.datatype.DataType.decimal128]            |
+| `DATE`                              | [`daft.DataType.date()`][daft.datatype.DataType.date]                                        |
+| `TIMESTAMP_NTZ`                     | [`daft.DataType.timestamp(timeunit="us", timezone=None)`][daft.datatype.DataType.timestamp]  |
+| `TIMESTAMP`                         | [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`][daft.datatype.DataType.timestamp] |
+| `STRING`                            | [`daft.DataType.string()`][daft.datatype.DataType.string]                                    |
+| `BINARY`                            | [`daft.DataType.binary()`][daft.datatype.DataType.binary]                                    |
+| **Nested Types**                    |
+| `MAP<key_type, value_type>`         | [`daft.DataType.map(key_type, value_type)`][daft.datatype.DataType.map]                      |
+| `STRUCT<[field_name: field_type,]>` | [`daft.DataType.struct(fields)`][daft.datatype.DataType.struct]                              |
+| `ARRAY<element_type>`               | [`daft.DataType.list(element_type)`][daft.datatype.DataType.list]                            |
+
+References:
+
+* [Python `unitycatalog` type name code reference](https://github.com/unitycatalog/unitycatalog-python/blob/main/src/unitycatalog/types/table_info.py)
+* [Spark types documentation](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/data_types.html)
+* [Databricks types documentation](https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-datatypes)
 
 ## Roadmap
 
