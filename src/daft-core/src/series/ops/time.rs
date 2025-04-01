@@ -281,4 +281,9 @@ impl Series {
             ))),
         }
     }
+
+    pub fn dt_unix_timestamp(&self, time_unit: TimeUnit) -> DaftResult<Self> {
+        let cast_to = DataType::Timestamp(time_unit, None);
+        self.cast(&cast_to)?.cast(&DataType::Int64)
+    }
 }

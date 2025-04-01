@@ -32,6 +32,11 @@ def test_temporals():
         daft.col("datetimes").dt.microsecond().alias("microsecond"),
         daft.col("datetimes").dt.nanosecond().alias("nanosecond"),
         daft.col("datetimes").dt.year().alias("year"),
+        daft.col("datetimes").dt.unix_timestamp().alias("unix_timestamp"),
+        daft.col("datetimes").dt.unix_timestamp("s").alias("unix_timestamp_s"),
+        daft.col("datetimes").dt.unix_timestamp("ms").alias("unix_timestamp_ms"),
+        daft.col("datetimes").dt.unix_timestamp("us").alias("unix_timestamp_us"),
+        daft.col("datetimes").dt.unix_timestamp("ns").alias("unix_timestamp_ns"),
     ).collect()
 
     actual = daft.sql(
@@ -49,6 +54,11 @@ def test_temporals():
         microsecond(datetimes) as microsecond,
         nanosecond(datetimes) as nanosecond,
         year(datetimes) as year,
+        unix_timestamp(datetimes) as unix_timestamp,
+        unix_timestamp(datetimes, 's') as unix_timestamp_s,
+        unix_timestamp(datetimes, 'ms') as unix_timestamp_ms,
+        unix_timestamp(datetimes, 'us') as unix_timestamp_us,
+        unix_timestamp(datetimes, 'ns') as unix_timestamp_ns
     FROM test
     """,
         catalog=catalog,

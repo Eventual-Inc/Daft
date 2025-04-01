@@ -1,7 +1,8 @@
+use daft_core::prelude::TimeUnit;
 use daft_dsl::ExprRef;
 use daft_functions::temporal::{
     dt_date, dt_day, dt_day_of_week, dt_day_of_year, dt_hour, dt_microsecond, dt_millisecond,
-    dt_minute, dt_month, dt_nanosecond, dt_second, dt_time, dt_year,
+    dt_minute, dt_month, dt_nanosecond, dt_second, dt_time, dt_unix_timestamp, dt_year,
 };
 use sqlparser::ast::FunctionArg;
 
@@ -29,6 +30,7 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("nanosecond", SQLNanosecond);
         parent.add_fn("year", SQLYear);
         parent.add_fn("time", SQLTime);
+        parent.add_fn("unix_timestamp", SQLUnixTimestamp);
 
         // TODO: Add truncate
         // Our `dt_truncate` function has vastly different semantics than SQL `DATE_TRUNCATE` function.
@@ -84,3 +86,44 @@ temporal!(SQLMicrosecond, dt_microsecond);
 temporal!(SQLNanosecond, dt_nanosecond);
 temporal!(SQLYear, dt_year);
 temporal!(SQLTime, dt_time);
+
+pub struct SQLUnixTimestamp;
+
+impl SQLFunction for SQLUnixTimestamp {
+    fn to_expr(
+        &self,
+        inputs: &[FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input] => {
+                let input = planner.plan_function_arg(input)?;
+                let tu = TimeUnit::Milliseconds;
+                Ok(dt_unix_timestamp(input, tu)?)
+            }
+            [input, tu] => {
+                let input = planner.plan_function_arg(input)?;
+                let tu = planner.plan_function_arg(tu)?;
+                let Some(tu) = tu.as_literal().and_then(|lit| lit.as_str()) else {
+                    unsupported_sql_err!("Invalid arguments for unix_timestamp: '{inputs:?}'",)
+                };
+
+                let tu = tu.parse::<TimeUnit>()?;
+
+                Ok(dt_unix_timestamp(input, tu)?)
+            }
+            _ => unsupported_sql_err!(
+                "Invalid arguments for {}: '{inputs:?}'",
+                stringify!(dt_unix_timestamp)
+            ),
+        }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Converts a datetime column to a Unix timestamp. with the specified time unit. (default: milliseconds)".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "time_unit"]
+    }
+}

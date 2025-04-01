@@ -1,3 +1,4 @@
+use daft_core::python::PyTimeUnit;
 use daft_dsl::python::PyExpr;
 use pyo3::{pyfunction, PyResult};
 
@@ -18,4 +19,9 @@ simple_python_wrapper!(dt_year, crate::temporal::dt_year, [expr: PyExpr]);
 #[pyfunction]
 pub fn dt_truncate(expr: PyExpr, interval: &str, relative_to: PyExpr) -> PyResult<PyExpr> {
     Ok(crate::temporal::truncate::dt_truncate(expr.into(), interval, relative_to.into()).into())
+}
+
+#[pyfunction]
+pub fn dt_unix_timestamp(expr: PyExpr, time_unit: PyTimeUnit) -> PyResult<PyExpr> {
+    Ok(crate::temporal::dt_unix_timestamp(expr.into(), time_unit.timeunit)?.into())
 }

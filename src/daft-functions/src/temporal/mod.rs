@@ -135,6 +135,60 @@ pub fn dt_time(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Time {}, vec![input]).into()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct UnixTimestamp {
+    pub time_unit: TimeUnit,
+}
+
+#[typetag::serde]
+impl ScalarUDF for UnixTimestamp {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &'static str {
+        "unix_timestamp"
+    }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        match inputs {
+            [input] => match input.to_field(schema) {
+                Ok(field) => match field.dtype {
+                    DataType::Timestamp(..) | DataType::Date => {
+                        Ok(Field::new(field.name, DataType::Int64))
+                    }
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected input to be date or timestamp, got {}",
+                        field.dtype
+                    ))),
+                },
+                Err(e) => Err(e),
+            },
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+        match inputs {
+            [input] => input
+                .cast(&DataType::Timestamp(self.time_unit, None))
+                .and_then(|s| s.cast(&DataType::Int64)),
+
+            _ => Err(DaftError::ValueError(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+}
+
+pub fn dt_unix_timestamp(input: ExprRef, time_unit: TimeUnit) -> DaftResult<ExprRef> {
+    Ok(ScalarFunction::new(UnixTimestamp { time_unit }, vec![input]).into())
+}
+
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
@@ -162,6 +216,12 @@ mod test {
                     interval: String::new(),
                 }),
                 "truncate",
+            ),
+            (
+                Arc::new(UnixTimestamp {
+                    time_unit: TimeUnit::Nanoseconds,
+                }),
+                "unix_timestamp",
             ),
         ];
 

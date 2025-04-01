@@ -2433,6 +2433,45 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         relative_to = Expression._to_expression(relative_to)
         return Expression._from_pyexpr(native.dt_truncate(self._expr, interval, relative_to._expr))
 
+    def unix_timestamp(self, time_unit: str | TimeUnit | None = None) -> Expression:
+        """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: milliseconds).
+
+        Example:
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "dates": [
+            ...             date(2001, 1, 1),
+            ...             date(2001, 1, 2),
+            ...             date(2001, 1, 3),
+            ...             None,
+            ...         ]
+            ...     }
+            ... )
+            >>>
+            >>> df.with_column("timestamp", daft.col("dates").dt.unix_timestamp("ns")).show()
+            ╭────────────┬────────────────────╮
+            │ dates      ┆ timestamp          │
+            │ ---        ┆ ---                │
+            │ Date       ┆ Int64              │
+            ╞════════════╪════════════════════╡
+            │ 2001-01-01 ┆ 978307200000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2001-01-02 ┆ 978393600000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2001-01-03 ┆ 978480000000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None       ┆ None               │
+            ╰────────────┴────────────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        if time_unit is None:
+            time_unit = TimeUnit.ms()
+        if isinstance(time_unit, str):
+            time_unit = TimeUnit.from_str(time_unit)
+
+        return Expression._from_pyexpr(native.dt_unix_timestamp(self._expr, time_unit._timeunit))
+
 
 class ExpressionStringNamespace(ExpressionNamespace):
     def contains(self, substr: str | Expression) -> Expression:

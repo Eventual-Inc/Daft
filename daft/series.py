@@ -5,7 +5,7 @@ from typing import Any, Iterator, Literal, TypeVar
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
-from daft.datatype import DataType, _ensure_registered_super_ext_type
+from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
@@ -1016,6 +1016,13 @@ class SeriesDateNamespace(SeriesNamespace):
         if relative_to is None:
             relative_to = Series.from_arrow(pa.array([None]))
         return Series._from_pyseries(self._series.dt_truncate(interval, relative_to._series))
+
+    def unix_timestamp(self, time_unit: str | TimeUnit | None = None) -> Series:
+        if time_unit is None:
+            time_unit = TimeUnit.ms()
+        if isinstance(time_unit, str):
+            time_unit = TimeUnit.from_str(time_unit)
+        return Series._from_pyseries(self._series.dt_unix_timestamp(time_unit._timeunit))
 
 
 class SeriesPartitioningNamespace(SeriesNamespace):

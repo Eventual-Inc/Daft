@@ -442,3 +442,21 @@ def test_series_timestamp_truncate_operation_invalid_relative_to() -> None:
     with pytest.raises(ValueError):
         # Start time must be a series of timestamps
         input_series.dt.truncate("1 second", Series.from_pylist([1]))
+
+
+@pytest.mark.parametrize(
+    "timeunit,expected",
+    [
+        ("s", 1641092645),
+        ("ms", 1641092645000),
+    ],
+)
+def test_series_unix_timestamp(timeunit, expected):
+    from datetime import datetime
+
+    input = datetime(2022, 1, 2, 3, 4, 5, 6)
+    input_series = Series.from_pylist([input])
+
+    expected_series = Series.from_pylist([int(expected)])
+    actual_series = input_series.dt.unix_timestamp(timeunit)
+    assert expected_series.to_pylist() == actual_series.to_pylist()
