@@ -193,7 +193,7 @@ However, unlike the Python Expression API which encourages method-chaining (e.g.
 
 !!! note "Note"
 
-    A full catalog of the available SQL Functions in Daft is available in the [`SQL API Docs`](../api_docs/sql.md).
+    A full catalog of the available SQL Functions in Daft is available in the [`SQL API Docs`](../api/sql.md).
 
     Note that it closely mirrors the Python API, with some function naming differences vs the available Python methods.
     We also have some aliased functions for ANSI SQL-compliance or familiarity to users coming from other common SQL dialects such as PostgreSQL and SparkSQL to easily find their functionality.

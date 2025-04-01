@@ -34,9 +34,11 @@
   background-color: rgb(120,98,255, 0.1);
 }
 
-/* color of icon for note admonitions */
+/* color of icon (before) & arrow (after) for note admonitions */
 .md-typeset .note > .admonition-title::before,
-.md-typeset .note > summary::before {
+.md-typeset .note > summary::before,
+.md-typeset .note > .admonition-title::after,
+.md-typeset .note > summary::after {
   background-color: rgb(120,98,255);
 }
 

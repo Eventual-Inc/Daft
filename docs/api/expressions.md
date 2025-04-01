@@ -9,6 +9,10 @@ Daft Expressions allow you to express some computation that needs to happen in a
 ::: daft.expressions.list_
 ::: daft.expressions.struct
 
+## SQL
+
+::: daft.sql.sql.sql_expr
+
 <!--
 ## Generic
 ## Numeric

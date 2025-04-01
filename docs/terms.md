@@ -1,6 +1,6 @@
 # Terminology
 
-Daft is a distributed data engine. The main abstraction in Daft is the [`DataFrame`](api_docs/dataframe.md), which conceptually can be thought of as a "table" of data with rows and columns.
+Daft is a distributed data engine. The main abstraction in Daft is the [`DataFrame`](api/dataframe.md), which conceptually can be thought of as a "table" of data with rows and columns.
 
 Daft also exposes a [`SQL`](core_concepts.md#sql) interface which interoperates closely with the DataFrame interface, allowing you to express data transformations and queries on your tables as SQL strings.
 
@@ -16,7 +16,7 @@ Daft DataFrames are lazy. This means that calling most methods on a DataFrame wi
 
 ## Expressions
 
-An [`Expression`](api_docs/expressions.md) is a fundamental concept in Daft that allows you to define computations on DataFrame columns. They are the building blocks for transforming and manipulating data within your DataFrame and will be your best friend if you are working with Daft primarily using the Python API.
+An [`Expression`](api/expressions.md) is a fundamental concept in Daft that allows you to define computations on DataFrame columns. They are the building blocks for transforming and manipulating data within your DataFrame and will be your best friend if you are working with Daft primarily using the Python API.
 
 > Learn more at [Expressions](core_concepts.md#expressions)
 
@@ -87,7 +87,7 @@ You can examine a logical plan using [`df.explain()`][daft.DataFrame.explain], h
 
 ## SQL
 
-[SQL (Structured Query Language)](https://en.wikipedia.org/wiki/SQL) is a common query language for expressing queries over tables of data. Daft exposes a SQL API as an alternative (but often also complementary API) to the Python [`DataFrame`](api_docs/dataframe.md) and [`Expression`](api_docs/expressions.md) APIs for building queries.
+[SQL (Structured Query Language)](https://en.wikipedia.org/wiki/SQL) is a common query language for expressing queries over tables of data. Daft exposes a SQL API as an alternative (but often also complementary API) to the Python [`DataFrame`](api/dataframe.md) and [`Expression`](api/expressions.md) APIs for building queries.
 
 You can use SQL in Daft via the [`daft.sql()`][daft.sql.sql.sql] function, and Daft will also convert many SQL-compatible strings into Expressions via [`daft.sql_expr()`][daft.sql.sql.sql_expr] for easy interoperability with DataFrames.
 

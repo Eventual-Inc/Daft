@@ -47,14 +47,14 @@ Any subsequent filter operations on the Daft `df` DataFrame object will be corre
 
 ## Writing to a Table
 
-To write to an Apache Iceberg table, use the [`daft.write_iceberg()`][daft.DataFrame.write_iceberg] method.
+To write to an Apache Iceberg table, use the [`df.write_iceberg()`][daft.DataFrame.write_iceberg] method.
 
 The following is an example of appending data to an Iceberg table:
 
 === "🐍 Python"
 
     ```python
-    written_df = daft.write_iceberg(table, mode="append")
+    written_df = df.write_iceberg(table, mode="append")
     written_df.show()
     ```
 

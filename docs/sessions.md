@@ -266,7 +266,7 @@ sess.sql("SELECT * FROM example.tbl, temp LIMIT 1").show()
 
 ## Reference
 
-For complete documentation, please see the [Session API docs](api_docs/sessions.md).
+For complete documentation, please see the [Session API docs](api/sessions.md).
 
 | Method                                                                                                                                  | Description                                                        |
 |-----------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------|

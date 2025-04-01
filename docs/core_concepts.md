@@ -900,7 +900,7 @@ Since column "A" is an integer, we can run numeric computation such as addition,
 
 Notice that the returned types of these operations are also well-typed according to their input types. For example, calling ``df["A"] > 1`` returns a column of type [`Boolean`][daft.datatype.DataType.bool].
 
-Both the [`Float`][daft.datatype.DataType.float32] and [`Int`][daft.datatype.DataType.int16] types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the [Expressions API Reference](api_docs/expressions.md).
+Both the [`Float`][daft.datatype.DataType.float32] and [`Int`][daft.datatype.DataType.int16] types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the [Expressions API Reference](api/expressions.md).
 
 #### String Expressions
 
@@ -956,7 +956,7 @@ Unlike the numeric types, the string type does not support arithmetic operations
 (Showing first 3 rows)
 ```
 
-There are also many string operators that are accessed through a separate [`.str.*`](api_docs/expressions.html#strings) "method namespace".
+There are also many string operators that are accessed through a separate [`.str.*`](api/expressions.html#strings) "method namespace".
 
 <!-- todo(docs - cc): add relative path to .str after figure out str namespace-->
 
@@ -992,13 +992,13 @@ For example, to check if each element in column "B" contains the substring "a", 
 (Showing first 3 rows)
 ```
 
-You may find a full list of string operations in the [Expressions API Reference](api_docs/expressions.md).
+You may find a full list of string operations in the [Expressions API Reference](api/expressions.md).
 
 #### URL Expressions
 
 One special case of a String column you may find yourself working with is a column of URL strings.
 
-Daft provides the [`.url.*`](api_docs/expressions.md#urls) method namespace with functionality for working with URL strings. For example, to download data from URLs:
+Daft provides the [`.url.*`](api/expressions.md#urls) method namespace with functionality for working with URL strings. For example, to download data from URLs:
 
 <!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
@@ -1054,7 +1054,7 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 
 #### JSON Expressions
 
-If you have a column of JSON strings, Daft provides the [`.json.*`](api_docs/expressions.md#json) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
+If you have a column of JSON strings, Daft provides the [`.json.*`](api/expressions.md#json) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
 
 <!-- todo(docs - cc): add relative path to .json after figure out json namespace-->
 
@@ -1162,7 +1162,7 @@ For example, here we can compare if each element in column "A" is equal to eleme
 (Showing first 3 of 3 rows)
 ```
 
-Other useful comparisons can be found in the [Expressions API Reference](api_docs/expressions.html#numeric).
+Other useful comparisons can be found in the [Expressions API Reference](api/expressions.html#numeric).
 
 <!-- todo(docs - cc): current expressions api docs is not separated by sections, so how to reference numeric section? -->
 
@@ -1291,7 +1291,7 @@ You can perform arithmetic operations with timestamps and durations, such as add
 
 ##### Temporal Component Extraction
 
-The [`.dt.*`](api_docs/expressions.html#temporal) method namespace provides extraction methods for the components of a timestamp, such as year, month, day, hour, minute, and second:
+The [`.dt.*`](api/expressions.html#temporal) method namespace provides extraction methods for the components of a timestamp, such as year, month, day, hour, minute, and second:
 
 <!-- todo(docs - cc): current expressions api docs is not separated by sections, so how to reference temporal section? -->
 
@@ -1493,7 +1493,7 @@ Daft supports file paths to a single file, a directory of files, and wildcards. 
     df = daft.read_csv("s3://mybucket/path/to/*.csv")
     ```
 
-To learn more about each of these constructors, as well as the options that they support, consult the API documentation on [`creating DataFrames from files`](api_docs/dataframe_creation.md#files).
+To learn more about each of these constructors, as well as the options that they support, consult the API documentation on [`creating DataFrames from files`](api/dataframe_creation.md#files).
 
 ### From Data Catalogs
 
@@ -1530,7 +1530,7 @@ For testing, or small datasets that fit in memory, you may also create DataFrame
     df = daft.from_pylist([{"A": 1, "B": "foo"}, {"A": 2, "B": "bar"}, {"A": 3, "B": "baz"}])
     ```
 
-To learn more, consult the API documentation on [`creating DataFrames from in-memory data structures`](api_docs/dataframe_creation.md#in-memory-data).
+To learn more, consult the API documentation on [`creating DataFrames from in-memory data structures`](api/dataframe_creation.md#in-memory-data).
 
 
 ### From Databases
@@ -1619,7 +1619,7 @@ Daft provides simple DataTypes that are ubiquituous in many DataFrames such as n
 
 !!! tip "Tip"
 
-    For a full overview on all the DataTypes that Daft supports, see the [DataType API Reference](api_docs/datatypes.md).
+    For a full overview on all the DataTypes that Daft supports, see the [DataType API Reference](api/datatypes.md).
 
 
 ### Numeric DataTypes
@@ -1700,7 +1700,7 @@ Daft supports many more interesting complex DataTypes, for example:
 * [`DataType.embedding()`][daft.datatype.DataType.embedding]: Lower-dimensional vector representation of data (e.g. words)
 * [`DataType.image()`][daft.datatype.DataType.image]: NHWC images
 
-Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the [image expressions API reference](api_docs/expressions.md#image). For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
+Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the [image expressions API reference](api/expressions.md#image). For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
 
 <!-- todo(docs - cc): add relative path to expressions image page after figure out image namespace-->
 
@@ -1716,7 +1716,7 @@ SQL is a human-readable way of constructing these query plans, and can often be 
 
     Please give us feedback or submit an [issue](https://github.com/Eventual-Inc/Daft/issues) and we'd love to hear more about what you would like.
 
-Head to our [SQL Overview] page for more examples on using SQL with DataFrames, SQL Expressions, and SQL Functions.
+Head to our [SQL Overview](sql/overview.md) page for more examples on using SQL with DataFrames, SQL Expressions, and SQL Functions.
 
 ## Aggregations and Grouping
 
@@ -1751,7 +1751,7 @@ An aggregation can be applied on an entire DataFrame, for example to get the mea
 (Showing first 1 of 1 rows)
 ```
 
-For a full list of available Dataframe aggregations, see [Aggregations](api_docs/dataframe.html#df-aggregations).
+For a full list of available Dataframe aggregations, see [Aggregations](api/dataframe.html#df-aggregations).
 
 <!-- todo(docs - cc): current dataframe api docs is not separated by sections, so how to reference agg section? -->
 
@@ -1779,7 +1779,7 @@ Aggregations can also be mixed and matched across columns, via the [`.agg()`][da
 (Showing first 1 of 1 rows)
 ```
 
-For a full list of available aggregation expressions, see [Aggregation Expressions](api_docs/expressions.html#api-aggregation-expression)
+For a full list of available aggregation expressions, see [Aggregation Expressions](api/expressions.html#api-aggregation-expression)
 
 <!-- todo(docs - cc): current expressions api docs is not separated by sections, so how to reference agg section? -->
 
@@ -1940,14 +1940,14 @@ For example, the following example creates a new `flattened_image` column by cal
 
 Note here that we use the `return_dtype` keyword argument to specify that our returned column type is a Python column!
 
-### Multi-column per-partition functions using [`@udf`](api_docs/udf.md#creating-udfs)
+### Multi-column per-partition functions using [`@udf`](api/udf.md#creating-udfs)
 
 [`.apply()`][daft.expressions.Expression.apply] is great for convenience, but has two main limitations:
 
 1. It can only run on single columns
 2. It can only run on single items at a time
 
-Daft provides the [`@udf`](api_docs/udf.md#creating-udfs) decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
+Daft provides the [`@udf`](api/udf.md#creating-udfs) decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
 
 For example, let's try writing a function that will crop all our images in the `image` column by its corresponding value in the `crop` column:
 
@@ -1996,7 +1996,7 @@ There's a few things happening here, let's break it down:
 
     c. An integer indicating how much padding to apply to the right and bottom of the cropping: `padding`
 
-2. To allow Daft to pass column data into the `images` and `crops` arguments, we decorate the function with [`@udf`](api_docs/udf.md#creating-udfs)
+2. To allow Daft to pass column data into the `images` and `crops` arguments, we decorate the function with [`@udf`](api/udf.md#creating-udfs)
 
     a. `return_dtype` defines the returned data type. In this case, we return a column containing Python objects of numpy arrays
 

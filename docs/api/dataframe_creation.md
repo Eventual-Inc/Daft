@@ -2,6 +2,12 @@
 
 Daft offers a variety of approaches to creating a DataFrame from various data sources like in-memory data, files, data catalogs, and integrations. Learn more about [Creating DataFrames](../core_concepts.md#creating-a-dataframe) in Daft User Guide.
 
+## SQL
+
+::: daft.sql.sql.sql
+    options:
+        heading_level: 3
+
 ## In-Memory Data
 
 ::: daft.from_pylist

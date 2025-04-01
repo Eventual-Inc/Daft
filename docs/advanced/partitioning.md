@@ -63,7 +63,7 @@ To interrogate the partitioning of your current DataFrame, you may use the [`df.
     |   ...
 ```
 
-In the above example, the call to [`df.read_parquet()`][daft.read_parquet] read 100 Parquet files, but the Physical Plan indicates that Daft will only create 3 partitions. This is because these files are quite small (in this example, totalling about 72MB of data) and Daft recognizes that it should be able to read them as just 3 partitions, each with about 33 files each!
+In the above example, the call to [`daft.read_parquet()`][daft.read_parquet] read 100 Parquet files, but the Physical Plan indicates that Daft will only create 3 partitions. This is because these files are quite small (in this example, totalling about 72MB of data) and Daft recognizes that it should be able to read them as just 3 partitions, each with about 33 files each!
 
 ## How can I change the way my data is partitioned?
 
