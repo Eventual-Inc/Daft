@@ -22,27 +22,6 @@ use crate::{
     LogicalPlan, LogicalPlanRef,
 };
 
-fn has_sides(expr: &ExprRef) -> (bool, bool) {
-    let mut has_left = false;
-    let mut has_right = false;
-
-    expr.apply(|e| {
-        match e.as_ref() {
-            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(_, JoinSide::Left))) => {
-                has_left = true;
-            }
-            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(_, JoinSide::Right))) => {
-                has_right = true;
-            }
-            _ => {}
-        }
-        Ok(TreeNodeRecursion::Continue)
-    })
-    .unwrap();
-
-    (has_left, has_right)
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct JoinPredicate(Option<ExprRef>);
 
@@ -75,6 +54,31 @@ impl JoinPredicate {
         self.0.is_none()
     }
 
+    /// Check if an expression contains columns from one side of the join
+    fn uses_join_side(expr: &ExprRef, side: JoinSide) -> bool {
+        expr.exists(|e| {
+            matches!(
+                e.as_ref(),
+                Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(_, s))) if *s == side
+            )
+        })
+    }
+
+    /// Replace ResolvedColumn::JoinSide with ResolvedColumn::Basic
+    fn replace_join_side_cols(expr: ExprRef) -> ExprRef {
+        expr.transform(|e| {
+            if let Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(Field { name, .. }, _))) =
+                e.as_ref()
+            {
+                Ok(Transformed::yes(resolved_col(name.clone())))
+            } else {
+                Ok(Transformed::no(e))
+            }
+        })
+        .unwrap()
+        .data
+    }
+
     /// Split out the equality predicates where one side is all left and the other side is all right columns.
     ///
     /// Returns (remaining, left keys, right keys, null equals null)
@@ -83,42 +87,23 @@ impl JoinPredicate {
             return (Self::empty(), vec![], vec![], vec![]);
         };
 
-        fn replace_join_side_cols(expr: ExprRef) -> ExprRef {
-            expr.transform(|e| {
-                if let Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
-                    Field { name, .. },
-                    _,
-                ))) = e.as_ref()
-                {
-                    Ok(Transformed::yes(resolved_col(name.clone())))
-                } else {
-                    Ok(Transformed::no(e))
-                }
-            })
-            .unwrap()
-            .data
-        }
-
         fn extract_equi_predicate(expr: &Expr) -> Option<(ExprRef, ExprRef, bool)> {
             match expr {
                 Expr::BinaryOp { op, left, right }
                     if matches!(op, Operator::Eq | Operator::EqNullSafe) =>
                 {
-                    let (left_has_left, left_has_right) = has_sides(left);
-                    let (right_has_left, right_has_right) = has_sides(right);
-
                     let (left_expr, right_expr) = match (
-                        left_has_left,
-                        left_has_right,
-                        right_has_left,
-                        right_has_right,
+                        JoinPredicate::uses_join_side(left, JoinSide::Left),
+                        JoinPredicate::uses_join_side(left, JoinSide::Right),
+                        JoinPredicate::uses_join_side(right, JoinSide::Left),
+                        JoinPredicate::uses_join_side(right, JoinSide::Right),
                     ) {
                         (true, false, false, true) => (left, right),
                         (false, true, true, false) => (right, left),
                         _ => return None,
                     };
-                    let left_cleaned = replace_join_side_cols(left_expr.clone());
-                    let right_cleaned = replace_join_side_cols(right_expr.clone());
+                    let left_cleaned = JoinPredicate::replace_join_side_cols(left_expr.clone());
+                    let right_cleaned = JoinPredicate::replace_join_side_cols(right_expr.clone());
                     let is_null_safe = *op == Operator::EqNullSafe;
                     Some((left_cleaned, right_cleaned, is_null_safe))
                 }
@@ -150,37 +135,31 @@ impl JoinPredicate {
 
     /// Split out the predicates in the conjunction that only use columns from one side of the join.
     ///
-    /// Returns (remaining, left predicate, right predicate)
-    pub fn split_side_only_preds(&self) -> (Self, Option<ExprRef>, Option<ExprRef>) {
+    /// Does not include predicates that use neither join side.
+    ///
+    /// Returns (remaining, side-only predicate)
+    pub fn split_side_only_preds(&self, side: JoinSide) -> (Self, Option<ExprRef>) {
         let Some(pred) = &self.0 else {
-            return (Self::empty(), None, None);
+            return (Self::empty(), None);
         };
 
         let exprs = split_conjunction(pred);
 
         let mut remaining_exprs = Vec::new();
-        let mut left_preds = Vec::new();
-        let mut right_preds = Vec::new();
+        let mut side_only_preds = Vec::new();
 
         for e in exprs {
-            let (has_left, has_right) = has_sides(&e);
-
-            if !has_right {
-                // put expressions that use neither side in left as well
-                left_preds.push(e);
-            } else if !has_left {
-                right_preds.push(e);
+            if Self::uses_join_side(&e, side) && !Self::uses_join_side(&e, !side) {
+                side_only_preds.push(e);
             } else {
                 remaining_exprs.push(e);
             }
         }
 
         let remaining = Self(combine_conjunction(remaining_exprs));
+        let side_only_pred = combine_conjunction(side_only_preds).map(Self::replace_join_side_cols);
 
-        let left_pred = combine_conjunction(left_preds);
-        let right_pred = combine_conjunction(right_preds);
-
-        (remaining, left_pred, right_pred)
+        (remaining, side_only_pred)
     }
 }
 
