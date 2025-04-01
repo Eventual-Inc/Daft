@@ -24,7 +24,7 @@ class Window:
 
     >>> from daft import Window, col
     >>> # Define a window partitioned by category
-    >>> window_spec = Window.partition_by("category")
+    >>> window_spec = Window().partition_by("category")
     >>> # Apply aggregation functions
     >>> df = df.select(
     ...     col("value").sum().over(window_spec).alias("category_total"),
@@ -34,12 +34,12 @@ class Window:
     Partitioning by multiple columns:
 
     >>> # Define a window partitioned by both department and category
-    >>> window_spec = Window.partition_by(["department", "category"])
+    >>> window_spec = Window().partition_by(["department", "category"])
     >>> df = df.select(col("sales").sum().over(window_spec).alias("dept_category_total"))
 
     Using window aggregations in expressions:
 
-    >>> window_spec = Window.partition_by("category")
+    >>> window_spec = Window().partition_by("category")
     >>> df = df.select((col("value") / col("value").sum().over(window_spec)).alias("pct_of_category"))
     """
 
@@ -65,8 +65,7 @@ class Window:
         column_iter: Iterable[ColumnInputType] = [columns] if Window._is_column_input(columns) else columns  # type: ignore
         return [col(c) if isinstance(c, str) else c for c in column_iter]
 
-    @classmethod
-    def partition_by(cls, *cols: ManyColumnsInputType) -> Window:
+    def partition_by(self, *cols: ManyColumnsInputType) -> Window:
         """Partitions the dataset by one or more columns or expressions.
 
         Args:
@@ -85,18 +84,17 @@ class Window:
         # Handle column inputs similar to DataFrame methods
         expressions = []
         for c in cols:
-            expressions.extend(cls._column_inputs_to_expressions(c))
+            expressions.extend(Window._column_inputs_to_expressions(c))
 
         if not expressions:
             raise ValueError("At least one partition column must be specified")
 
         # Create new Window with updated spec
-        window = cls()
-        window._spec = window._spec.with_partition_by([expr._expr for expr in expressions])
+        window = Window()
+        window._spec = self._spec.with_partition_by([expr._expr for expr in expressions])
         return window
 
-    @classmethod
-    def order_by(cls, *cols: ManyColumnsInputType, ascending: bool | list[bool] = True) -> Window:
+    def order_by(self, *cols: ManyColumnsInputType, ascending: bool | list[bool] = True) -> Window:
         """Orders rows within each partition by specified columns or expressions.
 
         Args:
@@ -110,7 +108,7 @@ class Window:
         # Handle column inputs similar to DataFrame methods
         expressions = []
         for c in cols:
-            expressions.extend(cls._column_inputs_to_expressions(c))
+            expressions.extend(Window._column_inputs_to_expressions(c))
 
         # Handle ascending parameter
         if isinstance(ascending, bool):
@@ -121,8 +119,8 @@ class Window:
             asc_flags = ascending
 
         # Create new Window with updated spec
-        window = cls()
-        window._spec = window._spec.with_order_by([expr._expr for expr in expressions], asc_flags)
+        window = Window()
+        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], asc_flags)
         return window
 
     def rows_between(
