@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import Any
 
 from daft.daft import WindowBoundary as _WindowBoundary
 from daft.daft import WindowFrame as _WindowFrame
 from daft.daft import WindowFrameType as _WindowFrameType
 from daft.daft import WindowSpec as _WindowSpec
-from daft.expressions import Expression, col
-
-# Import column input types from DataFrame for type checking
-if TYPE_CHECKING:
-    from daft.dataframe.dataframe import ColumnInputType, ManyColumnsInputType
+from daft.utils import ManyColumnsInputType, column_inputs_to_expressions
 
 
 class Window:
@@ -19,32 +15,39 @@ class Window:
     This class provides a way to specify window definitions for window functions.
     Window functions operate on a group of rows (called a window frame) and return
     a result for each row based on the values in its window frame.
+
+    Basic window aggregation with a single partition column:
+
+    >>> from daft import Window, col
+    >>> # Define a window partitioned by category
+    >>> window_spec = Window().partition_by("category")
+    >>> # Apply aggregation functions
+    >>> df = df.select(
+    ...     col("value").sum().over(window_spec).alias("category_total"),
+    ...     col("value").mean().over(window_spec).alias("category_avg"),
+    ... )
+
+    Partitioning by multiple columns:
+
+    >>> # Define a window partitioned by both department and category
+    >>> window_spec = Window().partition_by(["department", "category"])
+    >>> df = df.select(col("sales").sum().over(window_spec).alias("dept_category_total"))
+
+    Using window aggregations in expressions:
+
+    >>> window_spec = Window().partition_by("category")
+    >>> df = df.select((col("value") / col("value").sum().over(window_spec)).alias("pct_of_category"))
     """
 
     # Class-level constants for frame boundaries
-    unbounded_preceding = _WindowBoundary.unbounded_preceding()
-    unbounded_following = _WindowBoundary.unbounded_following()
-    current_row = _WindowBoundary.current_row()
+    unbounded_preceding = _WindowBoundary.UnboundedPreceding()
+    unbounded_following = _WindowBoundary.UnboundedFollowing()
+    current_row = _WindowBoundary.Offset(0)
 
     def __init__(self):
         self._spec = _WindowSpec.new()
 
-    @staticmethod
-    def _is_column_input(x: Any) -> bool:
-        return isinstance(x, str) or isinstance(x, Expression)
-
-    @staticmethod
-    def _column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expression]:
-        """Inputs can be passed in as individual arguments or an iterable.
-
-        In addition, they may be strings or Expressions.
-        This method normalizes the inputs to a list of Expressions.
-        """
-        column_iter: Iterable[ColumnInputType] = [columns] if Window._is_column_input(columns) else columns  # type: ignore
-        return [col(c) if isinstance(c, str) else c for c in column_iter]
-
-    @classmethod
-    def partition_by(cls, *cols: ManyColumnsInputType) -> Window:
+    def partition_by(self, *cols: ManyColumnsInputType) -> Window:
         """Partitions the dataset by one or more columns or expressions.
 
         Args:
@@ -63,18 +66,17 @@ class Window:
         # Handle column inputs similar to DataFrame methods
         expressions = []
         for c in cols:
-            expressions.extend(cls._column_inputs_to_expressions(c))
+            expressions.extend(column_inputs_to_expressions(c))
 
         if not expressions:
             raise ValueError("At least one partition column must be specified")
 
         # Create new Window with updated spec
-        window = cls()
-        window._spec = window._spec.with_partition_by([expr._expr for expr in expressions])
+        window = Window()
+        window._spec = self._spec.with_partition_by([expr._expr for expr in expressions])
         return window
 
-    @classmethod
-    def order_by(cls, *cols: ManyColumnsInputType, ascending: bool | list[bool] = True) -> Window:
+    def order_by(self, *cols: ManyColumnsInputType, ascending: bool | list[bool] = True) -> Window:
         """Orders rows within each partition by specified columns or expressions.
 
         Args:
@@ -88,7 +90,7 @@ class Window:
         # Handle column inputs similar to DataFrame methods
         expressions = []
         for c in cols:
-            expressions.extend(cls._column_inputs_to_expressions(c))
+            expressions.extend(column_inputs_to_expressions(c))
 
         # Handle ascending parameter
         if isinstance(ascending, bool):
@@ -99,8 +101,8 @@ class Window:
             asc_flags = ascending
 
         # Create new Window with updated spec
-        window = cls()
-        window._spec = window._spec.with_order_by([expr._expr for expr in expressions], asc_flags)
+        window = Window()
+        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], asc_flags)
         return window
 
     def rows_between(
@@ -126,7 +128,7 @@ class Window:
             end = _WindowBoundary.offset(end)
 
         frame = _WindowFrame(
-            frame_type=_WindowFrameType.rows(),
+            frame_type=_WindowFrameType.Rows(),
             start=start,
             end=end,
         )

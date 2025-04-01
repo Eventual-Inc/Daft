@@ -27,37 +27,6 @@ pub enum WindowBoundary {
     Offset(i64),
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-impl WindowBoundary {
-    /// Helper to create an UNBOUNDED PRECEDING boundary
-    #[staticmethod]
-    pub fn unbounded_preceding() -> Self {
-        Self::UnboundedPreceding()
-    }
-
-    /// Helper to create an UNBOUNDED FOLLOWING boundary
-    #[staticmethod]
-    pub fn unbounded_following() -> Self {
-        Self::UnboundedFollowing()
-    }
-
-    /// Helper to create a CURRENT ROW boundary
-    #[staticmethod]
-    pub fn current_row() -> Self {
-        Self::Offset(0)
-    }
-
-    /// Helper to create a row offset boundary directly
-    /// - 0 for CURRENT ROW
-    /// - Negative for PRECEDING
-    /// - Positive for FOLLOWING
-    #[staticmethod]
-    pub fn offset(n: i64) -> Self {
-        Self::Offset(n)
-    }
-}
-
 /// Represents the type of window frame (ROWS or RANGE)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
@@ -66,20 +35,6 @@ pub enum WindowFrameType {
     Rows(),
     /// Range-based window frame
     Range(),
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl WindowFrameType {
-    #[staticmethod]
-    pub fn rows() -> Self {
-        Self::Rows()
-    }
-
-    #[staticmethod]
-    pub fn range() -> Self {
-        Self::Range()
-    }
 }
 
 /// Represents a window frame specification
@@ -189,6 +144,10 @@ impl WindowFunction {
             expr: Arc::new(expr),
             window_spec,
         }
+    }
+
+    pub fn to_expr(&self) -> Expr {
+        Expr::Window(self.expr.clone(), self.window_spec.clone())
     }
 
     pub fn data_type(&self) -> DaftResult<DataType> {

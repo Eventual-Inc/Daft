@@ -216,7 +216,9 @@ pub enum Expr {
         inputs: Vec<ExprRef>,
     },
 
-    // add window function variant here (or it will be a function itself)
+    #[display("window({_0})")]
+    Window(ExprRef, window::WindowSpec),
+
     #[display("not({_0})")]
     Not(ExprRef),
 
@@ -971,6 +973,30 @@ impl Expr {
 
                 FieldID::new(format!("(EXISTS {subquery_id})"))
             }
+            Self::Window(expr, window_spec) => {
+                let child_id = expr.semantic_id(schema);
+                let partition_by_ids = window_spec
+                    .partition_by
+                    .iter()
+                    .map(|e| e.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let order_by_ids = window_spec
+                    .order_by
+                    .iter()
+                    .zip(window_spec.ascending.iter())
+                    .map(|(e, asc)| {
+                        format!(
+                            "{}:{}",
+                            e.semantic_id(schema),
+                            if *asc { "asc" } else { "desc" }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+
+                FieldID::new(format!("{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}])"))
+            }
         }
     }
 
@@ -985,7 +1011,8 @@ impl Expr {
             | Self::NotNull(expr)
             | Self::Cast(expr, ..)
             | Self::Alias(expr, ..)
-            | Self::InSubquery(expr, _) => {
+            | Self::InSubquery(expr, _)
+            | Self::Window(expr, _) => {
                 vec![expr.clone()]
             }
             Self::Agg(agg_expr) => agg_expr.children(),
@@ -1038,6 +1065,10 @@ impl Expr {
             Self::InSubquery(_, subquery) => Self::InSubquery(
                 children.first().expect("Should have 1 child").clone(),
                 subquery.clone(),
+            ),
+            Self::Window(_, window_spec) => Self::Window(
+                children.first().expect("Should have 1 child").clone(),
+                window_spec.clone(),
             ),
             // 2 children
             Self::BinaryOp { op, .. } => Self::BinaryOp {
@@ -1302,6 +1333,7 @@ impl Expr {
             }
             Self::InSubquery(expr, _) => Ok(Field::new(expr.name(), DataType::Boolean)),
             Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
+            Self::Window(expr, _) => expr.to_field(schema),
         }
     }
 
@@ -1344,6 +1376,7 @@ impl Expr {
             Self::Subquery(subquery) => subquery.name(),
             Self::InSubquery(expr, _) => expr.name(),
             Self::Exists(subquery) => subquery.name(),
+            Self::Window(expr, ..) => expr.name(),
         }
     }
 
@@ -1423,7 +1456,8 @@ impl Expr {
                 | Expr::Subquery(..)
                 | Expr::InSubquery(..)
                 | Expr::Exists(..)
-                | Expr::Column(..) => Err(io::Error::other(
+                | Expr::Window(..)
+                | Expr::Column(_) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",
                 )),
             }
@@ -1476,6 +1510,7 @@ impl Expr {
             } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
             Self::InSubquery(expr, _) => expr.has_compute(),
             Self::List(..) => true,
+            Self::Window(expr, ..) => expr.has_compute(),
         }
     }
 
@@ -1608,7 +1643,27 @@ pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
 }
 
 pub fn has_agg(expr: &ExprRef) -> bool {
-    expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
+    use common_treenode::{TreeNode, TreeNodeRecursion};
+
+    // Keep track of whether we found an aggregation expression
+    let mut found_agg = false;
+
+    // Use apply instead of exists to have more control over traversal
+    let _ = expr.apply(|e| {
+        match e.as_ref() {
+            // If we find an aggregation, set the flag and stop traversing
+            Expr::Agg(_) => {
+                found_agg = true;
+                Ok(TreeNodeRecursion::Stop)
+            }
+            // Skip traversing into Window expressions since they're allowed to contain aggregations
+            Expr::Window(_, _) => Ok(TreeNodeRecursion::Jump),
+            // Continue traversing for all other expression types
+            _ => Ok(TreeNodeRecursion::Continue),
+        }
+    });
+
+    found_agg
 }
 
 #[inline]
@@ -1711,6 +1766,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         | Expr::Function { .. }
         | Expr::Column(_)
         | Expr::IfElse { .. }
+        | Expr::Window(_, _)
         | Expr::FillNull(_, _) => match expr.to_field(schema) {
             Ok(field) if field.dtype == DataType::Boolean => 0.2,
             _ => 1.0,

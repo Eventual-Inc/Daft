@@ -323,6 +323,9 @@ fn split_and_merge_pass(
     if scan_tasks
         .iter()
         .all(|st| st.as_any().downcast_ref::<ScanTask>().is_some())
+        && !scan_tasks
+            .iter()
+            .any(|st| matches!(st.file_format_config().as_ref(), FileFormatConfig::Warc(_)))
     {
         // TODO(desmond): Here we downcast Arc<dyn ScanTaskLike> to Arc<ScanTask>. ScanTask and DummyScanTask (test only) are
         // the only non-test implementer of ScanTaskLike. It might be possible to avoid the downcast by implementing merging

@@ -8,7 +8,8 @@ use pyo3::{exceptions::PyValueError, prelude::*, types::PyList};
 
 use crate::RecordBatch;
 
-pub fn record_batches_to_table(
+/// Converts Arrow RecordBatches to a Daft RecordBatch (Table)
+pub fn record_batch_from_arrow(
     py: Python,
     batches: &[Bound<PyAny>],
     schema: SchemaRef,
@@ -57,7 +58,8 @@ pub fn record_batches_to_table(
     })
 }
 
-pub fn table_to_record_batch(
+/// Converts a Daft RecordBatch (Table) to an Arrow RecordBatch
+pub fn record_batch_to_arrow(
     py: Python,
     table: &RecordBatch,
     pyarrow: Bound<PyModule>,

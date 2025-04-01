@@ -155,7 +155,7 @@ def test_from_dask_dataframe_preview(n_partitions: int):
 
     daft_df = daft.from_dask_dataframe(ddf)
     assert len(daft_df) == 3
-    assert len(daft_df._preview.preview_partition) == 3
+    assert len(daft_df._preview.partition) == 3
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
@@ -171,4 +171,4 @@ def test_from_dask_dataframe_data_longer_than_preview(n_partitions: int):
 
     daft_df = daft.from_dask_dataframe(ddf)
     assert len(daft_df) == 10
-    assert len(daft_df._preview.preview_partition) == 8
+    assert len(daft_df._preview.partition) == 8

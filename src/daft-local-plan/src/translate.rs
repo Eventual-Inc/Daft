@@ -103,11 +103,8 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 ))
             }
         }
-        LogicalPlan::Window(_) => {
-            // Will be handled in PR3
-            Err(DaftError::not_implemented(
-                "Window functions not yet implemented",
-            ))
+        LogicalPlan::Window(_window) => {
+            todo!()
         }
         LogicalPlan::Unpivot(unpivot) => {
             let input = translate(&unpivot.input)?;

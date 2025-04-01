@@ -9,6 +9,24 @@ use crate::{
 };
 
 /// Window operator for computing window functions.
+///
+/// The Window operator represents window function operations in the logical plan.
+/// When a user calls an expression like `df.select(col("a").sum().over(window))`,
+/// it gets translated into this operator as follows:
+///
+/// 1. The aggregation function `col("a").sum()` is stored in the `window_functions` vector
+/// 2. The window specification (partition by, order by, frame) is stored in the `window_spec` field
+///
+/// For example, `df.select(col("a").sum().over(window.partition_by("b")))` becomes:
+/// ```
+/// Window {
+///   window_functions = [col("a").sum()],
+///   window_spec = WindowSpec { partition_by: [col("b")], ... }
+/// }
+/// ```
+///
+/// Multiple window function expressions can be stored in a single Window operator
+/// as long as they share the same window specification.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Window {
     /// An id for the plan.
@@ -37,12 +55,9 @@ impl Window {
         // Clone the input schema fields
         let mut fields = input_schema.fields.clone();
 
-        // Add fields for window function expressions with auto-generated names (window_0, window_1, etc.)
-        for (i, expr) in window_functions.iter().enumerate() {
-            let window_col_name = format!("window_{}", i);
-            let expr_type = expr.get_type(&input_schema)?;
-            let field = Field::new(&window_col_name, expr_type);
-            fields.insert(window_col_name, field);
+        // Add fields for window function
+        for expr in &window_functions {
+            fields.insert(expr.name().to_string(), expr.to_field(&input_schema)?);
         }
 
         // Create a new schema with all fields
