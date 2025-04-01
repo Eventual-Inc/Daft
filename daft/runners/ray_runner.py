@@ -205,7 +205,7 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
     non_native_fields = []
     for arrow_field in arrow_table.schema:
         dt = _from_arrow_type_with_ray_data_extensions(arrow_field.type)
-        if isinstance(dt, dtypes.PythonType, dtypes.TensorType, dtypes.FixedShapeTensorType):
+        if isinstance(dt, (dtypes.PythonType, dtypes.TensorType, dtypes.FixedShapeTensorType)):
             non_native_fields.append(arrow_field.name)
     if non_native_fields:
         # If there are any contained Arrow types that are not natively supported, convert each
