@@ -43,7 +43,6 @@ from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
 from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions
-from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
     import dask
