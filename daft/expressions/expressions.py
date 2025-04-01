@@ -2205,17 +2205,17 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ... )
             >>>
             >>> df.select(daft.col("datetime").dt.nanosecond()).show()
-            ╭──────────╮
-            │ datetime │
-            │ ---      │
-            │ UInt32   │
-            ╞══════════╡
-            │ 0        │
-            ├╌╌╌╌╌╌╌╌╌╌┤
-            │ 500000000│
-            ├╌╌╌╌╌╌╌╌╌╌┤
-            │ 60000000 │
-            ╰──────────╯
+            ╭───────────╮
+            │ datetime  │
+            │ ---       │
+            │ UInt32    │
+            ╞═══════════╡
+            │ 0         │
+            ├╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 500000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 60000000  │
+            ╰───────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
