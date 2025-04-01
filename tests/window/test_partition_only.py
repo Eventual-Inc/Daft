@@ -42,7 +42,7 @@ def test_single_partition_sum(make_df):
     """
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -66,7 +66,7 @@ def test_single_partition_min(make_df):
     """Test min over a single partition column."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -87,7 +87,7 @@ def test_single_partition_max(make_df):
     """Test max over a single partition column."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -108,7 +108,7 @@ def test_single_partition_mean(make_df):
     """Test mean over a single partition column."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -139,7 +139,7 @@ def test_single_partition_count(make_df):
     """Test count over a single partition column."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -166,7 +166,7 @@ def test_multiple_partition_columns(make_df):
         }
     )
 
-    window = Window.partition_by(["category", "group"])
+    window = Window().partition_by(["category", "group"])
     result = df.select(
         col("category"),
         col("group"),
@@ -195,7 +195,7 @@ def test_similar_partition_keys(make_df):
         }
     )
 
-    window = Window.partition_by(["key1", "key2"])
+    window = Window().partition_by(["key1", "key2"])
     result = df.select(
         col("key1"),
         col("key2"),
@@ -223,7 +223,7 @@ def test_null_partition_values(make_df):
         }
     )
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -260,7 +260,7 @@ def test_multiple_window_functions(make_df):
     """Test multiple window functions in the same query."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -303,7 +303,7 @@ def test_many_partitions(make_df):
 
     df = make_df({"category": categories, "value": values})
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -325,7 +325,7 @@ def test_window_mean_minus_value(make_df):
     """Test arithmetic with window mean and value."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -355,7 +355,7 @@ def test_window_value_over_sum(make_df):
     """Test division with value and window sum."""
     df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
 
-    window = Window.partition_by("category")
+    window = Window().partition_by("category")
     result = df.select(
         col("category"),
         col("value"),
@@ -390,7 +390,7 @@ def test_partition_by_with_expressions(make_df):
 
     # Use the column in partition_by as an expression
     parity_expr = col("parity")
-    window = Window.partition_by(parity_expr)
+    window = Window().partition_by(parity_expr)
 
     result = df.select(
         col("num"),
