@@ -9,6 +9,24 @@ use crate::{
 };
 
 /// Window operator for computing window functions.
+///
+/// The Window operator represents window function operations in the logical plan.
+/// When a user calls an expression like `df.select(col("a").sum().over(window))`,
+/// it gets translated into this operator as follows:
+///
+/// 1. The aggregation function `col("a").sum()` is stored in the `window_functions` vector
+/// 2. The window specification (partition by, order by, frame) is stored in the `window_spec` field
+///
+/// For example, `df.select(col("a").sum().over(window.partition_by("b")))` becomes:
+/// ```
+/// Window {
+///   window_functions = [col("a").sum()],
+///   window_spec = WindowSpec { partition_by: [col("b")], ... }
+/// }
+/// ```
+///
+/// Multiple window function expressions can be stored in a single Window operator
+/// as long as they share the same window specification.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Window {
     /// An id for the plan.

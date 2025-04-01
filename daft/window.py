@@ -19,6 +19,28 @@ class Window:
     This class provides a way to specify window definitions for window functions.
     Window functions operate on a group of rows (called a window frame) and return
     a result for each row based on the values in its window frame.
+
+    Basic window aggregation with a single partition column:
+
+    >>> from daft import Window, col
+    >>> # Define a window partitioned by category
+    >>> window_spec = Window.partition_by("category")
+    >>> # Apply aggregation functions
+    >>> df = df.select(
+    ...     col("value").sum().over(window_spec).alias("category_total"),
+    ...     col("value").mean().over(window_spec).alias("category_avg"),
+    ... )
+
+    Partitioning by multiple columns:
+
+    >>> # Define a window partitioned by both department and category
+    >>> window_spec = Window.partition_by(["department", "category"])
+    >>> df = df.select(col("sales").sum().over(window_spec).alias("dept_category_total"))
+
+    Using window aggregations in expressions:
+
+    >>> window_spec = Window.partition_by("category")
+    >>> df = df.select((col("value") / col("value").sum().over(window_spec)).alias("pct_of_category"))
     """
 
     # Class-level constants for frame boundaries
