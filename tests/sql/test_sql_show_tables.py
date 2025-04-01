@@ -4,24 +4,54 @@ from daft import Catalog, Session
 
 
 @pytest.fixture
-def sess():
-    cat1 = Catalog.from_pydict(
+def cat1():
+    return Catalog.from_pydict(
         name="cat1",
         tables={
             "aa_table": {"x": [1]},
             "bb_table": {"y": [2]},
         },
     )
-    cat2 = Catalog.from_pydict(
+
+
+@pytest.fixture
+def cat2():
+    return Catalog.from_pydict(
         name="cat2",
         tables={
             "cc_table": {"x": [1]},
             "dd_table": {"y": [2]},
         },
     )
+
+
+@pytest.fixture
+def cat3():
+    return Catalog.from_pydict(
+        name="cat3",
+        tables={
+            "aa_table": {"x": [1]},
+            "bb_table": {"y": [2]},
+            "cc_table": {"x": [1]},
+            "dd_table": {"y": [2]},
+            "xx.ee_table": {"x": [1]},
+            "xx.ff_table": {"y": [2]},
+            "xx.gg_table": {"x": [1]},
+            "xx.hh_table": {"y": [2]},
+            "yy.ii_table": {"x": [1]},
+            "yy.jj_table": {"y": [2]},
+            "yy.kk_table": {"x": [1]},
+            "yy.ll_table": {"y": [2]},
+        },
+    )
+
+
+@pytest.fixture(scope="function")
+def sess(cat1, cat2, cat3):
     sess = Session()
-    sess.attach_catalog(cat1)
-    sess.attach_catalog(cat2)
+    sess.attach(cat1)
+    sess.attach(cat2)
+    sess.attach(cat3)
     return sess
 
 
@@ -94,3 +124,45 @@ def test_show_tables_in_catalog_namespace_with_pattern(sess):
     assert len(tables) == 1
     assert "foo_table" in tables
     assert "bar_table" not in tables
+
+
+def test_show_tables_with_use_catalog(sess):
+    # test: show tables in catalog `cat2` after doing `USE cat2` with no pattern.
+    sess.use("cat2")
+    res = sess.sql("SHOW TABLES").to_pydict()
+    assert "cat2" in res["catalog"]
+    assert len(res["table"]) == 2
+    assert "cc_table" in res["table"]
+    assert "dd_table" in res["table"]
+
+
+def test_show_tables_with_use_catalog_with_pattern(sess):
+    # test: show tables in catalog `cat2` after doing `USE cat2` with pattern.
+    sess.use("cat2")
+    res = sess.sql("SHOW TABLES LIKE 'cc'").to_pydict()
+    assert "cat2" in res["catalog"]
+    assert len(res["table"]) == 1
+    assert "cc_table" in res["table"]
+    assert "dd_table" not in res["table"]
+
+
+def test_show_tables_with_use_catalog_namespace(sess):
+    # test: show tables in catalog `cat.ns` after doing `USE cat.xx` with no pattern.
+    sess.use("cat3.xx")
+    res = sess.sql("SHOW TABLES").to_pydict()
+    assert "cat3" in res["catalog"]
+    assert len(res["table"]) == 4
+    assert "ee_table" in res["table"]
+    assert "ff_table" in res["table"]
+    assert "gg_table" in res["table"]
+    assert "hh_table" in res["table"]
+
+
+def test_show_tables_with_use_catalog_namespace_with_pattern(sess):
+    # test: show tables in catalog `cat.ns` after doing `USE cat.xx` with pattern.
+    sess.use("cat3.xx")
+    res = sess.sql("SHOW TABLES LIKE 'e'").to_pydict()
+    assert "cat3" in res["catalog"]
+    assert len(res["table"]) == 1
+    assert "ee_table" in res["table"]
+    print(res)

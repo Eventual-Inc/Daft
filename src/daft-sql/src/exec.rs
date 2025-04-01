@@ -53,8 +53,21 @@ fn execute_show_tables(
         })?,
     };
 
+    // for now, the patterns are passed as-is to the catalog implementation, https://github.com/Eventual-Inc/Daft/issues/4007
+    let mut pattern: Option<String> = show_tables.pattern;
+
+    // join the pattern with the current namespace if any
+    if let Some(namespace) = sess.current_namespace()? {
+        let prefix = namespace.join(".");
+        let prefix = match pattern {
+            Some(suffix) => format!("{}.{}", prefix, suffix),
+            None => prefix,
+        };
+        pattern = Some(prefix);
+    }
+
     // this returns identifiers which we need to split into our columns
-    let tables = catalog.list_tables(show_tables.pattern)?;
+    let tables = catalog.list_tables(pattern)?;
 
     // these are typical `show` columns which are simplififed INFORMATION_SCHEMA.TABLES columns
     use daft_core::prelude::{DataType, Field, Schema};
