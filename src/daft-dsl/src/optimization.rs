@@ -36,6 +36,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::IfElse { .. }
         | Expr::Subquery { .. }
         | Expr::InSubquery { .. }
+        | Expr::Window(..)
         | Expr::Exists(..) => true,
     }
 }

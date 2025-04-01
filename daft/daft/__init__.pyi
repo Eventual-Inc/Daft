@@ -88,13 +88,8 @@ class WindowBoundary:
         ...
 
     @staticmethod
-    def preceding(n: int) -> WindowBoundary:
-        """Represents N PRECEDING boundary."""
-        ...
-
-    @staticmethod
-    def following(n: int) -> WindowBoundary:
-        """Represents N FOLLOWING boundary."""
+    def offset(n: int) -> WindowBoundary:
+        """Represents N OFFSET boundary."""
         ...
 
 class WindowFrameType:
