@@ -2359,6 +2359,10 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
 
+    def day_of_year(self) -> Expression:
+        """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st."""
+        return Expression._from_pyexpr(native.dt_day_of_year(self._expr))
+
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.
 

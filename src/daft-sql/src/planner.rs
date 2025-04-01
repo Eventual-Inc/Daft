@@ -1261,6 +1261,7 @@ impl<'a> SQLPlanner<'a> {
                     DateTimeField::Month => Ok(dt::dt_month(expr)),
                     DateTimeField::Day => Ok(dt::dt_day(expr)),
                     DateTimeField::DayOfWeek => Ok(dt::dt_day_of_week(expr)),
+                    DateTimeField::DayOfYear => Ok(dt::dt_day_of_year(expr)),
                     DateTimeField::Date => Ok(dt::dt_date(expr)),
                     DateTimeField::Hour => Ok(dt::dt_hour(expr)),
                     DateTimeField::Minute => Ok(dt::dt_minute(expr)),
