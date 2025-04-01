@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     file_format_config::DatabaseSourceConfig, CsvSourceConfig, FileFormat, FileFormatConfig,
-    JsonSourceConfig, ParquetSourceConfig, WarcSourceConfig,
+    JsonSourceConfig, ParquetSourceConfig, WarcSourceConfig, WriteMode,
 };
 
 /// Configuration for parsing a particular file format.
@@ -92,6 +92,15 @@ impl PyFileFormatConfig {
     }
 }
 
+#[pymethods]
+impl WriteMode {
+    #[staticmethod]
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(mode: &str) -> PyResult<Self> {
+        Ok(mode.parse()?)
+    }
+}
+
 impl_bincode_py_state_serialization!(PyFileFormatConfig);
 
 impl From<PyFileFormatConfig> for Arc<FileFormatConfig> {
@@ -108,5 +117,6 @@ impl From<Arc<FileFormatConfig>> for PyFileFormatConfig {
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<FileFormat>()?;
+    parent.add_class::<WriteMode>()?;
     Ok(())
 }

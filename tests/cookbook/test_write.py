@@ -23,9 +23,9 @@ def test_parquet_write(tmp_path, with_morsel_size):
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1
-    assert pd_df._preview.preview_partition is None
+    assert pd_df._preview.partition is None
     pd_df.__repr__()
-    assert len(pd_df._preview.preview_partition) == 1
+    assert len(pd_df._preview.partition) == 1
 
 
 def test_parquet_write_with_partitioning(tmp_path, with_morsel_size):
@@ -37,9 +37,9 @@ def test_parquet_write_with_partitioning(tmp_path, with_morsel_size):
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 5
-    assert pd_df._preview.preview_partition is None
+    assert pd_df._preview.partition is None
     pd_df.__repr__()
-    assert len(pd_df._preview.preview_partition) == 5
+    assert len(pd_df._preview.partition) == 5
 
 
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
@@ -54,7 +54,7 @@ def test_empty_parquet_write_without_partitioning(tmp_path, write_mode, with_mor
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1
-    assert len(pd_df._preview.preview_partition) == 1
+    assert len(pd_df._preview.partition) == 1
 
 
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
@@ -69,7 +69,7 @@ def test_empty_parquet_write_with_partitioning(tmp_path, write_mode, with_morsel
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(output_files) == 1
-    assert len(output_files._preview.preview_partition) == 1
+    assert len(output_files._preview.partition) == 1
 
 
 def test_parquet_write_with_partitioning_readback_values(tmp_path, with_morsel_size):
@@ -89,9 +89,9 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path, with_morsel_s
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(output_files) == 5
-    assert output_files._preview.preview_partition is None
+    assert output_files._preview.partition is None
     output_files.__repr__()
-    assert len(output_files._preview.preview_partition) == 5
+    assert len(output_files._preview.partition) == 5
 
 
 @pytest.mark.parametrize(
@@ -228,9 +228,9 @@ def test_csv_write(tmp_path, with_morsel_size):
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1
-    assert pd_df._preview.preview_partition is None
+    assert pd_df._preview.partition is None
     pd_df.__repr__()
-    assert len(pd_df._preview.preview_partition) == 1
+    assert len(pd_df._preview.partition) == 1
 
 
 def test_csv_write_with_partitioning(tmp_path, with_morsel_size):
@@ -263,7 +263,7 @@ def test_empty_csv_write(tmp_path, with_morsel_size):
     assert_df_equals(df.to_pandas().fillna(""), read_back_pd_df.fillna(""))
 
     assert len(pd_df) == 1
-    assert len(pd_df._preview.preview_partition) == 1
+    assert len(pd_df._preview.partition) == 1
 
 
 def test_empty_csv_write_with_partitioning(tmp_path, with_morsel_size):
@@ -281,7 +281,7 @@ def test_empty_csv_write_with_partitioning(tmp_path, with_morsel_size):
     assert_df_equals(df.to_pandas().fillna(""), read_back_pd_df.fillna(""))
 
     assert len(pd_df) == 1
-    assert len(pd_df._preview.preview_partition) == 1
+    assert len(pd_df._preview.partition) == 1
 
 
 def test_csv_write_with_some_empty_partitions(tmp_path, with_morsel_size):

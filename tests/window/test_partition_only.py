@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pandas as pd
 import pytest
 
@@ -412,3 +414,81 @@ def test_partition_by_with_expressions(make_df):
     for i, parity in enumerate(result_dict["parity"]):
         expected_sum = odd_sum if parity == 1 else even_sum
         assert result_dict["sum"][i] == expected_sum, f"Row {i} has incorrect sum for parity {parity}"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_multiple_window_partitions(make_df):
+    """Test multiple window functions with different partition keys using random numbers.
+
+    Creates a dataset with 18 rows (2 rows each for A1, A2, A3, B1, B2, B3, C1, C2, C3)
+    and verifies sums across different partition keys (A/B/C and 1/2/3).
+    """
+    random.seed(42)  # For reproducibility
+
+    # Create data with 3 rows for each combination of letter (A/B/C) and number (1/2/3)
+    data = []
+    for letter in ["A", "B", "C"]:
+        for num in ["1", "2", "3"]:
+            # Generate 2 random values for each combination
+            for _ in range(3):
+                data.append({"letter": letter, "num": num, "value": random.randint(1, 100)})
+
+    df = make_df(data)
+
+    # Create windows for different partition keys
+    letter_window = Window().partition_by("letter")
+    num_window = Window().partition_by("num")
+    combined_window = Window().partition_by(["letter", "num"])
+
+    result = df.select(
+        col("letter"),
+        col("num"),
+        col("value"),
+        col("value").sum().over(letter_window).alias("letter_sum"),
+        col("value").sum().over(num_window).alias("num_sum"),
+        col("value").sum().over(combined_window).alias("combined_sum"),
+    ).collect()
+
+    result_dict = result.to_pydict()
+
+    # Verify letter-based sums (A, B, C)
+    for letter in ["A", "B", "C"]:
+        letter_indices = [i for i, ltr in enumerate(result_dict["letter"]) if ltr == letter]
+        letter_values = [result_dict["value"][i] for i in letter_indices]
+        expected_letter_sum = sum(letter_values)
+        actual_letter_sums = [result_dict["letter_sum"][i] for i in letter_indices]
+        assert all(
+            sum == expected_letter_sum for sum in actual_letter_sums
+        ), f"Incorrect sum for letter {letter}: {actual_letter_sums} != {expected_letter_sum}"
+
+    # Verify number-based sums (1, 2, 3)
+    for num in ["1", "2", "3"]:
+        num_indices = [i for i, n in enumerate(result_dict["num"]) if n == num]
+        num_values = [result_dict["value"][i] for i in num_indices]
+        expected_num_sum = sum(num_values)
+        actual_num_sums = [result_dict["num_sum"][i] for i in num_indices]
+        assert all(
+            sum == expected_num_sum for sum in actual_num_sums
+        ), f"Incorrect sum for number {num}: {actual_num_sums} != {expected_num_sum}"
+
+    # Verify combined window sums (A1, A2, A3, B1, B2, B3, C1, C2, C3)
+    for letter in ["A", "B", "C"]:
+        for num in ["1", "2", "3"]:
+            combined_indices = [
+                i
+                for i, (ltr, n) in enumerate(zip(result_dict["letter"], result_dict["num"]))
+                if ltr == letter and n == num
+            ]
+            combined_values = [result_dict["value"][i] for i in combined_indices]
+            expected_combined_sum = sum(combined_values)
+            actual_combined_sums = [result_dict["combined_sum"][i] for i in combined_indices]
+            assert all(
+                sum == expected_combined_sum for sum in actual_combined_sums
+            ), f"Incorrect sum for combination {letter}{num}: {actual_combined_sums} != {expected_combined_sum}"
+
+    # Verify that each row's letter_sum + num_sum - combined_sum equals the total sum
+    total_sum = sum(result_dict["value"])
+    for i in range(len(result_dict["value"])):
+        expected = total_sum
+        actual = result_dict["letter_sum"][i] + result_dict["num_sum"][i] - result_dict["combined_sum"][i]
+        assert abs(expected - actual) < 1e-10, f"Row {i} has incorrect combined sum"
