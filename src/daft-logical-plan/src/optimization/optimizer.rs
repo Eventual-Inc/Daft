@@ -8,9 +8,9 @@ use super::{
     rules::{
         DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
         EnrichWithStats, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
-        PushDownFilter, PushDownLimit, PushDownProjection, ReorderJoins, SimplifyExpressionsRule,
-        SimplifyNullFilteredJoin, SplitActorPoolProjects, UnnestPredicateSubquery,
-        UnnestScalarSubquery,
+        PushDownFilter, PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
+        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -123,6 +123,7 @@ impl Default for OptimizerBuilder {
                         Box::new(PushDownProjection::new()),
                         Box::new(EliminateCrossJoin::new()),
                         Box::new(SimplifyNullFilteredJoin::new()),
+                        Box::new(PushDownJoinPredicate::new()),
                     ],
                     // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
                     // at the current node, which would require another batch application in order to have a chance to push

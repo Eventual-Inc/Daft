@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{ops::Not, str::FromStr};
 
 use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
@@ -154,6 +154,17 @@ impl Display for JoinSide {
         match self {
             Self::Left => write!(f, "left"),
             Self::Right => write!(f, "right"),
+        }
+    }
+}
+
+impl Not for JoinSide {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
         }
     }
 }
