@@ -61,7 +61,7 @@ jobs:
     - name: Install Daft and dev dependencies
       run: |
         rm -rf daft
-        uv pip install getdaft --pre --extra-index-url ${{ env.DAFT_INDEX_URL }}
+        uv pip install daft --pre --extra-index-url ${{ env.DAFT_INDEX_URL }}
         uv pip install gspread
     - name: Write service account secret file
       run: |

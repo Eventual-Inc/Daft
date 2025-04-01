@@ -27,7 +27,7 @@ futures = {workspace = true}
 indexmap = {workspace = true}
 indicatif = "0.17.9"
 itertools = {workspace = true}
-kanal = "0.1.0-pre8"
+kanal = "0.1"
 log = {workspace = true}
 num-format = {workspace = true}
 pin-project = "1"

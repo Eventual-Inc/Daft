@@ -1471,9 +1471,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.31"
+version = "4.5.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "027bb0d98429ae334a8698531da7077bdf906419543a35a55c2cb1b66437d767"
+checksum = "6088f3ae8c3608d19260cd7445411865a485688711b78b5be70d78cd96136f83"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1481,9 +1481,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.31"
+version = "4.5.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5589e0cba072e0f3d23791efac0fd8627b49c829c196a492e88168e6a669d863"
+checksum = "22a7ef7f676155edfb82daa97f99441f3ebf4a58d5e32f295a56259f1b6facc8"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1493,9 +1493,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.28"
+version = "4.5.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf4ced95c6f4a675af3da73304b9ac4ed991640c36374e4b46795c49e17cf1ed"
+checksum = "09176aae279615badda0765c0c0b3f6ed53f4709118af73cf4655d85d1530cd7"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2042,6 +2042,7 @@ dependencies = [
  "common-version",
  "daft-algebra",
  "daft-catalog",
+ "daft-cli",
  "daft-compression",
  "daft-connect",
  "daft-context",
@@ -2103,6 +2104,15 @@ dependencies = [
  "pyo3",
  "snafu",
  "sqlparser",
+]
+
+[[package]]
+name = "daft-cli"
+version = "0.3.0-dev0"
+dependencies = [
+ "clap 4.5.32",
+ "daft-dashboard",
+ "pyo3",
 ]
 
 [[package]]
@@ -2299,6 +2309,7 @@ dependencies = [
  "paste",
  "pyo3",
  "serde",
+ "simdutf8",
  "snafu",
  "tiktoken-rs",
  "tokio",
@@ -2782,17 +2793,19 @@ dependencies = [
 name = "daft-sql"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-daft-config",
  "common-error",
  "common-io-config",
  "common-runtime",
- "daft-algebra",
  "daft-catalog",
+ "daft-context",
  "daft-core",
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
  "daft-logical-plan",
+ "daft-micropartition",
  "daft-scan",
  "daft-session",
  "itertools 0.11.0",
@@ -4358,9 +4371,9 @@ dependencies = [
 
 [[package]]
 name = "kanal"
-version = "0.1.0-pre8"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b05d55519627edaf7fd0f29981f6dc03fb52df3f5b257130eb8d0bf2801ea1d7"
+checksum = "8b13526b910349296b1d3537ae62d5f83def9b6d6974e26d62b80ee2bb1b4794"
 dependencies = [
  "futures-core",
  "lock_api",
@@ -6777,7 +6790,7 @@ checksum = "257822358c6f206fed78bfe6369cf959063b0644d70f88df6b19f2dadc93423e"
 dependencies = [
  "alloca",
  "anyhow",
- "clap 4.5.31",
+ "clap 4.5.32",
  "colorz",
  "glob-match",
  "goblin",

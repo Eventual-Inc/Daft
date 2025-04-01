@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+from daft.scarf_telemetry import track_import_on_scarf
+
 ###
 # Set up code coverage for when running code coverage with ray
 ###
@@ -52,6 +54,7 @@ from daft.analytics import init_analytics
 user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
 analytics_client = init_analytics(get_version(), get_build_type(), user_opted_out)
 analytics_client.track_import()
+track_import_on_scarf()
 
 ###
 # Warn if using the old package name
@@ -117,17 +120,22 @@ from daft.session import (
     attach,
     attach_catalog,
     attach_table,
-    detach_catalog,
-    detach_table,
-    drop_namespace,
-    drop_table,
+    create_namespace,
+    create_namespace_if_not_exists,
+    create_table,
+    create_table_if_not_exists,
     create_temp_table,
     current_catalog,
     current_namespace,
     current_session,
+    detach_catalog,
+    detach_table,
+    drop_namespace,
+    drop_table,
     get_catalog,
     get_table,
     has_catalog,
+    has_namespace,
     has_table,
     list_catalogs,
     list_tables,
@@ -159,10 +167,15 @@ __all__ = [
     "Session",
     "Table",
     "TimeUnit",
+    "attach",
     "attach_catalog",
     "attach_table",
     "coalesce",
     "col",
+    "create_namespace",
+    "create_namespace_if_not_exists",
+    "create_table",
+    "create_table_if_not_exists",
     "create_temp_table",
     "current_catalog",
     "current_namespace",
@@ -182,6 +195,7 @@ __all__ = [
     "get_catalog",
     "get_table",
     "has_catalog",
+    "has_namespace",
     "has_table",
     "interval",
     "list_",

@@ -12,10 +12,10 @@ Daft currently supports:
 
 ## Installing Daft with Delta Lake Support
 
-Daft internally uses the [deltalake](https://pypi.org/project/deltalake/) Python package to fetch metadata about the Delta Lake table, such as paths to the underlying Parquet files and table statistics. The `deltalake` package therefore must be installed to read Delta Lake tables with Daft, either manually or with the below `getdaft[deltalake]` extras install of Daft.
+Daft internally uses the [deltalake](https://pypi.org/project/deltalake/) Python package to fetch metadata about the Delta Lake table, such as paths to the underlying Parquet files and table statistics. The `deltalake` package therefore must be installed to read Delta Lake tables with Daft, either manually or with the below `daft[deltalake]` extras install of Daft.
 
 ```bash
-pip install -U "getdaft[deltalake]"
+pip install -U "daft[deltalake]"
 ```
 
 ## Reading a Table

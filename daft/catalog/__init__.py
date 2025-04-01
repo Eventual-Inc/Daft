@@ -47,7 +47,7 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal, final
 
 from daft.logical.schema import Schema
 
@@ -198,6 +198,10 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
     return name
 
 
+class NotFoundError(Exception):
+    """Raised when some catalog object is not able to be found."""
+
+
 class Catalog(ABC):
     """Interface for python catalog implementations."""
 
@@ -255,7 +259,7 @@ class Catalog(ABC):
 
             return IcebergCatalog._from_obj(catalog)
         except ImportError:
-            raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
+            raise ImportError("Iceberg support not installed: pip install -U 'daft[iceberg]'")
 
     @staticmethod
     def from_unity(catalog: object) -> Catalog:
@@ -272,7 +276,39 @@ class Catalog(ABC):
 
             return UnityCatalog._from_obj(catalog)
         except ImportError:
-            raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
+            raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
+
+    @staticmethod
+    def from_s3tables(
+        table_bucket_arn: str,
+        client: object | None = None,
+        session: object | None = None,
+    ):
+        """Creates a Daft Catalog from S3 Tables bucket ARN, with optional client or session.
+
+        If neither a boto3 client nor session is given, an Iceberg REST client is used.
+
+        Args:
+            table_bucket_arn (str): s3tables bucket arn
+            client: optional boto3 client
+            session: optional boto3 session
+
+        Returns:
+            Catalog: new daft catalog instance backed by S3 Tables.
+        """
+        try:
+            from daft.catalog.__s3tables import S3Catalog
+
+            if client is not None and session is not None:
+                raise ValueError("Can provide either a client or session but not both.")
+            elif client is not None:
+                return S3Catalog.from_client(table_bucket_arn, client)
+            elif session is not None:
+                return S3Catalog.from_session(table_bucket_arn, session)
+            else:
+                return S3Catalog.from_arn(table_bucket_arn)
+        except ImportError:
+            raise ImportError("S3 Tables support not installed: pip install -U 'getdaft[aws]'")
 
     @staticmethod
     def _from_obj(obj: object) -> Catalog:
@@ -293,10 +329,40 @@ class Catalog(ABC):
     ###
 
     @abstractmethod
-    def create_namespace(self, identifier: Identifier | str): ...
+    def create_namespace(self, identifier: Identifier | str):
+        """Creates a namespace in this catalog."""
+
+    def create_namespace_if_not_exists(self, identifier: Identifier | str):
+        """Creates a namespace in this catalog if it does not already exist."""
+        if not self.has_namespace(identifier):
+            self.create_namespace(identifier)
 
     @abstractmethod
-    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table: ...
+    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
+        """Creates a table in this catalog."""
+
+    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource) -> Table:
+        """Creates a table in this catalog if it does not already exist."""
+        try:
+            if table := self.get_table(identifier):
+                return table
+        except NotFoundError:
+            return self.create_table(identifier, source)
+
+    ###
+    # has_*
+    ###
+
+    def has_namespace(self, identifier: Identifier | str):
+        raise NotImplementedError(f"Catalog implementation {type(self)} does not support has_namespace")
+
+    def has_table(self, identifier: Identifier | str):
+        """Returns True if the table exists, otherwise False."""
+        try:
+            _ = self.get_table(identifier)
+            return True
+        except NotFoundError:
+            return False
 
     ###
     # drop_*
@@ -490,6 +556,9 @@ class Identifier(Sequence):
     def __len__(self) -> int:
         return self._ident.__len__()
 
+    def __add__(self, suffix: Identifier) -> Identifier:
+        return Identifier(*(tuple(self) + tuple(suffix)))
+
     def __repr__(self) -> str:
         return f"Identifier('{self._ident.__repr__()}')"
 
@@ -571,7 +640,7 @@ class Table(ABC):
 
             return IcebergTable._from_obj(table)
         except ImportError:
-            raise ImportError("Iceberg support not installed: pip install -U 'getdaft[iceberg]'")
+            raise ImportError("Iceberg support not installed: pip install -U 'daft[iceberg]'")
 
     @staticmethod
     def from_unity(table: object) -> Table:
@@ -585,7 +654,7 @@ class Table(ABC):
 
             return UnityTable._from_obj(table)
         except ImportError:
-            raise ImportError("Unity support not installed: pip install -U 'getdaft[unity]'")
+            raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
     def _from_obj(name: str, source: object) -> Table:

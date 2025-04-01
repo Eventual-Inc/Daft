@@ -35,6 +35,7 @@ Generic
    Expression.fill_null
    Expression.hash
    Expression.apply
+   Expression.__getitem__
 
 .. _api-numeric-expression-operations:
 
@@ -58,6 +59,9 @@ Numeric
     Expression.ceil
     Expression.floor
     Expression.sign
+    Expression.signum
+    Expression.negate
+    Expression.negative
     Expression.round
     Expression.clip
     Expression.sqrt

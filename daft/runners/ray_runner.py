@@ -24,7 +24,7 @@ from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
 from daft.runners.progress_bar import ProgressBar
-from daft.scarf_telemetry import scarf_telemetry
+from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ try:
     import ray
 except ImportError:
     logger.error(
-        "Error when importing Ray. Please ensure that getdaft was installed with the Ray extras tag: getdaft[ray] (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
+        "Error when importing Ray. Please ensure that daft was installed with the Ray extras tag: daft[ray] (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
     )
     raise
 
@@ -1276,7 +1276,7 @@ class RayRunner(Runner[ray.ObjectRef]):
     def run_iter(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[RayMaterializedResult]:
-        scarf_telemetry(runner=self.name)
+        track_runner_on_scarf(runner=self.name)
 
         # Grab and freeze the current DaftExecutionConfig
         daft_execution_config = get_context().daft_execution_config

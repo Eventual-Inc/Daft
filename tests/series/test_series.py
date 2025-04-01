@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import copy
+import gc
+import os
 from collections import Counter
 from datetime import date, datetime
 
 import numpy as np
+import psutil
 import pyarrow as pa
 import pytest
 
@@ -251,3 +254,63 @@ def test_series_numpy_datetime64_date():
         s4 = Series.from_numpy(np.array(list_from_dates))
         assert s3.to_pylist() == py_dates
         assert s4.to_pylist() == py_dates
+
+
+def test_series_iter() -> None:
+    arrow = pa.array([1, 2, 3, None, 5, None])
+    s = Series.from_arrow(arrow)
+    for original, iterated in zip(arrow, s):
+        assert original.as_py() == iterated
+
+
+def get_memory_usage() -> float:
+    """Get the current memory usage in MiB."""
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / (1024 * 1024)
+
+
+def test_series_iter_memory_efficiency() -> None:
+    # Create a Series with 1 million elements.
+    n = 1000_000
+    arrow = pa.array(list(range(n)))
+    s = Series.from_arrow(arrow)
+    sum_using_iter = 0
+    sum_using_pylist = 0
+
+    # Force garbage collection before measurements.
+    gc.collect()
+
+    # Test 1: Using iterator.
+    iter_memory_before = get_memory_usage()
+    iter_peak_memory = 0
+    for i, item in enumerate(s):
+        sum_using_iter += item or 0
+        # Periodically check peak memory usage.
+        if i % 100_000 == 0:
+            current_memory = get_memory_usage() - iter_memory_before
+            iter_peak_memory = max(iter_peak_memory, current_memory)
+
+    current_memory = get_memory_usage() - iter_memory_before
+    iter_peak_memory = max(iter_peak_memory, current_memory)
+
+    # Force garbage collection before the next test.
+    gc.collect()
+
+    # Test 2: Using to_pylist().
+    pylist_memory_before = get_memory_usage()
+    pylist_peak_memory = 0
+    py_list = s.to_pylist()
+    for i, item in enumerate(py_list):
+        sum_using_pylist += item or 0
+        # Periodically check peak memory usage.
+        if i % 100_000 == 0:
+            current_memory = get_memory_usage() - pylist_memory_before
+            pylist_peak_memory = max(pylist_peak_memory, current_memory)
+
+    current_memory = get_memory_usage() - pylist_memory_before
+    pylist_peak_memory = max(pylist_peak_memory, current_memory)
+
+    # Check correctness.
+    assert sum_using_iter == sum_using_pylist
+    # Assert that the iterator uses less memory.
+    assert iter_peak_memory < pylist_peak_memory, "Iterator should use less memory than to_pylist()"

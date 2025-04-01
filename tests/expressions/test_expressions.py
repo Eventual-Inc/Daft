@@ -118,6 +118,33 @@ def test_repr_functions_sign() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_signum() -> None:
+    a = col("a")
+    y = a.signum()
+    repr_out = repr(y)
+    assert repr_out == "sign(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_negate() -> None:
+    a = col("a")
+    y = a.negate()
+    repr_out = repr(y)
+    assert repr_out == "negative(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_negative() -> None:
+    a = col("a")
+    y = a.negative()
+    repr_out = repr(y)
+    assert repr_out == "negative(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_round() -> None:
     a = col("a")
     y = a.round()
@@ -687,8 +714,17 @@ def test_list_value_counts_degenerate():
     [
         ("int32", DataType.int32()),
         ("int64", DataType.int64()),
+        ("float32", DataType.float32()),
+        ("real", DataType.float32()),
+        ("float(5)", DataType.float32()),
         ("float64", DataType.float64()),
+        ("float", DataType.float64()),
+        ("double", DataType.float64()),
+        ("double 10", DataType.float64()),
+        ("float(30)", DataType.float64()),
         ("text", DataType.string()),
+        ("string", DataType.string()),
+        ("varchar", DataType.string()),
     ],
 )
 def test_cast_sql_string(sql, actual):
@@ -697,3 +733,14 @@ def test_cast_sql_string(sql, actual):
     df = daft.from_pydict({"a": [1, 2, 3]}).select(expr)
     actual_df = daft.from_pydict({"a": [1, 2, 3]}).select(actual)
     assert df.schema() == actual_df.schema()
+
+
+@pytest.mark.parametrize(
+    # Some sql expressions were failing as documented previously
+    "sql",
+    ["char", "character", "char varying", "character varying"],
+)
+def test_cast_sql_string_failing(sql):
+    with pytest.raises(Exception):
+        expr = col("a").cast(sql)
+        daft.from_pydict({"a": [1, 2, 3]}).select(expr)
