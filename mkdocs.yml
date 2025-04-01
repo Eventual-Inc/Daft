@@ -52,7 +52,6 @@ nav:
   - DataFrame: api/dataframe.md
   - Expressions: api/expressions.md
   - Functions: api/functions.md
-  - SQL: api/sql.md
   - Sessions: api/sessions.md
   - Catalogs & Tables: api/catalogs_tables.md
   - Schema: api/schema.md

@@ -5,13 +5,26 @@ Daft Expressions allow you to express some computation that needs to happen in a
 ## Constructors
 
 ::: daft.expressions.col
+    options:
+        heading_level: 3
+
 ::: daft.expressions.lit
+    options:
+        heading_level: 3
+
 ::: daft.expressions.list_
+    options:
+        heading_level: 3
+
 ::: daft.expressions.struct
+    options:
+        heading_level: 3
 
 ## SQL
 
 ::: daft.sql.sql.sql_expr
+    options:
+        heading_level: 3
 
 <!--
 ## Generic

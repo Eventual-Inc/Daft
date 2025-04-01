@@ -6,10 +6,6 @@ Daft supports SQL as a way of constructing query plans and expressions as it can
     options:
         filters: ["!^_"]
 
-::: daft.sql.sql.sql
-
-::: daft.sql.sql.sql_expr
-
 <!-- why are these not part of sql funcs? -->
 
 <!-- ## SQL Functions

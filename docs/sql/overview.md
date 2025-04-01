@@ -85,7 +85,7 @@ In the above example, we query the DataFrame called `"my_special_df"` by simply 
 
 ### SQL Expressions
 
-SQL has the concept of expressions as well. Here is an example of a simple addition expression, adding columns "a" and "b" in SQL to produce a new column C.
+SQL has the concept of expressions as well. Here is an example of a simple addition expression, adding columns `A` and `B` in SQL to produce a new column `C`.
 
 We also present here the equivalent query for SQL and DataFrame. Notice how similar the concepts are!
 
