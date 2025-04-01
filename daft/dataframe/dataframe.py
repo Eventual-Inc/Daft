@@ -2153,6 +2153,10 @@ class DataFrame:
             )
         ]
 
+        # avoid superfluous .where with empty iterable when nothing to filter.
+        if not float_columns:
+            return self
+
         return self.where(
             ~reduce(
                 lambda x, y: x.is_null().if_else(lit(False), x) | y.is_null().if_else(lit(False), y),
