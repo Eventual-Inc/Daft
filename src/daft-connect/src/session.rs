@@ -4,8 +4,9 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_runtime::{get_io_runtime, RuntimeRef};
-use daft_io::{s3_config_from_env, AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
+use common_runtime::RuntimeRef;
+use daft_context::get_context;
+use daft_io::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
 use daft_session::Session;
 use uuid::Uuid;
 
@@ -65,19 +66,27 @@ impl ConnectSession {
     }
 
     pub fn get_io_config(&self) -> DaftResult<IOConfig> {
+        let IOConfig {
+            mut s3,
+            mut azure,
+            mut gcs,
+            mut http,
+        } = get_context().io_config();
+
+        self.s3_config_helper(&mut s3)?;
+        self.azure_config_helper(&mut azure)?;
+        self.gcs_config_helper(&mut gcs)?;
+        self.http_config_helper(&mut http)?;
+
         Ok(IOConfig {
-            s3: self.s3_config_helper()?,
-            azure: self.azure_config_helper()?,
-            gcs: self.gcs_config_helper()?,
-            http: self.http_config_helper()?,
+            s3,
+            azure,
+            gcs,
+            http,
         })
     }
 
-    fn s3_config_helper(&self) -> DaftResult<S3Config> {
-        let rt = get_io_runtime(false);
-        let mut default_s3_conf =
-            rt.block_on_current_thread(async { DaftResult::Ok(s3_config_from_env().await?) })?;
-
+    fn s3_config_helper(&self, default_s3_conf: &mut S3Config) -> DaftResult<()> {
         macro_rules! set_opt_str {
             ($field:ident) => {
                 if let Some(value) = self
@@ -133,12 +142,10 @@ impl ConnectSession {
         set_from_config!(force_virtual_addressing);
         set_opt_from_config!(profile_name);
 
-        Ok(default_s3_conf)
+        Ok(())
     }
 
-    fn azure_config_helper(&self) -> DaftResult<AzureConfig> {
-        let mut azure_conf = AzureConfig::default();
-
+    fn azure_config_helper(&self, azure_conf: &mut AzureConfig) -> DaftResult<()> {
         macro_rules! set_opt_str {
             ($field:ident) => {
                 if let Some(value) = self
@@ -185,11 +192,10 @@ impl ConnectSession {
         set_opt_str!(endpoint_url);
         set_from_config!(use_ssl);
 
-        Ok(azure_conf)
+        Ok(())
     }
 
-    fn gcs_config_helper(&self) -> DaftResult<GCSConfig> {
-        let mut gcs_conf = GCSConfig::default();
+    fn gcs_config_helper(&self, gcs_conf: &mut GCSConfig) -> DaftResult<()> {
         macro_rules! set_opt_str {
             ($field:ident) => {
                 if let Some(value) = self
@@ -234,11 +240,10 @@ impl ConnectSession {
         set_from_config!(read_timeout_ms);
         set_from_config!(num_tries);
 
-        Ok(gcs_conf)
+        Ok(())
     }
 
-    fn http_config_helper(&self) -> DaftResult<HTTPConfig> {
-        let mut http_conf = HTTPConfig::default();
+    fn http_config_helper(&self, http_conf: &mut HTTPConfig) -> DaftResult<()> {
         if let Some(value) = self
             .config_values
             .get("daft.io.http.user_agent")
@@ -255,6 +260,6 @@ impl ConnectSession {
             http_conf.bearer_token = Some(value.into());
         }
 
-        Ok(http_conf)
+        Ok(())
     }
 }

@@ -13,6 +13,7 @@ import s3fs
 from PIL import Image
 
 import daft
+from daft.pyspark import SparkSession
 
 T = TypeVar("T")
 
@@ -223,3 +224,36 @@ def small_images_s3_paths() -> list[str]:
     return [f"s3://daft-public-data/test_fixtures/small_images/rickroll{i}.jpg" for i in range(6)] + [
         f"s3a://daft-public-data/test_fixtures/small_images/rickroll{i}.jpg" for i in range(6)
     ]
+
+
+# def minio_io_config() -> daft.io.IOConfig:
+# return daft.io.IOConfig(
+#     s3=daft.io.S3Config(
+#         endpoint_url="http://127.0.0.1:9000",
+#         key_id="minioadmin",
+#         access_key="minioadmin",
+#         use_ssl=False,
+#     )
+# )
+@pytest.fixture(params=["local_spark", "ray_spark"], scope="session")
+def minio_spark(request):
+    spark = request.getfixturevalue(request.param)
+    spark.conf.set("daft.io.s3.endpoint_url", "http://127.0.0.1:9000")
+    spark.conf.set("daft.io.s3.key_id", "minioadmin")
+    spark.conf.set("daft.io.s3.access_key", "minioadmin")
+    spark.conf.set("daft.io.s3.use_ssl", False)
+    return spark
+
+
+@pytest.fixture(scope="session")
+def local_spark():
+    session = SparkSession.builder.appName("DaftConfigTest").local().getOrCreate()
+    yield session
+    session.stop()
+
+
+@pytest.fixture(scope="session")
+def ray_spark():
+    session = SparkSession.builder.appName("DaftConfigTest").remote("ray://localhost:10001").getOrCreate()
+    yield session
+    session.stop()
