@@ -3073,6 +3073,7 @@ class DataFrame:
         self,
         n: int = 8,
         format: Optional[PreviewFormat] = None,
+        verbose: bool = False,
         max_width: int = 30,
         align: PreviewAlign = "left",
         columns: Optional[List[PreviewColumn]] = None,
@@ -3081,6 +3082,12 @@ class DataFrame:
 
         If IPython is installed, this will use IPython's `display` utility to pretty-print in a
         notebook/REPL environment. Otherwise, this will fall back onto a naive Python `print`.
+
+        If no format is given, then daft's truncating preview format is used.
+            - The output is a 'fancy' table with rounded corners.
+            - Headers contain the column's data type.
+            - Columns are truncated to 30 characters.
+            - The table's overall width is limited to 10 columns.
 
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
@@ -3116,6 +3123,7 @@ class DataFrame:
             schema,
             format,
             **{
+                "verbose": verbose,
                 "max_width": max_width,
                 "align": align,
                 "columns": columns,
