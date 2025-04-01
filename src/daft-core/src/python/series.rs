@@ -701,6 +701,18 @@ impl PySeries {
         Ok(self.series.dt_second()?.into())
     }
 
+    pub fn dt_millisecond(&self) -> PyResult<Self> {
+        Ok(self.series.dt_millisecond()?.into())
+    }
+
+    pub fn dt_microsecond(&self) -> PyResult<Self> {
+        Ok(self.series.dt_microsecond()?.into())
+    }
+
+    pub fn dt_nanosecond(&self) -> PyResult<Self> {
+        Ok(self.series.dt_nanosecond()?.into())
+    }
+
     pub fn dt_time(&self) -> PyResult<Self> {
         Ok(self.series.dt_time()?.into())
     }

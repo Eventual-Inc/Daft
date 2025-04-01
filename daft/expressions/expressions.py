@@ -2122,6 +2122,105 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.dt_second(self._expr))
 
+    def millisecond(self) -> Expression:
+        """Retrieves the millisecond for a datetime column.
+
+        Example:
+            >>> import daft
+            >>> from datetime import datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+            ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+            ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+            ...         ]
+            ...     }
+            ... )
+            >>> df = df.select(daft.col("datetime").dt.millisecond())
+            >>> df.show()
+            ╭──────────╮
+            │ datetime │
+            │ ---      │
+            │ UInt32   │
+            ╞══════════╡
+            │ 0        │
+            ├╌╌╌╌╌╌╌╌╌╌┤
+            │ 500      │
+            ├╌╌╌╌╌╌╌╌╌╌┤
+            │ 60       │
+            ╰──────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        return Expression._from_pyexpr(native.dt_millisecond(self._expr))
+
+    def microsecond(self) -> Expression:
+        """Retrieves the microsecond for a datetime column.
+
+        Example:
+            >>> import daft
+            >>> from datetime import datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+            ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+            ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+            ...         ]
+            ...     }
+            ... )
+            >>> df.select(daft.col("datetime").dt.microsecond()).show()
+            ╭──────────╮
+            │ datetime │
+            │ ---      │
+            │ UInt32   │
+            ╞══════════╡
+            │ 0        │
+            ├╌╌╌╌╌╌╌╌╌╌┤
+            │ 500000   │
+            ├╌╌╌╌╌╌╌╌╌╌┤
+            │ 60000    │
+            ╰──────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        """
+        return Expression._from_pyexpr(native.dt_microsecond(self._expr))
+
+    def nanosecond(self) -> Expression:
+        """Retrieves the nanosecond for a datetime column.
+
+        Example:
+            >>> import daft
+            >>> from datetime import datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+            ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+            ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+            ...         ]
+            ...     }
+            ... )
+            >>>
+            >>> df.select(daft.col("datetime").dt.nanosecond()).show()
+            ╭──────────╮
+            │ datetime │
+            │ ---      │
+            │ UInt32   │
+            ╞══════════╡
+            │ 0        │
+            ├╌╌╌╌╌╌╌╌╌╌┤
+            │ 500000000│
+            ├╌╌╌╌╌╌╌╌╌╌┤
+            │ 60000000 │
+            ╰──────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        return Expression._from_pyexpr(native.dt_nanosecond(self._expr))
+
     def time(self) -> Expression:
         """Retrieves the time for a datetime column.
 

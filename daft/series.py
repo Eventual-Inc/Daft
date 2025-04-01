@@ -986,6 +986,15 @@ class SeriesDateNamespace(SeriesNamespace):
     def second(self) -> Series:
         return Series._from_pyseries(self._series.dt_second())
 
+    def millisecond(self) -> Series:
+        return Series._from_pyseries(self._series.dt_millisecond())
+
+    def microsecond(self) -> Series:
+        return Series._from_pyseries(self._series.dt_microsecond())
+
+    def nanosecond(self) -> Series:
+        return Series._from_pyseries(self._series.dt_nanosecond())
+
     def time(self) -> Series:
         return Series._from_pyseries(self._series.dt_time())
 

@@ -1265,6 +1265,9 @@ impl<'a> SQLPlanner<'a> {
                     DateTimeField::Hour => Ok(dt::dt_hour(expr)),
                     DateTimeField::Minute => Ok(dt::dt_minute(expr)),
                     DateTimeField::Second => Ok(dt::dt_second(expr)),
+                    DateTimeField::Millisecond => Ok(dt::dt_millisecond(expr)),
+                    DateTimeField::Microsecond => Ok(dt::dt_microsecond(expr)),
+                    DateTimeField::Nanosecond => Ok(dt::dt_nanosecond(expr)),
                     other => unsupported_sql_err!("EXTRACT ({other})"),
                 }
             }
