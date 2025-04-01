@@ -176,6 +176,14 @@ def test_list_tables(catalog: Catalog):
         assert table in res
 
 
+def test_existence_checks(catalog: Catalog):
+    ns1 = "ns1"
+    catalog.create_namespace(ns1)
+
+    assert catalog.has_namespace(ns1)
+    assert not catalog.has_namespace("does_not_exist")
+
+
 @pytest.mark.skip("S3 Tables read tests are done via integration tests.")
 def test_read_table():
     pass  # https://github.com/Eventual-Inc/Daft/issues/3925

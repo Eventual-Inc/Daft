@@ -2190,6 +2190,7 @@ dependencies = [
  "paste",
  "pyo3",
  "serde",
+ "simdutf8",
  "snafu",
  "tiktoken-rs",
  "tokio",
@@ -2546,6 +2547,7 @@ dependencies = [
  "pyo3",
  "rand 0.8.5",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

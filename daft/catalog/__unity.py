@@ -5,7 +5,9 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Table, TableSource
+from unitycatalog import NotFoundError as UnityNotFoundError
+
+from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
 from daft.io._deltalake import read_deltalake
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
@@ -66,7 +68,10 @@ class UnityCatalog(Catalog):
     def get_table(self, ident: Identifier | str) -> UnityTable:
         if isinstance(ident, Identifier):
             ident = ".".join(ident)  # TODO unity qualified identifiers
-        return UnityTable(self._inner.load_table(ident))
+        try:
+            return UnityTable(self._inner.load_table(ident))
+        except UnityNotFoundError:
+            return NotFoundError(f"Table {ident} not found!")
 
     ###
     # list_.*

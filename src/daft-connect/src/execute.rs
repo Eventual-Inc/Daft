@@ -1,7 +1,7 @@
 use std::{future::ready, rc::Rc, sync::Arc};
 
 use common_error::DaftResult;
-use common_file_formats::FileFormat;
+use common_file_formats::{FileFormat, WriteMode};
 use daft_catalog::TableSource;
 use daft_context::get_context;
 use daft_dsl::LiteralValue;
@@ -131,15 +131,7 @@ impl ConnectSession {
                     write_op.options
                 );
             }
-
-            let mode = SaveMode::try_from(write_op.mode)
-                .map_err(|_| Status::internal("invalid write mode"))?;
-
-            if mode == SaveMode::Unspecified {
-                Ok(())
-            } else {
-                not_yet_implemented!("save mode: {}", mode.as_str_name())
-            }
+            Ok(())
         }
 
         let finished = res.result_complete_response();
@@ -147,7 +139,8 @@ impl ConnectSession {
         let (tx, rx) = tokio::sync::mpsc::channel::<ConnectResult<ExecutePlanResponse>>(1);
 
         let this = self.clone();
-
+        let mode = SaveMode::try_from(operation.mode)
+            .map_err(|_| Status::internal("invalid write mode"))?;
         self.compute_runtime.runtime.spawn(async move {
             let result = async {
                 check_write_operation(&operation)?;
@@ -176,6 +169,13 @@ impl ConnectSession {
                 let translator = SparkAnalyzer::new(&this);
 
                 let plan = translator.to_logical_plan(input).await?;
+                let write_mode = match mode {
+                    SaveMode::Unspecified => WriteMode::Append,
+                    SaveMode::Append => WriteMode::Append,
+                    SaveMode::Overwrite => WriteMode::Overwrite,
+                    SaveMode::ErrorIfExists => not_yet_implemented!("ErrorIfExists"),
+                    SaveMode::Ignore => not_yet_implemented!("Ignore"),
+                };
 
                 let io_config = this.get_io_config().map_err(|e| {
                     Status::internal(
@@ -183,7 +183,8 @@ impl ConnectSession {
                     )
                 })?;
 
-                let plan = plan.table_write(&path, file_format, None, None, Some(io_config))?;
+                let plan =
+                    plan.table_write(&path, write_mode, file_format, None, None, Some(io_config))?;
 
                 let mut result_stream = this.run_query(plan).await?;
 

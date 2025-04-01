@@ -3,6 +3,8 @@ use std::sync::Arc;
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
+#[cfg(feature = "python")]
+use common_file_formats::WriteMode;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
 use daft_logical_plan::InMemoryInfo;
@@ -156,6 +158,7 @@ fn exprs_to_pyexprs(exprs: &[ExprRef]) -> Vec<PyExpr> {
 fn tabular_write(
     py: Python,
     upstream_iter: PyObject,
+    write_mode: &WriteMode,
     file_format: &FileFormat,
     schema: &SchemaRef,
     root_dir: &String,
@@ -168,6 +171,7 @@ fn tabular_write(
         .getattr(pyo3::intern!(py, "write_file"))?
         .call1((
             upstream_iter,
+            *write_mode,
             *file_format,
             PySchema::from(schema.clone()),
             root_dir,
@@ -849,6 +853,7 @@ fn physical_plan_to_partition_tasks(
             file_info:
                 OutputFileInfo {
                     root_dir,
+                    write_mode,
                     file_format,
                     partition_cols,
                     compression,
@@ -858,6 +863,7 @@ fn physical_plan_to_partition_tasks(
         }) => tabular_write(
             py,
             physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
+            write_mode,
             file_format,
             schema,
             root_dir,
@@ -870,6 +876,7 @@ fn physical_plan_to_partition_tasks(
             file_info:
                 OutputFileInfo {
                     root_dir,
+                    write_mode,
                     file_format,
                     partition_cols,
                     compression,
@@ -879,6 +886,7 @@ fn physical_plan_to_partition_tasks(
         }) => tabular_write(
             py,
             physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
+            write_mode,
             file_format,
             schema,
             root_dir,
@@ -891,6 +899,7 @@ fn physical_plan_to_partition_tasks(
             file_info:
                 OutputFileInfo {
                     root_dir,
+                    write_mode,
                     file_format,
                     partition_cols,
                     compression,
@@ -900,6 +909,7 @@ fn physical_plan_to_partition_tasks(
         }) => tabular_write(
             py,
             physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
+            write_mode,
             file_format,
             schema,
             root_dir,

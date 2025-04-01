@@ -62,3 +62,28 @@ impl FromStr for FileFormat {
 }
 
 impl_bincode_py_state_serialization!(FileFormat);
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+pub enum WriteMode {
+    Overwrite,
+    OverwritePartitions,
+    Append,
+}
+
+impl FromStr for WriteMode {
+    type Err = DaftError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "overwrite" => Ok(Self::Overwrite),
+            "overwrite-partitions" => Ok(Self::OverwritePartitions),
+            "append" => Ok(Self::Append),
+            _ => Err(DaftError::TypeError(format!(
+                "WriteMode {s} not supported!"
+            ))),
+        }
+    }
+}
+
+impl_bincode_py_state_serialization!(WriteMode);

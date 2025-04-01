@@ -600,6 +600,48 @@ Rows in a DataFrame can be reordered based on some column using [`df.sort()`]({{
 (Showing first 3 rows)
 ```
 
+### Numbering Rows
+
+Daft provides [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
+
+- Using the **upper 28 bits** for the partition number
+- Using the **lower 36 bits** for the row number within each partition
+
+This allows for up to 268 million partitions and 68 billion rows per partition. It's useful for creating unique IDs in distributed DataFrames, tracking row order after operations like sorting, and ensuring uniqueness across large datasets.
+
+```python
+import daft
+from daft.functions import monotonically_increasing_id
+
+# Initialize the RayRunner to run distributed
+daft.context.set_runner_ray()
+
+# Create a DataFrame and repartition it into 2 partitions
+df = daft.from_pydict({"A": [1, 2, 3, 4]}).into_partitions(2)
+
+# Add unique IDs
+df = df.with_column("id", monotonically_increasing_id())
+df.show()
+```
+
+``` {title="Output"}
+╭───────┬─────────────╮
+│ A     ┆ id          │
+│ ---   ┆ ---         │
+│ Int64 ┆ UInt64      │
+╞═══════╪═════════════╡
+│ 1     ┆ 0           │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2     ┆ 1           │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 3     ┆ 68719476736 │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 4     ┆ 68719476737 │
+╰───────┴─────────────╯
+```
+
+In this example, rows in the first partition get IDs `0` and `1`, while rows in the second partition start at `2^36` (`68719476736`).
+
 ### Exploding Columns
 
 The [`df.explode()`]({{ api_path }}/dataframe_methods/daft.DataFrame.explode.html) method can be used to explode a column containing a list of values into multiple rows. All other rows will be **duplicated**.
@@ -1401,98 +1443,6 @@ The [`.dt.truncate()`]({{ api_path }}/expression_methods/daft.Expression.dt.trun
 
 Daft can read data from a variety of sources, and write data to many destinations.
 
-## Built-in Functions
-
-Daft provides built-in functions for common data operations. Currently, we support [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html), which assigns unique, increasing IDs to rows in a DataFrame, especially useful in distributed settings, by:
-
-- Using the **upper 28 bits** for the partition number
-- Using the **lower 36 bits** for the row number within each partition
-
-This allows for:
-
-- Up to **268 million partitions**
-- Up to **68 billion rows per partition**
-
-
-### Use Cases
-
-1. **Unique IDs in Distributed DataFrames**: Ensures unique IDs across partitions without coordination.
-
-2. **Tracking Row Order**: Useful after sorting or joining to track original row positions.
-
-3. **Ensuring Uniqueness**: Guarantees unique IDs even in large, distributed datasets.
-
-!!! note "Note"
-
-    The `NativeRunner` does not support repartitioning. If you attempt to use [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) with the `NativeRunner`, it will assign sequential IDs without considering partitions. For distributed workloads, always use the `RayRunner`:
-
-    ```python
-    daft.context.set_runner_ray()
-    ```
-
-#### Example: Assigning Unique IDs
-
-To use [`monotonically_increasing_id()`]({{ api_path }}/function_methods/daft.functions.monotonically_increasing_id.html) effectively, ensure you're using the `RayRunner`, as the `NativeRunner` does not support repartitioning.
-
-```python
-import daft
-from daft.functions import monotonically_increasing_id
-
-# Initialize the RayRunner
-daft.context.set_runner_ray()
-
-# Create a DataFrame and repartition it into 2 partitions
-df = daft.from_pydict({"A": [1, 2, 3, 4]}).into_partitions(2)
-
-# Add unique IDs
-df = df.with_column("id", monotonically_increasing_id())
-df.show()
-```
-
-``` {title="Output"}
-
-╭───────┬─────────────╮
-│ A     ┆ id          │
-│ ---   ┆ ---         │
-│ Int64 ┆ UInt64      │
-╞═══════╪═════════════╡
-│ 1     ┆ 0           │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 2     ┆ 1           │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 3     ┆ 68719476736 │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 4     ┆ 68719476737 │
-╰───────┴─────────────╯
-```
-
-**What Happened?**
-
-- Rows in the first partition get IDs `0` and `1`
-- Rows in the second partition start at `2^36` (`68719476736`)
-
-#### Example: Filtering by ID
-
-You can combine this function with other expressions. For example, filter rows where the ID is greater than `1`:
-
-```python
-df = df.filter(df["id"] > 1)
-df.show()
-```
-
-``` {title="Output"}
-
-╭───────┬─────────────╮
-│ A     ┆ id          │
-│ ---   ┆ ---         │
-│ Int64 ┆ UInt64      │
-╞═══════╪═════════════╡
-│ 3     ┆ 68719476736 │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 4     ┆ 68719476737 │
-╰───────┴─────────────╯
-```
-
 ## Reading Data
 
 ### From Files
@@ -2065,6 +2015,59 @@ To run multiple aggregations on a Grouped DataFrame, you can use the `agg` metho
 (Showing first 2 of 2 rows)
 ```
 
+### Cross Column Aggregations
+
+While standard aggregations like `sum` or `mean` work vertically on a single column, Daft also provides functions to operate horizontally across multiple columns for each row. These functions are part of the `daft.functions` module and include:
+
+- [`columns_min`]({{ api_path }}/function_methods/daft.functions.columns_min.html): Find the minimum value across specified columns for each row
+- [`columns_max`]({{ api_path }}/function_methods/daft.functions.columns_max.html): Find the maximum value across specified columns for each row
+- [`columns_mean`]({{ api_path }}/function_methods/daft.functions.columns_mean.html): Calculate the mean across specified columns for each row
+- [`columns_sum`]({{ api_path }}/function_methods/daft.functions.columns_sum.html): Calculate the sum across specified columns for each row
+- [`columns_avg`]({{ api_path }}/function_methods/daft.functions.columns_avg.html): Alias for `columns_mean`
+
+Here's a simple example showing these functions in action:
+
+=== "🐍 Python"
+    ``` python
+    import daft
+    from daft.functions import columns_min, columns_max, columns_mean, columns_sum
+
+    df = daft.from_pydict({
+        "a": [1, 2, 3],
+        "b": [4, 5, 6],
+        "c": [7, 8, 9]
+    })
+
+    # Create new columns with cross-column aggregations
+    df = df.with_columns({
+        "min_value": columns_min("a", "b", "c"),
+        "max_value": columns_max("a", "b", "c"),
+        "mean_value": columns_mean("a", "b", "c"),
+        "sum_value": columns_sum("a", "b", "c")
+    })
+
+    df.show()
+    ```
+
+``` {title="Output"}
+
+╭───────┬───────┬───────┬───────────┬───────────┬────────────┬───────────╮
+│ a     ┆ b     ┆ c     ┆ min_value ┆ max_value ┆ mean_value ┆ sum_value │
+│ ---   ┆ ---   ┆ ---   ┆ ---       ┆ ---       ┆ ---        ┆ ---       │
+│ Int64 ┆ Int64 ┆ Int64 ┆ Int64     ┆ Int64     ┆ Float64    ┆ Int64     │
+╞═══════╪═══════╪═══════╪═══════════╪═══════════╪════════════╪═══════════╡
+│ 1     ┆ 4     ┆ 7     ┆ 1         ┆ 7         ┆ 4          ┆ 12        │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ 2     ┆ 5     ┆ 8     ┆ 2         ┆ 8         ┆ 5          ┆ 15        │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ 3     ┆ 6     ┆ 9     ┆ 3         ┆ 9         ┆ 6          ┆ 18        │
+╰───────┴───────┴───────┴───────────┴───────────┴────────────┴───────────╯
+
+(Showing first 3 of 3 rows)
+```
+
+These functions are especially useful when you need to calculate statistics across related columns or find extreme values from multiple fields in your data.
+
 ## User-Defined Functions (UDF)
 
 A key piece of functionality in Daft is the ability to flexibly define custom functions that can run computations on any data in your dataframe. This section walks you through the different types of UDFs that Daft allows you to run.
@@ -2358,7 +2361,7 @@ Daft is built to work comfortably with multimodal data types, including URLs and
 (Showing first 5 of 5 rows)
 ```
 
-Let’s turn the bytes into human-readable images using [`image.decode()`]({{ api_path }}/expression_methods/daft.Expression.image.decode.html):
+Let's turn the bytes into human-readable images using [`image.decode()`]({{ api_path }}/expression_methods/daft.Expression.image.decode.html):
 
 === "🐍 Python"
 
