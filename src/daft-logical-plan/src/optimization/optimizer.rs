@@ -9,7 +9,8 @@ use super::{
         DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
         EnrichWithStats, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
         PushDownFilter, PushDownLimit, PushDownProjection, ReorderJoins, SimplifyExpressionsRule,
-        SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery,
+        SimplifyNullFilteredJoin, SplitActorPoolProjects, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -32,7 +33,7 @@ impl OptimizerConfig {
 impl Default for OptimizerConfig {
     fn default() -> Self {
         // Default to a max of 5 optimizer passes for a given batch.
-        Self::new(5)
+        Self::new(20)
     }
 }
 
@@ -121,12 +122,13 @@ impl Default for OptimizerBuilder {
                         Box::new(PushDownFilter::new()),
                         Box::new(PushDownProjection::new()),
                         Box::new(EliminateCrossJoin::new()),
+                        Box::new(SimplifyNullFilteredJoin::new()),
                     ],
                     // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
                     // at the current node, which would require another batch application in order to have a chance to push
                     // that Filter node through upstream nodes.
                     // TODO(Clark): Refine this fixed-point policy.
-                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                    RuleExecutionStrategy::FixedPoint(None),
                 ),
                 // --- Limit pushdowns ---
                 // This needs to be separate from PushDownProjection because otherwise the limit and
