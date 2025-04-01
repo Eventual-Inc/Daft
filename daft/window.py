@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import Any
 
 from daft.daft import WindowBoundary as _WindowBoundary
 from daft.daft import WindowFrame as _WindowFrame
 from daft.daft import WindowFrameType as _WindowFrameType
 from daft.daft import WindowSpec as _WindowSpec
-from daft.expressions import Expression, col
-
-# Import column input types from DataFrame for type checking
-if TYPE_CHECKING:
-    from daft.dataframe.dataframe import ColumnInputType, ManyColumnsInputType
+from daft.utils import ManyColumnsInputType, column_inputs_to_expressions
 
 
 class Window:
@@ -51,20 +47,6 @@ class Window:
     def __init__(self):
         self._spec = _WindowSpec.new()
 
-    @staticmethod
-    def _is_column_input(x: Any) -> bool:
-        return isinstance(x, str) or isinstance(x, Expression)
-
-    @staticmethod
-    def _column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expression]:
-        """Inputs can be passed in as individual arguments or an iterable.
-
-        In addition, they may be strings or Expressions.
-        This method normalizes the inputs to a list of Expressions.
-        """
-        column_iter: Iterable[ColumnInputType] = [columns] if Window._is_column_input(columns) else columns  # type: ignore
-        return [col(c) if isinstance(c, str) else c for c in column_iter]
-
     def partition_by(self, *cols: ManyColumnsInputType) -> Window:
         """Partitions the dataset by one or more columns or expressions.
 
@@ -84,7 +66,7 @@ class Window:
         # Handle column inputs similar to DataFrame methods
         expressions = []
         for c in cols:
-            expressions.extend(Window._column_inputs_to_expressions(c))
+            expressions.extend(column_inputs_to_expressions(c))
 
         if not expressions:
             raise ValueError("At least one partition column must be specified")
@@ -108,7 +90,7 @@ class Window:
         # Handle column inputs similar to DataFrame methods
         expressions = []
         for c in cols:
-            expressions.extend(Window._column_inputs_to_expressions(c))
+            expressions.extend(column_inputs_to_expressions(c))
 
         # Handle ascending parameter
         if isinstance(ascending, bool):
