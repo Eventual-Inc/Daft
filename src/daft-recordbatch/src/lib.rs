@@ -32,6 +32,7 @@ use num_traits::ToPrimitive;
 pub mod ffi;
 mod growable;
 mod ops;
+mod preview;
 mod probeable;
 mod repr_html;
 

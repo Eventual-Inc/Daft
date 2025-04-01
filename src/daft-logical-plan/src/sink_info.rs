@@ -1,6 +1,6 @@
 use std::{hash::Hash, sync::Arc};
 
-use common_file_formats::FileFormat;
+use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
@@ -22,6 +22,7 @@ pub enum SinkInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OutputFileInfo {
     pub root_dir: String,
+    pub write_mode: WriteMode,
     pub file_format: FileFormat,
     pub partition_cols: Option<Vec<ExprRef>>,
     pub compression: Option<String>,
@@ -148,6 +149,7 @@ impl LanceCatalogInfo {
 impl OutputFileInfo {
     pub fn new(
         root_dir: String,
+        write_mode: WriteMode,
         file_format: FileFormat,
         partition_cols: Option<Vec<ExprRef>>,
         compression: Option<String>,
@@ -155,6 +157,7 @@ impl OutputFileInfo {
     ) -> Self {
         Self {
             root_dir,
+            write_mode,
             file_format,
             partition_cols,
             compression,

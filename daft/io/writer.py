@@ -40,7 +40,7 @@ class FileWriterBase(ABC):
         version: Optional[int] = None,
         default_partition_fallback: Optional[str] = None,
     ):
-        resolved_path, self.fs = self.resolve_path_and_fs(root_dir, io_config=io_config)
+        self.resolved_path, self.fs = self.resolve_path_and_fs(root_dir, io_config=io_config)
         self.protocol = get_protocol_from_path(root_dir)
         canonicalized_protocol = canonicalize_protocol(self.protocol)
         is_local_fs = canonicalized_protocol == "file"
@@ -57,7 +57,7 @@ class FileWriterBase(ABC):
                 for key, values in partition_values_to_str_mapping(self.partition_values).items()
             }
             self.dir_path = partition_strings_to_path(
-                resolved_path,
+                self.resolved_path,
                 self.partition_strings,
                 (
                     default_partition_fallback
@@ -67,7 +67,7 @@ class FileWriterBase(ABC):
             )
         else:
             self.partition_strings = {}
-            self.dir_path = f"{resolved_path}"
+            self.dir_path = f"{self.resolved_path}"
 
         self.full_path = f"{self.dir_path}/{self.file_name}"
         if is_local_fs:
@@ -211,6 +211,7 @@ class CSVFileWriter(FileWriterBase):
         if self.partition_values is not None:
             for col_name in self.partition_values.column_names():
                 metadata[col_name] = self.partition_values.get_column(col_name)
+
         return RecordBatch.from_pydict(metadata)
 
 
