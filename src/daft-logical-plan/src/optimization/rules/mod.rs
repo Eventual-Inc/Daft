@@ -13,6 +13,7 @@ mod push_down_projection;
 mod reorder_joins;
 mod rule;
 mod simplify_expressions;
+mod simplify_null_filtered_join;
 mod split_actor_pool_projects;
 mod unnest_subquery;
 
@@ -31,5 +32,6 @@ pub use push_down_projection::PushDownProjection;
 pub use reorder_joins::ReorderJoins;
 pub use rule::OptimizerRule;
 pub use simplify_expressions::SimplifyExpressionsRule;
+pub use simplify_null_filtered_join::SimplifyNullFilteredJoin;
 pub use split_actor_pool_projects::SplitActorPoolProjects;
 pub use unnest_subquery::{UnnestPredicateSubquery, UnnestScalarSubquery};
