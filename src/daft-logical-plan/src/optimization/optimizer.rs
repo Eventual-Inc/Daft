@@ -172,6 +172,8 @@ impl OptimizerBuilder {
         self.rule_batches.push(RuleBatch::new(
             vec![
                 Box::new(ReorderJoins::new()),
+                Box::new(PushDownFilter::new()),
+                Box::new(PushDownProjection::new()),
                 Box::new(EnrichWithStats::new()),
             ],
             RuleExecutionStrategy::Once,
