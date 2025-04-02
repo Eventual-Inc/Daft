@@ -251,6 +251,7 @@ Temporal
    Expression.dt.month
    Expression.dt.year
    Expression.dt.day_of_week
+   Expression.dt.day_of_year
    Expression.dt.truncate
 
 List

@@ -1,14 +1,14 @@
 use daft_dsl::ExprRef;
 use daft_functions::temporal::{
-    dt_date, dt_day, dt_day_of_week, dt_hour, dt_microsecond, dt_millisecond, dt_minute, dt_month,
-    dt_nanosecond, dt_second, dt_time, dt_year,
+    dt_date, dt_day, dt_day_of_week, dt_day_of_year, dt_hour, dt_microsecond, dt_millisecond,
+    dt_minute, dt_month, dt_nanosecond, dt_second, dt_time, dt_year,
 };
 use sqlparser::ast::FunctionArg;
 
 use super::SQLModule;
 use crate::{
     error::SQLPlannerResult,
-    functions::{SQLFunction, SQLFunctions},
+    functions::{DeprecatedSQLFunction, SQLFunction, SQLFunctions},
     unsupported_sql_err,
 };
 
@@ -18,7 +18,16 @@ impl SQLModule for SQLModuleTemporal {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("date", SQLDate);
         parent.add_fn("day", SQLDay);
-        parent.add_fn("dayofweek", SQLDayOfWeek);
+        parent.add_fn(
+            "dayofweek",
+            DeprecatedSQLFunction {
+                name: "dayofweek",
+                replacement: "day_of_week",
+                function: &SQLDayOfWeek,
+            },
+        );
+        parent.add_fn("day_of_week", SQLDayOfWeek);
+        parent.add_fn("day_of_year", SQLDayOfYear);
         parent.add_fn("hour", SQLHour);
         parent.add_fn("minute", SQLMinute);
         parent.add_fn("month", SQLMonth);
@@ -73,6 +82,7 @@ macro_rules! temporal {
 temporal!(SQLDate, dt_date);
 temporal!(SQLDay, dt_day);
 temporal!(SQLDayOfWeek, dt_day_of_week);
+temporal!(SQLDayOfYear, dt_day_of_year);
 temporal!(SQLHour, dt_hour);
 temporal!(SQLMinute, dt_minute);
 temporal!(SQLMonth, dt_month);

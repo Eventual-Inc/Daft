@@ -729,6 +729,10 @@ impl PySeries {
         Ok(self.series.dt_day_of_week()?.into())
     }
 
+    pub fn dt_day_of_year(&self) -> PyResult<Self> {
+        Ok(self.series.dt_day_of_year()?.into())
+    }
+
     pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {
         Ok(self
             .series
