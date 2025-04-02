@@ -1261,12 +1261,12 @@ impl<'a> SQLPlanner<'a> {
                     DateTimeField::Month => Ok(dt::dt_month(expr)),
                     DateTimeField::Day => Ok(dt::dt_day(expr)),
                     DateTimeField::Custom(Ident { value, .. })
-                        if value.as_str() == "day_of_week" =>
+                        if value.to_lowercase().as_str() == "day_of_week" =>
                     {
                         Ok(dt::dt_day_of_week(expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
-                        if value.as_str() == "day_of_year" =>
+                        if value.to_lowercase().as_str() == "day_of_year" =>
                     {
                         Ok(dt::dt_day_of_year(expr))
                     }
