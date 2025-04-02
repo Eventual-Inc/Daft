@@ -1,17 +1,12 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::DataType, prelude::*};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::expr::Expr;
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
-use crate::{
-    expr::Expr,
-    functions::{FunctionEvaluator, FunctionExpr},
-};
 
 /// Represents a window frame boundary
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -126,67 +121,5 @@ impl WindowSpec {
         let mut new_spec = self.clone();
         new_spec.min_periods = min_periods;
         new_spec
-    }
-}
-
-/// Represents a window function expression
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct WindowFunction {
-    /// The expression to apply the window function to
-    pub expr: Arc<Expr>,
-    /// The window specification
-    pub window_spec: WindowSpec,
-}
-
-impl WindowFunction {
-    pub fn new(expr: Expr, window_spec: WindowSpec) -> Self {
-        Self {
-            expr: Arc::new(expr),
-            window_spec,
-        }
-    }
-
-    pub fn to_expr(&self) -> Expr {
-        Expr::Window(self.expr.clone(), self.window_spec.clone())
-    }
-
-    pub fn data_type(&self) -> DaftResult<DataType> {
-        // For basic window functions like sum, the data type is the same as the input expression
-        // TODO: For more complex window functions (rank, dense_rank, etc.), implement specific type inference
-        // based on the window function type
-
-        // Get the data type from the input expression by using to_field with an empty schema
-        let schema = Schema::empty();
-        let field = self.expr.to_field(&schema)?;
-        Ok(field.dtype)
-    }
-
-    /// Get the name of the window function from its underlying expression
-    pub fn name(&self) -> &'static str {
-        // Return a default name in case the expression doesn't have a name
-        // This prevents the Option::unwrap() None panic
-        "window_function"
-    }
-}
-
-impl FunctionEvaluator for WindowFunction {
-    fn fn_name(&self) -> &'static str {
-        "window"
-    }
-
-    fn to_field(
-        &self,
-        _inputs: &[crate::ExprRef],
-        schema: &Schema,
-        _expr: &FunctionExpr,
-    ) -> DaftResult<Field> {
-        // The output field has the same name and type as the input expression
-        self.expr.to_field(schema)
-    }
-
-    fn evaluate(&self, _inputs: &[Series], _expr: &FunctionExpr) -> DaftResult<Series> {
-        Err(DaftError::NotImplemented(
-            "Window functions should be rewritten into a separate plan step by the optimizer. If you're seeing this error, the ExtractWindowFunction optimization rule may not have been applied.".to_string(),
-        ))
     }
 }
