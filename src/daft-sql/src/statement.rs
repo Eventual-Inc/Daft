@@ -195,7 +195,7 @@ impl SQLPlanner<'_> {
             let catalog = idents[0].value.clone();
             let namespace = match idents.len() {
                 1 => None,
-                _ => Some(Identifier::from_path(
+                _ => Some(Identifier::try_new(
                     idents[1..].iter().map(|ident| &ident.value),
                 )?),
             };
@@ -246,7 +246,7 @@ mod test {
             assert_eq!(use_stmt.catalog, "mycatalog");
             assert_eq!(
                 use_stmt.namespace,
-                Some(Identifier::from_path(vec!["myschema"])?)
+                Some(Identifier::try_new(vec!["myschema"])?)
             );
             Ok(())
         } else {
@@ -266,7 +266,7 @@ mod test {
             assert_eq!(use_stmt.catalog, "mycatalog");
             assert_eq!(
                 use_stmt.namespace,
-                Some(Identifier::from_path(vec!["myschema", "mysubschema"])?)
+                Some(Identifier::try_new(vec!["myschema", "mysubschema"])?)
             );
             Ok(())
         } else {
