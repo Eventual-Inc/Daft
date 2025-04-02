@@ -61,7 +61,7 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
                     "timestamp": MOCK_DATETIME.isoformat(),
                     "context": {
                         "app": {
-                            "name": "getdaft",
+                            "name": "daft",
                             "version": daft.get_version(),
                             "build": daft.get_build_type(),
                         },
@@ -154,7 +154,7 @@ def test_analytics_client_track_dataframe_method(
                     "timestamp": MOCK_DATETIME.isoformat(),
                     "context": {
                         "app": {
-                            "name": "getdaft",
+                            "name": "daft",
                             "version": daft.get_version(),
                             "build": daft.get_build_type(),
                         },

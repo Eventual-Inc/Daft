@@ -44,8 +44,10 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::binary_concat);
     add!(binary::binary_slice);
 
-    add!(binary::decode);
     add!(binary::encode);
+    add!(binary::decode);
+    add!(binary::try_encode);
+    add!(binary::try_decode);
 
     add!(float::is_inf);
     add!(float::is_nan);
@@ -88,6 +90,9 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::expm1);
     add!(numeric::floor);
     add!(numeric::sign);
+    add!(numeric::signum);
+    add!(numeric::negate);
+    add!(numeric::negative);
     add!(numeric::sqrt);
     add!(numeric::log2);
     add!(numeric::log10);

@@ -92,7 +92,7 @@ mod tests {
         )
         .into_series();
 
-        let dtype = DataType::SparseTensor(Box::new(DataType::Int64));
+        let dtype = DataType::SparseTensor(Box::new(DataType::Int64), false);
         let struct_array = StructArray::new(
             Field::new("tensor", dtype.to_physical()),
             vec![values_array, indices_array, shapes_array],
@@ -101,7 +101,7 @@ mod tests {
         let sparse_tensor_array =
             SparseTensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);
         let fixed_shape_sparse_tensor_dtype =
-            DataType::FixedShapeSparseTensor(Box::new(DataType::Int64), vec![3]);
+            DataType::FixedShapeSparseTensor(Box::new(DataType::Int64), vec![3], false);
         let fixed_shape_sparse_tensor_array =
             sparse_tensor_array.cast(&fixed_shape_sparse_tensor_dtype)?;
         let roundtrip_tensor = fixed_shape_sparse_tensor_array.cast(&dtype)?;
@@ -131,8 +131,11 @@ mod tests {
         ];
 
         for (n_elements, minimal_dtype) in element_counts.iter().zip(indices_minimal_dtype.iter()) {
-            let dtype =
-                DataType::FixedShapeSparseTensor(Box::new(DataType::Float32), vec![*n_elements]);
+            let dtype = DataType::FixedShapeSparseTensor(
+                Box::new(DataType::Float32),
+                vec![*n_elements],
+                false,
+            );
             let physical_dtype = dtype.to_physical();
             if let DataType::Struct(fields) = physical_dtype {
                 assert_eq!(fields.len(), 2, "Expected exactly 2 fields in Struct");

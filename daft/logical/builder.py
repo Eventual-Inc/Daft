@@ -12,6 +12,7 @@ from daft.daft import (
     JoinType,
     PyDaftExecutionConfig,
     ScanOperatorHandle,
+    WriteMode,
     logical_plan_table_scan,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
@@ -120,15 +121,15 @@ class LogicalPlanBuilder:
     @_apply_daft_planning_config_to_initializer
     def from_in_memory_scan(
         cls,
-        partition: PartitionCacheEntry,
+        cache_entry: PartitionCacheEntry,
         schema: Schema,
         num_partitions: int,
         size_bytes: int,
         num_rows: int,
     ) -> LogicalPlanBuilder:
         builder = _LogicalPlanBuilder.in_memory_scan(
-            partition.key,
-            partition,
+            cache_entry.key,
+            cache_entry,
             schema._schema,
             num_partitions,
             size_bytes,
@@ -319,6 +320,7 @@ class LogicalPlanBuilder:
     def write_tabular(
         self,
         root_dir: str | pathlib.Path,
+        write_mode: WriteMode,
         file_format: FileFormat,
         io_config: IOConfig,
         partition_cols: list[Expression] | None = None,
@@ -327,7 +329,9 @@ class LogicalPlanBuilder:
         if file_format != FileFormat.Csv and file_format != FileFormat.Parquet:
             raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
-        builder = self._builder.table_write(str(root_dir), file_format, part_cols_pyexprs, compression, io_config)
+        builder = self._builder.table_write(
+            str(root_dir), write_mode, file_format, part_cols_pyexprs, compression, io_config
+        )
         return LogicalPlanBuilder(builder)
 
     def write_iceberg(self, table: IcebergTable, io_config: IOConfig) -> LogicalPlanBuilder:

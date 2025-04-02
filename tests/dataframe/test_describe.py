@@ -37,7 +37,7 @@ def test_describe():
     ]
     # create an empty table with known schema
     mp = daft.recordbatch.MicroPartition.empty(Schema._from_fields(fields))
-    df = DataFrame._from_tables(mp)
+    df = DataFrame._from_micropartitions(mp)
     # describe..
     df = df.describe().collect()
     # assert

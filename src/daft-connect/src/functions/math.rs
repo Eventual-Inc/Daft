@@ -7,6 +7,7 @@ use daft_functions::numeric::{
     floor::Floor,
     log::{log, Ln, Log10, Log1p, Log2},
     round::round,
+    sign::{Negative, Sign},
     sqrt::Sqrt,
     trigonometry::{
         ArcCos, ArcCosh, ArcSin, ArcSinh, ArcTan, ArcTanh, Atan2, Cos, Cosh, Cot, Csc, Degrees,
@@ -58,11 +59,10 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("log10", Log10 {});
         parent.add_fn("log1p", Log1p {});
         parent.add_fn("log2", Log2 {});
-        parent.add_fn("negate", TODO_FUNCTION);
-        parent.add_fn("negative", TODO_FUNCTION);
+        parent.add_fn("negate", Negative {});
+        parent.add_fn("negative", Negative {});
         parent.add_fn("pi", TODO_FUNCTION);
         parent.add_fn("pmod", TODO_FUNCTION);
-        parent.add_fn("positive", TODO_FUNCTION);
         parent.add_fn("pow", TODO_FUNCTION);
         parent.add_fn("power", TODO_FUNCTION);
         parent.add_fn("rint", TODO_FUNCTION);
@@ -71,8 +71,8 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("sec", Sec {});
         parent.add_fn("shiftleft", TODO_FUNCTION);
         parent.add_fn("shiftright", TODO_FUNCTION);
-        parent.add_fn("sign", TODO_FUNCTION);
-        parent.add_fn("signum", TODO_FUNCTION);
+        parent.add_fn("sign", Sign {});
+        parent.add_fn("signum", Sign {});
         parent.add_fn("sin", Sin {});
         parent.add_fn("sinh", Sinh {});
         parent.add_fn("tan", Tan {});

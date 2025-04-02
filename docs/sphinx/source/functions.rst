@@ -15,3 +15,9 @@ Sequence Functions
    :toctree: doc_gen/function_methods
 
    monotonically_increasing_id
+   llm_generate
+   columns_sum
+   columns_mean
+   columns_avg
+   columns_min
+   columns_max

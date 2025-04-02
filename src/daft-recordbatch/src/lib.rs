@@ -44,6 +44,13 @@ pub use python::register_modules;
 use rand::seq::index::sample;
 use repr_html::html_value;
 
+#[macro_export]
+macro_rules! value_err {
+    ($($arg:tt)*) => {
+        return Err(common_error::DaftError::ValueError(format!($($arg)*)))
+    };
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RecordBatch {
     pub schema: SchemaRef,
@@ -65,27 +72,27 @@ impl Hash for RecordBatch {
 #[inline]
 fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     if schema.fields.len() != columns.len() {
-        return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
+        return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.fields.len(), columns.len())));
     }
     for (field, series) in schema.fields.values().zip(columns.iter()) {
         if field != series.field() {
-            return Err(DaftError::SchemaMismatch(format!("While building a Table, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
+            return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
         }
     }
     Ok(())
 }
 
 impl RecordBatch {
-    /// Create a new [`Table`] and handle broadcasting of any unit-length columns
+    /// Create a new [`RecordBatch`] and handle broadcasting of any unit-length columns
     ///
-    /// Note that this function is slow. You might instead be looking for [`Table::new_with_size`] which does not perform broadcasting
-    /// or [`Table::new_unchecked`] if you've already performed your own validation logic.
+    /// Note that this function is slow. You might instead be looking for [`RecordBatch::new_with_size`] which does not perform broadcasting
+    /// or [`RecordBatch::new_unchecked`] if you've already performed your own validation logic.
     ///
     /// # Arguments
     ///
-    /// * `schema` - Expected [`Schema`] of the new [`Table`], used for validation
+    /// * `schema` - Expected [`Schema`] of the new [`RecordBatch`], used for validation
     /// * `columns` - Columns to crate a table from as [`Series`] objects
-    /// * `num_rows` - Expected number of rows in the [`Table`], passed explicitly to handle cases where `columns` is empty
+    /// * `num_rows` - Expected number of rows in the [`RecordBatch`], passed explicitly to handle cases where `columns` is empty
     pub fn new_with_broadcast<S: Into<SchemaRef>>(
         schema: S,
         columns: Vec<Series>,
@@ -97,7 +104,7 @@ impl RecordBatch {
         // Validate Series lengths against provided num_rows
         for (field, series) in schema.fields.values().zip(columns.iter()) {
             if (series.len() != 1) && (series.len() != num_rows) {
-                return Err(DaftError::ValueError(format!("While building a Table with Table::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified Table length: {}", field.name, series.len(), num_rows)));
+                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
             }
         }
 
@@ -122,15 +129,15 @@ impl RecordBatch {
         self.columns.iter().map(|s| s.to_arrow())
     }
 
-    /// Create a new [`Table`] and validate against `num_rows`
+    /// Create a new [`RecordBatch`] and validate against `num_rows`
     ///
-    /// Note that this function is slow. You might instead be looking for [`Table::new_unchecked`] if you've already performed your own validation logic.
+    /// Note that this function is slow. You might instead be looking for [`RecordBatch::new_unchecked`] if you've already performed your own validation logic.
     ///
     /// # Arguments
     ///
-    /// * `schema` - Expected [`Schema`] of the new [`Table`], used for validation
+    /// * `schema` - Expected [`Schema`] of the new [`RecordBatch`], used for validation
     /// * `columns` - Columns to crate a table from as [`Series`] objects
-    /// * `num_rows` - Expected number of rows in the [`Table`], passed explicitly to handle cases where `columns` is empty
+    /// * `num_rows` - Expected number of rows in the [`RecordBatch`], passed explicitly to handle cases where `columns` is empty
     pub fn new_with_size<S: Into<SchemaRef>>(
         schema: S,
         columns: Vec<Series>,
@@ -142,14 +149,14 @@ impl RecordBatch {
         // Validate Series lengths against provided num_rows
         for (field, series) in schema.fields.values().zip(columns.iter()) {
             if series.len() != num_rows {
-                return Err(DaftError::ValueError(format!("While building a Table with Table::new_with_size, we found that the Series lengths did not match. Series named: {} had length: {} vs the specified Table length: {}", field.name, series.len(), num_rows)));
+                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_size, we found that the Series lengths did not match. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
             }
         }
 
         Ok(Self::new_unchecked(schema, columns, num_rows))
     }
 
-    /// Create a new [`Table`] without any validations
+    /// Create a new [`RecordBatch`] without any validations
     ///
     /// WARNING: be sure that your data is valid, or this might cause downstream problems such as segfaults!
     ///
@@ -177,16 +184,16 @@ impl RecordBatch {
         Ok(Self::new_unchecked(schema, columns, 0))
     }
 
-    /// Create a Table from a set of columns.
+    /// Create a RecordBatch from a set of columns.
     ///
     /// Note: `columns` cannot be empty (will panic if so.) and must all have the same length.
     ///
     /// # Arguments
     ///
-    /// * `columns` - Columns to crate a table from as [`Series`] objects
+    /// * `columns` - Columns to create a table from as [`Series`] objects
     pub fn from_nonempty_columns(columns: impl Into<Arc<Vec<Series>>>) -> DaftResult<Self> {
         let columns = columns.into();
-        assert!(!columns.is_empty(), "Cannot call Table::new() with empty columns. This indicates an internal error, please file an issue.");
+        assert!(!columns.is_empty(), "Cannot call RecordBatch::new() with empty columns. This indicates an internal error, please file an issue.");
 
         let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect())?;
         let schema: SchemaRef = schema.into();
@@ -199,13 +206,49 @@ impl RecordBatch {
                 num_rows = series.len();
             }
             if series.len() != num_rows {
-                return Err(DaftError::ValueError(format!("While building a Table with Table::new_with_nonempty_columns, we found that the Series lengths did not match. Series named: {} had length: {} vs inferred Table length: {}", field.name, series.len(), num_rows)));
+                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_nonempty_columns, we found that the Series lengths did not match. Series named: {} had length: {} vs inferred RecordBatch length: {}", field.name, series.len(), num_rows)));
             }
         }
 
         Ok(Self {
             schema,
             columns,
+            num_rows,
+        })
+    }
+
+    pub fn from_arrow<S: Into<SchemaRef>>(
+        schema: S,
+        arrays: Vec<Box<dyn arrow2::array::Array>>,
+    ) -> DaftResult<Self> {
+        // validate we have at least one array
+        if arrays.is_empty() {
+            value_err!("Cannot call RecordBatch::from_arrow() with no arrow arrays.")
+        }
+        // validate that we have a field for each array
+        let schema: SchemaRef = schema.into();
+        let fields = schema.get_fields();
+        if fields.len() != arrays.len() {
+            value_err!("While building a RecordBatch with RecordBatch::from_arrow(), we found that the number of fields in the schema `{}` did not match the number of arrays `{}`", fields.len(), arrays.len());
+        }
+        // convert arrays to series and validate lengths
+        let mut columns = vec![];
+        let mut num_rows = 1;
+        for (field, array) in schema.fields.values().zip(arrays.into_iter()) {
+            if num_rows == 1 {
+                num_rows = array.len();
+            }
+            if array.len() != num_rows {
+                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::from_arrow(), we found that the array for field `{}` had length `{}` whereas the expected length is {}", &field.name, array.len(), num_rows)));
+            }
+            let field = Arc::new(field.clone());
+            let column = Series::from_arrow(field, array)?;
+            columns.push(column);
+        }
+
+        Ok(Self {
+            schema,
+            columns: Arc::new(columns),
             num_rows,
         })
     }
@@ -358,7 +401,7 @@ impl RecordBatch {
     pub fn mask_filter(&self, mask: &Series) -> DaftResult<Self> {
         if *mask.data_type() != DataType::Boolean {
             return Err(DaftError::ValueError(format!(
-                "We can only mask a Table with a Boolean Series, but we got {}",
+                "We can only mask a RecordBatch with a Boolean Series, but we got {}",
                 mask.data_type()
             )));
         }
@@ -394,7 +437,7 @@ impl RecordBatch {
     pub fn concat<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
         if tables.is_empty() {
             return Err(DaftError::ValueError(
-                "Need at least 1 Table to perform concat".to_string(),
+                "Need at least 1 RecordBatch to perform concat".to_string(),
             ));
         }
         if tables.len() == 1 {
@@ -406,7 +449,7 @@ impl RecordBatch {
         for tab in tables.iter().skip(1).map(|t| t.as_ref()) {
             if tab.schema.as_ref() != first_schema {
                 return Err(DaftError::SchemaMismatch(format!(
-                    "Table concat requires all schemas to match, {} vs {}",
+                    "RecordBatch concat requires all schemas to match, {} vs {}",
                     first_schema, tab.schema
                 )));
             }
@@ -648,8 +691,8 @@ impl RecordBatch {
             Expr::Exists(_subquery) => Err(DaftError::ComputeError(
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
-            Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }))) => Err(DaftError::ComputeError(
-                format!("Outer reference columns should be eliminated before evaluation. This indicates either that column {name} does not exist in the table, or there is a bug in the query optimizer."),
+            Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(..))) => Err(DaftError::ComputeError(
+                format!("Column {expr} could not be resolved. This indicates either that the column is referencing a different table from the one it is being used in, or a bug in the query optimizer."),
             )),
             Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(..))) => Err(DaftError::ComputeError(
                 "Join side columns cannot be evaluated directly. This indicates a bug in the executor.".to_string(),
@@ -924,8 +967,8 @@ impl RecordBatch {
 impl TryFrom<RecordBatch> for FileInfos {
     type Error = DaftError;
 
-    fn try_from(table: RecordBatch) -> DaftResult<Self> {
-        let file_paths = table
+    fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
+        let file_paths = record_batch
             .get_column("path")?
             .utf8()?
             .data()
@@ -935,7 +978,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .iter()
             .map(|s| s.unwrap().to_string())
             .collect::<Vec<_>>();
-        let file_sizes = table
+        let file_sizes = record_batch
             .get_column("size")?
             .i64()?
             .data()
@@ -945,7 +988,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .iter()
             .map(|n| n.copied())
             .collect::<Vec<_>>();
-        let num_rows = table
+        let num_rows = record_batch
             .get_column("num_rows")?
             .i64()?
             .data()

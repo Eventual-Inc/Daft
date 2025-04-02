@@ -82,6 +82,10 @@ impl Schema {
         }
     }
 
+    pub fn get_fields(&self) -> Vec<Field> {
+        self.fields.values().cloned().collect()
+    }
+
     pub fn has_field(&self, name: &str) -> bool {
         self.fields.contains_key(name)
     }
@@ -130,7 +134,7 @@ impl Schema {
     }
 
     /// Takes the non-distinct union of two schemas. If there are overlapping keys, then we take the
-    /// corresponding field from one of the two schemas.
+    /// corresponding position from `self` and field from `other`.
     pub fn non_distinct_union(&self, other: &Self) -> Self {
         let fields = self
             .fields

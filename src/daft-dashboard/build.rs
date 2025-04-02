@@ -1,7 +1,8 @@
 use std::process::Command;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("cargo:rerun-if-changed=frontend");
+    println!("cargo:rerun-if-changed=frontend/src/");
+    println!("cargo:rerun-if-changed=frontend/bun.lockb");
     let out_dir = std::env::var("OUT_DIR")?;
 
     // always set the env var so that the include_dir! macro doesn't panic

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass, field
+from functools import reduce
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
 from daft.daft import JoinSide, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
+from daft.filesystem import overwrite_files
 from daft.recordbatch import MicroPartition, recordbatch_io
 from daft.runners.partitioning import (
     Boundaries,
@@ -432,6 +434,29 @@ class WriteFile(SingleOutputInstruction):
             partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
+
+
+@dataclass(frozen=True)
+class OverwriteFiles(SingleOutputInstruction):
+    overwrite_partitions: bool
+    root_dir: str | pathlib.Path
+    io_config: IOConfig | None
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        files_to_overwrite = []
+        for input in inputs:
+            files_to_overwrite.extend(input.get_column("path").to_pylist())
+        overwrite_files(
+            files_to_overwrite,
+            self.root_dir,
+            self.io_config,
+            self.overwrite_partitions,
+        )
+        return [MicroPartition.concat(inputs)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        merged_meta = reduce(lambda a, b: a.merge_with_partial(b), input_metadatas)
+        return [merged_meta]
 
 
 @dataclass(frozen=True)

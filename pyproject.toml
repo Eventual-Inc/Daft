@@ -18,12 +18,12 @@ maintainers = [
   {name = "Sammy Sidhu", email = "sammy@eventualcomputing.com"},
   {name = "Jay Chia", email = "jay@eventualcomputing.com"}
 ]
-name = "getdaft"
+name = "daft"
 readme = "README.rst"
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
+all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
 aws = ["boto3"]
 azure = []
 deltalake = ["deltalake", "packaging"]
@@ -43,6 +43,9 @@ ray = [
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
 unity = ["unitycatalog"]
 viz = []
+
+[project.scripts]
+daft = "daft.cli:main"
 
 [project.urls]
 homepage = "https://www.getdaft.io"

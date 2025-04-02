@@ -144,7 +144,7 @@ def lit(value: object) -> Expression:
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
-    See `Column Wildcards <../../../core_concepts/#selecting-columns-using-wildcards>`_ for details on wildcards.
+    See `Column Wildcards <https://www.getdaft.io/projects/docs/en/stable/core_concepts/#selecting-columns-using-wildcards>`_ for details on wildcards.
 
     Example:
         >>> import daft
@@ -595,6 +595,41 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr // self._expr)
 
+    def __getitem__(self, key) -> Expression:
+        """Syntactic sugar for `Expression.list.get` and `Expression.struct.get`.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}], "list": [[10, 20], [30, 40]]})
+            >>> df = df.select(df["struct"]["x"], df["list"][0].alias("first"))
+            >>> df.show()
+            ╭───────┬───────╮
+            │ x     ┆ first │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 10    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 30    │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        See Also:
+            `list.get`
+            `struct.get`
+        """
+        key_type = type(key)
+
+        if key_type is int:
+            return self.list.get(key)
+        elif key_type is str:
+            return self.struct.get(key)
+        else:
+            raise TypeError(
+                f"Argument of type {key_type} is not supported in Expression.__getitem__. Only int and string types are supported."
+            )
+
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name.
 
@@ -632,7 +667,7 @@ class Expression:
 
         Note:
             - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
-            - If a string is provided, it will use the sql engine to parse the string into a data type. See the SQL documentation for more information.
+            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://www.getdaft.io/projects/docs/en/stable/sql/datatypes/) for supported datatypes.
             - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
 
         The following combinations of datatype casting is valid:
@@ -769,6 +804,21 @@ class Expression:
     def sign(self) -> Expression:
         """The sign of a numeric expression."""
         expr = native.sign(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def signum(self) -> Expression:
+        """The signum of a numeric expression."""
+        expr = native.signum(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def negate(self) -> Expression:
+        """The negative of a numeric expression."""
+        expr = native.negate(self._expr)
+        return Expression._from_pyexpr(expr)
+
+    def negative(self) -> Expression:
+        """The negative of a numeric expression."""
+        expr = native.negative(self._expr)
         return Expression._from_pyexpr(expr)
 
     def round(self, decimals: int = 0) -> Expression:
@@ -1294,7 +1344,7 @@ class Expression:
         inferred_return_dtype = DataType._infer_type(return_dtype)
 
         def batch_func(self_series):
-            return [func(x) for x in self_series.to_pylist()]
+            return [func(x) for x in self_series]
 
         name = getattr(func, "__module__", "")  # type: ignore[call-overload]
         if name:
@@ -1511,8 +1561,13 @@ class Expression:
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
-    def encode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+    def encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
+
+        Note:
+            This inputs either a string or binary and returns a binary.
+            If the input value is a string and 'utf-8' is the codec, then it's just a cast to binary.
+            If the input value is a binary and 'utf-8' is the codec, we verify the bytes are valid utf-8.
 
         Example:
             >>> import daft
@@ -1548,13 +1603,17 @@ class Expression:
             codec (str): encoding codec (deflate, gzip, zlib)
 
         Returns:
-            Expression: A new expression with the encoded values.
+            Expression: A new expression, of type `binary`, with the encoded value.
         """
         expr = native.encode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-    def decode(self, codec: Literal["deflate", "gzip", "zlib"]) -> Expression:
+    def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
+
+        Note:
+            This inputs a binary and returns either a binary or string. For now,
+            only decoding with 'utf-8' returns a string.
 
         Example:
             >>> import daft
@@ -1579,6 +1638,16 @@ class Expression:
             Expression: A new expression with the decoded values.
         """
         expr = native.decode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
+
+    def try_encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+        """Encodes or returns null, see `Expression.encode`."""
+        expr = native.try_encode(self._expr, codec)
+        return Expression._from_pyexpr(expr)
+
+    def try_decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+        """Decodes or returns null, see `Expression.decode`."""
+        expr = native.try_decode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:
@@ -3638,7 +3707,7 @@ class ExpressionListNamespace(ExpressionNamespace):
 
 class ExpressionStructNamespace(ExpressionNamespace):
     def get(self, name: str) -> Expression:
-        """Retrieves one field from a struct column.
+        """Retrieves one field from a struct column, or all fields with "*".
 
         Args:
             name: the name of the field to retrieve
