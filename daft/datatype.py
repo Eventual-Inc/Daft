@@ -800,6 +800,16 @@ class DataType:
         """
         return self._dtype.is_fixed_shape_image()
 
+    def is_embedding(self) -> builtins.bool:
+        """Check if this is an embedding type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.embedding(daft.DataType.float32(), 512)
+            >>> assert dtype.is_embedding()
+        """
+        return self._dtype.is_embedding()
+
     def is_tensor(self) -> builtins.bool:
         """Check if this is a tensor type.
 
@@ -891,32 +901,32 @@ class DataType:
         return self._dtype.is_temporal()
 
     @property
-    def fixed_size(self) -> int:
+    def size(self) -> int:
         """If this is a fixed size type, return the size, otherwise an attribute error is raised.
 
         Example:
             >>> import daft
             >>> dtype = daft.DataType.fixed_size_binary(size=10)
-            >>> assert dtype.fixed_size == 10
+            >>> assert dtype.size == 10
             >>> dtype = daft.DataType.binary()
             >>> try:
-            ...     dtype.fixed_size
+            ...     dtype.size
             ... except AttributeError:
             ...     pass
         """
         return self._dtype.fixed_size()
 
     @property
-    def fixed_shape(self) -> tuple[int, ...]:
+    def shape(self) -> tuple[int, ...]:
         """If this is a fixed shape type, return the shape, otherwise an attribute error is raised.
 
         Example:
             >>> import daft
             >>> dtype = daft.DataType.tensor(daft.DataType.float32(), shape=(2, 3))
-            >>> assert dtype.fixed_shape == (2, 3)
+            >>> assert dtype.shape == (2, 3)
             >>> dtype = daft.DataType.tensor(daft.DataType.float32())
             >>> try:
-            ...     dtype.fixed_shape
+            ...     dtype.shape
             ... except AttributeError:
             ...     pass
 
@@ -957,7 +967,7 @@ class DataType:
         return self._dtype.time_zone()
 
     @property
-    def inner_type(self) -> DataType:
+    def dtype(self) -> DataType:
         """If the datatype contains an inner type, return the inner type, otherwise an attribute error is raised.
 
         Example:

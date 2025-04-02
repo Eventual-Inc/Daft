@@ -472,6 +472,10 @@ impl PyDataType {
         self.dtype.is_fixed_shape_image()
     }
 
+    pub fn is_embedding(&self) -> bool {
+        self.dtype.is_embedding()
+    }
+
     pub fn is_tensor(&self) -> bool {
         self.dtype.is_tensor()
     }

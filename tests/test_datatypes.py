@@ -29,10 +29,25 @@ daft_nonnull_types = (
 daft_list_types = [DataType.list(t) for t in daft_nonnull_types] + [
     DataType.fixed_size_list(t, size=10) for t in daft_nonnull_types
 ]
+daft_embedding_types = [DataType.embedding(t, 512) for t in daft_numeric_types]
+daft_tensor_types = [DataType.tensor(t) for t in daft_numeric_types]
+daft_sparse_tensor_types = [DataType.sparse_tensor(t) for t in daft_numeric_types]
+daft_fixed_shape_tensor_types = [DataType.tensor(t, shape=(2, 3)) for t in daft_numeric_types]
+daft_fixed_shape_sparse_tensor_types = [DataType.sparse_tensor(t, shape=(2, 3)) for t in daft_numeric_types]
 daft_map_types = [DataType.map(DataType.string(), t) for t in daft_nonnull_types]
 daft_struct_types = [DataType.struct({"foo": t, "bar": t}) for t in daft_nonnull_types]
 
-all_daft_types = daft_nonnull_types + daft_list_types + daft_map_types + daft_struct_types
+all_daft_types = (
+    daft_nonnull_types
+    + daft_list_types
+    + daft_map_types
+    + daft_struct_types
+    + daft_embedding_types
+    + daft_tensor_types
+    + daft_sparse_tensor_types
+    + daft_fixed_shape_tensor_types
+    + daft_fixed_shape_sparse_tensor_types
+)
 
 
 @pytest.mark.parametrize("dtype", daft_nonnull_types)
@@ -201,13 +216,13 @@ def test_is_string(test_type):
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_is_list(test_type):
     if test_type.is_list():
-        assert test_type.is_list() == (test_type == DataType.list(test_type.inner_type))
+        assert test_type.is_list() == (test_type == DataType.list(test_type.dtype))
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_is_fixed_size_list(test_type):
     if test_type.is_fixed_size_list():
-        assert test_type.is_fixed_size_list() == (test_type == DataType.fixed_size_list(test_type.inner_type, 10))
+        assert test_type.is_fixed_size_list() == (test_type == DataType.fixed_size_list(test_type.dtype, 10))
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
@@ -217,29 +232,38 @@ def test_is_image(test_type):
 
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_is_fixed_shape_image(test_type):
-    assert test_type.is_fixed_shape_image() == (test_type == DataType.image(mode="RGB", height=224, width=224))
+    if test_type.is_fixed_shape_image():
+        assert test_type == DataType.image(mode="RGB", height=224, width=224)
+
+
+@pytest.mark.parametrize("test_type", all_daft_types)
+def test_is_embedding(test_type):
+    if test_type.is_embedding():
+        assert test_type == DataType.embedding(test_type.dtype, test_type.size)
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_is_tensor(test_type):
-    assert test_type.is_tensor() == (test_type == DataType.tensor(DataType.float32()))
+    if test_type.is_tensor():
+        assert test_type == DataType.tensor(test_type.dtype)
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_is_fixed_shape_tensor(test_type):
-    assert test_type.is_fixed_shape_tensor() == (test_type == DataType.tensor(DataType.float32(), shape=(2, 3)))
+    if test_type.is_fixed_shape_tensor():
+        assert test_type == DataType.tensor(test_type.dtype, test_type.shape)
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_is_sparse_tensor(test_type):
-    assert test_type.is_sparse_tensor() == (test_type == DataType.sparse_tensor(DataType.float32()))
+    if test_type.is_sparse_tensor():
+        assert test_type == DataType.sparse_tensor(test_type.dtype)
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
-def test_is_fixed_shape_sparse_tensor(test_type):
-    assert test_type.is_fixed_shape_sparse_tensor() == (
-        test_type == DataType.sparse_tensor(DataType.float32(), shape=(2, 3))
-    )
+def test_is_fixed_shape_sparse_tensor(test_type: DataType):
+    if test_type.is_fixed_shape_sparse_tensor():
+        test_type == DataType.sparse_tensor(test_type.dtype, shape=test_type.shape)
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
@@ -272,10 +296,12 @@ def test_is_temporal(test_type):
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_fixed_size_property(test_type):
     if test_type.is_fixed_size_list() or test_type.is_fixed_size_binary():
-        assert test_type.fixed_size == 10
+        assert test_type.size == 10
+    elif test_type.is_embedding():
+        assert test_type.size == 512
     else:
         try:
-            test_type.fixed_size
+            test_type.size
             pytest.fail("Expected AttributeError")
         except AttributeError:
             assert True
@@ -290,9 +316,10 @@ def test_inner_type_property(test_type: DataType):
         or test_type.is_sparse_tensor()
         or test_type.is_fixed_shape_tensor()
         or test_type.is_fixed_shape_sparse_tensor()
+        or test_type.is_embedding()
     ):
         try:
-            assert test_type.inner_type is not None
+            assert test_type.dtype is not None
         except AttributeError:
             assert False
 

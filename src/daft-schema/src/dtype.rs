@@ -470,6 +470,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_embedding(&self) -> bool {
+        matches!(self, Self::Embedding(..))
+    }
+
+    #[inline]
     pub fn is_tensor(&self) -> bool {
         matches!(self, Self::Tensor(..))
     }
@@ -757,6 +762,7 @@ impl DataType {
         match self {
             Self::FixedSizeBinary(size) => Some(*size),
             Self::FixedSizeList(_, size) => Some(*size),
+            Self::Embedding(_, size) => Some(*size),
             _ => None,
         }
     }
@@ -804,6 +810,7 @@ impl DataType {
     pub fn inner_type(&self) -> Option<&Self> {
         match self {
             Self::List(dtype) | Self::FixedSizeList(dtype, _) => Some(dtype),
+            Self::Embedding(dtype, _) => Some(dtype),
             Self::Extension(_, dtype, _) => Some(dtype),
             Self::Tensor(dtype) => Some(dtype),
             Self::SparseTensor(dtype, _) => Some(dtype),
