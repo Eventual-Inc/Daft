@@ -1,6 +1,7 @@
 use daft_dsl::ExprRef;
 use daft_functions::temporal::{
-    dt_date, dt_day, dt_day_of_week, dt_hour, dt_minute, dt_month, dt_second, dt_time, dt_year,
+    dt_date, dt_day, dt_day_of_week, dt_hour, dt_microsecond, dt_millisecond, dt_minute, dt_month,
+    dt_nanosecond, dt_second, dt_time, dt_year,
 };
 use sqlparser::ast::FunctionArg;
 
@@ -22,6 +23,9 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("minute", SQLMinute);
         parent.add_fn("month", SQLMonth);
         parent.add_fn("second", SQLSecond);
+        parent.add_fn("millisecond", SQLMillisecond);
+        parent.add_fn("microsecond", SQLMicrosecond);
+        parent.add_fn("nanosecond", SQLNanosecond);
         parent.add_fn("year", SQLYear);
         parent.add_fn("time", SQLTime);
 
@@ -73,5 +77,8 @@ temporal!(SQLHour, dt_hour);
 temporal!(SQLMinute, dt_minute);
 temporal!(SQLMonth, dt_month);
 temporal!(SQLSecond, dt_second);
+temporal!(SQLMillisecond, dt_millisecond);
+temporal!(SQLMicrosecond, dt_microsecond);
+temporal!(SQLNanosecond, dt_nanosecond);
 temporal!(SQLYear, dt_year);
 temporal!(SQLTime, dt_time);

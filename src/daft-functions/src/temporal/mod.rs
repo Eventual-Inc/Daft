@@ -73,6 +73,10 @@ impl_temporal!(DayOfWeek, dt_day_of_week, "dt_day_of_week", UInt32);
 impl_temporal!(Minute, dt_minute, "dt_minute", UInt32);
 impl_temporal!(Month, dt_month, "dt_month", UInt32);
 impl_temporal!(Second, dt_second, "dt_second", UInt32);
+impl_temporal!(Millisecond, dt_millisecond, "dt_millisecond", UInt32);
+impl_temporal!(Microsecond, dt_microsecond, "dt_microsecond", UInt32);
+
+impl_temporal!(Nanosecond, dt_nanosecond, "dt_nanosecond", UInt32);
 impl_temporal!(Year, dt_year, "dt_year", Int32);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -147,6 +151,8 @@ mod test {
             (Arc::new(Minute), "minute"),
             (Arc::new(Month), "month"),
             (Arc::new(Second), "second"),
+            (Arc::new(Millisecond), "millisecond"),
+            (Arc::new(Nanosecond), "nanosecond"),
             (Arc::new(Time), "time"),
             (Arc::new(Year), "year"),
             (
