@@ -1356,3 +1356,45 @@ def test_join_different_join_key_types(join_type, expected, repartition_nparts, 
     assert sort_arrow_table(pa.Table.from_pydict(result.to_pydict()), *sort_by) == sort_arrow_table(
         pa.Table.from_pydict(expected), *sort_by
     )
+
+
+# Tests issue 4113.
+def test_self_join_with_projection():
+    df1 = daft.from_pydict(
+        {
+            "pattern_id_l": ["a"],
+            "pattern_id_r": ["b"],
+        }
+    )
+
+    df2 = daft.from_pydict(
+        {
+            "id": ["1", "2", "3"],
+            "pattern_id": ["a", "b", "c"],
+        }
+    )
+
+    result_df = (
+        df1.join(
+            df2,
+            left_on="pattern_id_l",
+            right_on="pattern_id",
+        )
+        .select(daft.col("id").alias("id_l"), daft.col("pattern_id_r"))
+        .join(
+            df2,
+            left_on="pattern_id_r",
+            right_on="pattern_id",
+        )
+        .select(
+            daft.col("id_l"),
+            daft.col("id").alias("id_r"),
+        )
+    )
+
+    expected = {
+        "id_l": ["1"],
+        "id_r": ["2"],
+    }
+
+    assert pa.Table.from_pydict(result_df.to_pydict()) == pa.Table.from_pydict(expected)

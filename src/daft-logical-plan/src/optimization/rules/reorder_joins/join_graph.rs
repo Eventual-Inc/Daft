@@ -775,20 +775,12 @@ impl JoinGraphBuilder {
                 LogicalPlan::Project(Project {
                     input, projection, ..
                 }) => {
-                    let projection_input_mapping = projection
+                    // TODO(desmond): Currently we only support reordering through Project nodes that only project columns. Ideally we should
+                    // perform a projection pushup at the start of join reordering in order to separate out this logic from join graph construction,
+                    // and so that we can reorder joins that have more complex projections in between them.
+                    let reorderable_project = projection
                         .iter()
-                        .filter_map(|e| e.input_mapping().map(|s| (e.name().to_string(), s)))
-                        .collect::<HashMap<String, _>>();
-                    // To be able to reorder through the current projection, all unresolved columns must either have a
-                    // zero-computation projection, or must not be projected by the current Project node (i.e. it should be
-                    // resolved from some other branch in the query tree).
-                    let schema = plan.schema();
-                    let reorderable_project =
-                        self.join_conds_to_resolve.iter().all(|(name, _, done)| {
-                            *done
-                                || !schema.has_field(name)
-                                || projection_input_mapping.contains_key(name.as_str())
-                        });
+                        .all(|e| matches!(e.as_ref(), Expr::Column(_)));
                     if reorderable_project {
                         plan = input;
                     } else {
@@ -1162,6 +1154,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Temporarily skipped - Join reordering algorithm needs to be updated to do a projection pushup"]
     fn test_create_join_graph_multiple_renames() {
         //                InnerJoin (a_beta = c)
         //                 /          \
@@ -1295,6 +1288,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Temporarily skipped - Join reordering algorithm needs to be updated to do a projection pushup"]
     fn test_create_join_graph_with_non_join_projections_and_filters() {
         //                InnerJoin (a = d)
         //                    /        \

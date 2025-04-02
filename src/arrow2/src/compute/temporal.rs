@@ -19,13 +19,14 @@
 
 use chrono::{Datelike, Timelike};
 
-use crate::array::*;
-use crate::datatypes::*;
-use crate::error::{Error, Result};
-use crate::temporal_conversions::*;
-use crate::types::NativeType;
-
 use super::arity::unary;
+use crate::{
+    array::*,
+    datatypes::*,
+    error::{Error, Result},
+    temporal_conversions::*,
+    types::NativeType,
+};
 
 // Create and implement a trait that converts chrono's `Weekday`
 // type into `u32`
@@ -102,12 +103,18 @@ pub fn weekday(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
     date_like!(u32_weekday, array, DataType::UInt32)
 }
 
+pub fn day_of_year(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+    date_like!(ordinal, array, DataType::UInt32)
+}
+
 /// Extracts ISO week of a temporal array as [`PrimitiveArray<u32>`]
 /// Value ranges from 1 to 53 (Last week depends on the year).
 /// Use [`can_iso_week`] to check if this operation is supported for the target [`DataType`]
 pub fn iso_week(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
     date_like!(u32_iso_week, array, DataType::UInt32)
 }
+
+
 
 // Macro to avoid repetition in functions, that apply
 // `chrono::Timelike` methods on Arrays

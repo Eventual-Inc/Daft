@@ -109,31 +109,16 @@ def pyarrow_supports_fixed_shape_tensor() -> bool:
 
 # Column utility functions
 def is_column_input(x: Any) -> bool:
-    """Check if input is a column input (string or Expression).
-
-    Args:
-        x: Input to check
-
-    Returns:
-        bool: True if input is a column input
-    """
     from daft.expressions import Expression
 
     return isinstance(x, str) or isinstance(x, Expression)
 
 
 def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expression]:
-    """Normalize column inputs to a list of Expressions.
+    """Inputs to dataframe operations can be passed in as individual arguments or an iterable.
 
-    Inputs can be passed in as individual arguments or an iterable.
     In addition, they may be strings or Expressions.
     This method normalizes the inputs to a list of Expressions.
-
-    Args:
-        columns: Column inputs to normalize
-
-    Returns:
-        list[Expression]: Normalized list of expressions
     """
     from daft.expressions import col
 

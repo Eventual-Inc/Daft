@@ -752,6 +752,7 @@ impl RecordBatch {
             Expr::Column(Column::Unresolved(..)) => Err(DaftError::ComputeError(
                 "Unresolved columns should be resolved before evaluation.".to_string(),
             )),
+            Expr::Window(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
         }?;
 
         if expected_field.name != series.field().name {

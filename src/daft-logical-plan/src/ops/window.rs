@@ -44,7 +44,6 @@ pub struct Window {
 }
 
 impl Window {
-    /// Create a new Window operator.
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         window_functions: Vec<ExprRef>,
@@ -52,15 +51,12 @@ impl Window {
     ) -> Result<Self> {
         let input_schema = input.schema();
 
-        // Clone the input schema fields
         let mut fields = input_schema.fields.clone();
 
-        // Add fields for window function
         for expr in &window_functions {
             fields.insert(expr.name().to_string(), expr.to_field(&input_schema)?);
         }
 
-        // Create a new schema with all fields
         let schema = Arc::new(Schema::new(fields.values().cloned().collect())?);
 
         Ok(Self {
@@ -99,6 +95,75 @@ impl Window {
 
 impl Window {
     pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!("Window: {}", self.window_functions.len())]
+        let mut lines = vec![format!("Window: {}", self.window_functions.len())];
+
+        if !self.window_spec.partition_by.is_empty() {
+            let partition_cols = self
+                .window_spec
+                .partition_by
+                .iter()
+                .map(|e| e.name().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            lines.push(format!("  Partition by: [{}]", partition_cols));
+        }
+
+        if !self.window_spec.order_by.is_empty() {
+            let order_cols = self
+                .window_spec
+                .order_by
+                .iter()
+                .zip(self.window_spec.ascending.iter())
+                .map(|(e, asc)| format!("{} {}", e.name(), if *asc { "ASC" } else { "DESC" }))
+                .collect::<Vec<_>>()
+                .join(", ");
+            lines.push(format!("  Order by: [{}]", order_cols));
+        }
+
+        if let Some(frame) = &self.window_spec.frame {
+            let frame_type = match frame.frame_type {
+                daft_dsl::expr::window::WindowFrameType::Rows => "ROWS",
+                daft_dsl::expr::window::WindowFrameType::Range => "RANGE",
+            };
+
+            let start = match &frame.start {
+                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding() => {
+                    "UNBOUNDED PRECEDING".to_string()
+                }
+                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing() => {
+                    "UNBOUNDED FOLLOWING".to_string()
+                }
+                daft_dsl::expr::window::WindowBoundary::Offset(n) => match n.cmp(&0) {
+                    std::cmp::Ordering::Equal => "CURRENT ROW".to_string(),
+                    std::cmp::Ordering::Less => format!("{} PRECEDING", n.abs()),
+                    std::cmp::Ordering::Greater => format!("{} FOLLOWING", n),
+                },
+            };
+
+            let end = match &frame.end {
+                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding() => {
+                    "UNBOUNDED PRECEDING".to_string()
+                }
+                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing() => {
+                    "UNBOUNDED FOLLOWING".to_string()
+                }
+                daft_dsl::expr::window::WindowBoundary::Offset(n) => match n.cmp(&0) {
+                    std::cmp::Ordering::Equal => "CURRENT ROW".to_string(),
+                    std::cmp::Ordering::Less => format!("{} PRECEDING", n.abs()),
+                    std::cmp::Ordering::Greater => format!("{} FOLLOWING", n),
+                },
+            };
+
+            lines.push(format!(
+                "  Frame: {} BETWEEN {} AND {}",
+                frame_type, start, end
+            ));
+        }
+
+        if self.window_spec.min_periods != 1 {
+            lines.push(format!("  Min periods: {}", self.window_spec.min_periods));
+        }
+
+        lines
     }
 }
