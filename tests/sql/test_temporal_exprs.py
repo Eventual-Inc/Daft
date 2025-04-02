@@ -90,8 +90,8 @@ def test_extract():
     SELECT
         extract(date from datetimes) as date,
         extract(day from datetimes) as day,
-        extract(dayofweek from datetimes) as day_of_week,
-        extract(dayofyear from datetimes) as day_of_year,
+        extract(day_of_week from datetimes) as day_of_week,
+        extract(day_of_year from datetimes) as day_of_year,
         extract(hour from datetimes) as hour,
         extract(minute from datetimes) as minute,
         extract(month from datetimes) as month,
