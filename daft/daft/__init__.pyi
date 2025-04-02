@@ -73,37 +73,17 @@ class WindowBoundary:
     """Represents a window frame boundary in window functions."""
 
     @staticmethod
-    def unbounded_preceding() -> WindowBoundary:
-        """Represents UNBOUNDED PRECEDING boundary."""
-        ...
-
+    def unbounded_preceding() -> WindowBoundary: ...
     @staticmethod
-    def unbounded_following() -> WindowBoundary:
-        """Represents UNBOUNDED FOLLOWING boundary."""
-        ...
-
+    def unbounded_following() -> WindowBoundary: ...
     @staticmethod
-    def current_row() -> WindowBoundary:
-        """Represents CURRENT ROW boundary."""
-        ...
+    def offset(n: int) -> WindowBoundary: ...
 
-    @staticmethod
-    def offset(n: int) -> WindowBoundary:
-        """Represents N OFFSET boundary."""
-        ...
-
-class WindowFrameType:
+class WindowFrameType(Enum):
     """Represents the type of window frame (ROWS or RANGE)."""
 
-    @staticmethod
-    def rows() -> WindowFrameType:
-        """Row-based window frame."""
-        ...
-
-    @staticmethod
-    def range() -> WindowFrameType:
-        """Range-based window frame."""
-        ...
+    Rows: int
+    Range: int
 
 class WindowFrame:
     """Represents a window frame specification."""
@@ -113,56 +93,17 @@ class WindowFrame:
         frame_type: WindowFrameType,
         start: WindowBoundary,
         end: WindowBoundary,
-    ) -> None:
-        """Create a new window frame specification.
-
-        Args:
-            frame_type: Type of window frame (ROWS or RANGE)
-            start: Start boundary of window frame
-            end: End boundary of window frame
-        """
-        ...
+    ) -> None: ...
 
 class WindowSpec:
     """Represents a window specification for window functions."""
 
     @staticmethod
-    def new() -> WindowSpec:
-        """Create a new empty window specification."""
-        ...
-
-    def with_partition_by(self, exprs: list[PyExpr]) -> WindowSpec:
-        """Set the partition by expressions.
-
-        Args:
-            exprs: List of expressions to partition by
-        """
-        ...
-
-    def with_order_by(self, exprs: list[PyExpr], ascending: list[bool]) -> WindowSpec:
-        """Set the order by expressions.
-
-        Args:
-            exprs: List of expressions to order by
-            ascending: List of booleans indicating sort order for each expression
-        """
-        ...
-
-    def with_frame(self, frame: WindowFrame) -> WindowSpec:
-        """Set the window frame specification.
-
-        Args:
-            frame: Window frame specification
-        """
-        ...
-
-    def with_min_periods(self, min_periods: int) -> WindowSpec:
-        """Set the minimum number of rows required to compute a result.
-
-        Args:
-            min_periods: Minimum number of rows required
-        """
-        ...
+    def new() -> WindowSpec: ...
+    def with_partition_by(self, exprs: list[PyExpr]) -> WindowSpec: ...
+    def with_order_by(self, exprs: list[PyExpr], ascending: list[bool]) -> WindowSpec: ...
+    def with_frame(self, frame: WindowFrame) -> WindowSpec: ...
+    def with_min_periods(self, min_periods: int) -> WindowSpec: ...
 
 class ImageFormat(Enum):
     """Supported image formats for Daft's image I/O."""

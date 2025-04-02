@@ -22,14 +22,33 @@ pub enum WindowBoundary {
     Offset(i64),
 }
 
+#[cfg(feature = "python")]
+#[pymethods]
+impl WindowBoundary {
+    #[staticmethod]
+    pub fn unbounded_preceding() -> Self {
+        Self::UnboundedPreceding()
+    }
+
+    #[staticmethod]
+    pub fn unbounded_following() -> Self {
+        Self::UnboundedFollowing()
+    }
+
+    #[staticmethod]
+    pub fn offset(n: i64) -> Self {
+        Self::Offset(n)
+    }
+}
+
 /// Represents the type of window frame (ROWS or RANGE)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
 pub enum WindowFrameType {
     /// Row-based window frame
-    Rows(),
+    Rows,
     /// Range-based window frame
-    Range(),
+    Range,
 }
 
 /// Represents a window frame specification

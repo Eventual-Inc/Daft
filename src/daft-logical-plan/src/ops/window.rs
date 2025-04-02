@@ -44,7 +44,6 @@ pub struct Window {
 }
 
 impl Window {
-    /// Create a new Window operator.
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         window_functions: Vec<ExprRef>,
@@ -52,15 +51,12 @@ impl Window {
     ) -> Result<Self> {
         let input_schema = input.schema();
 
-        // Clone the input schema fields
         let mut fields = input_schema.fields.clone();
 
-        // Add fields for window function
         for expr in &window_functions {
             fields.insert(expr.name().to_string(), expr.to_field(&input_schema)?);
         }
 
-        // Create a new schema with all fields
         let schema = Arc::new(Schema::new(fields.values().cloned().collect())?);
 
         Ok(Self {
@@ -101,7 +97,6 @@ impl Window {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![format!("Window: {}", self.window_functions.len())];
 
-        // Add partition by info
         if !self.window_spec.partition_by.is_empty() {
             let partition_cols = self
                 .window_spec
@@ -113,7 +108,6 @@ impl Window {
             lines.push(format!("  Partition by: [{}]", partition_cols));
         }
 
-        // Add order by info
         if !self.window_spec.order_by.is_empty() {
             let order_cols = self
                 .window_spec
@@ -126,11 +120,10 @@ impl Window {
             lines.push(format!("  Order by: [{}]", order_cols));
         }
 
-        // Add frame info if present
         if let Some(frame) = &self.window_spec.frame {
             let frame_type = match frame.frame_type {
-                daft_dsl::expr::window::WindowFrameType::Rows() => "ROWS",
-                daft_dsl::expr::window::WindowFrameType::Range() => "RANGE",
+                daft_dsl::expr::window::WindowFrameType::Rows => "ROWS",
+                daft_dsl::expr::window::WindowFrameType::Range => "RANGE",
             };
 
             let start = match &frame.start {
@@ -167,7 +160,6 @@ impl Window {
             ));
         }
 
-        // Add min_periods if not default (1)
         if self.window_spec.min_periods != 1 {
             lines.push(format!("  Min periods: {}", self.window_spec.min_periods));
         }
