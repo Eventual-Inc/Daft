@@ -442,3 +442,23 @@ def test_series_timestamp_truncate_operation_invalid_relative_to() -> None:
     with pytest.raises(ValueError):
         # Start time must be a series of timestamps
         input_series.dt.truncate("1 second", Series.from_pylist([1]))
+
+
+def test_series_day_of_year():
+    from datetime import datetime
+
+    input_series = Series.from_pylist([datetime(2024, 1, 1, 1)])
+    expected_series = Series.from_pylist([1])
+
+    day_of_year = input_series.dt.day_of_year()
+    assert expected_series.to_pylist() == day_of_year.to_pylist()
+
+
+def test_series_date_day_of_year():
+    from datetime import date
+
+    input_series = Series.from_pylist([date(2024, 1, 1)])
+    expected_series = Series.from_pylist([1])
+
+    day_of_year = input_series.dt.day_of_year()
+    assert expected_series.to_pylist() == day_of_year.to_pylist()

@@ -232,6 +232,24 @@ impl Series {
         }
     }
 
+    pub fn dt_day_of_year(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(_, _) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.day_of_year()?.into_series())
+            }
+            DataType::Date => {
+                let date_array = self.date()?;
+                Ok(date_array.day_of_year()?.into_series())
+            }
+
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run day_of_year() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
     pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> DaftResult<Self> {
         match (self.data_type(), relative_to.data_type()) {
             (DataType::Timestamp(self_tu,self_tz), DataType::Timestamp(start_tu,start_tz)) if self_tu == start_tu && self_tz == start_tz => {

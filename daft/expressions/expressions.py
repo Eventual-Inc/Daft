@@ -2359,6 +2359,41 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
 
+    def day_of_year(self) -> Expression:
+        """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
+
+        Example:
+            >>> import daft
+            >>> from datetime import datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime(2024, 1, 1, 0, 0, 0),
+            ...             datetime(2024, 2, 1, 0, 0, 0),
+            ...             datetime(2024, 12, 31, 0, 0, 0),  # 2024 is a leap year
+            ...             datetime(2023, 12, 31, 0, 0, 0),  # not leap year
+            ...         ],
+            ...     }
+            ... )
+            >>> df.with_column("day_of_year", df["datetime"].dt.day_of_year()).collect()
+            ╭───────────────────────────────┬─────────────╮
+            │ datetime                      ┆ day_of_year │
+            │ ---                           ┆ ---         │
+            │ Timestamp(Microseconds, None) ┆ UInt32      │
+            ╞═══════════════════════════════╪═════════════╡
+            │ 2024-01-01 00:00:00           ┆ 1           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2024-02-01 00:00:00           ┆ 32          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2024-12-31 00:00:00           ┆ 366         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2023-12-31 00:00:00           ┆ 365         │
+            ╰───────────────────────────────┴─────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        return Expression._from_pyexpr(native.dt_day_of_year(self._expr))
+
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.
 

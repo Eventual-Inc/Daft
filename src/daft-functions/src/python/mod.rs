@@ -124,6 +124,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(temporal::dt_date);
     add!(temporal::dt_day);
     add!(temporal::dt_day_of_week);
+    add!(temporal::dt_day_of_year);
     add!(temporal::dt_hour);
     add!(temporal::dt_minute);
     add!(temporal::dt_month);
