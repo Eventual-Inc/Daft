@@ -8,7 +8,7 @@ use sqlparser::ast::FunctionArg;
 use super::SQLModule;
 use crate::{
     error::SQLPlannerResult,
-    functions::{SQLFunction, SQLFunctions},
+    functions::{DeprecatedSQLFunction, SQLFunction, SQLFunctions},
     unsupported_sql_err,
 };
 
@@ -18,8 +18,16 @@ impl SQLModule for SQLModuleTemporal {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("date", SQLDate);
         parent.add_fn("day", SQLDay);
-        parent.add_fn("dayofweek", SQLDayOfWeek);
-        parent.add_fn("dayofyear", SQLDayOfYear);
+        parent.add_fn(
+            "dayofweek",
+            DeprecatedSQLFunction {
+                name: "dayofweek",
+                replacement: "day_of_week",
+                function: &SQLDayOfWeek,
+            },
+        );
+        parent.add_fn("day_of_week", SQLDayOfWeek);
+        parent.add_fn("day_of_year", SQLDayOfYear);
         parent.add_fn("hour", SQLHour);
         parent.add_fn("minute", SQLMinute);
         parent.add_fn("month", SQLMonth);

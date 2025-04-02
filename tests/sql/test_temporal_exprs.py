@@ -39,8 +39,8 @@ def test_temporals():
     SELECT
         date(datetimes) as date,
         day(datetimes) as day,
-        dayofweek(datetimes) as day_of_week,
-        dayofyear(datetimes) as day_of_year,
+        day_of_week(datetimes) as day_of_week,
+        day_of_year(datetimes) as day_of_year,
         hour(datetimes) as hour,
         minute(datetimes) as minute,
         month(datetimes) as month,

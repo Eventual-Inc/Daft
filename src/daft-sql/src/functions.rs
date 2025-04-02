@@ -107,6 +107,30 @@ pub trait SQLFunction: Send + Sync {
     }
 }
 
+pub struct DeprecatedSQLFunction {
+    pub name: &'static str,
+    pub replacement: &'static str,
+    pub function: &'static dyn SQLFunction,
+}
+
+impl SQLFunction for DeprecatedSQLFunction {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        eprintln!(
+            "WARNING: `{}` function is deprecated. Use `{}` instead.",
+            self.name, self.replacement
+        );
+        self.function.to_expr(inputs, planner)
+    }
+
+    fn docstrings(&self, alias: &str) -> String {
+        self.function.docstrings(alias)
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        self.function.arg_names()
+    }
+}
+
 /// TODOs
 ///   - Use multimap for function variants.
 ///   - Add more functions..
