@@ -1679,17 +1679,6 @@ class Expression:
     def _initialize_udfs(self) -> Expression:
         return Expression._from_pyexpr(initialize_udfs(self._expr))
 
-    def over(self, window: Window) -> Expression:
-        """Apply this expression as a window function over the specified window.
-
-        Args:
-            window: Window specification defining partitioning and ordering
-
-        Returns:
-            Expression: A new expression representing the window function result
-        """
-        return Expression._from_pyexpr(self._expr.over(window._spec))
-
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
