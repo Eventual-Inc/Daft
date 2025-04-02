@@ -8,9 +8,10 @@ use super::{
     rules::{
         DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
         EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
-        MaterializeScans, OptimizerRule, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
-        PushDownProjection, ReorderJoins, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
-        SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery,
+        MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
+        PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
+        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -116,6 +117,14 @@ impl Default for OptimizerBuilder {
                     vec![Box::new(FilterNullJoinKey::new())],
                     RuleExecutionStrategy::Once,
                 ),
+                // --- Anti/semi join pushdowns ---
+                // This needs to be separate from PushDownProjection and PushDownFilter
+                // because otherwise they will just keep swapping places.
+                // We ultimately do want filters to go before joins, so we run this rule before PushDownFilter.
+                RuleBatch::new(
+                    vec![Box::new(PushDownAntiSemiJoin::new())],
+                    RuleExecutionStrategy::FixedPoint(None),
+                ),
                 // --- Bulk of our rules ---
                 RuleBatch::new(
                     vec![
@@ -173,6 +182,8 @@ impl OptimizerBuilder {
         self.rule_batches.push(RuleBatch::new(
             vec![
                 Box::new(ReorderJoins::new()),
+                Box::new(PushDownFilter::new()),
+                Box::new(PushDownProjection::new()),
                 Box::new(EnrichWithStats::new()),
             ],
             RuleExecutionStrategy::Once,

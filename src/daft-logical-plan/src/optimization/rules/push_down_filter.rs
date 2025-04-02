@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups};
+use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups, ScanState};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction, to_cnf};
 use daft_dsl::{
@@ -87,6 +87,10 @@ impl PushDownFilter {
 
                     // Pushdown filter into the Source node
                     SourceInfo::Physical(external_info) => {
+                        // If the scan is materialized, we don't pushdown the filter.
+                        if matches!(external_info.scan_state, ScanState::Tasks(_)) {
+                            return Ok(Transformed::no(plan));
+                        }
                         let predicate = &filter.predicate;
                         let new_predicate = external_info
                             .pushdowns

@@ -128,7 +128,7 @@ class Window:
             end = _WindowBoundary.offset(end)
 
         frame = _WindowFrame(
-            frame_type=_WindowFrameType.Rows(),
+            frame_type=_WindowFrameType.Rows,
             start=start,
             end=end,
         )

@@ -1645,22 +1645,15 @@ pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
 pub fn has_agg(expr: &ExprRef) -> bool {
     use common_treenode::{TreeNode, TreeNodeRecursion};
 
-    // Keep track of whether we found an aggregation expression
     let mut found_agg = false;
 
-    // Use apply instead of exists to have more control over traversal
-    let _ = expr.apply(|e| {
-        match e.as_ref() {
-            // If we find an aggregation, set the flag and stop traversing
-            Expr::Agg(_) => {
-                found_agg = true;
-                Ok(TreeNodeRecursion::Stop)
-            }
-            // Skip traversing into Window expressions since they're allowed to contain aggregations
-            Expr::Window(_, _) => Ok(TreeNodeRecursion::Jump),
-            // Continue traversing for all other expression types
-            _ => Ok(TreeNodeRecursion::Continue),
+    let _ = expr.apply(|e| match e.as_ref() {
+        Expr::Agg(_) => {
+            found_agg = true;
+            Ok(TreeNodeRecursion::Stop)
         }
+        Expr::Window(_, _) => Ok(TreeNodeRecursion::Jump),
+        _ => Ok(TreeNodeRecursion::Continue),
     });
 
     found_agg

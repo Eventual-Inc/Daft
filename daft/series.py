@@ -986,6 +986,15 @@ class SeriesDateNamespace(SeriesNamespace):
     def second(self) -> Series:
         return Series._from_pyseries(self._series.dt_second())
 
+    def millisecond(self) -> Series:
+        return Series._from_pyseries(self._series.dt_millisecond())
+
+    def microsecond(self) -> Series:
+        return Series._from_pyseries(self._series.dt_microsecond())
+
+    def nanosecond(self) -> Series:
+        return Series._from_pyseries(self._series.dt_nanosecond())
+
     def time(self) -> Series:
         return Series._from_pyseries(self._series.dt_time())
 
@@ -997,6 +1006,9 @@ class SeriesDateNamespace(SeriesNamespace):
 
     def day_of_week(self) -> Series:
         return Series._from_pyseries(self._series.dt_day_of_week())
+
+    def day_of_year(self) -> Series:
+        return Series._from_pyseries(self._series.dt_day_of_year())
 
     def truncate(self, interval: str, relative_to: Series | None = None) -> Series:
         if relative_to is not None and not isinstance(relative_to, Series):
