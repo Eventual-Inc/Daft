@@ -42,6 +42,7 @@ from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
+from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions
 
 if TYPE_CHECKING:
     import dask
@@ -58,10 +59,6 @@ if TYPE_CHECKING:
 from daft.logical.schema import Schema
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
-
-ColumnInputType = Union[Expression, str]
-
-ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
@@ -1278,22 +1275,10 @@ class DataFrame:
         # TODO(Kevin): remove this method and use _column_inputs_to_expressions
         return [col(c) if isinstance(c, str) else c for c in columns]
 
-    def _is_column_input(self, x: Any) -> bool:
-        return isinstance(x, str) or isinstance(x, Expression)
-
-    def _column_inputs_to_expressions(self, columns: ManyColumnsInputType) -> List[Expression]:
-        """Inputs to dataframe operations can be passed in as individual arguments or an iterable.
-
-        In addition, they may be strings or Expressions.
-        This method normalizes the inputs to a list of Expressions.
-        """
-        column_iter: Iterable[ColumnInputType] = [columns] if self._is_column_input(columns) else columns  # type: ignore
-        return [col(c) if isinstance(c, str) else c for c in column_iter]
-
     def _wildcard_inputs_to_expressions(self, columns: Tuple[ManyColumnsInputType, ...]) -> List[Expression]:
         """Handles wildcard argument column inputs."""
         column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
-        return self._column_inputs_to_expressions(column_input)
+        return column_inputs_to_expressions(column_input)
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)."""
@@ -2328,8 +2313,8 @@ class DataFrame:
         See Also:
             `melt`
         """
-        ids_exprs = self._column_inputs_to_expressions(ids)
-        values_exprs = self._column_inputs_to_expressions(values)
+        ids_exprs = column_inputs_to_expressions(ids)
+        values_exprs = column_inputs_to_expressions(values)
 
         builder = self._builder.unpivot(ids_exprs, values_exprs, variable_name, value_name)
         return DataFrame(builder)
@@ -2768,8 +2753,8 @@ class DataFrame:
             DataFrame: DataFrame with pivoted columns
 
         """
-        group_by_expr = self._column_inputs_to_expressions(group_by)
-        [pivot_col_expr, value_col_expr] = self._column_inputs_to_expressions([pivot_col, value_col])
+        group_by_expr = column_inputs_to_expressions(group_by)
+        [pivot_col_expr, value_col_expr] = column_inputs_to_expressions([pivot_col, value_col])
         agg_expr = self._map_agg_string_to_expr(value_col_expr, agg_fn)
 
         if names is None:

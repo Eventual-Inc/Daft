@@ -103,6 +103,9 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 ))
             }
         }
+        LogicalPlan::Window(_window) => {
+            todo!()
+        }
         LogicalPlan::Unpivot(unpivot) => {
             let input = translate(&unpivot.input)?;
             Ok(LocalPhysicalPlan::unpivot(
