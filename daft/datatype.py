@@ -1037,6 +1037,54 @@ class DataType:
         """
         return self._dtype.image_mode()
 
+    @property
+    def use_offset_indices(self) -> bool:
+        """If this is a sparse tensor type, return whether the indices are stored as offsets, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.sparse_tensor(daft.DataType.float32(), use_offset_indices=True)
+            >>> assert dtype.use_offset_indices
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.use_offset_indices
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.use_offset_indices()
+
+    @property
+    def key_type(self) -> DataType:
+        """If this is a map type, return the key type, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.map(daft.DataType.string(), daft.DataType.int64())
+            >>> assert dtype.key_type == daft.DataType.string()
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.key_type
+            ... except AttributeError:
+            ...     pass
+        """
+        return DataType._from_pydatatype(self._dtype.key_type())
+
+    @property
+    def value_type(self) -> DataType:
+        """If this is a map type, return the value type, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.map(daft.DataType.string(), daft.DataType.int64())
+            >>> assert dtype.value_type == daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.value_type
+            ... except AttributeError:
+            ...     pass
+        """
+        return DataType._from_pydatatype(self._dtype.value_type())
+
     def _should_cast_to_python(self) -> builtins.bool:
         # NOTE: This is used to determine if we should cast a column to a Python object type when converting to PyList.
         # Map is a logical type, but we don't want to cast it to Python because the underlying physical type is a List,

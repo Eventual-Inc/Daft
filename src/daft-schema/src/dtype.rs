@@ -836,6 +836,31 @@ impl DataType {
             _ => None,
         }
     }
+
+    /// if the datatype is a sparse tensor, return whether it uses offset indices.
+    pub fn use_offset_indices(&self) -> Option<bool> {
+        match self {
+            Self::SparseTensor(_, use_offset) => Some(*use_offset),
+            Self::FixedShapeSparseTensor(_, _, use_offset) => Some(*use_offset),
+            _ => None,
+        }
+    }
+
+    /// if the datatype is a map, return its key type.
+    pub fn key_type(&self) -> Option<&Self> {
+        match self {
+            Self::Map { key, .. } => Some(key),
+            _ => None,
+        }
+    }
+
+    /// if the datatype is a map, return its value type.
+    pub fn value_type(&self) -> Option<&Self> {
+        match self {
+            Self::Map { value, .. } => Some(value),
+            _ => None,
+        }
+    }
 }
 
 #[expect(

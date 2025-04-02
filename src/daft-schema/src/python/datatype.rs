@@ -598,6 +598,39 @@ impl PyDataType {
         })
     }
 
+    pub fn use_offset_indices(&self) -> PyResult<bool> {
+        self.dtype.use_offset_indices().ok_or_else(|| {
+            PyAttributeError::new_err(format!(
+                "The data type {} does not contain a use_offset_indices",
+                self.dtype
+            ))
+        })
+    }
+
+    pub fn key_type(&self) -> PyResult<Self> {
+        self.dtype
+            .key_type()
+            .map(|dtype| dtype.clone().into())
+            .ok_or_else(|| {
+                PyAttributeError::new_err(format!(
+                    "The data type {} does not contain a key type",
+                    self.dtype
+                ))
+            })
+    }
+
+    pub fn value_type(&self) -> PyResult<Self> {
+        self.dtype
+            .value_type()
+            .map(|dtype| dtype.clone().into())
+            .ok_or_else(|| {
+                PyAttributeError::new_err(format!(
+                    "The data type {} does not contain a value type",
+                    self.dtype
+                ))
+            })
+    }
+
     pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {
         if other.is_instance_of::<Self>() {
             let other = other.extract::<Self>()?;

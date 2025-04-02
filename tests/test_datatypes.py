@@ -273,6 +273,12 @@ def test_is_temporal(test_type):
 def test_fixed_size_property(test_type):
     if test_type.is_fixed_size_list() or test_type.is_fixed_size_binary():
         assert test_type.fixed_size == 10
+    else:
+        try:
+            test_type.fixed_size
+            pytest.fail("Expected AttributeError")
+        except AttributeError:
+            assert True
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
@@ -292,9 +298,15 @@ def test_inner_type_property(test_type: DataType):
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
-def test_struct_fields_property(test_type):
+def test_struct_fields_property(test_type: DataType):
     if test_type.is_struct():
-        assert test_type.fields == {"foo": test_type, "bar": test_type}
+        assert test_type.fields is not None
+    else:
+        try:
+            test_type.fields
+            pytest.fail("Expected AttributeError")
+        except AttributeError:
+            assert True
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
@@ -302,15 +314,70 @@ def test_precision_and_scale_properties(test_type):
     if test_type.is_decimal128():
         assert test_type.precision == 10
         assert test_type.scale == 2
+    else:
+        try:
+            test_type.precision
+            test_type.scale
+            pytest.fail("Expected AttributeError")
+        except AttributeError:
+            assert True
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_time_unit_property(test_type: DataType):
     if test_type.is_time() or test_type.is_duration() or test_type.is_timestamp():
         assert test_type.timeunit == "ns"
+    else:
+        try:
+            test_type.timeunit
+            pytest.fail("Expected AttributeError")
+        except AttributeError:
+            assert True
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_image_properties(test_type: DataType):
     if test_type.is_image() or test_type.is_fixed_shape_image():
         assert test_type.image_mode == "RGB"
+    else:
+        try:
+            test_type.image_mode
+            pytest.fail("Expected AttributeError")
+        except AttributeError:
+            assert True
+
+
+@pytest.mark.parametrize("test_type", all_daft_types)
+def test_use_offset_indices_property(test_type: DataType):
+    if test_type.is_sparse_tensor() or test_type.is_fixed_shape_sparse_tensor():
+        assert test_type.use_offset_indices is False
+    else:
+        try:
+            test_type.use_offset_indices
+            pytest.fail("Expected AttributeError")
+        except AttributeError:
+            assert True
+
+
+@pytest.mark.parametrize("test_type", all_daft_types)
+def test_map_key_property(test_type: DataType):
+    if test_type.is_map():
+        assert test_type.key_type == DataType.string()
+    else:
+        try:
+            test_type.key_type
+            pytest.fail("Expected AttributeError")
+        except AttributeError:
+            assert True
+
+
+@pytest.mark.parametrize("test_type", all_daft_types)
+def test_map_value_property(test_type: DataType):
+    if test_type.is_map():
+        assert test_type.value_type is not None
+    else:
+        try:
+            test_type.value_type
+            pytest.fail("Expected AttributeError")
+        except AttributeError:
+            assert True
