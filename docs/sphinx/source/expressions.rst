@@ -243,6 +243,9 @@ Temporal
    Expression.dt.hour
    Expression.dt.minute
    Expression.dt.second
+   Expression.dt.millisecond
+   Expression.dt.microsecond
+   Expression.dt.nanosecond
    Expression.dt.time
    Expression.dt.day
    Expression.dt.month
