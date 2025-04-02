@@ -522,10 +522,11 @@ class DataType:
         """Check if this is a null type.
 
         Example:
-        >>> import daft
-        >>> dtype = daft.DataType.null()
-        >>> dtype.is_null()
+            >>> import daft
+            >>> dtype = daft.DataType.null()
+            >>> dtype.is_null()
         True
+
         """
         return self._dtype.is_null()
 
