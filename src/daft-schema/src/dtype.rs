@@ -437,15 +437,6 @@ impl DataType {
     }
 
     #[inline]
-    pub fn fixed_size(&self) -> Option<usize> {
-        match self {
-            Self::FixedSizeList(_, size) => Some(*size),
-            Self::Embedding(_, size) => Some(*size),
-            _ => None,
-        }
-    }
-
-    #[inline]
     pub fn is_integer(&self) -> bool {
         matches!(
             self,
@@ -535,6 +526,106 @@ impl DataType {
             Self::Extension(_, inner, _) => inner.is_null(),
             _ => false,
         }
+    }
+
+    #[inline]
+    pub fn is_int8(&self) -> bool {
+        matches!(self, Self::Int8)
+    }
+
+    #[inline]
+    pub fn is_int16(&self) -> bool {
+        matches!(self, Self::Int16)
+    }
+
+    #[inline]
+    pub fn is_int32(&self) -> bool {
+        matches!(self, Self::Int32)
+    }
+
+    #[inline]
+    pub fn is_int64(&self) -> bool {
+        matches!(self, Self::Int64)
+    }
+
+    #[inline]
+    pub fn is_uint8(&self) -> bool {
+        matches!(self, Self::UInt8)
+    }
+
+    #[inline]
+    pub fn is_uint16(&self) -> bool {
+        matches!(self, Self::UInt16)
+    }
+
+    #[inline]
+    pub fn is_uint32(&self) -> bool {
+        matches!(self, Self::UInt32)
+    }
+
+    #[inline]
+    pub fn is_uint64(&self) -> bool {
+        matches!(self, Self::UInt64)
+    }
+
+    #[inline]
+    pub fn is_float32(&self) -> bool {
+        matches!(self, Self::Float32)
+    }
+
+    #[inline]
+    pub fn is_float64(&self) -> bool {
+        matches!(self, Self::Float64)
+    }
+
+    #[inline]
+    pub fn is_decimal128(&self) -> bool {
+        matches!(self, Self::Decimal128(_, _))
+    }
+
+    #[inline]
+    pub fn is_timestamp(&self) -> bool {
+        matches!(self, Self::Timestamp(..))
+    }
+
+    #[inline]
+    pub fn is_date(&self) -> bool {
+        matches!(self, Self::Date)
+    }
+
+    #[inline]
+    pub fn is_time(&self) -> bool {
+        matches!(self, Self::Time(..))
+    }
+
+    #[inline]
+    pub fn is_duration(&self) -> bool {
+        matches!(self, Self::Duration(..))
+    }
+
+    #[inline]
+    pub fn is_interval(&self) -> bool {
+        matches!(self, Self::Interval)
+    }
+
+    #[inline]
+    pub fn is_binary(&self) -> bool {
+        matches!(self, Self::Binary)
+    }
+
+    #[inline]
+    pub fn is_fixed_size_binary(&self) -> bool {
+        matches!(self, Self::FixedSizeBinary(_))
+    }
+
+    #[inline]
+    pub fn is_fixed_size_list(&self) -> bool {
+        matches!(self, Self::FixedSizeList(..))
+    }
+
+    #[inline]
+    pub fn is_struct(&self) -> bool {
+        matches!(self, Self::Struct(..))
     }
 
     #[inline]
@@ -658,6 +749,92 @@ impl DataType {
     pub fn from_json(input: &str) -> DaftResult<Self> {
         let val: DataTypePayload = serde_json::from_str(input)?;
         Ok(val.datatype)
+    }
+
+    /// If the datatype variant has a `size` property, return it.
+    /// For example, `FixedSizeBinary` and `FixedSizeList` have a size property.
+    pub fn fixed_size(&self) -> Option<usize> {
+        match self {
+            Self::FixedSizeBinary(size) => Some(*size),
+            Self::FixedSizeList(_, size) => Some(*size),
+            _ => None,
+        }
+    }
+    /// if the datatype variant has a shape, return it.
+    /// For example, `FixedShapeImage` and `FixedShapeTensor` have a fixed shape.
+    pub fn fixed_shape(&self) -> Option<Vec<u64>> {
+        match self {
+            Self::FixedShapeImage(_, height, width) => Some(vec![*height as u64, *width as u64]),
+            Self::FixedShapeTensor(_, shape) => Some(shape.clone()),
+            Self::FixedShapeSparseTensor(_, shape, _) => Some(shape.clone()),
+            _ => None,
+        }
+    }
+
+    /// if the datatype contains a timeunit, return it.
+    pub fn time_unit(&self) -> Option<TimeUnit> {
+        match self {
+            Self::Timestamp(unit, _) => Some(*unit),
+            Self::Time(unit) => Some(*unit),
+            Self::Duration(unit) => Some(*unit),
+            _ => None,
+        }
+    }
+
+    /// if the datatype contains a timezone, return it.
+    pub fn time_zone(&self) -> Option<Option<&str>> {
+        match self {
+            Self::Timestamp(_, timezone) => Some(timezone.as_deref()),
+            _ => None,
+        }
+    }
+
+    /// if the datatype contains an image mode, return it.
+    /// For example, `Image` and `FixedShapeImage` have an image mode.
+    pub fn image_mode(&self) -> Option<ImageMode> {
+        match self {
+            Self::Image(mode) => *mode,
+            Self::FixedShapeImage(mode, ..) => Some(*mode),
+            _ => None,
+        }
+    }
+
+    /// if the datatype contains an inner datatype, return it.
+    /// For example, `List` and `FixedSizeList` have an inner datatype.
+    pub fn inner_type(&self) -> Option<&Self> {
+        match self {
+            Self::List(dtype) | Self::FixedSizeList(dtype, _) => Some(dtype),
+            Self::Extension(_, dtype, _) => Some(dtype),
+            Self::Tensor(dtype) => Some(dtype),
+            Self::SparseTensor(dtype, _) => Some(dtype),
+            Self::FixedShapeTensor(dtype, _) => Some(dtype),
+            Self::FixedShapeSparseTensor(dtype, _, _) => Some(dtype),
+            _ => None,
+        }
+    }
+
+    /// if the datatype is a struct, return its fields.
+    pub fn fields(&self) -> Option<&[Field]> {
+        match self {
+            Self::Struct(fields) => Some(fields),
+            _ => None,
+        }
+    }
+
+    /// if the datatype is a decimal, return its precision.
+    pub fn precision(&self) -> Option<usize> {
+        match self {
+            Self::Decimal128(precision, _) => Some(*precision),
+            _ => None,
+        }
+    }
+
+    /// if the datatype is a decimal, return its scale.
+    pub fn scale(&self) -> Option<usize> {
+        match self {
+            Self::Decimal128(_, scale) => Some(*scale),
+            _ => None,
+        }
     }
 }
 
