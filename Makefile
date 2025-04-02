@@ -68,8 +68,8 @@ test: .venv build  ## Run tests
 	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
 
 .PHONY: doctests
-doctests: .venv build  ## Run doctests
-	DAFT_BOLD_TABLE_HEADERS=0 $(VENV_BIN)/pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py daft/functions/functions.py
+doctests:
+	DAFT_BOLD_TABLE_HEADERS=0 pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py daft/functions/functions.py daft/datatype.py
 
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data
