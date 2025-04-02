@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Union
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Union
 
 from daft.dependencies import pa
-from daft.expressions import Expression, col
+
+if TYPE_CHECKING:
+    from daft.expressions import Expression
 
 # Column input type definitions
 ColumnInputType = Union["Expression", str]
@@ -107,6 +109,8 @@ def pyarrow_supports_fixed_shape_tensor() -> bool:
 
 # Column utility functions
 def is_column_input(x: Any) -> bool:
+    from daft.expressions import Expression
+
     return isinstance(x, str) or isinstance(x, Expression)
 
 
@@ -116,5 +120,7 @@ def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expressi
     In addition, they may be strings or Expressions.
     This method normalizes the inputs to a list of Expressions.
     """
+    from daft.expressions import col
+
     column_iter: Iterable[ColumnInputType] = [columns] if is_column_input(columns) else columns  # type: ignore
     return [col(c) if isinstance(c, str) else c for c in column_iter]
