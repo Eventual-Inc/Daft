@@ -831,14 +831,6 @@ jobs:
         cache-dependency-path: |
           pyproject.toml
           requirements-dev.txt
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
-    - name: Install dependencies
-      run: |
-        uv pip install -r requirements-dev.txt
     - name: Run doctests
       run: |
         make doctests
