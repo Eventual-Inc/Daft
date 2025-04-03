@@ -701,6 +701,18 @@ impl PySeries {
         Ok(self.series.dt_second()?.into())
     }
 
+    pub fn dt_millisecond(&self) -> PyResult<Self> {
+        Ok(self.series.dt_millisecond()?.into())
+    }
+
+    pub fn dt_microsecond(&self) -> PyResult<Self> {
+        Ok(self.series.dt_microsecond()?.into())
+    }
+
+    pub fn dt_nanosecond(&self) -> PyResult<Self> {
+        Ok(self.series.dt_nanosecond()?.into())
+    }
+
     pub fn dt_time(&self) -> PyResult<Self> {
         Ok(self.series.dt_time()?.into())
     }
@@ -715,6 +727,10 @@ impl PySeries {
 
     pub fn dt_day_of_week(&self) -> PyResult<Self> {
         Ok(self.series.dt_day_of_week()?.into())
+    }
+
+    pub fn dt_day_of_year(&self) -> PyResult<Self> {
+        Ok(self.series.dt_day_of_year()?.into())
     }
 
     pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {

@@ -4,13 +4,14 @@ use daft_dsl::python::PyExpr;
 use daft_micropartition::python::PyMicroPartition;
 use daft_schema::python::schema::PySchema;
 use pyo3::{
-    pyclass, pymethods,
+    pyclass, pyfunction, pymethods,
     types::{PyModule, PyModuleMethods},
-    Bound, PyResult, Python,
+    wrap_pyfunction, Bound, PyResult, Python,
 };
 
-use crate::shuffle_cache::{
-    get_or_init_shuffle_cache_runtime, InProgressShuffleCache, ShuffleCache,
+use crate::{
+    server::flight_server::{start_flight_server, FlightServerConnectionHandle},
+    shuffle_cache::{get_or_init_shuffle_cache_runtime, InProgressShuffleCache, ShuffleCache},
 };
 
 #[pyclass(module = "daft.daft", name = "InProgressShuffleCache", frozen)]
@@ -62,7 +63,7 @@ impl PyInProgressShuffleCache {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let shuffle_cache = cache.close().await?;
             Ok(PyShuffleCache {
-                cache: shuffle_cache,
+                cache: Arc::new(shuffle_cache),
             })
         })
     }
@@ -70,7 +71,7 @@ impl PyInProgressShuffleCache {
 
 #[pyclass(module = "daft.daft", name = "ShuffleCache", frozen)]
 pub struct PyShuffleCache {
-    cache: ShuffleCache,
+    cache: Arc<ShuffleCache>,
 }
 
 #[pymethods]
@@ -88,8 +89,36 @@ impl PyShuffleCache {
     }
 }
 
+#[pyclass(module = "daft.daft", name = "FlightServerConnectionHandle")]
+pub struct PyFlightServerConnectionHandle {
+    handle: FlightServerConnectionHandle,
+}
+
+#[pymethods]
+impl PyFlightServerConnectionHandle {
+    pub fn shutdown(&mut self) -> PyResult<()> {
+        self.handle.shutdown()?;
+        Ok(())
+    }
+
+    pub fn port(&self) -> PyResult<u16> {
+        Ok(self.handle.port())
+    }
+}
+
+#[pyfunction(name = "start_flight_server")]
+pub fn py_start_flight_server(
+    shuffle_cache: &PyShuffleCache,
+    ip: &str,
+) -> PyResult<PyFlightServerConnectionHandle> {
+    let handle = start_flight_server(shuffle_cache.cache.clone(), ip).unwrap();
+    Ok(PyFlightServerConnectionHandle { handle })
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyInProgressShuffleCache>()?;
     parent.add_class::<PyShuffleCache>()?;
+    parent.add_class::<PyFlightServerConnectionHandle>()?;
+    parent.add_function(wrap_pyfunction!(py_start_flight_server, parent)?)?;
     Ok(())
 }

@@ -101,6 +101,16 @@ impl DateArray {
         let day_arr = arrow2::compute::temporal::weekday(&input_array)?;
         Ok((self.name(), Box::new(day_arr.sub(&1))).into())
     }
+
+    pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
+        let input_array = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Date32);
+        let ordinal_day_arr = arrow2::compute::temporal::day_of_year(&input_array)?;
+        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+    }
 }
 
 impl TimestampArray {
@@ -407,6 +417,21 @@ impl TimestampArray {
             Int64Array::new(physical_field, Box::new(physical_res))?,
         ))
     }
+
+    pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
+        let (tu, tz) = match self.data_type() {
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            _ => unreachable!("TimestampArray must have Timestamp datatype"),
+        };
+        let input_array = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Timestamp(tu, tz));
+
+        let ordinal_day_arr = arrow2::compute::temporal::day_of_year(&input_array)?;
+        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+    }
 }
 
 impl TimeArray {
@@ -475,6 +500,83 @@ impl TimeArray {
                         arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc)
                             .time();
                     naive_time.second() as u32
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt32Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
+    }
+
+    pub fn millisecond(&self) -> DaftResult<UInt32Array> {
+        const NANOS_PER_MILLI: u32 = 1_000_000;
+        let physical = self.physical.as_arrow();
+        let tu = match self.data_type() {
+            DataType::Time(time_unit) => time_unit.to_arrow(),
+            _ => unreachable!("TimeArray must have Time datatype"),
+        };
+
+        let date_arrow = physical
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let naive_time =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc)
+                            .time();
+                    naive_time.nanosecond() / NANOS_PER_MILLI
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt32Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
+    }
+
+    pub fn microsecond(&self) -> DaftResult<UInt32Array> {
+        const NANOS_PER_MICRO: u32 = 1_000;
+        let physical = self.physical.as_arrow();
+        let tu = match self.data_type() {
+            DataType::Time(time_unit) => time_unit.to_arrow(),
+            _ => unreachable!("TimeArray must have Time datatype"),
+        };
+
+        let date_arrow = physical
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let naive_time =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc)
+                            .time();
+                    naive_time.nanosecond() / NANOS_PER_MICRO
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt32Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
+    }
+
+    pub fn nanosecond(&self) -> DaftResult<UInt32Array> {
+        let physical = self.physical.as_arrow();
+        let tu = match self.data_type() {
+            DataType::Time(time_unit) => time_unit.to_arrow(),
+            _ => unreachable!("TimeArray must have Time datatype"),
+        };
+
+        let date_arrow = physical
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let naive_time =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc)
+                            .time();
+                    naive_time.nanosecond()
                 })
             })
             .collect::<Vec<_>>();

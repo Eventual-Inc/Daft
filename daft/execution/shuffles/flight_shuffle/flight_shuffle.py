@@ -5,13 +5,12 @@ import random
 import shutil
 from collections import defaultdict, deque
 
-from daft.daft import InProgressShuffleCache, PyExpr
+from daft.daft import InProgressShuffleCache, PyExpr, start_flight_server
 from daft.execution.execution_step import (
     PartitionTaskBuilder,
     SingleOutputPartitionTask,
 )
 from daft.execution.physical_plan import InProgressPhysicalPlan, stage_id_counter
-from daft.execution.shuffles.flight_shuffle.flight_server import FlightServer
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import PartitionMetadata
 from daft.runners.ray_runner import _ray_num_cpus_provider
@@ -187,9 +186,8 @@ class ShuffleActor:
             partition_by=partition_by,
         )
 
-        # create a flight server to serve data from the shuffle cache
-        self.server = FlightServer(self.host, self.node_id)
-        self.port = self.server.get_port()
+        self.server = None
+        self.port = None
 
     def get_address(self):
         return f"grpc://{self.host}:{self.port}"
@@ -201,7 +199,8 @@ class ShuffleActor:
     # Wait for all the push partition futures to complete
     async def finish_push_partitions(self):
         shuffle_cache = await self.in_progress_shuffle_cache.close()
-        self.server.set_shuffle_cache(shuffle_cache)
+        self.server = start_flight_server(shuffle_cache, self.host)
+        self.port = self.server.port()
         self.in_progress_shuffle_cache = None
 
     # Clean up the shuffle files for the given partition
@@ -216,7 +215,8 @@ class ShuffleActor:
 
     # Shutdown the shuffle actor
     def shutdown(self):
-        self.server.shutdown()
+        if self.server is not None:
+            self.server.shutdown()
         try:
             for shuffle_dir in self.shuffle_dirs:
                 if os.path.exists(shuffle_dir):
