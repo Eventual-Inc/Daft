@@ -253,6 +253,8 @@ Temporal
    Expression.dt.day_of_week
    Expression.dt.day_of_year
    Expression.dt.truncate
+   Expression.dt.to_string
+   Expression.dt.strftime
 
 List
 ####
