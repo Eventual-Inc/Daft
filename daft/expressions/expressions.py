@@ -2446,6 +2446,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
 
         Example:
+            >>> import daft
+            >>> from datetime import date
             >>> df = daft.from_pydict(
             ...     {
             ...         "dates": [
@@ -2456,7 +2458,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ...         ]
             ...     }
             ... )
-            >>>
             >>> df.with_column("timestamp", daft.col("dates").dt.to_unix_epoch("ns")).show()
             ╭────────────┬────────────────────╮
             │ dates      ┆ timestamp          │
