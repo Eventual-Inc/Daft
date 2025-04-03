@@ -259,14 +259,14 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let auto_generated_name =
-            "value.local_sum().window(partition_by=[category,group],order_by=[])";
+        let window_expr = Arc::new(Expr::Window(sum_expr.clone(), window_spec.clone()));
+        let auto_generated_name = window_expr.semantic_id(&input_plan.schema()).id.to_string();
 
         let window_op = Window::try_new(
             input_plan.clone().build(),
             vec![
                 Arc::new(Expr::Window(sum_expr.clone(), window_spec.clone()))
-                    .alias(auto_generated_name),
+                    .alias(auto_generated_name.clone()),
             ],
             window_spec,
         )?;
