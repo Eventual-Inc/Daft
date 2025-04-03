@@ -22,6 +22,6 @@ pub fn dt_truncate(expr: PyExpr, interval: &str, relative_to: PyExpr) -> PyResul
 }
 
 #[pyfunction]
-pub fn dt_unix_timestamp(expr: PyExpr, time_unit: PyTimeUnit) -> PyResult<PyExpr> {
-    Ok(crate::temporal::dt_unix_timestamp(expr.into(), time_unit.timeunit)?.into())
+pub fn dt_to_unix_epoch(expr: PyExpr, time_unit: PyTimeUnit) -> PyResult<PyExpr> {
+    Ok(crate::temporal::dt_to_unix_epoch(expr.into(), time_unit.timeunit)?.into())
 }

@@ -1017,12 +1017,12 @@ class SeriesDateNamespace(SeriesNamespace):
             relative_to = Series.from_arrow(pa.array([None]))
         return Series._from_pyseries(self._series.dt_truncate(interval, relative_to._series))
 
-    def unix_timestamp(self, time_unit: str | TimeUnit | None = None) -> Series:
+    def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Series:
         if time_unit is None:
             time_unit = TimeUnit.ms()
         if isinstance(time_unit, str):
             time_unit = TimeUnit.from_str(time_unit)
-        return Series._from_pyseries(self._series.dt_unix_timestamp(time_unit._timeunit))
+        return Series._from_pyseries(self._series.dt_to_unix_epoch(time_unit._timeunit))
 
 
 class SeriesPartitioningNamespace(SeriesNamespace):

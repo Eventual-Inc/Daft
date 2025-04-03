@@ -740,8 +740,8 @@ impl PySeries {
             .into())
     }
 
-    pub fn dt_unix_timestamp(&self, unit: PyTimeUnit) -> PyResult<Self> {
-        Ok(self.series.dt_unix_timestamp(unit.timeunit)?.into())
+    pub fn dt_to_unix_epoch(&self, unit: PyTimeUnit) -> PyResult<Self> {
+        Ok(self.series.dt_to_unix_epoch(unit.timeunit)?.into())
     }
 
     pub fn partitioning_days(&self) -> PyResult<Self> {

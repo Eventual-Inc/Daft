@@ -147,7 +147,7 @@ impl ScalarUDF for UnixTimestamp {
     }
 
     fn name(&self) -> &'static str {
-        "unix_timestamp"
+        "to_unix_epoch"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
@@ -185,7 +185,7 @@ impl ScalarUDF for UnixTimestamp {
     }
 }
 
-pub fn dt_unix_timestamp(input: ExprRef, time_unit: TimeUnit) -> DaftResult<ExprRef> {
+pub fn dt_to_unix_epoch(input: ExprRef, time_unit: TimeUnit) -> DaftResult<ExprRef> {
     Ok(ScalarFunction::new(UnixTimestamp { time_unit }, vec![input]).into())
 }
 
@@ -221,7 +221,7 @@ mod test {
                 Arc::new(UnixTimestamp {
                     time_unit: TimeUnit::Nanoseconds,
                 }),
-                "unix_timestamp",
+                "to_unix_epoch",
             ),
         ];
 
