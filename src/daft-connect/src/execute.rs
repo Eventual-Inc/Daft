@@ -177,14 +177,7 @@ impl ConnectSession {
                     SaveMode::Ignore => not_yet_implemented!("Ignore"),
                 };
 
-                let io_config = this.get_io_config().map_err(|e| {
-                    Status::internal(
-                        textwrap::wrap(&format!("Error in Daft server: {e}"), 120).join("\n"),
-                    )
-                })?;
-
-                let plan =
-                    plan.table_write(&path, write_mode, file_format, None, None, Some(io_config))?;
+                let plan = plan.table_write(&path, write_mode, file_format, None, None, None)?;
 
                 let mut result_stream = this.run_query(plan).await?;
 

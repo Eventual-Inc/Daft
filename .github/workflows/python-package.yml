@@ -814,6 +814,7 @@ jobs:
     continue-on-error: true
     env:
       python-version: '3.10'
+      DAFT_BOLD_TABLE_HEADERS: '0'
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -843,10 +844,9 @@ jobs:
       run: |
         source activate
         maturin develop
-        make doctests
+        pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py daft/functions/functions.py
       env:
-        DAFT_RUNNER: native
-
+        DAFT_RUNNER: py
 
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov

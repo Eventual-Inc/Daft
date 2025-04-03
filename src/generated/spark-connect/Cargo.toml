@@ -1,7 +1,7 @@
 [dependencies]
 prost = "0.13.3"
 prost-types = "0.13.3"
-tonic = {workspace = true}
+tonic = "0.12.3"
 
 [lints]
 workspace = true

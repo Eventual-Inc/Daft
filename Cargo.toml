@@ -267,7 +267,6 @@ tokio = {version = "1.37.0", features = [
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
-tonic = "0.12.3"
 tracing = "0.1"
 typed-builder = "0.20.0"
 typetag = "0.2.18"

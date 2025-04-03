@@ -1,5 +1,5 @@
 #![feature(let_chains)]
-pub use common_io_config::IOConfig;
+use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 
 /// Configurations for Daft to use during the building of a Dataframe's plan.

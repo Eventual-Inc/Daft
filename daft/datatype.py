@@ -273,7 +273,7 @@ class DataType:
         """Create a Struct DataType: a nested type which has names mapped to child types.
 
         Example:
-            >>> struct_type = DataType.struct({"name": DataType.string(), "age": DataType.int64()})
+            >>> DataType.struct({"name": DataType.string(), "age": DataType.int64()})
 
         Args:
             fields: Nested fields of the Struct

@@ -1096,13 +1096,9 @@ class Expression:
             A grouped calculation of approximate percentiles:
 
             >>> df = daft.from_pydict({"class": ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
-            >>> df = (
-            ...     df.groupby("class")
-            ...     .agg(
-            ...         df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
-            ...         df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
-            ...     )
-            ...     .sort("class")
+            >>> df = df.groupby("class").agg(
+            ...     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
+            ...     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
             ... )
             >>> df.show()
             ╭───────┬─────────────────────┬────────────────────────────────╮
@@ -1110,11 +1106,11 @@ class Expression:
             │ ---   ┆ ---                 ┆ ---                            │
             │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═══════╪═════════════════════╪════════════════════════════════╡
+            │ c     ┆ None                ┆ None                           │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ c     ┆ None                ┆ None                           │
             ╰───────┴─────────────────────┴────────────────────────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
