@@ -108,8 +108,8 @@ pub struct PyIdentifier(Identifier);
 #[pymethods]
 impl PyIdentifier {
     #[new]
-    pub fn new(qualifier: Vec<String>, name: String) -> PyIdentifier {
-        Identifier::new(qualifier, name).into()
+    pub fn new(parts: Vec<String>) -> PyIdentifier {
+        Identifier::new(parts).into()
     }
 
     #[staticmethod]
@@ -123,7 +123,7 @@ impl PyIdentifier {
 
     pub fn getitem(&self, index: isize) -> PyResult<String> {
         let mut i = index;
-        let len = self.__len__()?;
+        let len = self.0.len();
         if i < 0 {
             // negative index
             i = (len as isize) + index;
@@ -132,15 +132,11 @@ impl PyIdentifier {
             // out of range
             return Err(PyIndexError::new_err(i));
         }
-        if i as usize == len - 1 {
-            // last is name
-            return Ok(self.0.name.to_string());
-        }
-        Ok(self.0.qualifier[i as usize].to_string())
+        Ok(self.0.get(i as usize).to_string())
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
-        Ok(self.0.qualifier.len() + 1)
+        Ok(self.0.len())
     }
 
     pub fn __repr__(&self) -> PyResult<String> {

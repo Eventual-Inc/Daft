@@ -481,3 +481,22 @@ def test_date_comparison(value):
     expected = {"date": [date(2020, 1, 1)]}
 
     assert actual == expected
+
+
+def test_date_and_datetime_day_of_year():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+
+    df = df.select(df["date"].dt.day_of_year().alias("date_doy"), df["datetime"].dt.day_of_year().alias("datetime_doy"))
+
+    expected = {"date_doy": [1, 366, 365], "datetime_doy": [1, 366, 365]}
+
+    assert df.to_pydict() == expected

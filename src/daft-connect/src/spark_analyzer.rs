@@ -316,6 +316,7 @@ impl SparkAnalyzer<'_> {
         }
 
         let format = &*format;
+        let io_config = self.session.get_io_config()?;
         Ok(match format {
             "parquet" => {
                 let chunk_size = options
@@ -338,7 +339,7 @@ impl SparkAnalyzer<'_> {
                 }
                 check_unused_options(format, &options)?;
 
-                builder.finish().await?
+                builder.io_config(io_config).finish().await?
             }
             "csv" => {
                 // reference for csv options:
@@ -408,11 +409,14 @@ impl SparkAnalyzer<'_> {
 
                 check_unused_options(format, &options)?;
 
-                builder.finish().await?
+                builder.io_config(io_config).finish().await?
             }
             "json" => {
                 check_unused_options(format, &options)?;
-                JsonScanBuilder::new(paths).finish().await?
+                JsonScanBuilder::new(paths)
+                    .io_config(io_config)
+                    .finish()
+                    .await?
             }
             "delta" => {
                 if paths.len() != 1 {
@@ -423,7 +427,7 @@ impl SparkAnalyzer<'_> {
                 let path = paths.first().unwrap();
                 check_unused_options(format, &options)?;
 
-                delta_scan(path, None, true)?
+                delta_scan(path, Some(io_config), true)?
             }
 
             other => invalid_argument_err!("Unsupported format: {other};"),

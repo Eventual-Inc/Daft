@@ -55,6 +55,8 @@ from daft.series import Series, item_to_series
 if TYPE_CHECKING:
     from daft.io import IOConfig
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
+    from daft.window import Window
+
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
 elif os.getenv("DAFT_SPHINX_BUILD") == "1":
@@ -1094,9 +1096,13 @@ class Expression:
             A grouped calculation of approximate percentiles:
 
             >>> df = daft.from_pydict({"class": ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
-            >>> df = df.groupby("class").agg(
-            ...     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
-            ...     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
+            >>> df = (
+            ...     df.groupby("class")
+            ...     .agg(
+            ...         df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
+            ...         df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
+            ...     )
+            ...     .sort("class")
             ... )
             >>> df.show()
             ╭───────┬─────────────────────┬────────────────────────────────╮
@@ -1104,11 +1110,11 @@ class Expression:
             │ ---   ┆ ---                 ┆ ---                            │
             │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═══════╪═════════════════════╪════════════════════════════════╡
-            │ c     ┆ None                ┆ None                           │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ c     ┆ None                ┆ None                           │
             ╰───────┴─────────────────────┴────────────────────────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
@@ -1652,6 +1658,9 @@ class Expression:
 
     def name(self) -> builtins.str:
         return self._expr.name()
+
+    def over(self, window: Window) -> Expression:
+        return Expression._from_pyexpr(self._expr.over(window._spec))
 
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
@@ -2358,6 +2367,41 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             Expression: a UInt32 expression with just the day_of_week extracted from a datetime column
         """
         return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
+
+    def day_of_year(self) -> Expression:
+        """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
+
+        Example:
+            >>> import daft
+            >>> from datetime import datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime(2024, 1, 1, 0, 0, 0),
+            ...             datetime(2024, 2, 1, 0, 0, 0),
+            ...             datetime(2024, 12, 31, 0, 0, 0),  # 2024 is a leap year
+            ...             datetime(2023, 12, 31, 0, 0, 0),  # not leap year
+            ...         ],
+            ...     }
+            ... )
+            >>> df.with_column("day_of_year", df["datetime"].dt.day_of_year()).collect()
+            ╭───────────────────────────────┬─────────────╮
+            │ datetime                      ┆ day_of_year │
+            │ ---                           ┆ ---         │
+            │ Timestamp(Microseconds, None) ┆ UInt32      │
+            ╞═══════════════════════════════╪═════════════╡
+            │ 2024-01-01 00:00:00           ┆ 1           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2024-02-01 00:00:00           ┆ 32          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2024-12-31 00:00:00           ┆ 366         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2023-12-31 00:00:00           ┆ 365         │
+            ╰───────────────────────────────┴─────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        return Expression._from_pyexpr(native.dt_day_of_year(self._expr))
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.

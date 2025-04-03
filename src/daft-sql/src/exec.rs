@@ -71,12 +71,12 @@ fn execute_show_tables(
     let mut tbl_array = MutableUtf8Array::<i64>::with_capacity(tables.len());
     for ident in &tables {
         cat_array.push(Some(catalog.name()));
-        if ident.qualifier.is_empty() {
-            nsp_array.push_null();
+        if let Some(namespace) = ident.qualifier() {
+            nsp_array.push(Some(namespace.join(".")));
         } else {
-            nsp_array.push(Some(ident.qualifier.join(".")));
+            nsp_array.push_null();
         }
-        tbl_array.push(Some(ident.name.to_string()));
+        tbl_array.push(Some(ident.name().to_string()));
     }
 
     // create an in-memory scan arrow arrays
