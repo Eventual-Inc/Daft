@@ -72,7 +72,7 @@ __all__ = [
 def unregister_catalog(catalog_name: str | None) -> bool:
     """Unregisters a catalog from the Daft catalog system.
 
-    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.detach_catalog`.
+    !!! warning "DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use [daft.detach_catalog][daft.Session.detach_catalog]."
 
     This function removes a previously registered catalog from the Daft catalog system.
 
@@ -83,9 +83,14 @@ def unregister_catalog(catalog_name: str | None) -> bool:
         bool: True if a catalog was successfully unregistered, False otherwise.
 
     Example:
-        >>> import daft
-        >>> daft.unregister_catalog("my_catalog")
+        ``` py linenums="1"
+        import daft
+
+        daft.unregister_catalog("my_catalog")
+        ```
+        ```
         True
+        ```
     """
     from daft.session import detach_catalog
 
@@ -105,7 +110,7 @@ def unregister_catalog(catalog_name: str | None) -> bool:
 def read_table(name: str) -> DataFrame:
     """Finds a table with the specified name and reads it as a DataFrame.
 
-    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.read_table`.
+    !!! warning "DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use [daft.read_table][daft.Session.read_table]."
 
     The provided name can be any of the following, and Daft will return them with the following order of priority:
 
@@ -132,10 +137,9 @@ def read_table(name: str) -> DataFrame:
 def register_table(name: str, dataframe: DataFrame) -> str:
     """Register a DataFrame as a named table.
 
-    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_table`.
+    !!! warning "DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use [daft.attach_table][daft.Session.attach_table]."
 
-    This function registers a DataFrame as a named table, making it accessible
-    via Daft-SQL or Daft's `read_table` function.
+    This function registers a DataFrame as a named table, making it accessible via Daft-SQL or Daft's `read_table` function.
 
     Args:
         name (str): The name to register the table under.
@@ -145,9 +149,11 @@ def register_table(name: str, dataframe: DataFrame) -> str:
         str: The name of the registered table.
 
     Example:
-        >>> df = daft.from_pydict({"foo": [1, 2, 3]})
-        >>> daft.catalog.register_table("my_table", df)
-        >>> daft.read_table("my_table")
+        ``` py linenums="1"
+        df = daft.from_pydict({"foo": [1, 2, 3]})
+        daft.catalog.register_table("my_table", df)
+        daft.read_table("my_table")
+        ```
     """
     from daft.session import create_temp_table
 
@@ -163,7 +169,7 @@ def register_table(name: str, dataframe: DataFrame) -> str:
 def register_python_catalog(catalog: object, name: str | None = None) -> str:
     """Registers a Python catalog with Daft.
 
-    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_catalog`.
+    !!! warning "DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use [daft.attach_catalog][daft.Session.attach_catalog]."
 
     Currently supports:
 
@@ -181,10 +187,12 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
         ValueError: If an unsupported catalog type is provided.
 
     Example:
-        >>> from pyiceberg.catalog import load_catalog
-        >>> catalog = load_catalog("my_catalog")
-        >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
+        ``` py linenums="1"
+        from pyiceberg.catalog import load_catalog
 
+        catalog = load_catalog("my_catalog")
+        daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
+        ```
     """
     from daft.session import attach_catalog
 
@@ -216,29 +224,34 @@ class Catalog(ABC):
 
         The table-like objects can be pydicts, dataframes, or a Table implementation.
 
-        Examples:
-            >>> import daft
-            >>> from daft.catalog import Catalog, Table
-            >>>
-            >>> dictionary = {"x": [1, 2, 3]}
-            >>> dataframe = daft.from_pydict(dictionary)
-            >>> table = Table.from_df("temp", dataframe)
-            >>>
-            >>> catalog = Catalog.from_pydict(
-            ...     {
-            ...         "R": dictionary,
-            ...         "S": dataframe,
-            ...         "T": table,
-            ...     }
-            ... )
-            >>> catalog.list_tables()
-            ['R', 'S', 'T']
-
         Args:
             tables (dict[str,object]): a dictionary of table-like objects (pydicts, dataframes, and tables)
 
         Returns:
             Catalog: new catalog instance with name 'default'
+
+        Examples:
+            ``` py linenums="1"
+            import daft
+            from daft.catalog import Catalog, Table
+            >>>
+            dictionary = {"x": [1, 2, 3]}
+            dataframe = daft.from_pydict(dictionary)
+            table = Table.from_df("temp", dataframe)
+            >>>
+            catalog = Catalog.from_pydict(
+                {
+                    "R": dictionary,
+                    "S": dataframe,
+                    "T": table,
+                }
+            )
+            catalog.list_tables()
+            ```
+            ```
+            ["R", "S", "T"]
+            ```
+
         """
         from daft.catalog.__memory import MemoryCatalog
 
@@ -460,8 +473,10 @@ class Identifier(Sequence):
     """A reference (path) to a catalog object.
 
     Example:
-        >>> id = Identifier("a", "b")
-        >>> assert len(id) == 2
+        ``` py linenums="1"
+        id = Identifier("a", "b")
+        assert len(id) == 2
+        ```
     """
 
     _ident: PyIdentifier
@@ -469,12 +484,16 @@ class Identifier(Sequence):
     def __init__(self, *parts: str):
         """Creates an Identifier from its parts.
 
-        Example:
-            >>> from daft.catalog import Identifier
-            >>> Identifier("namespace", "table")
-
         Returns:
             Identifier: A new identifier.
+
+
+        Example:
+            ``` py linenums="1"
+            from daft.catalog import Identifier
+
+            Identifier("namespace", "table")
+            ```
         """
         if len(parts) < 1:
             raise ValueError("Identifier requires at least one part.")
@@ -490,18 +509,22 @@ class Identifier(Sequence):
     def from_sql(input: str, normalize: bool = False) -> Identifier:
         """Parses an Identifier from an SQL string, normalizing to lowercase if specified.
 
-        Example:
-            >>> from daft.catalog import Identifier
-            >>> Identifier.from_sql("namespace.table") == Identifier("namespace", "table")
-            >>> Identifier.from_sql('"a.b"') == Identifier('"a.b."')
-            >>> Identifier.from_sql('ABC."xYz"', normalize=True) == Identifier("abc", "xYz")
-
         Args:
             input (str): input sql string
             normalize (bool): flag to case-normalize the identifier text
 
         Returns:
             Identifier: new identifier instance
+
+
+        Example:
+            ``` py linenums="1"
+            from daft.catalog import Identifier
+
+            Identifier.from_sql("namespace.table") == Identifier("namespace", "table")
+            Identifier.from_sql('"a.b"') == Identifier('"a.b."')
+            Identifier.from_sql('ABC."xYz"', normalize=True) == Identifier("abc", "xYz")
+            ```
         """
         i = Identifier.__new__(Identifier)
         i._ident = PyIdentifier.from_sql(input, normalize)
@@ -511,15 +534,19 @@ class Identifier(Sequence):
     def from_str(input: str) -> Identifier:
         """Parses an Identifier from a dot-delimited Python string without normalization.
 
-        Example:
-            >>> from daft.catalog import Identifier
-            >>> Identifier.from_str("namespace.table") == Identifier("namespace", "table")
-
         Args:
             input (str): input identifier string
 
         Returns:
             Identifier: new identifier instance
+
+
+        Example:
+            ``` py linenums="1"
+            from daft.catalog import Identifier
+
+            Identifier.from_str("namespace.table") == Identifier("namespace", "table")
+            ```
         """
         return Identifier(*input.split("."))
 
@@ -578,10 +605,22 @@ class Table(ABC):
     def from_pydict(name: str, data: dict[str, InputListType]) -> Table:
         """Returns a read-only table backed by the given data.
 
+        Args:
+            name (str): table table
+            data dict[str,object]: keys are column names and the values are python lists, numpy arrays, or arrow arrays.
+
+        Returns:
+            DataFrame: new read-only table instance
+
+
         Example:
-            >>> from daft.catalog import Table
-            >>> table = Table.from_pydict({"foo": [1, 2]})
-            >>> table.show()
+            ``` py linenums="1"
+            from daft.catalog import Table
+
+            table = Table.from_pydict({"foo": [1, 2]})
+            table.show()
+            ```
+            ```
             ╭───────╮
             │ foo   │
             │ ---   │
@@ -591,15 +630,9 @@ class Table(ABC):
             ├╌╌╌╌╌╌╌┤
             │ 2     │
             ╰───────╯
-            <BLANKLINE>
+
             (Showing first 2 of 2 rows)
-
-        Args:
-            name (str): table table
-            data dict[str,object]: keys are column names and the values are python lists, numpy arrays, or arrow arrays.
-
-        Returns:
-            DataFrame: new read-only table instance
+            ```
         """
         from daft.catalog.__memory import MemoryTable
 
@@ -609,17 +642,21 @@ class Table(ABC):
     def from_df(name: str, dataframe: DataFrame) -> Table:
         """Returns a read-only table backed by the DataFrame.
 
-        Example:
-            >>> import daft
-            >>> from daft.catalog import Table
-            >>> Table.from_df("my_table", daft.from_pydict({"x": [1, 2, 3]}))
-
         Args:
             name (str): table name
             dataframe (DataFrame): table source dataframe
 
         Returns:
             Table: new table instance
+
+
+        Example:
+            ``` py linenums="1"
+            import daft
+            from daft.catalog import Table
+
+            Table.from_df("my_table", daft.from_pydict({"x": [1, 2, 3]}))
+            ```
         """
         from daft.catalog.__memory import MemoryTable
 
