@@ -85,6 +85,9 @@ You can examine a logical plan using [`df.explain()`][daft.DataFrame.explain], h
 |   Clustering spec = { Num partitions = 1 }
 ```
 
+Because we are filtering our DataFrame on the partition column country, Daft can optimize the `LogicalPlan` and save time and computing resources by only reading a single partition from disk.
+
+
 ## SQL
 
 [SQL (Structured Query Language)](https://en.wikipedia.org/wiki/SQL) is a common query language for expressing queries over tables of data. Daft exposes a SQL API as an alternative (but often also complementary API) to the Python [`DataFrame`](api/dataframe.md) and [`Expression`](api/expressions.md) APIs for building queries.

@@ -1701,6 +1701,8 @@ class ExpressionNamespace:
 
 
 class ExpressionUrlNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.url` attribute."""
+
     @staticmethod
     def _should_use_multithreading_tokio_runtime() -> bool:
         """Whether or not our expression should use the multithreaded tokio runtime under the hood, or a singlethreaded one.
@@ -1833,6 +1835,8 @@ class ExpressionUrlNamespace(ExpressionNamespace):
 
 
 class ExpressionFloatNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.float` attribute."""
+
     def is_nan(self) -> Expression:
         """Checks if values are NaN (a special float value indicating not-a-number).
 
@@ -1956,6 +1960,8 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.dt` attribute."""
+
     def date(self) -> Expression:
         """Retrieves the date for a datetime column.
 
@@ -2444,6 +2450,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.str` attribute."""
+
     def contains(self, substr: str | Expression) -> Expression:
         """Checks whether each string contains the given pattern in a string column.
 
@@ -3552,6 +3560,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
 
 class ExpressionListNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.list` attribute."""
+
     def join(self, delimiter: str | Expression) -> Expression:
         """Joins every element of a list using the specified string delimiter.
 
@@ -3897,6 +3907,8 @@ class ExpressionListNamespace(ExpressionNamespace):
 
 
 class ExpressionStructNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.struct` attribute."""
+
     def get(self, name: str) -> Expression:
         """Retrieves one field from a struct column, or all fields with "*".
 
@@ -3910,6 +3922,8 @@ class ExpressionStructNamespace(ExpressionNamespace):
 
 
 class ExpressionMapNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.map` attribute."""
+
     def get(self, key: Expression) -> Expression:
         """Retrieves the value for a key in a map column.
 
@@ -4055,7 +4069,7 @@ class ExpressionsProjection(Iterable[Expression]):
 
 
 class ExpressionImageNamespace(ExpressionNamespace):
-    """Expression operations for image columns."""
+    """Expression operations for image columns. The following methods are available under the `expr.image` attribute."""
 
     def decode(
         self,
@@ -4149,6 +4163,8 @@ class ExpressionImageNamespace(ExpressionNamespace):
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.partition` attribute."""
+
     def days(self) -> Expression:
         """Partitioning Transform that returns the number of days since epoch (1970-01-01).
 
@@ -4209,6 +4225,8 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
 
 
 class ExpressionJsonNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.json` attribute."""
+
     def query(self, jq_query: str) -> Expression:
         """Query JSON data in a column using a JQ-style filter https://jqlang.github.io/jq/manual/.
 
@@ -4242,12 +4260,16 @@ class ExpressionJsonNamespace(ExpressionNamespace):
 
 
 class ExpressionEmbeddingNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.embedding` attribute."""
+
     def cosine_distance(self, other: Expression) -> Expression:
         """Compute the cosine distance between two embeddings."""
         return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
 
 
 class ExpressionBinaryNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.binary` attribute."""
+
     def length(self) -> Expression:
         """Retrieves the length for a binary string column.
 

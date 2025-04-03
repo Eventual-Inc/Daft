@@ -183,11 +183,12 @@ markdown_extensions:
 plugins:
 - markdown-exec
 - mkdocs-jupyter:
+    enable: false
     execute: false
     include_source: true
 - search:
     separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
-- macros
+# - macros
 - autorefs
 - minify:
     minify_html: true
@@ -218,3 +219,4 @@ plugins:
           summary:
             attributes: false
             functions: true
+          trim_doctest_flags: true

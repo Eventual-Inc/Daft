@@ -1637,7 +1637,7 @@ class DataFrame:
 
             You can also use a string expression as a predicate.
 
-            Note: this will use the method [sql_expr][daft.sql.sql.expr] to parse the string into an expression
+            Note: this will use the method [sql_expr][daft.sql.sql_expr] to parse the string into an expression
             this may raise an error if the expression is not yet supported in the sql engine.
 
             ``` py linenums="1"
