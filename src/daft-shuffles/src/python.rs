@@ -1,19 +1,16 @@
-use std::{pin::pin, sync::Arc};
+use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_runtime::get_io_runtime;
 use daft_dsl::python::PyExpr;
 use daft_micropartition::python::PyMicroPartition;
 use daft_schema::python::schema::PySchema;
-use futures::StreamExt;
 use pyo3::{
     pyclass, pyfunction, pymethods,
     types::{PyModule, PyModuleMethods},
-    wrap_pyfunction, Bound, PyRef, PyRefMut, PyResult, Python,
+    wrap_pyfunction, Bound, PyResult, Python,
 };
 
 use crate::{
-    client::{fetch_partitions_from_flight, ShuffleFlightClientManager},
+    client::FlightClientManager,
     server::flight_server::{start_flight_server, FlightServerConnectionHandle},
     shuffle_cache::{get_or_init_shuffle_cache_runtime, InProgressShuffleCache, ShuffleCache},
 };
@@ -26,10 +23,12 @@ pub struct PyInProgressShuffleCache {
 #[pymethods]
 impl PyInProgressShuffleCache {
     #[staticmethod]
-    #[pyo3(signature = (num_partitions, dirs, target_filesize, compression=None, partition_by=None))]
+    #[pyo3(signature = (num_partitions, dirs, node_id, shuffle_stage_id, target_filesize, compression=None, partition_by=None))]
     pub fn try_new(
         num_partitions: usize,
         dirs: Vec<String>,
+        node_id: String,
+        shuffle_stage_id: usize,
         target_filesize: usize,
         compression: Option<&str>,
         partition_by: Option<Vec<PyExpr>>,
@@ -37,6 +36,8 @@ impl PyInProgressShuffleCache {
         let shuffle_cache = InProgressShuffleCache::try_new(
             num_partitions,
             dirs.as_slice(),
+            node_id,
+            shuffle_stage_id,
             target_filesize,
             compression,
             partition_by.map(|partition_by| partition_by.into_iter().map(|p| p.into()).collect()),
@@ -85,12 +86,30 @@ impl PyShuffleCache {
         Ok(self.cache.schema().into())
     }
 
-    pub fn bytes_per_file(&self, partition_idx: usize) -> PyResult<Vec<usize>> {
-        Ok(self.cache.bytes_per_file(partition_idx))
+    pub fn file_paths_for_partition(&self, partition_idx: usize) -> PyResult<Vec<String>> {
+        Ok(self.cache.file_paths_for_partition(partition_idx))
     }
 
-    pub fn file_paths(&self, partition_idx: usize) -> PyResult<Vec<String>> {
-        Ok(self.cache.file_paths(partition_idx))
+    pub fn bytes_per_file_for_partition(&self, partition_idx: usize) -> PyResult<Vec<usize>> {
+        Ok(self.cache.bytes_per_file_for_partition(partition_idx))
+    }
+
+    pub fn rows_per_partition(&self) -> PyResult<Vec<usize>> {
+        Ok(self.cache.rows_per_partition())
+    }
+
+    pub fn bytes_per_partition(&self) -> PyResult<Vec<usize>> {
+        Ok(self.cache.bytes_per_partition())
+    }
+
+    pub fn clear_partition(&self, partition_idx: usize) -> PyResult<()> {
+        self.cache.clear_partition(partition_idx)?;
+        Ok(())
+    }
+
+    pub fn clear_directories(&self) -> PyResult<()> {
+        self.cache.clear_directories()?;
+        Ok(())
     }
 }
 
@@ -120,89 +139,20 @@ pub fn py_start_flight_server(
     Ok(PyFlightServerConnectionHandle { handle })
 }
 
-#[pyclass]
-pub struct PartitionIterator {
-    rx: tokio::sync::mpsc::Receiver<DaftResult<PyMicroPartition>>,
-    task: Option<std::thread::JoinHandle<DaftResult<()>>>,
+#[pyclass(module = "daft.daft", name = "FlightClientManager", frozen)]
+pub struct PyFlightClientManager {
+    manager: Arc<FlightClientManager>,
 }
 
 #[pymethods]
-impl PartitionIterator {
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<PyMicroPartition>> {
-        if slf.task.is_none() {
-            return Ok(None);
-        }
-
-        let next = slf.rx.blocking_recv();
-        match next {
-            Some(Ok(partition)) => Ok(Some(partition)),
-            Some(Err(e)) => {
-                // drop the task
-                slf.task = None;
-                Err(e.into())
-            }
-            None => {
-                // await the task to complete
-                slf.task.take().unwrap().join().unwrap()?;
-                Ok(None)
-            }
-        }
-    }
-}
-
-#[pyfunction(name = "fetch_partitions_from_flight")]
-pub fn py_fetch_partitions_from_flight(
-    addresses: Vec<String>,
-    partitions: Vec<usize>,
-    num_parallel_partitions: usize,
-) -> PyResult<PartitionIterator> {
-    let runtime = get_io_runtime(true);
-    let (tx, rx) = tokio::sync::mpsc::channel(partitions.len());
-    let reduce_task = std::thread::spawn(move || {
-        runtime.block_on_current_thread(async move {
-            let mut partition_stream = pin!(
-                fetch_partitions_from_flight(addresses, partitions, num_parallel_partitions)
-                    .await?
-            );
-            while let Some(partition) = partition_stream.next().await {
-                if tx
-                    .send(partition.map(|p| PyMicroPartition::from(p)))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-            }
-            DaftResult::Ok(())
-        })
-    });
-    Ok(PartitionIterator {
-        rx,
-        task: Some(reduce_task),
-    })
-}
-
-#[pyclass(module = "daft.daft", name = "ShuffleFlightClientManager", frozen)]
-pub struct PyShuffleFlightClientManager {
-    manager: Arc<ShuffleFlightClientManager>,
-}
-
-#[pymethods]
-impl PyShuffleFlightClientManager {
+impl PyFlightClientManager {
     #[new]
     pub fn new(addresses: Vec<String>, num_parallel_fetches: usize) -> PyResult<Self> {
         let _ = pyo3_async_runtimes::tokio::init_with_runtime(
             &get_or_init_shuffle_cache_runtime().runtime,
         );
         Ok(Self {
-            manager: Arc::new(ShuffleFlightClientManager::new(
-                addresses,
-                num_parallel_fetches,
-            )),
+            manager: Arc::new(FlightClientManager::new(addresses, num_parallel_fetches)),
         })
     }
 
@@ -224,8 +174,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyInProgressShuffleCache>()?;
     parent.add_class::<PyShuffleCache>()?;
     parent.add_class::<PyFlightServerConnectionHandle>()?;
-    parent.add_class::<PyShuffleFlightClientManager>()?;
+    parent.add_class::<PyFlightClientManager>()?;
     parent.add_function(wrap_pyfunction!(py_start_flight_server, parent)?)?;
-    parent.add_function(wrap_pyfunction!(py_fetch_partitions_from_flight, parent)?)?;
     Ok(())
 }

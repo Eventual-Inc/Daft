@@ -2731,6 +2731,7 @@ dependencies = [
  "daft-schema",
  "daft-writers",
  "futures",
+ "itertools 0.11.0",
  "pyo3",
  "pyo3-async-runtimes",
  "tokio",

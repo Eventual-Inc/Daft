@@ -13,6 +13,7 @@ daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
+itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {version = "0.23", features = ["attributes", "tokio-runtime"], optional = true}
 tokio = {workspace = true}
