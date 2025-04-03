@@ -44,23 +44,27 @@ Daft Expressions allow you to express some computation that needs to happen in a
         filters: ["!^_"]
         summary: false -->
 
-<!-- ## Strings
+## Strings
 
-The following methods are available under the `expr.str` attribute. -->
+The following methods are available under the `expr.str` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.str.[method]
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.str.[method] -->
+
 ::: daft.expressions.expressions.ExpressionStringNamespace
-    filters: ["!^_"] -->
+    options:
+        filters: ["!^_"]
 
 ## Binary
 
 The following methods are available under the `expr.binary` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.binary.[method]
-::: daft.expressions.expressions.ExpressionBinaryNamespace
-    filters: ["!^_"] -->
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.binary.[method] -->
 
-::: daft.expressions.expressions.ExpressionBinaryNamespace.concat
+::: daft.expressions.expressions.ExpressionBinaryNamespace
+    options:
+        filters: ["!^_"]
+
+<!-- ::: daft.expressions.expressions.ExpressionBinaryNamespace.concat
     options:
         heading: Expression.struct.binary.concat
         heading_level: 3
@@ -81,17 +85,19 @@ The following methods are available under the `expr.binary` attribute.
 
 ::: daft.expressions.expressions.Expression.decode
     options:
-        heading_level: 3
+        heading_level: 3 -->
 
 ## Floats
 
 The following methods are available under the `expr.float` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.float.[method]
-::: daft.expressions.expressions.ExpressionFloatNamespace
-    filters: ["!^_"] -->
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.float.[method] -->
 
-::: daft.expressions.expressions.ExpressionFloatNamespace.is_inf
+::: daft.expressions.expressions.ExpressionFloatNamespace
+    options:
+        filters: ["!^_"]
+
+<!-- ::: daft.expressions.expressions.ExpressionFloatNamespace.is_inf
     options:
         heading: Expression.struct.float.is_inf
         heading_level: 3
@@ -109,59 +115,69 @@ The following methods are available under the `expr.float` attribute.
 ::: daft.expressions.expressions.ExpressionFloatNamespace.fill_nan
     options:
         heading: Expression.struct.float.fill_nan
-        heading_level: 3
+        heading_level: 3 -->
 
-<!-- ## Temporal
+## Temporal
 
-The following methods are available under the `expr.dt` attribute. -->
+The following methods are available under the `expr.dt` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.dt.[method]
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.dt.[method] -->
+
 ::: daft.expressions.expressions.ExpressionDatetimeNamespace
-    filters: ["!^_"] -->
+    options:
+        filters: ["!^_"]
 
-<!-- ## List
+## List
 
-The following methods are available under the `expr.list` attribute. -->
+The following methods are available under the `expr.list` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.list.[method]
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.list.[method] -->
+
 ::: daft.expressions.expressions.ExpressionListNamespace
-    filters: ["!^_"] -->
+    options:
+        filters: ["!^_"]
 
 ## Struct
 
 The following methods are available under the `expr.struct` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.struct.[method]
-::: daft.expressions.expressions.ExpressionStructNamespace
-    filters: ["!^_"] -->
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.struct.[method] -->
 
-::: daft.expressions.expressions.ExpressionStructNamespace.get
+::: daft.expressions.expressions.ExpressionStructNamespace
+    options:
+        filters: ["!^_"]
+
+<!-- ::: daft.expressions.expressions.ExpressionStructNamespace.get
     options:
         heading: Expression.struct.get
-        heading_level: 3
+        heading_level: 3 -->
 
 ## Map
 
 The following methods are available under the `expr.map` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.map.[method]
-::: daft.expressions.expressions.ExpressionMapNamespace
-    filters: ["!^_"] -->
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.map.[method] -->
 
-::: daft.expressions.expressions.ExpressionMapNamespace.get
+::: daft.expressions.expressions.ExpressionMapNamespace
+    options:
+        filters: ["!^_"]
+
+<!-- ::: daft.expressions.expressions.ExpressionMapNamespace.get
     options:
         heading: Expression.map.get
-        heading_level: 3
+        heading_level: 3 -->
 
 ## Image
 
 The following methods are available under the `expr.image` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.image.[method]
-::: daft.expressions.expressions.ExpressionImageNamespace
-    filters: ["!^_"] -->
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.image.[method] -->
 
-::: daft.expressions.expressions.ExpressionImageNamespace.decode
+::: daft.expressions.expressions.ExpressionImageNamespace
+    options:
+        filters: ["!^_"]
+
+<!-- ::: daft.expressions.expressions.ExpressionImageNamespace.decode
     options:
         heading: Expression.image.decode
         heading_level: 3
@@ -184,17 +200,19 @@ The following methods are available under the `expr.image` attribute.
 ::: daft.expressions.expressions.ExpressionImageNamespace.to_mode
     options:
         heading: Expression.image.to_mode
-        heading_level: 3
+        heading_level: 3 -->
 
 ## Partitioning
 
 The following methods are available under the `expr.partition` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.partition.[method]
-::: daft.expressions.expressions.ExpressionPartitioningNamespace
-    filters: ["!^_"] -->
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.partition.[method] -->
 
-::: daft.expressions.expressions.ExpressionPartitioningNamespace.days
+::: daft.expressions.expressions.ExpressionPartitioningNamespace
+    options:
+        filters: ["!^_"]
+
+<!-- ::: daft.expressions.expressions.ExpressionPartitioningNamespace.days
     options:
         heading: Expression.partition.days
         heading_level: 3
@@ -217,17 +235,21 @@ The following methods are available under the `expr.partition` attribute.
 ::: daft.expressions.expressions.ExpressionPartitioningNamespace.iceberg_bucket
     options:
         heading: Expression.partition.iceberg_truncate
-        heading_level: 3
+        heading_level: 3 -->
 
 ## URLs
 
 The following methods are available under the `expr.url` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.url.[method]]
-::: daft.expressions.expressions.ExpressionUrlNamespace
-    filters: ["!^_"] -->
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.url.[method]] -->
 
-::: daft.expressions.expressions.ExpressionUrlNamespace.download
+::: daft.expressions.expressions.ExpressionUrlNamespace
+    options:
+        filters: ["!^_"]
+        heading: "Expression.url"
+        toc_label: "Expression.url"
+
+<!-- ::: daft.expressions.expressions.ExpressionUrlNamespace.download
     options:
         heading: Expression.url.download
         heading_level: 3
@@ -235,33 +257,37 @@ The following methods are available under the `expr.url` attribute.
 ::: daft.expressions.expressions.ExpressionUrlNamespace.upload
     options:
         heading: Expression.url.upload
-        heading_level: 3
+        heading_level: 3 -->
 
 ## JSON
 
 The following methods are available under the `expr.json` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.json.query
-::: daft.expressions.expressions.ExpressionJsonNamespace
-    filters: ["!^_"] -->
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.json.query -->
+
+<!-- ::: daft.expressions.expressions.ExpressionJsonNamespace
+    options:
+        filters: ["!^_"] -->
 
 ::: daft.expressions.expressions.ExpressionJsonNamespace.query
     options:
-        heading: Expression.json.query
-        heading_level: 3
+        toc_label: fancy
+        heading: module
 
 ## Embedding
 
 The following methods are available under the `expr.embedding` attribute.
 
-<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.embedding.cosine_distance
-::: daft.expressions.expressions.ExpressionEmbeddingNamespace
-    filters: ["!^_"] -->
+<!-- todo(docs - cc): ideally we have the class? and the proper method format should be Expression.embedding.cosine_distance -->
 
-::: daft.expressions.expressions.ExpressionEmbeddingNamespace.cosine_distance
+::: daft.expressions.expressions.ExpressionEmbeddingNamespace
+    options:
+        filters: ["!^_"]
+
+<!-- ::: daft.expressions.expressions.ExpressionEmbeddingNamespace.cosine_distance
     options:
         heading: Expression.embedding.cosine_distance
-        heading_level: 3
+        heading_level: 3 -->
 
 <!-- todo(docs - cc): need help with flattening namespaces, the following is not on api docs
 ::: daft.expressions.expressions.ExpressionNamespace
