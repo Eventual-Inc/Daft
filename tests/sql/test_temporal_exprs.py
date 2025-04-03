@@ -37,10 +37,10 @@ def test_temporals():
         daft.col("datetimes").dt.to_unix_epoch("ms").alias("to_unix_epoch_ms"),
         daft.col("datetimes").dt.to_unix_epoch("us").alias("to_unix_epoch_us"),
         daft.col("datetimes").dt.to_unix_epoch("ns").alias("to_unix_epoch_ns"),
-        daft.col("datetimes").dt.to_unix_epoch("seconds").alias("to_unix_epoch_s"),
-        daft.col("datetimes").dt.to_unix_epoch("milliseconds").alias("to_unix_epoch_ms"),
-        daft.col("datetimes").dt.to_unix_epoch("microseconds").alias("to_unix_epoch_us"),
-        daft.col("datetimes").dt.to_unix_epoch("nanoseconds").alias("to_unix_epoch_ns"),
+        daft.col("datetimes").dt.to_unix_epoch("seconds").alias("to_unix_epoch_seconds"),
+        daft.col("datetimes").dt.to_unix_epoch("milliseconds").alias("to_unix_epoch_milliseconds"),
+        daft.col("datetimes").dt.to_unix_epoch("microseconds").alias("to_unix_epoch_microseconds"),
+        daft.col("datetimes").dt.to_unix_epoch("nanoseconds").alias("to_unix_epoch_nanoseconds"),
     ).collect()
 
     actual = daft.sql(
@@ -63,10 +63,10 @@ def test_temporals():
         to_unix_epoch(datetimes, 'ms') as to_unix_epoch_ms,
         to_unix_epoch(datetimes, 'us') as to_unix_epoch_us,
         to_unix_epoch(datetimes, 'ns') as to_unix_epoch_ns,
-        to_unix_epoch(datetimes, 'seconds') as to_unix_epoch_s,
-        to_unix_epoch(datetimes, 'milliseconds') as to_unix_epoch_ms,
-        to_unix_epoch(datetimes, 'microseconds') as to_unix_epoch_us,
-        to_unix_epoch(datetimes, 'nanoseconds') as to_unix_epoch_ns
+        to_unix_epoch(datetimes, 's') as to_unix_epoch_seconds,
+        to_unix_epoch(datetimes, 'ms') as to_unix_epoch_milliseconds,
+        to_unix_epoch(datetimes, 'us') as to_unix_epoch_microseconds,
+        to_unix_epoch(datetimes, 'ns') as to_unix_epoch_nanoseconds,
     FROM test
     """,
         catalog=catalog,

@@ -2445,6 +2445,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
 
+        See :meth:`daft.datatype.TimeUnit` for more information on time units and valid values.
+
         Example:
             >>> import daft
             >>> from datetime import date

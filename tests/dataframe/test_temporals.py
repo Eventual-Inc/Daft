@@ -541,3 +541,40 @@ def test_date_to_unix_epoch():
     }
 
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "timeunit",
+    ["s", "ms", "us", "ns", "seconds", "milliseconds", "microseconds", "nanoseconds"],
+)
+def test_date_to_unix_epoch_valid_timeunits(timeunit):
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+        }
+    )
+    try:
+        df.select(
+            df["date"].dt.to_unix_epoch(timeunit).alias("date_epoch"),
+        ).to_pydict()
+    except ValueError:
+        pytest.fail(f"to_unix_epoch with timeunit {timeunit} raised an exception.")
+
+
+@pytest.mark.parametrize(
+    "timeunit",
+    ["second", "millis", "nanos", "millisecond", "nanosecond", "millis", "micros"],
+)
+def test_date_to_unix_epoch_invalid_timeunits(timeunit):
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1)],
+        }
+    )
+    try:
+        df.select(
+            df["date"].dt.to_unix_epoch(timeunit).alias("date_epoch"),
+        ).to_pydict()
+        pytest.fail(f"to_unix_epoch with timeunit {timeunit} did not raise an exception.")
+    except ValueError:
+        pass
