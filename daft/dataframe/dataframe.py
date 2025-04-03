@@ -430,9 +430,11 @@ class DataFrame:
 
         >>> import daft
         >>>
+        >>> daft.context.set_runner_ray()  # doctest: +SKIP
+        >>>
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
         >>> for part in df.iter_partitions():
-        ...     print(part)
+        ...     print(part)  # doctest: +SKIP
         MicroPartition with 2 rows:
         TableState: Loaded. 1 tables
         ╭───────┬──────╮
@@ -1329,9 +1331,11 @@ class DataFrame:
 
         Example:
             >>> import daft
+            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>>
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
-            >>> df.show()
+            >>> df.show()  # doctest: +SKIP
             ╭─────────────┬───────╮
             │ id          ┆ a     │
             │ ---         ┆ ---   │
@@ -1434,15 +1438,16 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 8]})
             >>> distinct_df = df.distinct()
+            >>> distinct_df = distinct_df.sort("x")
             >>> distinct_df.show()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
             │ Int64 ┆ Int64 ┆ Int64 │
             ╞═══════╪═══════╪═══════╡
-            │ 2     ┆ 5     ┆ 8     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 1     ┆ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 8     │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
@@ -1464,15 +1469,16 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 8]})
             >>> distinct_df = df.unique()
+            >>> distinct_df = distinct_df.sort("x")
             >>> distinct_df.show()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
             │ Int64 ┆ Int64 ┆ Int64 │
             ╞═══════╪═══════╪═══════╡
-            │ 2     ┆ 5     ┆ 8     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 1     ┆ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 8     │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
@@ -2682,6 +2688,7 @@ class DataFrame:
             ...     col("pet").count().alias("count"),
             ...     col("name").any_value(),
             ... )
+            >>> grouped_df = grouped_df.sort("pet")
             >>> grouped_df.show()
             ╭──────┬─────────┬─────────┬────────┬────────╮
             │ pet  ┆ min_age ┆ max_age ┆ count  ┆ name   │
@@ -2729,15 +2736,17 @@ class DataFrame:
             ... }
             >>> df = daft.from_pydict(data)
             >>> df = df.pivot("version", "platform", "downloads", "sum")
+            >>>
+            >>> df = df.sort("version").select("version", "windows", "macos")
             >>> df.show()
             ╭─────────┬─────────┬───────╮
             │ version ┆ windows ┆ macos │
             │ ---     ┆ ---     ┆ ---   │
             │ Utf8    ┆ Int64   ┆ Int64 │
             ╞═════════╪═════════╪═══════╡
-            │ 3.9     ┆ 250     ┆ 150   │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 3.8     ┆ None    ┆ 300   │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3.9     ┆ 250     ┆ 150   │
             ╰─────────┴─────────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
@@ -2893,7 +2902,9 @@ class DataFrame:
             >>> import daft
             >>> df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
             >>> df2 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 8, 6]})
-            >>> df1.intersect(df2).collect()
+            >>> df = df1.intersect(df2)
+            >>> df = df.sort("a")
+            >>> df.show()
             ╭───────┬───────╮
             │ a     ┆ b     │
             │ ---   ┆ ---   │
@@ -3527,6 +3538,7 @@ class GroupedDataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0, 1, 2, 100]})
             >>> df = df.groupby("keys").stddev()
+            >>> df = df.sort("keys")
             >>> df.show()
             ╭──────┬───────────────────╮
             │ keys ┆ col_a             │
@@ -3639,6 +3651,7 @@ class GroupedDataFrame:
             ...     col("pet").count().alias("count"),
             ...     col("name").any_value(),
             ... )
+            >>> grouped_df = grouped_df.sort("pet")
             >>> grouped_df.show()
             ╭──────┬─────────┬─────────┬────────┬────────╮
             │ pet  ┆ min_age ┆ max_age ┆ count  ┆ name   │
@@ -3683,6 +3696,7 @@ class GroupedDataFrame:
             ...     return [statistics.stdev(data)]
             >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
+            >>> df = df.sort("group")
             >>> df.show()
             ╭───────┬────────────────────╮
             │ group ┆ data               │
