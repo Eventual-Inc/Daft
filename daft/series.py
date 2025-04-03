@@ -1017,6 +1017,9 @@ class SeriesDateNamespace(SeriesNamespace):
             relative_to = Series.from_arrow(pa.array([None]))
         return Series._from_pyseries(self._series.dt_truncate(interval, relative_to._series))
 
+    def to_string(self, fmt: str | None = None) -> Series:
+        return Series._from_pyseries(self._series.dt_strftime(fmt))
+
 
 class SeriesPartitioningNamespace(SeriesNamespace):
     def days(self) -> Series:

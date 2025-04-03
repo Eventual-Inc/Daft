@@ -19,3 +19,9 @@ simple_python_wrapper!(dt_year, crate::temporal::dt_year, [expr: PyExpr]);
 pub fn dt_truncate(expr: PyExpr, interval: &str, relative_to: PyExpr) -> PyResult<PyExpr> {
     Ok(crate::temporal::truncate::dt_truncate(expr.into(), interval, relative_to.into()).into())
 }
+
+#[pyfunction]
+#[pyo3(signature = (expr, format=None))]
+pub fn dt_strftime(expr: PyExpr, format: Option<&str>) -> PyResult<PyExpr> {
+    Ok(crate::temporal::dt_strftime(expr.into(), format).into())
+}
