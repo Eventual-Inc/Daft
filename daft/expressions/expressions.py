@@ -2496,7 +2496,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         .. NOTE::
             The format must be a valid datetime format string. (defaults to ISO 8601 format)
-            See: https://docs.rs/chrono/latest/chrono/format/strptime/index.html
+            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
 
         Example:
