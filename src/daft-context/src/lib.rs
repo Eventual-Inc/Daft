@@ -1,7 +1,7 @@
 #![feature(mapped_lock_guards)]
 use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
 
-use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
+use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use daft_py_runners::{NativeRunner, PyRunner, RayRunner};
@@ -144,6 +144,10 @@ impl DaftContext {
     /// get the planning config
     pub fn planning_config(&self) -> Arc<DaftPlanningConfig> {
         self.state().config.planning.clone()
+    }
+
+    pub fn io_config(&self) -> IOConfig {
+        self.state().config.planning.default_io_config.clone()
     }
 }
 
