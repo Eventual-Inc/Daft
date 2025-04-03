@@ -55,6 +55,8 @@ from daft.series import Series, item_to_series
 if TYPE_CHECKING:
     from daft.io import IOConfig
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
+    from daft.window import Window
+
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
 elif os.getenv("DAFT_SPHINX_BUILD") == "1":
@@ -1034,7 +1036,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def approx_count_distinct(self) -> Expression:
-        """Calculates the approximate number of non-`NULL` unique values in the expression.
+        """Calculates the approximate number of non-`NULL` distinct values in the expression.
 
         Approximation is performed using the `HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ algorithm.
 
@@ -1094,9 +1096,13 @@ class Expression:
             A grouped calculation of approximate percentiles:
 
             >>> df = daft.from_pydict({"class": ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
-            >>> df = df.groupby("class").agg(
-            ...     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
-            ...     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
+            >>> df = (
+            ...     df.groupby("class")
+            ...     .agg(
+            ...         df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
+            ...         df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
+            ...     )
+            ...     .sort("class")
             ... )
             >>> df.show()
             ╭───────┬─────────────────────┬────────────────────────────────╮
@@ -1104,11 +1110,11 @@ class Expression:
             │ ---   ┆ ---                 ┆ ---                            │
             │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
             ╞═══════╪═════════════════════╪════════════════════════════════╡
-            │ c     ┆ None                ┆ None                           │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ c     ┆ None                ┆ None                           │
             ╰───────┴─────────────────────┴────────────────────────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
@@ -1225,33 +1231,33 @@ class Expression:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"values": [1, 1, None, 2, 2, None]})
-            >>> df.agg(df["values"].agg_set().alias("unique_values")).show()
-            ╭───────────────╮
-            │ unique_values │
-            │ ---           │
-            │ List[Int64]   │
-            ╞═══════════════╡
-            │ [1, 2]        │
-            ╰───────────────╯
+            >>> df.agg(df["values"].agg_set().alias("distinct_values")).show()
+            ╭─────────────────╮
+            │ distinct_values │
+            │ ---             │
+            │ List[Int64]     │
+            ╞═════════════════╡
+            │ [1, 2]          │
+            ╰─────────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
             Note that null values are ignored by default:
 
             >>> df = daft.from_pydict({"values": [None, None, None]})
-            >>> df.agg(df["values"].agg_set().alias("unique_values")).show()
-            ╭───────────────╮
-            │ unique_values │
-            │ ---           │
-            │ List[Null]    │
-            ╞═══════════════╡
-            │ []            │
-            ╰───────────────╯
+            >>> df.agg(df["values"].agg_set().alias("distinct_values")).show()
+            ╭─────────────────╮
+            │ distinct_values │
+            │ ---             │
+            │ List[Null]      │
+            ╞═════════════════╡
+            │ []              │
+            ╰─────────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
         Returns:
-            Expression: A List expression containing the unique values from the input
+            Expression: A List expression containing the distinct values from the input
         """
         expr = self._expr.agg_set()
         return Expression._from_pyexpr(expr)
@@ -1652,6 +1658,9 @@ class Expression:
 
     def name(self) -> builtins.str:
         return self._expr.name()
+
+    def over(self, window: Window) -> Expression:
+        return Expression._from_pyexpr(self._expr.over(window._spec))
 
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
@@ -3595,10 +3604,10 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_join(self._expr, delimiter_expr._expr))
 
     def value_counts(self) -> Expression:
-        """Counts the occurrences of each unique value in the list.
+        """Counts the occurrences of each distinct value in the list.
 
         Returns:
-            Expression: A Map<X, UInt64> expression where the keys are unique elements from the
+            Expression: A Map<X, UInt64> expression where the keys are distinct elements from the
                         original list of type X, and the values are UInt64 counts representing
                         the number of times each element appears in the list.
 
@@ -3832,7 +3841,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
 
     def distinct(self) -> Expression:
-        """Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
+        """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
 
         Example:
             >>> import daft
@@ -3873,9 +3882,57 @@ class ExpressionListNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         Returns:
-            Expression: An expression with lists containing only unique elements
+            Expression: An expression with lists containing only distinct elements
         """
         return Expression._from_pyexpr(_list_distinct(self._expr))
+
+    def unique(self) -> Expression:
+        """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
+
+        Alias for :func:`Expression.list.distinct`.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1], [None, 1, None, 1]]})
+            >>> df.select(df["a"].list.unique()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ [1, 2, 3]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [4, 6, 2]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [6, 7, 1]   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+
+            Note that null values are ignored:
+
+            >>> df = daft.from_pydict({"a": [[None, None], [1, None, 1], [None]]})
+            >>> df.select(df["a"].list.unique()).show()
+            ╭─────────────╮
+            │ a           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ []          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [1]         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ []          │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        Returns:
+            Expression: An expression with lists containing only distinct elements
+        """
+        return self.distinct()
 
 
 class ExpressionStructNamespace(ExpressionNamespace):

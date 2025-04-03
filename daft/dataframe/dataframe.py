@@ -42,6 +42,7 @@ from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
+from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions
 
 if TYPE_CHECKING:
     import dask
@@ -58,10 +59,6 @@ if TYPE_CHECKING:
 from daft.logical.schema import Schema
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
-
-ColumnInputType = Union[Expression, str]
-
-ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
@@ -433,9 +430,11 @@ class DataFrame:
 
         >>> import daft
         >>>
+        >>> daft.context.set_runner_ray()  # doctest: +SKIP
+        >>>
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
         >>> for part in df.iter_partitions():
-        ...     print(part)
+        ...     print(part)  # doctest: +SKIP
         MicroPartition with 2 rows:
         TableState: Loaded. 1 tables
         ╭───────┬──────╮
@@ -1278,22 +1277,10 @@ class DataFrame:
         # TODO(Kevin): remove this method and use _column_inputs_to_expressions
         return [col(c) if isinstance(c, str) else c for c in columns]
 
-    def _is_column_input(self, x: Any) -> bool:
-        return isinstance(x, str) or isinstance(x, Expression)
-
-    def _column_inputs_to_expressions(self, columns: ManyColumnsInputType) -> List[Expression]:
-        """Inputs to dataframe operations can be passed in as individual arguments or an iterable.
-
-        In addition, they may be strings or Expressions.
-        This method normalizes the inputs to a list of Expressions.
-        """
-        column_iter: Iterable[ColumnInputType] = [columns] if self._is_column_input(columns) else columns  # type: ignore
-        return [col(c) if isinstance(c, str) else c for c in column_iter]
-
     def _wildcard_inputs_to_expressions(self, columns: Tuple[ManyColumnsInputType, ...]) -> List[Expression]:
         """Handles wildcard argument column inputs."""
         column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
-        return self._column_inputs_to_expressions(column_input)
+        return column_inputs_to_expressions(column_input)
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)."""
@@ -1344,9 +1331,11 @@ class DataFrame:
 
         Example:
             >>> import daft
+            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>>
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
-            >>> df.show()
+            >>> df.show()  # doctest: +SKIP
             ╭─────────────┬───────╮
             │ id          ┆ a     │
             │ ---         ┆ ---   │
@@ -1443,31 +1432,61 @@ class DataFrame:
 
     @DataframePublicAPI
     def distinct(self) -> "DataFrame":
-        """Computes unique rows, dropping duplicates.
+        """Computes distinct rows, dropping duplicates.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 8]})
-            >>> unique_df = df.distinct()
-            >>> unique_df.show()
+            >>> distinct_df = df.distinct()
+            >>> distinct_df = distinct_df.sort("x")
+            >>> distinct_df.show()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
             │ Int64 ┆ Int64 ┆ Int64 │
             ╞═══════╪═══════╪═══════╡
-            │ 2     ┆ 5     ┆ 8     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 1     ┆ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 8     │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
         Returns:
-            DataFrame: DataFrame that has only  unique rows.
+            DataFrame: DataFrame that has only distinct rows.
         """
         ExpressionsProjection.from_schema(self._builder.schema())
         builder = self._builder.distinct()
         return DataFrame(builder)
+
+    @DataframePublicAPI
+    def unique(self) -> "DataFrame":
+        """Computes distinct rows, dropping duplicates.
+
+        Alias for :func:`DataFrame.distinct`.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 8]})
+            >>> distinct_df = df.unique()
+            >>> distinct_df = distinct_df.sort("x")
+            >>> distinct_df.show()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 8     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Returns:
+            DataFrame: DataFrame that has only distinct rows.
+        """
+        return self.distinct()
 
     @DataframePublicAPI
     def sample(
@@ -2300,8 +2319,8 @@ class DataFrame:
         See Also:
             `melt`
         """
-        ids_exprs = self._column_inputs_to_expressions(ids)
-        values_exprs = self._column_inputs_to_expressions(values)
+        ids_exprs = column_inputs_to_expressions(ids)
+        values_exprs = column_inputs_to_expressions(values)
 
         builder = self._builder.unpivot(ids_exprs, values_exprs, variable_name, value_name)
         return DataFrame(builder)
@@ -2669,6 +2688,7 @@ class DataFrame:
             ...     col("pet").count().alias("count"),
             ...     col("name").any_value(),
             ... )
+            >>> grouped_df = grouped_df.sort("pet")
             >>> grouped_df.show()
             ╭──────┬─────────┬─────────┬────────┬────────╮
             │ pet  ┆ min_age ┆ max_age ┆ count  ┆ name   │
@@ -2716,15 +2736,17 @@ class DataFrame:
             ... }
             >>> df = daft.from_pydict(data)
             >>> df = df.pivot("version", "platform", "downloads", "sum")
+            >>>
+            >>> df = df.sort("version").select("version", "windows", "macos")
             >>> df.show()
             ╭─────────┬─────────┬───────╮
             │ version ┆ windows ┆ macos │
             │ ---     ┆ ---     ┆ ---   │
             │ Utf8    ┆ Int64   ┆ Int64 │
             ╞═════════╪═════════╪═══════╡
-            │ 3.9     ┆ 250     ┆ 150   │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 3.8     ┆ None    ┆ 300   │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3.9     ┆ 250     ┆ 150   │
             ╰─────────┴─────────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
@@ -2740,8 +2762,8 @@ class DataFrame:
             DataFrame: DataFrame with pivoted columns
 
         """
-        group_by_expr = self._column_inputs_to_expressions(group_by)
-        [pivot_col_expr, value_col_expr] = self._column_inputs_to_expressions([pivot_col, value_col])
+        group_by_expr = column_inputs_to_expressions(group_by)
+        [pivot_col_expr, value_col_expr] = column_inputs_to_expressions([pivot_col, value_col])
         agg_expr = self._map_agg_string_to_expr(value_col_expr, agg_fn)
 
         if names is None:
@@ -2880,7 +2902,9 @@ class DataFrame:
             >>> import daft
             >>> df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
             >>> df2 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 8, 6]})
-            >>> df1.intersect(df2).collect()
+            >>> df = df1.intersect(df2)
+            >>> df = df.sort("a")
+            >>> df.show()
             ╭───────┬───────╮
             │ a     ┆ b     │
             │ ---   ┆ ---   │
@@ -3514,6 +3538,7 @@ class GroupedDataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0, 1, 2, 100]})
             >>> df = df.groupby("keys").stddev()
+            >>> df = df.sort("keys")
             >>> df.show()
             ╭──────┬───────────────────╮
             │ keys ┆ col_a             │
@@ -3626,6 +3651,7 @@ class GroupedDataFrame:
             ...     col("pet").count().alias("count"),
             ...     col("name").any_value(),
             ... )
+            >>> grouped_df = grouped_df.sort("pet")
             >>> grouped_df.show()
             ╭──────┬─────────┬─────────┬────────┬────────╮
             │ pet  ┆ min_age ┆ max_age ┆ count  ┆ name   │
@@ -3670,6 +3696,7 @@ class GroupedDataFrame:
             ...     return [statistics.stdev(data)]
             >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
+            >>> df = df.sort("group")
             >>> df.show()
             ╭───────┬────────────────────╮
             │ group ┆ data               │
