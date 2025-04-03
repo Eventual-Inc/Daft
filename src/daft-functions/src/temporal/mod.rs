@@ -140,16 +140,19 @@ pub struct UnixTimestamp {
     pub time_unit: TimeUnit,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct TemporalToString {
+    format: Option<String>,
+}
+
 #[typetag::serde]
 impl ScalarUDF for UnixTimestamp {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-
     fn name(&self) -> &'static str {
         "to_unix_epoch"
     }
-
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
@@ -170,13 +173,11 @@ impl ScalarUDF for UnixTimestamp {
             ))),
         }
     }
-
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => input
                 .cast(&DataType::Timestamp(self.time_unit, None))
                 .and_then(|s| s.cast(&DataType::Int64)),
-
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -185,8 +186,62 @@ impl ScalarUDF for UnixTimestamp {
     }
 }
 
+#[typetag::serde]
+impl ScalarUDF for TemporalToString {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &'static str {
+        "to_string"
+    }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        match inputs {
+            [input] => match input.to_field(schema) {
+                Ok(field) => match field.dtype {
+                    DataType::Time(_) | DataType::Timestamp(_, _) | DataType::Date => {
+                        Ok(Field::new(field.name, DataType::Utf8))
+                    }
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected input to be one of [time, timestamp, date] got {}",
+                        field.dtype
+                    ))),
+                },
+                Err(e) => Err(e),
+            },
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+        match inputs {
+            [input] => input.dt_strftime(self.format.as_deref()),
+            _ => Err(DaftError::ValueError(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+}
+
+#[must_use]
 pub fn dt_to_unix_epoch(input: ExprRef, time_unit: TimeUnit) -> DaftResult<ExprRef> {
     Ok(ScalarFunction::new(UnixTimestamp { time_unit }, vec![input]).into())
+}
+
+#[must_use]
+pub fn dt_strftime(input: ExprRef, format: Option<&str>) -> ExprRef {
+    ScalarFunction::new(
+        TemporalToString {
+            format: format.map(|s| s.to_string()),
+        },
+        vec![input],
+    )
+    .into()
 }
 
 #[cfg(test)]

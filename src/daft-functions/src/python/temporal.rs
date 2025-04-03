@@ -1,6 +1,6 @@
 use daft_core::python::PyTimeUnit;
 use daft_dsl::python::PyExpr;
-use pyo3::{pyfunction, PyResult};
+use pyo3::{pyfunction, PyResult, };
 
 simple_python_wrapper!(dt_date, crate::temporal::dt_date, [expr: PyExpr]);
 simple_python_wrapper!(dt_day, crate::temporal::dt_day, [expr: PyExpr]);
@@ -24,4 +24,9 @@ pub fn dt_truncate(expr: PyExpr, interval: &str, relative_to: PyExpr) -> PyResul
 #[pyfunction]
 pub fn dt_to_unix_epoch(expr: PyExpr, time_unit: PyTimeUnit) -> PyResult<PyExpr> {
     Ok(crate::temporal::dt_to_unix_epoch(expr.into(), time_unit.timeunit)?.into())
+}
+
+#[pyfunction(signature = (expr, format=None))]
+pub fn dt_strftime(expr: PyExpr, format: Option<&str>) -> PyResult<PyExpr> {
+    Ok(crate::temporal::dt_strftime(expr.into(), format).into())
 }

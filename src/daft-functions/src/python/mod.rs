@@ -136,6 +136,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(temporal::dt_year);
     add!(temporal::dt_truncate);
     add!(temporal::dt_to_unix_epoch);
+    add!(temporal::dt_strftime);
 
     add!(tokenize::tokenize_encode);
     add!(tokenize::tokenize_decode);

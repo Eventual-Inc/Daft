@@ -1,4 +1,8 @@
+use std::sync::Arc;
+
+use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
+use daft_schema::field::Field;
 
 use crate::{
     datatypes::{DataType, TimeUnit},
@@ -285,5 +289,21 @@ impl Series {
     pub fn dt_to_unix_epoch(&self, time_unit: TimeUnit) -> DaftResult<Self> {
         let cast_to = DataType::Timestamp(time_unit, None);
         self.cast(&cast_to)?.cast(&DataType::Int64)
+    }
+    
+    pub fn dt_strftime(&self, format: Option<&str>) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(..) | DataType::Date | DataType::Time(_) => {
+                let arrow_arr = self.to_arrow();
+                let out = arrow2::compute::temporal::strftime(arrow_arr.as_ref(), format)?;
+                let arc_field = Arc::new(Field::new(self.name().to_string(), DataType::Utf8));
+                Self::from_arrow(arc_field, out.to_boxed())
+            }
+
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run to_string() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
     }
 }
