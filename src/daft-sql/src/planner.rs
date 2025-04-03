@@ -184,7 +184,7 @@ impl<'a> SQLPlanner<'a> {
     fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
         let table = self.session().get_table(name)?;
         let plan = table.get_logical_plan()?;
-        Ok(LogicalPlanBuilder::from(plan).alias(name.name.clone()))
+        Ok(LogicalPlanBuilder::from(plan).alias(name.name()))
     }
 
     /// Borrow the planning session
@@ -853,7 +853,7 @@ impl<'a> SQLPlanner<'a> {
         } else {
             // search bindings then session metadata
             self.bound_ctes()
-                .get(&ident.name)
+                .get(ident.name())
                 .cloned()
                 .or_else(|| self.get_table(&ident).ok())
         };
@@ -1880,10 +1880,7 @@ fn compound_ident_to_str(idents: &[Ident]) -> String {
 /// Returns a normalized daft identifier from an sqlparser ObjectName
 pub(crate) fn normalize(name: &ObjectName) -> Identifier {
     // TODO case-normalization of regular identifiers
-    let mut names: Vec<String> = name.0.iter().map(|i| i.value.to_string()).collect();
-    let name = names.pop().unwrap();
-    let namespace = names;
-    Identifier::new(namespace, name)
+    Identifier::new(name.0.iter().map(|i| i.value.clone()))
 }
 
 /// Returns true iff the ObjectName is a string literal (single-quoted identifier e.g. 'path/to/file.extension').

@@ -7,10 +7,11 @@ use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
         DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
-        EnrichWithStats, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
-        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
-        PushDownProjection, ReorderJoins, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
-        SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery,
+        EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
+        MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
+        PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
+        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -101,6 +102,7 @@ impl Default for OptimizerBuilder {
                         Box::new(EliminateSubqueryAliasRule::new()),
                         Box::new(SplitActorPoolProjects::new()),
                         Box::new(DetectMonotonicId::new()),
+                        Box::new(ExtractWindowFunction::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),

@@ -478,7 +478,7 @@ class Identifier(Sequence):
         """
         if len(parts) < 1:
             raise ValueError("Identifier requires at least one part.")
-        self._ident = PyIdentifier(parts[:-1], parts[-1])
+        self._ident = PyIdentifier(parts)
 
     @staticmethod
     def _from_pyidentifier(ident: PyIdentifier) -> Identifier:

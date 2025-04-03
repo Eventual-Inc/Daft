@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Union
 
 from daft.dependencies import pa
+
+if TYPE_CHECKING:
+    from daft.expressions import Expression
+
+# Column input type definitions
+ColumnInputType = Union["Expression", str]
+ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
 def get_arrow_version():
@@ -98,3 +105,22 @@ def pyarrow_supports_fixed_shape_tensor() -> bool:
     return hasattr(pa, "fixed_shape_tensor") and (
         (get_context().get_or_create_runner().name != "ray") or get_arrow_version() >= (13, 0, 0)
     )
+
+
+# Column utility functions
+def is_column_input(x: Any) -> bool:
+    from daft.expressions import Expression
+
+    return isinstance(x, str) or isinstance(x, Expression)
+
+
+def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expression]:
+    """Inputs to dataframe operations can be passed in as individual arguments or an iterable.
+
+    In addition, they may be strings or Expressions.
+    This method normalizes the inputs to a list of Expressions.
+    """
+    from daft.expressions import col
+
+    column_iter: Iterable[ColumnInputType] = [columns] if is_column_input(columns) else columns  # type: ignore
+    return [col(c) if isinstance(c, str) else c for c in column_iter]

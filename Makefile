@@ -67,6 +67,10 @@ build-release: check-toolchain .venv  ## Compile and install a faster Daft binar
 test: .venv build  ## Run tests
 	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
 
+.PHONY: doctests
+doctests:
+	DAFT_BOLD_TABLE_HEADERS=0 pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py daft/functions/functions.py daft/datatype.py
+
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data
 	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpcds-gen-folder=$(OUTPUT_DIR)
