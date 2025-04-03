@@ -51,7 +51,7 @@ impl PySession {
 
     pub fn current_namespace(&self) -> PyResult<Option<PyIdentifier>> {
         if let Some(namespace) = self.0.current_namespace()? {
-            let ident = Identifier::from_path(namespace)?;
+            let ident = Identifier::try_new(namespace)?;
             let ident = PyIdentifier::from(ident);
             return Ok(Some(ident));
         }

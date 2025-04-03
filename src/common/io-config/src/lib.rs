@@ -85,3 +85,11 @@ impl From<String> for ObfuscatedString {
         Self(value.into())
     }
 }
+
+impl std::str::FromStr for ObfuscatedString {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.to_string().into()))
+    }
+}

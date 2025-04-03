@@ -744,3 +744,15 @@ def test_cast_sql_string_failing(sql):
     with pytest.raises(Exception):
         expr = col("a").cast(sql)
         daft.from_pydict({"a": [1, 2, 3]}).select(expr)
+
+
+def test_drop_nan():
+    dd = {"n": [1.0, 2.0, None]}
+    df = daft.from_pydict(dd)
+    assert df.drop_nan().to_pydict() == {"n": [1.0, 2.0]}
+
+
+def test_drop_nan_no_nans():
+    dd = {"n": [1, 1, 2]}
+    df = daft.from_pydict(dd)
+    assert df.drop_nan().to_pydict() == dd

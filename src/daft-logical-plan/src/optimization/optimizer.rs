@@ -7,9 +7,11 @@ use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
         DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
-        EnrichWithStats, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
-        PushDownFilter, PushDownLimit, PushDownProjection, ReorderJoins, SimplifyExpressionsRule,
-        SplitActorPoolProjects, UnnestPredicateSubquery, UnnestScalarSubquery,
+        EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
+        MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
+        PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
+        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -32,7 +34,7 @@ impl OptimizerConfig {
 impl Default for OptimizerConfig {
     fn default() -> Self {
         // Default to a max of 5 optimizer passes for a given batch.
-        Self::new(5)
+        Self::new(20)
     }
 }
 
@@ -100,6 +102,7 @@ impl Default for OptimizerBuilder {
                         Box::new(EliminateSubqueryAliasRule::new()),
                         Box::new(SplitActorPoolProjects::new()),
                         Box::new(DetectMonotonicId::new()),
+                        Box::new(ExtractWindowFunction::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
@@ -114,6 +117,14 @@ impl Default for OptimizerBuilder {
                     vec![Box::new(FilterNullJoinKey::new())],
                     RuleExecutionStrategy::Once,
                 ),
+                // --- Anti/semi join pushdowns ---
+                // This needs to be separate from PushDownProjection and PushDownFilter
+                // because otherwise they will just keep swapping places.
+                // We ultimately do want filters to go before joins, so we run this rule before PushDownFilter.
+                RuleBatch::new(
+                    vec![Box::new(PushDownAntiSemiJoin::new())],
+                    RuleExecutionStrategy::FixedPoint(None),
+                ),
                 // --- Bulk of our rules ---
                 RuleBatch::new(
                     vec![
@@ -121,12 +132,14 @@ impl Default for OptimizerBuilder {
                         Box::new(PushDownFilter::new()),
                         Box::new(PushDownProjection::new()),
                         Box::new(EliminateCrossJoin::new()),
+                        Box::new(SimplifyNullFilteredJoin::new()),
+                        Box::new(PushDownJoinPredicate::new()),
                     ],
                     // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
                     // at the current node, which would require another batch application in order to have a chance to push
                     // that Filter node through upstream nodes.
                     // TODO(Clark): Refine this fixed-point policy.
-                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                    RuleExecutionStrategy::FixedPoint(None),
                 ),
                 // --- Limit pushdowns ---
                 // This needs to be separate from PushDownProjection because otherwise the limit and
@@ -169,6 +182,8 @@ impl OptimizerBuilder {
         self.rule_batches.push(RuleBatch::new(
             vec![
                 Box::new(ReorderJoins::new()),
+                Box::new(PushDownFilter::new()),
+                Box::new(PushDownProjection::new()),
                 Box::new(EnrichWithStats::new()),
             ],
             RuleExecutionStrategy::Once,

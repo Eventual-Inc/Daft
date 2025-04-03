@@ -238,6 +238,15 @@ fn replace_column_with_semantic_id(
                 |transformed_child| Expr::Agg(transformed_child).into(),
                 |_| e,
             ),
+            Expr::Window(inner_expr, window_spec) => {
+                replace_column_with_semantic_id(inner_expr.clone(), subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_child| {
+                            Expr::Window(transformed_child, window_spec.clone()).into()
+                        },
+                        |_| e.clone(),
+                    )
+            }
             Expr::Alias(child, name) => {
                 replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                     .map_yes_no(

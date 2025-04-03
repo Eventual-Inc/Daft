@@ -21,7 +21,7 @@ use pyo3::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{Expr, ExprRef, LiteralValue};
+use crate::{expr::Expr, ExprRef, LiteralValue};
 
 #[pyfunction]
 pub fn unresolved_col(name: &str) -> PyExpr {
@@ -525,6 +525,12 @@ impl PyExpr {
     pub fn partitioning_iceberg_truncate(&self, w: i64) -> PyResult<Self> {
         use crate::functions::partitioning::iceberg_truncate;
         Ok(iceberg_truncate(self.into(), w).into())
+    }
+
+    pub fn over(&self, window_spec: &crate::expr::window::WindowSpec) -> PyResult<Self> {
+        Ok(Self {
+            expr: Arc::new(Expr::Window(self.expr.clone(), window_spec.clone())),
+        })
     }
 }
 

@@ -152,7 +152,7 @@ impl Session {
         //
         // Rule 0: check temp tables.
         if !name.has_qualifier() {
-            if let Some(view) = self.state().tables.get(&name.name) {
+            if let Some(view) = self.state().tables.get(name.name()) {
                 return Ok(view.clone());
             }
         }
@@ -182,7 +182,7 @@ impl Session {
         }
         //
         // Rule 3: try to resolve as catalog-qualified.
-        if let Ok(catalog) = self.get_catalog(&name.qualifier[0]) {
+        if let Ok(catalog) = self.get_catalog(name.get(0)) {
             if let Some(table) = catalog.get_table(&name.drop(1))? {
                 return Ok(table.into());
             }
@@ -225,12 +225,8 @@ impl Session {
 
     /// Sets the current_namespace (consider an Into at a later time).
     pub fn set_namespace(&self, ident: Option<&Identifier>) -> Result<()> {
-        // TODO chore: update once Identifier is a Vec<String>
         if let Some(ident) = ident {
-            let mut path = vec![];
-            path.extend_from_slice(&ident.qualifier);
-            path.push(ident.name.clone());
-            self.state_mut().options.curr_namespace = Some(path);
+            self.state_mut().options.curr_namespace = Some(ident.clone().path());
         } else {
             self.state_mut().options.curr_namespace = None;
         }

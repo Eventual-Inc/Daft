@@ -13,9 +13,11 @@ def monotonically_increasing_id() -> Expression:
     Example:
         >>> import daft
         >>> from daft.functions import monotonically_increasing_id
+        >>> daft.context.set_runner_ray()  # doctest: +SKIP
+        >>>
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
         >>> df = df.with_column("id", monotonically_increasing_id())
-        >>> df.show()
+        >>> df.show()  # doctest: +SKIP
         ╭───────┬─────────────╮
         │ a     ┆ id          │
         │ ---   ┆ ---         │

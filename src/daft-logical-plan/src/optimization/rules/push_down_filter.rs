@@ -4,12 +4,9 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups};
+use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups, ScanState};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
-use daft_algebra::boolean::{
-    combine_conjunction, predicate_removes_nulls, split_conjunction, to_cnf,
-};
-use daft_core::join::JoinType;
+use daft_algebra::boolean::{combine_conjunction, split_conjunction, to_cnf};
 use daft_dsl::{
     optimization::{get_required_columns, replace_columns_with_expressions},
     resolved_col, ExprRef,
@@ -90,6 +87,10 @@ impl PushDownFilter {
 
                     // Pushdown filter into the Source node
                     SourceInfo::Physical(external_info) => {
+                        // If the scan is materialized, we don't pushdown the filter.
+                        if matches!(external_info.scan_state, ScanState::Tasks(_)) {
+                            return Ok(Transformed::no(plan));
+                        }
                         let predicate = &filter.predicate;
                         let new_predicate = external_info
                             .pushdowns
@@ -264,50 +265,6 @@ impl PushDownFilter {
                 // Example:
                 //      For `foo JOIN bar ON foo.a == (bar.b + 2) WHERE a > 0`, the filter `a > 0` is pushed down to the left side, but can also be pushed down to the right side as `(b + 2) > 0`
 
-                // Left, right, and outer joins can be simplified if there is a filter on their null-producing side.
-                //
-                // Examples:
-                // 1. select * from A left join B where B.x > 0 -> select * from A inner join B where B.x > 0
-                // 2. select * from A full outer join B where B.x > 0 -> select * from A right join B where B.x > 0
-                // 3. select * from A full outer join B where A.x > 0 and B.y > 0 -> select * from A inner join B where A.x > 0 and B.y > 0
-                let simplified_join_type = if matches!(
-                    join_type,
-                    JoinType::Left | JoinType::Right | JoinType::Outer
-                ) {
-                    let left_preserved = !join_type.left_produces_nulls() || {
-                        let left_cols: HashSet<ExprRef> = HashSet::from_iter(
-                            left.schema().fields.keys().cloned().map(resolved_col),
-                        );
-
-                        predicate_removes_nulls(
-                            filter.predicate.clone(),
-                            &child_plan.schema(),
-                            &left_cols,
-                        )?
-                    };
-
-                    let right_preserved = !join_type.right_produces_nulls() || {
-                        let right_cols: HashSet<ExprRef> = HashSet::from_iter(
-                            right.schema().fields.keys().cloned().map(resolved_col),
-                        );
-
-                        predicate_removes_nulls(
-                            filter.predicate.clone(),
-                            &child_plan.schema(),
-                            &right_cols,
-                        )?
-                    };
-
-                    match (left_preserved, right_preserved) {
-                        (true, true) => JoinType::Inner,
-                        (true, false) => JoinType::Left,
-                        (false, true) => JoinType::Right,
-                        (false, false) => JoinType::Outer,
-                    }
-                } else {
-                    *join_type
-                };
-
                 let mut left_pushdowns = vec![];
                 let mut right_pushdowns = vec![];
                 let mut kept_predicates = vec![];
@@ -333,14 +290,14 @@ impl PushDownFilter {
                             kept_predicates.push(predicate);
                         }
                         (true, false) => {
-                            if simplified_join_type.left_produces_nulls() {
+                            if join_type.left_produces_nulls() {
                                 kept_predicates.push(predicate);
                             } else {
                                 left_pushdowns.push(predicate);
                             }
                         }
                         (false, true) => {
-                            if simplified_join_type.right_produces_nulls() {
+                            if join_type.right_produces_nulls() {
                                 kept_predicates.push(predicate);
                             } else {
                                 right_pushdowns.push(predicate);
@@ -377,7 +334,7 @@ impl PushDownFilter {
                         new_left,
                         new_right,
                         on.clone(),
-                        simplified_join_type,
+                        *join_type,
                         *join_strategy,
                     )?));
 
@@ -386,19 +343,6 @@ impl PushDownFilter {
                     } else {
                         new_join
                     }
-                } else if *join_type != simplified_join_type {
-                    let new_join = Join::try_new(
-                        left.clone(),
-                        right.clone(),
-                        on.clone(),
-                        simplified_join_type,
-                        *join_strategy,
-                    )?
-                    .into();
-
-                    Filter::try_new(new_join, filter.predicate.clone())
-                        .unwrap()
-                        .into()
                 } else {
                     return Ok(Transformed::no(plan));
                 }
@@ -416,7 +360,7 @@ mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, resolved_col, unresolved_col, ExprRef};
+    use daft_dsl::{lit, resolved_col, unresolved_col};
     use daft_functions::uri::download::UrlDownloadArgs;
     use rstest::rstest;
 
@@ -1064,76 +1008,6 @@ mod tests {
         .build();
 
         assert_optimized_plan_eq(plan, expected)?;
-
-        Ok(())
-    }
-
-    #[rstest]
-    #[case(JoinType::Left, resolved_col("b"), JoinType::Inner)]
-    #[case(JoinType::Left, resolved_col("a"), JoinType::Left)]
-    #[case(JoinType::Right, resolved_col("a"), JoinType::Inner)]
-    #[case(JoinType::Right, resolved_col("b"), JoinType::Right)]
-    #[case(JoinType::Outer, resolved_col("a").eq(resolved_col("b")), JoinType::Inner)]
-    #[case(JoinType::Outer, resolved_col("a"), JoinType::Left)]
-    #[case(JoinType::Outer, resolved_col("b"), JoinType::Right)]
-    #[case(JoinType::Outer, resolved_col("a").eq_null_safe(resolved_col("b")), JoinType::Outer)]
-    fn join_type_simplifies(
-        #[case] join_type: JoinType,
-        #[case] filter_predicate: ExprRef,
-        #[case] expected_join_type: JoinType,
-    ) -> DaftResult<()> {
-        let left_scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Boolean)]);
-        let right_scan_op = dummy_scan_operator(vec![Field::new("b", DataType::Boolean)]);
-
-        let plan = dummy_scan_node(left_scan_op.clone())
-            .join(
-                dummy_scan_node(right_scan_op.clone()),
-                None,
-                vec![],
-                join_type,
-                None,
-                Default::default(),
-            )?
-            .filter(filter_predicate.clone())?
-            .build();
-
-        let pushed_into_left = filter_predicate.to_field(&left_scan_op.0.schema()).is_ok();
-        let pushed_into_right = filter_predicate.to_field(&right_scan_op.0.schema()).is_ok();
-
-        let expected_left_scan_node = if pushed_into_left {
-            dummy_scan_node_with_pushdowns(
-                left_scan_op,
-                Pushdowns::default().with_filters(Some(filter_predicate.clone())),
-            )
-        } else {
-            dummy_scan_node(left_scan_op)
-        };
-
-        let expected_right_scan_node = if pushed_into_right {
-            dummy_scan_node_with_pushdowns(
-                right_scan_op,
-                Pushdowns::default().with_filters(Some(filter_predicate.clone())),
-            )
-        } else {
-            dummy_scan_node(right_scan_op)
-        };
-
-        let expected = expected_left_scan_node.join(
-            expected_right_scan_node,
-            None,
-            vec![],
-            expected_join_type,
-            None,
-            Default::default(),
-        )?;
-
-        let expected = if !pushed_into_left && !pushed_into_right {
-            expected.filter(filter_predicate)?
-        } else {
-            expected
-        };
-
-        assert_optimized_plan_eq(plan, expected.build())?;
 
         Ok(())
     }

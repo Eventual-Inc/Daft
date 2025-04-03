@@ -92,26 +92,32 @@ Daft and Delta Lake have compatible type systems. Here are how types are convert
 
 When reading from a Delta Lake table into Daft:
 
-| Delta Lake               | Daft                          |
-| --------------------- | ----------------------------- |
-| **Primitive Types** |
-| `boolean` | [`daft.DataType.bool()`](../api_docs/datatype.html) |
-| `byte` | [`daft.DataType.int8()`](../api_docs/datatype.html#daft.DataType.int8) |
-| `short` | [`daft.DataType.int16()`](../api_docs/datatype.html#daft.DataType.int16)|
-| `int` | [`daft.DataType.int32()`](../api_docs/datatype.html#daft.DataType.int32) |
-| `long` | [`daft.DataType.int64()`](../api_docs/datatype.html#daft.DataType.int64) |
-| `float` | [`daft.DataType.float32()`](../api_docs/datatype.html#daft.DataType.float32) |
-| `double` | [`daft.DataType.float64()`](../api_docs/datatype.html#daft.DataType.float64) |
-| `decimal(precision, scale)` | [`daft.DataType.decimal128(precision, scale)`](../api_docs/datatype.html#daft.DataType.decimal128) |
-| `date` | [`daft.DataType.date()`](../api_docs/datatype.html#daft.DataType.date) |
-| `timestamp` | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](../api_docs/datatype.html#daft.DataType.timestamp) |
-| `timestampz`| [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](../api_docs/datatype.html#daft.DataType.timestamp) |
-| `string` | [`daft.DataType.string()`](../api_docs/datatype.html#daft.DataType.string) |
-| `binary` | [`daft.DataType.binary()`](../api_docs/datatype.html#daft.DataType.binary) |
-| **Nested Types** |
-| `struct(fields)` | [`daft.DataType.struct(fields)`](../api_docs/datatype.html#daft.DataType.struct) |
-| `list(child_type)` | [`daft.DataType.list(child_type)`](../api_docs/datatype.html#daft.DataType.list) |
-| `map(K, V)` | [`daft.DataType.struct({"key": K, "value": V})`](../api_docs/datatype.html#daft.DataType.struct) |
+| Delta Lake                          | Daft                                                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Primitive Types**                 |
+| `BOOLEAN`                           | [`daft.DataType.bool()`](../api_docs/datatype.html)                                                           |
+| `BYTE`                              | [`daft.DataType.int8()`](../api_docs/datatype.html#daft.DataType.int8)                                        |
+| `SHORT`                             | [`daft.DataType.int16()`](../api_docs/datatype.html#daft.DataType.int16)                                      |
+| `INT`                               | [`daft.DataType.int32()`](../api_docs/datatype.html#daft.DataType.int32)                                      |
+| `LONG`                              | [`daft.DataType.int64()`](../api_docs/datatype.html#daft.DataType.int64)                                      |
+| `FLOAT`                             | [`daft.DataType.float32()`](../api_docs/datatype.html#daft.DataType.float32)                                  |
+| `DOUBLE`                            | [`daft.DataType.float64()`](../api_docs/datatype.html#daft.DataType.float64)                                  |
+| `DECIMAL(precision, scale)`         | [`daft.DataType.decimal128(precision, scale)`](../api_docs/datatype.html#daft.DataType.decimal128)            |
+| `DATE`                              | [`daft.DataType.date()`](../api_docs/datatype.html#daft.DataType.date)                                        |
+| `TIMESTAMP_NTZ`                     | [`daft.DataType.timestamp(timeunit="us", timezone=None)`](../api_docs/datatype.html#daft.DataType.timestamp)  |
+| `TIMESTAMP`                         | [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`](../api_docs/datatype.html#daft.DataType.timestamp) |
+| `STRING`                            | [`daft.DataType.string()`](../api_docs/datatype.html#daft.DataType.string)                                    |
+| `BINARY`                            | [`daft.DataType.binary()`](../api_docs/datatype.html#daft.DataType.binary)                                    |
+| **Nested Types**                    |
+| `MAP<key_type, value_type>`         | [`daft.DataType.map(key_type, value_type)`](../api_docs/datatype.html#daft.DataType.map)                      |
+| `STRUCT<[field_name: field_type,]>` | [`daft.DataType.struct(fields)`](../api_docs/datatype.html#daft.DataType.struct)                              |
+| `ARRAY<element_type>`               | [`daft.DataType.list(element_type)`](../api_docs/datatype.html#daft.DataType.list)                            |
+
+References:
+
+* [Python `unitycatalog` type name code reference](https://github.com/unitycatalog/unitycatalog-python/blob/main/src/unitycatalog/types/table_info.py)
+* [Spark types documentation](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/data_types.html)
+* [Databricks types documentation](https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-datatypes)
 
 ## Roadmap
 
