@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr, ExprRef};
-use itertools::Itertools;
+use indexmap::IndexMap;
 
 use crate::{
     logical_plan::{LogicalPlan, Project},
@@ -25,35 +25,22 @@ impl ExtractWindowFunction {
         Self
     }
 
-    fn is_window_function_expr(expr: &ExprRef) -> bool {
-        expr.exists(|e| matches!(e.as_ref(), Expr::Window(_, _)))
-    }
-
-    fn contains_window_function(project: &Project) -> bool {
-        project.projection.iter().any(Self::is_window_function_expr)
-    }
-
     fn extract_window_functions(projection: &[ExprRef]) -> Vec<(ExprRef, WindowSpec)> {
         let mut result = Vec::new();
 
         for expr in projection {
-            Self::collect_window_functions(expr, &mut result);
+            expr.apply(|e| {
+                if let Expr::Window(_inner_expr, window_spec) = e.as_ref() {
+                    result.push((e.clone(), window_spec.clone()));
+                    Ok(TreeNodeRecursion::Jump)
+                } else {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+            })
+            .unwrap();
         }
 
         result
-    }
-
-    fn collect_window_functions(expr: &ExprRef, result: &mut Vec<(ExprRef, WindowSpec)>) {
-        match expr.as_ref() {
-            Expr::Window(_inner_expr, window_spec) => {
-                result.push((expr.clone(), window_spec.clone()));
-            }
-            _ => {
-                for child in expr.children() {
-                    Self::collect_window_functions(&child, result);
-                }
-            }
-        }
     }
 
     fn replace_window_functions(
@@ -87,68 +74,70 @@ impl OptimizerRule for ExtractWindowFunction {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         plan.transform_down(|node| match node.as_ref() {
             LogicalPlan::Project(project) => {
-                if Self::contains_window_function(project) {
-                    let window_funcs = Self::extract_window_functions(&project.projection);
+                let window_funcs = Self::extract_window_functions(&project.projection);
 
-                    debug_assert!(
-                        !window_funcs.is_empty(),
-                        "Window functions detected but none extracted"
+                if window_funcs.is_empty() {
+                    return Ok(Transformed::no(node));
+                }
+
+                // Group window functions by spec using IndexMap for deterministic ordering
+                let mut window_funcs_grouped_by_spec = IndexMap::new();
+                for (expr, spec) in window_funcs {
+                    window_funcs_grouped_by_spec
+                        .entry(spec)
+                        .or_insert_with(Vec::new)
+                        .push(expr);
+                }
+
+                let (current_plan, window_col_mappings) =
+                    window_funcs_grouped_by_spec.into_iter().fold(
+                        (project.input.clone(), Vec::new()),
+                        |(current_plan, mut window_col_mappings),
+                         (window_spec, window_exprs_for_spec)| {
+                            // Semantic IDs to alias expressions in the Window operation
+                            let window_function_exprs_aliased = window_exprs_for_spec
+                                .iter()
+                                .map(|e| {
+                                    let semantic_id = e.semantic_id(&current_plan.schema());
+                                    e.alias(semantic_id.id)
+                                })
+                                .collect::<Vec<ExprRef>>();
+
+                            let new_plan = Arc::new(LogicalPlan::Window(
+                                Window::try_new(
+                                    current_plan,
+                                    window_function_exprs_aliased,
+                                    window_spec,
+                                )
+                                .unwrap(),
+                            ));
+
+                            // Semantic IDs to map original window expressions to column names in the final projection
+                            let spec_mappings = window_exprs_for_spec
+                                .iter()
+                                .map(|e| {
+                                    let semantic_id = e.semantic_id(&new_plan.schema());
+                                    (e.clone(), semantic_id.id.to_string())
+                                })
+                                .collect::<Vec<(ExprRef, String)>>();
+
+                            window_col_mappings.extend(spec_mappings);
+                            (new_plan, window_col_mappings)
+                        },
                     );
 
-                    let window_funcs_grouped_by_spec = window_funcs
-                        .into_iter()
-                        .into_group_map_by(|(_, spec)| spec.clone());
+                let new_projection = project
+                    .projection
+                    .iter()
+                    .map(|expr| Self::replace_window_functions(expr, &window_col_mappings))
+                    .collect::<DaftResult<Vec<ExprRef>>>()?;
 
-                    let mut window_col_mappings = Vec::new();
+                let final_plan = Arc::new(LogicalPlan::Project(Project::try_new(
+                    current_plan,
+                    new_projection,
+                )?));
 
-                    let mut current_plan = project.input.clone();
-
-                    for (window_spec, window_exprs_for_spec) in window_funcs_grouped_by_spec {
-                        let window_function_exprs = window_exprs_for_spec
-                            .iter()
-                            .map(|(expr, _)| expr.clone())
-                            .collect::<Vec<ExprRef>>();
-
-                        let window_function_exprs_aliased = window_function_exprs
-                            .iter()
-                            .map(|e| {
-                                let semantic_id = e.semantic_id(&current_plan.schema());
-                                e.alias(semantic_id.id)
-                            })
-                            .collect::<Vec<ExprRef>>();
-
-                        current_plan = Arc::new(LogicalPlan::Window(Window::try_new(
-                            current_plan,
-                            window_function_exprs_aliased,
-                            window_spec,
-                        )?));
-
-                        let spec_mappings = window_function_exprs
-                            .iter()
-                            .map(|e| {
-                                let semantic_id = e.semantic_id(&current_plan.schema());
-                                (e.clone(), semantic_id.id.to_string())
-                            })
-                            .collect::<Vec<(ExprRef, String)>>();
-
-                        window_col_mappings.extend(spec_mappings);
-                    }
-
-                    let new_projection = project
-                        .projection
-                        .iter()
-                        .map(|expr| Self::replace_window_functions(expr, &window_col_mappings))
-                        .collect::<DaftResult<Vec<ExprRef>>>()?;
-
-                    let final_plan = Arc::new(LogicalPlan::Project(Project::try_new(
-                        current_plan,
-                        new_projection,
-                    )?));
-
-                    Ok(Transformed::yes(final_plan))
-                } else {
-                    Ok(Transformed::no(node))
-                }
+                Ok(Transformed::yes(final_plan))
             }
             _ => Ok(Transformed::no(node)),
         })
@@ -212,13 +201,14 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let auto_generated_name = "value.local_min().window(partition_by=[category],order_by=[])";
+        let window_expr = Arc::new(Expr::Window(min_expr.clone(), window_spec.clone()));
+        let auto_generated_name = window_expr.semantic_id(&input_plan.schema()).id.to_string();
 
         let window_op = Window::try_new(
             input_plan.clone().build(),
             vec![
                 Arc::new(Expr::Window(min_expr.clone(), window_spec.clone()))
-                    .alias(auto_generated_name),
+                    .alias(auto_generated_name.clone()),
             ],
             window_spec,
         )?;
@@ -269,14 +259,14 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let auto_generated_name =
-            "value.local_sum().window(partition_by=[category,group],order_by=[])";
+        let window_expr = Arc::new(Expr::Window(sum_expr.clone(), window_spec.clone()));
+        let auto_generated_name = window_expr.semantic_id(&input_plan.schema()).id.to_string();
 
         let window_op = Window::try_new(
             input_plan.clone().build(),
             vec![
                 Arc::new(Expr::Window(sum_expr.clone(), window_spec.clone()))
-                    .alias(auto_generated_name),
+                    .alias(auto_generated_name.clone()),
             ],
             window_spec,
         )?;
@@ -335,16 +325,25 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let auto_generated_name1 = "value.local_min().window(partition_by=[category],order_by=[])";
-        let auto_generated_name2 = "value.local_sum().window(partition_by=[group],order_by=[])";
+        let window_expr1 = Arc::new(Expr::Window(min_expr.clone(), window_spec1.clone()));
+        let window_expr2 = Arc::new(Expr::Window(sum_expr.clone(), window_spec2.clone()));
+
+        let auto_generated_name1 = window_expr1
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+        let auto_generated_name2 = window_expr2
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
 
         let window_op1 = Window::try_new(
             input_plan.clone().build(),
             vec![
-                Arc::new(Expr::Window(sum_expr.clone(), window_spec2.clone()))
-                    .alias(auto_generated_name2),
+                Arc::new(Expr::Window(min_expr.clone(), window_spec1.clone()))
+                    .alias(auto_generated_name1.clone()),
             ],
-            window_spec2,
+            window_spec1,
         )?;
 
         let intermediate_plan = Arc::new(LogicalPlan::Window(window_op1));
@@ -352,10 +351,10 @@ mod tests {
         let window_op2 = Window::try_new(
             intermediate_plan,
             vec![
-                Arc::new(Expr::Window(min_expr.clone(), window_spec1.clone()))
-                    .alias(auto_generated_name1),
+                Arc::new(Expr::Window(sum_expr.clone(), window_spec2.clone()))
+                    .alias(auto_generated_name2.clone()),
             ],
-            window_spec1,
+            window_spec2,
         )?;
 
         let window_plan = Arc::new(LogicalPlan::Window(window_op2));
@@ -429,20 +428,41 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let auto_generated_name1 =
-            "value.local_sum().window(partition_by=[category,group],order_by=[])";
-        let auto_generated_name2 =
-            "value.local_mean().window(partition_by=[category,group],order_by=[])";
-        let auto_generated_name3 = "value.local_min().window(partition_by=[category],order_by=[])";
-        let auto_generated_name4 = "value.local_max().window(partition_by=[category],order_by=[])";
+        let window_expr1 = Arc::new(Expr::Window(sum_expr.clone(), multi_partition_spec.clone()));
+        let window_expr2 = Arc::new(Expr::Window(avg_expr.clone(), multi_partition_spec.clone()));
+        let window_expr3 = Arc::new(Expr::Window(
+            min_expr.clone(),
+            single_partition_spec.clone(),
+        ));
+        let window_expr4 = Arc::new(Expr::Window(
+            max_expr.clone(),
+            single_partition_spec.clone(),
+        ));
+
+        let auto_generated_name1 = window_expr1
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+        let auto_generated_name2 = window_expr2
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+        let auto_generated_name3 = window_expr3
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+        let auto_generated_name4 = window_expr4
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
 
         let multi_window_op = Window::try_new(
             input_plan.clone().build(),
             vec![
                 Arc::new(Expr::Window(sum_expr.clone(), multi_partition_spec.clone()))
-                    .alias(auto_generated_name1),
+                    .alias(auto_generated_name1.clone()),
                 Arc::new(Expr::Window(avg_expr.clone(), multi_partition_spec.clone()))
-                    .alias(auto_generated_name2),
+                    .alias(auto_generated_name2.clone()),
             ],
             multi_partition_spec,
         )?;
@@ -456,12 +476,12 @@ mod tests {
                     min_expr.clone(),
                     single_partition_spec.clone(),
                 ))
-                .alias(auto_generated_name3),
+                .alias(auto_generated_name3.clone()),
                 Arc::new(Expr::Window(
                     max_expr.clone(),
                     single_partition_spec.clone(),
                 ))
-                .alias(auto_generated_name4),
+                .alias(auto_generated_name4.clone()),
             ],
             single_partition_spec,
         )?;
