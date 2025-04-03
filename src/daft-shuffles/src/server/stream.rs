@@ -134,10 +134,12 @@ fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> 
     state.data_buffer.resize(body_length, 0);
     state.reader.read_exact(&mut state.data_buffer)?;
 
-    // Construct FlightData
+    let message_buffer = std::mem::take(&mut state.message_buffer);
+    let data_buffer = std::mem::take(&mut state.data_buffer);
+
     let flight_data = FlightData {
-        data_header: state.message_buffer.clone().into(),
-        data_body: state.data_buffer.clone().into(),
+        data_header: message_buffer.into(),
+        data_body: data_buffer.into(),
         ..Default::default()
     };
 
