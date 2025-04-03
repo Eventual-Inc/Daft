@@ -1,4 +1,4 @@
-# Groupby
+# GroupBy
 
 When performing aggregations such as sum, mean and count, Daft enables you to group data by certain keys and aggregate within those keys.
 

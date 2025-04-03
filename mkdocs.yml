@@ -205,8 +205,6 @@ plugins:
           members_order: alphabetical # or source
           separate_signature: true
           show_bases: false
-          show_docstring_examples: true
-          show_docstring_returns: true
           show_if_no_docstring: true
           show_root_full_path: false
           show_root_heading: true

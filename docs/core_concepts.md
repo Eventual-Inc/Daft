@@ -956,14 +956,9 @@ Unlike the numeric types, the string type does not support arithmetic operations
 (Showing first 3 rows)
 ```
 
-There are also many string operators that are accessed through a separate [`.str.*`](api/expressions.html#strings) "method namespace".
+There are also many string operators that are accessed through a separate [`.str.*`][daft.expressions.expressions.ExpressionStringNamespace] "method namespace".
 
-<!-- todo(docs - cc): add relative path to .str after figure out str namespace-->
-
-
-For example, to check if each element in column "B" contains the substring "a", we can use the [`.str.contains()`]({{ api_path }}/expression_methods/daft.Expression.str.contains.html) method:
-
-<!-- todo(docs - cc): add relative path to .str after figure out str namespace-->
+For example, to check if each element in column "B" contains the substring "a", we can use the [`.str.contains()`][daft.expressions.expressions.ExpressionStringNamespace.contains] method:
 
 === "🐍 Python"
     ``` python
@@ -1162,7 +1157,7 @@ For example, here we can compare if each element in column "A" is equal to eleme
 (Showing first 3 of 3 rows)
 ```
 
-Other useful comparisons can be found in the [Expressions API Reference](api/expressions.html#numeric).
+Other useful comparisons can be found in the [Expressions API Reference](api/expressions.md).
 
 <!-- todo(docs - cc): current expressions api docs is not separated by sections, so how to reference numeric section? -->
 
@@ -1291,10 +1286,7 @@ You can perform arithmetic operations with timestamps and durations, such as add
 
 ##### Temporal Component Extraction
 
-The [`.dt.*`](api/expressions.html#temporal) method namespace provides extraction methods for the components of a timestamp, such as year, month, day, hour, minute, and second:
-
-<!-- todo(docs - cc): current expressions api docs is not separated by sections, so how to reference temporal section? -->
-
+The [`.dt.*`][daft.expressions.expressions.ExpressionDatetimeNamespace] method namespace provides extraction methods for the components of a timestamp, such as year, month, day, hour, minute, and second:
 
 === "🐍 Python"
     ``` python
@@ -1420,9 +1412,7 @@ You can parse strings as timestamps with time zones and convert between differen
 
 ##### Temporal Truncation
 
-The [`.dt.truncate()`]({{ api_path }}/expression_methods/daft.Expression.dt.truncate.html) method allows you to truncate timestamps to specific time units. This can be useful for grouping data by time periods. For example, to truncate timestamps to the nearest hour:
-
-<!-- todo(docs - cc): add relative path to dt.truncate after figure out datetime namespace-->
+The [`.dt.truncate()`][daft.expressions.expressions.ExpressionDatetimeNamespace.truncate] method allows you to truncate timestamps to specific time units. This can be useful for grouping data by time periods. For example, to truncate timestamps to the nearest hour:
 
 === "🐍 Python"
     ``` python
@@ -1716,7 +1706,7 @@ SQL is a human-readable way of constructing these query plans, and can often be 
 
     Please give us feedback or submit an [issue](https://github.com/Eventual-Inc/Daft/issues) and we'd love to hear more about what you would like.
 
-Head to our [SQL Overview](sql/overview.md) page for more examples on using SQL with DataFrames, SQL Expressions, and SQL Functions.
+Head to our [SQL Reference](sql/overview.md) page for more examples on using SQL with DataFrames, SQL Expressions, and SQL Functions.
 
 ## Aggregations and Grouping
 
@@ -1751,10 +1741,6 @@ An aggregation can be applied on an entire DataFrame, for example to get the mea
 (Showing first 1 of 1 rows)
 ```
 
-For a full list of available Dataframe aggregations, see [Aggregations](api/dataframe.html#df-aggregations).
-
-<!-- todo(docs - cc): current dataframe api docs is not separated by sections, so how to reference agg section? -->
-
 Aggregations can also be mixed and matched across columns, via the [`.agg()`][daft.DataFrame.agg] method:
 
 === "🐍 Python"
@@ -1778,10 +1764,6 @@ Aggregations can also be mixed and matched across columns, via the [`.agg()`][da
 
 (Showing first 1 of 1 rows)
 ```
-
-For a full list of available aggregation expressions, see [Aggregation Expressions](api/expressions.html#api-aggregation-expression)
-
-<!-- todo(docs - cc): current expressions api docs is not separated by sections, so how to reference agg section? -->
 
 ### Grouped Aggregations
 

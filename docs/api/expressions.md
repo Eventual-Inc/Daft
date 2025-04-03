@@ -35,14 +35,9 @@ Daft Expressions allow you to express some computation that needs to happen in a
 
 ::: daft.expressions.Expression
     options:
-        filters: ["!^_", "!str", "!binary", "!float", "!dt", "!list", "!struct", "!map", "!image", "!partitioning", "!url", "!json", "!embedding"]
+        filters: ["!str", "!binary", "!float", "!dt", "!list", "!struct", "!map", "!image", "!partitioning", "!url", "!json", "!embedding", "!_explode", "!_from_pyexpr", "!_initialize_udfs", "!_to_expression", "!_to_field", "!_to_sql"]
 
 <!-- add more pages to filters to include them, see dataframe for example -->
-
-<!-- ::: daft.expressions.expressions.ExpressionNamespace
-    options:
-        filters: ["!^_"]
-        summary: false -->
 
 ::: daft.expressions.expressions.ExpressionStringNamespace
     options:
