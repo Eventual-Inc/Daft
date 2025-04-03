@@ -2,14 +2,13 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Write,
-    sync::{Arc, OnceLock},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
-use common_runtime::{Runtime, RuntimeRef, RuntimeTask};
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::translate;
 use daft_logical_plan::LogicalPlanBuilder;
@@ -36,21 +35,6 @@ use crate::{
     resource_manager::get_or_init_memory_manager,
     Error, ExecutionRuntimeContext,
 };
-
-static SWORDFISH_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
-
-fn get_or_init_swordfish_runtime() -> &'static RuntimeRef {
-    SWORDFISH_RUNTIME.get_or_init(|| {
-        Runtime::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(1)
-                .enable_all()
-                .build()
-                .expect("Failed to create tokio runtime"),
-            common_runtime::PoolType::Custom("Swordfish".to_string()),
-        )
-    })
-}
 
 #[cfg(feature = "python")]
 #[pyclass]
@@ -218,72 +202,84 @@ impl NativeExecutor {
         let pipeline = physical_plan_to_pipeline(&physical_plan, psets, &cfg)?;
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
+        let rt = self.runtime.clone();
         let pb_manager = self.pb_manager.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
-        let runtime = get_or_init_swordfish_runtime();
-        let execution_task = async move {
-            let memory_manager = get_or_init_memory_manager();
-            let mut runtime_handle = ExecutionRuntimeContext::new(
-                cfg.default_morsel_size,
-                memory_manager.clone(),
-                pb_manager,
-            );
-            let receiver = pipeline.start(true, &mut runtime_handle)?;
+        let handle = std::thread::spawn(move || {
+            let runtime = rt.unwrap_or_else(|| {
+                Arc::new(
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("Failed to create tokio runtime"),
+                )
+            });
+            let execution_task = async {
+                let memory_manager = get_or_init_memory_manager();
+                let mut runtime_handle = ExecutionRuntimeContext::new(
+                    cfg.default_morsel_size,
+                    memory_manager.clone(),
+                    pb_manager,
+                );
+                let receiver = pipeline.start(true, &mut runtime_handle)?;
 
-            while let Some(val) = receiver.recv().await {
-                if tx.send(val).await.is_err() {
-                    break;
+                while let Some(val) = receiver.recv().await {
+                    if tx.send(val).await.is_err() {
+                        break;
+                    }
                 }
-            }
 
-            while let Some(result) = runtime_handle.join_next().await {
-                match result {
-                    Ok(Err(e)) => {
-                        runtime_handle.shutdown().await;
-                        return DaftResult::Err(e.into());
+                while let Some(result) = runtime_handle.join_next().await {
+                    match result {
+                        Ok(Err(e)) => {
+                            runtime_handle.shutdown().await;
+                            return DaftResult::Err(e.into());
+                        }
+                        Err(e) => {
+                            runtime_handle.shutdown().await;
+                            return DaftResult::Err(Error::JoinError { source: e }.into());
+                        }
+                        _ => {}
                     }
-                    Err(e) => {
-                        runtime_handle.shutdown().await;
-                        return DaftResult::Err(Error::JoinError { source: e }.into());
-                    }
-                    _ => {}
                 }
-            }
-            if enable_explain_analyze {
-                let curr_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_millis();
-                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                let mut file = File::create(file_name)?;
-                writeln!(
-                    file,
-                    "```mermaid\n{}\n```",
-                    viz_pipeline_mermaid(
-                        pipeline.as_ref(),
-                        DisplayLevel::Verbose,
-                        true,
-                        Default::default()
-                    )
-                )?;
-            }
-            Ok(())
-        };
-        let handle = runtime.spawn(async move {
-            tokio::select! {
-                biased;
-                () = cancel.cancelled() => {
-                    log::info!("Execution engine cancelled");
+                if enable_explain_analyze {
+                    let curr_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Time went backwards")
+                        .as_millis();
+                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                    let mut file = File::create(file_name)?;
+                    writeln!(
+                        file,
+                        "```mermaid\n{}\n```",
+                        viz_pipeline_mermaid(
+                            pipeline.as_ref(),
+                            DisplayLevel::Verbose,
+                            true,
+                            Default::default()
+                        )
+                    )?;
+                }
                 Ok(())
-            }
-            _ = tokio::signal::ctrl_c() => {
-                log::info!("Received Ctrl-C, shutting down execution engine");
-                Ok(())
-            }
-                result = execution_task => result,
-            }
+            };
+
+            let local_set = tokio::task::LocalSet::new();
+            local_set.block_on(&runtime, async {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => {
+                        log::info!("Execution engine cancelled");
+                        Ok(())
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        log::info!("Received Ctrl-C, shutting down execution engine");
+                        Ok(())
+                    }
+                    result = execution_task => result,
+                }
+            })
         });
 
         Ok(ExecutionEngineResult {
@@ -361,7 +357,7 @@ fn should_enable_progress_bar() -> bool {
 
 pub struct ExecutionEngineReceiverIterator {
     receiver: kanal::Receiver<Arc<MicroPartition>>,
-    handle: Option<RuntimeTask<DaftResult<()>>>,
+    handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
 }
 
 impl Iterator for ExecutionEngineReceiverIterator {
@@ -372,11 +368,14 @@ impl Iterator for ExecutionEngineReceiverIterator {
             Some(part) => Some(Ok(part)),
             None => {
                 if self.handle.is_some() {
-                    let join_result = get_or_init_swordfish_runtime()
-                        .block_on_current_thread(self.handle.take().unwrap());
+                    let join_result = self
+                        .handle
+                        .take()
+                        .unwrap()
+                        .join()
+                        .expect("Execution engine thread panicked");
                     match join_result {
-                        Ok(Ok(())) => None,
-                        Ok(Err(e)) => Some(Err(e)),
+                        Ok(()) => None,
                         Err(e) => Some(Err(e)),
                     }
                 } else {
@@ -388,7 +387,7 @@ impl Iterator for ExecutionEngineReceiverIterator {
 }
 
 pub struct ExecutionEngineResult {
-    handle: RuntimeTask<DaftResult<()>>,
+    handle: std::thread::JoinHandle<DaftResult<()>>,
     receiver: Receiver<Arc<MicroPartition>>,
 }
 
@@ -396,7 +395,7 @@ impl ExecutionEngineResult {
     pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
         struct StreamState {
             receiver: Receiver<Arc<MicroPartition>>,
-            handle: Option<RuntimeTask<DaftResult<()>>>,
+            handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
         }
 
         let state = StreamState {
@@ -409,11 +408,14 @@ impl ExecutionEngineResult {
                 Some(part) => Some((Ok(part), state)),
                 None => {
                     if state.handle.is_some() {
-                        let join_result = get_or_init_swordfish_runtime()
-                            .block_on_current_thread(state.handle.take().unwrap());
+                        let join_result = state
+                            .handle
+                            .take()
+                            .unwrap()
+                            .join()
+                            .expect("Execution engine thread panicked");
                         match join_result {
-                            Ok(Ok(())) => None,
-                            Ok(Err(e)) => Some((Err(e), state)),
+                            Ok(()) => None,
                             Err(e) => Some((Err(e), state)),
                         }
                     } else {
