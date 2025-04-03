@@ -500,3 +500,44 @@ def test_date_and_datetime_day_of_year():
     expected = {"date_doy": [1, 366, 365], "datetime_doy": [1, 366, 365]}
 
     assert df.to_pydict() == expected
+
+
+def test_date_to_unix_epoch():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+
+    actual = df.select(
+        df["date"].dt.to_unix_epoch().alias("date_epoch"),
+        df["date"].dt.to_unix_epoch("s").alias("date_epoch_s"),
+        df["date"].dt.to_unix_epoch("ms").alias("date_epoch_ms"),
+        df["date"].dt.to_unix_epoch("us").alias("date_epoch_us"),
+        df["date"].dt.to_unix_epoch("ns").alias("date_epoch_ns"),
+        df["datetime"].dt.to_unix_epoch().alias("datetime_epoch"),
+        df["datetime"].dt.to_unix_epoch("s").alias("datetime_epoch_s"),
+        df["datetime"].dt.to_unix_epoch("ms").alias("datetime_epoch_ms"),
+        df["datetime"].dt.to_unix_epoch("us").alias("datetime_epoch_us"),
+        df["datetime"].dt.to_unix_epoch("ns").alias("datetime_epoch_ns"),
+    ).to_pydict()
+
+    expected = {
+        "date_epoch": [1577836800, 1609372800, 1640908800],
+        "date_epoch_s": [1577836800, 1609372800, 1640908800],
+        "date_epoch_ms": [1577836800000, 1609372800000, 1640908800000],
+        "date_epoch_us": [1577836800000000, 1609372800000000, 1640908800000000],
+        "date_epoch_ns": [1577836800000000000, 1609372800000000000, 1640908800000000000],
+        "datetime_epoch": [1577836800, 1609459199, 1640995199],
+        "datetime_epoch_s": [1577836800, 1609459199, 1640995199],
+        "datetime_epoch_ms": [1577836800000, 1609459199000, 1640995199000],
+        "datetime_epoch_us": [1577836800000000, 1609459199000000, 1640995199000000],
+        "datetime_epoch_ns": [1577836800000000000, 1609459199000000000, 1640995199000000000],
+    }
+
+    assert actual == expected
