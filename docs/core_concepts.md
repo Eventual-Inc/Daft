@@ -993,7 +993,7 @@ You may find a full list of string operations in the [Expressions API Reference]
 
 One special case of a String column you may find yourself working with is a column of URL strings.
 
-Daft provides the [`.url.*`](api/expressions.md#urls) method namespace with functionality for working with URL strings. For example, to download data from URLs:
+Daft provides the [`.url.*`](api/expressions.md#daft.expressions.expressions.ExpressionUrlNamespace) method namespace with functionality for working with URL strings. For example, to download data from URLs:
 
 <!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
@@ -1049,7 +1049,7 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 
 #### JSON Expressions
 
-If you have a column of JSON strings, Daft provides the [`.json.*`](api/expressions.md#json) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
+If you have a column of JSON strings, Daft provides the [`.json.*`](api/expressions.md#daft.expressions.expressions.ExpressionJsonNamespace) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
 
 <!-- todo(docs - cc): add relative path to .json after figure out json namespace-->
 
@@ -1690,7 +1690,7 @@ Daft supports many more interesting complex DataTypes, for example:
 * [`DataType.embedding()`][daft.datatype.DataType.embedding]: Lower-dimensional vector representation of data (e.g. words)
 * [`DataType.image()`][daft.datatype.DataType.image]: NHWC images
 
-Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the [image expressions API reference](api/expressions.md#image). For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
+Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the [image expressions API reference](api/expressions.md#daft.expressions.expressions.ExpressionImageNamespace). For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
 
 <!-- todo(docs - cc): add relative path to expressions image page after figure out image namespace-->
 

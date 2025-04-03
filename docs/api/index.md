@@ -1,6 +1,6 @@
 # Daft API Documentation
 
-Welcome to Daft API Documentation. For Daft User Guide, head to [User Guide](../index.md).
+Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Guide](../index.md).
 
 <div class="grid cards" markdown>
 
@@ -19,10 +19,6 @@ Welcome to Daft API Documentation. For Daft User Guide, head to [User Guide](../
 - [**Functions**](functions.md)
 
     Daft Functions provide a set of built-in operations that can be applied to DataFrame columns.
-
-- [**SQL**](sql.md)
-
-    Daft supports SQL as a way of constructing query plans and expressions.
 
 - [**Sessions**](sessions.md)
 

@@ -4200,7 +4200,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
     def iceberg_bucket(self, n: int) -> Expression:
         """Partitioning Transform that returns the Hash Bucket following the Iceberg Specification of murmur3_32_x86.
 
-        See https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements for more details.
+        See <https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements> for more details.
 
         Args:
             n (int): Number of buckets
@@ -4213,7 +4213,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
     def iceberg_truncate(self, w: int) -> Expression:
         """Partitioning Transform that truncates the input to a standard width `w` following the Iceberg Specification.
 
-        https://iceberg.apache.org/spec/#truncate-transform-details.
+        See <https://iceberg.apache.org/spec/#truncate-transform-details> for more details.
 
         Args:
             w (int): width of the truncation
@@ -4228,9 +4228,9 @@ class ExpressionJsonNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.json` attribute."""
 
     def query(self, jq_query: str) -> Expression:
-        """Query JSON data in a column using a JQ-style filter https://jqlang.github.io/jq/manual/.
+        """Query JSON data in a column using a JQ-style filter <https://jqlang.github.io/jq/manual/>.
 
-        This expression uses jaq as the underlying executor, see https://github.com/01mf02/jaq for the full list of supported filters.
+        This expression uses jaq as the underlying executor, see <https://github.com/01mf02/jaq> for the full list of supported filters.
 
         Example:
             >>> import daft
