@@ -253,7 +253,12 @@ Temporal
    Expression.dt.day_of_week
    Expression.dt.day_of_year
    Expression.dt.truncate
+<<<<<<< HEAD
    Expression.dt.to_unix_epoch
+=======
+   Expression.dt.to_string
+   Expression.dt.strftime
+>>>>>>> f2ac3840 (update expr.rst)
 
 List
 ####
