@@ -13,7 +13,7 @@ SHOW TABLES [ {FROM|IN} <catalog> ] [ LIKE <pattern> ]
 | `<catalog>` | `catalog` name                                |
 | `<pattern>` | `pattern` string to match e.g. a table prefix |
 
-!!! note ""
+!!! note "Note"
 
     Pattern support is currently dependent upon the underlying catalog's list support. For example, Iceberg and S3 Tables list by prefix rather than with a regular expression. Please see issue [#4007](https://github.com/Eventual-Inc/Daft/issues/4007) for better pattern support.
 

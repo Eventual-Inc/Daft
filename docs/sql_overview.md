@@ -1,14 +1,10 @@
 # Daft SQL
 
-!!! warning "Warning"
-
-    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love hear what you would like, thank you! 🤘
-
-Daft's [SQL](https://en.wikipedia.org/wiki/SQL) dialect closely follows both DuckDB and PostgreSQL.
+Daft's [SQL](https://en.wikipedia.org/wiki/SQL) dialect closely follows both DuckDB and PostgreSQL. For a full list of SQL operations, check out our [SQL Reference](sql/index.md).
 
 ## Example
 
-Please see [*Sessions*](../sessions.md) and [*Catalogs*](../catalogs.md) for a detailed look at connecting data sources to Daft SQL.
+Please see [Sessions](sessions.md) and [Catalogs](catalogs.md) for a detailed look at connecting data sources to Daft SQL.
 
 ```python
 import daft
@@ -191,14 +187,11 @@ SQL also has access to all of Daft's powerful [`daft.Expression`][daft.Expressio
 
 However, unlike the Python Expression API which encourages method-chaining (e.g. `col("a").url.download().image.decode()`), in SQL you have to do function nesting instead (e.g. `"image_decode(url_download(a))"`).
 
-<!-- !!! note "Note"
+!!! note "Note"
 
-    A full catalog of the available SQL Functions in Daft is available in the [`SQL API Docs`](../api/sql.md).
+    A full catalog of the available SQL Functions in Daft is available in [`SQL Reference`](api/sql.md).
 
-    Note that it closely mirrors the Python API, with some function naming differences vs the available Python methods.
-    We also have some aliased functions for ANSI SQL-compliance or familiarity to users coming from other common SQL dialects such as PostgreSQL and SparkSQL to easily find their functionality. -->
-
-<!-- todo(docs - cc) check with conner on how we want to populate sql functions -->
+    Note that it closely mirrors the Python API, with some function naming differences vs the available Python methods. We also have some aliased functions for ANSI SQL-compliance or familiarity to users coming from other common SQL dialects such as PostgreSQL and SparkSQL to easily find their functionality.
 
 Here is an example of an equivalent function call in SQL vs Python:
 

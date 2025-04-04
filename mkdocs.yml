@@ -20,6 +20,7 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
+  - SQL: sql_overview.md
   - Sessions: sessions.md
   - Catalogs: catalogs.md
   - Spark Connect: spark_connect.md
@@ -62,7 +63,7 @@ nav:
   - Configuration: api/config.md
   - Miscellaneous: api/misc.md
 - SQL Reference:
-  - Overview: sql/overview.md
+  - Overview: sql/index.md
   - Statements:
     - SELECT: sql/statements/select.md
     - SHOW: sql/statements/show.md
