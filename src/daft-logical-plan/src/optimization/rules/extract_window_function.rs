@@ -80,6 +80,15 @@ impl OptimizerRule for ExtractWindowFunction {
                     return Ok(Transformed::no(node));
                 }
 
+                println!("ExtractWindowFunction: Found window functions:");
+                for (expr, spec) in &window_funcs {
+                    println!("  Window expr: {}", expr);
+                    println!(
+                        "  Window spec: partition_by={:?}, order_by={:?}",
+                        spec.partition_by, spec.order_by
+                    );
+                }
+
                 // Group window functions by spec using IndexMap for deterministic ordering
                 let mut window_funcs_grouped_by_spec = IndexMap::new();
                 for (expr, spec) in window_funcs {
@@ -99,6 +108,8 @@ impl OptimizerRule for ExtractWindowFunction {
                                 .iter()
                                 .map(|e| {
                                     let semantic_id = e.semantic_id(&current_plan.schema());
+                                    println!("  Creating alias for window expr: {}", e);
+                                    println!("    Semantic ID: {}", semantic_id.id);
                                     e.alias(semantic_id.id)
                                 })
                                 .collect::<Vec<ExprRef>>();
@@ -117,6 +128,8 @@ impl OptimizerRule for ExtractWindowFunction {
                                 .iter()
                                 .map(|e| {
                                     let semantic_id = e.semantic_id(&new_plan.schema());
+                                    println!("  Mapping window expr to col: {}", e);
+                                    println!("    Semantic ID in mapping: {}", semantic_id.id);
                                     (e.clone(), semantic_id.id.to_string())
                                 })
                                 .collect::<Vec<(ExprRef, String)>>();
@@ -126,16 +139,28 @@ impl OptimizerRule for ExtractWindowFunction {
                         },
                     );
 
+                println!("Window column mappings:");
+                for (expr, col_name) in &window_col_mappings {
+                    println!("  Expr: {} -> Column: {}", expr, col_name);
+                }
+
                 let new_projection = project
                     .projection
                     .iter()
-                    .map(|expr| Self::replace_window_functions(expr, &window_col_mappings))
+                    .map(|expr| {
+                        println!("Replacing in projection: {}", expr);
+                        let result = Self::replace_window_functions(expr, &window_col_mappings)?;
+                        println!("  Result: {}", result);
+                        Ok(result)
+                    })
                     .collect::<DaftResult<Vec<ExprRef>>>()?;
 
                 let final_plan = Arc::new(LogicalPlan::Project(Project::try_new(
                     current_plan,
                     new_projection,
                 )?));
+
+                println!("Final plan schema: {:?}", final_plan.schema());
 
                 Ok(Transformed::yes(final_plan))
             }

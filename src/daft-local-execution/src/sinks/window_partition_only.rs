@@ -1,11 +1,10 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::prelude::{SchemaRef, Series};
+use daft_core::prelude::SchemaRef;
 use daft_dsl::{resolved_col, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
-use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use tracing::{instrument, Span};
 
@@ -15,34 +14,21 @@ use super::blocking_sink::{
 };
 use crate::{ExecutionTaskSpawner, NUM_CPUS};
 
-/// State for window partition operations
 enum WindowPartitionOnlyState {
-    Accumulating(Vec<MicroPartition>),
+    Accumulating(Vec<Arc<MicroPartition>>),
     Done,
 }
 
 impl WindowPartitionOnlyState {
-    fn new(_num_partitions: usize) -> Self {
-        Self::Accumulating(Vec::new())
-    }
-
-    fn push(
-        &mut self,
-        input: Arc<MicroPartition>,
-        params: &WindowPartitionOnlyParams,
-    ) -> DaftResult<()> {
+    fn push(&mut self, input: Arc<MicroPartition>) {
         if let Self::Accumulating(ref mut partitions) = self {
-            // Keep using partition_by_value as it's critical for window functions
-            let (mut partitioned, _partition_values) =
-                input.partition_by_value(&params.partition_by)?;
-            partitions.append(&mut partitioned);
-            Ok(())
+            partitions.push(input);
         } else {
             panic!("WindowPartitionOnlySink should be in Accumulating state");
         }
     }
 
-    fn finalize(&mut self) -> Vec<MicroPartition> {
+    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
         let res = if let Self::Accumulating(ref mut partitions) = self {
             std::mem::take(partitions)
         } else {
@@ -59,15 +45,12 @@ impl BlockingSinkState for WindowPartitionOnlyState {
     }
 }
 
-/// Parameters for window partition operations
 struct WindowPartitionOnlyParams {
-    original_aggregations: Vec<ExprRef>,
-    partition_by: Vec<ExprRef>,
-    partial_agg_exprs: Vec<ExprRef>,
-    final_agg_exprs: Vec<ExprRef>,
+    sink_agg_exprs: Vec<ExprRef>,
+    finalize_agg_exprs: Vec<ExprRef>,
     final_projections: Vec<ExprRef>,
-    window_column_names: Vec<String>,
-    window_column_mapping: Vec<(String, String)>,
+    partition_by: Vec<ExprRef>,
+    original_schema: SchemaRef,
 }
 
 pub struct WindowPartitionOnlySink {
@@ -80,97 +63,65 @@ impl WindowPartitionOnlySink {
         partition_by: &[ExprRef],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
-        // Extract aggregation expressions from window functions
+        println!("WindowPartitionOnlySink::new - Creating new sink");
+        println!(
+            "  Aggregations: {}",
+            aggregations.iter().map(|e| e.to_string()).join(", ")
+        );
+        println!(
+            "  Partition by: {}",
+            partition_by.iter().map(|e| e.to_string()).join(", ")
+        );
+        println!("  Schema: {}", schema);
+
         let aggregations = aggregations
             .iter()
             .map(extract_agg_expr)
             .collect::<DaftResult<Vec<_>>>()?;
 
-        // Get partial and final aggregation expressions
-        let (partial_aggs, final_aggs, mut final_projections) =
+        println!(
+            "  Extracted agg exprs: {}",
+            aggregations.iter().map(|e| e.to_string()).join(", ")
+        );
+
+        let (sink_aggs, finalize_aggs, final_projections) =
             daft_physical_plan::populate_aggregation_stages(&aggregations, schema, partition_by);
 
-        // Create simple internal names for window columns
-        let window_column_names = aggregations
-            .iter()
-            .enumerate()
-            .map(|(i, _)| format!("window_col_{}", i))
+        let sink_agg_exprs = sink_aggs
+            .values()
+            .cloned()
+            .map(|e| Arc::new(Expr::Agg(e)))
             .collect::<Vec<_>>();
 
-        // Map internal names to expected output names
-        let window_column_mapping = window_column_names
-            .iter()
-            .enumerate()
-            .map(|(i, internal_name)| (format!("window_{}", i), internal_name.clone()))
+        let finalize_agg_exprs = finalize_aggs
+            .values()
+            .cloned()
+            .map(|e| Arc::new(Expr::Agg(e)))
             .collect::<Vec<_>>();
 
-        // Alias the projections to use our internal names
-        let partition_col_count = partition_by.len();
-        for (i, window_name) in window_column_names.iter().enumerate() {
-            let idx = i + partition_col_count;
-            if idx < final_projections.len() {
-                final_projections[idx] = final_projections[idx].clone().alias(window_name.as_str());
-            }
-        }
-
-        // Convert aggregations to expression references
-        let partial_agg_exprs = partial_aggs
-            .into_values()
-            .map(|e| Arc::new(Expr::Agg(e)))
-            .collect();
-
-        let final_agg_exprs = final_aggs
-            .into_values()
-            .map(|e| Arc::new(Expr::Agg(e)))
-            .collect();
-
-        let original_aggregations = aggregations
-            .into_iter()
-            .map(|e| Arc::new(Expr::Agg(e)))
-            .collect();
-
-        // Create parameters struct
-        let params = WindowPartitionOnlyParams {
-            original_aggregations,
-            partition_by: partition_by.to_vec(),
-            partial_agg_exprs,
-            final_agg_exprs,
-            final_projections,
-            window_column_names,
-            window_column_mapping,
-        };
+        println!(
+            "  Sink agg exprs: {}",
+            sink_agg_exprs.iter().map(|e| e.to_string()).join(", ")
+        );
+        println!(
+            "  Finalize agg exprs: {}",
+            finalize_agg_exprs.iter().map(|e| e.to_string()).join(", ")
+        );
+        println!(
+            "  Final projections: {}",
+            final_projections.iter().map(|e| e.to_string()).join(", ")
+        );
 
         Ok(Self {
-            window_partition_only_params: Arc::new(params),
+            window_partition_only_params: Arc::new(WindowPartitionOnlyParams {
+                sink_agg_exprs,
+                finalize_agg_exprs,
+                final_projections,
+                partition_by: partition_by.to_vec(),
+                original_schema: schema.clone(),
+            }),
         })
     }
-
-    fn num_partitions(&self) -> usize {
-        *NUM_CPUS
-    }
-}
-
-/// Create window fields and batch from columns
-fn create_window_batch(
-    window_column_mapping: &[(String, String)],
-    window_cols: &[Series],
-    batch_len: usize,
-) -> DaftResult<RecordBatch> {
-    // Create renamed series that have the expected names (window_0, window_1, etc.)
-    let renamed_window_cols = window_cols
-        .iter()
-        .zip(window_column_mapping.iter())
-        .map(|(col, (expected_name, _))| col.rename(expected_name))
-        .collect::<Vec<_>>();
-
-    // Create schema directly from renamed series
-    let fields = renamed_window_cols
-        .iter()
-        .map(|col| daft_core::prelude::Field::new(col.name(), col.data_type().clone()))
-        .collect::<Vec<_>>();
-
-    let window_schema = daft_core::prelude::Schema::new(fields)?;
-    RecordBatch::new_with_size(Arc::new(window_schema), renamed_window_cols, batch_len)
 }
 
 impl BlockingSink for WindowPartitionOnlySink {
@@ -181,17 +132,25 @@ impl BlockingSink for WindowPartitionOnlySink {
         mut state: Box<dyn BlockingSinkState>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        let params = self.window_partition_only_params.clone();
+        println!("WindowPartitionOnlySink::sink - Processing input partition");
+        println!("  Input partition schema: {}", input.schema());
+        println!("  Input partition num rows: {}", input.len());
+        println!(
+            "  Input partition columns: {}",
+            input.schema().fields.keys().join(", ")
+        );
+
+        // Store the original input data for later processing
         spawner
             .spawn(
                 async move {
-                    let agg_state = state
+                    let window_state = state
                         .as_any_mut()
                         .downcast_mut::<WindowPartitionOnlyState>()
                         .expect("WindowPartitionOnlySink should have WindowPartitionOnlyState");
 
-                    agg_state.push(input, &params)?;
-
+                    // Save the original input data
+                    window_state.push(input);
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -206,167 +165,290 @@ impl BlockingSink for WindowPartitionOnlySink {
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.window_partition_only_params.clone();
+
+        println!(
+            "WindowPartitionOnlySink::finalize - Finalizing {} states",
+            states.len()
+        );
+
         spawner
             .spawn(
                 async move {
-                    let mut all_partitions = Vec::new();
-                    for mut state in states {
-                        let state = state
+                    // Collect all the original input partitions
+                    let all_parts =
+                        states
+                            .into_iter()
+                            .flat_map(|mut state| {
+                                state
                             .as_any_mut()
                             .downcast_mut::<WindowPartitionOnlyState>()
-                            .expect("State type mismatch");
-                        all_partitions.extend(state.finalize());
-                    }
+                            .expect("WindowPartitionOnlySink should have WindowPartitionOnlyState")
+                            .finalize()
+                            })
+                            .collect::<Vec<_>>();
 
-                    if all_partitions.is_empty() {
-                        return Ok(None);
-                    }
+                    println!("  Collected {} input partitions", all_parts.len());
 
-                    let mut processed_partitions = Vec::new();
-                    for partition in all_partitions {
-                        let original_tables = partition.get_tables()?;
-                        if original_tables.is_empty() {
-                            continue;
+                    // Concatenate all input partitions to create a single dataset
+                    let input_data = Arc::new(MicroPartition::concat(all_parts)?);
+                    println!(
+                        "  Original data: schema={}, rows={}",
+                        input_data.schema(),
+                        input_data.len()
+                    );
+                    println!(
+                        "  Original columns: {}",
+                        input_data.schema().fields.keys().join(", ")
+                    );
+                    println!(
+                        "  Original schema fields: {:#?}",
+                        input_data.schema().fields
+                    );
+
+                    // Check the original schema we were passed
+                    println!(
+                        "  Expected schema from params: {:#?}",
+                        params.original_schema.fields
+                    );
+
+                    // Compute partition-based aggregations
+                    println!("  Computing aggregations for each partition group");
+                    println!(
+                        "  Partition by: {}",
+                        params.partition_by.iter().map(|e| e.to_string()).join(", ")
+                    );
+                    println!(
+                        "  Aggregations: {}",
+                        params
+                            .sink_agg_exprs
+                            .iter()
+                            .map(|e| e.to_string())
+                            .join(", ")
+                    );
+
+                    println!(
+                        "[DEBUG] Before window_agg, input_data schema: {}",
+                        input_data.schema()
+                    );
+                    println!(
+                        "[DEBUG] Before window_agg, input_data fields: {:#?}",
+                        input_data.schema().fields
+                    );
+
+                    let partition_aggs =
+                        input_data.window_agg(&params.sink_agg_exprs, &params.partition_by)?;
+
+                    println!(
+                        "[DEBUG] After window_agg, partition_aggs schema: {}",
+                        partition_aggs.schema()
+                    );
+                    println!(
+                        "[DEBUG] After window_agg, partition_aggs fields: {:#?}",
+                        partition_aggs.schema().fields
+                    );
+                    println!(
+                        "[DEBUG] After window_agg, column names: {}",
+                        partition_aggs.schema().fields.keys().join(", ")
+                    );
+
+                    println!(
+                        "  Partition aggregation result: schema={}, rows={}",
+                        partition_aggs.schema(),
+                        partition_aggs.len()
+                    );
+                    println!(
+                        "  Partition agg columns: {}",
+                        partition_aggs.schema().fields.keys().join(", ")
+                    );
+                    println!(
+                        "  Partition agg schema: {:#?}",
+                        partition_aggs.schema().fields
+                    );
+
+                    // Apply finalize aggregations if needed
+                    println!("  Applying finalize aggregations");
+                    println!(
+                        "  Finalize agg exprs: {}",
+                        params
+                            .finalize_agg_exprs
+                            .iter()
+                            .map(|e| e.to_string())
+                            .join(", ")
+                    );
+
+                    println!(
+                        "[DEBUG] Before finalize, partition_aggs schema: {}",
+                        partition_aggs.schema()
+                    );
+
+                    let finalized_aggs = if !params.finalize_agg_exprs.is_empty() {
+                        partition_aggs.agg(&params.finalize_agg_exprs, &params.partition_by)?
+                    } else {
+                        partition_aggs
+                    };
+
+                    println!(
+                        "[DEBUG] After finalize, finalized_aggs schema: {}",
+                        finalized_aggs.schema()
+                    );
+                    println!(
+                        "[DEBUG] After finalize, finalized_aggs fields: {:#?}",
+                        finalized_aggs.schema().fields
+                    );
+
+                    println!(
+                        "  Finalized aggs: schema={}, rows={}",
+                        finalized_aggs.schema(),
+                        finalized_aggs.len()
+                    );
+                    println!(
+                        "  Finalized agg columns: {}",
+                        finalized_aggs.schema().fields.keys().join(", ")
+                    );
+
+                    // Join the aggregated values back to the original data based on partition keys
+                    println!(
+                        "[DEBUG] Before join - input_data schema: {}",
+                        input_data.schema()
+                    );
+                    println!(
+                        "[DEBUG] Before join - input_data fields: {:#?}",
+                        input_data.schema().fields
+                    );
+                    println!(
+                        "[DEBUG] Before join - finalized_aggs schema: {}",
+                        finalized_aggs.schema()
+                    );
+                    println!(
+                        "[DEBUG] Before join - finalized_aggs fields: {:#?}",
+                        finalized_aggs.schema().fields
+                    );
+                    println!(
+                        "[DEBUG] Join keys - left: {}",
+                        params.partition_by.iter().map(|e| e.to_string()).join(", ")
+                    );
+                    println!(
+                        "[DEBUG] Join keys - right: {}",
+                        params.partition_by.iter().map(|e| e.to_string()).join(", ")
+                    );
+
+                    let result = input_data.hash_join(
+                        &finalized_aggs,
+                        &params.partition_by[..], // Left join keys (original data)
+                        &params.partition_by[..], // Right join keys (aggregated data)
+                        None,                     // Use default null_equals_nulls
+                        daft_core::join::JoinType::Inner, // Inner join since all rows should have a match
+                    )?;
+
+                    println!("[DEBUG] After join - result schema: {}", result.schema());
+                    println!(
+                        "[DEBUG] After join - result fields: {:#?}",
+                        result.schema().fields
+                    );
+
+                    println!(
+                        "  After join: schema={}, rows={}",
+                        result.schema(),
+                        result.len()
+                    );
+                    println!(
+                        "  Joined columns: {}",
+                        result.schema().fields.keys().join(", ")
+                    );
+                    println!("  Joined schema: {:#?}", result.schema().fields);
+
+                    // Apply the final projections to get the expected output
+                    println!(
+                        "  Applying final projections: {}",
+                        params
+                            .final_projections
+                            .iter()
+                            .map(|e| e.to_string())
+                            .join(", ")
+                    );
+
+                    println!(
+                        "[DEBUG] Before final projection - result schema: {}",
+                        result.schema()
+                    );
+                    println!("[DEBUG] Final projections: {:#?}", params.final_projections);
+                    println!(
+                        "[DEBUG] Checking if 'value' is in schema: {}",
+                        result.schema().fields.contains_key("value")
+                    );
+
+                    // Create a projection list that includes both value and category
+                    let mut all_projections = Vec::new();
+                    let mut added_columns = std::collections::HashSet::new();
+
+                    // Add all original columns from the expected schema
+                    for field_name in params.original_schema.fields.keys() {
+                        if result.schema().fields.contains_key(field_name)
+                            && !added_columns.contains(field_name)
+                        {
+                            println!(
+                                "[DEBUG] Adding original column to projection: {}",
+                                field_name
+                            );
+                            all_projections.push(resolved_col(field_name.clone()));
+                            added_columns.insert(field_name.clone());
+                        } else if !result.schema().fields.contains_key(field_name) {
+                            println!(
+                                "[DEBUG] Warning: Original column not found in joined result: {}",
+                                field_name
+                            );
                         }
+                    }
 
-                        // Compute window functions for this partition
-                        let final_projected = if !params.partial_agg_exprs.is_empty() {
-                            let partial =
-                                partition.agg(&params.partial_agg_exprs, &params.partition_by)?;
-
-                            let aggregated = if !params.final_agg_exprs.is_empty() {
-                                partial.agg(&params.final_agg_exprs, &params.partition_by)?
-                            } else {
-                                partial
-                            };
-
-                            aggregated.eval_expression_list(&params.final_projections)?
+                    // Add the aggregation columns
+                    for expr in &params.final_projections {
+                        // Get the column name to check for duplicates
+                        let expr_str = expr.to_string();
+                        let is_duplicate = if expr_str.starts_with("col(") {
+                            // For simple columns, extract the name from col(name)
+                            let col_name =
+                                expr_str.trim_start_matches("col(").trim_end_matches(')');
+                            added_columns.contains(col_name)
                         } else {
-                            let aggregated = partition
-                                .agg(&params.original_aggregations, &params.partition_by)?;
-                            aggregated.eval_expression_list(&params.final_projections)?
+                            false // For expressions like aliases, assume not duplicate
                         };
 
-                        // Create window projections
-                        let mut window_projection_exprs = Vec::with_capacity(
-                            params.partition_by.len() + params.window_column_names.len(),
-                        );
-
-                        // Add partition columns and window columns to projection expressions
-                        window_projection_exprs.extend(params.partition_by.iter().cloned());
-                        window_projection_exprs.extend(
-                            params
-                                .window_column_names
-                                .iter()
-                                .map(|name| resolved_col(name.as_str())),
-                        );
-
-                        if window_projection_exprs.is_empty() {
-                            continue;
+                        if !is_duplicate {
+                            println!("[DEBUG] Adding final projection: {}", expr);
+                            all_projections.push(expr.clone());
+                        } else {
+                            println!("[DEBUG] Skipping duplicate final projection: {}", expr);
                         }
-
-                        let renamed_aggs =
-                            final_projected.eval_expression_list(&window_projection_exprs)?;
-                        let agg_tables = renamed_aggs.get_tables()?;
-                        if agg_tables.is_empty() {
-                            continue;
-                        }
-
-                        let agg_table = &agg_tables.as_ref()[0];
-
-                        let mut processed_tables = Vec::with_capacity(original_tables.len());
-                        for original_batch in original_tables.iter() {
-                            if original_batch.is_empty() {
-                                continue;
-                            }
-
-                            // Use first row for broadcasting since all rows in a partition have the same values
-                            let window_cols = params
-                                .window_column_names
-                                .iter()
-                                .filter_map(|window_name| {
-                                    agg_table.get_column(window_name.as_str()).ok().and_then(
-                                        |col| {
-                                            col.slice(0, 1)
-                                                .and_then(|value| {
-                                                    value.broadcast(original_batch.len())
-                                                })
-                                                .ok()
-                                        },
-                                    )
-                                })
-                                .collect::<Vec<_>>();
-
-                            if !window_cols.is_empty() {
-                                // Get original batch column names as a HashSet for efficient lookups
-                                let original_col_names: HashSet<String> =
-                                    original_batch.column_names().into_iter().collect();
-
-                                // Filter out any window column mappings that would clash with original columns
-                                let filtered_window_mapping: Vec<(String, String)> = params
-                                    .window_column_mapping
-                                    .iter()
-                                    .filter(|(user_name, _)| {
-                                        !original_col_names.contains(user_name)
-                                    })
-                                    .cloned()
-                                    .collect();
-
-                                // Create a set of indices to keep
-                                let keep_indices: HashSet<usize> = filtered_window_mapping
-                                    .iter()
-                                    .filter_map(|(_, internal_name)| {
-                                        params
-                                            .window_column_names
-                                            .iter()
-                                            .position(|n| n == internal_name)
-                                    })
-                                    .collect();
-
-                                // Filter the window columns
-                                let filtered_window_cols: Vec<Series> = window_cols
-                                    .into_iter()
-                                    .enumerate()
-                                    .filter_map(|(i, col)| {
-                                        if keep_indices.contains(&i) {
-                                            Some(col)
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect();
-
-                                let window_batch = create_window_batch(
-                                    &filtered_window_mapping,
-                                    &filtered_window_cols,
-                                    original_batch.len(),
-                                )?;
-
-                                processed_tables.push(original_batch.union(&window_batch)?);
-                            } else {
-                                processed_tables.push(original_batch.clone());
-                            }
-                        }
-
-                        if processed_tables.is_empty() {
-                            continue;
-                        }
-
-                        processed_partitions.push(MicroPartition::new_loaded(
-                            processed_tables[0].schema.clone(),
-                            Arc::new(processed_tables),
-                            None,
-                        ));
                     }
 
-                    if processed_partitions.is_empty() {
-                        return Ok(None);
-                    }
+                    println!(
+                        "[DEBUG] Combined projections: {}",
+                        all_projections.iter().map(|e| e.to_string()).join(", ")
+                    );
 
-                    // Combine all processed partition results
-                    Ok(Some(Arc::new(MicroPartition::concat(
-                        &processed_partitions,
-                    )?)))
+                    let final_result = result.eval_expression_list(&all_projections)?;
+
+                    println!(
+                        "[DEBUG] After final projection - final_result schema: {}",
+                        final_result.schema()
+                    );
+                    println!(
+                        "[DEBUG] After final projection - final_result fields: {:#?}",
+                        final_result.schema().fields
+                    );
+
+                    println!(
+                        "  Final result: schema={}, rows={}",
+                        final_result.schema(),
+                        final_result.len()
+                    );
+                    println!(
+                        "  Final columns: {}",
+                        final_result.schema().fields.keys().join(", ")
+                    );
+                    println!("  Final schema: {:#?}", final_result.schema().fields);
+
+                    Ok(Some(Arc::new(final_result)))
                 },
                 Span::current(),
             )
@@ -382,7 +464,7 @@ impl BlockingSink for WindowPartitionOnlySink {
         display.push(format!(
             "WindowPartitionOnly: {}",
             self.window_partition_only_params
-                .original_aggregations
+                .sink_agg_exprs
                 .iter()
                 .map(|e| e.to_string())
                 .join(", ")
@@ -403,8 +485,6 @@ impl BlockingSink for WindowPartitionOnlySink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(WindowPartitionOnlyState::new(
-            self.num_partitions(),
-        )))
+        Ok(Box::new(WindowPartitionOnlyState::Accumulating(vec![])))
     }
 }

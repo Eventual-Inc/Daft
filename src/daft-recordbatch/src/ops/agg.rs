@@ -13,6 +13,66 @@ impl RecordBatch {
         }
     }
 
+    /// Perform a window aggregation, preserving all original columns
+    ///
+    /// Similar to `agg`, but preserves all columns from the input data
+    /// in addition to the aggregation results. This is specifically
+    /// designed for window functions where we need the original data
+    /// alongside the aggregated results.
+    pub fn window_agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
+        // For global aggs (no partitioning), just use regular agg
+        if group_by.is_empty() {
+            return self.agg_global(to_agg);
+        }
+
+        // For grouped aggs, we need to preserve all original columns
+        let agg_exprs = to_agg
+            .iter()
+            .map(|e| match e.as_ref() {
+                Expr::Agg(e) => Ok(e),
+                _ => Err(DaftError::ValueError(format!(
+                    "Trying to run non-Agg expression in Grouped Agg! {e}"
+                ))),
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        // Table with just the groupby columns.
+        let groupby_table = self.eval_expression_list(group_by)?;
+
+        // Get the unique group keys (by indices)
+        // and the grouped values (also by indices, one array of indices per group).
+        let (groupkey_indices, groupvals_indices) = groupby_table.make_groups()?;
+
+        // Table with the aggregated (deduplicated) group keys.
+        let groupkeys_table = {
+            let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
+            groupby_table.take(&indices_as_series)?
+        };
+
+        // Take fast path short circuit if there is only 1 group
+        let group_idx_input = if groupvals_indices.len() == 1 {
+            None
+        } else {
+            Some(&groupvals_indices)
+        };
+
+        let grouped_cols = agg_exprs
+            .iter()
+            .map(|e| self.eval_agg_expression(e, group_idx_input))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        // Combine the groupkey columns and the aggregation result columns
+        // to make the aggregation result table.
+        let agg_table =
+            Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())?;
+
+        // Note: The original RecordBatch only returns the agg_table,
+        // but for window functions, we need to preserve all original columns.
+        // The join on groups is handled in the WindowPartitionOnlySink.
+
+        Ok(agg_table)
+    }
+
     pub fn agg_global(&self, to_agg: &[ExprRef]) -> DaftResult<Self> {
         self.eval_expression_list(to_agg)
     }
