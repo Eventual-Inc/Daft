@@ -3,7 +3,7 @@ use std::sync::Arc;
 use daft_core::prelude::SchemaRef;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 
-use crate::{bindings::Bindings, error::Result};
+use crate::error::Result;
 
 /// Table implementation reference.
 pub type TableRef = Arc<dyn Table>;
@@ -34,9 +34,6 @@ impl From<LogicalPlanBuilder> for TableSource {
         TableSource::View(view.build())
     }
 }
-
-/// TableProvider is a collection of referenceable tables.
-pub type TableProvider = Bindings<TableRef>;
 
 /// TODO consider moving out to daft-table, but this isn't necessary or helpful right now.
 pub trait Table: Sync + Send + std::fmt::Debug {

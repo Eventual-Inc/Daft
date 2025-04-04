@@ -29,6 +29,7 @@ nav:
       - SHOW: sql/statements/show.md
       - USE: sql/statements/use.md
     - Data Types: sql/datatypes.md
+    - Identifiers: sql/identifiers.md
   - Sessions: sessions.md
   - Catalogs: catalogs.md
   - Spark Connect: spark_connect.md
