@@ -25,11 +25,13 @@ class UnityCatalog:
 
     Unity Catalog is an open-sourced data catalog that can be self-hosted, or hosted by Databricks.
 
-    Example of reading a dataframe from a table in Unity Catalog hosted by Databricks:
-
-    >>> cat = UnityCatalog("https://<databricks_workspace_id>.cloud.databricks.com", token="my-token")
-    >>> table = cat.load_table("my_catalog.my_schema.my_table")
-    >>> df = daft.read_deltalake(table)
+    Example:
+        Reading a dataframe from a table in Unity Catalog hosted by Databricks
+        ``` py linenums="1"
+        cat = UnityCatalog("https://<databricks_workspace_id>.cloud.databricks.com", token="my-token")
+        table = cat.load_table("my_catalog.my_schema.my_table")
+        df = daft.read_deltalake(table)
+        ```
     """
 
     def __init__(self, endpoint: str, token: str | None = None):
