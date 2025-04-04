@@ -15,39 +15,30 @@ def llm_generate(
 ):
     """A UDF for running LLM inference over an input column of strings.
 
-    This UDF provides a flexible interface for text generation using various LLM providers.
-    By default, it uses vLLM for efficient local inference.
+    This UDF provides a flexible interface for text generation using various LLM providers. By default, it uses vLLM for efficient local inference.
 
-    Parameters:
-    -----------
+    !!! note "Make sure the required provider packages are installed (e.g. vllm, transformers)."
 
-    model: str, default="facebook/opt-125m"
-        The model identifier to use for generation
-    provider: str, default="vllm"
-        The LLM provider to use for generation. Supported values: "vllm"
-    concurrency: int, default=1
-        The number of concurrent instances of the model to run
-    batch_size: int, default=1024
-        The batch size for the UDF
-    num_cpus: float, default=None
-        The number of CPUs to use for the UDF
-    num_gpus: float, default=None
-        The number of GPUs to use for the UDF
-    generation_config: dict, default={}
-        Configuration parameters for text generation (e.g., temperature, max_tokens)
+    Args:
+        model (str, default="facebook/opt-125m"): The model identifier to use for generation
+        provider (str, default="vllm"): The LLM provider to use for generation. Supported values: "vllm"
+        concurrency (int, default=1): The number of concurrent instances of the model to run
+        batch_size (int, default=1024): The batch size for the UDF
+        num_cpus (float, default=None): The number of CPUs to use for the UDF
+        num_gpus (float, default=None): The number of GPUs to use for the UDF
+        generation_config (dict, default={}): Configuration parameters for text generation (e.g., temperature, max_tokens)
 
     Example:
-    --------
-        >>> import daft
-        >>> from daft import col
-        >>> from daft.functions import llm_generate
-        >>> df = daft.read_csv("prompts.csv")
-        >>> df = df.with_column("response", llm_generate(col("prompt"), model="facebook/opt-125m"))
-        >>> df.collect()
+        ``` py linenums="1"
+        import daft
+        from daft import col
+        from daft.functions import llm_generate
 
-    Notes:
-    ------
-    Make sure the required provider packages are installed (e.g. vllm, transformers).
+        df = daft.read_csv("prompts.csv")
+        df = df.with_column("response", llm_generate(col("prompt"), model="facebook/opt-125m"))
+        df.collect()
+        ```
+
     """
     if provider == "vllm":
         cls = _vLLMGenerator
