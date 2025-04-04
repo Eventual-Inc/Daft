@@ -32,7 +32,7 @@ impl ClientState {
 }
 pub struct FlightClientManager {
     client_state: Mutex<ClientState>,
-    semaphore: Arc<Semaphore>,
+    semaphore: Semaphore,
 }
 
 impl FlightClientManager {
@@ -40,13 +40,13 @@ impl FlightClientManager {
         let client_state = ClientState::Uninitialized(addresses);
         Self {
             client_state: Mutex::new(client_state),
-            semaphore: Arc::new(Semaphore::new(num_parallel_fetches)),
+            semaphore: Semaphore::new(num_parallel_fetches),
         }
     }
 
     pub async fn fetch_partition(&self, partition: usize) -> DaftResult<Arc<MicroPartition>> {
         let io_runtime = get_io_runtime(true);
-        let permit = self.semaphore.clone().acquire_owned().await.unwrap();
+        let permit = self.semaphore.acquire().await.unwrap();
         let remote_streams = {
             let mut client_state = self.client_state.lock().await;
             let clients = client_state.get_or_create_clients().await;
@@ -69,11 +69,11 @@ impl FlightClientManager {
                     record_batches.into(),
                     None,
                 );
-                drop(permit);
                 DaftResult::Ok(Arc::new(mp))
             })
             .await??;
 
+        drop(permit);
         Ok(res)
     }
 }

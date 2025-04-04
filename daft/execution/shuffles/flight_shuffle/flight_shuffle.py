@@ -23,6 +23,7 @@ try:
     import ray
     import ray.experimental
     import ray.util.scheduling_strategies
+    from ray.util.state import get_node
 except ImportError:
     logger.error(
         "Error when importing Ray. Please ensure that getdaft was installed with the Ray extras tag: getdaft[ray] (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
@@ -68,11 +69,13 @@ class ShuffleActorManager:
     # Get or create an actor for a given node id
     def get_or_create_actor(self, node_id: str):
         if node_id not in self.all_actors:
+            num_cpus = get_node(node_id).resources_total["CPU"]
             actor = ShuffleActor.options(
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node_id,
                     soft=False,  # TODO: check if this is dangerous, if so, check if we can do true
                 ),
+                max_concurrency=int(num_cpus * 2),
             ).remote(
                 ray.get_runtime_context().current_actor,
                 self.shuffle_stage_id,
