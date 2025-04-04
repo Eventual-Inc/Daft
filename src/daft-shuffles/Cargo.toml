@@ -1,4 +1,7 @@
 [dependencies]
+arrow-flight = "54.0.0"
+arrow-ipc = "54.2.1"
+arrow2 = {workspace = true, features = ["io_flight", "io_ipc_read_async"]}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
@@ -10,6 +13,7 @@ daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 tokio = {workspace = true}
+tonic = {workspace = true}
 
 [features]
 python = [
