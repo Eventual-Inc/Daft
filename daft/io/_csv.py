@@ -36,12 +36,6 @@ def read_csv(
 ) -> DataFrame:
     """Creates a DataFrame from CSV file(s).
 
-    Example:
-        >>> df = daft.read_csv("/path/to/file.csv")
-        >>> df = daft.read_csv("/path/to/directory")
-        >>> df = daft.read_csv("/path/to/files-*.csv")
-        >>> df = daft.read_csv("s3://path/to/files-*.csv")
-
     Args:
         path (str): Path to CSV (allows for wildcards)
         infer_schema (bool): Whether to infer the schema of the CSV, defaults to True.
@@ -56,8 +50,16 @@ def read_csv(
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame
+
+    Example:
+        ``` py linenums="1"
+        df = daft.read_csv("/path/to/file.csv")
+        df = daft.read_csv("/path/to/directory")
+        df = daft.read_csv("/path/to/files-*.csv")
+        df = daft.read_csv("s3://path/to/files-*.csv")
+        ```
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")

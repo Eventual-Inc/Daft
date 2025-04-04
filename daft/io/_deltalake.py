@@ -25,31 +25,32 @@ def read_deltalake(
 ) -> DataFrame:
     """Create a DataFrame from a Delta Lake table.
 
-    Example:
-        >>> df = daft.read_deltalake("some-table-uri")
-        >>>
-        >>> # Filters on this dataframe can now be pushed into
-        >>> # the read operation from Delta Lake.
-        >>> df = df.where(df["foo"] > 5)
-        >>> df.show()
-
-    .. NOTE::
-        This function requires the use of `deltalake <https://delta-io.github.io/delta-rs/>`_, a Python library for
-        interacting with Delta Lake.
+    !!! note "This function requires the use of [deltalake](https://delta-io.github.io/delta-rs/), a Python library forinteracting with Delta Lake.
 
     Args:
         table: Either a URI for the Delta Lake table or a :class:`~daft.io.catalog.DataCatalogTable` instance
-            referencing a table in a data catalog, such as AWS Glue Data Catalog or Databricks Unity Catalog.
+        referencing a table in a data catalog, such as AWS Glue Data Catalog or Databricks Unity Catalog.
         version (optional): If int is passed, read the table with specified version number. Otherwise if string or datetime,
-            read the timestamp version of the table. Strings must be RFC 3339 and ISO 8601 date and time format.
-            Datetimes are assumed to be UTC timezone unless specified. By default, read the latest version of the table.
+        read the timestamp version of the table. Strings must be RFC 3339 and ISO 8601 date and time format.
+        Datetimes are assumed to be UTC timezone unless specified. By default, read the latest version of the table.
         io_config (optional): A custom :class:`~daft.daft.IOConfig` to use when accessing Delta Lake object storage data. Defaults to None.
         _multithreaded_io (optional): Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
-            the amount of system resources (number of connections and thread contention) when running in the Ray runner.
-            Defaults to None, which will let Daft decide based on the runner it is currently using.
+        the amount of system resources (number of connections and thread contention) when running in the Ray runner.
+        Defaults to None, which will let Daft decide based on the runner it is currently using.
 
     Returns:
         DataFrame: A DataFrame with the schema converted from the specified Delta Lake table.
+
+    Example:
+        ``` py linenums="1"
+        df = daft.read_deltalake("some-table-uri")
+
+        # Filters on this dataframe can now be pushed into
+        # the read operation from Delta Lake.
+        df = df.where(df["foo"] > 5)
+        df.show()
+        ```
+
     """
     from daft.delta_lake.delta_lake_scan import DeltaLakeScanOperator
 
