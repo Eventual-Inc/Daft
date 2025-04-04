@@ -226,7 +226,6 @@ class Session:
         Returns:
             Table: new table instance
 
-
         Example:
             ``` py linenums="1"
             import daft

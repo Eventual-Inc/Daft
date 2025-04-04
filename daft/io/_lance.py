@@ -53,7 +53,6 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
         df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
         df.show()
         ```
-
     """
     try:
         import lance
