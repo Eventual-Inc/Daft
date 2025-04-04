@@ -436,7 +436,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shuffle_cache_with_empty_partitions() -> DaftResult<()> {
-        let num_partitions = 2;
+        let num_partitions = 5;
         let mut writers = Vec::with_capacity(num_partitions);
         let dummy_writer_factory = DummyWriterFactory {};
         let dummy_writer_factory =
@@ -453,15 +453,24 @@ mod tests {
         let cache =
             InProgressShuffleCache::try_new_with_writers(writers, num_partitions, partition_by)?;
 
-        let mp = make_dummy_mp(0);
-        let mp2 = make_dummy_mp(0);
-
-        cache.push_partitions(vec![mp, mp2]).await?;
+        // 1000 empty partitions
+        for _ in 0..1000 {
+            cache.push_partitions(vec![make_dummy_mp(0)]).await?;
+        }
 
         let shuffle_cache = cache.close().await?;
 
         // Even though we pushed empty partitions, we should still files.
+        assert!(shuffle_cache.schema().names() == vec!["ints"]);
         assert_eq!(shuffle_cache.file_paths_per_partition.len(), num_partitions);
+        assert!(
+            shuffle_cache
+                .file_paths_per_partition
+                .iter()
+                .all(|paths| paths.len() == 0),
+            "All partitions should have no file paths: {:?}",
+            shuffle_cache.file_paths_per_partition
+        );
 
         Ok(())
     }
