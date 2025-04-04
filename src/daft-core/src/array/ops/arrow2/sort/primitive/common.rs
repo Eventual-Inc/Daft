@@ -65,7 +65,7 @@ where
 fn generate_initial_indices<I>(
     validity: Option<&Bitmap>,
     length: usize,
-    descending: bool,
+    _descending: bool,
     nulls_first: bool,
 ) -> (Vec<I>, usize, usize)
 where
@@ -108,7 +108,7 @@ where
             });
 
         // either `descending` or `nulls_first` means that nulls come first
-        let (start_idx, end_idx) = if descending || nulls_first {
+        let (start_idx, end_idx) = if nulls_first {
             // since nulls come first, our valid values start at the end of the nulls
             (n_nulls, length)
         } else {
