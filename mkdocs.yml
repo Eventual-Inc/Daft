@@ -217,4 +217,5 @@ plugins:
           summary:
             attributes: false
             functions: true
-          trim_doctest_flags: true
+          extra:
+            trim_doctest_flags: true
