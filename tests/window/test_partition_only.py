@@ -17,25 +17,20 @@ def assert_equal_ignoring_order(result_dict, expected_dict):
     Converts both dictionaries to pandas DataFrames, sorts them by the keys,
     and then compares equality.
     """
-    # Convert dictionaries to DataFrames
     result_df = pd.DataFrame(result_dict)
     expected_df = pd.DataFrame(expected_dict)
 
-    # Sort both DataFrames by all columns
     result_df = result_df.sort_values(by=list(result_dict.keys())).reset_index(drop=True)
     expected_df = expected_df.sort_values(by=list(expected_dict.keys())).reset_index(drop=True)
 
-    # Convert back to dictionaries for comparison
     sorted_result = {k: result_df[k].tolist() for k in result_dict.keys()}
     sorted_expected = {k: expected_df[k].tolist() for k in expected_dict.keys()}
 
-    # Compare using normal equality
     assert (
         sorted_result == sorted_expected
     ), f"Result data doesn't match expected after sorting.\nGot: {sorted_result}\nExpected: {sorted_expected}"
 
 
-# @pytest.mark.skip(reason="Skipping this test (currently hardcoded to pass in pipeline.rs)")
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_single_partition_sum(make_df):
     """Stage: PARTITION BY-Only Window Aggregations.
@@ -58,11 +53,9 @@ def test_single_partition_sum(make_df):
         "sum": [22, 22, 22, 29, 29, 29, 21, 21],
     }
 
-    # Use our helper function instead of direct equality
     assert_equal_ignoring_order(result.to_pydict(), expected)
 
 
-# @pytest.mark.skip(reason="Skipping this test (currently hardcoded to pass in pipeline.rs)")
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_single_partition_min(make_df):
     """Test min over a single partition column."""
@@ -117,7 +110,6 @@ def test_single_partition_mean(make_df):
         col("value").mean().over(window).alias("mean"),
     ).collect()
 
-    # A: (5+8+9)/3 = 7.333, B: (10+12+7)/3 = 9.667, C: (15+6)/2 = 10.5
     expected = {
         "category": ["A", "A", "A", "B", "B", "B", "C", "C"],
         "value": [5, 8, 9, 10, 12, 7, 15, 6],
@@ -205,10 +197,8 @@ def test_similar_partition_keys(make_df):
         col("value").sum().over(window).alias("sum"),
     ).collect()
 
-    # Each partition should have exactly one row (all key combinations are unique)
     expected_dict = result.to_pydict()
 
-    # Verify each partition has a sum equal to its own value (no collisions)
     for i in range(len(expected_dict["key1"])):
         assert (
             expected_dict["sum"][i] == expected_dict["value"][i]
@@ -232,13 +222,10 @@ def test_null_partition_values(make_df):
         col("value").sum().over(window).alias("sum"),
     ).collect()
 
-    # Convert to dictionaries for easy processing
     result_dict = result.to_pydict()
 
-    # Group by category and verify sums
     for category in set(result_dict["category"]):
         if category is None:
-            # All null categories should be grouped together
             null_indices = [i for i, cat in enumerate(result_dict["category"]) if cat is None]
             null_values = [result_dict["value"][i] for i in null_indices]
             expected_sum = sum(null_values)
@@ -247,7 +234,6 @@ def test_null_partition_values(make_df):
                 sum == expected_sum for sum in actual_sums
             ), f"Incorrect sum for null category: {actual_sums} != {expected_sum}"
         else:
-            # Check non-null categories
             cat_indices = [i for i, cat in enumerate(result_dict["category"]) if cat == category]
             cat_values = [result_dict["value"][i] for i in cat_indices]
             expected_sum = sum(cat_values)
@@ -298,7 +284,6 @@ def test_multiple_window_functions(make_df):
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_many_partitions(make_df):
     """Test window functions with a large number of partitions."""
-    # Create a dataset with 100 unique partition keys
     num_partitions = 100
     categories = [f"category_{i}" for i in range(num_partitions)]
     values = list(range(num_partitions))
@@ -312,10 +297,8 @@ def test_many_partitions(make_df):
         col("value").sum().over(window).alias("sum"),
     ).collect()
 
-    # Each partition should have exactly one value
     result_dict = result.to_pydict()
 
-    # Verify each partition has a sum equal to its own value
     for i in range(len(result_dict["category"])):
         assert (
             result_dict["sum"][i] == result_dict["value"][i]
@@ -387,10 +370,8 @@ def test_partition_by_with_expressions(make_df):
     """Test window functions with expressions in partition_by clause."""
     df = make_df({"num": [1, 2, 3, 4, 5, 6, 7, 8], "value": [10, 20, 30, 40, 50, 60, 70, 80]})
 
-    # First add the expression as a column to the dataframe
     df = df.with_column("parity", col("num") % 2)
 
-    # Use the column in partition_by as an expression
     parity_expr = col("parity")
     window = Window().partition_by(parity_expr)
 
@@ -403,14 +384,12 @@ def test_partition_by_with_expressions(make_df):
 
     result_dict = result.to_pydict()
 
-    # Group by parity and check sums
     odd_values = [result_dict["value"][i] for i, p in enumerate(result_dict["parity"]) if p == 1]
     even_values = [result_dict["value"][i] for i, p in enumerate(result_dict["parity"]) if p == 0]
 
     odd_sum = sum(odd_values)
     even_sum = sum(even_values)
 
-    # Verify each group has the correct sum
     for i, parity in enumerate(result_dict["parity"]):
         expected_sum = odd_sum if parity == 1 else even_sum
         assert result_dict["sum"][i] == expected_sum, f"Row {i} has incorrect sum for parity {parity}"
@@ -423,19 +402,16 @@ def test_multiple_window_partitions(make_df):
     Creates a dataset with 18 rows (2 rows each for A1, A2, A3, B1, B2, B3, C1, C2, C3)
     and verifies sums across different partition keys (A/B/C and 1/2/3).
     """
-    random.seed(42)  # For reproducibility
+    random.seed(42)
 
-    # Create data with 3 rows for each combination of letter (A/B/C) and number (1/2/3)
     data = []
     for letter in ["A", "B", "C"]:
         for num in ["1", "2", "3"]:
-            # Generate 2 random values for each combination
             for _ in range(3):
                 data.append({"letter": letter, "num": num, "value": random.randint(1, 100)})
 
     df = make_df(data)
 
-    # Create windows for different partition keys
     letter_window = Window().partition_by("letter")
     num_window = Window().partition_by("num")
     combined_window = Window().partition_by(["letter", "num"])
@@ -451,7 +427,6 @@ def test_multiple_window_partitions(make_df):
 
     result_dict = result.to_pydict()
 
-    # Verify letter-based sums (A, B, C)
     for letter in ["A", "B", "C"]:
         letter_indices = [i for i, ltr in enumerate(result_dict["letter"]) if ltr == letter]
         letter_values = [result_dict["value"][i] for i in letter_indices]
@@ -461,7 +436,6 @@ def test_multiple_window_partitions(make_df):
             sum == expected_letter_sum for sum in actual_letter_sums
         ), f"Incorrect sum for letter {letter}: {actual_letter_sums} != {expected_letter_sum}"
 
-    # Verify number-based sums (1, 2, 3)
     for num in ["1", "2", "3"]:
         num_indices = [i for i, n in enumerate(result_dict["num"]) if n == num]
         num_values = [result_dict["value"][i] for i in num_indices]
@@ -471,7 +445,6 @@ def test_multiple_window_partitions(make_df):
             sum == expected_num_sum for sum in actual_num_sums
         ), f"Incorrect sum for number {num}: {actual_num_sums} != {expected_num_sum}"
 
-    # Verify combined window sums (A1, A2, A3, B1, B2, B3, C1, C2, C3)
     for letter in ["A", "B", "C"]:
         for num in ["1", "2", "3"]:
             combined_indices = [
@@ -486,9 +459,78 @@ def test_multiple_window_partitions(make_df):
                 sum == expected_combined_sum for sum in actual_combined_sums
             ), f"Incorrect sum for combination {letter}{num}: {actual_combined_sums} != {expected_combined_sum}"
 
-    # Verify that each row's letter_sum + num_sum - combined_sum equals the total sum
-    total_sum = sum(result_dict["value"])
-    for i in range(len(result_dict["value"])):
-        expected = total_sum
-        actual = result_dict["letter_sum"][i] + result_dict["num_sum"][i] - result_dict["combined_sum"][i]
-        assert abs(expected - actual) < 1e-10, f"Row {i} has incorrect combined sum"
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_multi_window_agg_functions(make_df):
+    """Test multiple window aggregation functions with different partition keys.
+
+    Tests window functions with two different partition specifications:
+    1. Partitioning by both category and group
+    2. Partitioning by just category
+
+    Using sum(), mean(), min(), and max() aggregations.
+    """
+    data = [
+        {"category": "A", "group": 1, "value": 10},
+        {"category": "A", "group": 1, "value": 20},
+        {"category": "A", "group": 2, "value": 30},
+        {"category": "A", "group": 2, "value": 40},
+        {"category": "B", "group": 1, "value": 50},
+        {"category": "B", "group": 1, "value": 60},
+        {"category": "B", "group": 2, "value": 70},
+        {"category": "B", "group": 2, "value": 80},
+    ]
+
+    df = make_df(data)
+
+    multi_partition_window = Window().partition_by(["category", "group"])
+    single_partition_window = Window().partition_by("category")
+
+    result = df.select(
+        col("category"),
+        col("group"),
+        col("value"),
+        col("value").sum().over(multi_partition_window).alias("sum_multi"),
+        col("value").mean().over(multi_partition_window).alias("avg_multi"),
+        col("value").min().over(single_partition_window).alias("min_single"),
+        col("value").max().over(single_partition_window).alias("max_single"),
+    ).collect()
+
+    result_dict = result.to_pydict()
+
+    for category in ["A", "B"]:
+        for group in [1, 2]:
+            indices = [
+                i
+                for i, (cat, grp) in enumerate(zip(result_dict["category"], result_dict["group"]))
+                if cat == category and grp == group
+            ]
+
+            values = [result_dict["value"][i] for i in indices]
+
+            expected_sum = sum(values)
+            expected_avg = sum(values) / len(values)
+
+            for idx in indices:
+                assert (
+                    result_dict["sum_multi"][idx] == expected_sum
+                ), f"Incorrect sum for {category}/{group}: {result_dict['sum_multi'][idx]} != {expected_sum}"
+                assert (
+                    abs(result_dict["avg_multi"][idx] - expected_avg) < 1e-10
+                ), f"Incorrect avg for {category}/{group}: {result_dict['avg_multi'][idx]} != {expected_avg}"
+
+    for category in ["A", "B"]:
+        indices = [i for i, cat in enumerate(result_dict["category"]) if cat == category]
+
+        values = [result_dict["value"][i] for i in indices]
+
+        expected_min = min(values)
+        expected_max = max(values)
+
+        for idx in indices:
+            assert (
+                result_dict["min_single"][idx] == expected_min
+            ), f"Incorrect min for {category}: {result_dict['min_single'][idx]} != {expected_min}"
+            assert (
+                result_dict["max_single"][idx] == expected_max
+            ), f"Incorrect max for {category}: {result_dict['max_single'][idx]} != {expected_max}"

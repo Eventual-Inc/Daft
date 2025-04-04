@@ -80,15 +80,6 @@ impl OptimizerRule for ExtractWindowFunction {
                     return Ok(Transformed::no(node));
                 }
 
-                println!("ExtractWindowFunction: Found window functions:");
-                for (expr, spec) in &window_funcs {
-                    println!("  Window expr: {}", expr);
-                    println!(
-                        "  Window spec: partition_by={:?}, order_by={:?}",
-                        spec.partition_by, spec.order_by
-                    );
-                }
-
                 // Group window functions by spec using IndexMap for deterministic ordering
                 let mut window_funcs_grouped_by_spec = IndexMap::new();
                 for (expr, spec) in window_funcs {
@@ -108,8 +99,6 @@ impl OptimizerRule for ExtractWindowFunction {
                                 .iter()
                                 .map(|e| {
                                     let semantic_id = e.semantic_id(&current_plan.schema());
-                                    println!("  Creating alias for window expr: {}", e);
-                                    println!("    Semantic ID: {}", semantic_id.id);
                                     e.alias(semantic_id.id)
                                 })
                                 .collect::<Vec<ExprRef>>();
@@ -128,8 +117,6 @@ impl OptimizerRule for ExtractWindowFunction {
                                 .iter()
                                 .map(|e| {
                                     let semantic_id = e.semantic_id(&new_plan.schema());
-                                    println!("  Mapping window expr to col: {}", e);
-                                    println!("    Semantic ID in mapping: {}", semantic_id.id);
                                     (e.clone(), semantic_id.id.to_string())
                                 })
                                 .collect::<Vec<(ExprRef, String)>>();
@@ -139,28 +126,16 @@ impl OptimizerRule for ExtractWindowFunction {
                         },
                     );
 
-                println!("Window column mappings:");
-                for (expr, col_name) in &window_col_mappings {
-                    println!("  Expr: {} -> Column: {}", expr, col_name);
-                }
-
                 let new_projection = project
                     .projection
                     .iter()
-                    .map(|expr| {
-                        println!("Replacing in projection: {}", expr);
-                        let result = Self::replace_window_functions(expr, &window_col_mappings)?;
-                        println!("  Result: {}", result);
-                        Ok(result)
-                    })
+                    .map(|expr| Self::replace_window_functions(expr, &window_col_mappings))
                     .collect::<DaftResult<Vec<ExprRef>>>()?;
 
                 let final_plan = Arc::new(LogicalPlan::Project(Project::try_new(
                     current_plan,
                     new_projection,
                 )?));
-
-                println!("Final plan schema: {:?}", final_plan.schema());
 
                 Ok(Transformed::yes(final_plan))
             }
@@ -523,6 +498,125 @@ mod tests {
                 resolved_col(auto_generated_name2).alias("avg_value"),
                 resolved_col(auto_generated_name3).alias("min_value"),
                 resolved_col(auto_generated_name4).alias("max_value"),
+            ],
+        )?;
+
+        let expected_plan = Arc::new(LogicalPlan::Project(final_projection));
+
+        assert_optimized_plan_eq(plan, expected_plan)
+    }
+
+    #[test]
+    fn test_three_window_specs() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("letter", DataType::Utf8),
+            Field::new("num", DataType::Utf8),
+            Field::new("value", DataType::Int64),
+        ]);
+
+        let input_plan = dummy_scan_node(scan_op.clone());
+
+        let letter_col = resolved_col("letter");
+        let num_col = resolved_col("num");
+        let value_col = resolved_col("value");
+
+        let mut letter_window_spec = WindowSpec::default();
+        letter_window_spec.partition_by = vec![letter_col.clone()];
+
+        let mut num_window_spec = WindowSpec::default();
+        num_window_spec.partition_by = vec![num_col.clone()];
+
+        let mut combined_window_spec = WindowSpec::default();
+        combined_window_spec.partition_by = vec![letter_col.clone(), num_col.clone()];
+
+        let letter_sum = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            letter_window_spec.clone(),
+        ))
+        .alias("letter_sum");
+
+        let num_sum = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            num_window_spec.clone(),
+        ))
+        .alias("num_sum");
+
+        let combined_sum = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            combined_window_spec.clone(),
+        ))
+        .alias("combined_sum");
+
+        let projection = vec![
+            letter_col.clone(),
+            num_col.clone(),
+            value_col.clone(),
+            letter_sum.clone(),
+            num_sum.clone(),
+            combined_sum.clone(),
+        ];
+
+        let plan = input_plan.clone().select(projection)?.build();
+
+        let letter_sum_expr = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            letter_window_spec.clone(),
+        ));
+        let num_sum_expr = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            num_window_spec.clone(),
+        ));
+        let combined_sum_expr = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            combined_window_spec.clone(),
+        ));
+
+        let letter_sum_id = letter_sum_expr
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+        let num_sum_id = num_sum_expr
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+        let combined_sum_id = combined_sum_expr
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+
+        let letter_window_op = Window::try_new(
+            input_plan.clone().build(),
+            vec![letter_sum_expr.alias(letter_sum_id.clone())],
+            letter_window_spec,
+        )?;
+
+        let intermediate_plan1 = Arc::new(LogicalPlan::Window(letter_window_op));
+
+        let num_window_op = Window::try_new(
+            intermediate_plan1,
+            vec![num_sum_expr.alias(num_sum_id.clone())],
+            num_window_spec,
+        )?;
+
+        let intermediate_plan2 = Arc::new(LogicalPlan::Window(num_window_op));
+
+        let combined_window_op = Window::try_new(
+            intermediate_plan2,
+            vec![combined_sum_expr.alias(combined_sum_id.clone())],
+            combined_window_spec,
+        )?;
+
+        let window_plan = Arc::new(LogicalPlan::Window(combined_window_op));
+
+        let final_projection = Project::try_new(
+            window_plan,
+            vec![
+                letter_col,
+                num_col,
+                value_col,
+                resolved_col(letter_sum_id).alias("letter_sum"),
+                resolved_col(num_sum_id).alias("num_sum"),
+                resolved_col(combined_sum_id).alias("combined_sum"),
             ],
         )?;
 
