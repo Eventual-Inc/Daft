@@ -1,6 +1,25 @@
 use std::collections::{HashMap, HashSet};
 
-/// Bindings are stored case-normalized with the case-preserved bindings.
+/// Bindings is used to bind names and lookup identifiers with various case-handling modes.
+///
+/// **Definitions**
+/// * `object` - any 'thing' .. an 'x object' is a component of, or is otherwise associated with, some x, and cannot exist independently of that x (SQL)
+/// * `name` - a name is some label (lvalue) associated with a reference-able object via "binding"
+/// * `identifier` - an identifier is a reference (rvalue) to some named object which is resolved by looking up in the scope's bindings
+/// * `bind` - to associate a name to an object
+/// * `lookup` - to find object(s) from an identifier
+/// * `identify` - to properly reference something without ambiguity (SQL)
+///
+/// (see also SQL-99 Part 1, page 5)
+///
+/// **Example**
+///
+/// ```sql
+/// SELECT col AS alias FROM T;
+/// -- 'col' is an identifier (rvalue) to reference a column.
+/// -- 'alias' is a name (lvalue) to bind the resolved reference to.
+/// -- 'T' is an identifier (rvalue) to reference a table.
+/// ```
 #[derive(Debug)]
 pub struct Bindings<T> {
     /// case-preserved bindings (default)
@@ -16,14 +35,14 @@ pub enum BindMode {
     Normalize,
 }
 
-/// Find mode is for rvalue handling.
+/// Lookup mode is for rvalue handling.
 #[derive(Debug, Clone, Copy)]
-pub enum FindMode {
+pub enum LookupMode {
     Insensitive,
     Sensitive,
 }
 
-/// Bindings implements "bind" and "find" for handling various identifier modes.
+/// Bindings implements "bind" and "lookup" for handling various identifier modes.
 impl<T> Bindings<T> {
     /// Creates an empty bindings object.
     pub fn empty() -> Self {
@@ -39,25 +58,24 @@ impl<T> Bindings<T> {
         self.aliases.entry(alias(&name)).or_default().insert(name);
     }
 
-    /// Find all object by name (rvalue).
-    pub fn find(&self, name: &str, mode: FindMode) -> Vec<&T> {
+    /// Lookup all object by name (rvalue).
+    pub fn lookup(&self, name: &str, mode: LookupMode) -> Vec<&T> {
         match mode {
-            FindMode::Insensitive => self.find_aliased(name),
-            FindMode::Sensitive => self.find_binding(name),
+            LookupMode::Insensitive => self.lookup_bindings_by_alias(name),
+            LookupMode::Sensitive => self.lookup_bindings(name),
         }
     }
-    /// Finds this binding by exact case.
-    #[inline]
-    fn find_binding(&self, name: &str) -> Vec<&T> {
+
+    /// Lookup all matching bindings by exact case.
+    fn lookup_bindings(&self, name: &str) -> Vec<&T> {
         self.bindings
             .get(name)
             .map(|binding| vec![binding])
             .unwrap_or_default()
     }
 
-    /// Finds all bindings mapped to this alias.
-    #[inline]
-    fn find_aliased(&self, name: &str) -> Vec<&T> {
+    /// Lookup all matching bindings using the the case-normalized alias.
+    fn lookup_bindings_by_alias(&self, name: &str) -> Vec<&T> {
         self.aliases
             .get(&alias(name))
             .map(|names| {

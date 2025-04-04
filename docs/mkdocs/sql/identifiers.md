@@ -14,16 +14,23 @@ fits your preferences and current systems. When working across multiple systems,
 ```sql
 -- regular identifier
 abc
+```
 
+```sql
 -- delimited identifier
 "abc"
 
+```sql
 -- qualified identifier
 abc.xyz
+```
 
+```sql
 -- qualified identifier with mixed parts
 a."b".c
+```
 
+```sql
 -- delimited identifier with special characters
 SELECT "🍺" FROM "🍻"
 ```
@@ -33,7 +40,7 @@ SELECT "🍺" FROM "🍻"
 * Identifiers may be unquoted (regular) or double-quoted (delimited).
 * Identifiers must be double-quoted if the text is a keyword or the text contains special characters.
 * Regular identifiers must start with either an [alphabetic character](https://www.unicode.org/Public/UCD/latest/ucd/DerivedCoreProperties.txt) or an underscore `'_'` character.
-* Regular identifiers must contain only alphabetic, `[0-9]`, `'$'` and `'_'` characters.
+* Regular identifiers must contain only alphanumeric, `'$'` and `'_'` characters.
 
 ## Modes
 
