@@ -27,22 +27,22 @@ def test_case_sensitive_identifiers():
     sess.create_temp_table("T", _df("T"))
 
     # ok since regular and delimited are both case-sensitive.
-    assert_ok(sess, """  T  """, find="T")
-    assert_ok(sess, """ "T" """, find="T")
+    assert_ok(sess, "  T  ", find="T")
+    assert_ok(sess, ' "T" ', find="T")
 
     # fails since case-sensitive cannot find 'T'
-    assert_err(sess, """  t  """, match="Table not found")
-    assert_err(sess, """ "t" """, match="Table not found")
+    assert_err(sess, "  t  ", match="Table not found")
+    assert_err(sess, ' "t" ', match="Table not found")
     # unambiguous lowercase name
     sess.create_temp_table("s", _df("s"))
 
     # ok since regular and delimited are both case-sensitive.
-    assert_ok(sess, """  s  """, find="s")
-    assert_ok(sess, """ "s" """, find="s")
+    assert_ok(sess, "  s  ", find="s")
+    assert_ok(sess, ' "s" ', find="s")
 
     # fails since case-sensitive cannot find 's'
-    assert_err(sess, """  S  """, match="Table not found")
-    assert_err(sess, """ "S" """, match="Table not found")
+    assert_err(sess, "  S  ", match="Table not found")
+    assert_err(sess, ' "S" ', match="Table not found")
 
     # possibly ambiguous names depending on mode
     sess.create_temp_table("abc", _df("abc"))
@@ -50,11 +50,11 @@ def test_case_sensitive_identifiers():
     sess.create_temp_table("aBc", _df("aBc"))
 
     # delimited identifiers are case-sensitive
-    assert_ok(sess, """ "abc" """, find="abc")
-    assert_ok(sess, """ "ABC" """, find="ABC")
-    assert_ok(sess, """ "aBc" """, find="aBc")
+    assert_ok(sess, ' "abc" ', find="abc")
+    assert_ok(sess, ' "ABC" ', find="ABC")
+    assert_ok(sess, ' "aBc" ', find="aBc")
 
     # regular identifiers are also case-sensitive
-    assert_ok(sess, """ abc """, find="abc")
-    assert_ok(sess, """ ABC """, find="ABC")
-    assert_ok(sess, """ aBc """, find="aBc")
+    assert_ok(sess, " abc ", find="abc")
+    assert_ok(sess, " ABC ", find="ABC")
+    assert_ok(sess, " aBc ", find="aBc")

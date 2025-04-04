@@ -248,7 +248,7 @@ impl Session {
 impl SessionState {
     /// Get an attached catalog by name using the session's identifier mode.
     pub fn get_attached_catalog(&self, name: &str) -> Result<Option<CatalogRef>> {
-        match self.catalogs.find(name, self.options.find_mode()) {
+        match self.catalogs.lookup(name, self.options.find_mode()) {
             catalogs if catalogs.is_empty() => Ok(None),
             catalogs if catalogs.len() == 1 => Ok(Some(catalogs[0].clone())),
             _ => panic!("ambiguous catalog identifier"),
@@ -257,7 +257,7 @@ impl SessionState {
 
     /// Get an attached table by name using the session's identifier mode.
     pub fn get_attached_table(&self, name: &str) -> Result<Option<TableRef>> {
-        match self.tables.find(name, self.options.find_mode()) {
+        match self.tables.lookup(name, self.options.find_mode()) {
             tables if tables.is_empty() => Ok(None),
             tables if tables.len() == 1 => Ok(Some(tables[0].clone())),
             _ => panic!("ambiguous table identifier"),
