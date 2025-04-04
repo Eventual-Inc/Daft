@@ -22,32 +22,31 @@ def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
     """Creates a DataFrame from a list of dictionaries.
 
     Args:
-    data: List of dictionaries, where each key is a column name.
+        data: List of dictionaries, where each key is a column name.
 
     Returns:
-    DataFrame: DataFrame created from list of dictionaries.
-
+        DataFrame: DataFrame created from list of dictionaries.
 
     Example:
-    ``` py linenums="1"
-    import daft
+        ``` py linenums="1"
+        import daft
 
-    df = daft.from_pylist([{"foo": 1}, {"foo": 2}])
-    df.show()
-    ```
-    ```
-    ╭───────╮
-    │ foo   │
-    │ ---   │
-    │ Int64 │
-    ╞═══════╡
-    │ 1     │
-    ├╌╌╌╌╌╌╌┤
-    │ 2     │
-    ╰───────╯
+        df = daft.from_pylist([{"foo": 1}, {"foo": 2}])
+        df.show()
+        ```
+        ```
+        ╭───────╮
+        │ foo   │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 2     │
+        ╰───────╯
 
-    (Showing first 2 of 2 rows)
-    ```
+        (Showing first 2 of 2 rows)
+        ```
     """
     from daft import DataFrame
 
@@ -101,7 +100,6 @@ def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) 
 
     Returns:
         DataFrame: DataFrame created from the provided pyarrow Table.
-
 
     Example:
         ``` py linenums="1"
