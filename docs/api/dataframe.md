@@ -4,5 +4,4 @@ Most DataFrame methods are **lazy**, meaning that they do not execute computatio
 
 ::: daft.DataFrame
     options:
-        members_order: source
-        filters: ["!^_", "__getitem__", "__len__", "__contains__", "__iter__"]
+        filters: ["!^_[^_]", "!__repr__", "!__column_input_to_expression", "!__builder"]

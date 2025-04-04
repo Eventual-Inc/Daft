@@ -6,10 +6,6 @@ Daft integrates with various catalog implementations using its `Catalog` and `Ta
     options:
         filters: ["!^_"]
 
-<!-- add more pages to filters to include them, see dataframe for example -->
-
-<!-- fix: do we need class catalogs? -->
-
 ::: daft.catalog.Identifier
     options:
         filters: ["!^_"]

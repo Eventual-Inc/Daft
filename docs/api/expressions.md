@@ -20,8 +20,6 @@ Daft Expressions allow you to express some computation that needs to happen in a
     options:
         heading_level: 3
 
-## SQL
-
 ::: daft.sql.sql.sql_expr
     options:
         heading_level: 3
@@ -35,9 +33,7 @@ Daft Expressions allow you to express some computation that needs to happen in a
 
 ::: daft.expressions.Expression
     options:
-        filters: ["!str", "!binary", "!float", "!dt", "!list", "!struct", "!map", "!image", "!partitioning", "!url", "!json", "!embedding", "!_explode", "!_from_pyexpr", "!_initialize_udfs", "!_to_expression", "!_to_field", "!_to_sql", "!to_struct"]
-
-<!-- add more pages to filters to include them, see dataframe for example -->
+        filters: ["!^_[^_]", "!str", "!binary", "!float", "!dt", "!list", "!struct", "!map", "!image", "!partitioning", "!url", "!json", "!embedding"]
 
 ::: daft.expressions.expressions.ExpressionStringNamespace
     options:
@@ -110,9 +106,3 @@ Daft Expressions allow you to express some computation that needs to happen in a
         filters: ["!^_"]
         toc_label: Expression.embedding
         heading: Expression.emedding
-
-::: daft.expressions.expressions.ExpressionsProjection
-    options:
-        filters: ["!^_"]
-        toc_label: Projection
-        heading: Projection

@@ -4,6 +4,4 @@ Each column in a Table is a Series. Series expose methods which invoke high-perf
 
 ::: daft.series.Series
     options:
-        filters: ["!^_"]
-
-<!-- fix: do we need class datatype> -->
+        filters: ["^to", "^from"]
