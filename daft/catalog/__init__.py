@@ -234,11 +234,11 @@ class Catalog(ABC):
             ``` py linenums="1"
             import daft
             from daft.catalog import Catalog, Table
-            >>>
+
             dictionary = {"x": [1, 2, 3]}
             dataframe = daft.from_pydict(dictionary)
             table = Table.from_df("temp", dataframe)
-            >>>
+
             catalog = Catalog.from_pydict(
                 {
                     "R": dictionary,
@@ -487,7 +487,6 @@ class Identifier(Sequence):
         Returns:
             Identifier: A new identifier.
 
-
         Example:
             ``` py linenums="1"
             from daft.catalog import Identifier
@@ -516,7 +515,6 @@ class Identifier(Sequence):
         Returns:
             Identifier: new identifier instance
 
-
         Example:
             ``` py linenums="1"
             from daft.catalog import Identifier
@@ -539,7 +537,6 @@ class Identifier(Sequence):
 
         Returns:
             Identifier: new identifier instance
-
 
         Example:
             ``` py linenums="1"
@@ -612,7 +609,6 @@ class Table(ABC):
         Returns:
             DataFrame: new read-only table instance
 
-
         Example:
             ``` py linenums="1"
             from daft.catalog import Table
@@ -648,7 +644,6 @@ class Table(ABC):
 
         Returns:
             Table: new table instance
-
 
         Example:
             ``` py linenums="1"
