@@ -34,3 +34,13 @@ macro_rules! obj_not_found_err {
         ))
     };
 }
+
+#[macro_export]
+macro_rules! ambiguous_identifier_err {
+    ($typ_:literal, $name:expr) => {
+        return Err($crate::error::Error::ambiguous_identifier(
+            $typ_.to_string(),
+            $name,
+        ))
+    };
+}

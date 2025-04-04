@@ -142,16 +142,23 @@ impl Display for Identifier {
 }
 
 impl From<String> for Identifier {
-    /// Returns an unqualified delimited identifier.
+    /// Returns an unqualified identifier.
     fn from(name: String) -> Self {
         Self::simple(name)
     }
 }
 
 impl From<&str> for Identifier {
-    /// Returns an unqualified delmited identifier.
+    /// Returns an unqualified identifier.
     fn from(name: &str) -> Self {
         Self::simple(name.to_string())
+    }
+}
+
+impl From<Vec<&str>> for Identifier {
+    /// Returns an identifier from vec literal like vec!["a", "b"].into()
+    fn from(path: Vec<&str>) -> Self {
+        Self::new(path)
     }
 }
 

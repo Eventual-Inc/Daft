@@ -4,7 +4,10 @@ use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef, TableSource, View
 use uuid::Uuid;
 
 use crate::{
-    error::Result, obj_already_exists_err, obj_not_found_err, options::Options, unsupported_err,
+    error::Result,
+    obj_already_exists_err, obj_not_found_err,
+    options::{IdentifierMode, Options},
+    unsupported_err,
 };
 
 /// Session holds all state for query planning and execution (e.g. connection).
@@ -26,7 +29,6 @@ struct SessionState {
     /// Bindings for the attached tables.
     tables: Bindings<TableRef>,
     // TODO execution context
-    // TODO identifier matcher for case-insensitive matching
 }
 
 impl Session {
@@ -55,24 +57,24 @@ impl Session {
 
     /// Attaches a catalog to this session, err if already exists.
     pub fn attach_catalog(&self, catalog: CatalogRef, alias: String) -> Result<()> {
-        if self.state().catalogs.exists(&alias) {
+        if self.state().catalogs.contains(&alias) {
             obj_already_exists_err!("Catalog", &alias.into())
         }
         if self.state().catalogs.is_empty() {
             // use only catalog as the current catalog
             self.state_mut().options.curr_catalog = Some(alias.clone());
         }
-        self.state_mut().catalogs.insert(alias, catalog);
+        self.state_mut().catalogs.bind(alias, catalog);
         Ok(())
     }
 
     /// Attaches a table to this session, err if already exists.
     pub fn attach_table(&self, table: TableRef, alias: impl Into<String>) -> Result<()> {
         let alias = alias.into();
-        if self.state().tables.exists(&alias) {
+        if self.state().tables.contains(&alias) {
             obj_already_exists_err!("Table", &alias.into())
         }
-        self.state_mut().tables.insert(alias, table);
+        self.state_mut().tables.bind(alias, table);
         Ok(())
     }
 
@@ -90,7 +92,7 @@ impl Session {
         replace: bool,
     ) -> Result<TableRef> {
         let name = name.into();
-        if !replace && self.state().tables.exists(&name) {
+        if !replace && self.state().tables.contains(&name) {
             obj_already_exists_err!("Temporary table", &name.into())
         }
         // we don't have mutable temporary tables, only immutable views over dataframes.
@@ -98,7 +100,7 @@ impl Session {
             TableSource::Schema(_) => unsupported_err!("temporary table with schema"),
             TableSource::View(plan) => View::from(plan.clone()).arced(),
         };
-        self.state_mut().tables.insert(name, table.clone());
+        self.state_mut().tables.bind(name, table.clone());
         Ok(table)
     }
 
@@ -118,7 +120,7 @@ impl Session {
 
     /// Detaches a table from this session, err if does not exist.
     pub fn detach_table(&self, alias: &str) -> Result<()> {
-        if !self.state().tables.exists(alias) {
+        if !self.state().tables.contains(alias) {
             obj_not_found_err!("Table", &alias.into())
         }
         self.state_mut().tables.remove(alias);
@@ -127,7 +129,7 @@ impl Session {
 
     /// Detaches a catalog from this session, err if does not exist.
     pub fn detach_catalog(&self, alias: &str) -> Result<()> {
-        if !self.state().catalogs.exists(alias) {
+        if !self.state().catalogs.contains(alias) {
             obj_not_found_err!("Catalog", &alias.into())
         }
         self.state_mut().catalogs.remove(alias);
@@ -140,7 +142,7 @@ impl Session {
 
     /// Returns the catalog or an object not found error.
     pub fn get_catalog(&self, name: &str) -> Result<CatalogRef> {
-        if let Some(catalog) = self.state().catalogs.get(name) {
+        if let Some(catalog) = self.state().get_attached_catalog(name)? {
             Ok(catalog.clone())
         } else {
             obj_not_found_err!("Catalog", &name.into())
@@ -152,7 +154,7 @@ impl Session {
         //
         // Rule 0: check temp tables.
         if !name.has_qualifier() {
-            if let Some(view) = self.state().tables.get(name.name()) {
+            if let Some(view) = self.state().get_attached_table(name.name())? {
                 return Ok(view.clone());
             }
         }
@@ -192,7 +194,7 @@ impl Session {
 
     /// Returns true iff the session has access to a matching catalog.
     pub fn has_catalog(&self, name: &str) -> bool {
-        self.state().catalogs.exists(name)
+        self.state().catalogs.contains(name)
     }
 
     /// Returns true iff the session has access to a matching table.
@@ -210,7 +212,7 @@ impl Session {
         Ok(self.state().tables.list(pattern))
     }
 
-    /// Sets the current_catalog
+    /// Sets the current_catalog.
     pub fn set_catalog(&self, ident: Option<&str>) -> Result<()> {
         if let Some(ident) = ident {
             if !self.has_catalog(ident) {
@@ -223,7 +225,7 @@ impl Session {
         Ok(())
     }
 
-    /// Sets the current_namespace (consider an Into at a later time).
+    /// Sets the current_namespace.
     pub fn set_namespace(&self, ident: Option<&Identifier>) -> Result<()> {
         if let Some(ident) = ident {
             self.state_mut().options.curr_namespace = Some(ident.clone().path());
@@ -231,6 +233,35 @@ impl Session {
             self.state_mut().options.curr_namespace = None;
         }
         Ok(())
+    }
+
+    /// Returns an identifier normalization function based upon the session options.
+    pub fn normalizer(&self) -> impl Fn(&str) -> String {
+        match self.state().options.identifier_mode {
+            IdentifierMode::Insensitive => str::to_string,
+            IdentifierMode::Sensitive => str::to_string,
+            IdentifierMode::Normalize => str::to_lowercase,
+        }
+    }
+}
+
+impl SessionState {
+    /// Get an attached catalog by name using the session's identifier mode.
+    pub fn get_attached_catalog(&self, name: &str) -> Result<Option<CatalogRef>> {
+        match self.catalogs.find(name, self.options.find_mode()) {
+            catalogs if catalogs.is_empty() => Ok(None),
+            catalogs if catalogs.len() == 1 => Ok(Some(catalogs[0].clone())),
+            _ => panic!("ambiguous catalog identifier"),
+        }
+    }
+
+    /// Get an attached table by name using the session's identifier mode.
+    pub fn get_attached_table(&self, name: &str) -> Result<Option<TableRef>> {
+        match self.tables.find(name, self.options.find_mode()) {
+            tables if tables.is_empty() => Ok(None),
+            tables if tables.len() == 1 => Ok(Some(tables[0].clone())),
+            _ => panic!("ambiguous table identifier"),
+        }
     }
 }
 
