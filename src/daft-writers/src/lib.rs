@@ -8,6 +8,10 @@ mod physical;
 #[cfg(test)]
 mod test;
 
+// Make test module public for use in other crates' tests
+#[cfg(not(test))]
+pub mod test;
+
 #[cfg(feature = "python")]
 mod catalog;
 #[cfg(feature = "python")]
@@ -34,6 +38,9 @@ use ipc::IPCWriterFactory;
 pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
+
+pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
+
 /// This trait is used to abstract the writing of data to a file.
 ///
 /// The `Input` type is the type of data that will be written to the file.
@@ -135,7 +142,6 @@ pub fn make_physical_writer_factory(
 
 pub fn make_ipc_writer(
     dir: &str,
-    partition_idx: usize,
     target_filesize: usize,
     compression: Option<&str>,
 ) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
@@ -150,7 +156,7 @@ pub fn make_ipc_writer(
         }
         None => None,
     };
-    let base_writer_factory = IPCWriterFactory::new(dir.to_string(), partition_idx, compression);
+    let base_writer_factory = IPCWriterFactory::new(dir.to_string(), compression);
     let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
         target_filesize,
         if compression.is_some() { 1.0 } else { 2.0 },
