@@ -313,11 +313,9 @@ class DataFrame:
 
             The default value is the total number of CPUs available on the current machine.
 
-
         Example:
             ``` py linenums="1"
             import daft
-
             df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
             for row in df.iter_rows():
             print(row)
@@ -434,9 +432,8 @@ class DataFrame:
         Example:
             ``` py linenums="1"
             import daft
-            >>>
+
             daft.context.set_runner_ray()  # doctest: +SKIP
-            >>>
             df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
             for part in df.iter_partitions():
                 print(part)  # doctest: +SKIP
@@ -647,7 +644,6 @@ class DataFrame:
 
         Returns:
             DataFrame: The filenames that were written out as strings.
-
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
@@ -1355,7 +1351,6 @@ class DataFrame:
             import daft
 
             daft.context.set_runner_ray()  # doctest: +SKIP
-
             df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             df = df._add_monotonically_increasing_id()
             df.show()  # doctest: +SKIP
@@ -1414,7 +1409,6 @@ class DataFrame:
 
             (Showing first 3 of 3 rows)
             ```
-
         """
         assert len(columns) > 0
         builder = self._builder.select(self.__column_input_to_expression(columns))
@@ -1426,7 +1420,6 @@ class DataFrame:
 
         Returns:
             DataFrame: A dataframe where each row is a column name and its corresponding type.
-
 
         Example:
             ``` py linenums="1"
@@ -1587,7 +1580,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with some columns excluded.
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -1707,7 +1699,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new column.
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -1746,7 +1737,6 @@ class DataFrame:
 
         Returns:
             DataFrame: DataFrame with new columns.
-
 
         Example:
             ``` py linenums="1"
@@ -1790,7 +1780,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with the column renamed.
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -1828,7 +1817,6 @@ class DataFrame:
 
         Returns:
             DataFrame: DataFrame with the columns renamed.
-
 
         Example:
             ``` py linenums="1"
@@ -1876,7 +1864,6 @@ class DataFrame:
             * Since this a global sort, this requires an expensive repartition which can be quite slow.
             * Supports multicolumn sorts and can have unique `descending` flag per column.
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -1899,10 +1886,9 @@ class DataFrame:
             ╰───────┴───────╯
 
             (Showing first 3 of 3 rows)
+            ```
 
             You can also sort by multiple columns, and specify the 'descending' flag for each column:
-
-            ```
             ``` py linenums="1"
             df = daft.from_pydict({"x": [1, 2, 1, 2], "y": [9, 8, 7, 6]})
             sorted_df = df.sort(["x", "y"], [True, False])
@@ -1950,7 +1936,6 @@ class DataFrame:
 
         Returns:
             DataFrame: Limited DataFrame
-
 
         Example:
             ``` py linenums="1"
@@ -2015,6 +2000,7 @@ class DataFrame:
             you mean instead wish to consider using [DataFrame.into_partitions][daft.DataFrame.into_partitions]
             which avoids shuffling of data in favor of splitting/coalescing adjacent partitions where appropriate.
 
+
         Example:
             ``` py linenums="1"
             import daft
@@ -2050,7 +2036,6 @@ class DataFrame:
 
         Returns:
             DataFrame: Dataframe with ``num`` partitions.
-
 
         Example:
             ``` py linenums="1"
@@ -2099,7 +2084,6 @@ class DataFrame:
 
         Returns:
             DataFrame: Joined DataFrame.
-
 
         Raises:
             ValueError: if `on` is passed in and `left_on` or `right_on` is not None.
@@ -2221,10 +2205,9 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with rows from `self` on top and rows from `other` at the bottom.
 
-        !!! note "DataFrames being concatenated **must have exactly the same schema**.
+        !!! note "DataFrames being concatenated **must have exactly the same schema**."
             You may wish to use the [df.select()][daft.DataFrame.select] and [expr.cast()][daft.Expression.cast] methods
             to ensure schema compatibility before concatenation.
-
         """
         if self.schema() != other.schema():
             raise ValueError(
@@ -2244,8 +2227,6 @@ class DataFrame:
 
         Returns:
             DataFrame: DataFrame without NaNs in specified/all columns
-
-
 
         Example:
             ``` py linenums="1"
@@ -2268,7 +2249,6 @@ class DataFrame:
             ╰─────────╯
 
             (Showing first 3 of 3 rows)
-
             ```
             ``` py linenums="1"
             import daft
@@ -2328,7 +2308,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame without missing values in specified/all columns
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -2369,7 +2348,6 @@ class DataFrame:
 
         Returns:
             DataFrame: DataFrame with exploded column
-
 
         Example:
             ``` py linenums="1"
@@ -2425,7 +2403,6 @@ class DataFrame:
 
         Returns:
             DataFrame: Unpivoted DataFrame
-
 
         Example:
             ``` py linenums="1"
@@ -2501,7 +2478,6 @@ class DataFrame:
 
         Returns:
             DataFrame: Transformed DataFrame.
-
 
         Example:
             ``` py linenums="1"
@@ -2622,7 +2598,6 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated standard deviation. Should be a single row.
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -2709,7 +2684,6 @@ class DataFrame:
 
         (Showing first 1 of 1 rows)
         ```
-
         However, specifying some column names would instead change the behavior to count all non-null values,
         similar to a SQL command for `SELECT COUNT(foo), COUNT(bar) FROM df`. Also, using `df.count(col("*"))`
         will expand out into count() for each column.
@@ -2810,7 +2784,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with aggregated results
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -2860,7 +2833,6 @@ class DataFrame:
 
         Returns:
             GroupedDataFrame: DataFrame to Aggregate
-
 
         Example:
             ``` py linenums="1"
@@ -2919,7 +2891,6 @@ class DataFrame:
 
         Returns:
             DataFrame: DataFrame with pivoted columns
-
 
         !!! note
             You may wish to provide a list of distinct values to pivot on, which is more efficient as it avoids
@@ -3118,7 +3089,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with the intersection of the two DataFrames
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3155,7 +3125,6 @@ class DataFrame:
 
         Returns:
             DataFrame: DataFrame with the intersection of the two DataFrames, including duplicates
-
 
         Example:
             ``` py linenums="1"
@@ -3194,7 +3163,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with the set difference of the two DataFrames
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3227,7 +3195,6 @@ class DataFrame:
 
         Returns:
             DataFrame: DataFrame with the set difference of the two DataFrames, considering duplicates
-
 
         Example:
             ``` py linenums="1"
@@ -3414,7 +3381,6 @@ class DataFrame:
 
         Returns:
             int: count of rows.
-
         """
         if self._result is not None:
             return len(self._result)
@@ -3434,7 +3400,6 @@ class DataFrame:
 
         Returns:
             bool: whether the column exists in the dataframe.
-
 
         Example:
             ``` py linenums="1"
@@ -3484,7 +3449,6 @@ class DataFrame:
 
         Returns:
             pyarrow.Table: [pyarrow Table](https://arrow.apache.org/docs/python/generated/pyarrow.Table.html) converted from a Daft DataFrame
-
         """
         import pyarrow as pa
 
@@ -3501,7 +3465,6 @@ class DataFrame:
 
         Returns:
             dict[str, list[Any]]: python dict converted from a Daft DataFrame
-
         """
         self.collect()
         result = self._result
@@ -3517,7 +3480,6 @@ class DataFrame:
 
         Returns:
             List[dict[str, Any]]: List of python dict objects.
-
 
         Example:
             ``` py linenums="1"
@@ -3561,11 +3523,8 @@ class DataFrame:
         Begins execution of the DataFrame if it is not yet executed. Items will be returned in pydict format: a dict of `{"column name": value}` for each row in the data.
 
         !!! note
-            The produced dataset is meant to be used with the single-process DataLoader,
-            and does not support data sharding hooks for multi-process data loading.
-
-            Do keep in mind that Daft is already using multithreading or multiprocessing under the hood
-            to compute the data stream that feeds this dataset.
+            The produced dataset is meant to be used with the single-process DataLoader, and does not support data sharding hooks for multi-process data loading.
+            Do keep in mind that Daft is already using multithreading or multiprocessing under the hood to compute the data stream that feeds this dataset.
 
         !!! tip "This method returns results locally."
             For distributed training, you may want to use [DataFrame.to_ray_dataset()][daft.DataFrame.to_ray_dataset].
@@ -3785,7 +3744,6 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped standard deviation.
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3890,7 +3848,6 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped aggregations
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3946,7 +3903,6 @@ class GroupedDataFrame:
 
         Returns:
             DataFrame: DataFrame with grouped aggregations
-
 
         Example:
             ``` py linenums="1"

@@ -38,7 +38,6 @@ def llm_generate(
         df = df.with_column("response", llm_generate(col("prompt"), model="facebook/opt-125m"))
         df.collect()
         ```
-
     """
     if provider == "vllm":
         cls = _vLLMGenerator

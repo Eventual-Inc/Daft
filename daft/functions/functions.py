@@ -13,14 +13,12 @@ def monotonically_increasing_id() -> Expression:
     Returns:
         Expression: An expression that generates monotonically increasing IDs
 
-
     Example:
         ``` py linenums="1"
         import daft
         from daft.functions import monotonically_increasing_id
 
         daft.context.set_runner_ray()  # doctest: +SKIP
-
         df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
         df = df.with_column("id", monotonically_increasing_id())
         df.show()  # doctest: +SKIP

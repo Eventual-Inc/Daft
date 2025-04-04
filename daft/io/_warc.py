@@ -37,7 +37,6 @@ def read_warc(
         metadata column ("WARC-Identified-Payload-Type"), one column "warc_content" with the raw byte content of the WARC record,
         and one column "warc_headers" with the remaining headers of the WARC record stored as a JSON string.
 
-
     Example:
         ``` py linenums="1"
         df = daft.read_warc("/path/to/file.warc")

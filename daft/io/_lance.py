@@ -29,9 +29,6 @@ def _lancedb_table_factory_function(
 def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
-    !!! note "This function requires the use of [LanceDB](https://lancedb.github.io/lancedb/), which is the Pythonlibrary for the LanceDB project.
-        To ensure that this is installed with Daft, you may install: ``pip install daft[lance]``
-
     Args:
         url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
@@ -39,13 +36,15 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
 
+    !!! note "This function requires the use of [LanceDB](https://lancedb.github.io/lancedb/), which is the Pythonlibrary for the LanceDB project.
+        To ensure that this is installed with Daft, you may install: ``pip install daft[lance]``
+
     Example:
         Read a local LanceDB table:
         ``` py linenums="1"
         df = daft.read_lance("s3://my-lancedb-bucket/data/")
         df.show()
         ```
-
         Read a LanceDB table from a public S3 bucket:
         ``` py linenums="1"
         from daft.io import S3Config

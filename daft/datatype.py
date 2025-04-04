@@ -275,7 +275,6 @@ class DataType:
         Args:
             fields: Nested fields of the Struct
 
-
         Example:
             ``` py linenums="1"
             struct_type = DataType.struct({"name": DataType.string(), "age": DataType.int64()})

@@ -40,7 +40,6 @@ def read_json(
     Returns:
         DataFrame: parsed DataFrame
 
-
     Example:
         ``` py linenums="1"
         df = daft.read_json("/path/to/file.json")

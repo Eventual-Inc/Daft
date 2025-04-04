@@ -23,7 +23,6 @@ def read_hudi(
     Returns:
         DataFrame: A DataFrame with the schema converted from the specified Hudi table.
 
-
     Example:
         ``` py linenums="1"
         df = daft.read_hudi("some-table-uri")

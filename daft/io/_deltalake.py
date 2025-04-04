@@ -44,7 +44,6 @@ def read_deltalake(
     Example:
         ``` py linenums="1"
         df = daft.read_deltalake("some-table-uri")
-
         # Filters on this dataframe can now be pushed into
         # the read operation from Delta Lake.
         df = df.where(df["foo"] > 5)

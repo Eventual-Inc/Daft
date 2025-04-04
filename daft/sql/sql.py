@@ -51,57 +51,55 @@ def sql_expr(sql: str) -> Expression:
     Returns:
     Expression: A Daft Expression representing the parsed SQL.
 
-    Examples:
-    Create a simple SQL expression:
-    ``` py linenums="1"
-    import daft
+    Example:
+        Create a simple SQL expression:
+        ``` py linenums="1"
+        import daft
 
-    expr = daft.sql_expr("1 + 2")
-    print(expr)
-    ```
-    ```
-    lit(1) + lit(2)
-    ```
+        expr = daft.sql_expr("1 + 2")
+        print(expr)
+        ```
+        ```
+        lit(1) + lit(2)
+        ```
+        Use SQL expression in a Daft DataFrame operation:
+        ``` py linenums="1"
+        df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+        df = df.with_column("c", daft.sql_expr("a + b"))
+        df.show()
+        ```
+        ```
+        ╭───────┬───────┬───────╮
+        │ a     ┆ b     ┆ c     │
+        │ ---   ┆ ---   ┆ ---   │
+        │ Int64 ┆ Int64 ┆ Int64 │
+        ╞═══════╪═══════╪═══════╡
+        │ 1     ┆ 4     ┆ 5     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2     ┆ 5     ┆ 7     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 6     ┆ 9     │
+        ╰───────┴───────┴───────╯
 
-    Use SQL expression in a Daft DataFrame operation:
-    ``` py linenums="1"
-    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-    df = df.with_column("c", daft.sql_expr("a + b"))
-    df.show()
-    ```
-    ```
-    ╭───────┬───────┬───────╮
-    │ a     ┆ b     ┆ c     │
-    │ ---   ┆ ---   ┆ ---   │
-    │ Int64 ┆ Int64 ┆ Int64 │
-    ╞═══════╪═══════╪═══════╡
-    │ 1     ┆ 4     ┆ 5     │
-    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-    │ 2     ┆ 5     ┆ 7     │
-    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-    │ 3     ┆ 6     ┆ 9     │
-    ╰───────┴───────┴───────╯
+        (Showing first 3 of 3 rows)
+        ```
+        `daft.sql_expr` is also called automatically for you in some DataFrame operations such as filters:
+        ``` py linenums="1"
+        df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        result = df.where("x < 3 AND y > 4")
+        result.show()
+        ```
+        ```
+        ╭───────┬───────╮
+        │ x     ┆ y     │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 2     ┆ 5     │
+        ╰───────┴───────╯
 
-    (Showing first 3 of 3 rows)
-    ```
-
-    `daft.sql_expr` is also called automatically for you in some DataFrame operations such as filters:
-    ``` py linenums="1"
-    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    result = df.where("x < 3 AND y > 4")
-    result.show()
-    ```
-    ```
-    ╭───────┬───────╮
-    │ x     ┆ y     │
-    │ ---   ┆ ---   │
-    │ Int64 ┆ Int64 │
-    ╞═══════╪═══════╡
-    │ 2     ┆ 5     │
-    ╰───────┴───────╯
-
-    (Showing first 1 of 1 rows)
-    ```
+        (Showing first 1 of 1 rows)
+        ```
     """
     return Expression._from_pyexpr(_sql_expr(sql))
 
@@ -124,7 +122,7 @@ def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool =
     Returns:
         DataFrame: Dataframe containing the results of the query
 
-    Examples:
+    Example:
         A simple example joining 2 dataframes together using a SQL statement, relying on Daft to detect the names of
         SQL tables using their corresponding Python variable names.
         ``` py linenums="1"
@@ -152,7 +150,6 @@ def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool =
 
         (Showing first 3 of 3 rows)
         ```
-
         A more complex example using a SQLCatalog to create a named table called `"my_table"`, which can then be referenced from inside your SQL statement.
         ``` py linenums="1"
         import daft
@@ -162,7 +159,6 @@ def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool =
 
         # Register dataframes as tables in SQL explicitly with names
         catalog = SQLCatalog({"my_table": df})
-
         daft.sql("SELECT a FROM my_table", catalog=catalog).show()
         ```
         ```

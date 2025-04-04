@@ -427,9 +427,12 @@ def udf(
 
     ``` py linenums="1"
     import daft
+
+
     @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
     def udf_needs_2_cpus(x: daft.Series):
-    return x
+        return x
+
 
     df = daft.from_pydict({"x": [1, 2, 3]})
     df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
@@ -450,7 +453,6 @@ def udf(
 
     (Showing first 3 of 3 rows)
     ```
-
     Your UDFs' resources can also be overridden before you call it like so:
     ``` py linenums="1"
     import daft
@@ -516,9 +518,12 @@ def udf(
 
         ``` py linenums="1"
         import daft
+
+
         @daft.udf(return_dtype=daft.DataType.int64())
         def add_constant(x: daft.Series, c=10):
-        return [v + c for v in x]
+            return [v + c for v in x]
+
 
         df = daft.from_pydict({"x": [1, 2, 3]})
         df = df.with_column("new_x", add_constant(df["x"], c=20))
@@ -539,7 +544,6 @@ def udf(
 
         (Showing first 3 of 3 rows)
         ```
-
     """
     inferred_return_dtype = DataType._infer_type(return_dtype)
 

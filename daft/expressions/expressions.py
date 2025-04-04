@@ -90,7 +90,6 @@ def lit(value: object) -> Expression:
     Returns:
         Expression: Expression representing the value provided
 
-
     Example:
         ``` py linenums="1"
         import daft
@@ -160,7 +159,6 @@ def col(name: str) -> Expression:
     Returns:
         Expression: Expression representing the selected column
 
-
     Example:
         ``` py linenums="1"
         import daft
@@ -202,7 +200,6 @@ def list_(*items: Expression | str):
     Returns:
         Expression: Expression representing the constructed list
 
-
     Example:
         ``` py linenums="1"
         import daft
@@ -239,7 +236,6 @@ def struct(*fields: Expression | str) -> Expression:
 
     Returns:
         An expression for a struct column with the input columns as its fields.
-
 
     Example:
         ``` py linenums="1"
@@ -307,7 +303,6 @@ def coalesce(*args: Expression) -> Expression:
 
     Returns:
         Expression: Expression containing first non-null value encountered when evaluating arguments in order
-
 
     Example:
         ``` py linenums="1"
@@ -675,7 +670,6 @@ class Expression:
 
         Returns:
             Expression: Renamed expression
-
 
         Example:
             ``` py linenums="1"
@@ -1062,7 +1056,6 @@ class Expression:
             For unsigned integers, this expression perform a logical right shift.
             For signed integers, this expression perform an arithmetic right shift.
 
-
         """
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
@@ -1136,7 +1129,6 @@ class Expression:
         Returns:
             A new expression representing the approximate percentile(s). If `percentiles` was a single float, this will be a new `Float64` expression. If `percentiles` was a list of floats, this will be a new expression with type: `FixedSizeList[Float64, len(percentiles)]`.
 
-
         Example:
             A global calculation of approximate percentiles:
             ``` py linenums="1"
@@ -1161,7 +1153,6 @@ class Expression:
             (Showing first 1 of 1 rows)
             ```
             A grouped calculation of approximate percentiles:
-
             ``` py linenums="1"
             df = daft.from_pydict({"class": ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
             df = (
@@ -1304,7 +1295,6 @@ class Expression:
 
         Returns:
             Expression: A List expression containing the distinct values from the input
-
 
         Example:
             ``` py linenums="1"
@@ -1461,7 +1451,6 @@ class Expression:
         Returns:
             Expression: Boolean Expression indicating whether values are missing
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -1494,7 +1483,6 @@ class Expression:
 
         Returns:
             Expression: Boolean Expression indicating whether values are not missing
-
 
         Example:
             ``` py linenums="1"
@@ -1529,7 +1517,6 @@ class Expression:
         Returns:
             Expression: Expression with null values filled with the provided fill_value
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -1563,7 +1550,6 @@ class Expression:
 
         Returns:
             Expression: Boolean Expression indicating whether values are in the provided list
-
 
         Example:
             ``` py linenums="1"
@@ -1605,7 +1591,6 @@ class Expression:
 
         Returns:
             Expression: Boolean Expression indicating whether values are between lower and upper, inclusive.
-
 
         Example:
             ``` py linenums="1"
@@ -1701,7 +1686,6 @@ class Expression:
         Returns:
             Expression: A new expression, of type `binary`, with the encoded value.
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -1735,7 +1719,6 @@ class Expression:
 
         Returns:
             Expression: A new expression with the decoded values.
-
 
         Example:
             ``` py linenums="1"
@@ -1910,7 +1893,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression containing the written filepath
 
-
         Example:
             ``` py linenums="1"
             col("data").url.upload("s3://my-bucket/my-folder")  # doctest: +SKIP
@@ -1959,7 +1941,6 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         Returns:
             Expression: Boolean Expression indicating whether values are invalid.
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -1993,7 +1974,6 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         Returns:
             Expression: Boolean Expression indicating whether values are Infinity.
-
 
         Example:
             ``` py linenums="1"
@@ -2031,7 +2011,6 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         Returns:
             Expression: Boolean Expression indicating whether values are not invalid.
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -2063,7 +2042,6 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         Returns:
             Expression: Expression with Nan values filled with the provided fill_value
-
 
         Example:
             ``` py linenums="1"
@@ -2100,7 +2078,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a Date expression
-
 
         Example:
             ``` py linenums="1"
@@ -2142,7 +2119,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the day extracted from a datetime column
 
-
         Example:
             ``` py linenums="1"
             import daft, datetime
@@ -2181,8 +2157,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Retrieves the day for a datetime column.
 
         Returns:
-        Expression: a UInt32 expression with just the day extracted from a datetime column
-
+            Expression: a UInt32 expression with just the day extracted from a datetime column
 
         Example:
         ``` py linenums="1"
@@ -2222,8 +2197,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Retrieves the minute for a datetime column.
 
         Returns:
-        Expression: a UInt32 expression with just the minute extracted from a datetime column
-
+            Expression: a UInt32 expression with just the minute extracted from a datetime column
 
         Example:
         ``` py linenums="1"
@@ -2421,7 +2395,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Example:
             ``` py linenums="1"
             import daft, datetime
-                df = daft.from_pydict(
+
+            df = daft.from_pydict(
                 {
                     "x": [
                         datetime.datetime(2021, 1, 1, 0, 1, 1),
@@ -2456,7 +2431,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a UInt32 expression with just the month extracted from a datetime column
-
 
         Example:
             ``` py linenums="1"
@@ -2497,7 +2471,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the year extracted from a datetime column
 
-
         Example:
             ``` py linenums="1"
             import daft, datetime
@@ -2536,7 +2509,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a UInt32 expression with just the day_of_week extracted from a datetime column
-
 
         Example:
             ``` py linenums="1"
@@ -2621,7 +2593,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a DateTime expression truncated to the specified interval
 
-
         Example:
             ``` py linenums="1"
             import daft, datetime
@@ -2703,7 +2674,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a Boolean expression indicating whether each value matches the provided pattern
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -2739,7 +2709,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a Boolean expression indicating whether each value ends with the provided pattern
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -2774,7 +2743,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a Boolean expression indicating whether each value starts with the provided pattern
-
 
         Example:
             ``` py linenums="1"
@@ -2834,7 +2802,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
             (Showing first 3 of 3 rows)
             ```
-
             Split on a regex pattern
             ``` py linenums="1"
             import daft
@@ -2872,7 +2839,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a String expression which is `self` concatenated with `other`
-
 
         Example:
             ``` py linenums="1"
@@ -2938,7 +2904,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
             (Showing first 3 of 3 rows)
             ``
-
             Extract the first capture group
             ``` py linenums="1"
             df.with_column("match", df["x"].str.extract(regex, 1)).collect()
@@ -3001,7 +2966,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
             (Showing first 3 of 3 rows)
             ```
-
             Extract the first capture group
             ``` py linenums="1"
             df.with_column("match", df["x"].str.extract_all(regex, 1)).collect()
@@ -3065,7 +3029,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
             (Showing first 3 of 3 rows)
             ```
-
             Replace with a regex pattern
             ``` py linenums="1"
             import daft
@@ -3101,7 +3064,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: an UInt64 expression with the length of each string
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3133,7 +3095,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: an UInt64 expression with the length of each string
-
 
         Example:
             ``` py linenums="1"
@@ -3167,7 +3128,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is `self` lowercased
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3199,7 +3159,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a String expression which is `self` uppercased
-
 
         Example:
             ``` py linenums="1"
@@ -3233,7 +3192,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is `self` with leading whitespace stripped
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3265,7 +3223,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a String expression which is `self` with trailing whitespace stripped
-
 
         Example:
             ``` py linenums="1"
@@ -3299,7 +3256,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is `self` reversed
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3331,7 +3287,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a String expression which is `self` uppercased with the first character and lowercased the rest
-
 
         Example:
             ``` py linenums="1"
@@ -3365,7 +3320,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is the `n` left-most characters of `self`
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3398,7 +3352,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a String expression which is the `n` right-most characters of `self`
-
 
         Example:
             ``` py linenums="1"
@@ -3435,7 +3388,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: an Int64 expression with the index of the first occurrence of the substring in each string
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3470,7 +3422,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a String expression which is `self` truncated or right-padded with the pad character
-
 
         Example:
             ``` py linenums="1"
@@ -3577,7 +3528,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a Boolean expression indicating whether each value matches the provided pattern
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3613,7 +3563,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a Boolean expression indicating whether each value matches the provided pattern
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3648,7 +3597,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: A String expression representing the extracted substring.
-
 
         Example:
             ``` py linenums="1"
@@ -3720,7 +3668,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a DateTime expression which is parsed by given format and timezone
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -3744,7 +3691,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
             (Showing first 3 of 3 rows)
             ```
-
             If a timezone is provided, the datetime will be parsed in that timezone
             ``` py linenums="1"
             df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123 +0800", "2021-01-02 12:30:00.456 +0800", None]})
@@ -3789,7 +3735,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a String expression which is normalized.
-
 
         Example:
             ``` py linenums="1"
@@ -3941,14 +3886,12 @@ class ExpressionListNamespace(ExpressionNamespace):
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
 
+        !!! note "This function does not work for nested types. For example, it will not produce a map with lists as keys."
+
         Returns:
             Expression: A Map<X, UInt64> expression where the keys are distinct elements from the
             original list of type X, and the values are UInt64 counts representing
             the number of times each element appears in the list.
-
-        Note:
-            This function does not work for nested types. For example, it will not produce a map
-            with lists as keys.
 
         Example:
             ``` py linenums="1"
@@ -4202,7 +4145,6 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with lists containing only distinct elements
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -4227,7 +4169,6 @@ class ExpressionListNamespace(ExpressionNamespace):
 
             (Showing first 4 of 4 rows)
             ```
-
             Note that null values are ignored:
             ``` py linenums="1"
             df = daft.from_pydict({"a": [[None, None], [1, None, 1], [None]]})
@@ -4283,7 +4224,6 @@ class ExpressionListNamespace(ExpressionNamespace):
 
             (Showing first 4 of 4 rows)
             ```
-
             Note that null values are ignored:
             ``` py linenums="1"
             df = daft.from_pydict({"a": [[None, None], [1, None, 1], [None]]})
@@ -4332,7 +4272,6 @@ class ExpressionMapNamespace(ExpressionNamespace):
 
         Returns:
             Expression: the value expression
-
 
         Example:
             ``` py linenums="1"
@@ -4640,7 +4579,6 @@ class ExpressionJsonNamespace(ExpressionNamespace):
         Returns:
             Expression: Expression representing the result of the JQ query as a column of JSON-compatible strings
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -4680,7 +4618,6 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         Returns:
             Expression: an UInt64 expression with the length of each binary string in bytes
 
-
         Example:
             ``` py linenums="1"
             import daft
@@ -4715,7 +4652,6 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
 
         Returns:
             Expression: A binary expression containing the concatenated strings
-
 
         Example:
             ``` py linenums="1"
@@ -4757,7 +4693,6 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
 
         Returns:
             A new expression representing the slice.
-
 
         Example:
             ``` py linenums="1"

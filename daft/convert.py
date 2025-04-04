@@ -64,7 +64,6 @@ def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
     Returns:
         DataFrame: DataFrame created from dictionary of columns
 
-
     Example:
         ``` py linenums="1"
         import daft
@@ -140,7 +139,6 @@ def from_pandas(data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame
 
     Returns:
         DataFrame: Daft DataFrame created from the provided pandas DataFrame.
-
 
     Example:
         ``` py linenums="1"
