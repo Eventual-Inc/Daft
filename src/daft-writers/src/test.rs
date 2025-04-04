@@ -10,6 +10,7 @@ use daft_recordbatch::RecordBatch;
 
 use crate::{
     FileWriter, TargetFileSizeWriterFactory, TargetInMemorySizeBytesCalculator, WriterFactory,
+    RETURN_PATHS_COLUMN_NAME,
 };
 
 pub struct DummyWriterFactory;
@@ -62,8 +63,11 @@ impl FileWriter for DummyWriter {
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
-        let path_series =
-            Utf8Array::from_values("path", std::iter::once(self.file_idx.clone())).into_series();
+        let path_series = Utf8Array::from_values(
+            RETURN_PATHS_COLUMN_NAME,
+            std::iter::once(self.file_idx.clone()),
+        )
+        .into_series();
         let write_count_series =
             UInt64Array::from_values("write_count", std::iter::once(self.write_count as u64))
                 .into_series();
@@ -171,8 +175,11 @@ impl FileWriter for FailingWriter {
         }
 
         // Same behavior as DummyWriter when not failing
-        let path_series =
-            Utf8Array::from_values("path", std::iter::once(self.file_idx.clone())).into_series();
+        let path_series = Utf8Array::from_values(
+            RETURN_PATHS_COLUMN_NAME,
+            std::iter::once(self.file_idx.clone()),
+        )
+        .into_series();
         let write_count_series =
             UInt64Array::from_values("write_count", std::iter::once(self.write_count as u64))
                 .into_series();
