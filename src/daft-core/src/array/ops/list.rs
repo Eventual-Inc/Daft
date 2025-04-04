@@ -1050,7 +1050,11 @@ macro_rules! impl_aggs_list_array {
 
                 let agg_refs: Vec<_> = aggs.iter().collect();
 
-                Series::concat(agg_refs.as_slice()).map(|s| s.rename(self.name()))
+                if agg_refs.is_empty() {
+                    Ok(Series::empty(self.name(), self.data_type()))
+                } else {
+                    Series::concat(agg_refs.as_slice()).map(|s| s.rename(self.name()))
+                }
             }
 
             pub fn sum(&self) -> DaftResult<Series> {
