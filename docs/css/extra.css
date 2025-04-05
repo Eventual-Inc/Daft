@@ -22,6 +22,8 @@
   --md-typeset-a-color: #7862FF;
 }
 
+/* NOTE ADMONITIONS */
+
 /* use daft purple for note admonitions */
 .md-typeset .admonition.note,
 .md-typeset details.note {
@@ -41,6 +43,14 @@
 .md-typeset .note > summary::after {
   background-color: rgb(120,98,255);
 }
+
+/* box shadow on click for expanding boxes for note admonitions */
+.md-typeset .admonition.note:focus-within,
+.md-typeset details.note:focus-within {
+  box-shadow: 0 0 0 .2rem rgba(120,98,255, 0.1)
+}
+
+/* EXAMPLE ADMONITIONS */
 
 /* use blue for example admonitions */
 .md-typeset .admonition.example,
