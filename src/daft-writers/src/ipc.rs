@@ -8,7 +8,7 @@ use daft_core::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{FileWriter, WriterFactory};
+use crate::{FileWriter, WriterFactory, RETURN_PATHS_COLUMN_NAME};
 
 pub struct IPCWriter {
     is_closed: bool,
@@ -69,7 +69,7 @@ impl FileWriter for IPCWriter {
         }
         // return the path
         let path_col = Series::from_arrow(
-            Arc::new(Field::new("path", DataType::Utf8)),
+            Arc::new(Field::new(RETURN_PATHS_COLUMN_NAME, DataType::Utf8)),
             Box::new(arrow2::array::Utf8Array::<i64>::from_iter_values(
                 std::iter::once(self.file_path.clone()),
             )),

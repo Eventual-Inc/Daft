@@ -38,6 +38,9 @@ use ipc::IPCWriterFactory;
 pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
+
+pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
+
 /// This trait is used to abstract the writing of data to a file.
 ///
 /// The `Input` type is the type of data that will be written to the file.

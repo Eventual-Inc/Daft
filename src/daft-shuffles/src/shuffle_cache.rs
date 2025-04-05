@@ -7,7 +7,7 @@ use daft_io::{parse_url, SourceType};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
-use daft_writers::{make_ipc_writer, FileWriter};
+use daft_writers::{make_ipc_writer, FileWriter, RETURN_PATHS_COLUMN_NAME};
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
@@ -180,8 +180,9 @@ impl InProgressShuffleCache {
                     .map(|partition| partitioner_sender.send(partition));
 
                 // If any send fails, the receiver is dropped, so we need to close the shuffle cache to get the error
-                if futures::future::try_join_all(send_futures).await.is_err() {
+                if let Err(e) = futures::future::try_join_all(send_futures).await {
                     self.close().await?;
+                    return Err(DaftError::InternalError(e.to_string()));
                 }
             }
             None => {
@@ -335,7 +336,7 @@ async fn writer_task(
             assert!(file_path_table.num_columns() > 0);
             assert!(file_path_table.num_rows() == 1);
             let path = file_path_table
-                .get_column("path")?
+                .get_column(RETURN_PATHS_COLUMN_NAME)?
                 .utf8()?
                 .get(0)
                 .expect("path column should have one path");
@@ -518,6 +519,50 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn test_shuffle_cache_with_empty_partitions() -> DaftResult<()> {
+        let num_partitions = 5;
+        let mut writers = Vec::with_capacity(num_partitions);
+        let dummy_writer_factory = DummyWriterFactory {};
+        let dummy_writer_factory =
+            make_dummy_target_file_size_writer_factory(100, 1.0, Arc::new(dummy_writer_factory));
+        for partition_idx in 0..num_partitions {
+            writers.push(dummy_writer_factory.create_writer(partition_idx, None)?);
+        }
+
+        let partition_by = Some(vec![Expr::Column(Column::Resolved(ResolvedColumn::Basic(
+            "ints".into(),
+        )))
+        .into()]);
+
+        let cache = InProgressShuffleCache::try_new_with_writers(
+            writers,
+            num_partitions,
+            partition_by,
+            vec![],
+        )?;
+
+        // 1000 empty partitions
+        for _ in 0..1000 {
+            cache.push_partitions(vec![make_dummy_mp(0)]).await?;
+        }
+
+        let shuffle_cache = cache.close().await?;
+
+        // Even though we pushed empty partitions, we should still files.
+        assert!(shuffle_cache.schema().names() == vec!["ints"]);
+        assert_eq!(shuffle_cache.file_paths_per_partition.len(), num_partitions);
+        assert!(
+            shuffle_cache
+                .file_paths_per_partition
+                .iter()
+                .all(|paths| paths.len() == 0),
+            "All partitions should have no file paths: {:?}",
+            shuffle_cache.file_paths_per_partition
+        );
+
+        Ok(())
+    }
     #[tokio::test]
     async fn test_shuffle_cache_with_failing_writer() -> DaftResult<()> {
         // Create failing writers for testing
