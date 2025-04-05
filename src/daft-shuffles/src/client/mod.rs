@@ -17,16 +17,16 @@ enum ClientState {
 
 impl ClientState {
     async fn get_or_create_clients(&mut self) -> &mut Vec<ShuffleFlightClient> {
-        if let ClientState::Uninitialized(addresses) = self {
+        if let Self::Uninitialized(addresses) = self {
             let addresses = std::mem::take(addresses);
             let clients =
                 futures::future::join_all(addresses.into_iter().map(ShuffleFlightClient::new))
                     .await;
-            *self = ClientState::Initialized(clients);
+            *self = Self::Initialized(clients);
         }
         match self {
-            ClientState::Initialized(clients) => clients,
-            ClientState::Uninitialized(_) => unreachable!(),
+            Self::Initialized(clients) => clients,
+            Self::Uninitialized(_) => unreachable!(),
         }
     }
 }

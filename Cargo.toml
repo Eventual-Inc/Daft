@@ -124,10 +124,6 @@ inherits = "release"
 lto = 'thin'
 strip = "none"  # dont strip
 
-[profile.release]
-strip = true
-panic = 'abort'
-
 [profile.release-lto]
 codegen-units = 1
 inherits = "release"

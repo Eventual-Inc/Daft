@@ -33,7 +33,7 @@ fn get_shuffle_dirs(
     shuffle_stage_id: usize,
 ) -> Vec<String> {
     shuffle_dirs
-        .into_iter()
+        .iter()
         .map(|dir| {
             format!(
                 "{}/daft_shuffle/node_{}/shuffle_stage_{}",
@@ -83,7 +83,7 @@ impl InProgressShuffleCache {
     ) -> DaftResult<Self> {
         // Create the directories
         let shuffle_dirs = get_shuffle_dirs(dirs, &node_id, shuffle_stage_id);
-        for dir in shuffle_dirs.iter() {
+        for dir in &shuffle_dirs {
             // Check that the dir is a file
             let (source_type, _) = parse_url(dir)?;
             if source_type != SourceType::File {
