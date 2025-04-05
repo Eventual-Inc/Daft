@@ -9,7 +9,7 @@ from unitycatalog import NotFoundError as UnityNotFoundError
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
 from daft.io._deltalake import read_deltalake
-from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
+from daft.unity_catalog import UnityCatalogClient as InnerClient  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
 if TYPE_CHECKING:
@@ -17,29 +17,31 @@ if TYPE_CHECKING:
 
 
 class UnityCatalog(Catalog):
-    _inner: InnerCatalog
+    _inner_client: InnerClient
+    _catalog_name: str
 
-    def __init__(self, unity_catalog: InnerCatalog):
+    def __init__(self, client: InnerClient, catalog_name: str):
         """DEPRECATED: Please use `Catalog.from_unity`; version 0.5.0!"""
         warnings.warn(
             "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Catalog.from_unity` instead; version 0.5.0!",
             category=DeprecationWarning,
         )
-        self._inner = unity_catalog
+        self._inner_client = client
+        self._catalog_name = catalog_name
 
     @property
     def name(self) -> str:
-        # TODO feat: add names to unity catalogs
-        return "unity"
+        return self._catalog_name
 
     @staticmethod
-    def _from_obj(obj: object) -> UnityCatalog:
+    def _from_obj(client: object, catalog_name: str) -> UnityCatalog:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
-        if isinstance(obj, InnerCatalog):
+        if isinstance(client, InnerClient):
             c = UnityCatalog.__new__(UnityCatalog)
-            c._inner = obj
+            c._inner_client = client
+            c._catalog_name = catalog_name
             return c
-        raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
+        raise ValueError(f"Unsupported unity catalog type: {type(client)}")
 
     ###
     # create_*
@@ -67,9 +69,11 @@ class UnityCatalog(Catalog):
 
     def get_table(self, ident: Identifier | str) -> UnityTable:
         if isinstance(ident, Identifier):
-            ident = ".".join(ident)  # TODO unity qualified identifiers
+            ident = ".".join(ident)
+        ident = self._catalog_name + "." + ident
+
         try:
-            return UnityTable(self._inner.load_table(ident))
+            return UnityTable(self._inner_client.load_table(ident))
         except UnityNotFoundError:
             return NotFoundError(f"Table {ident} not found!")
 
@@ -84,17 +88,21 @@ class UnityCatalog(Catalog):
         if pattern is None or pattern == "":
             return [
                 tbl
-                for cat in self._inner.list_catalogs()
-                for schema in self._inner.list_schemas(cat)
-                for tbl in self._inner.list_tables(schema)
+                for cat in self._inner_client.list_catalogs()
+                for schema in self._inner_client.list_schemas(cat)
+                for tbl in self._inner_client.list_tables(schema)
             ]
         num_namespaces = pattern.count(".")
         if num_namespaces == 0:
             catalog_name = pattern
-            return [tbl for schema in self._inner.list_schemas(catalog_name) for tbl in self._inner.list_tables(schema)]
+            return [
+                tbl
+                for schema in self._inner_client.list_schemas(catalog_name)
+                for tbl in self._inner_client.list_tables(schema)
+            ]
         elif num_namespaces == 1:
             schema_name = pattern
-            return [tbl for tbl in self._inner.list_tables(schema_name)]
+            return [tbl for tbl in self._inner_client.list_tables(schema_name)]
         else:
             raise ValueError(
                 f"Unrecognized catalog name or schema name, expected a '.'-separated namespace but received: {pattern}"

@@ -184,3 +184,6 @@ class UnityCatalog:
             table_uri=storage_location,
             io_config=io_config,
         )
+
+
+UnityCatalogClient = UnityCatalog
