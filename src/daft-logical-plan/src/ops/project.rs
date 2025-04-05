@@ -145,6 +145,10 @@ impl Project {
                     // (otherwise the unaliased child will be double counted)
                     if matches!(expr.as_ref(), Expr::Alias(..)) {
                         expr.children()
+                    // If expr is a window function, skip and continue recursing
+                    // (col("a").sum().over(window1) may differ from col("a").sum().over(window2))
+                    } else if matches!(expr.as_ref(), Expr::Window(..)) {
+                        vec![]
                     } else {
                         let expr_id = expr.semantic_id(schema);
                         if let Expr::Column(Column::Resolved(..)) = expr.as_ref() {

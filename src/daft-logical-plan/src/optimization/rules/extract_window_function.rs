@@ -505,4 +505,123 @@ mod tests {
 
         assert_optimized_plan_eq(plan, expected_plan)
     }
+
+    #[test]
+    fn test_three_window_specs() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("letter", DataType::Utf8),
+            Field::new("num", DataType::Utf8),
+            Field::new("value", DataType::Int64),
+        ]);
+
+        let input_plan = dummy_scan_node(scan_op.clone());
+
+        let letter_col = resolved_col("letter");
+        let num_col = resolved_col("num");
+        let value_col = resolved_col("value");
+
+        let mut letter_window_spec = WindowSpec::default();
+        letter_window_spec.partition_by = vec![letter_col.clone()];
+
+        let mut num_window_spec = WindowSpec::default();
+        num_window_spec.partition_by = vec![num_col.clone()];
+
+        let mut combined_window_spec = WindowSpec::default();
+        combined_window_spec.partition_by = vec![letter_col.clone(), num_col.clone()];
+
+        let letter_sum = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            letter_window_spec.clone(),
+        ))
+        .alias("letter_sum");
+
+        let num_sum = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            num_window_spec.clone(),
+        ))
+        .alias("num_sum");
+
+        let combined_sum = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            combined_window_spec.clone(),
+        ))
+        .alias("combined_sum");
+
+        let projection = vec![
+            letter_col.clone(),
+            num_col.clone(),
+            value_col.clone(),
+            letter_sum.clone(),
+            num_sum.clone(),
+            combined_sum.clone(),
+        ];
+
+        let plan = input_plan.clone().select(projection)?.build();
+
+        let letter_sum_expr = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            letter_window_spec.clone(),
+        ));
+        let num_sum_expr = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            num_window_spec.clone(),
+        ));
+        let combined_sum_expr = Arc::new(Expr::Window(
+            value_col.clone().sum(),
+            combined_window_spec.clone(),
+        ));
+
+        let letter_sum_id = letter_sum_expr
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+        let num_sum_id = num_sum_expr
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+        let combined_sum_id = combined_sum_expr
+            .semantic_id(&input_plan.schema())
+            .id
+            .to_string();
+
+        let letter_window_op = Window::try_new(
+            input_plan.clone().build(),
+            vec![letter_sum_expr.alias(letter_sum_id.clone())],
+            letter_window_spec,
+        )?;
+
+        let intermediate_plan1 = Arc::new(LogicalPlan::Window(letter_window_op));
+
+        let num_window_op = Window::try_new(
+            intermediate_plan1,
+            vec![num_sum_expr.alias(num_sum_id.clone())],
+            num_window_spec,
+        )?;
+
+        let intermediate_plan2 = Arc::new(LogicalPlan::Window(num_window_op));
+
+        let combined_window_op = Window::try_new(
+            intermediate_plan2,
+            vec![combined_sum_expr.alias(combined_sum_id.clone())],
+            combined_window_spec,
+        )?;
+
+        let window_plan = Arc::new(LogicalPlan::Window(combined_window_op));
+
+        let final_projection = Project::try_new(
+            window_plan,
+            vec![
+                letter_col,
+                num_col,
+                value_col,
+                resolved_col(letter_sum_id).alias("letter_sum"),
+                resolved_col(num_sum_id).alias("num_sum"),
+                resolved_col(combined_sum_id).alias("combined_sum"),
+            ],
+        )?;
+
+        let expected_plan = Arc::new(LogicalPlan::Project(final_projection));
+
+        assert_optimized_plan_eq(plan, expected_plan)
+    }
 }

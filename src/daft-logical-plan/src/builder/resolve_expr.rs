@@ -311,7 +311,7 @@ impl ExprResolver<'_> {
     fn validate_expr(&self, expr: ExprRef) -> DaftResult<ExprRef> {
         if has_agg(&expr) {
             return Err(DaftError::ValueError(format!(
-                "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+                "Aggregation expressions are currently only allowed in agg, pivot, and window: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
             )));
         }
 

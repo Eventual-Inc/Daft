@@ -13,6 +13,47 @@ impl RecordBatch {
         }
     }
 
+    pub fn window_agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
+        if group_by.is_empty() {
+            return self.agg_global(to_agg);
+        }
+
+        let agg_exprs = to_agg
+            .iter()
+            .map(|e| match e.as_ref() {
+                Expr::Agg(e) => Ok(e),
+                _ => Err(DaftError::ValueError(format!(
+                    "Trying to run non-Agg expression in Grouped Agg! {e}"
+                ))),
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let groupby_table = self.eval_expression_list(group_by)?;
+
+        let (groupkey_indices, groupvals_indices) = groupby_table.make_groups()?;
+
+        let groupkeys_table = {
+            let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
+            groupby_table.take(&indices_as_series)?
+        };
+
+        let group_idx_input = if groupvals_indices.len() == 1 {
+            None
+        } else {
+            Some(&groupvals_indices)
+        };
+
+        let grouped_cols = agg_exprs
+            .iter()
+            .map(|e| self.eval_agg_expression(e, group_idx_input))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let agg_table =
+            Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())?;
+
+        Ok(agg_table)
+    }
+
     pub fn agg_global(&self, to_agg: &[ExprRef]) -> DaftResult<Self> {
         self.eval_expression_list(to_agg)
     }

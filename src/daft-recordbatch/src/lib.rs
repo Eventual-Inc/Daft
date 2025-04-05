@@ -584,6 +584,7 @@ impl RecordBatch {
         let series = match expr {
             Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
+            Expr::Window(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
             Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
             // TODO: remove ability to evaluate on unresolved col once we fix all tests
             Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) | Expr::Column(Column::Unresolved(UnresolvedColumn { name, plan_ref: PlanRef::Unqualified, plan_schema: None })) => self.get_column(name).cloned(),
@@ -701,7 +702,6 @@ impl RecordBatch {
             Expr::Column(Column::Unresolved(..)) => Err(DaftError::ComputeError(
                 "Unresolved columns should be resolved before evaluation.".to_string(),
             )),
-            Expr::Window(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
         }?;
 
         if expected_field.name != series.field().name {
