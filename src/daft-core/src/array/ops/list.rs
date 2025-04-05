@@ -15,7 +15,10 @@ use crate::{
         FixedSizeListArray, ListArray, StructArray,
     },
     count_mode::CountMode,
-    datatypes::{BooleanArray, DataType, Field, Int64Array, UInt64Array, Utf8Array},
+    datatypes::{
+        try_mean_aggregation_supertype, BooleanArray, DataType, Field, Int64Array, UInt64Array,
+        Utf8Array,
+    },
     kernels::search_sorted::build_is_valid,
     prelude::MapArray,
     series::{IntoSeries, Series},
@@ -1035,9 +1038,10 @@ impl FixedSizeListArray {
 macro_rules! impl_aggs_list_array {
     ($la:ident) => {
         impl $la {
-            fn agg_helper<T>(&self, op: T) -> DaftResult<Series>
+            fn agg_helper<T, F>(&self, op: T, target_type_getter: F) -> DaftResult<Series>
             where
                 T: Fn(&Series) -> DaftResult<Series>,
+                F: Fn(&DataType) -> DaftResult<DataType>,
             {
                 // TODO(Kevin): Currently this requires full materialization of one Series for every list. We could avoid this by implementing either sorted aggregation or an array builder
 
@@ -1050,23 +1054,28 @@ macro_rules! impl_aggs_list_array {
 
                 let agg_refs: Vec<_> = aggs.iter().collect();
 
-                Series::concat(agg_refs.as_slice()).map(|s| s.rename(self.name()))
+                if agg_refs.is_empty() {
+                    let target_type = target_type_getter(self.child_data_type())?;
+                    Ok(Series::empty(self.name(), &target_type))
+                } else {
+                    Series::concat(agg_refs.as_slice()).map(|s| s.rename(self.name()))
+                }
             }
 
             pub fn sum(&self) -> DaftResult<Series> {
-                self.agg_helper(|s| s.sum(None))
+                self.agg_helper(|s| s.sum(None), |dtype| Ok(dtype.clone()))
             }
 
             pub fn mean(&self) -> DaftResult<Series> {
-                self.agg_helper(|s| s.mean(None))
+                self.agg_helper(|s| s.mean(None), try_mean_aggregation_supertype)
             }
 
             pub fn min(&self) -> DaftResult<Series> {
-                self.agg_helper(|s| s.min(None))
+                self.agg_helper(|s| s.min(None), |dtype| Ok(dtype.clone()))
             }
 
             pub fn max(&self) -> DaftResult<Series> {
-                self.agg_helper(|s| s.max(None))
+                self.agg_helper(|s| s.max(None), |dtype| Ok(dtype.clone()))
             }
         }
     };
