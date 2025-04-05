@@ -103,7 +103,6 @@ impl BlockingSink for WindowPartitionOnlySink {
         mut state: Box<dyn BlockingSinkState>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        // Store the original input data for later processing
         spawner
             .spawn(
                 async move {
@@ -112,7 +111,6 @@ impl BlockingSink for WindowPartitionOnlySink {
                         .downcast_mut::<WindowPartitionOnlyState>()
                         .expect("WindowPartitionOnlySink should have WindowPartitionOnlyState");
 
-                    // Save the original input data
                     window_state.push(input);
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
@@ -132,47 +130,41 @@ impl BlockingSink for WindowPartitionOnlySink {
         spawner
             .spawn(
                 async move {
-                    // Collect all the original input partitions
-                    let all_parts =
-                        states
-                            .into_iter()
-                            .flat_map(|mut state| {
-                                state
-                            .as_any_mut()
-                            .downcast_mut::<WindowPartitionOnlyState>()
-                            .expect("WindowPartitionOnlySink should have WindowPartitionOnlyState")
-                            .finalize()
-                            })
-                            .collect::<Vec<_>>();
+                    let all_parts = states
+                        .into_iter()
+                        .flat_map(|mut state| {
+                            state
+                                .as_any_mut()
+                                .downcast_mut::<WindowPartitionOnlyState>()
+                                .expect(
+                                    "WindowPartitionOnlySink should have WindowPartitionOnlyState",
+                                )
+                                .finalize()
+                        })
+                        .collect::<Vec<_>>();
 
-                    // Concatenate all input partitions to create a single dataset
                     let input_data = Arc::new(MicroPartition::concat(all_parts)?);
 
-                    // Compute partition-based aggregations
                     let partition_aggs =
                         input_data.window_agg(&params.sink_agg_exprs, &params.partition_by)?;
 
-                    // Apply finalize aggregations if needed
                     let finalized_aggs = if !params.finalize_agg_exprs.is_empty() {
                         partition_aggs.agg(&params.finalize_agg_exprs, &params.partition_by)?
                     } else {
                         partition_aggs
                     };
 
-                    // Join the aggregated values back to the original data based on partition keys
                     let result = input_data.hash_join(
                         &finalized_aggs,
-                        &params.partition_by[..], // Left join keys (original data)
-                        &params.partition_by[..], // Right join keys (aggregated data)
-                        None,                     // Use default null_equals_nulls
-                        daft_core::join::JoinType::Inner, // Inner join since all rows should have a match
+                        &params.partition_by[..],
+                        &params.partition_by[..],
+                        None,
+                        daft_core::join::JoinType::Inner,
                     )?;
 
-                    // Create a projection list that includes both original and aggregated columns
                     let mut all_projections = Vec::new();
                     let mut added_columns = std::collections::HashSet::new();
 
-                    // Add all original columns from the expected schema
                     for field_name in params.original_schema.fields.keys() {
                         if result.schema().fields.contains_key(field_name)
                             && !added_columns.contains(field_name)
@@ -182,17 +174,14 @@ impl BlockingSink for WindowPartitionOnlySink {
                         }
                     }
 
-                    // Add the aggregation columns
                     for expr in &params.final_projections {
-                        // Get the column name to check for duplicates
                         let expr_str = expr.to_string();
                         let is_duplicate = if expr_str.starts_with("col(") {
-                            // For simple columns, extract the name from col(name)
                             let col_name =
                                 expr_str.trim_start_matches("col(").trim_end_matches(')');
                             added_columns.contains(col_name)
                         } else {
-                            false // For expressions like aliases, assume not duplicate
+                            false
                         };
 
                         if !is_duplicate {
