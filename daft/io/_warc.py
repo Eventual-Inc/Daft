@@ -24,13 +24,6 @@ def read_warc(
 ) -> DataFrame:
     """Creates a DataFrame from WARC or gzipped WARC file(s). This is an experimental feature and the API may change in the future.
 
-    Example:
-        >>> df = daft.read_warc("/path/to/file.warc")
-        >>> df = daft.read_warc("/path/to/directory")
-        >>> df = daft.read_warc("/path/to/files-*.warc")
-        >>> df = daft.read_warc("s3://path/to/files-*.warc")
-        >>> df = daft.read_warc("gs://path/to/files-*.warc")
-
     Args:
         path (Union[str, List[str]]): Path to WARC file (allows for wildcards)
         io_config (Optional[IOConfig]): Config to be used with the native downloader
@@ -39,10 +32,19 @@ def read_warc(
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame with mandatory metadata columns ("WARC-Record-ID", "WARC-Type", "WARC-Date", "Content-Length"), one optional
             metadata column ("WARC-Identified-Payload-Type"), one column "warc_content" with the raw byte content of the WARC record,
             and one column "warc_headers" with the remaining headers of the WARC record stored as a JSON string.
+
+    Example:
+        ``` py linenums="1"
+        df = daft.read_warc("/path/to/file.warc")
+        df = daft.read_warc("/path/to/directory")
+        df = daft.read_warc("/path/to/files-*.warc")
+        df = daft.read_warc("s3://path/to/files-*.warc")
+        df = daft.read_warc("gs://path/to/files-*.warc")
+        ```
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

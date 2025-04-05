@@ -5,16 +5,16 @@ build:
   tools:
     python: '3.10'
     rust: '1.64'
-  jobs:
-    pre_build:
-    - VIRTUAL_ENV=${READTHEDOCS_VIRTUALENV_PATH} make VENV=${READTHEDOCS_VIRTUALENV_PATH} build
+  # jobs:
+  #   pre_build:
+  #   - VIRTUAL_ENV=${READTHEDOCS_VIRTUALENV_PATH} make VENV=${READTHEDOCS_VIRTUALENV_PATH} build
 
 python:
   install:
   - requirements: requirements-docs.txt
 
 mkdocs:
-  configuration: docs/mkdocs.yml
+  configuration: mkdocs.yml
 
 formats:
 - htmlzip

@@ -25,18 +25,6 @@ def read_deltalake(
 ) -> DataFrame:
     """Create a DataFrame from a Delta Lake table.
 
-    Example:
-        >>> df = daft.read_deltalake("some-table-uri")
-        >>>
-        >>> # Filters on this dataframe can now be pushed into
-        >>> # the read operation from Delta Lake.
-        >>> df = df.where(df["foo"] > 5)
-        >>> df.show()
-
-    .. NOTE::
-        This function requires the use of `deltalake <https://delta-io.github.io/delta-rs/>`_, a Python library for
-        interacting with Delta Lake.
-
     Args:
         table: Either a URI for the Delta Lake table or a :class:`~daft.io.catalog.DataCatalogTable` instance
             referencing a table in a data catalog, such as AWS Glue Data Catalog or Databricks Unity Catalog.
@@ -50,6 +38,18 @@ def read_deltalake(
 
     Returns:
         DataFrame: A DataFrame with the schema converted from the specified Delta Lake table.
+
+    !!! note "This function requires the use of [deltalake](https://delta-io.github.io/delta-rs/), a Python library for interacting with Delta Lake."
+
+    Example:
+        ``` py linenums="1"
+        df = daft.read_deltalake("some-table-uri")
+
+        # Filters on this dataframe can now be pushed into
+        # the read operation from Delta Lake.
+        df = df.where(df["foo"] > 5)
+        df.show()
+        ```
     """
     from daft.delta_lake.delta_lake_scan import DeltaLakeScanOperator
 
