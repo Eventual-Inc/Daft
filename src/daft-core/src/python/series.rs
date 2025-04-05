@@ -740,6 +740,11 @@ impl PySeries {
             .into())
     }
 
+    #[pyo3(signature = (format=None))]
+    pub fn dt_strftime(&self, format: Option<&str>) -> PyResult<Self> {
+        Ok(self.series.dt_strftime(format)?.into())
+    }
+
     pub fn partitioning_days(&self) -> PyResult<Self> {
         Ok(self.series.partitioning_days()?.into())
     }

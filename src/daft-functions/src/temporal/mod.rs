@@ -135,6 +135,64 @@ pub fn dt_time(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Time {}, vec![input]).into()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct TemporalToString {
+    format: Option<String>,
+}
+
+#[typetag::serde]
+impl ScalarUDF for TemporalToString {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &'static str {
+        "to_string"
+    }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        match inputs {
+            [input] => match input.to_field(schema) {
+                Ok(field) => match field.dtype {
+                    DataType::Time(_) | DataType::Timestamp(_, _) | DataType::Date => {
+                        Ok(Field::new(field.name, DataType::Utf8))
+                    }
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected input to be one of [time, timestamp, date] got {}",
+                        field.dtype
+                    ))),
+                },
+                Err(e) => Err(e),
+            },
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+        match inputs {
+            [input] => input.dt_strftime(self.format.as_deref()),
+            _ => Err(DaftError::ValueError(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+}
+
+#[must_use]
+pub fn dt_strftime(input: ExprRef, format: Option<&str>) -> ExprRef {
+    ScalarFunction::new(
+        TemporalToString {
+            format: format.map(|s| s.to_string()),
+        },
+        vec![input],
+    )
+    .into()
+}
+
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
