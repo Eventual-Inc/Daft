@@ -28,7 +28,7 @@ impl Hasher for IdentityHasher {
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Clone)]
 pub struct IndexHash {
     pub idx: u64,
     pub hash: u64,
