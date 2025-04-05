@@ -254,7 +254,7 @@ class Series:
 
         # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
         # TODO: Push this down into self._series.to_arrow()?
-        if dtype._is_fixed_shape_tensor_type() and pyarrow_supports_fixed_shape_tensor():
+        if dtype.is_fixed_shape_tensor() and pyarrow_supports_fixed_shape_tensor():
             pyarrow_dtype = dtype.to_arrow_dtype()
             arrow_series = self._series.to_arrow()
             return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
@@ -263,7 +263,7 @@ class Series:
 
     def to_pylist(self) -> list:
         """Convert this Series to a Python list."""
-        if self.datatype()._is_python_type():
+        if self.datatype().is_python():
             return self._series.to_pylist()
         elif self.datatype()._should_cast_to_python():
             return self._series.cast(DataType.python()._dtype).to_pylist()
@@ -712,7 +712,7 @@ class Series:
         return SeriesPartitioningNamespace.from_series(self)
 
     def __reduce__(self) -> tuple:
-        if self.datatype()._is_python_type():
+        if self.datatype().is_python():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
         else:
             return (Series.from_arrow, (self.to_arrow(), self.name()))

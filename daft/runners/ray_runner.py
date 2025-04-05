@@ -149,7 +149,7 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
         # Convert arrays to Ray Data's native ArrowTensorType arrays
         new_arrs = {}
         for idx, field in enumerate(arrow_tbl.schema):
-            if daft_schema[field.name].dtype._is_fixed_shape_tensor_type():
+            if daft_schema[field.name].dtype.is_fixed_shape_tensor():
                 assert isinstance(field.type, pa.FixedShapeTensorType)
                 new_dtype = ArrowTensorType(field.type.shape, field.type.value_type)
                 arrow_arr = arrow_tbl[field.name].combine_chunks()
@@ -166,7 +166,7 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
                     field.name,
                     pa.ExtensionArray.from_storage(new_dtype, new_storage_arr),
                 )
-            elif daft_schema[field.name].dtype._is_tensor_type():
+            elif daft_schema[field.name].dtype.is_tensor():
                 assert isinstance(field.type, pa.ExtensionType)
                 new_arrs[idx] = (field.name, ArrowTensorArray.from_numpy(partition.get_column(field.name).to_pylist()))
         for idx, (field_name, arr) in new_arrs.items():
@@ -204,7 +204,7 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
     non_native_fields = []
     for arrow_field in arrow_table.schema:
         dt = _from_arrow_type_with_ray_data_extensions(arrow_field.type)
-        if dt == DataType.python() or dt._is_tensor_type() or dt._is_fixed_shape_tensor_type():
+        if dt == DataType.python() or dt.is_tensor() or dt.is_fixed_shape_tensor():
             non_native_fields.append(arrow_field.name)
     if non_native_fields:
         # If there are any contained Arrow types that are not natively supported, convert each
