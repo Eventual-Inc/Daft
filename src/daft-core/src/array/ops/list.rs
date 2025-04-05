@@ -1051,7 +1051,7 @@ macro_rules! impl_aggs_list_array {
                 let agg_refs: Vec<_> = aggs.iter().collect();
 
                 if agg_refs.is_empty() {
-                    Ok(Series::empty(self.name(), self.data_type()))
+                    Ok(Series::empty(self.name(), self.child_data_type()))
                 } else {
                     Series::concat(agg_refs.as_slice()).map(|s| s.rename(self.name()))
                 }
