@@ -253,6 +253,7 @@ Temporal
    Expression.dt.day_of_week
    Expression.dt.day_of_year
    Expression.dt.truncate
+   Expression.dt.to_unix_epoch
 
 List
 ####

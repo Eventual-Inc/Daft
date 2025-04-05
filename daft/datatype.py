@@ -47,17 +47,28 @@ class TimeUnit:
 
     @classmethod
     def from_str(cls, unit: str) -> TimeUnit:
-        unit = unit.lower()
-        if unit == "s":
-            return cls.s()
-        elif unit == "ms":
-            return cls.ms()
-        elif unit == "us":
-            return cls.us()
-        elif unit == "ns":
-            return cls.ns()
-        else:
-            raise ValueError("Unsupported unit: {unit}")
+        """Attempts to parse a string into a TimeUnit.
+
+        Supported strings are
+        - "s" | "seconds" -> seconds
+        - "ms" | "milliseconds" -> milliseconds
+        - "us" | "microseconds" -> microseconds
+        - "ns" | "nanoseconds" -> nanoseconds
+        Args:
+            unit: The string to parse.
+
+        Example:
+            >>> TimeUnit.from_str("s")
+            TimeUnit(s)
+            >>> TimeUnit.from_str("milliseconds")
+            TimeUnit(ms)
+            >>> try:
+            ...     TimeUnit.from_str("foo")
+            ... except ValueError:
+            ...     pass
+
+        """
+        return cls._from_pytimeunit(PyTimeUnit.from_str(unit))
 
     def __str__(self) -> str:
         # These are the strings PyArrow uses.
@@ -71,6 +82,9 @@ class TimeUnit:
             return "ns"
         else:
             assert False
+
+    def __repr__(self) -> str:
+        return f"TimeUnit({self!s})"
 
 
 class DataType:

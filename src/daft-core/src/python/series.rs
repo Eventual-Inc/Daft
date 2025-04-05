@@ -6,7 +6,7 @@ use std::{
 
 use common_arrow_ffi as ffi;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
-use daft_schema::python::PyDataType;
+use daft_schema::python::{PyDataType, PyTimeUnit};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -738,6 +738,10 @@ impl PySeries {
             .series
             .dt_truncate(interval, &relative_to.series)?
             .into())
+    }
+
+    pub fn dt_to_unix_epoch(&self, unit: PyTimeUnit) -> PyResult<Self> {
+        Ok(self.series.dt_to_unix_epoch(unit.timeunit)?.into())
     }
 
     pub fn partitioning_days(&self) -> PyResult<Self> {
