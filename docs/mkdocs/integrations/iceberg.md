@@ -22,13 +22,7 @@ A more detailed Iceberg roadmap for Daft can be found on [our Github Issues page
 
 ## Tutorial
 
-### Using Catalogs
-
-*PLACEHOLDER*
-
-### Using DataFrames
-
-#### Reading a Table
+### Reading a Table
 
 To read from the Apache Iceberg table format, use the [`daft.read_iceberg`](../{{ api_path }}/io_functions/daft.read_iceberg.html#daft.read_iceberg) function.
 
@@ -65,7 +59,7 @@ Any subsequent filter operations on the Daft `df` DataFrame object will be corre
     df.show()
     ```
 
-#### Writing to a Table
+### Writing to a Table
 
 To write to an Apache Iceberg table, use the [`daft.DataFrame.write_iceberg`](../{{ api_path }}/dataframe_methods/daft.DataFrame.write_iceberg.html) method.
 
@@ -119,33 +113,47 @@ References:
 
 ## Reference
 
+Daft has high-level [Session](../sessions.md) and [Catalog](../catalogs.md) APIs
+to read and write Iceberg tables; however it is the `daft.read_iceberg` and
+`df.write_iceberg` API which is ultimately the entry-point to Iceberg reads and
+writes respectively. This section gives a short reference on those APIs and how
+they relate to both DataFrames and Iceberg.
+
+Daft's DataFrames are an abstraction over relational algebra operators like
+filter, project, and join. DataFrames start with a *data source* and are built
+upwards, via composition with additional operators, to form a tree with sources
+as the leaves. We typically call these leaves *tables* or *sources* and their
+algebraic operator is called a *scan*.
+
 #### `read_iceberg`
 
-Daft has high-level `Session` and `Catalog` APIs to read Iceberg tables; however
-it is the `daft.read_iceberg` API which is ultimately the entry-point to Iceberg
-reads. This method accepts a `pyiceberg` table which becomes a *scan*. This scan
-is responsible for producing rows for operators further up the tree. In short,
-when we do `daft.read_iceberg` we create a DataFrame with a single `scan` which
-is implemented by the `IcebergScanOperator`.
-
-!!! note "DataFrames"
-
-    DataFrames are an abstraction over relational algebra operators like filter,
-    project, and join. DataFrames start with a *data source* and are built upwards,
-    via composition with additional operators, to form a tree with sources as the
-    leaves. We typically call these leaves *tables* and in an engine's
-    implementation (query plans) they're called *scans*.
+Daft's `read_iceberg` method creates a DataFrame from the the given PyIceberg
+table. It produces rows by traversing the table's metadata tree to locate all
+the data files for the given snapshot which is handled by our
+`IcebergScanOperator`.
 
 Daft's `IcebergScanOperator` initializes itself by fetching the latest schema,
 or the schema of the given snapshot, along with setting up the partition key
-metadata. The scan operator's primary method, `to_scan_tasks`, accepts
-projection, predicate, and partition filter pushdowns and returns an iterator of
-`ScanTasks`. Each `ScanTask` object holds the data file location while is then
-fetched into rows.
+metadata. The scan operator's primary method, `to_scan_tasks`, accepts pushdowns
+(projections, predicates, partition filters) and returns an iterator of
+`ScanTasks`. Each `ScanTask` object holds a data file, optional delete files,
+and the associated pushdowns. Finally, we read each data file's parquet to
+produce a stream of record batches which later operators consume and transform.
 
 #### `write_iceberg`
 
-*PLACEHOLDER*
+Daft's `write_iceberg` method writes the DataFrame's contents to the given PyIceberg table.
+It works by creating a special *sink* operator which consumes all inputs and writes
+data files to the table's location.
+
+Daft's sink operator will apply the Iceberg partition transform and distribute
+records to an appropriate data file writer. Each writer is responsible for
+actually writing the parquet to storage and keeping track of metadata like total
+bytes written. Once the sink has exhausted its input, it will close all open
+writers.
+
+Finally, we update the Iceberg table's metadata to include these new data files,
+and use a transaction to update the latest metadata pointer.
 
 #### Iceberg Architecture
 
@@ -267,67 +275,58 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 ## FAQs
 
-1. **How does Daft connect to Iceberg tables?**
+1. **How does Daft read Iceberg tables?**
 
-   *Currently supports direct file system access to Iceberg metadata files and leverages Pyarrow for reading Parquet/ORC.*
+    *Daft reads Iceberg tables by reading a snapshot's data files into its arrow-based record batches. For more detail, please see the [`read_iceberg`](#read_iceberg) reference.*
 
-2. **Which REST catalog implementations does Daft support?**
+2. **How does Daft write Iceberg tables?**
 
-   *Supports AWS Glue and working on REST catalog protocol implementation.*
+    *Daft writes Iceberg tables by writing the new, possibly partitioned, data files to storage then atomically committing an updated Iceberg metadata file. For more detail, please see [`write_iceberg`](#write_iceberg)*.
 
-3. **How does Daft handle Iceberg table schemas?**
+3. **How do Daft's data types compare to Iceberg's data types?**
 
-   *Maps Iceberg types to Daft's type system with special handling for nested structures.*
+    *The type systems are quite similar because they are both based around Apache Arrow's types. Please see our comprehensive type comparison table.*
 
-4. **Does Daft support manifest file pruning for faster queries?**
+4. **Does Daft support Iceberg REST catalog implementations?**
 
-   *Yes, uses manifest lists to identify relevant files before data loading.*
+    *Yes! Daft uses PyIceberg to interface with Iceberg catalogs which has extensive Iceberg REST catalog support.
 
-5. **How does Daft handle position deletes vs equality deletes?**
+5. **How does Daft handle positional deletes vs equality deletes?**
 
-   *Full support for position deletes, equality deletes handled through post-filtering.*
+    *Daft currently only supports positional deletes, but V2 equality deletes are on the roadmap.*
 
 6. **Can Daft leverage Iceberg's metadata for predicate pushdown?**
-   *Yes, uses min/max statistics from manifest files for partition pruning.*
+
+    *Yes, uses min/max statistics from manifest files for partition pruning.*
 
 7. **Does Daft support time travel queries?**
-   *Limited support via snapshot ID selection, timestamp-based time travel coming soon.*
+
+   *Daft supports reading by snapshot id, and snapshot slices are on the roadmap*.
 
 8. **Which complex data types does Daft support in Iceberg tables?**
-   *Full support for arrays and maps, limited support for structs with nested fields.*
+
+    *Daft supports arrays, structs, and maps.*
 
 9. **How does Daft handle schema evolution?**
-   *Supports add/rename/drop column operations, type promotion coming soon.*
+
+    *Daft currently does not expose any data definition operators beyond `create_table`.*
 
 10. **Does Daft support reading table metadata like snapshot information?**
-    *Yes, provides API for metadata exploration alongside data access.*
+
+    *Daft does not have native APIs for this, and we recommend using PyIceberg for reading metadata.*
 
 11. **How does Daft handle Iceberg's hidden partitioning?**
+
     *Transparently leverages partition information without user specification.*
 
-12. **Can Daft read partition transforms like truncate, bucket, or hour?**
-    *Supports identity, date transforms (year/month/day), and truncate. Bucket support is experimental.*
+12. **Can Daft read and write partition transforms like truncate, bucket, or hour?**
+
+    *Daft can read and write all Iceberg partition transform types: identity, bucket, date transforms (year/month/day), and truncate.
 
 13. **How does Daft optimize queries against partitioned data?**
-    *Uses partition pruning and Iceberg statistics for data skipping.*
 
-14. **Does Daft support writing to Iceberg tables?**
-    *Basic append support available, merge-on-read and overwrite operations in beta.*
+    *Daft will shuffle partitioned data when possible and based upon your execution environment.*
 
-15. **How does Daft handle transactions and atomicity?**
-    *Uses optimistic concurrency for atomic commits, with configurable retry policies.*
+14. **Which writes operations does Daft support?**
 
-16. **Can Daft perform schema evolution during writes?**
-    *Limited support for adding new columns during write operations.*
-
-17. **Is there a roadmap for adding full ACID transaction support?**
-    *Yes, focusing on snapshot isolation guarantees and concurrent writers.*
-
-18. **How is Daft planning to handle Iceberg's new features like Z-order clustering?**
-    *Evaluating Z-order support for read operations, clustering suggestions planned.*
-
-19. **Will Daft support Iceberg's column-level stats for better predicate pushdown?**
-    *Column statistics integration is in progress, expected Q3 2025.*
-
-20. **Are there plans to optimize Daft's memory usage when dealing with large Iceberg tables?**
-    *Working on chunked reading and lazy materialization of complex objects.*
+    *Daft supports basic overwrite and append, it does not support upserts like copy-on-write updates.*
