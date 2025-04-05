@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+import daft
 from daft.datatype import DataType
 from daft.expressions import col
 from daft.recordbatch import MicroPartition
@@ -57,12 +58,47 @@ def test_list_numeric_aggs_empty_table():
         ]
     )
     assert result.to_pydict() == {
-        "col_sum": [[]],
-        "col_mean": [[]],
-        "col_min": [[]],
-        "col_max": [[]],
-        "fixed_col_sum": [[]],
-        "fixed_col_mean": [[]],
-        "fixed_col_min": [[]],
-        "fixed_col_max": [[]],
+        "col_sum": [],
+        "col_mean": [],
+        "col_min": [],
+        "col_max": [],
+        "fixed_col_sum": [],
+        "fixed_col_mean": [],
+        "fixed_col_min": [],
+        "fixed_col_max": [],
     }
+
+
+def test_list_numeric_aggs_with_groupby():
+    df = daft.from_pydict({"group_col": [1, 1, 1, 1, 2, 2, 2, 2], "id_col": [3, 1, 2, 2, 5, 4, 2, 1]})
+
+    # Group by and test aggregates.
+    grouped_df = df.groupby("group_col").agg(daft.col("id_col").agg_list().alias("ids_col"))
+    result = grouped_df.select(
+        col("group_col"),
+        col("ids_col").list.sum().alias("ids_col_sum"),
+        col("ids_col").list.mean().alias("ids_col_mean"),
+        col("ids_col").list.min().alias("ids_col_min"),
+        col("ids_col").list.max().alias("ids_col_max"),
+    ).sort("group_col", desc=False)
+    result_dict = result.to_pydict()
+    expected = {
+        "group_col": [1, 2],
+        "ids_col_sum": [8, 12],
+        "ids_col_mean": [2.0, 3.0],
+        "ids_col_min": [1, 1],
+        "ids_col_max": [3, 5],
+    }
+    assert result_dict == expected
+
+    # Cast to fixed size list, group by, and test aggregates.
+    grouped_df = grouped_df.with_column("ids_col", col("ids_col").cast(DataType.fixed_size_list(DataType.int64(), 4)))
+    result = grouped_df.select(
+        col("group_col"),
+        col("ids_col").list.sum().alias("ids_col_sum"),
+        col("ids_col").list.mean().alias("ids_col_mean"),
+        col("ids_col").list.min().alias("ids_col_min"),
+        col("ids_col").list.max().alias("ids_col_max"),
+    ).sort("group_col", desc=False)
+    result_dict = result.to_pydict()
+    assert result_dict == expected
