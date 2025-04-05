@@ -2,6 +2,8 @@ use crate::{bitmap::Bitmap, buffer::Buffer, datatypes::DataType, error::Error};
 
 use super::Array;
 
+#[cfg(feature = "arrow")]
+mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;

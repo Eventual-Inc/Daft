@@ -10,7 +10,8 @@ use std::{collections::BTreeMap, sync::Arc};
 pub use field::Field;
 pub use physical_type::*;
 pub use schema::Schema;
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde_types")]
+use serde_derive::{Deserialize, Serialize};
 
 /// typedef for [BTreeMap<String, String>] denoting [`Field`]'s and [`Schema`]'s metadata.
 pub type Metadata = BTreeMap<String, String>;
@@ -30,8 +31,9 @@ pub type ArrowField = Field;
 /// Each variant has a corresponding [`PhysicalType`], obtained via [`DataType::to_physical_type`],
 /// which declares the in-memory representation of data.
 /// The [`DataType::Extension`] is special in that it augments a [`DataType`] with metadata to support custom types.
-/// Use `to_logical_type` to desugar such type and return its abstraction logical type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Use `to_logical_type` to desugar such type and return its corresponding logical type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
 pub enum DataType {
     /// Null type
     Null,
@@ -212,13 +214,160 @@ impl DataType {
     }
 }
 
+#[cfg(feature = "arrow")]
+impl From<DataType> for arrow_schema::DataType {
+    fn from(value: DataType) -> Self {
+        use arrow_schema::{Field as ArrowField, UnionFields};
+
+        match value {
+            DataType::Null => Self::Null,
+            DataType::Boolean => Self::Boolean,
+            DataType::Int8 => Self::Int8,
+            DataType::Int16 => Self::Int16,
+            DataType::Int32 => Self::Int32,
+            DataType::Int64 => Self::Int64,
+            DataType::UInt8 => Self::UInt8,
+            DataType::UInt16 => Self::UInt16,
+            DataType::UInt32 => Self::UInt32,
+            DataType::UInt64 => Self::UInt64,
+            DataType::Float16 => Self::Float16,
+            DataType::Float32 => Self::Float32,
+            DataType::Float64 => Self::Float64,
+            DataType::Timestamp(unit, tz) => Self::Timestamp(unit.into(), tz.map(Into::into)),
+            DataType::Date32 => Self::Date32,
+            DataType::Date64 => Self::Date64,
+            DataType::Time32(unit) => Self::Time32(unit.into()),
+            DataType::Time64(unit) => Self::Time64(unit.into()),
+            DataType::Duration(unit) => Self::Duration(unit.into()),
+            DataType::Interval(unit) => Self::Interval(unit.into()),
+            DataType::Binary => Self::Binary,
+            DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(size as _),
+            DataType::LargeBinary => Self::LargeBinary,
+            DataType::Utf8 => Self::Utf8,
+            DataType::LargeUtf8 => Self::LargeUtf8,
+            DataType::List(f) => Self::List(Arc::new((*f).into())),
+            DataType::FixedSizeList(f, size) => {
+                Self::FixedSizeList(Arc::new((*f).into()), size as _)
+            }
+            DataType::LargeList(f) => Self::LargeList(Arc::new((*f).into())),
+            DataType::Struct(f) => Self::Struct(f.into_iter().map(ArrowField::from).collect()),
+            DataType::Union(fields, Some(ids), mode) => {
+                let ids = ids.into_iter().map(|x| x as _);
+                let fields = fields.into_iter().map(ArrowField::from);
+                Self::Union(UnionFields::new(ids, fields), mode.into())
+            }
+            DataType::Union(fields, None, mode) => {
+                let ids = 0..fields.len() as i8;
+                let fields = fields.into_iter().map(ArrowField::from);
+                Self::Union(UnionFields::new(ids, fields), mode.into())
+            }
+            DataType::Map(f, ordered) => Self::Map(Arc::new((*f).into()), ordered),
+            DataType::Dictionary(key, value, _) => Self::Dictionary(
+                Box::new(DataType::from(key).into()),
+                Box::new((*value).into()),
+            ),
+            DataType::Decimal(precision, scale) => Self::Decimal128(precision as _, scale as _),
+            DataType::Decimal256(precision, scale) => Self::Decimal256(precision as _, scale as _),
+            DataType::Extension(_, d, _) => (*d).into(),
+        }
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<arrow_schema::DataType> for DataType {
+    fn from(value: arrow_schema::DataType) -> Self {
+        use arrow_schema::DataType;
+        match value {
+            DataType::Null => Self::Null,
+            DataType::Boolean => Self::Boolean,
+            DataType::Int8 => Self::Int8,
+            DataType::Int16 => Self::Int16,
+            DataType::Int32 => Self::Int32,
+            DataType::Int64 => Self::Int64,
+            DataType::UInt8 => Self::UInt8,
+            DataType::UInt16 => Self::UInt16,
+            DataType::UInt32 => Self::UInt32,
+            DataType::UInt64 => Self::UInt64,
+            DataType::Float16 => Self::Float16,
+            DataType::Float32 => Self::Float32,
+            DataType::Float64 => Self::Float64,
+            DataType::Timestamp(unit, tz) => {
+                Self::Timestamp(unit.into(), tz.map(|x| x.to_string()))
+            }
+            DataType::Date32 => Self::Date32,
+            DataType::Date64 => Self::Date64,
+            DataType::Time32(unit) => Self::Time32(unit.into()),
+            DataType::Time64(unit) => Self::Time64(unit.into()),
+            DataType::Duration(unit) => Self::Duration(unit.into()),
+            DataType::Interval(unit) => Self::Interval(unit.into()),
+            DataType::Binary => Self::Binary,
+            DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(size as _),
+            DataType::LargeBinary => Self::LargeBinary,
+            DataType::Utf8 => Self::Utf8,
+            DataType::LargeUtf8 => Self::LargeUtf8,
+            DataType::List(f) => Self::List(Box::new(f.into())),
+            DataType::FixedSizeList(f, size) => Self::FixedSizeList(Box::new(f.into()), size as _),
+            DataType::LargeList(f) => Self::LargeList(Box::new(f.into())),
+            DataType::Struct(f) => Self::Struct(f.into_iter().map(Into::into).collect()),
+            DataType::Union(fields, mode) => {
+                let ids = fields.iter().map(|(x, _)| x as _).collect();
+                let fields = fields.iter().map(|(_, f)| f.into()).collect();
+                Self::Union(fields, Some(ids), mode.into())
+            }
+            DataType::Map(f, ordered) => Self::Map(Box::new(f.into()), ordered),
+            DataType::Dictionary(key, value) => {
+                let key = match *key {
+                    DataType::Int8 => IntegerType::Int8,
+                    DataType::Int16 => IntegerType::Int16,
+                    DataType::Int32 => IntegerType::Int32,
+                    DataType::Int64 => IntegerType::Int64,
+                    DataType::UInt8 => IntegerType::UInt8,
+                    DataType::UInt16 => IntegerType::UInt16,
+                    DataType::UInt32 => IntegerType::UInt32,
+                    DataType::UInt64 => IntegerType::UInt64,
+                    d => panic!("illegal dictionary key type: {d}"),
+                };
+                Self::Dictionary(key, Box::new((*value).into()), false)
+            }
+            DataType::Decimal128(precision, scale) => Self::Decimal(precision as _, scale as _),
+            DataType::Decimal256(precision, scale) => Self::Decimal256(precision as _, scale as _),
+            DataType::RunEndEncoded(_, _) => panic!("Run-end encoding not supported by arrow2"),
+            DataType::BinaryView => panic!("BinaryView not supported by arrow2"),
+            DataType::Utf8View => panic!("Utf8View not supported by arrow2"),
+            DataType::ListView(_) => panic!("ListView not supported by arrow2"),
+            DataType::LargeListView(_) => panic!("LargeListView not supported by arrow2"),
+        }
+    }
+}
+
 /// Mode of [`DataType::Union`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
 pub enum UnionMode {
     /// Dense union
     Dense,
     /// Sparse union
     Sparse,
+}
+
+#[cfg(feature = "arrow")]
+impl From<UnionMode> for arrow_schema::UnionMode {
+    fn from(value: UnionMode) -> Self {
+        match value {
+            UnionMode::Dense => Self::Dense,
+            UnionMode::Sparse => Self::Sparse,
+        }
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<arrow_schema::UnionMode> for UnionMode {
+    fn from(value: arrow_schema::UnionMode) -> Self {
+        match value {
+            arrow_schema::UnionMode::Dense => Self::Dense,
+            arrow_schema::UnionMode::Sparse => Self::Sparse,
+        }
+    }
 }
 
 impl UnionMode {
@@ -244,7 +393,8 @@ impl UnionMode {
 }
 
 /// The time units defined in Arrow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
 pub enum TimeUnit {
     /// Time in seconds.
     Second,
@@ -256,8 +406,33 @@ pub enum TimeUnit {
     Nanosecond,
 }
 
+#[cfg(feature = "arrow")]
+impl From<TimeUnit> for arrow_schema::TimeUnit {
+    fn from(value: TimeUnit) -> Self {
+        match value {
+            TimeUnit::Nanosecond => Self::Nanosecond,
+            TimeUnit::Millisecond => Self::Millisecond,
+            TimeUnit::Microsecond => Self::Microsecond,
+            TimeUnit::Second => Self::Second,
+        }
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<arrow_schema::TimeUnit> for TimeUnit {
+    fn from(value: arrow_schema::TimeUnit) -> Self {
+        match value {
+            arrow_schema::TimeUnit::Nanosecond => Self::Nanosecond,
+            arrow_schema::TimeUnit::Millisecond => Self::Millisecond,
+            arrow_schema::TimeUnit::Microsecond => Self::Microsecond,
+            arrow_schema::TimeUnit::Second => Self::Second,
+        }
+    }
+}
+
 /// Interval units defined in Arrow
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
 pub enum IntervalUnit {
     /// The number of elapsed whole months.
     YearMonth,
@@ -266,6 +441,28 @@ pub enum IntervalUnit {
     DayTime,
     /// The number of elapsed months (i32), days (i32) and nanoseconds (i64).
     MonthDayNano,
+}
+
+#[cfg(feature = "arrow")]
+impl From<IntervalUnit> for arrow_schema::IntervalUnit {
+    fn from(value: IntervalUnit) -> Self {
+        match value {
+            IntervalUnit::YearMonth => Self::YearMonth,
+            IntervalUnit::DayTime => Self::DayTime,
+            IntervalUnit::MonthDayNano => Self::MonthDayNano,
+        }
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<arrow_schema::IntervalUnit> for IntervalUnit {
+    fn from(value: arrow_schema::IntervalUnit) -> Self {
+        match value {
+            arrow_schema::IntervalUnit::YearMonth => Self::YearMonth,
+            arrow_schema::IntervalUnit::DayTime => Self::DayTime,
+            arrow_schema::IntervalUnit::MonthDayNano => Self::MonthDayNano,
+        }
+    }
 }
 
 impl DataType {

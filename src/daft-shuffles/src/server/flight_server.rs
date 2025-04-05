@@ -84,7 +84,7 @@ impl FlightService for ShuffleFlightServer {
         let partition_idx = partition_idx_str
             .parse::<usize>()
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        let file_paths = self.shuffle_cache.file_paths(partition_idx);
+        let file_paths = self.shuffle_cache.file_paths_for_partition(partition_idx);
 
         let file_path_stream = futures::stream::iter(file_paths);
         let flight_data_stream = file_path_stream

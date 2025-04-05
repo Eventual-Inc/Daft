@@ -17,6 +17,8 @@ use super::{
     Array, GenericBinaryArray,
 };
 
+#[cfg(feature = "arrow")]
+mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from;
