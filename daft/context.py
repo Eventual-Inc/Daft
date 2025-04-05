@@ -69,6 +69,8 @@ def set_runner_ray(
 ) -> DaftContext:
     """Configure Daft to execute dataframes using the Ray distributed computing framework.
 
+    !!! note "Can also be configured via environment variable: DAFT_RUNNER=ray"
+
     Args:
         address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
         noop_if_initialized: If True, skip initialization if Ray is already running.
@@ -78,8 +80,6 @@ def set_runner_ray(
     Returns:
         DaftContext: Updated Daft execution context configured for Ray.
 
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=ray
     """
     py_ctx = _set_runner_ray(
         address=address,
@@ -94,19 +94,16 @@ def set_runner_ray(
 def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     """Configure Daft to execute dataframes in the local Python interpreter.
 
+    !!! warning "DEPRECATED: This execution mode is deprecated. Use [set_runner_native()][daft.context.set_runner_native] instead for
+    improved local performance with native multi-threading."
+
     Args:
-        use_thread_pool: If True, uses a thread pool for parallel execution.
-            If False, runs single-threaded. If None, uses system default.
+    use_thread_pool: If True, uses a thread pool for parallel execution.
+    If False, runs single-threaded. If None, uses system default.
 
     Returns:
         DaftContext: Updated Daft execution context configured for local Python.
 
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=py
-
-    Deprecated:
-        This execution mode is deprecated. Use set_runner_native() instead for
-        improved local performance with native multi-threading.
     """
     py_ctx = _set_runner_py(
         use_thread_pool=use_thread_pool,
@@ -120,11 +117,11 @@ def set_runner_native() -> DaftContext:
 
     This is the default execution mode for Daft.
 
+    !!! note "Can also be configured via environment variable: DAFT_RUNNER=native"
+
     Returns:
         DaftContext: Updated Daft execution context configured for native execution.
 
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=native
     """
     py_ctx = _set_runner_native()
 
@@ -210,8 +207,7 @@ def set_execution_config(
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
-    These configuration values
-    are used when a Dataframe is executed (e.g. calls to :meth:`DataFrame.write_*`, :meth:`DataFrame.collect()` or :meth:`DataFrame.show()`).
+    These configuration values are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](daft.DataFrame.collect) or [DataFrame.show()][daft.DataFrame.show]).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates

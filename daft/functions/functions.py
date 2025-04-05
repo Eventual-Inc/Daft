@@ -10,14 +10,20 @@ def monotonically_increasing_id() -> Expression:
     The implementation puts the partition number in the upper 28 bits, and the row number in each partition
     in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
 
+    Returns:
+        Expression: An expression that generates monotonically increasing IDs
+
     Example:
-        >>> import daft
-        >>> from daft.functions import monotonically_increasing_id
-        >>> daft.context.set_runner_ray()  # doctest: +SKIP
-        >>>
-        >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
-        >>> df = df.with_column("id", monotonically_increasing_id())
-        >>> df.show()  # doctest: +SKIP
+        ``` py linenums="1"
+        import daft
+        from daft.functions import monotonically_increasing_id
+
+        daft.context.set_runner_ray()  # doctest: +SKIP
+        df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
+        df = df.with_column("id", monotonically_increasing_id())
+        df.show()  # doctest: +SKIP
+        ```
+        ```
         ╭───────┬─────────────╮
         │ a     ┆ id          │
         │ ---   ┆ ---         │
@@ -31,11 +37,9 @@ def monotonically_increasing_id() -> Expression:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 4     ┆ 68719476737 │
         ╰───────┴─────────────╯
-        <BLANKLINE>
-        (Showing first 4 of 4 rows)
 
-    Returns:
-        Expression: An expression that generates monotonically increasing IDs
+        (Showing first 4 of 4 rows)
+        ```
     """
     return Expression._from_pyexpr(native.monotonically_increasing_id())
 
@@ -47,11 +51,15 @@ def columns_sum(*exprs: Expression | str) -> Expression:
         exprs: The columns to sum.
 
     Example:
-        >>> import daft
-        >>> from daft.functions import columns_sum
-        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> df = df.with_column("sum", columns_sum("a", "b"))
-        >>> df.show()
+        ``` py linenums="1"
+        import daft
+        from daft.functions import columns_sum
+
+        df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+        df = df.with_column("sum", columns_sum("a", "b"))
+        df.show()
+        ```
+        ```
         ╭───────┬───────┬───────╮
         │ a     ┆ b     ┆ sum   │
         │ ---   ┆ ---   ┆ ---   │
@@ -63,8 +71,9 @@ def columns_sum(*exprs: Expression | str) -> Expression:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 3     ┆ 6     ┆ 9     │
         ╰───────┴───────┴───────╯
-        <BLANKLINE>
+
         (Showing first 3 of 3 rows)
+        ```
     """
     if not exprs:
         raise ValueError("columns_sum requires at least one expression")
@@ -78,11 +87,15 @@ def columns_mean(*exprs: Expression | str) -> Expression:
         exprs: The columns to average.
 
     Example:
-        >>> import daft
-        >>> from daft.functions import columns_mean
-        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> df = df.with_column("mean", columns_mean("a", "b"))
-        >>> df.show()
+        ``` py linenums="1"
+        import daft
+        from daft.functions import columns_mean
+
+        df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+        df = df.with_column("mean", columns_mean("a", "b"))
+        df.show()
+        ```
+        ```
         ╭───────┬───────┬─────────╮
         │ a     ┆ b     ┆ mean    │
         │ ---   ┆ ---   ┆ ---     │
@@ -94,8 +107,9 @@ def columns_mean(*exprs: Expression | str) -> Expression:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ 3     ┆ 6     ┆ 4.5     │
         ╰───────┴───────┴─────────╯
-        <BLANKLINE>
+
         (Showing first 3 of 3 rows)
+        ```
     """
     if not exprs:
         raise ValueError("columns_mean requires at least one expression")
@@ -109,11 +123,15 @@ def columns_avg(*exprs: Expression | str) -> Expression:
         exprs: The columns to average across.
 
     Example:
-        >>> import daft
-        >>> from daft.functions import columns_avg
-        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> df = df.with_column("avg", columns_avg("a", "b"))
-        >>> df.show()
+        ``` py linenums="1"
+        import daft
+        from daft.functions import columns_avg
+
+        df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+        df = df.with_column("avg", columns_avg("a", "b"))
+        df.show()
+        ```
+        ```
         ╭───────┬───────┬─────────╮
         │ a     ┆ b     ┆ avg     │
         │ ---   ┆ ---   ┆ ---     │
@@ -125,8 +143,9 @@ def columns_avg(*exprs: Expression | str) -> Expression:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ 3     ┆ 6     ┆ 4.5     │
         ╰───────┴───────┴─────────╯
-        <BLANKLINE>
+
         (Showing first 3 of 3 rows)
+        ```
     """
     if not exprs:
         raise ValueError("columns_avg requires at least one expression")
@@ -140,11 +159,15 @@ def columns_min(*exprs: Expression | str) -> Expression:
         exprs: The columns to find the minimum of.
 
     Example:
-        >>> import daft
-        >>> from daft.functions import columns_min
-        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> df = df.with_column("min", columns_min("a", "b"))
-        >>> df.show()
+        ``` py linenums="1"
+        import daft
+        from daft.functions import columns_min
+
+        df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+        df = df.with_column("min", columns_min("a", "b"))
+        df.show()
+        ```
+        ```
         ╭───────┬───────┬───────╮
         │ a     ┆ b     ┆ min   │
         │ ---   ┆ ---   ┆ ---   │
@@ -156,8 +179,9 @@ def columns_min(*exprs: Expression | str) -> Expression:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 3     ┆ 6     ┆ 3     │
         ╰───────┴───────┴───────╯
-        <BLANKLINE>
+
         (Showing first 3 of 3 rows)
+        ```
     """
     if not exprs:
         raise ValueError("columns_min requires at least one expression")
@@ -171,11 +195,15 @@ def columns_max(*exprs: Expression | str) -> Expression:
         exprs: The columns to find the maximum of.
 
     Example:
-        >>> import daft
-        >>> from daft.functions import columns_max
-        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> df = df.with_column("max", columns_max("a", "b"))
-        >>> df.show()
+        ``` py linenums="1"
+        import daft
+        from daft.functions import columns_max
+
+        df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+        df = df.with_column("max", columns_max("a", "b"))
+        df.show()
+        ```
+        ```
         ╭───────┬───────┬───────╮
         │ a     ┆ b     ┆ max   │
         │ ---   ┆ ---   ┆ ---   │
@@ -187,8 +215,9 @@ def columns_max(*exprs: Expression | str) -> Expression:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 3     ┆ 6     ┆ 6     │
         ╰───────┴───────┴───────╯
-        <BLANKLINE>
+
         (Showing first 3 of 3 rows)
+        ```
     """
     if not exprs:
         raise ValueError("columns_max requires at least one expression")
