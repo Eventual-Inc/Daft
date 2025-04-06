@@ -301,7 +301,7 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 7. **Does Daft support time travel queries?**
 
-   *Daft supports reading by snapshot id, and snapshot slices are on the roadmap*.
+    *Daft supports reading by snapshot id, and snapshot slices are on the roadmap*.
 
 8. **Which complex data types does Daft support in Iceberg tables?**
 
