@@ -84,7 +84,7 @@ class TimeUnit:
             assert False
 
     def __repr__(self) -> str:
-        return f"TimeUnit({self!s})"
+        return f"TimeUnit.{self.__str__()}"
 
 
 class DataType:
@@ -528,60 +528,587 @@ class DataType:
         """Create a Python DataType: a type which refers to an arbitrary Python object."""
         return cls._from_pydatatype(PyDataType.python())
 
-    def _is_python_type(self) -> builtins.bool:
-        # NOTE: This is currently used in a few places still. We can get rid of it once these are refactored away. To be discussed.
-        # 1. Visualizations - we can get rid of it if we do all our repr and repr_html logic in a Series instead of in Python
-        # 2. Hypothesis test data generation - we can get rid of it if we allow for creation of Series from a Python list and DataType
+    def is_null(self) -> builtins.bool:
+        """Check if this is a null type.
 
-        return self == DataType.python()
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.null()
+            >>> dtype.is_null()
+            True
+        """
+        return self._dtype.is_null()
 
-    def _is_tensor_type(self) -> builtins.bool:
-        return self._dtype.is_tensor()
+    def is_boolean(self) -> builtins.bool:
+        """Check if this is a boolean type.
 
-    def _is_fixed_shape_tensor_type(self) -> builtins.bool:
-        return self._dtype.is_fixed_shape_tensor()
-
-    def _is_sparse_tensor_type(self) -> builtins.bool:
-        return self._dtype.is_sparse_tensor()
-
-    def _is_fixed_shape_sparse_tensor_type(self) -> builtins.bool:
-        return self._dtype.is_fixed_shape_sparse_tensor()
-
-    def _is_image_type(self) -> builtins.bool:
-        return self._dtype.is_image()
-
-    def _is_fixed_shape_image_type(self) -> builtins.bool:
-        return self._dtype.is_fixed_shape_image()
-
-    def _is_numeric_type(self) -> builtins.bool:
-        return self._dtype.is_numeric()
-
-    def _is_integer(self) -> builtins.bool:
-        return self._dtype.is_integer()
-
-    def _is_list(self) -> builtins.bool:
-        return self._dtype.is_list()
-
-    def _is_boolean(self) -> builtins.bool:
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.bool()
+            >>> assert dtype.is_boolean()
+        """
         return self._dtype.is_boolean()
 
-    def _is_string(self) -> builtins.bool:
+    def is_int8(self) -> builtins.bool:
+        """Check if this is an 8-bit integer type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.int8()
+            >>> assert dtype.is_int8()
+        """
+        return self._dtype.is_int8()
+
+    def is_int16(self) -> builtins.bool:
+        """Check if this is a 16-bit integer type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.int16()
+            >>> assert dtype.is_int16()
+        """
+        return self._dtype.is_int16()
+
+    def is_int32(self) -> builtins.bool:
+        """Check if this is a 32-bit integer type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.int32()
+            >>> assert dtype.is_int32()
+        """
+        return self._dtype.is_int32()
+
+    def is_int64(self) -> builtins.bool:
+        """Check if this is a 64-bit integer type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.int64()
+            >>> assert dtype.is_int64()
+        """
+        return self._dtype.is_int64()
+
+    def is_uint8(self) -> builtins.bool:
+        """Check if this is an unsigned 8-bit integer type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.uint8()
+            >>> assert dtype.is_uint8()
+        """
+        return self._dtype.is_uint8()
+
+    def is_uint16(self) -> builtins.bool:
+        """Check if this is an unsigned 16-bit integer type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.uint16()
+            >>> assert dtype.is_uint16()
+        """
+        return self._dtype.is_uint16()
+
+    def is_uint32(self) -> builtins.bool:
+        """Check if this is an unsigned 32-bit integer type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.uint32()
+            >>> assert dtype.is_uint32()
+        """
+        return self._dtype.is_uint32()
+
+    def is_uint64(self) -> builtins.bool:
+        """Check if this is an unsigned 64-bit integer type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.uint64()
+            >>> assert dtype.is_uint64()
+        """
+        return self._dtype.is_uint64()
+
+    def is_float32(self) -> builtins.bool:
+        """Check if this is a 32-bit float type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.float32()
+            >>> assert dtype.is_float32()
+        """
+        return self._dtype.is_float32()
+
+    def is_float64(self) -> builtins.bool:
+        """Check if this is a 64-bit float type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.float64()
+            >>> assert dtype.is_float64()
+        """
+        return self._dtype.is_float64()
+
+    def is_decimal128(self) -> builtins.bool:
+        """Check if this is a decimal128 type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.decimal128(precision=10, scale=2)
+            >>> assert dtype.is_decimal128()
+        """
+        return self._dtype.is_decimal128()
+
+    def is_timestamp(self) -> builtins.bool:
+        """Check if this is a timestamp type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.timestamp(timeunit="ns")
+            >>> assert dtype.is_timestamp()
+        """
+        return self._dtype.is_timestamp()
+
+    def is_date(self) -> builtins.bool:
+        """Check if this is a date type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.date()
+            >>> assert dtype.is_date()
+        """
+        return self._dtype.is_date()
+
+    def is_time(self) -> builtins.bool:
+        """Check if this is a time type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.time(timeunit="ns")
+            >>> assert dtype.is_time()
+        """
+        return self._dtype.is_time()
+
+    def is_duration(self) -> builtins.bool:
+        """Check if this is a duration type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.duration(timeunit="ns")
+            >>> assert dtype.is_duration()
+        """
+        return self._dtype.is_duration()
+
+    def is_interval(self) -> builtins.bool:
+        """Check if this is an interval type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.interval()
+            >>> assert dtype.is_interval()
+        """
+        return self._dtype.is_interval()
+
+    def is_binary(self) -> builtins.bool:
+        """Check if this is a binary type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.binary()
+            >>> assert dtype.is_binary()
+        """
+        return self._dtype.is_binary()
+
+    def is_fixed_size_binary(self) -> builtins.bool:
+        """Check if this is a fixed size binary type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.fixed_size_binary(size=10)
+            >>> assert dtype.is_fixed_size_binary()
+        """
+        return self._dtype.is_fixed_size_binary()
+
+    def is_string(self) -> builtins.bool:
+        """Check if this is a string type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.string()
+            >>> assert dtype.is_string()
+        """
         return self._dtype.is_string()
 
-    def _is_map(self) -> builtins.bool:
+    def is_list(self) -> builtins.bool:
+        """Check if this is a list type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.list(daft.DataType.int64())
+            >>> assert dtype.is_list()
+        """
+        return self._dtype.is_list()
+
+    def is_fixed_size_list(self) -> builtins.bool:
+        """Check if this is a fixed size list type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.fixed_size_list(daft.DataType.int64(), size=10)
+            >>> assert dtype.is_fixed_size_list()
+        """
+        return self._dtype.is_fixed_size_list()
+
+    def is_struct(self) -> builtins.bool:
+        """Check if this is a struct type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.struct({"a": daft.DataType.int64()})
+            >>> assert dtype.is_struct()
+        """
+        return self._dtype.is_struct()
+
+    def is_map(self) -> builtins.bool:
+        """Check if this is a map type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.map(daft.DataType.string(), daft.DataType.int64())
+            >>> assert dtype.is_map()
+        """
         return self._dtype.is_map()
 
-    def _is_logical_type(self) -> builtins.bool:
+    def is_extension(self) -> builtins.bool:
+        """Check if this is an extension type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.extension("custom", daft.DataType.int64())
+            >>> assert dtype.is_extension()
+        """
+        return self._dtype.is_extension()
+
+    def is_image(self) -> builtins.bool:
+        """Check if this is an image type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.image()
+            >>> assert dtype.is_image()
+        """
+        return self._dtype.is_image()
+
+    def is_fixed_shape_image(self) -> builtins.bool:
+        """Check if this is a fixed shape image type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.image(mode="RGB", height=224, width=224)
+            >>> assert dtype.is_fixed_shape_image()
+        """
+        return self._dtype.is_fixed_shape_image()
+
+    def is_embedding(self) -> builtins.bool:
+        """Check if this is an embedding type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.embedding(daft.DataType.float32(), 512)
+            >>> assert dtype.is_embedding()
+        """
+        return self._dtype.is_embedding()
+
+    def is_tensor(self) -> builtins.bool:
+        """Check if this is a tensor type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.tensor(daft.DataType.float32())
+            >>> assert dtype.is_tensor()
+        """
+        return self._dtype.is_tensor()
+
+    def is_fixed_shape_tensor(self) -> builtins.bool:
+        """Check if this is a fixed shape tensor type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.tensor(daft.DataType.float32(), shape=(2, 3))
+            >>> assert dtype.is_fixed_shape_tensor()
+        """
+        return self._dtype.is_fixed_shape_tensor()
+
+    def is_sparse_tensor(self) -> builtins.bool:
+        """Check if this is a sparse tensor type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.sparse_tensor(daft.DataType.float32())
+            >>> assert dtype.is_sparse_tensor()
+        """
+        return self._dtype.is_sparse_tensor()
+
+    def is_fixed_shape_sparse_tensor(self) -> builtins.bool:
+        """Check if this is a fixed shape sparse tensor type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.sparse_tensor(daft.DataType.float32(), shape=(2, 3))
+            >>> assert dtype.is_fixed_shape_sparse_tensor()
+        """
+        return self._dtype.is_fixed_shape_sparse_tensor()
+
+    def is_python(self) -> builtins.bool:
+        """Check if this is a python object type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.python()
+            >>> assert dtype.is_python()
+        """
+        return self._dtype.is_python()
+
+    def is_numeric(self) -> builtins.bool:
+        """Check if this is a numeric type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.float64()
+            >>> assert dtype.is_numeric()
+        """
+        return self._dtype.is_numeric()
+
+    def is_integer(self) -> builtins.bool:
+        """Check if this is an integer type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.int64()
+            >>> assert dtype.is_integer()
+        """
+        return self._dtype.is_integer()
+
+    def is_logical(self) -> builtins.bool:
+        """Check if this is a logical type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.bool()
+            >>> assert not dtype.is_logical()
+        """
         return self._dtype.is_logical()
 
-    def _is_temporal_type(self) -> builtins.bool:
+    def is_temporal(self) -> builtins.bool:
+        """Check if this is a temporal type.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.timestamp(timeunit="ns")
+            >>> assert dtype.is_temporal()
+        """
         return self._dtype.is_temporal()
+
+    @property
+    def size(self) -> int:
+        """If this is a fixed size type, return the size, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.fixed_size_binary(size=10)
+            >>> assert dtype.size == 10
+            >>> dtype = daft.DataType.binary()
+            >>> try:
+            ...     dtype.size
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.fixed_size()
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """If this is a fixed shape type, return the shape, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.tensor(daft.DataType.float32(), shape=(2, 3))
+            >>> assert dtype.shape == (2, 3)
+            >>> dtype = daft.DataType.tensor(daft.DataType.float32())
+            >>> try:
+            ...     dtype.shape
+            ... except AttributeError:
+            ...     pass
+
+        """
+        return tuple(self._dtype.fixed_shape())
+
+    @property
+    def timeunit(self) -> TimeUnit:
+        """If this is a time or timestamp type, return the timeunit, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.time(timeunit="ns")
+            >>> dtype.timeunit
+            TimeUnit.ns
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.timeunit
+            ... except AttributeError:
+            ...     pass
+        """
+        return TimeUnit._from_pytimeunit(self._dtype.time_unit())
+
+    @property
+    def timezone(self) -> str:
+        """If this is a timestamp type, return the timezone, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.timestamp(timeunit="ns", timezone="UTC")
+            >>> assert dtype.timezone == "UTC"
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.time_zone
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.time_zone()
+
+    @property
+    def dtype(self) -> DataType:
+        """If the datatype contains an inner type, return the inner type, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.list(daft.DataType.int64())
+            >>> assert dtype.dtype == daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.dtype
+            ... except AttributeError:
+            ...     pass
+        """
+        return DataType._from_pydatatype(self._dtype.dtype())
+
+    @property
+    def fields(self) -> dict[str, DataType]:
+        """If this is a struct type, return the fields, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.struct({"a": daft.DataType.int64()})
+            >>> fields = dtype.fields
+            >>> assert fields["a"] == daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.fields
+            ... except AttributeError:
+            ...     pass
+        """
+        return {field.name(): DataType._from_pydatatype(field.dtype()) for field in self._dtype.fields()}
+
+    @property
+    def precision(self) -> int:
+        """If this is a decimal type, return the precision, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.decimal128(precision=10, scale=2)
+            >>> assert dtype.precision == 10
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.precision
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.precision()
+
+    @property
+    def scale(self) -> int:
+        """If this is a decimal type, return the scale, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.decimal128(precision=10, scale=2)
+            >>> assert dtype.scale == 2
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.precision
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.scale()
+
+    @property
+    def image_mode(self) -> ImageMode | None:
+        """If this is an image type, return the (optional) image mode, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.image(mode="RGB")
+            >>> assert dtype.image_mode == daft.ImageMode.RGB
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.image_mode
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.image_mode()
+
+    @property
+    def use_offset_indices(self) -> bool:
+        """If this is a sparse tensor type, return whether the indices are stored as offsets, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.sparse_tensor(daft.DataType.float32(), use_offset_indices=True)
+            >>> assert dtype.use_offset_indices
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.use_offset_indices
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.use_offset_indices()
+
+    @property
+    def key_type(self) -> DataType:
+        """If this is a map type, return the key type, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.map(daft.DataType.string(), daft.DataType.int64())
+            >>> assert dtype.key_type == daft.DataType.string()
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.key_type
+            ... except AttributeError:
+            ...     pass
+        """
+        return DataType._from_pydatatype(self._dtype.key_type())
+
+    @property
+    def value_type(self) -> DataType:
+        """If this is a map type, return the value type, otherwise an attribute error is raised.
+
+        Example:
+            >>> import daft
+            >>> dtype = daft.DataType.map(daft.DataType.string(), daft.DataType.int64())
+            >>> assert dtype.value_type == daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.value_type
+            ... except AttributeError:
+            ...     pass
+        """
+        return DataType._from_pydatatype(self._dtype.value_type())
 
     def _should_cast_to_python(self) -> builtins.bool:
         # NOTE: This is used to determine if we should cast a column to a Python object type when converting to PyList.
         # Map is a logical type, but we don't want to cast it to Python because the underlying physical type is a List,
         # which we can handle without casting to Python.
-        return self._is_logical_type() and not self._is_map()
+        return self.is_logical() and not self.is_map()
 
     def __repr__(self) -> str:
         return self._dtype.__repr__()
