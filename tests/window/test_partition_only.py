@@ -11,26 +11,6 @@ from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 # from daft.expressions import count, max, mean, min, sum
 
 
-def assert_equal_ignoring_order(result_dict, expected_dict):
-    """Helper function to verify dictionaries are equal, ignoring row order.
-
-    Converts both dictionaries to pandas DataFrames, sorts them by the keys,
-    and then compares equality.
-    """
-    result_df = pd.DataFrame(result_dict)
-    expected_df = pd.DataFrame(expected_dict)
-
-    result_df = result_df.sort_values(by=list(result_dict.keys())).reset_index(drop=True)
-    expected_df = expected_df.sort_values(by=list(expected_dict.keys())).reset_index(drop=True)
-
-    sorted_result = {k: result_df[k].tolist() for k in result_dict.keys()}
-    sorted_expected = {k: expected_df[k].tolist() for k in expected_dict.keys()}
-
-    assert (
-        sorted_result == sorted_expected
-    ), f"Result data doesn't match expected after sorting.\nGot: {sorted_result}\nExpected: {sorted_expected}"
-
-
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_single_partition_sum(make_df):
     """Stage: PARTITION BY-Only Window Aggregations.

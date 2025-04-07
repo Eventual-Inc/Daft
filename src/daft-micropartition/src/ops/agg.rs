@@ -32,4 +32,31 @@ impl MicroPartition {
             _ => unreachable!(),
         }
     }
+
+    pub fn window_agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
+        let io_stats = IOStatsContext::new("MicroPartition::window_agg");
+
+        let tables = self.concat_or_get(io_stats)?;
+
+        match tables.as_slice() {
+            [] => {
+                let empty_table = RecordBatch::empty(Some(self.schema.clone()))?;
+                let agged = empty_table.window_agg(to_agg, group_by)?;
+                Ok(Self::new_loaded(
+                    agged.schema.clone(),
+                    vec![agged].into(),
+                    None,
+                ))
+            }
+            [t] => {
+                let agged = t.window_agg(to_agg, group_by)?;
+                Ok(Self::new_loaded(
+                    agged.schema.clone(),
+                    vec![agged].into(),
+                    None,
+                ))
+            }
+            _ => unreachable!(),
+        }
+    }
 }

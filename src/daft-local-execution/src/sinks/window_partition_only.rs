@@ -5,6 +5,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::{resolved_col, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::extract_agg_expr;
+use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use tracing::{instrument, Span};
 
@@ -16,7 +17,7 @@ use crate::{ExecutionTaskSpawner, NUM_CPUS};
 
 #[derive(Default)]
 struct SinglePartitionWindowState {
-    partitions: Vec<Arc<MicroPartition>>,
+    partitions: Vec<Arc<RecordBatch>>,
 }
 
 enum WindowPartitionOnlyState {
@@ -40,7 +41,9 @@ impl WindowPartitionOnlyState {
             let partitioned = input.partition_by_hash(partition_by, inner_states.len())?;
             for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
                 let state = state.get_or_insert_with(SinglePartitionWindowState::default);
-                state.partitions.push(Arc::new(p));
+                for table in p.get_tables()?.iter() {
+                    state.partitions.push(Arc::new(table.clone()));
+                }
             }
         } else {
             panic!("WindowPartitionOnlySink should be in Accumulating state");
@@ -168,7 +171,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                             )
                         });
 
-                        let all_partitions: Vec<Arc<MicroPartition>> = per_partition_state
+                        let all_partitions: Vec<Arc<RecordBatch>> = per_partition_state
                             .flatten()
                             .flat_map(|state| state.partitions)
                             .collect();
@@ -179,23 +182,16 @@ impl BlockingSink for WindowPartitionOnlySink {
 
                         let params = params.clone();
                         per_partition_tasks.spawn(async move {
-                            let input_data = Arc::new(MicroPartition::concat(&all_partitions)?);
+                            let input_data = RecordBatch::concat(&all_partitions)?;
 
-                            let result = input_data.agg(&params.agg_exprs, &params.partition_by)?;
-
-                            let result = input_data.hash_join(
-                                &result,
-                                &params.partition_by[..],
-                                &params.partition_by[..],
-                                None,
-                                daft_core::join::JoinType::Inner,
-                            )?;
-
+                            let result =
+                                input_data.window_agg(&params.agg_exprs, &params.partition_by)?;
+                            let result = input_data.union(&result)?;
                             let mut all_projections = Vec::new();
                             let mut added_columns = std::collections::HashSet::new();
 
                             for field_name in params.original_schema.fields.keys() {
-                                if result.schema().fields.contains_key(field_name)
+                                if result.schema.fields.contains_key(field_name)
                                     && !added_columns.contains(field_name)
                                 {
                                     all_projections.push(resolved_col(field_name.clone()));
@@ -205,7 +201,7 @@ impl BlockingSink for WindowPartitionOnlySink {
 
                             let final_result = result.eval_expression_list(&all_projections)?;
 
-                            Ok(Arc::new(final_result))
+                            Ok(final_result)
                         });
                     }
 
@@ -221,7 +217,12 @@ impl BlockingSink for WindowPartitionOnlySink {
                         return Ok(Some(Arc::new(empty_result)));
                     }
 
-                    let final_result = MicroPartition::concat(&results)?;
+                    // let final_result = MicroPartition::concat(&results)?;
+                    let final_result = MicroPartition::new_loaded(
+                        params.original_schema.clone(),
+                        results.into(),
+                        None,
+                    );
                     Ok(Some(Arc::new(final_result)))
                 },
                 Span::current(),
