@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from daft import Window, col
-from tests.conftest import get_tests_daft_runner_name
+from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 # from daft.expressions import count, max, mean, min, sum
 
@@ -43,7 +43,7 @@ def test_single_partition_sum(make_df):
     result = df.select(
         col("category"),
         col("value"),
-        # sum("value").over(window).alias("sum"),
+        # sum("value").over(window).alias("sum"), # TODO: Support .over() on non-aggregation expressions
         col("value").sum().over(window).alias("sum"),
     ).collect()
 
@@ -53,7 +53,7 @@ def test_single_partition_sum(make_df):
         "sum": [22, 22, 22, 29, 29, 29, 21, 21],
     }
 
-    assert_equal_ignoring_order(result.to_pydict(), expected)
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()))
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
@@ -74,7 +74,7 @@ def test_single_partition_min(make_df):
         "min": [5, 5, 5, 7, 7, 7, 6, 6],
     }
 
-    assert_equal_ignoring_order(result.to_pydict(), expected)
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()))
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
@@ -95,7 +95,7 @@ def test_single_partition_max(make_df):
         "max": [9, 9, 9, 12, 12, 12, 15, 15],
     }
 
-    assert_equal_ignoring_order(result.to_pydict(), expected)
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()))
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
@@ -125,7 +125,7 @@ def test_single_partition_mean(make_df):
         ],
     }
 
-    assert_equal_ignoring_order(result.to_pydict(), expected)
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()))
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
@@ -146,7 +146,7 @@ def test_single_partition_count(make_df):
         "count": [3, 3, 3, 3, 3, 3, 2, 2],
     }
 
-    assert_equal_ignoring_order(result.to_pydict(), expected)
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
@@ -175,7 +175,7 @@ def test_multiple_partition_columns(make_df):
         "sum": [13, 13, 9, 17, 12, 17, 21, 21],
     }
 
-    assert_equal_ignoring_order(result.to_pydict(), expected)
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()))
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
@@ -278,7 +278,7 @@ def test_multiple_window_functions(make_df):
         "count": [3, 3, 3, 3, 3, 3, 2, 2],
     }
 
-    assert_equal_ignoring_order(result.to_pydict(), expected)
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
@@ -332,7 +332,7 @@ def test_window_mean_minus_value(make_df):
         ],
     }
 
-    assert_equal_ignoring_order(result.to_pydict(), expected)
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()))
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
@@ -362,7 +362,7 @@ def test_window_value_over_sum(make_df):
         ],
     }
 
-    assert_equal_ignoring_order(result.to_pydict(), expected)
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()))
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
