@@ -68,6 +68,15 @@ impl PyTimeUnit {
         self.timeunit.hash(&mut hasher);
         hasher.finish()
     }
+
+    #[staticmethod]
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(timeunit: &str) -> PyResult<Self> {
+        Ok(timeunit
+            .parse::<TimeUnit>()
+            .map_err(|_| PyValueError::new_err(format!("Invalid time unit: {timeunit}")))?
+            .into())
+    }
 }
 
 #[pyclass(module = "daft.daft")]

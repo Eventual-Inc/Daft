@@ -28,10 +28,11 @@ static COMPUTE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 
 pub type RuntimeRef = Arc<Runtime>;
 
-#[derive(Debug, Clone, Copy)]
-enum PoolType {
+#[derive(Debug, Clone)]
+pub enum PoolType {
     Compute,
     IO,
+    Custom(String),
 }
 
 // A spawned task on a Runtime that can be awaited
@@ -72,7 +73,7 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    pub(crate) fn new(runtime: tokio::runtime::Runtime, pool_type: PoolType) -> RuntimeRef {
+    pub fn new(runtime: tokio::runtime::Runtime, pool_type: PoolType) -> RuntimeRef {
         Arc::new(Self {
             runtime: Arc::new(runtime),
             pool_type,
@@ -113,7 +114,7 @@ impl Runtime {
         F::Output: Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
-        let pool_type = self.pool_type;
+        let pool_type = self.pool_type.clone();
         let _join_handle = self.spawn(async move {
             let task_output = Self::execute_task(future, pool_type).await;
             if tx.send(task_output).is_err() {
