@@ -47,7 +47,7 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING, Any, Literal, final
+from typing import TYPE_CHECKING, Literal
 
 from daft.logical.schema import Schema
 
