@@ -2442,6 +2442,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         relative_to = Expression._to_expression(relative_to)
         return Expression._from_pyexpr(native.dt_truncate(self._expr, interval, relative_to._expr))
 
+<<<<<<< HEAD
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
 
@@ -2488,6 +2489,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """Converts a datetime/date column to a string column. (alias for strftime)."""
         return self.strftime(format=format)
 
+=======
+>>>>>>> 36dcf4c6 (remove "to_string" method)
     def strftime(self, format: str | None = None) -> Expression:
         """Converts a datetime/date column to a string column.
 
