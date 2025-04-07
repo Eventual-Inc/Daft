@@ -40,9 +40,9 @@ class Window:
     """
 
     # Class-level constants for frame boundaries
-    unbounded_preceding = _WindowBoundary.UnboundedPreceding()
-    unbounded_following = _WindowBoundary.UnboundedFollowing()
-    current_row = _WindowBoundary.Offset(0)
+    unbounded_preceding = _WindowBoundary.unbounded_preceding()
+    unbounded_following = _WindowBoundary.unbounded_following()
+    current_row = _WindowBoundary.offset(0)
 
     def __init__(self):
         self._spec = _WindowSpec.new()

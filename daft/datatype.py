@@ -960,7 +960,7 @@ class DataType:
         return TimeUnit._from_pytimeunit(self._dtype.time_unit())
 
     @property
-    def timezone(self) -> str:
+    def timezone(self) -> str | None:
         """If this is a timestamp type, return the timezone, otherwise an attribute error is raised.
 
         Example:
@@ -1057,7 +1057,7 @@ class DataType:
         return self._dtype.image_mode()
 
     @property
-    def use_offset_indices(self) -> bool:
+    def use_offset_indices(self) -> builtins.bool:
         """If this is a sparse tensor type, return whether the indices are stored as offsets, otherwise an attribute error is raised.
 
         Example:
