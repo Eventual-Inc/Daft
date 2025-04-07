@@ -254,9 +254,12 @@ Temporal
    Expression.dt.day_of_year
    Expression.dt.truncate
 <<<<<<< HEAD
+<<<<<<< HEAD
    Expression.dt.to_unix_epoch
 =======
    Expression.dt.to_string
+=======
+>>>>>>> 2eaa60d9 (fix docgen)
    Expression.dt.strftime
 >>>>>>> f2ac3840 (update expr.rst)
 
