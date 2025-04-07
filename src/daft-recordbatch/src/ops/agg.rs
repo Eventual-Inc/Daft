@@ -25,7 +25,18 @@ impl RecordBatch {
         self.eval_expression_list(to_agg)
     }
 
-    pub fn agg_groupby(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
+    /// Common implementation for both regular aggregation and window aggregation
+    ///
+    /// Args:
+    ///     to_agg: Expressions to aggregate
+    ///     group_by: Expressions to group by
+    ///     broadcast_to_original_rows: If true, broadcast aggregated values back to original rows (window function behavior)
+    fn agg_groupby_internal(
+        &self,
+        to_agg: &[ExprRef],
+        group_by: &[ExprRef],
+        broadcast_to_original_rows: bool,
+    ) -> DaftResult<Self> {
         let agg_exprs = to_agg
             .iter()
             .map(|e| match e.as_ref() {
@@ -48,6 +59,13 @@ impl RecordBatch {
         // and the grouped values (also by indices, one array of indices per group).
         let (groupkey_indices, groupvals_indices) = groupby_table.make_groups()?;
 
+        // Convert groupvals_indices to row_to_group_mapping if we're doing window aggregation
+        let row_to_group_mapping = if broadcast_to_original_rows {
+            Self::create_row_to_group_mapping(&groupvals_indices, self.len())?
+        } else {
+            vec![] // Empty vec for regular aggregation as it's not needed
+        };
+
         // Table with the aggregated (deduplicated) group keys.
         let groupkeys_table = {
             let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
@@ -66,34 +84,49 @@ impl RecordBatch {
             .map(|e| self.eval_agg_expression(e, group_idx_input))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        // Combine the groupkey columns and the aggregation result columns.
-        Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+        if broadcast_to_original_rows {
+            // For window functions: broadcast the aggregated values back to original rows
+            let window_cols = grouped_cols
+                .into_iter()
+                .map(|agg_col| {
+                    // Create a Series of indices to use with take()
+                    let take_indices = UInt64Array::from((
+                        "",
+                        row_to_group_mapping
+                            .iter()
+                            .map(|&idx| idx as u64)
+                            .collect::<Vec<_>>(),
+                    ))
+                    .into_series();
+                    agg_col.take(&take_indices)
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            // Create a new RecordBatch with just the window columns (no group keys)
+            Self::from_nonempty_columns(window_cols)
+        } else {
+            // For regular aggregation: combine the groupkey columns and the aggregation result columns
+            Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+        }
+    }
+
+    pub fn agg_groupby(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
+        self.agg_groupby_internal(to_agg, group_by, false)
     }
 
     pub fn window_agg_groupby(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
-        let agg_exprs = to_agg
-            .iter()
-            .map(|e| match e.as_ref() {
-                Expr::Agg(e) => Ok(e),
-                _ => Err(DaftError::ValueError(format!(
-                    "Trying to run non-Agg expression in Grouped Agg! {e}"
-                ))),
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+        self.agg_groupby_internal(to_agg, group_by, true)
+    }
 
-        #[cfg(feature = "python")]
-        if let [AggExpr::MapGroups { func, inputs }] = &agg_exprs[..] {
-            return self.map_groups(func, inputs, group_by);
-        }
-
-        // Table with just the groupby columns.
-        let groupby_table = self.eval_expression_list(group_by)?;
-
-        // Get the unique group keys (by indices)
-        // and the grouped values (also by indices, one array of indices per group).
-        let (_, groupvals_indices) = groupby_table.make_groups()?;
-
-        let mut row_to_group_mapping = vec![0; self.len()];
+    /// Creates a mapping from row index to group index
+    ///
+    /// For example, if groupvals_indices is [[0, 2, 4], [1, 3, 5]],
+    /// this returns [0, 1, 0, 1, 0, 1]
+    fn create_row_to_group_mapping(
+        groupvals_indices: &[Vec<u64>],
+        total_len: usize,
+    ) -> DaftResult<Vec<usize>> {
+        let mut row_to_group_mapping = vec![0; total_len];
 
         for (group_idx, indices) in groupvals_indices.iter().enumerate() {
             for &row_idx in indices {
@@ -101,42 +134,7 @@ impl RecordBatch {
             }
         }
 
-        // Take fast path short circuit if there is only 1 group
-        let group_idx_input = if groupvals_indices.len() == 1 {
-            None
-        } else {
-            Some(&groupvals_indices)
-        };
-
-        let grouped_cols = agg_exprs
-            .iter()
-            .map(|e| self.eval_agg_expression(e, group_idx_input))
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        // Instead of returning grouped keys + aggregated columns, broadcast
-        // the aggregated values back to the original row indices
-        let window_cols = grouped_cols
-            .into_iter()
-            .map(|agg_col| {
-                // Create a Series of indices to use with take()
-                let take_indices = UInt64Array::from((
-                    "",
-                    row_to_group_mapping
-                        .iter()
-                        .map(|&idx| idx as u64)
-                        .collect::<Vec<_>>(),
-                ))
-                .into_series();
-                agg_col.take(&take_indices)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        for col in window_cols.clone() {
-            println!("{}", col);
-        }
-
-        // Create a new RecordBatch with just the window columns (no group keys)
-        Self::from_nonempty_columns(window_cols)
+        Ok(row_to_group_mapping)
     }
 
     #[cfg(feature = "python")]
