@@ -217,7 +217,6 @@ impl BlockingSink for WindowPartitionOnlySink {
                         return Ok(Some(Arc::new(empty_result)));
                     }
 
-                    // let final_result = MicroPartition::concat(&results)?;
                     let final_result = MicroPartition::new_loaded(
                         params.original_schema.clone(),
                         results.into(),
