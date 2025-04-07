@@ -560,9 +560,9 @@ impl PyDataType {
         })
     }
 
-    pub fn inner_type(&self) -> PyResult<Self> {
+    pub fn dtype(&self) -> PyResult<Self> {
         self.dtype
-            .inner_type()
+            .dtype()
             .map(|dtype| dtype.clone().into())
             .ok_or_else(|| {
                 PyAttributeError::new_err(format!(

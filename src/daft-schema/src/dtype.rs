@@ -807,7 +807,7 @@ impl DataType {
 
     /// if the datatype contains an inner datatype, return it.
     /// For example, `List` and `FixedSizeList` have an inner datatype.
-    pub fn inner_type(&self) -> Option<&Self> {
+    pub fn dtype(&self) -> Option<&Self> {
         match self {
             Self::List(dtype) | Self::FixedSizeList(dtype, _) => Some(dtype),
             Self::Embedding(dtype, _) => Some(dtype),

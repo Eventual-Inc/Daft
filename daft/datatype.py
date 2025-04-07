@@ -524,8 +524,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.null()
             >>> dtype.is_null()
-        True
-
+            True
         """
         return self._dtype.is_null()
 
@@ -972,14 +971,14 @@ class DataType:
         Example:
             >>> import daft
             >>> dtype = daft.DataType.list(daft.DataType.int64())
-            >>> assert dtype.inner_type == daft.DataType.int64()
+            >>> assert dtype.dtype == daft.DataType.int64()
             >>> dtype = daft.DataType.int64()
             >>> try:
-            ...     dtype.inner_type
+            ...     dtype.dtype
             ... except AttributeError:
             ...     pass
         """
-        return DataType._from_pydatatype(self._dtype.inner_type())
+        return DataType._from_pydatatype(self._dtype.dtype())
 
     @property
     def fields(self) -> dict[str, DataType]:
