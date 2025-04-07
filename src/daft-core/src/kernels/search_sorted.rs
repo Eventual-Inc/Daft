@@ -460,6 +460,45 @@ pub fn build_compare_with_nulls(
     }
 }
 
+pub fn build_nulls_first_compare_with_nulls(
+    left: &dyn Array,
+    right: &dyn Array,
+    reversed: bool,
+    nulls_first: bool,
+) -> Result<DynComparator> {
+    let comparator = build_compare_with_nan(left, right)?;
+    let left_is_valid = build_is_valid(left);
+    let right_is_valid = build_is_valid(right);
+
+    // Determine null ordering based on nulls_first and reversed parameters
+    let (null_vs_valid, valid_vs_null) = match (nulls_first, reversed) {
+        (true, false) => (Ordering::Greater, Ordering::Less), // nulls first, not reversed
+        (false, false) => (Ordering::Less, Ordering::Greater), // nulls last, not reversed
+        (true, true) => (Ordering::Less, Ordering::Greater),  // nulls first, reversed
+        (false, true) => (Ordering::Greater, Ordering::Less), // nulls last, reversed
+    };
+
+    if reversed {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => comparator(i, j).reverse(),
+                (false, true) => null_vs_valid,
+                (false, false) => Ordering::Equal,
+                (true, false) => valid_vs_null,
+            }
+        }))
+    } else {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => comparator(i, j),
+                (false, true) => null_vs_valid,
+                (false, false) => Ordering::Equal,
+                (true, false) => valid_vs_null,
+            }
+        }))
+    }
+}
+
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynPartialComparator = Box<dyn Fn(usize, usize) -> Option<Ordering> + Send + Sync>;
 
