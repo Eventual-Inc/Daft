@@ -226,6 +226,7 @@ class WriteMode(Enum):
     OverwritePartitions: int
     Append: int
 
+    @staticmethod
     def from_str(mode: str) -> WriteMode: ...
 
 class ParquetSourceConfig:
@@ -942,7 +943,7 @@ class PyDataType:
     def tensor(dtype: PyDataType, shape: tuple[int, ...] | None = None) -> PyDataType: ...
     @staticmethod
     def sparse_tensor(
-        dtype: PyDataType, shape: tuple[int, ...] | None = None, use_offset_indices: bool = False
+        dtype: PyDataType, shape: tuple[int, ...] | None = None, use_offset_indices: builtins.bool = False
     ) -> PyDataType: ...
     @staticmethod
     def python() -> PyDataType: ...

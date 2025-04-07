@@ -164,7 +164,7 @@ class IcebergTable(Table):
         return self._inner.name()[-1]
 
     @staticmethod
-    def _from_obj(obj: object) -> IcebergTable | None:
+    def _from_obj(obj: object) -> IcebergTable:
         """Returns an IcebergTable if the given object can be adapted so."""
         if isinstance(obj, InnerTable):
             t = IcebergTable.__new__(IcebergTable)

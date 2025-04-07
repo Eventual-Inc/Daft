@@ -379,7 +379,7 @@ class DataType:
         cls,
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
-        use_offset_indices: bool = False,
+        use_offset_indices: builtins.bool = False,
     ) -> DataType:
         """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided ``shape``.
 

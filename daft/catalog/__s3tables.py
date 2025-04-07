@@ -15,6 +15,7 @@ from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.daft import IOConfig
+    from daft.dependencies import pa
 
 
 class S3Path(Sequence):
@@ -357,7 +358,7 @@ def _to_metadata(schema: Schema) -> dict:
     }
 
 
-def _to_field(field: object) -> dict:
+def _to_field(field: pa.Field) -> dict:
     return {
         "name": field.name,
         "type": str(field.field_type),

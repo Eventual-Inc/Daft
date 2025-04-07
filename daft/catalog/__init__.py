@@ -344,8 +344,7 @@ class Catalog(ABC):
     def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource) -> Table:
         """Creates a table in this catalog if it does not already exist."""
         try:
-            if table := self.get_table(identifier):
-                return table
+            return self.get_table(identifier)
         except NotFoundError:
             return self.create_table(identifier, source)
 
@@ -430,7 +429,7 @@ class Catalog(ABC):
     def write_table(
         self,
         identifier: Identifier | str,
-        df: DataFrame | object,
+        df: DataFrame,
         mode: Literal["append", "overwrite"] = "append",
         **options,
     ):
@@ -670,12 +669,12 @@ class Table(ABC):
             raise ValueError(f"Unsupported table source {type(source)}")
 
     @staticmethod
-    def _validate_options(method: str, input: dict[str, any], valid: set[str]):
+    def _validate_options(method: str, input: dict[str, Any], valid: set[str]):
         """Validates input options against a set of valid options.
 
         Args:
             method (str): The method name to include in the error message
-            input (dict[str, any]): The input options dictionary
+            input (dict[str, Any]): The input options dictionary
             valid (set[str]): Set of valid option keys
 
         Raises:

@@ -120,18 +120,16 @@ def file_write(
             yield step
         while any(not _.done() for _ in write_tasks):
             yield None
-        partition_metadatas = []
-        inputs = []
         for task in consume_deque(write_tasks):
-            inputs.append(task.partition())
-            partition_metadatas.append(task.partition_metadata())
-        yield PartitionTaskBuilder(inputs=inputs, partial_metadatas=partition_metadatas).add_instruction(
-            execution_step.OverwriteFiles(
-                overwrite_partitions=write_mode == WriteMode.OverwritePartitions,
-                root_dir=root_dir,
-                io_config=io_config,
+            yield PartitionTaskBuilder[PartitionT](
+                inputs=[task.partition()], partial_metadatas=[task.partition_metadata()]
+            ).add_instruction(
+                execution_step.OverwriteFiles(
+                    overwrite_partitions=write_mode == WriteMode.OverwritePartitions,
+                    root_dir=root_dir,
+                    io_config=io_config,
+                )
             )
-        )
     else:
         yield from (
             step.add_instruction(
