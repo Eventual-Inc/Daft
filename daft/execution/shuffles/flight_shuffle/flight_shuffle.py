@@ -233,7 +233,8 @@ class ShuffleActor:
 
     def initialize_client_manager(self, addresses: list[str], num_parallel_fetches: int = 2):
         assert self.client_manager is None, "Client manager already initialized"
-        self.client_manager = FlightClientManager(addresses, num_parallel_fetches)
+        schema = self.shuffle_cache.schema()
+        self.client_manager = FlightClientManager(addresses, num_parallel_fetches, schema)
 
     async def fetch_partition(self, partition_idx: int):
         assert self.client_manager is not None, "Client manager not initialized"

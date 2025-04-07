@@ -2,54 +2,41 @@ pub mod flight_client;
 
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
+use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, TryStreamExt};
 use tokio::sync::{Mutex, Semaphore};
 
 use crate::client::flight_client::ShuffleFlightClient;
-
-enum ClientState {
-    Uninitialized(Vec<String>),
-    Initialized(Vec<ShuffleFlightClient>),
-}
-
-impl ClientState {
-    async fn get_or_create_clients(&mut self) -> &mut Vec<ShuffleFlightClient> {
-        if let Self::Uninitialized(addresses) = self {
-            let addresses = std::mem::take(addresses);
-            let clients =
-                futures::future::join_all(addresses.into_iter().map(ShuffleFlightClient::new))
-                    .await;
-            *self = Self::Initialized(clients);
-        }
-        match self {
-            Self::Initialized(clients) => clients,
-            Self::Uninitialized(_) => unreachable!(),
-        }
-    }
-}
 pub struct FlightClientManager {
-    client_state: Mutex<ClientState>,
+    clients: Mutex<Vec<ShuffleFlightClient>>,
     semaphore: Semaphore,
+    schema: SchemaRef,
 }
 
 impl FlightClientManager {
-    pub fn new(addresses: Vec<String>, num_parallel_fetches: usize) -> Self {
-        let client_state = ClientState::Uninitialized(addresses);
+    pub fn new(addresses: Vec<String>, num_parallel_fetches: usize, schema: SchemaRef) -> Self {
+        let clients = addresses
+            .into_iter()
+            .map(|address| ShuffleFlightClient::new(address, schema.clone()))
+            .collect();
         Self {
-            client_state: Mutex::new(client_state),
+            clients: Mutex::new(clients),
             semaphore: Semaphore::new(num_parallel_fetches),
+            schema,
         }
     }
 
     pub async fn fetch_partition(&self, partition: usize) -> DaftResult<Arc<MicroPartition>> {
         let io_runtime = get_io_runtime(true);
-        let permit = self.semaphore.acquire().await.unwrap();
+        let permit =
+            self.semaphore.acquire().await.map_err(|e| {
+                DaftError::InternalError(format!("Failed to acquire semaphore: {}", e))
+            })?;
         let remote_streams = {
-            let mut client_state = self.client_state.lock().await;
-            let clients = client_state.get_or_create_clients().await;
+            let mut clients = self.clients.lock().await;
             futures::future::try_join_all(
                 clients
                     .iter_mut()
@@ -58,17 +45,14 @@ impl FlightClientManager {
             .await?
         };
 
+        let schema = self.schema.clone();
         let res = io_runtime
             .spawn(async move {
                 let record_batches = futures::stream::iter(remote_streams.into_iter())
                     .flatten_unordered(None)
                     .try_collect::<Vec<_>>()
                     .await?;
-                let mp = MicroPartition::new_loaded(
-                    record_batches[0].schema.clone(),
-                    record_batches.into(),
-                    None,
-                );
+                let mp = MicroPartition::new_loaded(schema, record_batches.into(), None);
                 DaftResult::Ok(Arc::new(mp))
             })
             .await??;

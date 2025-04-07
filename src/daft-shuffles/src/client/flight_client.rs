@@ -1,28 +1,49 @@
 use std::{
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use arrow_flight::{client::FlightClient, decode::FlightRecordBatchStream, Ticket};
 use common_error::{DaftError, DaftResult};
-use daft_core::{prelude::Schema, series::Series};
+use daft_core::{prelude::SchemaRef, series::Series};
 use daft_recordbatch::RecordBatch;
-use daft_schema::field::Field;
+use daft_schema::field::FieldRef;
 use futures::{FutureExt, Stream, StreamExt};
 use tonic::transport::Channel;
 
+enum ClientState {
+    Uninitialized(String),
+    Initialized(String, FlightClient),
+}
+
 pub struct ShuffleFlightClient {
-    inner: FlightClient,
-    address: String,
+    inner: ClientState,
+    schema: SchemaRef,
 }
 
 impl ShuffleFlightClient {
-    pub async fn new(address: String) -> Self {
-        let endpoint = Channel::from_shared(address.clone()).unwrap();
-        let channel = endpoint.connect().await.unwrap();
+    pub fn new(address: String, schema: SchemaRef) -> Self {
         Self {
-            inner: FlightClient::new(channel),
-            address,
+            inner: ClientState::Uninitialized(address),
+            schema,
+        }
+    }
+
+    async fn connect(&mut self) -> DaftResult<(&str, &mut FlightClient)> {
+        if let ClientState::Uninitialized(address) = &mut self.inner {
+            let endpoint = Channel::from_shared(address.clone()).map_err(|e| {
+                DaftError::External(format!("Failed to create channel: {}", e).into())
+            })?;
+            let channel = endpoint.connect().await.map_err(|e| {
+                DaftError::External(format!("Failed to connect to channel: {}", e).into())
+            })?;
+            self.inner =
+                ClientState::Initialized(std::mem::take(address), FlightClient::new(channel));
+        }
+        match &mut self.inner {
+            ClientState::Uninitialized(_) => panic!("Client not initialized"),
+            ClientState::Initialized(address, client) => Ok((address, client)),
         }
     }
 
@@ -31,11 +52,12 @@ impl ShuffleFlightClient {
         partition_idx: usize,
     ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
         let ticket = Ticket::new(format!("{}", partition_idx));
-        let stream = self.inner.do_get(ticket).await.map_err(|e| {
+        let (address, client) = self.connect().await?;
+        let stream = client.do_get(ticket).await.map_err(|e| {
             DaftError::External(
                 format!(
                     "Error fetching partition: {} from {}. {}",
-                    partition_idx, self.address, e
+                    partition_idx, address, e
                 )
                 .into(),
             )
@@ -43,6 +65,13 @@ impl ShuffleFlightClient {
         Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
             stream,
             done: false,
+            schema: self.schema.clone(),
+            fields: self
+                .schema
+                .fields
+                .values()
+                .map(|f| Arc::new(f.clone()))
+                .collect(),
         })
     }
 }
@@ -50,6 +79,8 @@ impl ShuffleFlightClient {
 pub struct FlightRecordBatchStreamToDaftRecordBatchStream {
     stream: FlightRecordBatchStream,
     done: bool,
+    schema: SchemaRef,
+    fields: Vec<FieldRef>,
 }
 
 impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
@@ -65,44 +96,25 @@ impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
         let batch = this.stream.next().poll_unpin(cx);
         match batch {
             Poll::Ready(Some(Ok(batch))) => {
-                let columns = batch
-                    .schema()
-                    .fields()
+                let columns = this
+                    .fields
                     .iter()
-                    .map(|field| {
-                        let col_name = field.name();
-                        let arrow_array = batch
-                            .column_by_name(col_name)
-                            .expect("Column should exist in RecordBatch");
-                        let arrow2_array = arrow_array.as_ref().into();
-                        Series::try_from((col_name.as_str(), arrow2_array))
+                    .zip(batch.columns())
+                    .map(|(field, array)| {
+                        let arrow2_array = array.as_ref().into();
+                        Series::try_from_field_and_arrow_array(field.clone(), arrow2_array)
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
-                let rb = RecordBatch::from_nonempty_columns(columns);
-                Poll::Ready(Some(rb))
+                let rb =
+                    RecordBatch::new_with_size(this.schema.clone(), columns, batch.num_rows())?;
+                Poll::Ready(Some(Ok(rb)))
             }
             Poll::Ready(Some(Err(e))) => {
                 Poll::Ready(Some(Err(DaftError::External(e.to_string().into()))))
             }
             Poll::Ready(None) => {
-                // Mark as done and return an empty record batch
                 this.done = true;
-
-                // Create an empty record batch with the same schema
-                let fields = this
-                    .stream
-                    .schema()
-                    .expect("Schema should exist once stream is done")
-                    .fields()
-                    .iter()
-                    .map(|field| {
-                        let arrow2_field = field.into();
-                        let daft_field = Field::from(&arrow2_field);
-                        Ok(daft_field)
-                    })
-                    .collect::<DaftResult<Vec<_>>>()?;
-                let empty_batch = RecordBatch::empty(Some(Schema::new(fields)?.into()));
-                Poll::Ready(Some(empty_batch))
+                Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
         }

@@ -82,6 +82,8 @@ impl InProgressShuffleCache {
         partition_by: Option<Vec<ExprRef>>,
     ) -> DaftResult<Self> {
         // Create the directories
+        // TODO: Add checks here, as well as periodic checks to ensure that the dirs are not too full. If so, we switch to directories with more space.
+        // And raise an error if we can't find any directories with space.
         let shuffle_dirs = get_shuffle_dirs(dirs, &node_id, shuffle_stage_id);
         for dir in &shuffle_dirs {
             // Check that the dir is a file

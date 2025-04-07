@@ -147,12 +147,20 @@ pub struct PyFlightClientManager {
 #[pymethods]
 impl PyFlightClientManager {
     #[new]
-    pub fn new(addresses: Vec<String>, num_parallel_fetches: usize) -> PyResult<Self> {
+    pub fn new(
+        addresses: Vec<String>,
+        num_parallel_fetches: usize,
+        schema: &PySchema,
+    ) -> PyResult<Self> {
         let _ = pyo3_async_runtimes::tokio::init_with_runtime(
             &get_or_init_shuffle_cache_runtime().runtime,
         );
         Ok(Self {
-            manager: Arc::new(FlightClientManager::new(addresses, num_parallel_fetches)),
+            manager: Arc::new(FlightClientManager::new(
+                addresses,
+                num_parallel_fetches,
+                schema.schema.clone(),
+            )),
         })
     }
 
