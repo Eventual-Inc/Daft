@@ -444,6 +444,24 @@ def test_series_timestamp_truncate_operation_invalid_relative_to() -> None:
         input_series.dt.truncate("1 second", Series.from_pylist([1]))
 
 
+@pytest.mark.parametrize(
+    "timeunit,expected",
+    [
+        ("s", 1641092645),
+        ("ms", 1641092645000),
+    ],
+)
+def test_series_to_unix_epoch(timeunit, expected):
+    from datetime import datetime
+
+    input = datetime(2022, 1, 2, 3, 4, 5, 6)
+    input_series = Series.from_pylist([input])
+
+    expected_series = Series.from_pylist([int(expected)])
+    actual_series = input_series.dt.to_unix_epoch(timeunit)
+    assert expected_series.to_pylist() == actual_series.to_pylist()
+
+
 def test_series_day_of_year():
     from datetime import datetime
 
