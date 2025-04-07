@@ -758,114 +758,138 @@ impl DataType {
 
     /// If the datatype variant has a `size` property, return it.
     /// For example, `FixedSizeBinary` and `FixedSizeList` have a size property.
-    pub fn fixed_size(&self) -> Option<usize> {
+    pub fn fixed_size(&self) -> DaftResult<usize> {
         match self {
-            Self::FixedSizeBinary(size) => Some(*size),
-            Self::FixedSizeList(_, size) => Some(*size),
-            Self::Embedding(_, size) => Some(*size),
-            _ => None,
+            Self::FixedSizeBinary(size) => Ok(*size),
+            Self::FixedSizeList(_, size) => Ok(*size),
+            Self::Embedding(_, size) => Ok(*size),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `fixed_size` property",
+            ))),
         }
     }
     /// if the datatype variant has a shape, return it.
     /// For example, `FixedShapeImage` and `FixedShapeTensor` have a fixed shape.
-    pub fn fixed_shape(&self) -> Option<Vec<u64>> {
+    pub fn fixed_shape(&self) -> DaftResult<Vec<u64>> {
         match self {
-            Self::FixedShapeImage(_, height, width) => Some(vec![*height as u64, *width as u64]),
-            Self::FixedShapeTensor(_, shape) => Some(shape.clone()),
-            Self::FixedShapeSparseTensor(_, shape, _) => Some(shape.clone()),
-            _ => None,
+            Self::FixedShapeImage(_, height, width) => Ok(vec![*height as u64, *width as u64]),
+            Self::FixedShapeTensor(_, shape) => Ok(shape.clone()),
+            Self::FixedShapeSparseTensor(_, shape, _) => Ok(shape.clone()),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `fixed_shape` property",
+            ))),
         }
     }
 
     /// if the datatype contains a timeunit, return it.
-    pub fn time_unit(&self) -> Option<TimeUnit> {
+    pub fn time_unit(&self) -> DaftResult<TimeUnit> {
         match self {
-            Self::Timestamp(unit, _) => Some(*unit),
-            Self::Time(unit) => Some(*unit),
-            Self::Duration(unit) => Some(*unit),
-            _ => None,
+            Self::Timestamp(unit, _) => Ok(*unit),
+            Self::Time(unit) => Ok(*unit),
+            Self::Duration(unit) => Ok(*unit),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `time_unit` property",
+            ))),
         }
     }
 
     /// if the datatype contains a timezone, return it.
-    pub fn time_zone(&self) -> Option<Option<&str>> {
+    pub fn time_zone(&self) -> DaftResult<Option<&str>> {
         match self {
-            Self::Timestamp(_, timezone) => Some(timezone.as_deref()),
-            _ => None,
+            Self::Timestamp(_, timezone) => Ok(timezone.as_deref()),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `time_zone` property",
+            ))),
         }
     }
 
     /// if the datatype contains an image mode, return it.
     /// For example, `Image` and `FixedShapeImage` have an image mode.
-    pub fn image_mode(&self) -> Option<ImageMode> {
+    pub fn image_mode(&self) -> DaftResult<Option<ImageMode>> {
         match self {
-            Self::Image(mode) => *mode,
-            Self::FixedShapeImage(mode, ..) => Some(*mode),
-            _ => None,
+            Self::Image(mode) => Ok(*mode),
+            Self::FixedShapeImage(mode, ..) => Ok(Some(*mode)),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have an `image_mode` property",
+            ))),
         }
     }
 
     /// if the datatype contains an inner datatype, return it.
     /// For example, `List` and `FixedSizeList` have an inner datatype.
-    pub fn dtype(&self) -> Option<&Self> {
+    pub fn dtype(&self) -> DaftResult<&Self> {
         match self {
-            Self::List(dtype) | Self::FixedSizeList(dtype, _) => Some(dtype),
-            Self::Embedding(dtype, _) => Some(dtype),
-            Self::Extension(_, dtype, _) => Some(dtype),
-            Self::Tensor(dtype) => Some(dtype),
-            Self::SparseTensor(dtype, _) => Some(dtype),
-            Self::FixedShapeTensor(dtype, _) => Some(dtype),
-            Self::FixedShapeSparseTensor(dtype, _, _) => Some(dtype),
-            _ => None,
+            Self::List(dtype) | Self::FixedSizeList(dtype, _) => Ok(dtype),
+            Self::Embedding(dtype, _) => Ok(dtype),
+            Self::Extension(_, dtype, _) => Ok(dtype),
+            Self::Tensor(dtype) => Ok(dtype),
+            Self::SparseTensor(dtype, _) => Ok(dtype),
+            Self::FixedShapeTensor(dtype, _) => Ok(dtype),
+            Self::FixedShapeSparseTensor(dtype, _, _) => Ok(dtype),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `dtype` property",
+            ))),
         }
     }
 
     /// if the datatype is a struct, return its fields.
-    pub fn fields(&self) -> Option<&[Field]> {
+    pub fn fields(&self) -> DaftResult<&[Field]> {
         match self {
-            Self::Struct(fields) => Some(fields),
-            _ => None,
+            Self::Struct(fields) => Ok(fields),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `fields` property",
+            ))),
         }
     }
 
     /// if the datatype is a decimal, return its precision.
-    pub fn precision(&self) -> Option<usize> {
+    pub fn precision(&self) -> DaftResult<usize> {
         match self {
-            Self::Decimal128(precision, _) => Some(*precision),
-            _ => None,
+            Self::Decimal128(precision, _) => Ok(*precision),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `precision` property",
+            ))),
         }
     }
 
     /// if the datatype is a decimal, return its scale.
-    pub fn scale(&self) -> Option<usize> {
+    pub fn scale(&self) -> DaftResult<usize> {
         match self {
-            Self::Decimal128(_, scale) => Some(*scale),
-            _ => None,
+            Self::Decimal128(_, scale) => Ok(*scale),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `scale` property",
+            ))),
         }
     }
 
     /// if the datatype is a sparse tensor, return whether it uses offset indices.
-    pub fn use_offset_indices(&self) -> Option<bool> {
+    pub fn use_offset_indices(&self) -> DaftResult<bool> {
         match self {
-            Self::SparseTensor(_, use_offset) => Some(*use_offset),
-            Self::FixedShapeSparseTensor(_, _, use_offset) => Some(*use_offset),
-            _ => None,
+            Self::SparseTensor(_, use_offset) => Ok(*use_offset),
+            Self::FixedShapeSparseTensor(_, _, use_offset) => Ok(*use_offset),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `use_offset_indices` property",
+            ))),
         }
     }
 
     /// if the datatype is a map, return its key type.
-    pub fn key_type(&self) -> Option<&Self> {
+    pub fn key_type(&self) -> DaftResult<&Self> {
         match self {
-            Self::Map { key, .. } => Some(key),
-            _ => None,
+            Self::Map { key, .. } => Ok(key),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `key_type` property",
+            ))),
         }
     }
 
     /// if the datatype is a map, return its value type.
-    pub fn value_type(&self) -> Option<&Self> {
+    pub fn value_type(&self) -> DaftResult<&Self> {
         match self {
-            Self::Map { value, .. } => Some(value),
-            _ => None,
+            Self::Map { value, .. } => Ok(value),
+            _ => Err(DaftError::TypeError(format!(
+                "DataType {self:?} does not have a `value_type` property",
+            ))),
         }
     }
 }

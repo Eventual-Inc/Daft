@@ -513,126 +513,81 @@ impl PyDataType {
     }
 
     pub fn fixed_size(&self) -> PyResult<usize> {
-        self.dtype.fixed_size().ok_or_else(|| {
-            PyAttributeError::new_err(format!(
-                "The data type {} does not contain a fixed size",
-                self.dtype
-            ))
-        })
+        self.dtype
+            .fixed_size()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn fixed_shape(&self) -> PyResult<Vec<u64>> {
-        self.dtype.fixed_shape().ok_or_else(|| {
-            PyAttributeError::new_err(format!(
-                "The data type {} does not contain a fixed shape",
-                self.dtype
-            ))
-        })
+        self.dtype
+            .fixed_shape()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn time_unit(&self) -> PyResult<PyTimeUnit> {
-        self.dtype.time_unit().map(|tu| tu.into()).ok_or_else(|| {
-            PyAttributeError::new_err(format!(
-                "The data type {} does not contain a time unit",
-                self.dtype
-            ))
-        })
+        self.dtype
+            .time_unit()
+            .map(|tu| tu.into())
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn time_zone(&self) -> PyResult<Option<String>> {
         self.dtype
             .time_zone()
             .map(|tz| tz.map(|tz| tz.to_string()))
-            .ok_or_else(|| {
-                PyAttributeError::new_err(format!(
-                    "The data type {} does not contain a timezone",
-                    self.dtype
-                ))
-            })
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
-    pub fn image_mode(&self) -> PyResult<ImageMode> {
-        self.dtype.image_mode().ok_or_else(|| {
-            PyAttributeError::new_err(format!(
-                "The data type {} does not contain an image mode",
-                self.dtype
-            ))
-        })
+    pub fn image_mode(&self) -> PyResult<Option<ImageMode>> {
+        self.dtype
+            .image_mode()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn dtype(&self) -> PyResult<Self> {
         self.dtype
             .dtype()
             .map(|dtype| dtype.clone().into())
-            .ok_or_else(|| {
-                PyAttributeError::new_err(format!(
-                    "The data type {} does not contain an inner data type",
-                    self.dtype
-                ))
-            })
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn fields(&self) -> PyResult<Vec<PyField>> {
         self.dtype
             .fields()
             .map(|fields| fields.iter().map(|field| field.clone().into()).collect())
-            .ok_or_else(|| {
-                PyAttributeError::new_err(format!(
-                    "The data type {} does not contain struct fields",
-                    self.dtype
-                ))
-            })
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn precision(&self) -> PyResult<usize> {
-        self.dtype.precision().ok_or_else(|| {
-            PyAttributeError::new_err(format!(
-                "The data type {} does not contain a precision",
-                self.dtype
-            ))
-        })
+        self.dtype
+            .precision()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn scale(&self) -> PyResult<usize> {
-        self.dtype.scale().ok_or_else(|| {
-            PyAttributeError::new_err(format!(
-                "The data type {} does not contain a scale",
-                self.dtype
-            ))
-        })
+        self.dtype
+            .scale()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn use_offset_indices(&self) -> PyResult<bool> {
-        self.dtype.use_offset_indices().ok_or_else(|| {
-            PyAttributeError::new_err(format!(
-                "The data type {} does not contain a use_offset_indices",
-                self.dtype
-            ))
-        })
+        self.dtype
+            .use_offset_indices()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn key_type(&self) -> PyResult<Self> {
         self.dtype
             .key_type()
             .map(|dtype| dtype.clone().into())
-            .ok_or_else(|| {
-                PyAttributeError::new_err(format!(
-                    "The data type {} does not contain a key type",
-                    self.dtype
-                ))
-            })
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn value_type(&self) -> PyResult<Self> {
         self.dtype
             .value_type()
             .map(|dtype| dtype.clone().into())
-            .ok_or_else(|| {
-                PyAttributeError::new_err(format!(
-                    "The data type {} does not contain a value type",
-                    self.dtype
-                ))
-            })
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {
