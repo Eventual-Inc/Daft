@@ -8,3 +8,4 @@ mod pivot;
 mod search_sorted;
 mod sort;
 mod unpivot;
+mod window;

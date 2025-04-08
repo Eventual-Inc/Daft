@@ -17,7 +17,7 @@ use crate::{ExecutionTaskSpawner, NUM_CPUS};
 
 #[derive(Default)]
 struct SinglePartitionWindowState {
-    partitions: Vec<Arc<RecordBatch>>,
+    partitions: Vec<RecordBatch>,
 }
 
 enum WindowPartitionOnlyState {
@@ -42,7 +42,7 @@ impl WindowPartitionOnlyState {
             for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
                 let state = state.get_or_insert_with(SinglePartitionWindowState::default);
                 for table in p.get_tables()?.iter() {
-                    state.partitions.push(Arc::new(table.clone()));
+                    state.partitions.push(table.clone());
                 }
             }
         } else {
@@ -171,7 +171,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                             )
                         });
 
-                        let all_partitions: Vec<Arc<RecordBatch>> = per_partition_state
+                        let all_partitions: Vec<RecordBatch> = per_partition_state
                             .flatten()
                             .flat_map(|state| state.partitions)
                             .collect();
@@ -187,17 +187,12 @@ impl BlockingSink for WindowPartitionOnlySink {
                             let result =
                                 input_data.window_agg(&params.agg_exprs, &params.partition_by)?;
                             let result = input_data.union(&result)?;
-                            let mut all_projections = Vec::new();
-                            let mut added_columns = std::collections::HashSet::new();
-
-                            for field_name in params.original_schema.fields.keys() {
-                                if result.schema.fields.contains_key(field_name)
-                                    && !added_columns.contains(field_name)
-                                {
-                                    all_projections.push(resolved_col(field_name.clone()));
-                                    added_columns.insert(field_name.clone());
-                                }
-                            }
+                            let all_projections = params
+                                .original_schema
+                                .fields
+                                .keys()
+                                .map(|k| resolved_col(k.clone()))
+                                .collect::<Vec<_>>();
 
                             let final_result = result.eval_expression_list(&all_projections)?;
 
