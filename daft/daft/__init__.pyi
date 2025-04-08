@@ -8,7 +8,7 @@ from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
-from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
+from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
 
@@ -1700,7 +1700,7 @@ class PyMicroPartition:
         multithreaded_io: bool | None = None,
     ): ...
 
-class PyMicroPartitionSet(PartitionSet):
+class PyMicroPartitionSet:
     def get_partition(self, idx: int) -> PyMicroPartition: ...
     def set_partition(self, idx: int, part: PyMicroPartition) -> None: ...
     def delete_partition(self, idx: int) -> None: ...
@@ -2028,7 +2028,7 @@ class PyIdentifier:
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
 
-class PyTable(Table):
+class PyTable:
     def read(self):
         LogicalPlanBuilder
 

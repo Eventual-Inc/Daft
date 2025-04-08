@@ -281,7 +281,7 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
     def _from_micropartition_set(pset: PyMicroPartitionSet) -> LocalPartitionSet:
         s = LocalPartitionSet()
         for idx in range(0, pset.num_partitions()):
-            s.set_partition_from_table(idx, MicroPartition._from_pymicropartition(pset.get_partition(idx)))
+            s.set_partition_from_table(idx=idx, part=MicroPartition._from_pymicropartition(pset.get_partition(idx)))
         return s
 
     def items(self) -> list[tuple[PartID, MaterializedResult[MicroPartition]]]:
