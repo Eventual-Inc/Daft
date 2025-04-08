@@ -950,7 +950,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.time(timeunit="ns")
             >>> dtype.timeunit
-            TimeUnit.ns
+            TimeUnit(ns)
             >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.timeunit
