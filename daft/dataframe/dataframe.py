@@ -378,7 +378,7 @@ class DataFrame:
     ) -> Iterator["pyarrow.RecordBatch"]:
         """Return an iterator of pyarrow recordbatches for this dataframe."""
         for name in self.schema().column_names():
-            if self.schema()[name].dtype._is_python_type():
+            if self.schema()[name].dtype.is_python():
                 raise ValueError(
                     f"Cannot convert column {name} to Arrow type, found Python type: {self.schema()[name].dtype}"
                 )

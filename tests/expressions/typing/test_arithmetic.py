@@ -44,7 +44,7 @@ def test_plus(binary_data_fixture):
 def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType, op: ops) -> bool:
     """Checks whether these input types are resolvable for arithmetic operations."""
     # (temporal - temporal = duration)
-    if lhs._is_temporal_type() and rhs._is_temporal_type() and lhs == rhs and op == ops.sub:
+    if lhs.is_temporal() and rhs.is_temporal() and lhs == rhs and op == ops.sub:
         return True
 
     # (numeric <op> numeric = numeric)
