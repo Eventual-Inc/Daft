@@ -84,7 +84,7 @@ class TimeUnit:
             assert False
 
     def __repr__(self) -> str:
-        return f"TimeUnit.{self.__str__()}"
+        return f"TimeUnit({self.__str__()})"
 
 
 class DataType:
