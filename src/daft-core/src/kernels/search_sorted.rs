@@ -470,12 +470,11 @@ pub fn build_nulls_first_compare_with_nulls(
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
 
-    // Determine null ordering based on nulls_first and reversed parameters
-    let (null_vs_valid, valid_vs_null) = match (nulls_first, reversed) {
-        (true, false) => (Ordering::Greater, Ordering::Less), // nulls first, not reversed
-        (false, false) => (Ordering::Less, Ordering::Greater), // nulls last, not reversed
-        (true, true) => (Ordering::Less, Ordering::Greater),  // nulls first, reversed
-        (false, true) => (Ordering::Greater, Ordering::Less), // nulls last, reversed
+    // Determine null ordering based on nulls_first parameter only
+    // If nulls_first = true, nulls should always come before valid values, regardless of reversed
+    let (null_vs_valid, valid_vs_null) = match nulls_first {
+        true => (Ordering::Less, Ordering::Greater), // nulls first, regardless of sort direction
+        false => (Ordering::Greater, Ordering::Less), // nulls last, regardless of sort direction
     };
 
     if reversed {
