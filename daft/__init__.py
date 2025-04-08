@@ -152,9 +152,6 @@ from daft.window import Window
 
 to_struct = Expression.to_struct
 
-# Make range available in module scope
-range = _range
-
 __all__ = [
     "Catalog",
     "DataCatalogTable",
