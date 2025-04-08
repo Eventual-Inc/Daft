@@ -186,7 +186,6 @@ impl BlockingSink for WindowPartitionOnlySink {
 
                             let result =
                                 input_data.window_agg(&params.agg_exprs, &params.partition_by)?;
-                            let result = input_data.union(&result)?;
                             let all_projections = params
                                 .original_schema
                                 .fields
