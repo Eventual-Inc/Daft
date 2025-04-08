@@ -18,10 +18,6 @@ from daft.recordbatch.recordbatch import RecordBatch
 
 
 @overload
-def _range(end: int) -> DataFrame: ...
-
-
-@overload
 def _range(start: int, end: int) -> DataFrame: ...
 
 
@@ -34,7 +30,7 @@ def _range(start: int, end: int, step: int, partitions: int) -> DataFrame: ...
 
 
 @PublicAPI
-def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 1) -> DataFrame:
+def _range(start: int = 0, end: int | None = None, step: int = 1, partitions: int = 1) -> DataFrame:
     """Creates a DataFrame with a range of values.
 
     Args:

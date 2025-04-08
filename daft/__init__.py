@@ -103,7 +103,7 @@ from daft.io import (
     DataCatalogTable,
     DataCatalogType,
     from_glob_path,
-    _range as range,
+    _range,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -151,6 +151,9 @@ from daft.viz import register_viz_hook
 from daft.window import Window
 
 to_struct = Expression.to_struct
+
+# Make range available in module scope
+range = _range
 
 __all__ = [
     "Catalog",
