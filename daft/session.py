@@ -193,6 +193,9 @@ class Session:
             if ns := self.current_namespace():
                 identifier = ns + identifier
 
+        if not isinstance(source, TableSource):
+            source = TableSource._from_obj(source)
+
         return catalog.create_table(identifier, source)
 
     def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource | object) -> Table:
@@ -213,6 +216,9 @@ class Session:
         if len(identifier) == 1:
             if ns := self.current_namespace():
                 identifier = ns + identifier
+
+        if not isinstance(source, TableSource):
+            source = TableSource._from_obj(source)
 
         return catalog.create_table_if_not_exists(identifier, source)
 
@@ -282,9 +288,9 @@ class Session:
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         if len(identifier) == 1:
-            self.set_catalog(identifier[0])
+            self.set_catalog(str(identifier[0]))
         else:
-            self.set_catalog(identifier[0])
+            self.set_catalog(str(identifier[0]))
             self.set_namespace(identifier.drop(1))
 
     def current_catalog(self) -> Catalog | None:
@@ -452,7 +458,7 @@ class Session:
     def write_table(
         self,
         identifier: Identifier | str,
-        df: DataFrame | object,
+        df: DataFrame,
         mode: Literal["append", "overwrite"] = "append",
         **options,
     ):
@@ -460,7 +466,7 @@ class Session:
 
         Args:
             identifier (Identifier|str): table identifier
-            df (DataFrame|object): dataframe to write
+            df (DataFrame): dataframe to write
             mode ("append"|"overwrite"): write mode, defaults to "append"
             options**: additional, format-specific write options
 
@@ -469,6 +475,7 @@ class Session:
         """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
+
         self._session.get_table(identifier._ident).write(df, mode=mode, **options)
 
 
@@ -659,7 +666,10 @@ def read_table(identifier: Identifier | str, **options) -> DataFrame:
 
 
 def write_table(
-    identifier: Identifier | str, df: DataFrame | object, mode: Literal["append", "overwrite"] = "append", **options
+    identifier: Identifier | str,
+    df: DataFrame,
+    mode: Literal["append", "overwrite"] = "append",
+    **options,
 ):
     """Writes the DataFrame to the table specified with the identifier."""
     _session().write_table(identifier, df, mode, **options)

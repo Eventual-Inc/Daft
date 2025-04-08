@@ -34,6 +34,8 @@ log/
 # Added by pyenv
 .python-version
 
+# Added by mypy
+.mypy_cache
 
 # Zed editor
 .zed/

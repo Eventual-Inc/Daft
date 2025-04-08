@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
-
-if TYPE_CHECKING:
-    from daft.dataframe.dataframe import DataFrame
+from daft.dataframe.dataframe import DataFrame
 
 
 class MemoryCatalog(Catalog):
@@ -29,7 +25,7 @@ class MemoryCatalog(Catalog):
         mem = MemoryCatalog(name)
         for path, source in tables.items():
             ident = Identifier.from_str(path)
-            table = Table._from_obj(ident[-1], source)
+            table = MemoryTable._from_pyobject(str(ident[-1]), source)
             mem._tables[path] = table
         return mem
 
@@ -112,6 +108,19 @@ class MemoryTable(Table):
     def name(self) -> str:
         return self._name
 
+    @staticmethod
+    def _from_pyobject(name: str, source: object) -> Table:
+        """Returns a Daft Table from a supported object type or raises an error."""
+        if isinstance(source, Table):
+            # we want to rename and create an immutable view from this external table
+            return Table.from_df(name, source.read())
+        elif isinstance(source, DataFrame):
+            return Table.from_df(name, source)
+        elif isinstance(source, dict):
+            return Table.from_df(name, DataFrame._from_pydict(source))
+        else:
+            raise ValueError(f"Unsupported table source {type(source)}")
+
     ###
     # read methods
     ###
@@ -123,5 +132,5 @@ class MemoryTable(Table):
     # write methods
     ###
 
-    def write(self, df: DataFrame | object, mode: str = "append", **options):
+    def write(self, df: DataFrame, mode: str = "append", **options):
         raise NotImplementedError("Writes to in-memory tables are not yet supported.")
