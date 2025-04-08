@@ -656,17 +656,17 @@ class Table(ABC):
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
-    def _from_obj(name: str, source: object) -> Table:
-        """Returns a Daft Table from a supported object type or raises an error."""
-        if isinstance(source, Table):
-            # we want to rename and create an immutable view from this external table
-            return Table.from_df(name, source.read())
-        elif isinstance(source, DataFrame):
-            return Table.from_df(name, source)
-        elif isinstance(source, dict):
-            return Table.from_df(name, DataFrame._from_pydict(source))
-        else:
-            raise ValueError(f"Unsupported table source {type(source)}")
+    def _from_obj(obj: object) -> Table:
+        for factory in (Table.from_iceberg, Table.from_unity):
+            try:
+                return factory(obj)
+            except ValueError:
+                pass
+            except ImportError:
+                pass
+        raise ValueError(
+            f"Unsupported table type: {type(obj)}; please ensure all required extra dependencies are installed."
+        )
 
     @staticmethod
     def _validate_options(method: str, input: dict[str, Any], valid: set[str]):
