@@ -100,8 +100,6 @@ impl Default for OptimizerBuilder {
                         Box::new(UnnestScalarSubquery::new()),
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
-                        Box::new(DetectMonotonicId::new()),
-                        Box::new(ExtractWindowFunction::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
@@ -148,15 +146,17 @@ impl Default for OptimizerBuilder {
                     vec![Box::new(PushDownLimit::new())],
                     RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
-                // --- SplitActorPoolProjects ---
-                // Once other rules have been applied, split actor pool projects and push down projections.
-                // We delay splitting actor pool projects to avoid having to special case optimization rules
-                // for actor pool projects.
+                // --- Rewrite projections ---
+                // Once optimization rules have been applied,split actor pool projects and detect monotonic IDs.
+                // By delaying these rewrite rules, we avoid having to special case optimization rules for
+                // actor pool projects and monotonically increasing ids.
                 RuleBatch::new(
                     vec![
                         Box::new(SplitActorPoolProjects::new()),
                         // Push down projections after splitting actor pool projects.
                         Box::new(PushDownProjection::new()),
+                        Box::new(DetectMonotonicId::new()),
+                        Box::new(ExtractWindowFunction::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
@@ -638,6 +638,19 @@ mod tests {
         }
     }
 
+    fn get_scan_materializer_and_stats_enricher() -> Optimizer {
+        Optimizer::with_rule_batches(
+            vec![RuleBatch::new(
+                vec![
+                    Box::new(MaterializeScans::new()),
+                    Box::new(EnrichWithStats::new()),
+                ],
+                RuleExecutionStrategy::Once,
+            )],
+            OptimizerConfig::new(5),
+        )
+    }
+
     /// Tests that Limit commutes with ActorPoolProject.
     ///
     /// Limit-ActorPoolProject-Source -> ActorPoolProject-Source[with_limit]
@@ -671,16 +684,7 @@ mod tests {
             vec![actor_pool_expr.alias("a")],
         )?)
         .arced();
-        let scan_materializer_and_stats_enricher = Optimizer::with_rule_batches(
-            vec![RuleBatch::new(
-                vec![
-                    Box::new(MaterializeScans::new()),
-                    Box::new(EnrichWithStats::new()),
-                ],
-                RuleExecutionStrategy::Once,
-            )],
-            OptimizerConfig::new(5),
-        );
+        let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
         let expected = scan_materializer_and_stats_enricher
             .optimize_with_rules(
                 scan_materializer_and_stats_enricher.rule_batches[0]
@@ -737,16 +741,7 @@ mod tests {
             vec![resolved_col("a"), actor_pool_expr.alias("renamed_col")],
         )?)
         .arced();
-        let scan_materializer_and_stats_enricher = Optimizer::with_rule_batches(
-            vec![RuleBatch::new(
-                vec![
-                    Box::new(MaterializeScans::new()),
-                    Box::new(EnrichWithStats::new()),
-                ],
-                RuleExecutionStrategy::Once,
-            )],
-            OptimizerConfig::new(5),
-        );
+        let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
         let expected = scan_materializer_and_stats_enricher
             .optimize_with_rules(
                 scan_materializer_and_stats_enricher.rule_batches[0]
@@ -768,4 +763,9 @@ mod tests {
         );
         Ok(())
     }
+
+    // TODO(desmond): Add tests that Filter and Limit commutes with monotonically increasing ids.
+    // We can't do this at the momente currently rewrite monotonically increasing ids to a
+    // monotonically increasing id column node that produces a column with a uuid. Moving away from
+    // string-based column matching will make this test easier to write.
 }
