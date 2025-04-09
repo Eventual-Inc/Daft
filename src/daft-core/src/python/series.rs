@@ -743,7 +743,7 @@ impl PySeries {
     pub fn dt_to_unix_epoch(&self, unit: PyTimeUnit) -> PyResult<Self> {
         Ok(self.series.dt_to_unix_epoch(unit.timeunit)?.into())
     }
-    
+
     #[pyo3(signature = (format=None))]
     pub fn dt_strftime(&self, format: Option<&str>) -> PyResult<Self> {
         Ok(self.series.dt_strftime(format)?.into())

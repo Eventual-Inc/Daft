@@ -540,7 +540,8 @@ def test_date_to_unix_epoch():
     }
 
     assert actual == expected
-    
+
+
 def test_date_to_string():
     df = daft.from_pydict(
         {
@@ -570,6 +571,7 @@ def test_date_to_string():
     }
 
     assert actual == expected
+
 
 @pytest.mark.parametrize(
     "timeunit",
@@ -606,6 +608,7 @@ def test_date_to_unix_epoch_invalid_timeunits(timeunit):
         pytest.fail(f"to_unix_epoch with timeunit {timeunit} did not raise an exception.")
     except ValueError:
         pass
+
 
 @pytest.mark.parametrize(
     "fmt,expected",

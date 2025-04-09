@@ -290,7 +290,7 @@ impl Series {
         let cast_to = DataType::Timestamp(time_unit, None);
         self.cast(&cast_to)?.cast(&DataType::Int64)
     }
-    
+
     pub fn dt_strftime(&self, format: Option<&str>) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Timestamp(..) | DataType::Date | DataType::Time(_) => {
