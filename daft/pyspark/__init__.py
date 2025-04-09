@@ -72,6 +72,8 @@ class Builder:
             return wrapped
         return attr
 
+    __doc__ = property(lambda self: self._spark_session.__doc__)  # type: ignore
+
 
 class SparkSession:
     builder = Builder()
@@ -89,3 +91,5 @@ class SparkSession:
     def stop(self):
         self._spark_session.stop()
         self._connection.shutdown()
+
+    __doc__ = property(lambda self: self._spark_session.__doc__)  # type: ignore
