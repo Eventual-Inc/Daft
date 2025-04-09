@@ -338,8 +338,8 @@ pub enum WindowExpr {
     #[display("agg({_0})")]
     Agg(AggExpr),
 
-    #[display("rank({_0})")]
-    Rank(ExprRef),
+    #[display("rank()")]
+    Rank(),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -680,42 +680,35 @@ impl WindowExpr {
     pub fn name(&self) -> &str {
         match self {
             Self::Agg(agg_expr) => agg_expr.name(),
-            Self::Rank(expr) => expr.name(),
+            Self::Rank() => "rank()",
         }
     }
 
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         match self {
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
-            Self::Rank(expr) => {
-                let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.rank()"))
-            }
+            Self::Rank() => FieldID::new("rank()"),
         }
     }
 
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
             Self::Agg(agg_expr) => agg_expr.children(),
-            Self::Rank(expr) => vec![expr.clone()],
+            Self::Rank() => vec![],
         }
     }
 
-    pub fn with_new_children(&self, mut children: Vec<ExprRef>) -> Self {
+    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
             Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
-            Self::Rank(_) => {
-                assert_eq!(children.len(), 1);
-                let first_child = children.pop().unwrap();
-                Self::Rank(first_child)
-            }
+            Self::Rank() => Self::Rank(),
         }
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
-            Self::Rank(expr) => expr.to_field(schema)?.to_list_field(),
+            Self::Rank() => Ok(Field::new("rank()", DataType::UInt64)),
         }
     }
 }
@@ -880,7 +873,7 @@ impl Expr {
     }
 
     pub fn rank(self: ExprRef) -> ExprRef {
-        Self::Window(WindowExpr::Rank(self)).into()
+        Self::Window(WindowExpr::Rank()).into()
     }
 
     #[allow(clippy::should_implement_trait)]
