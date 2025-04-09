@@ -112,7 +112,6 @@ where
                 },
                 &others_cmp,
                 arrow_array.len(),
-                first_desc,
                 first_nulls_first,
             )
         } else {
@@ -130,7 +129,6 @@ where
                 },
                 &others_cmp,
                 arrow_array.len(),
-                first_desc,
                 first_nulls_first,
             )
         };
@@ -208,7 +206,6 @@ impl Float32Array {
                 },
                 &others_cmp,
                 arrow_array.len(),
-                first_desc,
                 first_nulls_first,
             )
         } else {
@@ -226,7 +223,6 @@ impl Float32Array {
                 },
                 &others_cmp,
                 arrow_array.len(),
-                first_desc,
                 first_nulls_first,
             )
         };
@@ -304,7 +300,6 @@ impl Float64Array {
                 },
                 &others_cmp,
                 arrow_array.len(),
-                first_desc,
                 first_nulls_first,
             )
         } else {
@@ -322,7 +317,6 @@ impl Float64Array {
                 },
                 &others_cmp,
                 arrow_array.len(),
-                first_desc,
                 first_nulls_first,
             )
         };
@@ -400,7 +394,6 @@ impl Decimal128Array {
                 },
                 &others_cmp,
                 arrow_array.len(),
-                first_desc,
                 first_nulls_first,
             )
         } else {
@@ -418,7 +411,6 @@ impl Decimal128Array {
                 },
                 &others_cmp,
                 arrow_array.len(),
-                first_desc,
                 first_nulls_first,
             )
         };
@@ -464,7 +456,6 @@ impl NullArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
@@ -478,7 +469,6 @@ impl NullArray {
             },
             &others_cmp,
             self.len(),
-            first_desc,
             first_nulls_first,
         );
 
@@ -544,7 +534,6 @@ impl BooleanArray {
                 },
                 &others_cmp,
                 self.len(),
-                first_desc,
                 first_nulls_first,
             )
         } else {
@@ -562,7 +551,6 @@ impl BooleanArray {
                 },
                 &others_cmp,
                 self.len(),
-                first_desc,
                 first_nulls_first,
             )
         };
@@ -640,7 +628,6 @@ macro_rules! impl_binary_like_sort {
                         },
                         &others_cmp,
                         self.len(),
-                        first_desc,
                         first_nulls_first,
                     )
                 } else {
@@ -658,7 +645,6 @@ macro_rules! impl_binary_like_sort {
                         },
                         &others_cmp,
                         self.len(),
-                        first_desc,
                         first_nulls_first,
                     )
                 };

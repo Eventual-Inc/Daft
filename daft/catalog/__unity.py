@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from unitycatalog import NotFoundError as UnityNotFoundError
 
@@ -48,7 +48,7 @@ class UnityCatalog(Catalog):
     def create_namespace(self, identifier: Identifier | str):
         raise NotImplementedError("Unity create_namespace not yet supported.")
 
-    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
+    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
         raise NotImplementedError("Unity create_table not yet supported.")
 
     ###
@@ -71,7 +71,7 @@ class UnityCatalog(Catalog):
         try:
             return UnityTable(self._inner.load_table(ident))
         except UnityNotFoundError:
-            return NotFoundError(f"Table {ident} not found!")
+            raise NotFoundError(f"Table {ident} not found!")
 
     ###
     # list_.*
@@ -128,7 +128,7 @@ class UnityTable(Table):
         return self._inner.table_info.name
 
     @staticmethod
-    def _from_obj(obj: object) -> UnityTable | None:
+    def _from_obj(obj: object) -> UnityTable:
         """Returns a UnityTable if the given object can be adapted so."""
         if isinstance(obj, InnerTable):
             t = UnityTable.__new__(UnityTable)
@@ -149,7 +149,7 @@ class UnityTable(Table):
     # write methods
     ###
 
-    def write(self, df: DataFrame | object, mode: str = "append", **options):
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite", "error", "ignore"] = "append", **options):
         self._validate_options("Unity write", options, UnityTable._write_options)
 
         return df.write_deltalake(

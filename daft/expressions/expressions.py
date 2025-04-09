@@ -2447,6 +2447,48 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         relative_to = Expression._to_expression(relative_to)
         return Expression._from_pyexpr(native.dt_truncate(self._expr, interval, relative_to._expr))
 
+    def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
+        """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
+
+        See :class: `daft.datatype.TimeUnit` for more information on time units and valid values.
+
+        Example:
+            >>> import daft
+            >>> from datetime import date
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "dates": [
+            ...             date(2001, 1, 1),
+            ...             date(2001, 1, 2),
+            ...             date(2001, 1, 3),
+            ...             None,
+            ...         ]
+            ...     }
+            ... )
+            >>> df.with_column("timestamp", daft.col("dates").dt.to_unix_epoch("ns")).show()
+            ╭────────────┬────────────────────╮
+            │ dates      ┆ timestamp          │
+            │ ---        ┆ ---                │
+            │ Date       ┆ Int64              │
+            ╞════════════╪════════════════════╡
+            │ 2001-01-01 ┆ 978307200000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2001-01-02 ┆ 978393600000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2001-01-03 ┆ 978480000000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None       ┆ None               │
+            ╰────────────┴────────────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        if time_unit is None:
+            time_unit = TimeUnit.s()
+        if isinstance(time_unit, str):
+            time_unit = TimeUnit.from_str(time_unit)
+
+        return Expression._from_pyexpr(native.dt_to_unix_epoch(self._expr, time_unit._timeunit))
+
 
 class ExpressionStringNamespace(ExpressionNamespace):
     def contains(self, substr: str | Expression) -> Expression:

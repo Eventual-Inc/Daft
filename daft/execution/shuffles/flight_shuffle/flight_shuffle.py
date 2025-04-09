@@ -4,6 +4,7 @@ import os
 import random
 import shutil
 from collections import defaultdict, deque
+from typing import Optional
 
 from daft.daft import InProgressShuffleCache, PyExpr, start_flight_server
 from daft.execution.execution_step import (
@@ -28,32 +29,15 @@ except ImportError:
     raise
 
 
-def get_shuffle_dir_path(
+# Get the shuffle directories for the given node and shuffle stage
+def get_shuffle_dirs(
     shuffle_dirs: list[str],
     node_id: str,
     shuffle_stage_id: int,
-):
+) -> list[str]:
     if not shuffle_dirs:
         raise ValueError("No shuffle directories provided")
-
-    # Find directory with most available space
-    max_space = -1
-    selected_dir = None
-
-    for directory in shuffle_dirs:
-        if os.path.exists(directory):
-            try:
-                free_space = shutil.disk_usage(directory).free
-                if free_space > max_space:
-                    max_space = free_space
-                    selected_dir = directory
-            except OSError:
-                continue
-
-    if selected_dir is None:
-        selected_dir = random.choice(shuffle_dirs)
-
-    return f"{selected_dir}/daft_shuffle/node_{node_id}/shuffle_stage_{shuffle_stage_id}"
+    return [f"{dir}/daft_shuffle/node_{node_id}/shuffle_stage_{shuffle_stage_id}" for dir in shuffle_dirs]
 
 
 @ray.remote(num_cpus=0)
@@ -73,7 +57,7 @@ class ShuffleActorManager:
         shuffle_stage_id: int,
         shuffle_dirs: list[str],
         num_output_partitions: int,
-        partition_by: list[PyExpr] | None = None,
+        partition_by: Optional[list[PyExpr]] = None,
     ):
         self.shuffle_stage_id = shuffle_stage_id
         self.shuffle_dirs = shuffle_dirs
@@ -83,8 +67,7 @@ class ShuffleActorManager:
         self.all_actors: dict[str, ShuffleActor] = {}
         self.active_actors: dict[str, ShuffleActor] = {}
 
-        self.push_partition_futures = []
-        self.clear_partition_futures = []
+        self.clear_partition_futures: list[ray.ObjectRef] = []
 
         # Eagerly create actors for all nodes that are currently available
         for node in ray.nodes():
@@ -93,7 +76,7 @@ class ShuffleActorManager:
     # Get or create an actor for a given node id
     def get_or_create_actor(self, node_id: str):
         if node_id not in self.all_actors:
-            actor = ShuffleActor.options(
+            actor = ShuffleActor.options(  # type: ignore[attr-defined]
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node_id,
                     soft=False,  # TODO: check if this is dangerous, if so, check if we can do true
@@ -116,8 +99,8 @@ class ShuffleActorManager:
     def get_all_node_ids(self):
         return list(self.all_actors.keys())
 
-    def get_all_actor_addresses(self):
-        return ray.get([self.all_actors[node_id].get_address.remote() for node_id in self.all_actors])
+    def get_all_actor_addresses(self) -> list[str]:
+        return ray.get([self.all_actors[node_id].get_address.remote() for node_id in self.all_actors])  # type: ignore[attr-defined]
 
     # Push an object to an actor
     def _push_objects_to_actor(self, node_id: str, objects: list[ray.ObjectRef]) -> ray.ObjectRef:
@@ -144,21 +127,19 @@ class ShuffleActorManager:
                     [node_id] = object_location["node_ids"]
                 objects_to_push_per_node[node_id].append(object)
 
-        self.push_partition_futures.extend(
-            self._push_objects_to_actor(node_id, objects) for node_id, objects in objects_to_push_per_node.items()
+        ray.get(
+            [self._push_objects_to_actor(node_id, objects) for node_id, objects in objects_to_push_per_node.items()]
         )
 
     # Wait for all shuffle actors to finish pushing objects to the cache
     def finish_push_objects(self):
-        ray.get(self.push_partition_futures)
-        self.push_partition_futures.clear()
-
         ray.get([actor.finish_push_partitions.remote() for actor in self.active_actors.values()])
 
     # Clear the given partitions from the shuffle actors
     def clear_partition(self, partition_idx: int):
         self.clear_partition_futures.extend(
-            self.active_actors[node_id].clear_partition.remote(partition_idx) for node_id in self.active_actors
+            self.active_actors[node_id].clear_partition.remote(partition_idx)  # type: ignore[attr-defined]
+            for node_id in self.active_actors
         )
 
     # Shutdown the shuffle actor manager and all the shuffle actors
@@ -189,19 +170,19 @@ class ShuffleActor:
         shuffle_stage_id: int,
         shuffle_dirs: list[str],
         num_output_partitions: int,
-        partition_by: list[PyExpr] | None = None,
+        partition_by: Optional[list[PyExpr]] = None,
     ):
         self.node_id = ray.get_runtime_context().get_node_id()
         self.host = ray.util.get_node_ip_address()
 
-        self.shuffle_dir = get_shuffle_dir_path(shuffle_dirs, self.node_id, shuffle_stage_id)
+        self.shuffle_dirs = get_shuffle_dirs(shuffle_dirs, self.node_id, shuffle_stage_id)
         self.num_output_partitions = num_output_partitions
         self.partition_by = partition_by
 
         # create a shuffle cache to store the partitions
         self.in_progress_shuffle_cache = InProgressShuffleCache.try_new(
             num_output_partitions,
-            self.shuffle_dir,
+            self.shuffle_dirs,
             target_filesize=1024 * 1024 * 10,
             compression=None,
             partition_by=partition_by,
@@ -210,42 +191,24 @@ class ShuffleActor:
         self.server = None
         self.port = None
 
-        # create a threadpool to push partitions to the shuffle cache
-        self.push_partition_executor = concurrent.futures.ThreadPoolExecutor()
-        self.push_partition_futures = []
-
-        # clean up any existing shuffle files
-        os.makedirs(self.shuffle_dir, exist_ok=True)
-        for partition_idx in range(self.num_output_partitions):
-            dir = os.path.join(self.shuffle_dir, f"partition_{partition_idx}")
-            os.makedirs(dir, exist_ok=True)
-
     def get_address(self):
         return f"grpc://{self.host}:{self.port}"
 
-    # Push a partition to the shuffle cache, do this in a threadpool so we return immediately
-    def push_partitions(self, *partitions: MicroPartition):
-        self.push_partition_futures.extend(
-            self.push_partition_executor.submit(
-                self.in_progress_shuffle_cache.push_partition, partition._micropartition
-            )
-            for partition in partitions
-        )
+    # Push a partition to the shuffle cache asynchronously
+    async def push_partitions(self, *partitions: MicroPartition):
+        await self.in_progress_shuffle_cache.push_partitions([partition._micropartition for partition in partitions])
 
     # Wait for all the push partition futures to complete
-    def finish_push_partitions(self):
-        for future in concurrent.futures.as_completed(self.push_partition_futures):
-            future.result()
-        self.push_partition_futures.clear()
-        self.push_partition_executor.shutdown()
-
-        self.server = start_flight_server(self.in_progress_shuffle_cache.close(), self.host)
+    async def finish_push_partitions(self):
+        shuffle_cache = await self.in_progress_shuffle_cache.close()
+        self.server = start_flight_server(shuffle_cache, self.host)
         self.port = self.server.port()
         self.in_progress_shuffle_cache = None
 
     # Clean up the shuffle files for the given partition
     def clear_partition(self, partition_idx: int):
-        path = os.path.join(self.shuffle_dir, f"partition_{partition_idx}")
+        for shuffle_dir in self.shuffle_dirs:
+            path = os.path.join(shuffle_dir, f"partition_{partition_idx}")
         try:
             if os.path.exists(path):
                 shutil.rmtree(path)
@@ -257,8 +220,9 @@ class ShuffleActor:
         if self.server is not None:
             self.server.shutdown()
         try:
-            if os.path.exists(self.shuffle_dir):
-                shutil.rmtree(self.shuffle_dir)
+            for shuffle_dir in self.shuffle_dirs:
+                if os.path.exists(shuffle_dir):
+                    shutil.rmtree(shuffle_dir)
         except Exception as e:
             print(f"failed to clean up shuffle files: {e}")
 
@@ -346,7 +310,7 @@ def reduce_partitions(
                 metadata = PartitionMetadata.from_table(reduced)
 
                 yield reduced
-                clear_partitions_futures.append(shuffle_actor_manager.clear_partition.remote(partition_idx))
+                clear_partitions_futures.append(shuffle_actor_manager.clear_partition.remote(partition_idx))  # type: ignore[attr-defined]
                 yield metadata
 
             except StopAsyncIteration:
@@ -393,23 +357,19 @@ def run_map_phase(
         else:
             yield step
 
-    push_objects_futures = []
     while pending_map_tasks or in_flight_map_tasks:
         # Get all the map tasks that are done
         done_ids = [id for id in in_flight_map_tasks.keys() if in_flight_map_tasks[id].done()]
 
         # If there are any map tasks that are done, push them to the actor manager
         if len(done_ids) > 0:
-            done_partitions = []
-            for id in done_ids:
-                materialization = in_flight_map_tasks.pop(id)
-                done_partitions.append(materialization.partition())
-
-            push_objects_futures.append(shuffle_actor_manager.push_objects.remote(done_partitions))
+            done_partitions = [in_flight_map_tasks.pop(id).partition() for id in done_ids]
+            ray.get(shuffle_actor_manager.push_objects.remote(done_partitions))  # type: ignore[attr-defined]
+            del done_partitions
         # If there are no map tasks that are done, try to emit more map tasks. Else, yield None to indicate to the scheduler that we need to wait
         else:
             # Max number of maps to emit per wave
-            batch_size = next(_ray_num_cpus_provider()) * 2
+            batch_size = next(_ray_num_cpus_provider())
             available_to_yield = min(batch_size - len(in_flight_map_tasks), len(pending_map_tasks))
             if available_to_yield > 0:
                 for _ in range(available_to_yield):
@@ -419,12 +379,8 @@ def run_map_phase(
             else:
                 yield None
 
-    # All the map tasks have been emitted, so wait for the actor manager to finish pushing them to the actors
-    ray.get(push_objects_futures)
-    del push_objects_futures
-
     # Wait for all actors to complete the map phase
-    ray.get(shuffle_actor_manager.finish_push_objects.remote())
+    ray.get(shuffle_actor_manager.finish_push_objects.remote())  # type: ignore[attr-defined]
 
 
 def run_reduce_phase(
@@ -434,8 +390,8 @@ def run_reduce_phase(
     # Calculate how many reduce tasks, and which partitions go to which reduce tasks
     actor_addresses, actor_node_ids = ray.get(
         [
-            shuffle_actor_manager.get_active_actor_addresses.remote(),
-            shuffle_actor_manager.get_active_node_ids.remote(),
+            shuffle_actor_manager.get_active_actor_addresses.remote(),  # type: ignore[attr-defined]
+            shuffle_actor_manager.get_active_node_ids.remote(),  # type: ignore[attr-defined]
         ],
     )
     reduce_task_to_partitions, partitions_to_reduce_task = optimize_reduce_partition_assignment(
@@ -467,7 +423,7 @@ def run_reduce_phase(
     ray.get([reduce_gen.completed() for reduce_gen in reduce_generators])
     del reduce_generators
     # Shutdown the actor manager
-    ray.get(shuffle_actor_manager.shutdown.remote())
+    ray.get(shuffle_actor_manager.shutdown.remote())  # type: ignore[attr-defined]
     # Kill the actor manager
     ray.kill(shuffle_actor_manager)
 
@@ -476,13 +432,13 @@ def flight_shuffle(
     fanout_plan: InProgressPhysicalPlan[ray.ObjectRef],
     num_output_partitions: int,
     shuffle_dirs: list[str],
-    partition_by: list[PyExpr] | None = None,
+    partition_by: Optional[list[PyExpr]] = None,
 ):
     map_stage_id = next(stage_id_counter)
     shuffle_stage_id = next(stage_id_counter)
 
     # Try to schedule the manager on the current node, which should be the head node
-    shuffle_actor_manager = ShuffleActorManager.options(
+    shuffle_actor_manager = ShuffleActorManager.options(  # type: ignore[attr-defined]
         scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
             node_id=ray.get_runtime_context().get_node_id(),
             soft=False,
