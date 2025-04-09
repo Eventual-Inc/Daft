@@ -1017,23 +1017,15 @@ class SeriesDateNamespace(SeriesNamespace):
             relative_to = Series.from_arrow(pa.array([None]))
         return Series._from_pyseries(self._series.dt_truncate(interval, relative_to._series))
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Series:
         if time_unit is None:
             time_unit = TimeUnit.ms()
         if isinstance(time_unit, str):
             time_unit = TimeUnit.from_str(time_unit)
         return Series._from_pyseries(self._series.dt_to_unix_epoch(time_unit._timeunit))
-=======
-    def to_string(self, fmt: str | None = None) -> Series:
-        return self.strftime(fmt)
 
-=======
->>>>>>> 36dcf4c6 (remove "to_string" method)
     def strftime(self, fmt: str | None = None) -> Series:
         return Series._from_pyseries(self._series.dt_strftime(fmt))
->>>>>>> cd3e8f48 (fix borked tests)
 
 
 class SeriesPartitioningNamespace(SeriesNamespace):

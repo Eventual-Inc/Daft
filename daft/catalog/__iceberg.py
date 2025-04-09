@@ -149,7 +149,7 @@ class IcebergTable(Table):
     _inner: InnerTable
 
     _read_options = {"snapshot_id"}
-    _write_options = set()
+    _write_options: set[str] = set()
 
     def __init__(self, inner: InnerTable):
         """DEPRECATED: Please use `Table.from_iceberg`; version 0.5.0!"""
@@ -164,7 +164,7 @@ class IcebergTable(Table):
         return self._inner.name()[-1]
 
     @staticmethod
-    def _from_obj(obj: object) -> IcebergTable | None:
+    def _from_obj(obj: object) -> IcebergTable:
         """Returns an IcebergTable if the given object can be adapted so."""
         if isinstance(obj, InnerTable):
             t = IcebergTable.__new__(IcebergTable)
@@ -177,7 +177,7 @@ class IcebergTable(Table):
 
         return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
 
-    def write(self, df: DataFrame | object, mode: str = "append", **options):
+    def write(self, df: DataFrame, mode: str = "append", **options):
         self._validate_options("Iceberg write", options, IcebergTable._write_options)
 
         df.write_iceberg(self._inner, mode=mode)
