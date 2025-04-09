@@ -147,7 +147,7 @@ impl Project {
                         expr.children()
                     // If expr is a window function, skip and continue recursing
                     // (col("a").sum().over(window1) may differ from col("a").sum().over(window2))
-                    } else if matches!(expr.as_ref(), Expr::Window(..)) {
+                    } else if matches!(expr.as_ref(), Expr::Over(..)) {
                         vec![]
                     } else {
                         let expr_id = expr.semantic_id(schema);
@@ -242,38 +242,22 @@ fn replace_column_with_semantic_id(
                 |transformed_child| Expr::Agg(transformed_child).into(),
                 |_| e,
             ),
-            Expr::Window(inner_expr, window_spec) => {
-                // replace_column_with_semantic_id(inner_expr.clone(), subexprs_to_replace, schema)
-                //     .map_yes_no(
-                //         |transformed_child| {
-                //             Expr::Window(transformed_child, window_spec.clone()).into()
-                //         },
-                //         |_| e.clone(),
-                //     )
-
+            Expr::Over(inner_expr, window_spec) => {
                 let expr_ref: ExprRef = ExprRef::from(inner_expr);
 
                 replace_column_with_semantic_id(expr_ref, subexprs_to_replace, schema).map_yes_no(
                     |transformed_child| {
-                        Expr::Window(transformed_child.try_into().unwrap(), window_spec.clone())
+                        Expr::Over(transformed_child.try_into().unwrap(), window_spec.clone())
                             .into()
                     },
                     |_| e.clone(),
                 )
             }
-            Expr::WindowFn(inner_expr) => {
-                // replace_column_with_semantic_id(inner_expr.clone(), subexprs_to_replace, schema)
-                //     .map_yes_no(
-                //         |transformed_child| Expr::WindowFn(transformed_child).into(),
-                //         |_| e.clone(),
-                //     )
-
+            Expr::Window(inner_expr) => {
                 let expr_ref: ExprRef = ExprRef::from(inner_expr);
 
                 replace_column_with_semantic_id(expr_ref, subexprs_to_replace, schema).map_yes_no(
-                    |transformed_child| {
-                        Expr::WindowFn(transformed_child.try_into().unwrap()).into()
-                    },
+                    |transformed_child| Expr::Window(transformed_child.try_into().unwrap()).into(),
                     |_| e.clone(),
                 )
             }

@@ -547,7 +547,7 @@ pub fn adaptively_translate_single_logical_node(
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
     match expr.as_ref() {
         Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
-        Expr::Window(inner_expr, _) => {
+        Expr::Over(inner_expr, _) => {
             let expr_ref: ExprRef = inner_expr.into();
             extract_agg_expr(&expr_ref)
         }
