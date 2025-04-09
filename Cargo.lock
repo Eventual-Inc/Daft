@@ -2081,7 +2081,6 @@ name = "daft-connect"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
- "async-stream",
  "common-error",
  "common-file-formats",
  "common-runtime",
