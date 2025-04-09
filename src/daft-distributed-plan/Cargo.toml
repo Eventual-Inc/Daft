@@ -1,0 +1,20 @@
+[dependencies]
+common-daft-config = {path = "../common/daft-config", default-features = false}
+common-display = {path = "../common/display", default-features = false}
+common-error = {path = "../common/error", default-features = false}
+common-scan-info = {path = "../common/scan-info", default-features = false}
+common-treenode = {path = "../common/treenode", default-features = false}
+daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+daft-local-plan = {path = "../daft-local-plan", default-features = false}
+serde = {workspace = true}
+
+[features]
+python = []
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-distributed-plan"
+version = {workspace = true}
