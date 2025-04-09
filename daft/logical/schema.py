@@ -106,8 +106,8 @@ class Schema:
         return s
 
     @classmethod
-    def _from_pydict(fields: dict[str, DataType]) -> Schema:
-        return Schema._from_fields([Field.create(k, v) for k, v in fields.items()])
+    def _from_pydict(cls, fields: dict[str, DataType]) -> Schema:
+        return cls._from_fields([Field.create(k, v) for k, v in fields.items()])
 
     def __getitem__(self, key: str) -> Field:
         assert isinstance(key, str), f"Expected str for key, but received: {type(key)}"

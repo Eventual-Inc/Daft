@@ -70,7 +70,7 @@ class PreviewOptions:
 
     def __repr__(self) -> str:
         """For debugging."""
-        self.serialize()
+        return self.serialize()
 
     def serialize(self) -> str:
         """This lowers the burden to interop with the rust formatter."""
