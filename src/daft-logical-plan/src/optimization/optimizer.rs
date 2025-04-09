@@ -100,6 +100,7 @@ impl Default for OptimizerBuilder {
                         Box::new(UnnestScalarSubquery::new()),
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
+                        Box::new(ExtractWindowFunction::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
@@ -153,11 +154,13 @@ impl Default for OptimizerBuilder {
                 RuleBatch::new(
                     vec![
                         Box::new(SplitActorPoolProjects::new()),
-                        // Push down projections after splitting actor pool projects.
-                        Box::new(PushDownProjection::new()),
                         Box::new(DetectMonotonicId::new()),
-                        Box::new(ExtractWindowFunction::new()),
                     ],
+                    RuleExecutionStrategy::Once,
+                ),
+                // Push down projections after rewriting projections.
+                RuleBatch::new(
+                    vec![Box::new(PushDownProjection::new())],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
                 // --- Simplify expressions before scans are materialized ---
