@@ -5,7 +5,7 @@ from typing import Any, Iterator, Literal, TypeVar
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
-from daft.datatype import DataType, _ensure_registered_super_ext_type
+from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
@@ -254,7 +254,7 @@ class Series:
 
         # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
         # TODO: Push this down into self._series.to_arrow()?
-        if dtype._is_fixed_shape_tensor_type() and pyarrow_supports_fixed_shape_tensor():
+        if dtype.is_fixed_shape_tensor() and pyarrow_supports_fixed_shape_tensor():
             pyarrow_dtype = dtype.to_arrow_dtype()
             arrow_series = self._series.to_arrow()
             return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
@@ -263,7 +263,7 @@ class Series:
 
     def to_pylist(self) -> list:
         """Convert this Series to a Python list."""
-        if self.datatype()._is_python_type():
+        if self.datatype().is_python():
             return self._series.to_pylist()
         elif self.datatype()._should_cast_to_python():
             return self._series.cast(DataType.python()._dtype).to_pylist()
@@ -712,7 +712,7 @@ class Series:
         return SeriesPartitioningNamespace.from_series(self)
 
     def __reduce__(self) -> tuple:
-        if self.datatype()._is_python_type():
+        if self.datatype().is_python():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
         else:
             return (Series.from_arrow, (self.to_arrow(), self.name()))
@@ -1016,6 +1016,13 @@ class SeriesDateNamespace(SeriesNamespace):
         if relative_to is None:
             relative_to = Series.from_arrow(pa.array([None]))
         return Series._from_pyseries(self._series.dt_truncate(interval, relative_to._series))
+
+    def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Series:
+        if time_unit is None:
+            time_unit = TimeUnit.ms()
+        if isinstance(time_unit, str):
+            time_unit = TimeUnit.from_str(time_unit)
+        return Series._from_pyseries(self._series.dt_to_unix_epoch(time_unit._timeunit))
 
 
 class SeriesPartitioningNamespace(SeriesNamespace):

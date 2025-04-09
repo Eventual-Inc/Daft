@@ -378,7 +378,7 @@ class DataFrame:
     ) -> Iterator["pyarrow.RecordBatch"]:
         """Return an iterator of pyarrow recordbatches for this dataframe."""
         for name in self.schema().column_names():
-            if self.schema()[name].dtype._is_python_type():
+            if self.schema()[name].dtype.is_python():
                 raise ValueError(
                     f"Cannot convert column {name} to Arrow type, found Python type: {self.schema()[name].dtype}"
                 )
@@ -657,12 +657,10 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
-        write_mode = WriteMode.from_str(write_mode)
-
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
-            write_mode=write_mode,
+            write_mode=WriteMode.from_str(write_mode),
             file_format=FileFormat.Parquet,
             compression=compression,
             io_config=io_config,
@@ -728,12 +726,11 @@ class DataFrame:
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
-        write_mode = WriteMode.from_str(write_mode)
 
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
-            write_mode=write_mode,
+            write_mode=WriteMode.from_str(write_mode),
             file_format=FileFormat.Csv,
             io_config=io_config,
         )
@@ -3146,7 +3143,7 @@ class DataFrame:
         """
         schema = self.schema()
         preview = self._construct_show_preview(n)
-        preview = PreviewFormatter(
+        preview_formatter = PreviewFormatter(
             preview,
             schema,
             format,
@@ -3161,9 +3158,9 @@ class DataFrame:
         try:
             from IPython.display import display
 
-            display(preview, clear=True)
+            display(preview_formatter, clear=True)
         except ImportError:
-            print(preview)
+            print(preview_formatter)
         return None
 
     def __len__(self):

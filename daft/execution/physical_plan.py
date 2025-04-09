@@ -103,7 +103,7 @@ def file_write(
     """Write the results of `child_plan` into files described by `write_info`."""
     if write_mode == WriteMode.Overwrite or write_mode == WriteMode.OverwritePartitions:
         stage_id = next(stage_id_counter)
-        write_tasks: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+        write_tasks: list[SingleOutputPartitionTask[PartitionT]] = []
         for step in child_plan:
             if isinstance(step, PartitionTaskBuilder):
                 step = step.add_instruction(
@@ -120,12 +120,11 @@ def file_write(
             yield step
         while any(not _.done() for _ in write_tasks):
             yield None
-        partition_metadatas = []
-        inputs = []
-        for task in consume_deque(write_tasks):
-            inputs.append(task.partition())
-            partition_metadatas.append(task.partition_metadata())
-        yield PartitionTaskBuilder(inputs=inputs, partial_metadatas=partition_metadatas).add_instruction(
+        partition_metadatas = [task.partition_metadata() for task in write_tasks]
+        inputs = [task.partition() for task in write_tasks]
+        yield PartitionTaskBuilder[PartitionT](
+            inputs=inputs, partial_metadatas=list(partition_metadatas)
+        ).add_instruction(
             execution_step.OverwriteFiles(
                 overwrite_partitions=write_mode == WriteMode.OverwritePartitions,
                 root_dir=root_dir,

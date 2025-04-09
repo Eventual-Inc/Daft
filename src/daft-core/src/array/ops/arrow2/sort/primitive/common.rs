@@ -16,7 +16,7 @@ where
     F: Fn(&I, &I) -> std::cmp::Ordering,
 {
     let (mut indices, start_idx, end_idx) =
-        generate_initial_indices::<I>(validity, length, descending, nulls_first);
+        generate_initial_indices::<I>(validity, length, nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     if !descending {
@@ -33,19 +33,14 @@ pub fn multi_column_idx_sort<I, F>(
     overall_cmp: F,
     others_cmp: &DynComparator,
     length: usize,
-    first_col_desc: bool,
     first_col_nulls_first: bool,
 ) -> PrimitiveArray<I>
 where
     I: Index,
     F: Fn(&I, &I) -> std::cmp::Ordering,
 {
-    let (mut indices, start_idx, end_idx) = generate_initial_indices::<I>(
-        first_col_validity,
-        length,
-        first_col_desc,
-        first_col_nulls_first,
-    );
+    let (mut indices, start_idx, end_idx) =
+        generate_initial_indices::<I>(first_col_validity, length, first_col_nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     indices_slice.sort_unstable_by(|a, b| overall_cmp(a, b));
@@ -65,7 +60,6 @@ where
 fn generate_initial_indices<I>(
     validity: Option<&Bitmap>,
     length: usize,
-    descending: bool,
     nulls_first: bool,
 ) -> (Vec<I>, usize, usize)
 where
@@ -108,7 +102,7 @@ where
             });
 
         // either `descending` or `nulls_first` means that nulls come first
-        let (start_idx, end_idx) = if descending || nulls_first {
+        let (start_idx, end_idx) = if nulls_first {
             // since nulls come first, our valid values start at the end of the nulls
             (n_nulls, length)
         } else {
