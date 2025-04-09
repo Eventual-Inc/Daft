@@ -84,7 +84,7 @@ class TimeUnit:
             assert False
 
     def __repr__(self) -> str:
-        return f"TimeUnit.{self.__str__()}"
+        return f"TimeUnit({self.__str__()})"
 
 
 class DataType:
@@ -950,7 +950,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.time(timeunit="ns")
             >>> dtype.timeunit
-            TimeUnit.ns
+            TimeUnit(ns)
             >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.timeunit
