@@ -59,9 +59,9 @@ class TimeUnit:
 
         Example:
             >>> TimeUnit.from_str("s")
-            TimeUnit.s
+            TimeUnit(s)
             >>> TimeUnit.from_str("milliseconds")
-            TimeUnit.ms
+            TimeUnit(ms)
             >>> try:
             ...     TimeUnit.from_str("foo")
             ... except ValueError:
