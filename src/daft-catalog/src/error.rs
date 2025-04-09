@@ -25,6 +25,9 @@ pub enum Error {
     #[snafu(display("{type_} with name {ident} not found!"))]
     ObjectNotFound { type_: String, ident: String },
 
+    #[snafu(display("Ambgiuous identifier {input}, found {options}!"))]
+    AmbiguousIdentifier { input: String, options: String },
+
     #[snafu(display("Invalid identifier {input}!"))]
     InvalidIdentifier { input: String },
 
@@ -37,13 +40,6 @@ pub enum Error {
 }
 
 impl Error {
-    #[inline]
-    pub fn invalid_identifier<S: Into<String>>(input: S) -> Error {
-        Error::InvalidIdentifier {
-            input: input.into(),
-        }
-    }
-
     #[inline]
     pub fn unsupported<S: Into<String>>(message: S) -> Error {
         Error::Unsupported {
@@ -65,6 +61,28 @@ impl Error {
         Error::ObjectNotFound {
             type_: typ_.into(),
             ident: ident.to_string(),
+        }
+    }
+
+    pub fn ambiguous_identifier<O, I>(input: I, options: O) -> Self
+    where
+        O: IntoIterator<Item = I>,
+        I: Into<String>,
+    {
+        Error::AmbiguousIdentifier {
+            input: input.into(),
+            options: options
+                .into_iter()
+                .map(Into::into)
+                .collect::<Vec<_>>()
+                .join("."),
+        }
+    }
+
+    #[inline]
+    pub fn invalid_identifier<S: Into<String>>(input: S) -> Error {
+        Error::InvalidIdentifier {
+            input: input.into(),
         }
     }
 }

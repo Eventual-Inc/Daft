@@ -839,6 +839,24 @@ impl<'a> SQLPlanner<'a> {
         self.plan_table_function(func, &args)
     }
 
+    /// Returns a normalized daft identifier from an sqlparser ObjectName
+    pub(crate) fn normalize(&self, name: &ObjectName) -> SQLPlannerResult<Identifier> {
+        let normalizer = self.session().normalizer();
+        let mut path = vec![];
+        for part in &name.0 {
+            let part = match part.quote_style {
+                Some('"') => part.value.to_string(),
+                None => normalizer(&part.value),
+                Some(c) => unsupported_sql_err!(
+                    "Daft only supports delimited identifiers with double-quotes, found {}",
+                    c
+                ),
+            };
+            path.push(part);
+        }
+        Ok(Identifier::try_new(path)?)
+    }
+
     /// Plan a `FROM <table>` table factor.
     ///
     /// All plans returned by plan_relation_table should have a SubqueryAlias with the table's name.
@@ -846,7 +864,7 @@ impl<'a> SQLPlanner<'a> {
         &self,
         name: &ObjectName,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        let ident = normalize(name);
+        let ident = self.normalize(name)?;
         let table = if ident.has_qualifier() {
             // qualified search of session metadata
             self.get_table(&ident).ok()
@@ -1025,7 +1043,7 @@ impl<'a> SQLPlanner<'a> {
             // TODO: support wildcard struct gets
             SelectItem::QualifiedWildcard(object_name, wildcard_opts) => {
                 check_wildcard_options(wildcard_opts)?;
-                let ident = normalize(object_name);
+                let ident = object_name_to_identifier(object_name);
                 let ident_name = ident.to_string();
                 let Some(current_plan) = self.current_plan.as_ref() else {
                     table_not_found_err!(ident_name);
@@ -1877,9 +1895,8 @@ fn compound_ident_to_str(idents: &[Ident]) -> String {
         .join(".")
 }
 
-/// Returns a normalized daft identifier from an sqlparser ObjectName
-pub(crate) fn normalize(name: &ObjectName) -> Identifier {
-    // TODO case-normalization of regular identifiers
+/// TODO remove me once columns use case-normalized names
+pub(crate) fn object_name_to_identifier(name: &ObjectName) -> Identifier {
     Identifier::new(name.0.iter().map(|i| i.value.clone()))
 }
 
