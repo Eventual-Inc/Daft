@@ -149,7 +149,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr};
+    use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr, WindowExpr};
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::{
@@ -192,7 +192,7 @@ mod tests {
         let mut window_spec = WindowSpec::default();
         window_spec.partition_by = vec![category_col.clone()];
 
-        let min_expr = value_col.clone().min();
+        let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
 
         let window_func =
             Arc::new(Expr::Window(min_expr.clone(), window_spec.clone())).alias("min_value");
@@ -245,7 +245,7 @@ mod tests {
         let mut window_spec = WindowSpec::default();
         window_spec.partition_by = vec![category_col.clone(), group_col.clone()];
 
-        let sum_expr = value_col.clone().sum();
+        let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
 
         let window_func =
             Arc::new(Expr::Window(sum_expr.clone(), window_spec.clone())).alias("sum_value");
@@ -307,8 +307,8 @@ mod tests {
         let mut window_spec2 = WindowSpec::default();
         window_spec2.partition_by = vec![group_col.clone()];
 
-        let min_expr = value_col.clone().min();
-        let sum_expr = value_col.clone().sum();
+        let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
+        let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
 
         let window_func1 =
             Arc::new(Expr::Window(min_expr.clone(), window_spec1.clone())).alias("min_by_category");
@@ -395,10 +395,10 @@ mod tests {
         let mut single_partition_spec = WindowSpec::default();
         single_partition_spec.partition_by = vec![category_col.clone()];
 
-        let sum_expr = value_col.clone().sum();
-        let avg_expr = value_col.clone().mean();
-        let min_expr = value_col.clone().min();
-        let max_expr = value_col.clone().max();
+        let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
+        let avg_expr: WindowExpr = value_col.clone().mean().try_into().unwrap();
+        let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
+        let max_expr: WindowExpr = value_col.clone().max().try_into().unwrap();
 
         let window_func1 = Arc::new(Expr::Window(sum_expr.clone(), multi_partition_spec.clone()))
             .alias("sum_value");
@@ -529,20 +529,21 @@ mod tests {
         let mut combined_window_spec = WindowSpec::default();
         combined_window_spec.partition_by = vec![letter_col.clone(), num_col.clone()];
 
+        let letter_sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
+        let num_sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
+        let combined_sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
+
         let letter_sum = Arc::new(Expr::Window(
-            value_col.clone().sum(),
+            letter_sum_expr.clone(),
             letter_window_spec.clone(),
         ))
         .alias("letter_sum");
 
-        let num_sum = Arc::new(Expr::Window(
-            value_col.clone().sum(),
-            num_window_spec.clone(),
-        ))
-        .alias("num_sum");
+        let num_sum =
+            Arc::new(Expr::Window(num_sum_expr.clone(), num_window_spec.clone())).alias("num_sum");
 
         let combined_sum = Arc::new(Expr::Window(
-            value_col.clone().sum(),
+            combined_sum_expr.clone(),
             combined_window_spec.clone(),
         ))
         .alias("combined_sum");
@@ -559,15 +560,12 @@ mod tests {
         let plan = input_plan.clone().select(projection)?.build();
 
         let letter_sum_expr = Arc::new(Expr::Window(
-            value_col.clone().sum(),
+            letter_sum_expr.clone(),
             letter_window_spec.clone(),
         ));
-        let num_sum_expr = Arc::new(Expr::Window(
-            value_col.clone().sum(),
-            num_window_spec.clone(),
-        ));
+        let num_sum_expr = Arc::new(Expr::Window(num_sum_expr.clone(), num_window_spec.clone()));
         let combined_sum_expr = Arc::new(Expr::Window(
-            value_col.clone().sum(),
+            combined_sum_expr.clone(),
             combined_window_spec.clone(),
         ));
 

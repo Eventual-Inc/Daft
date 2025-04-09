@@ -217,7 +217,10 @@ pub enum Expr {
     },
 
     #[display("window({_0})")]
-    Window(ExprRef, window::WindowSpec),
+    Window(WindowExpr, window::WindowSpec),
+
+    #[display("window_fn({_0})")]
+    WindowFn(WindowExpr),
 
     #[display("not({_0})")]
     Not(ExprRef),
@@ -328,6 +331,15 @@ pub enum AggExpr {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
+}
+
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum WindowExpr {
+    #[display("agg({_0})")]
+    Agg(AggExpr),
+
+    #[display("rank({_0})")]
+    Rank(ExprRef),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -664,6 +676,80 @@ impl From<&AggExpr> for ExprRef {
     }
 }
 
+impl WindowExpr {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Agg(agg_expr) => agg_expr.name(),
+            Self::Rank(expr) => expr.name(),
+        }
+    }
+
+    pub fn semantic_id(&self, schema: &Schema) -> FieldID {
+        match self {
+            Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
+            Self::Rank(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.rank()"))
+            }
+        }
+    }
+
+    pub fn children(&self) -> Vec<ExprRef> {
+        match self {
+            Self::Agg(agg_expr) => agg_expr.children(),
+            Self::Rank(expr) => vec![expr.clone()],
+        }
+    }
+
+    pub fn with_new_children(&self, mut children: Vec<ExprRef>) -> Self {
+        match self {
+            Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
+            Self::Rank(_) => {
+                assert_eq!(children.len(), 1);
+                let first_child = children.pop().unwrap();
+                Self::Rank(first_child)
+            }
+        }
+    }
+
+    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+        match self {
+            Self::Agg(agg_expr) => agg_expr.to_field(schema),
+            Self::Rank(expr) => expr.to_field(schema)?.to_list_field(),
+        }
+    }
+}
+
+impl From<&WindowExpr> for ExprRef {
+    fn from(window_expr: &WindowExpr) -> Self {
+        match window_expr {
+            WindowExpr::Agg(agg_expr) => Self::new(Expr::Agg(agg_expr.clone())),
+            _ => Self::new(Expr::WindowFn(window_expr.clone())),
+        }
+    }
+}
+
+impl From<AggExpr> for WindowExpr {
+    fn from(agg_expr: AggExpr) -> Self {
+        Self::Agg(agg_expr)
+    }
+}
+
+impl TryFrom<ExprRef> for WindowExpr {
+    type Error = DaftError;
+
+    fn try_from(expr: ExprRef) -> Result<Self, Self::Error> {
+        match expr.as_ref() {
+            Expr::Agg(agg_expr) => Ok(Self::Agg(agg_expr.clone())),
+            Expr::WindowFn(window_expr) => Ok(window_expr.clone()),
+            _ => Err(DaftError::ValueError(format!(
+                "Expected an AggExpr or WindowFn, got {:?}",
+                expr
+            ))),
+        }
+    }
+}
+
 impl From<UnresolvedColumn> for ExprRef {
     fn from(col: UnresolvedColumn) -> Self {
         Self::new(Expr::Column(Column::Unresolved(col)))
@@ -770,11 +856,11 @@ impl Expr {
     }
 
     pub fn bool_and(self: ExprRef) -> ExprRef {
-        Arc::new(Self::Agg(AggExpr::BoolAnd(self)))
+        Self::Agg(AggExpr::BoolAnd(self)).into()
     }
 
     pub fn bool_or(self: ExprRef) -> ExprRef {
-        Arc::new(Self::Agg(AggExpr::BoolOr(self)))
+        Self::Agg(AggExpr::BoolOr(self)).into()
     }
 
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
@@ -791,6 +877,10 @@ impl Expr {
 
     pub fn agg_concat(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Concat(self)).into()
+    }
+
+    pub fn rank(self: ExprRef) -> ExprRef {
+        Self::WindowFn(WindowExpr::Rank(self)).into()
     }
 
     #[allow(clippy::should_implement_trait)]
@@ -997,6 +1087,10 @@ impl Expr {
 
                 FieldID::new(format!("{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}])"))
             }
+            Self::WindowFn(window_expr) => {
+                let child_id = window_expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.window_fn()"))
+            }
         }
     }
 
@@ -1011,11 +1105,12 @@ impl Expr {
             | Self::NotNull(expr)
             | Self::Cast(expr, ..)
             | Self::Alias(expr, ..)
-            | Self::InSubquery(expr, _)
-            | Self::Window(expr, _) => {
+            | Self::InSubquery(expr, _) => {
                 vec![expr.clone()]
             }
             Self::Agg(agg_expr) => agg_expr.children(),
+            Self::Window(window_expr, _) => window_expr.children(),
+            Self::WindowFn(window_expr) => window_expr.children(),
 
             // Multiple children.
             Self::Function { inputs, .. } => inputs.clone(),
@@ -1066,10 +1161,6 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 subquery.clone(),
             ),
-            Self::Window(_, window_spec) => Self::Window(
-                children.first().expect("Should have 1 child").clone(),
-                window_spec.clone(),
-            ),
             // 2 children
             Self::BinaryOp { op, .. } => Self::BinaryOp {
                 op: *op,
@@ -1114,6 +1205,10 @@ impl Expr {
             },
             // N-ary
             Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
+            Self::Window(window_expr, window_spec) => {
+                Self::Window(window_expr.with_new_children(children), window_spec.clone())
+            }
+            Self::WindowFn(window_expr) => Self::WindowFn(window_expr.with_new_children(children)),
             Self::Function {
                 func,
                 inputs: old_children,
@@ -1334,6 +1429,7 @@ impl Expr {
             Self::InSubquery(expr, _) => Ok(Field::new(expr.name(), DataType::Boolean)),
             Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
             Self::Window(expr, _) => expr.to_field(schema),
+            Self::WindowFn(expr) => expr.to_field(schema),
         }
     }
 
@@ -1377,6 +1473,7 @@ impl Expr {
             Self::InSubquery(expr, _) => expr.name(),
             Self::Exists(subquery) => subquery.name(),
             Self::Window(expr, ..) => expr.name(),
+            Self::WindowFn(expr) => expr.name(),
         }
     }
 
@@ -1457,6 +1554,7 @@ impl Expr {
                 | Expr::InSubquery(..)
                 | Expr::Exists(..)
                 | Expr::Window(..)
+                | Expr::WindowFn(..)
                 | Expr::Column(_) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",
                 )),
@@ -1494,6 +1592,8 @@ impl Expr {
             Self::Function { .. } => true,
             Self::ScalarFunction(..) => true,
             Self::Agg(_) => true,
+            Self::Window(..) => true,
+            Self::WindowFn(..) => true,
             Self::IsIn(..) => true,
             Self::Between(..) => true,
             Self::BinaryOp { .. } => true,
@@ -1510,7 +1610,6 @@ impl Expr {
             } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
             Self::InSubquery(expr, _) => expr.has_compute(),
             Self::List(..) => true,
-            Self::Window(expr, ..) => expr.has_compute(),
         }
     }
 
@@ -1759,7 +1858,8 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         | Expr::Function { .. }
         | Expr::Column(_)
         | Expr::IfElse { .. }
-        | Expr::Window(_, _)
+        | Expr::Window(..)
+        | Expr::WindowFn(_)
         | Expr::FillNull(_, _) => match expr.to_field(schema) {
             Ok(field) if field.dtype == DataType::Boolean => 0.2,
             _ => 1.0,

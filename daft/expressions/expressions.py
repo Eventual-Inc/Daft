@@ -1660,7 +1660,12 @@ class Expression:
         return self._expr.name()
 
     def over(self, window: Window) -> Expression:
-        return Expression._from_pyexpr(self._expr.over(window._spec))
+        expr = self._expr.over(window._spec)
+        return Expression._from_pyexpr(expr)
+
+    def rank(self) -> Expression:
+        expr = self._expr.rank()
+        return Expression._from_pyexpr(expr)
 
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
