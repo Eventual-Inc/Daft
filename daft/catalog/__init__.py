@@ -338,10 +338,10 @@ class Catalog(ABC):
             self.create_namespace(identifier)
 
     @abstractmethod
-    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
+    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
         """Creates a table in this catalog."""
 
-    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource) -> Table:
+    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource | object) -> Table:
         """Creates a table in this catalog if it does not already exist."""
         try:
             return self.get_table(identifier)

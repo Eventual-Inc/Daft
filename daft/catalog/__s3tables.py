@@ -35,7 +35,7 @@ class S3Path(Sequence):
         if isinstance(ident, Identifier):
             path._parts = tuple(ident)
         elif isinstance(ident, str):
-            path._parts = tuple(*ident.split("."))
+            path._parts = tuple(ident.split("."))
         else:
             raise ValueError("expected Identifier or str")
         return path

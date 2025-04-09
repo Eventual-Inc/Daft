@@ -36,7 +36,7 @@ class MemoryCatalog(Catalog):
     def create_namespace(self, identifier: Identifier | str):
         raise NotImplementedError("Memory create_namespace not yet supported.")
 
-    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
+    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
         raise NotImplementedError("Memory create_table not yet supported.")
 
     ###
