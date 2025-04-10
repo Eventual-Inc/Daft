@@ -261,12 +261,15 @@ class Catalog(ABC):
         except ImportError:
             raise ImportError("Iceberg support not installed: pip install -U 'daft[iceberg]'")
 
+    # Currently daft.unity_catalog.UnityCatalog is more like a Unity Catalog client rather than a
+    # the catalog itself.
     @staticmethod
-    def from_unity(catalog: object) -> Catalog:
-        """Creates a Daft Catalog instance from a Unity catalog.
+    def from_unity(client: object, catalog_name: str = "unity") -> Catalog:
+        """Creates a Daft Catalog instance from a Unity catalog client and a catalog name.
 
         Args:
-            catalog (object): unity catalog object
+            client (object): unity catalog client
+            catalog_name (str): name of the catalog
 
         Returns:
             Catalog: new daft catalog instance from the unity catalog object.
@@ -274,7 +277,7 @@ class Catalog(ABC):
         try:
             from daft.catalog.__unity import UnityCatalog
 
-            return UnityCatalog._from_obj(catalog)
+            return UnityCatalog._from_obj(client, catalog_name)
         except ImportError:
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
