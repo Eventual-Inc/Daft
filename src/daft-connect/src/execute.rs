@@ -288,7 +288,7 @@ impl ConnectSession {
         }
 
         // TODO: converge Session and ConnectSession
-        let session = self.session().clone();
+        let session = self.session().shallow_clone();
         let session = Rc::new(session);
 
         let mut planner = daft_sql::SQLPlanner::new(session);

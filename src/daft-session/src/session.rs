@@ -18,18 +18,6 @@ pub struct Session {
     state: Arc<RwLock<SessionState>>,
 }
 
-impl Clone for Session {
-    /// Creates a completely independent copy of the Session with its own state.
-    ///
-    /// **This performs a deep clone, not just an Arc clone.**
-    fn clone(&self) -> Self {
-        let state = self.state().clone();
-        Self {
-            state: Arc::new(RwLock::new(state)),
-        }
-    }
-}
-
 /// Session state is to be kept internal, consider a builder.
 #[derive(Debug, Clone)]
 struct SessionState {
@@ -46,6 +34,25 @@ struct SessionState {
 }
 
 impl Session {
+    /// Creates a completely independent copy of the Session with its own state.
+    ///
+    /// **This performs a deep clone of the state, not just an Arc clone.**
+    pub fn deep_clone(&self) -> Self {
+        let state = self.state().clone();
+        Self {
+            state: Arc::new(RwLock::new(state)),
+        }
+    }
+
+    /// Clones the session, but does not clone the state. This is a shallow copy.
+    ///
+    /// If you need a deep clone, use the `clone` method.
+    pub fn shallow_clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+        }
+    }
+
     /// Creates a new empty session
     pub fn empty() -> Self {
         let state = SessionState {

@@ -13,7 +13,7 @@ pub(crate) type DataFrame = Arc<LogicalPlan>;
 
 /// Execute SQL statements against the session.
 pub(crate) fn execute_statement(sess: Session, statement: &str) -> DaftResult<Option<DataFrame>> {
-    let sess: Rc<Session> = Rc::new(sess.into());
+    let sess: Rc<Session> = Rc::new(sess);
     let stmt = SQLPlanner::new(sess.clone()).plan(statement)?;
     match stmt {
         Statement::Select(select) => execute_select(&sess, select),

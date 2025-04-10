@@ -115,7 +115,7 @@ impl PySession {
 
 impl From<&PySession> for Session {
     fn from(sess: &PySession) -> Self {
-        sess.0.clone()
+        sess.0.shallow_clone()
     }
 }
 
