@@ -20,7 +20,8 @@ pub struct Session {
 
 impl Clone for Session {
     /// Creates a completely independent copy of the Session with its own state.
-    /// Note: This performs a deep clone, not just an Arc clone.
+    ///
+    /// **This performs a deep clone, not just an Arc clone.**
     fn clone(&self) -> Self {
         let state = self.state().clone();
         Self {
