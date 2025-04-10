@@ -241,7 +241,7 @@ impl PipelineNode for IntermediateNode {
         let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
             node_name: self.name(),
         })?;
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let counting_sender =
             CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
 
