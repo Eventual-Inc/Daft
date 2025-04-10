@@ -44,6 +44,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from daft.daft import PyIdentifier, PyTableSource
+from daft.io.scan import ScanOperator, Pushdowns
 
 from daft.dataframe import DataFrame
 
@@ -349,7 +350,7 @@ class Catalog(ABC):
             raise ImportError("AWS Glue support not installed: pip install -U 'daft[aws]'")
 
     @staticmethod
-    def from_iceberg_glue(
+    def _from_iceberg_glue(
         name: str,
         warehouse: str,
         catalog_id: str | None = None,
@@ -803,6 +804,7 @@ class Table(ABC):
         Returns:
             DataFrame: new DataFrame instance
         """
+
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Creates a new DataFrame from the table applying the provided expressions.

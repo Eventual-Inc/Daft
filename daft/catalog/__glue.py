@@ -20,6 +20,9 @@ if TYPE_CHECKING:
 
     from daft.daft import IOConfig
     from daft.dataframe import DataFrame
+
+    from daft.io.source import GlobSourcePushdowns, GlobSource
+
 else:
     GlueClient = object
 
@@ -185,6 +188,10 @@ class GlueGlobTable(GlueTable):
             )
 
         return t
+
+    def scan(self, **pushdowns: GlobSourcePushdowns) -> GlobSource:
+        # HERE WE
+        pass
 
     def read(self, **options) -> DataFrame:
         from daft.io import read_csv, read_parquet

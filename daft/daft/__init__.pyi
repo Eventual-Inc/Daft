@@ -722,6 +722,7 @@ class ScanOperatorHandle:
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
     ) -> ScanOperatorHandle: ...
+    
     @staticmethod
     def glob_scan(
         glob_path: list[str],
@@ -732,6 +733,7 @@ class ScanOperatorHandle:
         schema: PySchema | None = None,
         file_path_column: str | None = None,
     ) -> ScanOperatorHandle: ...
+    
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...
 

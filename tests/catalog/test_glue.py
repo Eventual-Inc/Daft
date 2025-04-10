@@ -27,7 +27,7 @@ def test_iceberg_glue():
     import daft
 
     # Create a Daft Catalog which is implemented via PyIceberg's GlueCatalog
-    catalog = Catalog.from_iceberg_glue(name="glue", region="us-west-2", warehouse="s3://rchowell")
+    catalog = Catalog._from_iceberg_glue(name="glue", region="us-west-2", warehouse="s3://rchowell")
 
     # Load some test data
     df = daft.read_parquet("tests/assets/parquet-data/mvp.parquet")
