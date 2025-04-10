@@ -10,7 +10,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, NUM_CPUS};
+use crate::ExecutionTaskSpawner;
 
 enum SortState {
     Building(Vec<Arc<MicroPartition>>),
@@ -138,9 +138,5 @@ impl BlockingSink for SortSink {
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         Ok(Box::new(SortState::Building(Vec::new())))
-    }
-
-    fn max_concurrency(&self) -> usize {
-        *NUM_CPUS
     }
 }
