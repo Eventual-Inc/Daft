@@ -596,13 +596,14 @@ def ray_remote_traced(f: ray.remote_function.RemoteFunction):
     """Decorates a Ray Remote function to ensure that we can trace it.
 
     Usage:
+        ``` py linenums="1"
+    @ray_remote_traced
+    @ray.remote
+    def f():
+        ...
 
-    >>> @ray_remote_traced
-    >>> @ray.remote
-    >>> def f():
-    >>>     ...
-    >>>
-    >>> f.with_tracing(tracer, task).remote(...)
+    f.with_tracing(tracer, task).remote(...)
+        ```
     """
     return _RayFunctionWrapper(f=f)
 

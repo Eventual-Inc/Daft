@@ -564,8 +564,10 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
     more than once per `ttl_seconds`.
 
     Example:
-    >>> p = _ray_num_cpus_provider()
-    >>> next(p)
+        ``` py linenums="1"
+        p = _ray_num_cpus_provider()
+        next(p)
+        ```
     """
     last_checked_time = time.time()
     last_num_cpus_queried = int(ray.cluster_resources().get("CPU", 0))

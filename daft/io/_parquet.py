@@ -31,13 +31,6 @@ def read_parquet(
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s).
 
-    Example:
-        >>> df = daft.read_parquet("/path/to/file.parquet")
-        >>> df = daft.read_parquet("/path/to/directory")
-        >>> df = daft.read_parquet("/path/to/files-*.parquet")
-        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
-        >>> df = daft.read_parquet("gs://path/to/files-*.parquet")
-
     Args:
         path (str): Path to Parquet file (allows for wildcards)
         row_groups (List[int] or List[List[int]]): List of row groups to read corresponding to each file.
@@ -48,11 +41,20 @@ def read_parquet(
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
-            the amount of system resources (number of connections and thread contention) when running in the Ray runner.
-            Defaults to None, which will let Daft decide based on the runner it is currently using.
+        the amount of system resources (number of connections and thread contention) when running in the Ray runner.
+        Defaults to None, which will let Daft decide based on the runner it is currently using.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame
+
+    Example:
+        ``` py linenums="1"
+        df = daft.read_parquet("/path/to/file.parquet")
+        df = daft.read_parquet("/path/to/directory")
+        df = daft.read_parquet("/path/to/files-*.parquet")
+        df = daft.read_parquet("s3://path/to/files-*.parquet")
+        df = daft.read_parquet("gs://path/to/files-*.parquet")
+        ```
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

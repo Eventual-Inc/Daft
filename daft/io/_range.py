@@ -45,9 +45,12 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
 
     Examples:
         The range starts at 0 and ends at `end` (exclusive) with a step size of 1.
+        ``` py linenums="1"
+        import daft
 
-        >>> import daft
-        >>> daft.range(5).show()
+        daft.range(5).show()
+        ```
+        ```
         ╭───────╮
         │ id    │
         │ ---   │
@@ -63,13 +66,16 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
         ├╌╌╌╌╌╌╌┤
         │ 4     │
         ╰───────╯
-        <BLANKLINE>
+
         (Showing first 5 of 5 rows)
-
+        ```
         The range starts at `start` and ends at `end` (exclusive) with a step size of 1.
+        ``` py linenums="1"
+        import daft
 
-        >>> import daft
-        >>> daft.range(2, 5).show()
+        daft.range(2, 5).show()
+        ```
+        ```
         ╭───────╮
         │ id    │
         │ ---   │
@@ -81,13 +87,16 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
         ├╌╌╌╌╌╌╌┤
         │ 4     │
         ╰───────╯
-        <BLANKLINE>
+
         (Showing first 3 of 3 rows)
-
+        ```
         The range starts at `start` and ends at `end` (exclusive) with a step size of `step`.
+        ``` py linenums="1"
+        import daft
 
-        >>> import daft
-        >>> daft.range(2, 10, 2).show()
+        daft.range(2, 10, 2).show()
+        ```
+        ```
         ╭───────╮
         │ id    │
         │ ---   │
@@ -101,17 +110,24 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
         ├╌╌╌╌╌╌╌┤
         │ 8     │
         ╰───────╯
-        <BLANKLINE>
-        (Showing first 4 of 4 rows)
 
+        (Showing first 4 of 4 rows)
+        ```
         The range starts at `start` and ends at `end` (exclusive) with a step size of `step`.
         The range is partitioned into `partitions` partitions.
+        ``` py linenums="1"
+        import daft
 
-        >>> import daft
-        >>> df = daft.range(2, 10, step=2, partitions=2)
-        >>> df.num_partitions()
+        df = daft.range(2, 10, step=2, partitions=2)
+        df.num_partitions()
+        ```
+        ```
         2
-        >>> df.show()
+        ```
+        ``` py linenums="1"
+        df.show()
+        ```
+        ```
         ╭───────╮
         │ id    │
         │ ---   │
@@ -125,8 +141,9 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
         ├╌╌╌╌╌╌╌┤
         │ 8     │
         ╰───────╯
-        <BLANKLINE>
+
         (Showing first 4 of 4 rows)
+        ```
     """
     if end is None:
         end = start

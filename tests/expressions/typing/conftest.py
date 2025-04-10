@@ -175,22 +175,23 @@ def assert_typing_resolve_vs_runtime_behavior(
 ):
     """Asserts that typing behavior during schema resolution matches behavior during runtime on Series'.
 
-    Example Usage:
-
-        >>> def my_test(binary_data_fixture):
-        >>>     lhs, rhs = binary_data_fixture  # unwrap the generated Series data
-        >>>     assert_typing_resolve_vs_runtime_behavior(
-        >>>         data=binary_data_fixture,
-        >>>         expr=col(lhs.name()) + col(rhs.name()),
-        >>>         run_kernel=lambda: lhs + rhs,
-        >>>         resolvable=can_add_dtypes(lhs.datatype(), rhs.datatype()),
-        >>>     )
-
     Args:
         data: data to test against (generated using one of the provided fixtures, `{unary, binary}_data_fixture`)
         expr (Expression): Expression used to run the kernel in a MicroPartition (use `.name()` of the generated data to refer to columns)
         run_kernel (Callable): A lambda that will run the kernel directly on the generated Series' without going through the Expressions API
         resolvable (bool): Whether this kernel should be valid, given the datatypes of the generated Series'
+
+    Example:
+        ```py linenums="1"
+        def my_test(binary_data_fixture):
+            lhs, rhs = binary_data_fixture  # unwrap the generated Series data
+            assert_typing_resolve_vs_runtime_behavior(
+                data=binary_data_fixture,
+                expr=col(lhs.name()) + col(rhs.name()),
+                run_kernel=lambda: lhs + rhs,
+                resolvable=can_add_dtypes(lhs.datatype(), rhs.datatype()),
+            )
+        ```
     """
     table = MicroPartition.from_pydict({s.name(): s for s in data})
     projection = ExpressionsProjection([expr.alias("result")])

@@ -16,17 +16,19 @@ def read_hudi(
 ) -> DataFrame:
     """Create a DataFrame from a Hudi table.
 
-    Example:
-        >>> df = daft.read_hudi("some-table-uri")
-        >>> df = df.where(df["foo"] > 5)
-        >>> df.show()
-
     Args:
         table_uri: URI to the Hudi table.
         io_config: A custom IOConfig to use when accessing Hudi table object storage data. Defaults to None.
 
     Returns:
         DataFrame: A DataFrame with the schema converted from the specified Hudi table.
+
+    Example:
+        ``` py linenums="1"
+        df = daft.read_hudi("some-table-uri")
+        df = df.where(df["foo"] > 5)
+        df.show()
+        ```
     """
     from daft.hudi.hudi_scan import HudiScanOperator
 

@@ -225,21 +225,26 @@ class Session:
     def create_temp_table(self, identifier: str, source: TableSource | object = None) -> Table:
         """Creates a temp table scoped to this session's lifetime.
 
-        Example:
-            >>> import daft
-            >>> from daft.session import Session
-            >>> sess = Session()
-            >>> sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
-            >>> sess.create_temp_table("S", daft.from_pydict({"y": [4, 5, 6]}))
-            >>> sess.list_tables()
-            [Identifier(''T''), Identifier(''S'')]
-
         Args:
             identifier (str): table identifier (name)
             source (TableSource|object): table source like a schema or dataframe
 
         Returns:
             Table: new table instance
+
+        Example:
+            ``` py linenums="1"
+            import daft
+            from daft.session import Session
+
+            sess = Session()
+            sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
+            sess.create_temp_table("S", daft.from_pydict({"y": [4, 5, 6]}))
+            sess.list_tables()
+            ```
+            ```
+            [Identifier(''T''), Identifier(''S'')]
+            ```
         """
         s = source if isinstance(source, TableSource) else TableSource._from_obj(source)
         return self._session.create_temp_table(identifier, s._source, replace=True)
