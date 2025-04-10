@@ -537,8 +537,8 @@ impl PyExpr {
         })
     }
 
-    pub fn rank(&self) -> PyResult<Self> {
-        Ok(self.expr.clone().rank().into())
+    pub fn row_number(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().row_number().into())
     }
 }
 

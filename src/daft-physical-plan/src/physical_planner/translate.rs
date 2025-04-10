@@ -655,7 +655,7 @@ pub fn extract_window_expr(expr: &ExprRef) -> DaftResult<WindowExpr> {
                     AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
                 }
             }),
-            WindowExpr::Rank() => WindowExpr::Rank(),
+            WindowExpr::RowNumber(_) => WindowExpr::RowNumber(Some(name.to_string())),
         }),
         _ => Err(DaftError::InternalError(format!(
             "Expected a window expression, got {:?}",

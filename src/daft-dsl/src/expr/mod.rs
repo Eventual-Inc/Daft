@@ -338,8 +338,8 @@ pub enum WindowExpr {
     #[display("agg({_0})")]
     Agg(AggExpr),
 
-    #[display("rank()")]
-    Rank(),
+    #[display("row_number()")]
+    RowNumber(Option<String>),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -680,35 +680,35 @@ impl WindowExpr {
     pub fn name(&self) -> &str {
         match self {
             Self::Agg(agg_expr) => agg_expr.name(),
-            Self::Rank() => "rank()",
+            Self::RowNumber(_) => "row_number()",
         }
     }
 
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         match self {
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
-            Self::Rank() => FieldID::new("rank()"),
+            Self::RowNumber(_) => FieldID::new("row_number()"),
         }
     }
 
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
             Self::Agg(agg_expr) => agg_expr.children(),
-            Self::Rank() => vec![],
+            Self::RowNumber(_) => vec![],
         }
     }
 
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
             Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
-            Self::Rank() => Self::Rank(),
+            Self::RowNumber(name) => Self::RowNumber(name.clone()),
         }
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
-            Self::Rank() => Ok(Field::new("rank()", DataType::UInt64)),
+            Self::RowNumber(_) => Ok(Field::new("row_number()", DataType::UInt64)),
         }
     }
 }
@@ -872,8 +872,8 @@ impl Expr {
         Self::Agg(AggExpr::Concat(self)).into()
     }
 
-    pub fn rank(self: ExprRef) -> ExprRef {
-        Self::Window(WindowExpr::Rank()).into()
+    pub fn row_number(self: ExprRef) -> ExprRef {
+        Self::Window(WindowExpr::RowNumber(None)).into()
     }
 
     #[allow(clippy::should_implement_trait)]
@@ -1058,10 +1058,6 @@ impl Expr {
             }
             Self::Over(expr, window_spec) => {
                 let child_id = expr.semantic_id(schema);
-
-                if !matches!(expr, WindowExpr::Agg(_)) {
-                    return FieldID::new(format!("{child_id}.window()"));
-                }
 
                 let partition_by_ids = window_spec
                     .partition_by

@@ -202,13 +202,13 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             let mut result = sorted_data;
                             for window_expr in &params.window_exprs {
                                 match extract_window_expr(window_expr)? {
-                                    WindowExpr::Rank() => {
-                                        // For rank, we'll just use row numbers for now
-                                        // This will be replaced with proper rank logic later
+                                    WindowExpr::RowNumber(name) => {
+                                        assert!(name.is_some());
+                                        let name = name.unwrap();
                                         let row_numbers = (1..(result.num_rows() + 1) as u64).collect::<Vec<_>>();
-                                        let rank_series = UInt64Array::from(("rank().window()", row_numbers)).into_series();
-                                        let rank_batch = RecordBatch::from_nonempty_columns(vec![rank_series])?;
-                                        result = result.union(&rank_batch)?;
+                                        let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
+                                        let row_number_batch = RecordBatch::from_nonempty_columns(vec![row_number_series])?;
+                                        result = result.union(&row_number_batch)?;
                                     }
                                     WindowExpr::Agg(agg_expr) => {
                                         let agg_result = result.window_agg(&[Arc::new(Expr::Agg(agg_expr.clone()))], &params.partition_by)?;
