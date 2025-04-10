@@ -260,9 +260,6 @@ impl Session {
     pub fn get_function(&self, name: &str) -> Result<WrappedUDFClass> {
         self.state().get_function(name)
     }
-    pub fn list_functions(&self) -> Vec<String> {
-        self.state().functions.list(None)
-    }
 }
 
 impl SessionState {
