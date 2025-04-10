@@ -12,14 +12,24 @@ use crate::{
 };
 
 /// Session holds all state for query planning and execution (e.g. connection).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Session {
     /// Session state for interior mutability
     state: Arc<RwLock<SessionState>>,
 }
 
+impl Clone for Session {
+    fn clone(&self) -> Self {
+        // We actually want to clone the state, not just the Arc
+        let state = self.state().clone();
+        Self {
+            state: Arc::new(RwLock::new(state)),
+        }
+    }
+}
+
 /// Session state is to be kept internal, consider a builder.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SessionState {
     /// Session identifier
     _id: String,

@@ -62,7 +62,7 @@ pub fn sql(
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
     // TODO deprecated catalog APIs #3819
-    // let session = Session::empty();
+
     let session = py_session.0.clone();
 
     for (name, view) in catalog.tables {
