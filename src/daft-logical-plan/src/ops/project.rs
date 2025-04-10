@@ -253,11 +253,13 @@ fn replace_column_with_semantic_id(
                     |_| e.clone(),
                 )
             }
-            Expr::Window(inner_expr) => {
+            Expr::WindowFunction(inner_expr) => {
                 let expr_ref: ExprRef = ExprRef::from(inner_expr);
 
                 replace_column_with_semantic_id(expr_ref, subexprs_to_replace, schema).map_yes_no(
-                    |transformed_child| Expr::Window(transformed_child.try_into().unwrap()).into(),
+                    |transformed_child| {
+                        Expr::WindowFunction(transformed_child.try_into().unwrap()).into()
+                    },
                     |_| e.clone(),
                 )
             }

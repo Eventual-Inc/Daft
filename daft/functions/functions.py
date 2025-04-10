@@ -193,3 +193,12 @@ def columns_max(*exprs: Expression | str) -> Expression:
     if not exprs:
         raise ValueError("columns_max requires at least one expression")
     return list_(*exprs).list.max().alias("columns_max")
+
+
+def rank() -> Expression:
+    """Rank the values in the column.
+
+    Returns:
+        Expression: An expression that ranks the values in the column.
+    """
+    return Expression._from_pyexpr(native.rank())

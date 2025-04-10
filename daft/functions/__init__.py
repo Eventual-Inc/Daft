@@ -7,6 +7,7 @@ from .functions import (
     columns_avg,
     columns_min,
     columns_max,
+    rank,
 )
 from .llm_generate import llm_generate
 
@@ -18,4 +19,5 @@ __all__ = [
     "columns_sum",
     "llm_generate",
     "monotonically_increasing_id",
+    "rank",
 ]

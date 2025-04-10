@@ -12,7 +12,7 @@ use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     estimated_selectivity, functions::agg::merge_mean, is_partition_compatible,
     join::normalize_join_keys, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef,
-    SketchType,
+    SketchType, WindowExpr,
 };
 use daft_functions::{
     list::{count_distinct, distinct},
@@ -551,6 +551,13 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
             let expr_ref: ExprRef = inner_expr.into();
             extract_agg_expr(&expr_ref)
         }
+        Expr::WindowFunction(inner_expr) => {
+            if let WindowExpr::Agg(agg_expr) = inner_expr {
+                extract_agg_expr(&agg_expr.into())
+            } else {
+                Err(DaftError::InternalError("Expected window function to be an agg".to_string()))
+            }
+        }
         Expr::Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
             // reorder expressions so that alias goes before agg
             match agg_expr {
@@ -600,7 +607,12 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 },
             }
         }),
-        _ => Err(DaftError::InternalError("Expected non-agg expressions in aggregation to be factored out before plan translation.".to_string())),
+        _ => Err(DaftError::InternalError(
+            format!(
+                "Expected non-agg expressions in aggregation to be factored out before plan translation. Got: {:?}",
+                expr
+            )
+        )),
     }
 }
 

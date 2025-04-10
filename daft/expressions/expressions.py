@@ -1663,10 +1663,6 @@ class Expression:
         expr = self._expr.over(window._spec)
         return Expression._from_pyexpr(expr)
 
-    def rank(self) -> Expression:
-        expr = self._expr.rank()
-        return Expression._from_pyexpr(expr)
-
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
 
