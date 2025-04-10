@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
@@ -9,10 +7,7 @@ use pyo3::{
 };
 
 use super::{super::FunctionEvaluator, PythonUDF};
-use crate::{
-    functions::{FunctionExpr, ScalarUDF},
-    ExprRef,
-};
+use crate::{functions::FunctionExpr, ExprRef};
 
 #[cfg(feature = "python")]
 fn run_udf(
@@ -129,44 +124,6 @@ impl FunctionEvaluator for PythonUDF {
         #[cfg(feature = "python")]
         {
             self.call_udf(inputs)
-        }
-    }
-}
-
-#[typetag::serde]
-impl ScalarUDF for PythonUDF {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn name(&self) -> &'static str {
-        "py_udf"
-    }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        #[cfg(not(feature = "python"))]
-        {
-            panic!("Cannot evaluate a PythonUDF without compiling for Python");
-        }
-        #[cfg(feature = "python")]
-        {
-            self.call_udf(inputs)
-        }
-    }
-
-    fn to_field(&self, inputs: &[ExprRef], _: &Schema) -> DaftResult<Field> {
-        if inputs.len() != self.num_expressions {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Number of inputs required by UDF {} does not match number of inputs provided: {}",
-                self.num_expressions,
-                inputs.len()
-            )));
-        }
-        match inputs {
-            [] => Err(DaftError::ValueError(
-                "Cannot run UDF with 0 expression arguments".into(),
-            )),
-            [first, ..] => Ok(Field::new(first.name(), self.return_dtype.clone())),
         }
     }
 }
