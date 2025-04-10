@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -140,5 +140,56 @@ impl WindowSpec {
         let mut new_spec = self.clone();
         new_spec.min_periods = min_periods;
         new_spec
+    }
+}
+
+impl fmt::Display for WindowSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "window(")?;
+
+        // Write partition by
+        if !self.partition_by.is_empty() {
+            write!(f, "partition_by=[")?;
+            for (i, expr) in self.partition_by.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", expr)?;
+            }
+            write!(f, "]")?;
+        }
+
+        // Write order by
+        if !self.order_by.is_empty() {
+            if !self.partition_by.is_empty() {
+                write!(f, ", ")?;
+            }
+            write!(f, "order_by=[")?;
+            for (i, (expr, asc)) in self.order_by.iter().zip(self.ascending.iter()).enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}:{}", expr, if *asc { "asc" } else { "desc" })?;
+            }
+            write!(f, "]")?;
+        }
+
+        // Write frame if present
+        if let Some(frame) = &self.frame {
+            if !self.partition_by.is_empty() || !self.order_by.is_empty() {
+                write!(f, ", ")?;
+            }
+            write!(f, "frame={:?}", frame)?;
+        }
+
+        // Write min_periods if not default
+        if self.min_periods != 1 {
+            if !self.partition_by.is_empty() || !self.order_by.is_empty() || self.frame.is_some() {
+                write!(f, ", ")?;
+            }
+            write!(f, "min_periods={}", self.min_periods)?;
+        }
+
+        write!(f, ")")
     }
 }

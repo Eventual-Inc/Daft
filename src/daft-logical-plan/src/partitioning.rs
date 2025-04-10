@@ -329,7 +329,7 @@ fn translate_clustering_spec_expr(
             Ok(expr.in_subquery(subquery.clone()))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.
-        Expr::Agg(_) | Expr::Column(..) | Expr::Window(..) => Err(()),
+        Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),
     }
 }
 
