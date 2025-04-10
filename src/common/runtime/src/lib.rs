@@ -21,6 +21,10 @@ static NUM_CPUS: LazyLock<usize> =
 static THREADED_IO_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| 8.min(*NUM_CPUS));
 static COMPUTE_RUNTIME_NUM_WORKER_THREADS: OnceLock<usize> = OnceLock::new();
 
+pub fn get_or_init_compute_runtime_num_worker_threads() -> usize {
+    *COMPUTE_RUNTIME_NUM_WORKER_THREADS.get_or_init(|| *NUM_CPUS)
+}
+
 pub fn set_compute_runtime_num_worker_threads(num_threads: usize) {
     COMPUTE_RUNTIME_NUM_WORKER_THREADS
         .set(num_threads)
@@ -186,13 +190,7 @@ fn init_io_runtime(multi_thread: bool) -> RuntimeRef {
 
 pub fn get_compute_runtime() -> RuntimeRef {
     COMPUTE_RUNTIME
-        .get_or_init(|| {
-            init_compute_runtime(
-                *COMPUTE_RUNTIME_NUM_WORKER_THREADS
-                    .get()
-                    .unwrap_or(&NUM_CPUS),
-            )
-        })
+        .get_or_init(|| init_compute_runtime(get_or_init_compute_runtime_num_worker_threads()))
         .clone()
 }
 
@@ -223,10 +221,8 @@ pub fn get_io_pool_num_threads() -> Option<usize> {
     }
 }
 
-pub fn get_num_compute_threads() -> usize {
-    *COMPUTE_RUNTIME_NUM_WORKER_THREADS
-        .get()
-        .expect("Compute runtime num worker threads not set")
+pub fn get_compute_pool_num_threads() -> usize {
+    get_or_init_compute_runtime_num_worker_threads()
 }
 
 mod tests {

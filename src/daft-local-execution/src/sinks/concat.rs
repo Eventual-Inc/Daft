@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_runtime::get_num_compute_threads;
+use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
@@ -57,7 +57,7 @@ impl StreamingSink for ConcatSink {
     }
 
     fn max_concurrency(&self) -> usize {
-        get_num_compute_threads()
+        get_compute_pool_num_threads()
     }
 
     fn dispatch_spawner(

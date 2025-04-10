@@ -1,7 +1,7 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::get_num_compute_threads;
+use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
     ExprRef,
@@ -50,7 +50,7 @@ impl ProjectOperator {
     // This function is used to determine the optimal allocation of concurrency and expression parallelism
     fn get_optimal_allocation(projection: &[ExprRef]) -> DaftResult<(usize, usize)> {
         let resource_request = get_resource_request(projection);
-        let num_cpus = get_num_compute_threads();
+        let num_cpus = get_compute_pool_num_threads();
         // The number of CPUs available for the operator.
         let available_cpus = match resource_request {
             // If the resource request specifies a number of CPUs, the available cpus is the number of actual CPUs

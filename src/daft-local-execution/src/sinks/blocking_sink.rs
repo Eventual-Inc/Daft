@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_runtime::{get_compute_runtime, get_num_compute_threads};
+use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
@@ -54,7 +54,7 @@ pub trait BlockingSink: Send + Sync {
         )))
     }
     fn max_concurrency(&self) -> usize {
-        get_num_compute_threads()
+        get_compute_pool_num_threads()
     }
 }
 
