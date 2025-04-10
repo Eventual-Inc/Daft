@@ -30,7 +30,7 @@ impl ExtractWindowFunction {
 
         for expr in projection {
             expr.apply(|e| {
-                if let Expr::Window(_inner_expr, window_spec) = e.as_ref() {
+                if let Expr::Over(_inner_expr, window_spec) = e.as_ref() {
                     result.push((e.clone(), window_spec.clone()));
                     Ok(TreeNodeRecursion::Jump)
                 } else {
@@ -149,7 +149,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr};
+    use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr, WindowExpr};
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::{
@@ -192,24 +192,22 @@ mod tests {
         let mut window_spec = WindowSpec::default();
         window_spec.partition_by = vec![category_col.clone()];
 
-        let min_expr = value_col.clone().min();
+        let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
 
         let window_func =
-            Arc::new(Expr::Window(min_expr.clone(), window_spec.clone())).alias("min_value");
+            Arc::new(Expr::Over(min_expr.clone(), window_spec.clone())).alias("min_value");
 
         let projection = vec![category_col.clone(), value_col.clone(), window_func.clone()];
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let window_expr = Arc::new(Expr::Window(min_expr.clone(), window_spec.clone()));
+        let window_expr = Arc::new(Expr::Over(min_expr.clone(), window_spec.clone()));
         let auto_generated_name = window_expr.semantic_id(&input_plan.schema()).id.to_string();
 
         let window_op = Window::try_new(
             input_plan.clone().build(),
-            vec![
-                Arc::new(Expr::Window(min_expr.clone(), window_spec.clone()))
-                    .alias(auto_generated_name.clone()),
-            ],
+            vec![Arc::new(Expr::Over(min_expr.clone(), window_spec.clone()))
+                .alias(auto_generated_name.clone())],
             window_spec,
         )?;
 
@@ -245,10 +243,10 @@ mod tests {
         let mut window_spec = WindowSpec::default();
         window_spec.partition_by = vec![category_col.clone(), group_col.clone()];
 
-        let sum_expr = value_col.clone().sum();
+        let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
 
         let window_func =
-            Arc::new(Expr::Window(sum_expr.clone(), window_spec.clone())).alias("sum_value");
+            Arc::new(Expr::Over(sum_expr.clone(), window_spec.clone())).alias("sum_value");
 
         let projection = vec![
             category_col.clone(),
@@ -259,15 +257,13 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let window_expr = Arc::new(Expr::Window(sum_expr.clone(), window_spec.clone()));
+        let window_expr = Arc::new(Expr::Over(sum_expr.clone(), window_spec.clone()));
         let auto_generated_name = window_expr.semantic_id(&input_plan.schema()).id.to_string();
 
         let window_op = Window::try_new(
             input_plan.clone().build(),
-            vec![
-                Arc::new(Expr::Window(sum_expr.clone(), window_spec.clone()))
-                    .alias(auto_generated_name.clone()),
-            ],
+            vec![Arc::new(Expr::Over(sum_expr.clone(), window_spec.clone()))
+                .alias(auto_generated_name.clone())],
             window_spec,
         )?;
 
@@ -307,13 +303,13 @@ mod tests {
         let mut window_spec2 = WindowSpec::default();
         window_spec2.partition_by = vec![group_col.clone()];
 
-        let min_expr = value_col.clone().min();
-        let sum_expr = value_col.clone().sum();
+        let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
+        let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
 
         let window_func1 =
-            Arc::new(Expr::Window(min_expr.clone(), window_spec1.clone())).alias("min_by_category");
+            Arc::new(Expr::Over(min_expr.clone(), window_spec1.clone())).alias("min_by_category");
         let window_func2 =
-            Arc::new(Expr::Window(sum_expr.clone(), window_spec2.clone())).alias("sum_by_group");
+            Arc::new(Expr::Over(sum_expr.clone(), window_spec2.clone())).alias("sum_by_group");
 
         let projection = vec![
             category_col.clone(),
@@ -325,8 +321,8 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let window_expr1 = Arc::new(Expr::Window(min_expr.clone(), window_spec1.clone()));
-        let window_expr2 = Arc::new(Expr::Window(sum_expr.clone(), window_spec2.clone()));
+        let window_expr1 = Arc::new(Expr::Over(min_expr.clone(), window_spec1.clone()));
+        let window_expr2 = Arc::new(Expr::Over(sum_expr.clone(), window_spec2.clone()));
 
         let auto_generated_name1 = window_expr1
             .semantic_id(&input_plan.schema())
@@ -339,10 +335,8 @@ mod tests {
 
         let window_op1 = Window::try_new(
             input_plan.clone().build(),
-            vec![
-                Arc::new(Expr::Window(min_expr.clone(), window_spec1.clone()))
-                    .alias(auto_generated_name1.clone()),
-            ],
+            vec![Arc::new(Expr::Over(min_expr.clone(), window_spec1.clone()))
+                .alias(auto_generated_name1.clone())],
             window_spec1,
         )?;
 
@@ -350,10 +344,8 @@ mod tests {
 
         let window_op2 = Window::try_new(
             intermediate_plan,
-            vec![
-                Arc::new(Expr::Window(sum_expr.clone(), window_spec2.clone()))
-                    .alias(auto_generated_name2.clone()),
-            ],
+            vec![Arc::new(Expr::Over(sum_expr.clone(), window_spec2.clone()))
+                .alias(auto_generated_name2.clone())],
             window_spec2,
         )?;
 
@@ -395,26 +387,20 @@ mod tests {
         let mut single_partition_spec = WindowSpec::default();
         single_partition_spec.partition_by = vec![category_col.clone()];
 
-        let sum_expr = value_col.clone().sum();
-        let avg_expr = value_col.clone().mean();
-        let min_expr = value_col.clone().min();
-        let max_expr = value_col.clone().max();
+        let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
+        let avg_expr: WindowExpr = value_col.clone().mean().try_into().unwrap();
+        let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
+        let max_expr: WindowExpr = value_col.clone().max().try_into().unwrap();
 
-        let window_func1 = Arc::new(Expr::Window(sum_expr.clone(), multi_partition_spec.clone()))
-            .alias("sum_value");
-        let window_func2 = Arc::new(Expr::Window(avg_expr.clone(), multi_partition_spec.clone()))
-            .alias("avg_value");
+        let window_func1 =
+            Arc::new(Expr::Over(sum_expr.clone(), multi_partition_spec.clone())).alias("sum_value");
+        let window_func2 =
+            Arc::new(Expr::Over(avg_expr.clone(), multi_partition_spec.clone())).alias("avg_value");
 
-        let window_func3 = Arc::new(Expr::Window(
-            min_expr.clone(),
-            single_partition_spec.clone(),
-        ))
-        .alias("min_value");
-        let window_func4 = Arc::new(Expr::Window(
-            max_expr.clone(),
-            single_partition_spec.clone(),
-        ))
-        .alias("max_value");
+        let window_func3 = Arc::new(Expr::Over(min_expr.clone(), single_partition_spec.clone()))
+            .alias("min_value");
+        let window_func4 = Arc::new(Expr::Over(max_expr.clone(), single_partition_spec.clone()))
+            .alias("max_value");
 
         let projection = vec![
             category_col.clone(),
@@ -428,16 +414,10 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let window_expr1 = Arc::new(Expr::Window(sum_expr.clone(), multi_partition_spec.clone()));
-        let window_expr2 = Arc::new(Expr::Window(avg_expr.clone(), multi_partition_spec.clone()));
-        let window_expr3 = Arc::new(Expr::Window(
-            min_expr.clone(),
-            single_partition_spec.clone(),
-        ));
-        let window_expr4 = Arc::new(Expr::Window(
-            max_expr.clone(),
-            single_partition_spec.clone(),
-        ));
+        let window_expr1 = Arc::new(Expr::Over(sum_expr.clone(), multi_partition_spec.clone()));
+        let window_expr2 = Arc::new(Expr::Over(avg_expr.clone(), multi_partition_spec.clone()));
+        let window_expr3 = Arc::new(Expr::Over(min_expr.clone(), single_partition_spec.clone()));
+        let window_expr4 = Arc::new(Expr::Over(max_expr.clone(), single_partition_spec.clone()));
 
         let auto_generated_name1 = window_expr1
             .semantic_id(&input_plan.schema())
@@ -459,9 +439,9 @@ mod tests {
         let multi_window_op = Window::try_new(
             input_plan.clone().build(),
             vec![
-                Arc::new(Expr::Window(sum_expr.clone(), multi_partition_spec.clone()))
+                Arc::new(Expr::Over(sum_expr.clone(), multi_partition_spec.clone()))
                     .alias(auto_generated_name1.clone()),
-                Arc::new(Expr::Window(avg_expr.clone(), multi_partition_spec.clone()))
+                Arc::new(Expr::Over(avg_expr.clone(), multi_partition_spec.clone()))
                     .alias(auto_generated_name2.clone()),
             ],
             multi_partition_spec,
@@ -472,16 +452,10 @@ mod tests {
         let single_window_op = Window::try_new(
             intermediate_plan,
             vec![
-                Arc::new(Expr::Window(
-                    min_expr.clone(),
-                    single_partition_spec.clone(),
-                ))
-                .alias(auto_generated_name3.clone()),
-                Arc::new(Expr::Window(
-                    max_expr.clone(),
-                    single_partition_spec.clone(),
-                ))
-                .alias(auto_generated_name4.clone()),
+                Arc::new(Expr::Over(min_expr.clone(), single_partition_spec.clone()))
+                    .alias(auto_generated_name3.clone()),
+                Arc::new(Expr::Over(max_expr.clone(), single_partition_spec.clone()))
+                    .alias(auto_generated_name4.clone()),
             ],
             single_partition_spec,
         )?;
@@ -529,20 +503,21 @@ mod tests {
         let mut combined_window_spec = WindowSpec::default();
         combined_window_spec.partition_by = vec![letter_col.clone(), num_col.clone()];
 
-        let letter_sum = Arc::new(Expr::Window(
-            value_col.clone().sum(),
+        let letter_sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
+        let num_sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
+        let combined_sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
+
+        let letter_sum = Arc::new(Expr::Over(
+            letter_sum_expr.clone(),
             letter_window_spec.clone(),
         ))
         .alias("letter_sum");
 
-        let num_sum = Arc::new(Expr::Window(
-            value_col.clone().sum(),
-            num_window_spec.clone(),
-        ))
-        .alias("num_sum");
+        let num_sum =
+            Arc::new(Expr::Over(num_sum_expr.clone(), num_window_spec.clone())).alias("num_sum");
 
-        let combined_sum = Arc::new(Expr::Window(
-            value_col.clone().sum(),
+        let combined_sum = Arc::new(Expr::Over(
+            combined_sum_expr.clone(),
             combined_window_spec.clone(),
         ))
         .alias("combined_sum");
@@ -558,16 +533,13 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let letter_sum_expr = Arc::new(Expr::Window(
-            value_col.clone().sum(),
+        let letter_sum_expr = Arc::new(Expr::Over(
+            letter_sum_expr.clone(),
             letter_window_spec.clone(),
         ));
-        let num_sum_expr = Arc::new(Expr::Window(
-            value_col.clone().sum(),
-            num_window_spec.clone(),
-        ));
-        let combined_sum_expr = Arc::new(Expr::Window(
-            value_col.clone().sum(),
+        let num_sum_expr = Arc::new(Expr::Over(num_sum_expr.clone(), num_window_spec.clone()));
+        let combined_sum_expr = Arc::new(Expr::Over(
+            combined_sum_expr.clone(),
             combined_window_spec.clone(),
         ));
 

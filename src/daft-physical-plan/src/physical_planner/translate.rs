@@ -12,7 +12,7 @@ use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     estimated_selectivity, functions::agg::merge_mean, is_partition_compatible,
     join::normalize_join_keys, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef,
-    SketchType,
+    SketchType, WindowExpr,
 };
 use daft_functions::{
     list::{count_distinct, distinct},
@@ -547,7 +547,10 @@ pub fn adaptively_translate_single_logical_node(
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
     match expr.as_ref() {
         Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
-        Expr::Window(inner_expr, _) => extract_agg_expr(inner_expr),
+        Expr::Over(inner_expr, _) => {
+            let expr_ref: ExprRef = inner_expr.into();
+            extract_agg_expr(&expr_ref)
+        }
         Expr::Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
             // reorder expressions so that alias goes before agg
             match agg_expr {
@@ -598,6 +601,66 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
             }
         }),
         _ => Err(DaftError::InternalError("Expected non-agg expressions in aggregation to be factored out before plan translation.".to_string())),
+    }
+}
+
+pub fn extract_window_expr(expr: &ExprRef) -> DaftResult<WindowExpr> {
+    match expr.as_ref() {
+        Expr::Window(window_expr) => Ok(window_expr.clone()),
+        Expr::Over(inner_expr, _) => Ok(inner_expr.clone()),
+        Expr::Alias(e, name) => extract_window_expr(e).map(|window_expr| match window_expr {
+            WindowExpr::Agg(agg_expr) => WindowExpr::Agg(match agg_expr {
+                AggExpr::Count(e, count_mode) => {
+                    AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
+                }
+                AggExpr::CountDistinct(e) => {
+                    AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
+                }
+                AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
+                AggExpr::BoolAnd(e) => AggExpr::BoolAnd(Expr::Alias(e, name.clone()).into()),
+                AggExpr::BoolOr(e) => AggExpr::BoolOr(Expr::Alias(e, name.clone()).into()),
+                AggExpr::AnyValue(e, ignore_nulls) => {
+                    AggExpr::AnyValue(Expr::Alias(e, name.clone()).into(), ignore_nulls)
+                }
+                AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Set(e) => AggExpr::Set(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
+                AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
+                    func,
+                    inputs: inputs
+                        .into_iter()
+                        .map(|input| input.alias(name.clone()))
+                        .collect(),
+                },
+                AggExpr::ApproxPercentile(ApproxPercentileParams {
+                    child: e,
+                    percentiles,
+                    force_list_output,
+                }) => AggExpr::ApproxPercentile(ApproxPercentileParams {
+                    child: Expr::Alias(e, name.clone()).into(),
+                    percentiles,
+                    force_list_output,
+                }),
+                AggExpr::ApproxCountDistinct(e) => {
+                    AggExpr::ApproxCountDistinct(Expr::Alias(e, name.clone()).into())
+                }
+                AggExpr::ApproxSketch(e, sketch_type) => {
+                    AggExpr::ApproxSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
+                }
+                AggExpr::MergeSketch(e, sketch_type) => {
+                    AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
+                }
+            }),
+            WindowExpr::Rank() => WindowExpr::Rank(),
+        }),
+        _ => Err(DaftError::InternalError(format!(
+            "Expected a window expression, got {:?}",
+            expr
+        ))),
     }
 }
 
