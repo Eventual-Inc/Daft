@@ -97,18 +97,18 @@ impl PySession {
         Ok(self.0.set_namespace(ident.map(|i| i.as_ref()))?)
     }
 
-    pub fn register_function(&self, func: PyObject, name: &str) -> PyResult<()> {
+    pub fn attach_function(&self, func: PyObject, name: &str) -> PyResult<()> {
         let wrapped = WrappedUDFClass {
             inner: Arc::new(func),
         };
 
-        self.0.register_function(name.to_string(), wrapped)?;
+        self.0.attach_function(name.to_string(), wrapped)?;
 
         Ok(())
     }
 
-    pub fn unregister_function(&self, name: &str) -> PyResult<()> {
-        self.0.unregister_function(name)?;
+    pub fn detach_function(&self, name: &str) -> PyResult<()> {
+        self.0.detach_function(name)?;
         Ok(())
     }
 }

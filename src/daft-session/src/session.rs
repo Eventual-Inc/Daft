@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef, TableSource, View};
+use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
 use daft_dsl::functions::python::WrappedUDFClass;
 use uuid::Uuid;
 
@@ -247,12 +247,12 @@ impl Session {
         }
     }
 
-    pub fn register_function(&self, name: String, func: WrappedUDFClass) -> Result<()> {
+    pub fn attach_function(&self, name: String, func: WrappedUDFClass) -> Result<()> {
         self.state_mut().functions.bind(name, func);
         Ok(())
     }
 
-    pub fn unregister_function(&self, name: &str) -> Result<()> {
+    pub fn detach_function(&self, name: &str) -> Result<()> {
         self.state_mut().functions.remove(name);
         Ok(())
     }
@@ -282,9 +282,13 @@ impl SessionState {
     }
 
     pub fn get_function(&self, name: &str) -> Result<WrappedUDFClass> {
-        self.functions
-            .get_exact(name)
-            .cloned()
+        let mut items = self
+            .functions
+            .lookup(name, LookupMode::Insensitive)
+            .into_iter();
+        let f = items.next();
+
+        f.cloned()
             .ok_or_else(|| crate::error::Error::function_not_found(name))
     }
 }

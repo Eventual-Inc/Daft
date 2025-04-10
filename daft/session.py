@@ -16,6 +16,7 @@ __all__ = [
     "Session",
     "attach",
     "attach_catalog",
+    "attach_function",
     "attach_table",
     "create_namespace",
     "create_table",
@@ -24,6 +25,7 @@ __all__ = [
     "current_namespace",
     "current_session",
     "detach_catalog",
+    "detach_function",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -484,13 +486,13 @@ class Session:
     ###
     # functions
     ###
-    def register_function(self, func: UDF, name: str):
-        """Registers a Python function as a UDF in the current session."""
-        self._session.register_function(func, name)
+    def attach_function(self, func: UDF, name: str):
+        """Attaches a Python function as a UDF in the current session."""
+        self._session.attach_function(func, name)
 
-    def unregister_function(self, name: str):
-        """Unregisters a Python function as a UDF in the current session."""
-        self._session.unregister_function(name)
+    def detach_function(self, name: str):
+        """Detaches a Python function as a UDF in the current session."""
+        self._session.detach_function(name)
 
 
 ###
@@ -721,11 +723,11 @@ def set_session(session: Session):
 ###
 
 
-def register_function(func: UDF, name: str):
-    """Registers a Python function as a UDF in the current session."""
-    _session().register_function(func, name)
+def attach_function(func: UDF, name: str):
+    """Attaches a Python function as a UDF in the current session."""
+    _session().attach_function(func, name)
 
 
-def unregister_function(name: str):
-    """Unregisters a Python function as a UDF in the current session."""
-    _session().unregister_function(name)
+def detach_function(name: str):
+    """Detaches a Python function as a UDF in the current session."""
+    _session().detach_function(name)

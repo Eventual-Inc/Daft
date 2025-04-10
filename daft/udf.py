@@ -548,7 +548,7 @@ def udf(
             concurrency=concurrency,
         )
         # for sql we only want to register it by the qual_name so it's easily identifiable
-        daft.register_function(udf, qual_name)
+        daft.attach_function(udf, qual_name)
         return udf
 
     return _udf
