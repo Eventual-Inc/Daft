@@ -195,10 +195,10 @@ def columns_max(*exprs: Expression | str) -> Expression:
     return list_(*exprs).list.max().alias("columns_max")
 
 
-def rank() -> Expression:
-    """Rank the values in the column.
+def row_number() -> Expression:
+    """Return the row number of the current row (used for window functions).
 
     Returns:
-        Expression: An expression that ranks the values in the column.
+        Expression: An expression that returns the row number of the current row.
     """
-    return Expression._from_pyexpr(native.rank())
+    return Expression._from_pyexpr(native.row_number())
