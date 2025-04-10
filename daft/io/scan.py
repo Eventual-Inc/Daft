@@ -50,6 +50,14 @@ class ScanOperator(abc.ABC):
     def multiline_display(self) -> list[str]:
         raise NotImplementedError()
 
+    # class Taks(abc.ABC):
+
+    #     to_record_batches(slef) -> Generator[RecordBatch]:
+    #         pass
+
+    # def to_tasks(self) -> Generator[Task]:
+    #     pass
+
     @abc.abstractmethod
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         raise NotImplementedError()

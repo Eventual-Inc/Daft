@@ -47,7 +47,7 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Any
 
 from daft.logical.schema import Schema
 
@@ -734,6 +734,7 @@ class Table(ABC):
             mode (str): write mode such as 'append' or 'overwrite'
             **options: additional format-dependent write options
         """
+        raise NotImplementedError()
 
     def append(self, df: DataFrame, **options) -> None:
         """Appends the DataFrame to this table.

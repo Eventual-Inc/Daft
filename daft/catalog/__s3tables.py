@@ -119,7 +119,7 @@ class S3Catalog(Catalog):
         """Creates an S3Catalog using the boto3 session."""
         c = S3Catalog.__new__(S3Catalog)
         c._table_bucket_arn = table_bucket_arn
-        c._client = session.create_client("s3tables")
+        c._client = session.client("s3tables")
         return c
 
     ###
