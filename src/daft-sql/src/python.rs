@@ -63,7 +63,7 @@ pub fn sql(
 ) -> PyResult<PyLogicalPlanBuilder> {
     // TODO deprecated catalog APIs #3819
 
-    let session = py_session.inner().deep_clone();
+    let session = py_session.0.deep_clone();
 
     for (name, view) in catalog.tables {
         session.create_temp_table(name, &TableSource::View(view), true)?;
