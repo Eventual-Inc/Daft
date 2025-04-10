@@ -2,33 +2,31 @@
 
 from __future__ import annotations
 
-from abc import ABC
-
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import boto3
 from botocore.exceptions import ClientError
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
-from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.logical.schema import Field, Schema
 
 if TYPE_CHECKING:
     from boto3 import Session
     from mypy_boto3_glue import GlueClient
-    from mypy_boto3_glue.type_defs import (
-        TableTypeDef as GlueTableInfo,
-        StorageDescriptorOutputTypeDef as GlueStorageInfo,
-        ColumnOutputTypeDef as GlueColumnInfo
-    )
+    from mypy_boto3_glue.type_defs import ColumnOutputTypeDef as GlueColumnInfo
+    from mypy_boto3_glue.type_defs import TableTypeDef as GlueTableInfo
+
     from daft.daft import IOConfig
+    from daft.dataframe import DataFrame
 else:
     GlueClient = object
 
 
-Properties = dict[str,Any]
+Properties = dict[str, Any]
+
+
 class GlueCatalog(Catalog):
     """The GlueCatalog maps to an AWS Glue Database using a boto3 client."""
 
@@ -92,7 +90,7 @@ class GlueCatalog(Catalog):
         try:
             res = self._client.get_table(DatabaseName=self._database_name, Name=str(identifier))
             return GlueTable._from_table_info(self, res["Table"])
-        except self._client.exceptions.EntityNotFoundException as e:
+        except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
 
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
@@ -132,9 +130,7 @@ class GlueTable(Table):
                 return factory(catalog, table)
             except ValueError:
                 pass
-        raise ValueError(
-            f"Not able to determine the GlueTable implementation for response {table}"
-        )
+        raise ValueError(f"Not able to determine the GlueTable implementation for response {table}")
 
     @property
     def name(self) -> str:
@@ -142,12 +138,13 @@ class GlueTable(Table):
 
     def __repr__(self) -> str:
         import json
-        
+
         return json.dumps(self._table, indent=4, default=str)
 
 
 class GlueGlobTable(GlueTable):
     """GlueTable implemented by scanning files by glob prefix."""
+
     _location: str
     _format: GlueGlobTableFormat
     _schema: Schema
@@ -158,11 +155,11 @@ class GlueGlobTable(GlueTable):
     @staticmethod
     def _from_table_info(catalog: GlueCatalog, table: GlueTableInfo) -> GlueGlobTable:
         """Creates a GlueGlobTable with the specified format type.
-        
+
         Parameters:
             catalog (GlueCatalog): The catalog this table belongs to
             table (GlueTableInfo): The table information from Glue
-            
+
         Returns:
             GlueGlobTable: A new table instance with the specified format.
         """
@@ -176,19 +173,21 @@ class GlueGlobTable(GlueTable):
         properties: Properties = table["Parameters"]
 
         # csv or parquet files should not have a table_type
-        if (table_type := properties.get("table_type")):
+        if table_type := properties.get("table_type"):
             raise ValueError(f"GlueTable information had table type {table_type} but should be none for a glob table.")
 
         # we'll use the "classification" property to figure out which io method to use.
-        if (classification := properties.get("classification")):
+        if classification := properties.get("classification"):
             t._format = GlueGlobTableFormat.from_str(classification)
         else:
-            raise ValueError(f"GlueTable information is missing the 'classification' property which is required for glob tables.")
+            raise ValueError(
+                "GlueTable information is missing the 'classification' property which is required for glob tables."
+            )
 
         return t
-    
+
     def read(self, **options) -> DataFrame:
-        from daft.io import read_parquet, read_csv
+        from daft.io import read_csv, read_parquet
 
         if self._format == GlueGlobTableFormat.CSV:
             return read_csv(
@@ -196,14 +195,11 @@ class GlueGlobTable(GlueTable):
                 infer_schema=False,
                 schema={f.name: f.dtype for f in self._schema},
                 delimiter=options.get("delimiter", ","),
-                **options
+                **options,
             )
         elif self._format == GlueGlobTableFormat.PARQUET:
             return read_parquet(
-                path=self._location,
-                infer_schema=False,
-                schema={f.name: f.dtype for f in self._schema},
-                **options
+                path=self._location, infer_schema=False, schema={f.name: f.dtype for f in self._schema}, **options
             )
         else:
             raise ValueError(f"Unsupported format: {self._format}")
@@ -211,24 +207,30 @@ class GlueGlobTable(GlueTable):
     def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
         raise NotImplementedError()
 
+
 class GlueGlobTableFormat(Enum):
     """Enum representing supported GlueGlobTable formats."""
+
     CSV = "csv"
     PARQUET = "parquet"
-    
+
     @classmethod
-    def from_str(cls, value: str) -> "GlueGlobTableFormat":
+    def from_str(cls, value: str) -> GlueGlobTableFormat:
         try:
             return cls(value.lower())
         except ValueError:
-            raise ValueError(f"Unknown glob table format: {value}. Expected one of: {', '.join(item.value for item in cls)}")
+            raise ValueError(
+                f"Unknown glob table format: {value}. Expected one of: {', '.join(item.value for item in cls)}"
+            )
 
 
 def _to_schema(columns: list[GlueColumnInfo]) -> Schema:
     return Schema._from_fields([_to_field(column) for column in columns])
 
+
 def _to_field(column: GlueColumnInfo) -> Field:
     return Field.create(column["Name"], _to_type(column["Type"]))
+
 
 def _to_type(type: str) -> DataType:
     type = type.lower()
