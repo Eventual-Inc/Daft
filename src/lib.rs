@@ -94,8 +94,8 @@ pub mod pylib {
         Ok(())
     }
 
-    #[pyfunction(signature = (num_threads = None))]
-    pub fn set_compute_runtime_num_worker_threads(num_threads: Option<usize>) {
+    #[pyfunction]
+    pub fn set_compute_runtime_num_worker_threads(num_threads: usize) {
         common_runtime::set_compute_runtime_num_worker_threads(num_threads);
     }
 

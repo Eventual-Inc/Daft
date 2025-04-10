@@ -49,7 +49,8 @@ class NativeRunner(Runner[MicroPartition]):
 
     def __init__(self, num_threads: int | None = None) -> None:
         super().__init__()
-        set_compute_runtime_num_worker_threads(num_threads)
+        if num_threads is not None:
+            set_compute_runtime_num_worker_threads(num_threads)
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return LOCAL_PARTITION_SET_CACHE

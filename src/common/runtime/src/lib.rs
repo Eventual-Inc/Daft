@@ -21,9 +21,9 @@ static NUM_CPUS: LazyLock<usize> =
 static THREADED_IO_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| 8.min(*NUM_CPUS));
 static COMPUTE_RUNTIME_NUM_WORKER_THREADS: OnceLock<usize> = OnceLock::new();
 
-pub fn set_compute_runtime_num_worker_threads(num_threads: Option<usize>) {
+pub fn set_compute_runtime_num_worker_threads(num_threads: usize) {
     COMPUTE_RUNTIME_NUM_WORKER_THREADS
-        .set(num_threads.unwrap_or(*NUM_CPUS))
+        .set(num_threads)
         .expect("Compute runtime num worker threads already set");
 }
 
@@ -190,7 +190,7 @@ pub fn get_compute_runtime() -> RuntimeRef {
             init_compute_runtime(
                 *COMPUTE_RUNTIME_NUM_WORKER_THREADS
                     .get()
-                    .expect("Compute runtime num worker threads not set"),
+                    .unwrap_or(&NUM_CPUS),
             )
         })
         .clone()
@@ -260,18 +260,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn cannot_get_compute_runtime_without_setting_num_threads() {
-        use super::*;
-
-        get_compute_runtime();
-    }
-
-    #[test]
     fn can_get_compute_runtime_after_setting_num_threads() {
         use super::*;
 
-        set_compute_runtime_num_worker_threads(Some(1));
+        set_compute_runtime_num_worker_threads(1);
         let runtime = get_compute_runtime();
         assert!(runtime.runtime.metrics().num_workers() == 1);
     }
