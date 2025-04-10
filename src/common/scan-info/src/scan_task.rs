@@ -10,7 +10,6 @@ use common_display::DisplayAs;
 use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use daft_schema::schema::SchemaRef;
-use futures::{stream::BoxStream, Stream, StreamExt};
 
 use crate::Pushdowns;
 
@@ -66,45 +65,3 @@ pub type SplitAndMergePass = dyn Fn(
     + Sync
     + Send;
 pub static SPLIT_AND_MERGE_PASS: OnceLock<&SplitAndMergePass> = OnceLock::new();
-
-enum ScanTaskProducer {
-    Local(PhysicalScanTaskProducer),
-    Distributed(DistributedScanTaskProducer),
-}
-
-impl ScanTaskProducer {
-    fn new(scan_tasks: Vec<ScanTaskLikeRef>) -> Self {
-        Self::Local(PhysicalScanTaskProducer { scan_tasks })
-    }
-
-    fn into_stream(self) -> BoxStream<'static, ScanTaskLikeRef> {
-        match self {
-            Self::Local(producer) => producer.into_stream().boxed(),
-            Self::Distributed(producer) => producer.into_stream().boxed(),
-        }
-    }
-}
-
-struct PhysicalScanTaskProducer {
-    scan_tasks: Vec<ScanTaskLikeRef>,
-}
-
-impl PhysicalScanTaskProducer {
-    fn into_stream(self) -> impl Stream<Item = ScanTaskLikeRef> {
-        futures::stream::iter(self.scan_tasks)
-    }
-}
-
-struct DistributedScanTaskProducer {
-    rx: tokio::sync::mpsc::Receiver<ScanTaskLikeRef>,
-}
-
-impl DistributedScanTaskProducer {
-    fn into_stream(self) -> impl Stream<Item = ScanTaskLikeRef> {
-        tokio_stream::wrappers::ReceiverStream::new(self.rx)
-    }
-}
-
-
-
-

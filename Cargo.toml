@@ -69,6 +69,7 @@ python = [
   "daft-core/python",
   "daft-csv/python",
   "daft-dashboard/python",
+  "daft-distributed-plan/python",
   "daft-dsl/python",
   "daft-functions-json/python",
   "daft-functions/python",

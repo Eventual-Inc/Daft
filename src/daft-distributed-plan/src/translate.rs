@@ -2,20 +2,20 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanState;
-use daft_core::join::JoinStrategy;
-use daft_dsl::{join::normalize_join_keys, ExprRef};
+use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_scan::ScanTaskRef;
 
-use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-
-pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
+pub fn translate_single_logical_node(
+    plan: &LogicalPlanRef,
+    inputs: &mut Vec<ScanTaskRef>,
+) -> DaftResult<LocalPhysicalPlanRef> {
     match plan.as_ref() {
         LogicalPlan::Source(source) => {
             match source.source_info.as_ref() {
-                SourceInfo::InMemory(info) => Ok(LocalPhysicalPlan::in_memory_scan(
-                    info.clone(),
-                    source.stats_state.clone(),
-                )),
+                SourceInfo::InMemory(info) => {
+                    unimplemented!("InMemory scan not supported on distributed swordfish yet")
+                }
                 SourceInfo::Physical(info) => {
                     // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
                     let scan_tasks = match &info.scan_state {
@@ -25,11 +25,12 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                     };
                     if scan_tasks.is_empty() {
-                        Ok(LocalPhysicalPlan::empty_scan(source.output_schema.clone()))
+                        unimplemented!("Empty scan not supported on distributed swordfish yet");
                     } else {
-                        Ok(LocalPhysicalPlan::physical_scan(
-                            scan_tasks,
-                            info.pushdowns.clone(),
+                        for scan_task in scan_tasks.iter() {
+                            inputs.push(scan_task.clone().as_any_arc().downcast().unwrap());
+                        }
+                        Ok(LocalPhysicalPlan::stream_scan(
                             source.output_schema.clone(),
                             source.stats_state.clone(),
                         ))
@@ -41,7 +42,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             }
         }
         LogicalPlan::Filter(filter) => {
-            let input = translate(&filter.input)?;
+            let input = translate_single_logical_node(&filter.input, inputs)?;
             Ok(LocalPhysicalPlan::filter(
                 input,
                 filter.predicate.clone(),
@@ -49,7 +50,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Limit(limit) => {
-            let input = translate(&limit.input)?;
+            let input = translate_single_logical_node(&limit.input, inputs)?;
             Ok(LocalPhysicalPlan::limit(
                 input,
                 limit.limit,
@@ -57,7 +58,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Project(project) => {
-            let input = translate(&project.input)?;
+            let input = translate_single_logical_node(&project.input, inputs)?;
             Ok(LocalPhysicalPlan::project(
                 input,
                 project.projection.clone(),
@@ -66,7 +67,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::ActorPoolProject(actor_pool_project) => {
-            let input = translate(&actor_pool_project.input)?;
+            let input = translate_single_logical_node(&actor_pool_project.input, inputs)?;
             Ok(LocalPhysicalPlan::actor_pool_project(
                 input,
                 actor_pool_project.projection.clone(),
@@ -75,7 +76,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Sample(sample) => {
-            let input = translate(&sample.input)?;
+            let input = translate_single_logical_node(&sample.input, inputs)?;
             Ok(LocalPhysicalPlan::sample(
                 input,
                 sample.fraction,
@@ -84,46 +85,17 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 sample.stats_state.clone(),
             ))
         }
+        LogicalPlan::Distinct(distinct) => {
+            unimplemented!("Distinct not supported on distributed swordfish yet");
+        }
         LogicalPlan::Aggregate(aggregate) => {
-            let input = translate(&aggregate.input)?;
-            if aggregate.groupby.is_empty() {
-                Ok(LocalPhysicalPlan::ungrouped_aggregate(
-                    input,
-                    aggregate.aggregations.clone(),
-                    aggregate.output_schema.clone(),
-                    aggregate.stats_state.clone(),
-                ))
-            } else {
-                Ok(LocalPhysicalPlan::hash_aggregate(
-                    input,
-                    aggregate.aggregations.clone(),
-                    aggregate.groupby.clone(),
-                    aggregate.output_schema.clone(),
-                    aggregate.stats_state.clone(),
-                ))
-            }
+            unimplemented!("Aggregate not supported on distributed swordfish yet");
         }
         LogicalPlan::Window(window) => {
-            let input = translate(&window.input)?;
-            if !window.window_spec.partition_by.is_empty()
-                && window.window_spec.order_by.is_empty()
-                && window.window_spec.frame.is_none()
-            {
-                Ok(LocalPhysicalPlan::window_partition_only(
-                    input,
-                    window.window_spec.partition_by.clone(),
-                    window.schema.clone(),
-                    window.stats_state.clone(),
-                    window.window_functions.clone(),
-                ))
-            } else {
-                Err(DaftError::not_implemented(
-                    "Window with order by or frame not yet implemented",
-                ))
-            }
+            unimplemented!("Window not supported on distributed swordfish yet");
         }
         LogicalPlan::Unpivot(unpivot) => {
-            let input = translate(&unpivot.input)?;
+            let input = translate_single_logical_node(&unpivot.input, inputs)?;
             Ok(LocalPhysicalPlan::unpivot(
                 input,
                 unpivot.ids.clone(),
@@ -135,108 +107,26 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Pivot(pivot) => {
-            let input = translate(&pivot.input)?;
-            Ok(LocalPhysicalPlan::pivot(
-                input,
-                pivot.group_by.clone(),
-                pivot.pivot_column.clone(),
-                pivot.value_column.clone(),
-                pivot.aggregation.clone(),
-                pivot.names.clone(),
-                pivot.output_schema.clone(),
-                pivot.stats_state.clone(),
-            ))
+            unimplemented!("Pivot not supported on distributed swordfish yet");
         }
         LogicalPlan::Sort(sort) => {
-            let input = translate(&sort.input)?;
-            Ok(LocalPhysicalPlan::sort(
-                input,
-                sort.sort_by.clone(),
-                sort.descending.clone(),
-                sort.nulls_first.clone(),
-                sort.stats_state.clone(),
-            ))
+            unimplemented!("Sort not supported on distributed swordfish yet");
         }
         LogicalPlan::Join(join) => {
-            if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
-                return Err(DaftError::not_implemented(
-                    "Only hash join is supported for now",
-                ));
-            }
-            let left = translate(&join.left)?;
-            let right = translate(&join.right)?;
-
-            let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
-
-            if !remaining_on.is_empty() {
-                return Err(DaftError::not_implemented("Execution of non-equality join"));
-            }
-
-            let (left_on, right_on) =
-                normalize_join_keys(left_on, right_on, join.left.schema(), join.right.schema())?;
-
-            if left_on.is_empty() && right_on.is_empty() && join.join_type == JoinType::Inner {
-                Ok(LocalPhysicalPlan::cross_join(
-                    left,
-                    right,
-                    join.output_schema.clone(),
-                    join.stats_state.clone(),
-                ))
-            } else {
-                Ok(LocalPhysicalPlan::hash_join(
-                    left,
-                    right,
-                    left_on,
-                    right_on,
-                    Some(null_equals_nulls),
-                    join.join_type,
-                    join.output_schema.clone(),
-                    join.stats_state.clone(),
-                ))
-            }
-        }
-        LogicalPlan::Distinct(distinct) => {
-            let schema = distinct.input.schema();
-            let input = translate(&distinct.input)?;
-            let col_exprs = input
-                .schema()
-                .names()
-                .iter()
-                .map(|name| daft_dsl::resolved_col(name.clone()))
-                .collect::<Vec<ExprRef>>();
-            Ok(LocalPhysicalPlan::hash_aggregate(
-                input,
-                vec![],
-                col_exprs,
-                schema,
-                distinct.stats_state.clone(),
-            ))
+            unimplemented!("Join not supported on distributed swordfish yet");
         }
         LogicalPlan::Concat(concat) => {
-            let input = translate(&concat.input)?;
-            let other = translate(&concat.other)?;
-            Ok(LocalPhysicalPlan::concat(
-                input,
-                other,
-                concat.stats_state.clone(),
-            ))
+            unimplemented!("Concat not supported on distributed swordfish yet");
         }
         LogicalPlan::Repartition(repartition) => {
-            log::warn!("Repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition");
-            translate(&repartition.input)
+            unimplemented!("Repartition not supported on distributed swordfish yet");
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
-            let input = translate(&monotonically_increasing_id.input)?;
-            Ok(LocalPhysicalPlan::monotonically_increasing_id(
-                input,
-                monotonically_increasing_id.column_name.clone(),
-                monotonically_increasing_id.schema.clone(),
-                monotonically_increasing_id.stats_state.clone(),
-            ))
+            unimplemented!("MonotonicallyIncreasingId not supported on distributed swordfish yet");
         }
         LogicalPlan::Sink(sink) => {
             use daft_logical_plan::SinkInfo;
-            let input = translate(&sink.input)?;
+            let input = translate_single_logical_node(&sink.input, inputs)?;
             let data_schema = input.schema().clone();
             match sink.sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(info) => Ok(LocalPhysicalPlan::physical_write(
@@ -271,7 +161,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             }
         }
         LogicalPlan::Explode(explode) => {
-            let input = translate(&explode.input)?;
+            let input = translate_single_logical_node(&explode.input, inputs)?;
             Ok(LocalPhysicalPlan::explode(
                 input,
                 explode.to_explode.clone(),

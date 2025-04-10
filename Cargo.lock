@@ -1713,11 +1713,8 @@ dependencies = [
  "daft-algebra",
  "daft-dsl",
  "daft-schema",
- "futures",
  "pyo3",
  "serde",
- "tokio",
- "tokio-stream",
  "typetag",
 ]
 
@@ -2297,6 +2294,8 @@ dependencies = [
  "common-treenode",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-scan",
+ "pyo3",
  "serde",
 ]
 
@@ -2510,8 +2509,10 @@ dependencies = [
  "num-format",
  "pin-project",
  "pyo3",
+ "pyo3-async-runtimes",
  "snafu",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tracing",
 ]
@@ -2521,13 +2522,17 @@ name = "daft-local-plan"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-py-serde",
  "common-resource-request",
  "common-scan-info",
  "daft-core",
  "daft-dsl",
  "daft-logical-plan",
  "log",
+ "pyo3",
+ "serde",
  "strum 0.26.3",
+ "tokio",
 ]
 
 [[package]]

@@ -4,47 +4,47 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
-use common_scan_info::{Pushdowns, ScanTaskLike};
-use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
+use daft_core::prelude::SchemaRef;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
-use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
-use daft_scan::{ChunkSpec, ScanTask};
+use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_scan::{ChunkSpec, ScanTask, ScanTaskRef};
 use daft_warc::WarcConvertOptions;
 use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
+    channel::Receiver,
     sources::source::{Source, SourceStream},
-    NUM_CPUS,
 };
 
 pub struct InputStreamSource {
-    stream: BoxStream<'static, ScanTaskLikeRef>,
+    rx: Receiver<ScanTaskRef>,
     num_parallel_tasks: usize,
     schema: SchemaRef,
+}
+
+impl Drop for InputStreamSource {
+    fn drop(&mut self) {
+        println!("InputStreamSource drop");
+    }
 }
 
 impl InputStreamSource {
     const MAX_PARALLEL_SCAN_TASKS: usize = 8;
 
-    pub fn new(
-        scan_tasks: Vec<Arc<ScanTask>>,
-        pushdowns: Pushdowns,
-        schema: SchemaRef,
-        cfg: &DaftExecutionConfig,
-    ) -> Self {
+    pub fn new(rx: Receiver<ScanTaskRef>, schema: SchemaRef) -> Self {
+        println!("InputStreamSource new");
         Self {
-            stream,
-            num_parallel_tasks,
+            rx,
+            num_parallel_tasks: Self::MAX_PARALLEL_SCAN_TASKS,
             schema,
         }
     }
@@ -63,7 +63,12 @@ impl Source for InputStreamSource {
         io_stats: IOStatsRef,
     ) -> DaftResult<SourceStream<'static>> {
         let io_runtime = get_io_runtime(true);
-        let stream_of_streams = self.stream.map(move |scan_task| {
+        println!("get_data");
+        let rx_stream = futures::stream::unfold(self.rx.clone(), |rx| async move {
+            println!("rx_stream unfold");
+            rx.recv().await.map(|scan_task| (scan_task, rx))
+        });
+        let stream_of_streams = rx_stream.map(move |scan_task| {
             let io_stats = io_stats.clone();
             io_runtime.spawn(stream_scan_task(scan_task, io_stats, maintain_order))
         });
@@ -101,78 +106,14 @@ impl Source for InputStreamSource {
     }
 }
 
-impl TreeDisplay for ScanTaskSource {
+impl TreeDisplay for InputStreamSource {
     fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        fn base_display(scan: &ScanTaskSource) -> String {
-            let num_scan_tasks = scan.scan_tasks.len();
-            let total_bytes: usize = scan
-                .scan_tasks
-                .iter()
-                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
-                .sum();
-
-            #[allow(unused_mut)]
-            let mut s = format!(
-                "ScanTaskSource:
-Num Scan Tasks = {num_scan_tasks}
-Estimated Scan Bytes = {total_bytes}
-"
-            );
-            #[cfg(feature = "python")]
-            if let FileFormatConfig::Database(config) =
-                scan.scan_tasks[0].file_format_config().as_ref()
-            {
-                if num_scan_tasks == 1 {
-                    writeln!(s, "SQL Query = {}", &config.sql).unwrap();
-                } else {
-                    writeln!(s, "SQL Queries = [{},..]", &config.sql).unwrap();
-                }
-            }
-            s
+        fn base_display(_scan: &InputStreamSource) -> String {
+            format!("InputStreamSource")
         }
         match level {
             DisplayLevel::Compact => self.get_name(),
-            DisplayLevel::Default => {
-                let mut s = base_display(self);
-                // We're only going to display the pushdowns and schema for the first scan task.
-                let pushdown = self.scan_tasks[0].pushdowns();
-                if !pushdown.is_empty() {
-                    s.push_str(&pushdown.display_as(DisplayLevel::Compact));
-                    s.push('\n');
-                }
-
-                let schema = self.scan_tasks[0].schema();
-                writeln!(
-                    s,
-                    "Schema: {{{}}}",
-                    schema.display_as(DisplayLevel::Compact)
-                )
-                .unwrap();
-
-                let tasks = self.scan_tasks.iter();
-
-                writeln!(s, "Scan Tasks: [").unwrap();
-                for (i, st) in tasks.enumerate() {
-                    if i < 3 || i >= self.scan_tasks.len() - 3 {
-                        writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Compact)).unwrap();
-                    } else if i == 3 {
-                        writeln!(s, "...").unwrap();
-                    }
-                }
-                writeln!(s, "]").unwrap();
-
-                s
-            }
-            DisplayLevel::Verbose => {
-                let mut s = base_display(self);
-                writeln!(s, "Scan Tasks: [").unwrap();
-
-                for st in &self.scan_tasks {
-                    writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Verbose)).unwrap();
-                }
-                s
-            }
+            DisplayLevel::Default | DisplayLevel::Verbose => base_display(self),
         }
     }
 
@@ -183,78 +124,6 @@ Estimated Scan Bytes = {total_bytes}
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         vec![]
     }
-}
-
-// Read all iceberg delete files and return a map of file paths to delete positions
-async fn get_delete_map(
-    scan_tasks: &[Arc<ScanTask>],
-) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
-    let delete_files = scan_tasks
-        .iter()
-        .flat_map(|st| {
-            st.sources
-                .iter()
-                .filter_map(|source| source.get_iceberg_delete_files())
-                .flatten()
-                .cloned()
-        })
-        .collect::<HashSet<_>>();
-    if delete_files.is_empty() {
-        return Ok(None);
-    }
-
-    let (runtime, io_client) = scan_tasks
-        .first()
-        .unwrap() // Safe to unwrap because we checked that the list is not empty
-        .storage_config
-        .get_io_client_and_runtime()?;
-    let scan_tasks = scan_tasks.to_vec();
-    runtime
-        .spawn(async move {
-            let mut delete_map = scan_tasks
-                .iter()
-                .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
-                .map(|path| (path, vec![]))
-                .collect::<std::collections::HashMap<_, _>>();
-            let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
-            let result = read_parquet_bulk_async(
-                delete_files.into_iter().collect(),
-                columns_to_read,
-                None,
-                None,
-                None,
-                None,
-                io_client,
-                None,
-                *NUM_CPUS,
-                ParquetSchemaInferenceOptions::new(None),
-                None,
-                None,
-                None,
-                None,
-            )
-            .await?;
-
-            for table_result in result {
-                let table = table_result?;
-                // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
-                // https://iceberg.apache.org/spec/#position-delete-files
-                let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
-                let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
-
-                for (file, pos) in file_paths
-                    .as_arrow()
-                    .values_iter()
-                    .zip(positions.as_arrow().values_iter())
-                {
-                    if delete_map.contains_key(file) {
-                        delete_map.get_mut(file).unwrap().push(*pos);
-                    }
-                }
-            }
-            Ok(Some(delete_map))
-        })
-        .await?
 }
 
 async fn stream_scan_task(
@@ -315,7 +184,6 @@ async fn stream_scan_task(
             let inference_options =
                 ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
-            let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
             let row_groups = if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
                 Some(row_groups.clone())
             } else {
@@ -337,7 +205,7 @@ async fn stream_scan_task(
                 field_id_mapping.clone(),
                 metadata,
                 maintain_order,
-                delete_rows,
+                None,
                 *chunk_size,
             )
             .await?

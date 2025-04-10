@@ -19,7 +19,7 @@ pub use pushdowns::Pushdowns;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
-pub use scan_task::{ScanTaskLike, ScanTaskLikeRef, ScanTaskProducer, SPLIT_AND_MERGE_PASS};
+pub use scan_task::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScanState {

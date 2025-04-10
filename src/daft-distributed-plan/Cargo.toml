@@ -6,10 +6,21 @@ common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
 serde = {workspace = true}
+pyo3 = {workspace = true, optional = true}
 
 [features]
-python = []
+python = [
+    "dep:pyo3",
+    "common-daft-config/python",
+    "common-error/python",
+    "common-scan-info/python",
+    "common-treenode/python",
+    "daft-logical-plan/python",
+    "daft-local-plan/python",
+    "daft-scan/python",
+]
 
 [lints]
 workspace = true

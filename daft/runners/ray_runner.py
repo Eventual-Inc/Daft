@@ -23,6 +23,7 @@ from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
+from daft.runners.distributed_swordfish import DistributedSwordfishRunner
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
@@ -1328,6 +1329,10 @@ class RayRunner(Runner[ray.ObjectRef]):
                 explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
                 explain_analyze_dir.mkdir(exist_ok=True, parents=True)
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
+        elif daft_execution_config.big_buddha_special:
+            distributed_swordfish_runner = DistributedSwordfishRunner()
+            for obj in distributed_swordfish_runner.run_plan(builder, daft_execution_config, results_buffer_size):
+                yield RayMaterializedResult(obj)
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.
