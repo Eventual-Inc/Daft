@@ -10,7 +10,13 @@ use pyo3::prelude::*;
 use crate::Session;
 
 #[pyclass]
-pub struct PySession(pub Session);
+pub struct PySession(Session);
+
+impl PySession {
+    pub fn inner(&self) -> &Session {
+        &self.0
+    }
+}
 
 #[pymethods]
 impl PySession {

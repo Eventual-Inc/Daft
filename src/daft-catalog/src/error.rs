@@ -37,9 +37,6 @@ pub enum Error {
     #[cfg(feature = "python")]
     #[snafu(display("Python error: {}", source))]
     PythonError { source: pyo3::PyErr },
-
-    #[snafu(display("Function with name {name} not found!"))]
-    FunctionNotFound { name: String },
 }
 
 impl Error {
@@ -91,7 +88,10 @@ impl Error {
 
     #[inline]
     pub fn function_not_found<S: Into<String>>(name: S) -> Error {
-        Error::FunctionNotFound { name: name.into() }
+        Error::ObjectNotFound {
+            type_: "Function".to_string(),
+            ident: name.into(),
+        }
     }
 }
 

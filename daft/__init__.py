@@ -174,7 +174,6 @@ __all__ = [
     "attach",
     "attach_catalog",
     "attach_function",
-    "attach_function",
     "attach_table",
     "coalesce",
     "col",
