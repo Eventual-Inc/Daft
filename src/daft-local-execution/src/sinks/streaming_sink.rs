@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_runtime::get_compute_runtime;
+use common_runtime::{get_compute_runtime, get_num_compute_threads};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
@@ -18,7 +18,7 @@ use crate::{
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, JoinSnafu, OperatorOutput, TaskSet, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, JoinSnafu, OperatorOutput, TaskSet,
 };
 
 pub trait StreamingSinkState: Send + Sync {
@@ -65,7 +65,7 @@ pub trait StreamingSink: Send + Sync {
     /// The maximum number of concurrent workers that can be spawned for this sink.
     /// Each worker will has its own StreamingSinkState.
     fn max_concurrency(&self) -> usize {
-        *NUM_CPUS
+        get_num_compute_threads()
     }
 
     fn dispatch_spawner(

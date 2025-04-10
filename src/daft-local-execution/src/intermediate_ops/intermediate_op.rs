@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_runtime::get_compute_runtime;
+use common_runtime::{get_compute_runtime, get_num_compute_threads};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
@@ -19,7 +19,6 @@ use crate::{
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
-    NUM_CPUS,
 };
 
 pub(crate) trait IntermediateOpState: Send + Sync {
@@ -56,7 +55,7 @@ pub trait IntermediateOperator: Send + Sync {
     /// Each worker will has its own IntermediateOperatorState.
     /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(*NUM_CPUS)
+        Ok(get_num_compute_threads())
     }
 
     fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {

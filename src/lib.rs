@@ -94,6 +94,11 @@ pub mod pylib {
         Ok(())
     }
 
+    #[pyfunction(signature = (num_threads = None))]
+    pub fn set_compute_runtime_num_worker_threads(num_threads: Option<usize>) {
+        common_runtime::set_compute_runtime_num_worker_threads(num_threads);
+    }
+
     #[pymodule]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
@@ -134,6 +139,7 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
+        m.add_wrapped(wrap_pyfunction!(set_compute_runtime_num_worker_threads))?;
         daft_image::python::register_modules(m)?;
 
         daft_dashboard::register_modules(m)?;

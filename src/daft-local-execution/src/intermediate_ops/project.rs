@@ -1,6 +1,7 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
+use common_runtime::get_num_compute_threads;
 use daft_dsl::{
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
     ExprRef,
@@ -13,8 +14,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner, NUM_CPUS};
-
+use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
 fn num_parallel_exprs(projection: &[ExprRef]) -> usize {
     max(
         projection.iter().filter(|expr| expr.has_compute()).count(),
@@ -50,6 +50,7 @@ impl ProjectOperator {
     // This function is used to determine the optimal allocation of concurrency and expression parallelism
     fn get_optimal_allocation(projection: &[ExprRef]) -> DaftResult<(usize, usize)> {
         let resource_request = get_resource_request(projection);
+        let num_cpus = get_num_compute_threads();
         // The number of CPUs available for the operator.
         let available_cpus = match resource_request {
             // If the resource request specifies a number of CPUs, the available cpus is the number of actual CPUs
@@ -57,19 +58,16 @@ impl ProjectOperator {
             // E.g. if the resource request specifies 2 CPUs and NUM_CPUS is 4, the number of available cpus is 2.
             Some(resource_request) if resource_request.num_cpus().is_some() => {
                 let requested_num_cpus = resource_request.num_cpus().unwrap();
-                if requested_num_cpus > *NUM_CPUS as f64 {
+                if requested_num_cpus > num_cpus as f64 {
                     Err(DaftError::ValueError(format!(
                         "Requested {} CPUs but found only {} available",
-                        requested_num_cpus, *NUM_CPUS
+                        requested_num_cpus, num_cpus
                     )))
                 } else {
-                    Ok(
-                        (*NUM_CPUS as f64 / requested_num_cpus).clamp(1.0, *NUM_CPUS as f64)
-                            as usize,
-                    )
+                    Ok((num_cpus as f64 / requested_num_cpus).clamp(1.0, num_cpus as f64) as usize)
                 }
             }
-            _ => Ok(*NUM_CPUS),
+            _ => Ok(num_cpus),
         }?;
 
         let max_parallel_exprs = num_parallel_exprs(projection);

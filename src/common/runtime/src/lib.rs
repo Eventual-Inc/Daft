@@ -19,8 +19,13 @@ use tokio::{
 static NUM_CPUS: LazyLock<usize> =
     LazyLock::new(|| std::thread::available_parallelism().unwrap().get());
 static THREADED_IO_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| 8.min(*NUM_CPUS));
-static COMPUTE_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| *NUM_CPUS);
-static COMPUTE_RUNTIME_MAX_BLOCKING_THREADS: LazyLock<usize> = LazyLock::new(|| 1); // Compute thread should not use blocking threads, limit this to the minimum, i.e. 1
+static COMPUTE_RUNTIME_NUM_WORKER_THREADS: OnceLock<usize> = OnceLock::new();
+
+pub fn set_compute_runtime_num_worker_threads(num_threads: Option<usize>) {
+    COMPUTE_RUNTIME_NUM_WORKER_THREADS
+        .set(num_threads.unwrap_or(*NUM_CPUS))
+        .expect("Compute runtime num worker threads already set");
+}
 
 static THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 static SINGLE_THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
@@ -140,18 +145,18 @@ impl Runtime {
     }
 }
 
-fn init_compute_runtime() -> RuntimeRef {
+fn init_compute_runtime(num_worker_threads: usize) -> RuntimeRef {
     std::thread::spawn(move || {
         let mut builder = tokio::runtime::Builder::new_multi_thread();
         builder
-            .worker_threads(*COMPUTE_RUNTIME_NUM_WORKER_THREADS)
+            .worker_threads(num_worker_threads)
             .enable_all()
             .thread_name_fn(move || {
                 static COMPUTE_THREAD_ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = COMPUTE_THREAD_ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
                 format!("Compute-Thread-{}", id)
             })
-            .max_blocking_threads(*COMPUTE_RUNTIME_MAX_BLOCKING_THREADS);
+            .max_blocking_threads(1);
         Runtime::new(builder.build().unwrap(), PoolType::Compute)
     })
     .join()
@@ -180,7 +185,15 @@ fn init_io_runtime(multi_thread: bool) -> RuntimeRef {
 }
 
 pub fn get_compute_runtime() -> RuntimeRef {
-    COMPUTE_RUNTIME.get_or_init(init_compute_runtime).clone()
+    COMPUTE_RUNTIME
+        .get_or_init(|| {
+            init_compute_runtime(
+                *COMPUTE_RUNTIME_NUM_WORKER_THREADS
+                    .get()
+                    .expect("Compute runtime num worker threads not set"),
+            )
+        })
+        .clone()
 }
 
 pub fn get_io_runtime(multi_thread: bool) -> RuntimeRef {
@@ -208,6 +221,12 @@ pub fn get_io_pool_num_threads() -> Option<usize> {
         }
         Err(_) => None,
     }
+}
+
+pub fn get_num_compute_threads() -> usize {
+    *COMPUTE_RUNTIME_NUM_WORKER_THREADS
+        .get()
+        .expect("Compute runtime num worker threads not set")
 }
 
 mod tests {
@@ -238,5 +257,22 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         // The strong count should be 1 now
         assert!(Arc::strong_count(&ptr) == 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn cannot_get_compute_runtime_without_setting_num_threads() {
+        use super::*;
+
+        get_compute_runtime();
+    }
+
+    #[test]
+    fn can_get_compute_runtime_after_setting_num_threads() {
+        use super::*;
+
+        set_compute_runtime_num_worker_threads(Some(1));
+        let runtime = get_compute_runtime();
+        assert!(runtime.runtime.metrics().num_workers() == 1);
     }
 }
