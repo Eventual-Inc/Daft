@@ -2459,6 +2459,7 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-channel 2.3.1",
  "async-trait",
  "common-daft-config",
  "common-display",
@@ -2487,7 +2488,6 @@ dependencies = [
  "indexmap 2.7.0",
  "indicatif",
  "itertools 0.11.0",
- "kanal",
  "log",
  "num-format",
  "pin-project",
@@ -4383,16 +4383,6 @@ dependencies = [
  "serde",
  "serde_json",
  "simple_asn1",
-]
-
-[[package]]
-name = "kanal"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b13526b910349296b1d3537ae62d5f83def9b6d6974e26d62b80ee2bb1b4794"
-dependencies = [
- "futures-core",
- "lock_api",
 ]
 
 [[package]]
