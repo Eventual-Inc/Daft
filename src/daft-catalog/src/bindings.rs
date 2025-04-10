@@ -111,6 +111,11 @@ impl<T> Bindings<T> {
     pub fn is_empty(&self) -> bool {
         self.bindings.is_empty()
     }
+
+    /// Returns the binding if it exists (exact-case).
+    pub fn get_exact(&self, name: &str) -> Option<&T> {
+        self.bindings.get(name)
+    }
 }
 
 /// Using the unicode lowercase to normalize

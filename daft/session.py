@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.context import get_context
@@ -8,6 +8,9 @@ from daft.daft import LogicalPlanBuilder as PyBuilder
 from daft.daft import PySession, sql_exec
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
+
+if TYPE_CHECKING:
+    from daft.udf import UDF
 
 __all__ = [
     "Session",
@@ -478,6 +481,17 @@ class Session:
 
         self._session.get_table(identifier._ident).write(df, mode=mode, **options)
 
+    ###
+    # functions
+    ###
+    def register_function(self, func: UDF, name: str):
+        """Registers a Python function as a UDF in the current session."""
+        self._session.register_function(func, name)
+
+    def unregister_function(self, name: str):
+        """Unregisters a Python function as a UDF in the current session."""
+        self._session.unregister_function(name)
+
 
 ###
 # global active session
@@ -700,3 +714,18 @@ def set_session(session: Session):
     # ```
     global _SESSION
     _SESSION = session
+
+
+###
+# functions
+###
+
+
+def register_function(func: UDF, name: str):
+    """Registers a Python function as a UDF in the current session."""
+    _session().register_function(func, name)
+
+
+def unregister_function(name: str):
+    """Unregisters a Python function as a UDF in the current session."""
+    _session().unregister_function(name)

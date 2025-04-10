@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef, TableSource, View};
+use daft_dsl::functions::python::WrappedUDFClass;
 use uuid::Uuid;
 
 use crate::{
@@ -28,7 +29,8 @@ struct SessionState {
     catalogs: Bindings<CatalogRef>,
     /// Bindings for the attached tables.
     tables: Bindings<TableRef>,
-    // TODO execution context
+    /// User defined functions
+    functions: Bindings<WrappedUDFClass>,
 }
 
 impl Session {
@@ -39,6 +41,7 @@ impl Session {
             options: Options::default(),
             catalogs: Bindings::empty(),
             tables: Bindings::empty(),
+            functions: Bindings::empty(),
         };
         let state = RwLock::new(state);
         let state = Arc::new(state);
@@ -243,6 +246,23 @@ impl Session {
             IdentifierMode::Normalize => str::to_lowercase,
         }
     }
+
+    pub fn register_function(&self, name: String, func: WrappedUDFClass) -> Result<()> {
+        self.state_mut().functions.bind(name, func);
+        Ok(())
+    }
+
+    pub fn unregister_function(&self, name: &str) -> Result<()> {
+        self.state_mut().functions.remove(name);
+        Ok(())
+    }
+
+    pub fn get_function(&self, name: &str) -> Result<WrappedUDFClass> {
+        self.state().get_function(name)
+    }
+    pub fn list_functions(&self) -> Vec<String> {
+        self.state().functions.list(None)
+    }
 }
 
 impl SessionState {
@@ -262,6 +282,13 @@ impl SessionState {
             tables if tables.len() == 1 => Ok(Some(tables[0].clone())),
             _ => panic!("ambiguous table identifier"),
         }
+    }
+
+    pub fn get_function(&self, name: &str) -> Result<WrappedUDFClass> {
+        self.functions
+            .get_exact(name)
+            .cloned()
+            .ok_or_else(|| crate::error::Error::function_not_found(name))
     }
 }
 

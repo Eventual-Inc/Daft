@@ -79,11 +79,11 @@ struct OrderByExprs {
 /// TODO consolidate SQLPlanner state to the single context.
 /// TODO move bound_ctes into per-planner scope since these are a scoped concept.
 #[derive(Default)]
-struct PlannerContext {
+pub(crate) struct PlannerContext {
     /// Session provides access to metadata and the path for name resolution.
     /// TODO move into SQLPlanner once state is flipped.
     /// TODO consider decoupling session from planner via a resolver trait.
-    session: Rc<Session>,
+    pub(crate) session: Rc<Session>,
     /// Bindings for common table expressions (cte).
     bound_ctes: Bindings<LogicalPlanBuilder>,
 }
@@ -111,7 +111,7 @@ impl PlannerContext {
 #[derive(Default)]
 pub struct SQLPlanner<'a> {
     /// Shared context for all planners
-    context: Rc<RefCell<PlannerContext>>,
+    pub(crate) context: Rc<RefCell<PlannerContext>>,
     /// Planner for the outer scope
     parent: Option<&'a SQLPlanner<'a>>,
     /// In-scope bindings introduced by the current relation's schema

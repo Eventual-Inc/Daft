@@ -9,11 +9,16 @@ use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use itertools::Itertools;
 #[cfg(feature = "python")]
-use pyo3::Python;
+use pyo3::{
+    types::{PyDict, PyTuple},
+    Bound, IntoPyObject, PyObject, PyResult, Python,
+};
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
 
 use super::FunctionExpr;
+#[cfg(feature = "python")]
+use crate::python::PyExpr;
 use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -23,6 +28,36 @@ pub enum MaybeInitializedUDF {
         inner: RuntimePyObject,
         init_args: RuntimePyObject,
     },
+}
+
+/// rust wrapper around `daft.udf.py:UDF`
+#[derive(Debug, Clone)]
+pub struct WrappedUDFClass {
+    #[cfg(feature = "python")]
+    pub inner: Arc<PyObject>,
+}
+
+#[cfg(feature = "python")]
+impl WrappedUDFClass {
+    pub fn call<'py, A>(
+        &self,
+        py: Python<'py>,
+        args: A,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyExpr>
+    where
+        A: IntoPyObject<'py, Target = PyTuple>,
+    {
+        let o = self.inner.call(py, args, kwargs)?;
+        let inner = o.getattr(py, "_expr")?;
+
+        let expr = inner.extract::<PyExpr>(py)?;
+        Ok(expr)
+    }
+
+    pub fn name(&self, py: Python) -> PyResult<String> {
+        self.inner.getattr(py, "name")?.extract(py)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

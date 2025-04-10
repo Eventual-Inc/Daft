@@ -5,6 +5,7 @@ import functools
 import inspect
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
+import daft
 from daft.daft import PyDataType, ResourceRequest
 from daft.datatype import DataType, DataTypeLike
 from daft.dependencies import np, pa
@@ -51,6 +52,7 @@ class BoundUDFArgs:
                 for kwarg_key, x in val.items():
                     if isinstance(x, Expression):
                         parsed_expressions[kwarg_key] = x
+
             elif isinstance(val, Expression):
                 parsed_expressions[key] = val
 
@@ -89,6 +91,7 @@ def run_udf(
     arg_keys = bound_args.arg_keys()
     pyvalues = {key: val for key, val in bound_args.bound_args.arguments.items() if not isinstance(val, Expression)}
     expressions = bound_args.expressions()
+
     assert len(evaluated_expressions) == len(
         expressions
     ), "Computed series must map 1:1 to the expressions that were evaluated"
@@ -521,6 +524,7 @@ def udf(
         # Grab a name for the UDF. It **should** be unique.
         module_name = getattr(f, "__module__", "")  # type: ignore[call-overload]
         qual_name = getattr(f, "__qualname__")  # type: ignore[call-overload]
+
         if module_name:
             name = f"{module_name}.{qual_name}"
         else:
@@ -535,8 +539,7 @@ def udf(
                 memory_bytes=memory_bytes,
             )
         )
-
-        return UDF(
+        udf = UDF(
             inner=f,
             name=name,
             return_dtype=inferred_return_dtype,
@@ -544,5 +547,8 @@ def udf(
             batch_size=batch_size,
             concurrency=concurrency,
         )
+        # for sql we only want to register it by the qual_name so it's easily identifiable
+        daft.register_function(udf, qual_name)
+        return udf
 
     return _udf

@@ -144,6 +144,7 @@ from daft.session import (
     set_namespace,
     set_session,
     write_table,
+    register_function,
 )
 from daft.sql import sql, sql_expr
 from daft.udf import udf
@@ -217,6 +218,7 @@ __all__ = [
     "read_table",
     "read_warc",
     "refresh_logger",
+    "register_function",
     "register_table",
     "register_viz_hook",
     "set_catalog",

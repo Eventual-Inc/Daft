@@ -1,13 +1,16 @@
+use std::sync::Arc;
+
 use daft_catalog::{
     python::{PyCatalogWrapper, PyIdentifier, PyTable, PyTableSource, PyTableWrapper},
     Identifier,
 };
+use daft_dsl::functions::python::WrappedUDFClass;
 use pyo3::prelude::*;
 
 use crate::Session;
 
 #[pyclass]
-pub struct PySession(Session);
+pub struct PySession(pub Session);
 
 #[pymethods]
 impl PySession {
@@ -92,6 +95,21 @@ impl PySession {
     #[pyo3(signature = (ident))]
     pub fn set_namespace(&self, ident: Option<&PyIdentifier>) -> PyResult<()> {
         Ok(self.0.set_namespace(ident.map(|i| i.as_ref()))?)
+    }
+
+    pub fn register_function(&self, func: PyObject, name: &str) -> PyResult<()> {
+        let wrapped = WrappedUDFClass {
+            inner: Arc::new(func),
+        };
+
+        self.0.register_function(name.to_string(), wrapped)?;
+
+        Ok(())
+    }
+
+    pub fn unregister_function(&self, name: &str) -> PyResult<()> {
+        self.0.unregister_function(name)?;
+        Ok(())
     }
 }
 

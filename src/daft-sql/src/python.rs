@@ -5,7 +5,7 @@ use daft_catalog::TableSource;
 use daft_core::python::PyDataType;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
-use daft_session::{python::PySession, Session};
+use daft_session::python::PySession;
 use pyo3::{prelude::*, IntoPyObjectExt};
 
 use crate::{
@@ -58,10 +58,13 @@ pub fn sql_exec(
 pub fn sql(
     sql: &str,
     catalog: PyCatalog,
+    py_session: &PySession,
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
     // TODO deprecated catalog APIs #3819
-    let session = Session::empty();
+    // let session = Session::empty();
+    let session = py_session.0.clone();
+
     for (name, view) in catalog.tables {
         session.create_temp_table(name, &TableSource::View(view), true)?;
     }
