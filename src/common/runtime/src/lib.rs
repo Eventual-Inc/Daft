@@ -25,10 +25,12 @@ pub fn get_or_init_compute_runtime_num_worker_threads() -> usize {
     *COMPUTE_RUNTIME_NUM_WORKER_THREADS.get_or_init(|| *NUM_CPUS)
 }
 
-pub fn set_compute_runtime_num_worker_threads(num_threads: usize) {
+pub fn set_compute_runtime_num_worker_threads(num_threads: usize) -> DaftResult<()> {
     COMPUTE_RUNTIME_NUM_WORKER_THREADS
         .set(num_threads)
-        .expect("Compute runtime num worker threads already set");
+        .map_err(|_| {
+            DaftError::InternalError("Compute runtime num worker threads already set".to_string())
+        })
 }
 
 static THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
@@ -259,7 +261,7 @@ mod tests {
     fn can_get_compute_runtime_after_setting_num_threads() {
         use super::*;
 
-        set_compute_runtime_num_worker_threads(1);
+        set_compute_runtime_num_worker_threads(1).unwrap();
         let runtime = get_compute_runtime();
         assert!(runtime.runtime.metrics().num_workers() == 1);
     }

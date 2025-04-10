@@ -95,8 +95,9 @@ pub mod pylib {
     }
 
     #[pyfunction]
-    pub fn set_compute_runtime_num_worker_threads(num_threads: usize) {
-        common_runtime::set_compute_runtime_num_worker_threads(num_threads);
+    pub fn set_compute_runtime_num_worker_threads(num_threads: usize) -> PyResult<()> {
+        common_runtime::set_compute_runtime_num_worker_threads(num_threads)?;
+        Ok(())
     }
 
     #[pymodule]
