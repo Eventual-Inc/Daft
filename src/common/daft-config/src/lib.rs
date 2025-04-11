@@ -96,7 +96,7 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
-            maintain_order_for_writes: false,
+            maintain_order_for_writes: true,
         }
     }
 }
