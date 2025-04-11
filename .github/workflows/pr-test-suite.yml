@@ -1,4 +1,4 @@
-name: Pull Request test suite
+name: PR test suite
 
 on:
   push:
