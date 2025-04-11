@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     import torch
 
     from daft.io import DataCatalogTable
+    from daft.io.source import ReadSource
     from daft.unity_catalog import UnityCatalogTable
 
 from daft.logical.schema import Schema

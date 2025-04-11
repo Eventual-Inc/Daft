@@ -7,6 +7,7 @@ from daft.catalog import Catalog, Table
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io.scan import ScanOperator
+from daft.io.source import ReadTask
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
@@ -710,6 +711,10 @@ class ScanTask:
         stats: PyRecordBatch | None,
     ) -> ScanTask:
         """Create a Python factory function Scan Task."""
+        ...
+
+    @staticmethod
+    def from_read_task(task: ReadTask) -> ReadTask:
         ...
 
 class ScanOperatorHandle:

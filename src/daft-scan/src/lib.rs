@@ -417,8 +417,6 @@ impl DisplayAs for DataSource {
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
 
-    /// Schema to use when reading the DataSources.
-    ///
     /// Schema to use when reading the DataSources. This should always be passed in by the
     /// ScanOperator implementation and should not have had any "pruning" applied.
     ///

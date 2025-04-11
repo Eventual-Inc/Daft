@@ -170,7 +170,7 @@ class GlueGlobTable(GlueTable):
         t._catalog = catalog
         t._table = table
         t._location = table["StorageDescriptor"]["Location"]
-        t._schema = _to_schema(table["StorageDescriptor"]["Columns"])
+        t._schema = _convert_glue_schema(table["StorageDescriptor"]["Columns"])
 
         # check properties for necessary glob path information
         properties: Properties = table["Parameters"]
@@ -189,27 +189,13 @@ class GlueGlobTable(GlueTable):
 
         return t
 
-    def scan(self, **pushdowns: GlobSourcePushdowns) -> GlobSource:
-        # HERE WE
-        pass
-
     def read(self, **options) -> DataFrame:
-        from daft.io import read_csv, read_parquet
-
-        if self._format == GlueGlobTableFormat.CSV:
-            return read_csv(
-                path=self._location,
-                infer_schema=False,
-                schema={f.name: f.dtype for f in self._schema},
-                delimiter=options.get("delimiter", ","),
-                **options,
-            )
-        elif self._format == GlueGlobTableFormat.PARQUET:
-            return read_parquet(
-                path=self._location, infer_schema=False, schema={f.name: f.dtype for f in self._schema}, **options
-            )
-        else:
-            raise ValueError(f"Unsupported format: {self._format}")
+        from daft.io.__glob import GlobSource
+        source = GlobSource(
+            paths=[self._location],
+            schema=self._schema,
+        )
+        return source.to_df()
 
     def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
         raise NotImplementedError()
@@ -217,7 +203,6 @@ class GlueGlobTable(GlueTable):
 
 class GlueGlobTableFormat(Enum):
     """Enum representing supported GlueGlobTable formats."""
-
     CSV = "csv"
     PARQUET = "parquet"
 
@@ -231,15 +216,15 @@ class GlueGlobTableFormat(Enum):
             )
 
 
-def _to_schema(columns: list[GlueColumnInfo]) -> Schema:
-    return Schema._from_fields([_to_field(column) for column in columns])
+def _convert_glue_schema(columns: list[GlueColumnInfo]) -> Schema:
+    return Schema._from_fields([_convert_glue_column(column) for column in columns])
 
 
-def _to_field(column: GlueColumnInfo) -> Field:
-    return Field.create(column["Name"], _to_type(column["Type"]))
+def _convert_glue_column(column: GlueColumnInfo) -> Field:
+    return Field.create(column["Name"], _convert_glue_type(column["Type"]))
 
 
-def _to_type(type: str) -> DataType:
+def _convert_glue_type(type: str) -> DataType:
     type = type.lower()
     if type == "boolean":
         return DataType.bool()

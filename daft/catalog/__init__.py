@@ -44,7 +44,6 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from daft.daft import PyIdentifier, PyTableSource
-from daft.io.scan import ScanOperator, Pushdowns
 
 from daft.dataframe import DataFrame
 
@@ -348,73 +347,6 @@ class Catalog(ABC):
                 return GlueCatalog.from_database(database_name, **options)
         except ImportError:
             raise ImportError("AWS Glue support not installed: pip install -U 'daft[aws]'")
-
-    @staticmethod
-    def _from_iceberg_glue(
-        name: str,
-        warehouse: str,
-        catalog_id: str | None = None,
-        skip_archive: bool | None = None,
-        endpoint: str | None = None,
-        profile_name: str | None = None,
-        region: str | None = None,
-        access_key_id: str | None = None,
-        secret_access_key: str | None = None,
-        session_token: str | None = None,
-        max_retries: int | None = None,
-        retry_mode: str | None = None,
-    ) -> Catalog:
-        """Creates a Daft Catalog from a PyIceberg GlueCatalog.
-
-        Args:
-            name (str): The name of the catalog (typically the AWS account ID)
-            warehouse (str): Default warehouse location
-            catalog_id (str, optional): The 12-digit ID of the Glue Catalog
-            skip_archive (bool, optional): Whether to skip archival of older table versions. Defaults to true
-            endpoint (str, optional): Alternative endpoint of the Glue service
-            profile_name (str, optional): Static profile used to access the Glue Catalog
-            region (str, optional): Region of the Glue Catalog
-            access_key_id (str, optional): Static access key id used to access the Glue Catalog
-            secret_access_key (str, optional): Static secret access key used to access the Glue Catalog
-            session_token (str, optional): Static session token used to access the Glue Catalog
-            max_retries (int, optional): Maximum number of retries for the Glue service calls
-            retry_mode (str, optional): Retry mode for the Glue service. Defaults to standard
-
-        Returns:
-            Catalog: A Daft catalog instance backed by PyIceberg's GlueCatalog
-        """
-        try:
-            from daft.catalog.__iceberg import IcebergCatalog
-
-            options = {
-                "type": "glue",
-                "warehouse": warehouse,
-            }
-
-            if catalog_id is not None:
-                options["glue.id"] = catalog_id
-            if skip_archive is not None:
-                options["glue.skip-archive"] = str(skip_archive).lower()
-            if endpoint is not None:
-                options["glue.endpoint"] = endpoint
-            if profile_name is not None:
-                options["glue.profile-name"] = profile_name
-            if region is not None:
-                options["glue.region"] = region
-            if access_key_id is not None:
-                options["glue.access-key-id"] = access_key_id
-            if secret_access_key is not None:
-                options["glue.secret-access-key"] = secret_access_key
-            if session_token is not None:
-                options["glue.session-token"] = session_token
-            if max_retries is not None:
-                options["glue.max-retries"] = str(max_retries)
-            if retry_mode is not None:
-                options["glue.retry-mode"] = retry_mode
-
-            return IcebergCatalog._load_catalog(name, **options)
-        except ImportError:
-            raise ImportError("Iceberg support not installed: pip install -U 'daft[iceberg]'")
 
     @staticmethod
     def _from_obj(obj: object) -> Catalog:
@@ -804,7 +736,6 @@ class Table(ABC):
         Returns:
             DataFrame: new DataFrame instance
         """
-
 
     def select(self, *columns: ColumnInputType) -> DataFrame:
         """Creates a new DataFrame from the table applying the provided expressions.

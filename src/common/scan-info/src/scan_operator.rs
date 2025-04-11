@@ -13,8 +13,11 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn name(&self) -> &str;
 
     fn schema(&self) -> SchemaRef;
+
     fn partitioning_keys(&self) -> &[PartitionField];
+
     fn file_path_column(&self) -> Option<&str>;
+
     // Although generated fields are often added to the partition spec, generated fields and
     // partition fields are handled differently:
     // 1. Generated fields: Currently from file paths or Hive partitions,
@@ -28,8 +31,11 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn generated_fields(&self) -> Option<SchemaRef>;
 
     fn can_absorb_filter(&self) -> bool;
+
     fn can_absorb_select(&self) -> bool;
+
     fn can_absorb_limit(&self) -> bool;
+
     fn multiline_display(&self) -> Vec<String>;
 
     /// If cfg provided, `to_scan_tasks` should apply the appropriate transformations
