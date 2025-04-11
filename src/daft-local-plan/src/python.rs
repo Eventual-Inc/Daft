@@ -23,6 +23,14 @@ impl PyLocalPhysicalPlan {
             plan: physical_plan,
         })
     }
+
+    pub fn memory_cost(&self) -> usize {
+        self.plan.memory_cost()
+    }
+
+    pub fn cpu_cost(&self) -> usize {
+        self.plan.cpu_cost()
+    }
 }
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);

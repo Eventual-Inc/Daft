@@ -294,7 +294,7 @@ async fn get_delete_map(
         .await?
 }
 
-pub async fn stream_scan_task(
+async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,

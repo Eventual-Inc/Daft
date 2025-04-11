@@ -5,6 +5,7 @@ common-error = {path = "../common/error", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 serde = {workspace = true}

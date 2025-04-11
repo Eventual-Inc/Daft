@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::max, sync::Arc};
 
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
@@ -15,7 +15,6 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
-    StreamScan(StreamScan),
     EmptyScan(EmptyScan),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
@@ -67,7 +66,6 @@ impl LocalPhysicalPlan {
         match self {
             Self::InMemoryScan(_) => vec![],
             Self::PhysicalScan(_) => vec![],
-            Self::StreamScan(_) => vec![],
             Self::EmptyScan(_) => vec![],
             Self::Project(p) => vec![&p.input],
             Self::ActorPoolProject(p) => vec![&p.input],
@@ -97,7 +95,6 @@ impl LocalPhysicalPlan {
         match self {
             Self::InMemoryScan(InMemoryScan { stats_state, .. })
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
-            | Self::StreamScan(StreamScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
@@ -142,14 +139,6 @@ impl LocalPhysicalPlan {
         Self::PhysicalScan(PhysicalScan {
             scan_tasks,
             pushdowns,
-            schema,
-            stats_state,
-        })
-        .arced()
-    }
-
-    pub fn stream_scan(schema: SchemaRef, stats_state: StatsState) -> LocalPhysicalPlanRef {
-        Self::StreamScan(StreamScan {
             schema,
             stats_state,
         })
@@ -497,7 +486,6 @@ impl LocalPhysicalPlan {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
             | Self::EmptyScan(EmptyScan { schema, .. })
-            | Self::StreamScan(StreamScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
@@ -522,6 +510,144 @@ impl LocalPhysicalPlan {
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
         }
     }
+
+    pub fn cpu_cost(&self) -> usize {
+        match self {
+            Self::PhysicalScan(PhysicalScan {
+                schema, scan_tasks, ..
+            }) => scan_tasks.len(),
+            Self::InMemoryScan(InMemoryScan { info, .. }) => 4, // TODO: actually compute this
+            Self::EmptyScan(EmptyScan { .. }) => 1,
+            Self::Filter(Filter { input, .. })
+            | Self::Limit(Limit { input, .. })
+            | Self::Project(Project { input, .. })
+            | Self::ActorPoolProject(ActorPoolProject { input, .. })
+            | Self::UnGroupedAggregate(UnGroupedAggregate { input, .. })
+            | Self::HashAggregate(HashAggregate { input, .. })
+            | Self::Pivot(Pivot { input, .. })
+            | Self::Sort(Sort { input, .. })
+            | Self::Sample(Sample { input, .. })
+            | Self::Explode(Explode { input, .. })
+            | Self::Unpivot(Unpivot { input, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+                input.cpu_cost()
+            }
+            Self::Concat(Concat { input, other, .. }) => max(input.cpu_cost(), other.cpu_cost()),
+            Self::HashJoin(HashJoin { left, right, .. }) => max(left.cpu_cost(), right.cpu_cost()),
+            Self::CrossJoin(CrossJoin { left, right, .. }) => {
+                max(left.cpu_cost(), right.cpu_cost())
+            }
+            Self::PhysicalWrite(PhysicalWrite { input, .. }) => input.cpu_cost(),
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(CatalogWrite { input, .. }) => input.cpu_cost(),
+            #[cfg(feature = "python")]
+            Self::LanceWrite(LanceWrite { input, .. }) => input.cpu_cost(),
+            Self::WindowPartitionOnly(WindowPartitionOnly { input, .. }) => input.cpu_cost(),
+        }
+    }
+
+    pub fn memory_cost(&self) -> usize {
+        match self {
+            Self::PhysicalScan(PhysicalScan { stats_state, .. }) => {
+                stats_state.materialized_stats().approx_stats.size_bytes
+            }
+            Self::InMemoryScan(InMemoryScan { stats_state, .. }) => {
+                stats_state.materialized_stats().approx_stats.size_bytes
+            }
+            Self::EmptyScan(EmptyScan { .. }) => 0,
+            Self::Filter(Filter {
+                input, stats_state, ..
+            })
+            | Self::Limit(Limit {
+                input, stats_state, ..
+            })
+            | Self::Project(Project {
+                input, stats_state, ..
+            })
+            | Self::ActorPoolProject(ActorPoolProject {
+                input, stats_state, ..
+            })
+            | Self::UnGroupedAggregate(UnGroupedAggregate {
+                input, stats_state, ..
+            })
+            | Self::HashAggregate(HashAggregate {
+                input, stats_state, ..
+            })
+            | Self::Pivot(Pivot {
+                input, stats_state, ..
+            })
+            | Self::Sort(Sort {
+                input, stats_state, ..
+            })
+            | Self::Sample(Sample {
+                input, stats_state, ..
+            })
+            | Self::Explode(Explode {
+                input, stats_state, ..
+            })
+            | Self::Unpivot(Unpivot {
+                input, stats_state, ..
+            })
+            | Self::WindowPartitionOnly(WindowPartitionOnly {
+                input, stats_state, ..
+            })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                input,
+                stats_state,
+                ..
+            }) => max(
+                input.memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::Concat(Concat {
+                input,
+                other,
+                stats_state,
+                ..
+            }) => max(
+                max(input.memory_cost(), other.memory_cost()),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::HashJoin(HashJoin {
+                left,
+                right,
+                stats_state,
+                ..
+            }) => max(
+                max(left.memory_cost(), right.memory_cost()),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::CrossJoin(CrossJoin {
+                left,
+                right,
+                stats_state,
+                ..
+            }) => max(
+                max(left.memory_cost(), right.memory_cost()),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::PhysicalWrite(PhysicalWrite {
+                input, stats_state, ..
+            }) => max(
+                input.memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(CatalogWrite {
+                input, stats_state, ..
+            }) => max(
+                input.memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            #[cfg(feature = "python")]
+            Self::LanceWrite(LanceWrite {
+                input, stats_state, ..
+            }) => max(
+                input.memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -534,12 +660,6 @@ pub struct InMemoryScan {
 pub struct PhysicalScan {
     pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     pub pushdowns: Pushdowns,
-    pub schema: SchemaRef,
-    pub stats_state: StatsState,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct StreamScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

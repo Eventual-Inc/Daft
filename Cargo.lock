@@ -2295,6 +2295,7 @@ dependencies = [
  "daft-local-plan",
  "daft-logical-plan",
  "daft-scan",
+ "daft-schema",
  "pyo3",
  "serde",
 ]
@@ -2509,10 +2510,8 @@ dependencies = [
  "num-format",
  "pin-project",
  "pyo3",
- "pyo3-async-runtimes",
  "snafu",
  "tokio",
- "tokio-stream",
  "tokio-util",
  "tracing",
 ]
