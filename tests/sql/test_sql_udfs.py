@@ -95,7 +95,6 @@ def test_sql_udf_various_datatypes(value, return_type):
 
     cat = SQLCatalog({"df": df})
     query = f"select udf(x, literal:={value}) as x from df"
-    print(query)
     actual = daft.sql(query, cat).to_pydict()
 
     if return_type is str:
@@ -109,3 +108,13 @@ def test_sql_udf_various_datatypes(value, return_type):
         value = ast.literal_eval(value)
     expected = {"x": [value] * 10}
     assert actual == expected
+
+
+def test_sql_udf_unregister():
+    @daft.udf(return_dtype=str)
+    def my_udf(column, literal):
+        return ["hello" for i in column]
+
+    daft.detach_function("my_udf")
+    with pytest.raises(Exception, match="Function `my_udf` not found"):
+        daft.sql("select my_udf(1, literal:='world')").to_pydict()
