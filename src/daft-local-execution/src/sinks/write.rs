@@ -58,6 +58,7 @@ pub(crate) struct WriteSink {
     file_schema: SchemaRef,
     /// File information is needed for overwriting files.
     file_info: Option<OutputFileInfo>,
+    maintain_order: bool,
 }
 
 impl WriteSink {
@@ -69,6 +70,7 @@ impl WriteSink {
         partition_by: Option<Vec<ExprRef>>,
         file_schema: SchemaRef,
         file_info: Option<OutputFileInfo>,
+        maintain_order: bool,
     ) -> Self {
         Self {
             write_format,
@@ -76,6 +78,7 @@ impl WriteSink {
             partition_by,
             file_schema,
             file_info,
+            maintain_order,
         }
     }
 }
@@ -232,7 +235,7 @@ impl BlockingSink for WriteSink {
     }
 
     fn max_concurrency(&self) -> usize {
-        if self.partition_by.is_some() {
+        if self.partition_by.is_some() || !self.maintain_order {
             get_compute_pool_num_threads()
         } else {
             1

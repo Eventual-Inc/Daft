@@ -208,6 +208,7 @@ def set_execution_config(
     flight_shuffle_dirs: list[str] | None = None,
     enable_ray_tracing: bool | None = None,
     scantask_splitting_level: int | None = None,
+    maintain_order_for_writes: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -254,6 +255,7 @@ def set_execution_config(
         flight_shuffle_dirs: The directories to use for flight shuffle. Defaults to ["/tmp"].
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
+        maintain_order_for_writes: By default, Daft will maintain ordering of rows when writing out data. Setting this to False can make writes faster, but the output will be unordered.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -287,6 +289,7 @@ def set_execution_config(
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             enable_ray_tracing=enable_ray_tracing,
             scantask_splitting_level=scantask_splitting_level,
+            maintain_order_for_writes=maintain_order_for_writes,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
