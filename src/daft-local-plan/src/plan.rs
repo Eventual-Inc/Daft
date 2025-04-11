@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
@@ -9,6 +8,7 @@ use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
 };
+use serde::{Deserialize, Serialize};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(Debug, strum::IntoStaticStr, Serialize, Deserialize)]
@@ -61,6 +61,36 @@ impl LocalPhysicalPlan {
     #[must_use]
     pub fn arced(self) -> LocalPhysicalPlanRef {
         self.into()
+    }
+
+    pub fn get_children(&self) -> Vec<&LocalPhysicalPlanRef> {
+        match self {
+            Self::InMemoryScan(_) => vec![],
+            Self::PhysicalScan(_) => vec![],
+            Self::StreamScan(_) => vec![],
+            Self::EmptyScan(_) => vec![],
+            Self::Project(p) => vec![&p.input],
+            Self::ActorPoolProject(p) => vec![&p.input],
+            Self::Filter(p) => vec![&p.input],
+            Self::Limit(p) => vec![&p.input],
+            Self::Explode(p) => vec![&p.input],
+            Self::Unpivot(p) => vec![&p.input],
+            Self::Sort(p) => vec![&p.input],
+            Self::Sample(p) => vec![&p.input],
+            Self::MonotonicallyIncreasingId(p) => vec![&p.input],
+            Self::UnGroupedAggregate(p) => vec![&p.input],
+            Self::HashAggregate(p) => vec![&p.input],
+            Self::Pivot(p) => vec![&p.input],
+            Self::PhysicalWrite(p) => vec![&p.input],
+            Self::WindowPartitionOnly(p) => vec![&p.input],
+            Self::Concat(p) => vec![&p.input, &p.other],
+            Self::HashJoin(p) => vec![&p.left, &p.right],
+            Self::CrossJoin(p) => vec![&p.left, &p.right],
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(p) => vec![&p.input],
+            #[cfg(feature = "python")]
+            Self::LanceWrite(p) => vec![&p.input],
+        }
     }
 
     pub fn get_stats_state(&self) -> &StatsState {
@@ -560,7 +590,7 @@ pub struct Explode {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug, Serialize, Deserialize  )]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Sort {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<ExprRef>,

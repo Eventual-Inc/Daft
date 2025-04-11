@@ -1,6 +1,6 @@
-import asyncio
+import logging
 from collections import deque
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -8,6 +8,7 @@ from daft.daft import (
     NativeExecutor,
     PlanInputConsumer,
     PyDaftExecutionConfig,
+    PyMicroPartition,
     ScanTask,
 )
 from daft.logical.builder import LogicalPlanBuilder
@@ -15,9 +16,10 @@ from daft.recordbatch.micropartition import MicroPartition
 
 try:
     import ray
-    from ray._raylet import ObjectRefGenerator
 except ImportError:
     raise
+
+logger = logging.getLogger(__name__)
 
 
 @ray.remote
@@ -26,6 +28,7 @@ class SwordfishActor:
         self.node_id = node_id
         self.current_executor: Optional[NativeExecutor] = None
         self.current_consumer: Optional[PlanInputConsumer] = None
+        self.current_result_gen: Optional[AsyncIterator[PyMicroPartition]] = None
 
     async def run_local_plan(
         self,
@@ -41,14 +44,18 @@ class SwordfishActor:
         self.current_executor = executor
         self.current_consumer = input_consumer
 
-        async for partition in output_producer:
+        self.current_result_gen = output_producer
+
+    async def get_results(self):
+        assert self.current_result_gen is not None
+        async for partition in self.current_result_gen:
             if partition is None:
                 break
             yield MicroPartition._from_pymicropartition(partition)
 
     async def put_input(self, input_id: int, input: ScanTask):
         assert self.current_consumer is not None
-        await self.current_consumer.put_input(input_id, input)
+        await self.current_consumer.put_input(0, input)
         return self.node_id
 
     async def mark_inputs_finished(self):
@@ -56,49 +63,8 @@ class SwordfishActor:
         self.current_consumer = None
 
     async def mark_plan_finished(self):
-        assert self.current_output_producer is not None
         assert self.current_executor is not None
-        self.current_output_producer = None
         self.current_executor = None
-
-
-@ray.remote
-class ActorInputAssigner:
-    def __init__(self, inputs: deque[ScanTask]):
-        self.actors: dict[str, SwordfishActor] = {}
-        self.actor_lock = asyncio.Lock()
-        self.inputs = inputs
-        self.input_refs: dict[str, Optional[ray.ObjectRef]] = {}
-
-    async def add_actor(self, actor: SwordfishActor, node_id: str):
-        async with self.actor_lock:
-            self.actors[node_id] = actor
-            self.input_refs[node_id] = None
-
-    async def get_actors(self):
-        async with self.actor_lock:
-            return self.actors
-
-    async def start_assigning_inputs(self):
-        while self.inputs and all([self.input_refs[node_id] is not None for node_id in self.input_refs]):
-            # dispatch new inputs to actors
-            actors = await self.get_actors()
-            for node_id, input_ref in self.input_refs.items():
-                if input_ref is None:
-                    try:
-                        next_input = self.inputs.popleft()
-                        input_ref = actors[node_id].put_input.remote(0, next_input)
-                        self.input_refs[node_id] = input_ref
-                    except IndexError:
-                        await asyncio.gather(*[actor.mark_inputs_finished.remote() for actor in actors.values()])
-                        break
-
-            # await actors to finish processing
-            to_wait = self.input_refs.values()
-            ready, _ = await asyncio.wait(to_wait, return_when=asyncio.FIRST_COMPLETED)
-            for ready_ref in ready:
-                node_id = ray.get(ready_ref)
-                self.input_refs[node_id] = None
 
 
 class DistributedSwordfishRunner:
@@ -112,12 +78,12 @@ class DistributedSwordfishRunner:
             if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0:
                 node_id = node["NodeID"]
                 if node_id not in self.actors:
-                    actor = SwordfishActor.options(  # type: ignore[attr-defined]
+                    actor = SwordfishActor.options(
                         scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                             node_id=node_id,
                             soft=False,
                         ),
-                    ).remote()
+                    ).remote(node_id)
                     self.actors[node_id] = actor
                     new_actors[node_id] = actor
         return new_actors
@@ -128,56 +94,95 @@ class DistributedSwordfishRunner:
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: Optional[int] = None,
     ):
-        # Make the distributed plan
-        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-            builder._builder, daft_execution_config=daft_execution_config
-        )
+        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(builder._builder)
         local_plan = distributed_plan.get_local_physical_plan()
-        inputs = deque(distributed_plan.get_inputs())
 
-        # refresh actors
+        inputs = deque([(i, input) for i, input in enumerate(distributed_plan.get_inputs())])
+        original_num_inputs = len(inputs)
+
+        logger.info("Running distributed plan: %s, num inputs: %d", distributed_plan.repr(), len(inputs))
+
         self.refresh_actors()
 
-        # Create an actor to assign inputs to actors
-        actor_input_assigner = ActorInputAssigner.remote(inputs)  # type: ignore[attr-defined]
-        ray.get([actor_input_assigner.add_actor.remote(actor, node_id) for node_id, actor in self.actors.items()])
+        logger.info("Starting plan on %d actors", len(self.actors))
+        # Start plan on actors
+        ray.get(
+            [
+                actor.run_local_plan.remote(local_plan, daft_execution_config, results_buffer_size)
+                for actor in self.actors.values()
+            ]
+        )
 
-        # launch plan on all actors
-        result_gens = []
-        for node_id, actor in self.actors.items():
-            result_gen = actor.run_local_plan.remote(local_plan, daft_execution_config, results_buffer_size)
-            result_gens.append(result_gen)
+        # Get result generators from actors
+        result_gens = [actor.get_results.remote() for actor in self.actors.values()]
 
-        # start assigning inputs to actors
-        assign_inputs_done = actor_input_assigner.start_assigning_inputs.remote()  # type: ignore[attr-defined]
+        # store the put_input refs for each node
+        put_input_refs_per_node = {node_id: None for node_id in self.actors}
 
-        # Scheduling loop
-        input_exhausted = False
-        while result_gens and not input_exhausted:
-            # refresh actors to get new actors if new nodes are up, and submit plan to them
+        # dispatch all inputs to actors
+        while inputs:
+            # wait on any put_input refs to complete
+            ready, _ = ray.wait(
+                [ref for ref in put_input_refs_per_node.values() if ref is not None],
+                timeout=0.1,
+            )
+
+            if len(ready) > 0:
+                # clear completed put_input refs
+                for ref in ready:
+                    node_id = ray.get(ref)
+                    put_input_refs_per_node[node_id] = None
+
+            # refresh actors
             new_actors = self.refresh_actors()
-            for node_id, actor in new_actors.items():
-                result_gen = actor.run_local_plan.remote(local_plan, daft_execution_config, results_buffer_size)
-                result_gens.append(result_gen)
-                ray.get(actor_input_assigner.add_actor.remote(actor, node_id))
+            if len(new_actors) > 0:
+                for node_id in new_actors:
+                    # start new plan on new actors
+                    ray.get(
+                        new_actors[node_id].run_local_plan.remote(
+                            local_plan, daft_execution_config, results_buffer_size
+                        )
+                    )
+                    # get the result generator for the new actor
+                    result_gens[node_id] = new_actors[node_id].get_results.remote()
+                    # put it in the put_input_refs_per_node dict
+                    put_input_refs_per_node[node_id] = None
 
-            # TODO THINK ABOUT ORDERING OF GENERATORS
-            ready, result_gens = ray.wait(result_gens, timeout=0.1, fetch_local=False)
-            for gen in ready:
-                assert isinstance(gen, ObjectRefGenerator)
-                try:
-                    partition = next(gen)
-                    yield partition
-                except StopIteration:
-                    pass
-                else:
-                    result_gens.append(gen)
+            # dispatch inputs to available actors
+            num_inputs_dispatched = 0
+            for node_id, input_ref in put_input_refs_per_node.items():
+                if input_ref is None:
+                    try:
+                        next_input_id, next_input = inputs.popleft()
+                        put_input_refs_per_node[node_id] = self.actors[node_id].put_input.remote(
+                            next_input_id, next_input
+                        )
+                    except IndexError:
+                        # no more inputs to dispatch
+                        break
+                    num_inputs_dispatched += 1
+            if num_inputs_dispatched > 0:
+                inputs_dispatched = original_num_inputs - len(inputs)
+                logger.info(
+                    "Dispatched %d inputs to swordfish actors, %d inputs remaining", inputs_dispatched, len(inputs)
+                )
 
-            # check if inputs are exhausted
-            if not input_exhausted:
-                ready, _ = ray.wait([assign_inputs_done], timeout=0.1, fetch_local=False)
-                if len(ready) > 0:
-                    input_exhausted = True
+        logger.info("Finished dispatching inputs to swordfish actors")
+        # finish all the put input refs
+        ray.get([ref for ref in put_input_refs_per_node.values() if ref is not None])
+        # tell the actors that no more inputs will be provided
+        ray.get([actor.mark_inputs_finished.remote() for actor in self.actors.values()])
 
-        # wait for all actors to finish
+        # now get outputs from actors
+        num_outputs_received = 0
+        for result_gen in result_gens:
+            for partition in result_gen:
+                num_outputs_received += 1
+                logger.info("Received output %d from swordfish actors", num_outputs_received)
+                # this does not guarantee order. we need to guarantee order if there is a sort for example.
+                yield partition
+
+        logger.info("Finished receiving %d outputs from swordfish actors", num_outputs_received)
+
+        # tell the actors that the plan is finished
         ray.get([actor.mark_plan_finished.remote() for actor in self.actors.values()])

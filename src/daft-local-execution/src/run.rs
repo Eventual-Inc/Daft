@@ -11,13 +11,13 @@ use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
 use common_runtime::{RuntimeRef, RuntimeTask};
 use common_tracing::refresh_chrome_trace;
-use daft_local_plan::{translate, LocalPhysicalPlanRef, PyLocalPhysicalPlan};
+use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
     partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
     MicroPartition, MicroPartitionRef,
 };
-use daft_scan::{python::pylib::PyScanTask, ScanTaskRef};
+use daft_scan::ScanTaskRef;
 use futures::Stream;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -32,7 +32,7 @@ use {
 };
 
 use crate::{
-    channel::{create_channel, Receiver},
+    channel::{create_channel, Receiver, Sender},
     pipeline::{physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid},
     progress_bar::{make_progress_bar_manager, ProgressBarManager},
     resource_manager::get_or_init_memory_manager,
@@ -52,7 +52,10 @@ pub fn get_or_init_swordfish_runtime() -> &'static RuntimeRef {
             common_runtime::PoolType::Custom("swordfish".to_string()),
         )
     });
-    let _ = pyo3_async_runtimes::tokio::init_with_runtime(&runtime.runtime);
+    #[cfg(feature = "python")]
+    {
+        let _ = pyo3_async_runtimes::tokio::init_with_runtime(&runtime.runtime);
+    }
     runtime
 }
 
@@ -93,12 +96,8 @@ impl LocalPartitionStream {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let part = rx.recv().await;
             match part {
-                Some(part) => {
-                    println!("got real part");
-                    Ok(Some(PyMicroPartition::from(part)))
-                }
+                Some(part) => Ok(Some(PyMicroPartition::from(part))),
                 None => {
-                    println!("got none");
                     let mut handle_guard = handle.lock().await;
                     if let Some(handle) = handle_guard.take() {
                         handle.await??;
@@ -112,16 +111,10 @@ impl LocalPartitionStream {
     }
 }
 
-impl Drop for LocalPartitionStream {
-    fn drop(&mut self) {
-        println!("dropping local partition stream");
-    }
-}
-
 #[cfg(feature = "python")]
 #[pyclass(module = "daft.daft", name = "PlanInputConsumer")]
 pub struct PyPlanInputConsumer {
-    senders: Vec<kanal::AsyncSender<ScanTaskRef>>,
+    senders: Vec<Sender<ScanTaskRef>>,
 }
 
 #[cfg(feature = "python")]
@@ -130,13 +123,12 @@ impl PyPlanInputConsumer {
     fn put_input<'a>(
         &self,
         input_id: usize,
-        input: PyScanTask,
+        input: daft_scan::python::pylib::PyScanTask,
         py: Python<'a>,
     ) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let sender = self.senders[input_id].clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let sent = sender.send(input.0).await;
-            println!("input sent inner");
             if let Err(e) = sent {
                 panic!("Failed to send input: {}", e);
             }
@@ -174,7 +166,7 @@ impl PyNativeExecutor {
     pub fn run_local<'a>(
         &self,
         py: Python<'a>,
-        local_physical_plan: &PyLocalPhysicalPlan,
+        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
@@ -221,11 +213,11 @@ impl PyNativeExecutor {
     pub fn run_distributed<'a>(
         &self,
         py: Python<'a>,
-        local_physical_plan: &PyLocalPhysicalPlan,
+        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<Bound<'a, PyAny>> {
-        let (res, input_consumer) = py.allow_threads(|| {
+        let (res, input_senders) = py.allow_threads(|| {
             self.executor.run(
                 &local_physical_plan.plan,
                 &InMemoryPartitionSetCache::empty(),
@@ -238,7 +230,9 @@ impl PyNativeExecutor {
                 handle: Arc::new(Mutex::new(Some(res.handle))),
                 receiver: res.receiver,
             },
-            input_consumer,
+            PyPlanInputConsumer {
+                senders: input_senders,
+            },
         );
         Ok(tuple.into_pyobject(py)?.into_any())
     }
@@ -311,8 +305,7 @@ impl NativeExecutor {
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
-    ) -> DaftResult<(ExecutionEngineResult, PyPlanInputConsumer)> {
-        println!("running");
+    ) -> DaftResult<(ExecutionEngineResult, Vec<Sender<ScanTaskRef>>)> {
         refresh_chrome_trace();
         let cancel = self.cancel.clone();
         let mut input_consumer_senders = Vec::new();
@@ -327,7 +320,6 @@ impl NativeExecutor {
         let pb_manager = self.pb_manager.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
         let execution_task = async move {
-            println!("execution task");
             let memory_manager = get_or_init_memory_manager();
             let mut runtime_handle = ExecutionRuntimeContext::new(
                 cfg.default_morsel_size,
@@ -336,14 +328,10 @@ impl NativeExecutor {
             );
             let receiver = pipeline.start(true, &mut runtime_handle)?;
             while let Some(val) = receiver.recv().await {
-                println!("got partition");
                 if tx.send(val).await.is_err() {
-                    println!("tx send failed");
                     break;
                 }
-                println!("tx send success");
             }
-            println!("receiver done");
             while let Some(result) = runtime_handle.join_next().await {
                 match result {
                     Ok(Err(e)) => {
@@ -393,18 +381,12 @@ impl NativeExecutor {
                 result = execution_task => result,
             }
         });
-        println!("handle spawned");
         Ok((
             ExecutionEngineResult {
                 handle,
                 receiver: rx,
             },
-            PyPlanInputConsumer {
-                senders: input_consumer_senders
-                    .into_iter()
-                    .map(|sender| sender.into_inner())
-                    .collect(),
-            },
+            input_consumer_senders,
         ))
     }
 

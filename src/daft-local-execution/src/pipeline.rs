@@ -12,7 +12,9 @@ use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{join::get_common_join_cols, resolved_col};
 use daft_local_plan::{
-    ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample, Sort, StreamScan, UnGroupedAggregate, Unpivot, WindowPartitionOnly
+    ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
+    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
+    Project, Sample, Sort, StreamScan, UnGroupedAggregate, Unpivot, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -49,7 +51,10 @@ use crate::{
         window_partition_only::WindowPartitionOnlySink,
         write::{WriteFormat, WriteSink},
     },
-    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, input_stream::InputStreamSource, source::SourceNode},
+    sources::{
+        empty_scan::EmptyScanSource, in_memory::InMemorySource, input_stream::InputStreamSource,
+        source::SourceNode,
+    },
     state_bridge::BroadcastStateBridge,
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
@@ -589,8 +594,10 @@ pub fn physical_plan_to_pipeline(
                 JoinSide::Right => (right, left),
             };
 
-            let stream_child_node = physical_plan_to_pipeline(stream_child, psets, cfg, input_senders)?;
-            let collect_child_node = physical_plan_to_pipeline(collect_child, psets, cfg, input_senders)?;
+            let stream_child_node =
+                physical_plan_to_pipeline(stream_child, psets, cfg, input_senders)?;
+            let collect_child_node =
+                physical_plan_to_pipeline(collect_child, psets, cfg, input_senders)?;
 
             let state_bridge = BroadcastStateBridge::new();
             let collect_node = BlockingSinkNode::new(

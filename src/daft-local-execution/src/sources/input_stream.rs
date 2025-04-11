@@ -31,17 +31,10 @@ pub struct InputStreamSource {
     schema: SchemaRef,
 }
 
-impl Drop for InputStreamSource {
-    fn drop(&mut self) {
-        println!("InputStreamSource drop");
-    }
-}
-
 impl InputStreamSource {
     const MAX_PARALLEL_SCAN_TASKS: usize = 8;
 
     pub fn new(rx: Receiver<ScanTaskRef>, schema: SchemaRef) -> Self {
-        println!("InputStreamSource new");
         Self {
             rx,
             num_parallel_tasks: Self::MAX_PARALLEL_SCAN_TASKS,
@@ -63,9 +56,7 @@ impl Source for InputStreamSource {
         io_stats: IOStatsRef,
     ) -> DaftResult<SourceStream<'static>> {
         let io_runtime = get_io_runtime(true);
-        println!("get_data");
         let rx_stream = futures::stream::unfold(self.rx.clone(), |rx| async move {
-            println!("rx_stream unfold");
             rx.recv().await.map(|scan_task| (scan_task, rx))
         });
         let stream_of_streams = rx_stream.map(move |scan_task| {

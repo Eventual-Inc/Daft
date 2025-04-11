@@ -1,4 +1,4 @@
-use daft_local_plan::{LocalPhysicalPlanRef, PyLocalPhysicalPlan};
+use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, PyLocalPhysicalPlan};
 use daft_logical_plan::PyLogicalPlanBuilder;
 use daft_scan::{python::pylib::PyScanTask, ScanTaskRef};
 use pyo3::prelude::*;
@@ -35,6 +35,29 @@ impl DistributedPhysicalPlan {
         PyLocalPhysicalPlan {
             plan: self.local_physical_plan.clone(),
         }
+    }
+
+    pub fn repr(&self) -> String {
+        fn build_plan_string(plan: &LocalPhysicalPlan) -> String {
+            let node_name = plan.name();
+            let children = plan.get_children();
+
+            if children.is_empty() {
+                node_name.to_string()
+            } else if children.len() == 1 {
+                let child_string = build_plan_string(children[0]);
+                format!("{} -> {}", child_string, node_name)
+            } else {
+                // For joins and concat, show both branches
+                let child_strings: Vec<String> = children
+                    .iter()
+                    .map(|child| build_plan_string(child))
+                    .collect();
+                format!("({}) -> {}", child_strings.join(", "), node_name)
+            }
+        }
+
+        build_plan_string(&self.local_physical_plan)
     }
 }
 

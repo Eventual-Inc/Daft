@@ -2,6 +2,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+
 use crate::{translate, LocalPhysicalPlanRef};
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
@@ -25,7 +26,6 @@ impl PyLocalPhysicalPlan {
 }
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);
-
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyLocalPhysicalPlan>()?;
