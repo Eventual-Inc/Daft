@@ -10,7 +10,13 @@ use pyo3::prelude::*;
 use crate::Session;
 
 #[pyclass]
-pub struct PySession(pub Session);
+pub struct PySession(Session);
+
+impl PySession {
+    pub fn inner(&self) -> &Session {
+        &self.0
+    }
+}
 
 #[pymethods]
 impl PySession {
@@ -110,12 +116,6 @@ impl PySession {
     pub fn detach_function(&self, name: &str) -> PyResult<()> {
         self.0.detach_function(name)?;
         Ok(())
-    }
-}
-
-impl From<&PySession> for Session {
-    fn from(sess: &PySession) -> Self {
-        sess.0.shallow_clone()
     }
 }
 

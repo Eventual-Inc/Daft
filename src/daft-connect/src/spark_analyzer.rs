@@ -796,7 +796,7 @@ impl SparkAnalyzer<'_> {
         }
 
         // TODO: converge Session and ConnectSession
-        let session = self.session.session().shallow_clone();
+        let session = self.session.session().clone_ref();
         let session = Rc::new(session);
 
         let mut planner = SQLPlanner::new(session);

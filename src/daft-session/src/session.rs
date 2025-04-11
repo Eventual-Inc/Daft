@@ -35,20 +35,72 @@ struct SessionState {
 }
 
 impl Session {
-    /// Creates a completely independent copy of the Session with its own state.
+    /// Creates an independent copy of the Session with its own separate state.
     ///
-    /// **This performs a deep clone of the state, not just an Arc clone.**
-    pub fn deep_clone(&self) -> Self {
+    /// This method performs a complete clone of the underlying `SessionState`,
+    /// creating a new `Arc<RwLock<SessionState>>` that contains the cloned state.
+    /// Any changes made to the state of the forked session will not affect the
+    /// original session and vice versa.
+    ///
+    /// # Comparison with `clone_ref()`
+    ///
+    /// Unlike `clone_ref()` which only creates a new reference to the same underlying state,
+    /// `fork()` creates a complete copy of the state. This makes `fork()` more expensive
+    /// but ensures complete isolation between the original and new session.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let original_session = Session::empty();
+    /// // ... configure original_session ...
+    ///
+    /// // Create an independent copy with the same initial state
+    /// let forked_session = original_session.fork();
+    ///
+    /// // Changes to forked_session won't affect original_session
+    /// ```
+    ///
+    pub fn fork(&self) -> Self {
         let state = self.state().clone();
         Self {
             state: Arc::new(RwLock::new(state)),
         }
     }
 
-    /// Clones the session, but does not clone the state. This is a shallow copy.
+    /// Creates a new session that shares the same underlying state with the original.
     ///
-    /// If you need a deep clone, use the `clone` method.
-    pub fn shallow_clone(&self) -> Self {
+    /// This method creates a new `Session` instance that contains a clone of the `Arc`
+    /// pointer to the same `RwLock<SessionState>`, but does not clone the state itself.
+    /// This means that any changes to the state through either session will be visible
+    /// to the other session.
+    ///
+    /// # Use Cases
+    ///
+    /// Use `clone_ref()` when you need multiple sessions that should always see the
+    /// same state changes, such as:
+    /// - Creating multiple handles to the same logical session
+    /// - Sharing session state across different components of your application
+    /// - When you need multiple sessions with synchronized state
+    ///
+    /// # Comparison with `fork()`
+    ///
+    /// Unlike `fork()` which creates a completely independent copy of the session state,
+    /// `clone_ref()` only clones the reference to the state. This makes `clone_ref()` much
+    /// cheaper but means that changes to one session will affect all sessions created
+    /// with `clone_ref()`.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let original_session = Session::empty();
+    /// // ... configure original_session ...
+    ///
+    /// // Create another session that shares state with the original
+    /// let shared_session = original_session.clone_ref();
+    ///
+    /// // Changes through shared_session will be visible to original_session and vice versa
+    /// ```
+    pub fn clone_ref(&self) -> Self {
         Self {
             state: self.state.clone(),
         }

@@ -45,7 +45,7 @@ pub fn sql_exec(
     session: &PySession,
     config: PyDaftPlanningConfig,
 ) -> PyResult<Option<PyObject>> {
-    if let Some(plan) = execute_statement(session.into(), sql)? {
+    if let Some(plan) = execute_statement(session.inner().clone_ref(), sql)? {
         let builder = LogicalPlanBuilder::new(plan, Some(config.config));
         let builder = PyLogicalPlanBuilder::from(builder);
         let builder = builder.into_py_any(py)?;
@@ -63,7 +63,7 @@ pub fn sql(
 ) -> PyResult<PyLogicalPlanBuilder> {
     // TODO deprecated catalog APIs #3819
 
-    let session = py_session.0.deep_clone();
+    let session = py_session.inner().fork();
 
     for (name, view) in catalog.tables {
         session.create_temp_table(name, &TableSource::View(view), true)?;
