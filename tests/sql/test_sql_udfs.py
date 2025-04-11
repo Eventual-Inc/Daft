@@ -13,7 +13,7 @@ def test_sql_udf():
     def multiply_by_n(data, n):
         return [i * n for i in data]
 
-    cat = SQLCatalog({"df", df})
+    cat = SQLCatalog({"df": df})
 
     expected = {"b": [2, 4, 6]}
     actual = daft.sql("select multiply_by_n(a, n:=2) as b from df", cat).to_pydict()
@@ -23,7 +23,7 @@ def test_sql_udf():
 
 def test_sql_udf_ambigious_name():
     df = daft.from_pydict({"a": [1, 2, 3]})
-    cat = SQLCatalog({"df", df})
+    cat = SQLCatalog({"df": df})
 
     @daft.udf(return_dtype=daft.DataType.int64())
     def multiply_by_n(data, n):
@@ -39,7 +39,7 @@ def test_sql_udf_ambigious_name():
 
 def test_sql_udf_multi_column():
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-    cat = SQLCatalog({"df", df})
+    cat = SQLCatalog({"df": df})
 
     @daft.udf(return_dtype=daft.DataType.int64())
     def multiply(a, b):
@@ -52,7 +52,7 @@ def test_sql_udf_multi_column():
 
 def test_sql_udf_multi_column_and_kwargs():
     df = daft.from_pydict({"first_name": ["Alice", "Bob", "Charlie"], "last_name": ["Smith", "Johnson", "Williams"]})
-    cat = SQLCatalog({"df", df})
+    cat = SQLCatalog({"df": df})
 
     @daft.udf(return_dtype=str)
     def make_greeting(a, b, greeting="hello"):
