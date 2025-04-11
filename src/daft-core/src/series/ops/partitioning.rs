@@ -53,14 +53,11 @@ impl Series {
 
     pub fn partitioning_days(&self) -> DaftResult<Self> {
         let value = match self.data_type() {
-            DataType::Date => {
-                let date_array = self.downcast::<DateArray>()?;
-                Ok(date_array.physical.clone().into_series())
-            }
+            DataType::Date => Ok(self.clone()),
             DataType::Timestamp(tu, _) => {
                 let array = self.cast(&DataType::Timestamp(*tu, None))?;
                 let ts_array = array.downcast::<TimestampArray>()?;
-                Ok(ts_array.date()?.physical.into_series())
+                Ok(ts_array.date()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run partitioning_days() operation on temporal types, got {}",

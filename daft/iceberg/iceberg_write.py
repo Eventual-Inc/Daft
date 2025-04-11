@@ -108,6 +108,8 @@ def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSche
         warnings.warn(f"{field.transform} not implemented, Please make an issue!")
         transform_expr = part_col
 
+    transform_expr = transform_expr.alias(field.name)
+
     # currently the partitioning expressions change the name of the column
     # so we need to alias it back to the original column name
     return transform_expr
