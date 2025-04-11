@@ -322,8 +322,10 @@ impl SQLPlanner<'_> {
         // lookup function variant(s) by name
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
-        let mut fn_match = get_func_from_session(&self.context.borrow().session, &fn_name)?
-            .or_else(|| get_func_from_sqlfunctions_registry(fn_name.as_str()))
+        let mut fn_match = get_func_from_sqlfunctions_registry(fn_name.as_str())
+            .map(SQLPlannerResult::Ok)
+            .transpose()
+            .or_else(|_| get_func_from_session(&self.context.borrow().session, &fn_name))?
             .ok_or_else(|| {
                 PlannerError::unsupported_sql(format!("Function `{}` not found", fn_name))
             })?;
