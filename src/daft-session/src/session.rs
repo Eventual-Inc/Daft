@@ -5,6 +5,7 @@ use daft_dsl::functions::python::WrappedUDFClass;
 use uuid::Uuid;
 
 use crate::{
+    ambiguous_identifier_err,
     error::Result,
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
@@ -305,6 +306,11 @@ impl SessionState {
             .functions
             .lookup(name, LookupMode::Insensitive)
             .into_iter();
+
+        if items.len() > 1 {
+            let names = self.functions.list(Some(name));
+            ambiguous_identifier_err!("Function", names);
+        }
         let f = items.next();
 
         f.cloned()
