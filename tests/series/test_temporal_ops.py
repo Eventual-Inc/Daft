@@ -480,3 +480,23 @@ def test_series_date_day_of_year():
 
     day_of_year = input_series.dt.day_of_year()
     assert expected_series.to_pylist() == day_of_year.to_pylist()
+
+
+# just a sanity check, more robust tests are in tests/dataframe/test_temporals.py
+def test_series_date_to_string():
+    from datetime import date
+
+    input_series = Series.from_pylist([date(2024, 1, 1)])
+    expected_series = Series.from_pylist(["2024-01-01"])
+    date_as_string = input_series.dt.strftime()
+    assert expected_series.to_pylist() == date_as_string.to_pylist()
+
+
+# just a sanity check, more robust tests are in tests/dataframe/test_temporals.py
+def test_series_timestamp_to_string():
+    from datetime import datetime
+
+    input_series = Series.from_pylist([datetime(2024, 1, 1)]).cast(DataType.timestamp(TimeUnit.s()))
+    expected_series = Series.from_pylist(["2024-01-01T00:00:00"])
+    date_as_string = input_series.dt.strftime()
+    assert expected_series.to_pylist() == date_as_string.to_pylist()

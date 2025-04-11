@@ -16,7 +16,7 @@ mod state_bridge;
 use std::{
     future::Future,
     pin::Pin,
-    sync::{Arc, LazyLock},
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -28,9 +28,6 @@ pub use run::{ExecutionEngineResult, NativeExecutor};
 use runtime_stats::{RuntimeStatsContext, TimedFuture};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 use tracing::Instrument;
-
-pub static NUM_CPUS: LazyLock<usize> =
-    LazyLock::new(|| std::thread::available_parallelism().unwrap().get());
 
 /// The `OperatorOutput` enum represents the output of an operator.
 /// It can be either `Ready` or `Pending`.

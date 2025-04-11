@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
@@ -9,7 +10,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 struct ConcatSinkState {}
@@ -56,7 +57,7 @@ impl StreamingSink for ConcatSink {
     }
 
     fn max_concurrency(&self) -> usize {
-        *NUM_CPUS
+        get_compute_pool_num_threads()
     }
 
     fn dispatch_spawner(
