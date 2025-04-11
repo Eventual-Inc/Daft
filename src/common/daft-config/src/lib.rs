@@ -64,6 +64,7 @@ pub struct DaftExecutionConfig {
     pub flight_shuffle_dirs: Vec<String>,
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
+    pub maintain_order_for_writes: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -95,6 +96,7 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
+            maintain_order_for_writes: false,
         }
     }
 }

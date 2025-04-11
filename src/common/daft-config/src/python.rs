@@ -101,7 +101,8 @@ impl PyDaftExecutionConfig {
         pre_shuffle_merge_threshold=None,
         flight_shuffle_dirs=None,
         enable_ray_tracing=None,
-        scantask_splitting_level=None
+        scantask_splitting_level=None,
+        maintain_order_for_writes=None,
     ))]
     fn with_config_values(
         &self,
@@ -131,6 +132,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs: Option<Vec<String>>,
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
+        maintain_order_for_writes: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -232,6 +234,10 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.scantask_splitting_level = scantask_splitting_level;
+        }
+
+        if let Some(maintain_order_for_writes) = maintain_order_for_writes {
+            config.maintain_order_for_writes = maintain_order_for_writes;
         }
 
         Ok(Self {
@@ -352,6 +358,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn scantask_splitting_level(&self) -> PyResult<i32> {
         Ok(self.config.scantask_splitting_level)
+    }
+
+    #[getter]
+    fn maintain_order_for_writes(&self) -> PyResult<bool> {
+        Ok(self.config.maintain_order_for_writes)
     }
 }
 
