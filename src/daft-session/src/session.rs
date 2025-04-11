@@ -321,7 +321,7 @@ impl Session {
         Ok(())
     }
 
-    pub fn get_function(&self, name: &str) -> Result<WrappedUDFClass> {
+    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
         self.state().get_function(name)
     }
 }
@@ -345,20 +345,26 @@ impl SessionState {
         }
     }
 
-    pub fn get_function(&self, name: &str) -> Result<WrappedUDFClass> {
+    #[cfg(feature = "python")]
+    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
         let mut items = self
             .functions
             .lookup(name, LookupMode::Insensitive)
             .into_iter();
 
         if items.len() > 1 {
-            let names = self.functions.list(Some(name));
+            let names = items
+                .map(|i| i.name())
+                .collect::<pyo3::PyResult<Vec<_>>>()?;
+
             ambiguous_identifier_err!("Function", names);
         }
-        let f = items.next();
+        Ok(items.next().cloned())
+    }
 
-        f.cloned()
-            .ok_or_else(|| crate::error::Error::function_not_found(name))
+    #[cfg(not(feature = "python"))]
+    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+        panic!("Function not supported")
     }
 }
 

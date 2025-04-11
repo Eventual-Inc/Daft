@@ -55,8 +55,15 @@ impl WrappedUDFClass {
         Ok(expr)
     }
 
-    pub fn name(&self, py: Python) -> PyResult<String> {
-        self.inner.getattr(py, "name")?.extract(py)
+    pub fn name(&self) -> PyResult<String> {
+        Python::with_gil(|py| {
+            let s: String = self.inner.getattr(py, "name")?.extract(py)?;
+            Ok(if s.contains('.') {
+                s.split('.').next_back().unwrap().to_string()
+            } else {
+                s
+            })
+        })
     }
 }
 

@@ -310,17 +310,19 @@ impl SQLPlanner<'_> {
         fn get_func_from_session(
             session: &Session,
             name: impl AsRef<str>,
-        ) -> Option<Arc<dyn SQLFunction>> {
+        ) -> SQLPlannerResult<Option<Arc<dyn SQLFunction>>> {
             let name = name.as_ref();
-            let f = session.get_function(name).ok()?;
 
-            Some(Arc::new(f))
+            match session.get_function(name)? {
+                Some(f) => Ok(Some(Arc::new(f))),
+                None => Ok(None),
+            }
         }
 
         // lookup function variant(s) by name
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
-        let mut fn_match = get_func_from_session(&self.context.borrow().session, &fn_name)
+        let mut fn_match = get_func_from_session(&self.context.borrow().session, &fn_name)?
             .or_else(|| get_func_from_sqlfunctions_registry(fn_name.as_str()))
             .ok_or_else(|| {
                 PlannerError::unsupported_sql(format!("Function `{}` not found", fn_name))

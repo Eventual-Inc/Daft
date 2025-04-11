@@ -547,8 +547,10 @@ def udf(
             batch_size=batch_size,
             concurrency=concurrency,
         )
-        # for sql we only want to register it by the qual_name so it's easily identifiable
-        daft.attach_function(udf, qual_name)
+        # for sql we only want to register it by the actual given name so it's easily identifiable
+        # example: "my_module.my_udf" -> "my_udf"
+        sql_name = name.split(".")[-1]
+        daft.attach_function(udf, sql_name)
         return udf
 
     return _udf
