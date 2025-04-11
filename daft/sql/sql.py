@@ -3,6 +3,7 @@
 import inspect
 from typing import Optional
 
+import daft
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.daft import PyCatalog as _PyCatalog
@@ -185,5 +186,8 @@ def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool =
     planning_config = get_context().daft_planning_config
 
     _py_catalog = catalog._catalog
-    _py_logical = _sql(sql, _py_catalog, planning_config)
+
+    sess = daft.current_session()._session
+
+    _py_logical = _sql(sql, _py_catalog, sess, planning_config)
     return DataFrame(LogicalPlanBuilder(_py_logical))

@@ -144,6 +144,8 @@ from daft.session import (
     set_namespace,
     set_session,
     write_table,
+    attach_function,
+    detach_function,
 )
 from daft.sql import sql, sql_expr
 from daft.udf import udf
@@ -171,6 +173,7 @@ __all__ = [
     "Window",
     "attach",
     "attach_catalog",
+    "attach_function",
     "attach_table",
     "coalesce",
     "col",
@@ -183,6 +186,7 @@ __all__ = [
     "current_namespace",
     "current_session",
     "detach_catalog",
+    "detach_function",
     "detach_table",
     "drop_namespace",
     "drop_table",

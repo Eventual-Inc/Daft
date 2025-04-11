@@ -6,7 +6,7 @@ pub(crate) const _DAFT_SESSION_USER: &str = "daft";
 pub(crate) const _DAFT_SESSION_TEMP_DIR: &str = "/tmp";
 
 /// Session state variables.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct Options {
     pub identifier_mode: IdentifierMode,
     pub curr_catalog: Option<String>,
@@ -14,7 +14,7 @@ pub(crate) struct Options {
 }
 
 /// Identifier mode controls identifier resolution and name binding logic (tables, columns, views, etc).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 #[allow(dead_code)]
 pub enum IdentifierMode {
     /// For `ident AS alias` -> lookup 'ident' case-insensitively and bind to 'alias' case-preserved.

@@ -273,6 +273,17 @@ pub enum ApproxPercentileInput {
     Many(Vec<f64>),
 }
 
+impl PyExpr {
+    /// converts the pyexpr into a `daft.Expression` python instance
+    /// `daft.Expression._from_pyexpr(self)`
+    pub fn into_expr_cls(self, py: Python) -> PyResult<PyObject> {
+        let daft = py.import("daft")?;
+        let expr_cls = daft.getattr("Expression")?;
+        let expr = expr_cls.call_method1("_from_pyexpr", (self,))?;
+        Ok(expr.unbind())
+    }
+}
+
 #[pymethods]
 impl PyExpr {
     pub fn _input_mapping(&self) -> PyResult<Option<String>> {

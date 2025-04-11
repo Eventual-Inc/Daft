@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.context import get_context
@@ -9,10 +9,14 @@ from daft.daft import PySession, sql_exec
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 
+if TYPE_CHECKING:
+    from daft.udf import UDF
+
 __all__ = [
     "Session",
     "attach",
     "attach_catalog",
+    "attach_function",
     "attach_table",
     "create_namespace",
     "create_table",
@@ -21,6 +25,7 @@ __all__ = [
     "current_namespace",
     "current_session",
     "detach_catalog",
+    "detach_function",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -478,6 +483,17 @@ class Session:
 
         self._session.get_table(identifier._ident).write(df, mode=mode, **options)
 
+    ###
+    # functions
+    ###
+    def attach_function(self, func: UDF, name: str):
+        """Attaches a Python function as a UDF in the current session."""
+        self._session.attach_function(func, name)
+
+    def detach_function(self, name: str):
+        """Detaches a Python function as a UDF in the current session."""
+        self._session.detach_function(name)
+
 
 ###
 # global active session
@@ -700,3 +716,18 @@ def set_session(session: Session):
     # ```
     global _SESSION
     _SESSION = session
+
+
+###
+# functions
+###
+
+
+def attach_function(func: UDF, name: str):
+    """Attaches a Python function as a UDF in the current session."""
+    _session().attach_function(func, name)
+
+
+def detach_function(name: str):
+    """Detaches a Python function as a UDF in the current session."""
+    _session().detach_function(name)
