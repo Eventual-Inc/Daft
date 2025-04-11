@@ -74,14 +74,6 @@ impl Session {
     /// This means that any changes to the state through either session will be visible
     /// to the other session.
     ///
-    /// # Use Cases
-    ///
-    /// Use `clone_ref()` when you need multiple sessions that should always see the
-    /// same state changes, such as:
-    /// - Creating multiple handles to the same logical session
-    /// - Sharing session state across different components of your application
-    /// - When you need multiple sessions with synchronized state
-    ///
     /// # Comparison with `fork()`
     ///
     /// Unlike `fork()` which creates a completely independent copy of the session state,
