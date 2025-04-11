@@ -1,4 +1,4 @@
-name: nightly-publish-s3
+name: Nightly package build, S3 publish, and tests
 
 on:
   schedule:

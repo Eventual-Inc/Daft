@@ -1,4 +1,4 @@
-name: benchmark-local-tpch
+name: Benchmark Local TPC-H
 
 on:
   workflow_dispatch:
