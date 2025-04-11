@@ -4,6 +4,10 @@ impl<T> Sender<T> {
     pub(crate) async fn send(&self, val: T) -> Result<(), kanal::SendError> {
         self.0.send(val).await
     }
+
+    pub(crate) fn into_inner(self) -> kanal::AsyncSender<T> {
+        self.0
+    }
 }
 
 #[derive(Clone)]

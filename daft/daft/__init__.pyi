@@ -1,7 +1,7 @@
 import builtins
 import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterator, Literal
 
 from daft.catalog import Catalog, Table
 from daft.dataframe.display import MermaidOptions
@@ -1869,15 +1869,37 @@ class LogicalPlanBuilder:
     def repr_ascii(self, simple: bool) -> str: ...
     def repr_mermaid(self, options: MermaidOptions) -> str: ...
 
+class DistributedPhysicalPlan:
+    @staticmethod
+    def from_logical_plan_builder(builder: LogicalPlanBuilder) -> DistributedPhysicalPlan: ...
+    def get_local_physical_plan(self) -> LocalPhysicalPlan: ...
+    def get_inputs(self) -> list[ScanTask]: ...
+    def repr(self) -> str: ...
+
+class LocalPhysicalPlan:
+    @staticmethod
+    def from_logical_plan_builder(
+        logical_plan_builder: LogicalPlanBuilder,
+    ) -> LocalPhysicalPlan: ...
+
+class PlanInputConsumer:
+    async def put_input(self, input_id: int, input: ScanTask) -> None: ...
+
 class NativeExecutor:
     def __init__(self) -> None: ...
-    def run(
+    def run_local(
         self,
-        builder: LogicalPlanBuilder,
+        plan: LocalPhysicalPlan,
         psets: dict[str, list[PartitionT]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
     ) -> Iterator[PyMicroPartition]: ...
+    def run_distributed(
+        self,
+        plan: LocalPhysicalPlan,
+        daft_execution_config: PyDaftExecutionConfig,
+        results_buffer_size: int | None,
+    ) -> tuple[AsyncIterator[PyMicroPartition], PlanInputConsumer]: ...
     def repr_ascii(
         self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool
     ) -> str: ...
@@ -1916,6 +1938,7 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
+        big_buddha_special: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1965,6 +1988,8 @@ class PyDaftExecutionConfig:
     def flight_shuffle_dirs(self) -> list[str]: ...
     @property
     def enable_ray_tracing(self) -> bool: ...
+    @property
+    def big_buddha_special(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

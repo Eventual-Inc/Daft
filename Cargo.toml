@@ -19,6 +19,7 @@ daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dashboard = {path = "src/daft-dashboard", default-features = false}
+daft-distributed-plan = {path = "src/daft-distributed-plan", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
@@ -68,6 +69,7 @@ python = [
   "daft-core/python",
   "daft-csv/python",
   "daft-dashboard/python",
+  "daft-distributed-plan/python",
   "daft-dsl/python",
   "daft-functions-json/python",
   "daft-functions/python",
@@ -123,6 +125,10 @@ debug = 1  # include symbols
 inherits = "release"
 lto = 'thin'
 strip = "none"  # dont strip
+
+[profile.release]
+panic = 'abort'
+strip = true
 
 [profile.release-lto]
 codegen-units = 1
