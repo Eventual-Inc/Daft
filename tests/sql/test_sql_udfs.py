@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+
 import pytest
 
 import daft
@@ -78,3 +80,32 @@ def test_sql_udf_multi_column_and_kwargs():
 @pytest.mark.skip(reason="doesn't work as expected because udf's don error if the args are incorrect")
 def test_sql_udf_kwargs_dont_work_as_positional():
     pass
+
+
+@pytest.mark.parametrize(
+    "value,return_type",
+    [("1.23", float), ("1", int), ("'hello'", str), ("['hello']", daft.DataType.list(daft.DataType.string()))],
+)
+def test_sql_udf_various_datatypes(value, return_type):
+    @daft.udf(return_dtype=return_type)
+    def udf(column, literal):
+        return [literal for i in column]
+
+    df = daft.from_pydict({"x": [i for i in range(10)]})
+
+    cat = SQLCatalog({"df": df})
+    query = f"select udf(x, literal:={value}) as x from df"
+    print(query)
+    actual = daft.sql(query, cat).to_pydict()
+
+    if return_type is str:
+        # remove the quotes
+        value = value[1:-1]
+    elif return_type is float:
+        value = float(value)
+    elif return_type is int:
+        value = int(value)
+    elif return_type == daft.DataType.list(daft.DataType.string()):
+        value = ast.literal_eval(value)
+    expected = {"x": [value] * 10}
+    assert actual == expected
