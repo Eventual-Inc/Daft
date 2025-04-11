@@ -1,6 +1,6 @@
 import logging
 from collections import deque
-from typing import AsyncIterator, Optional
+from typing import AsyncGenerator, AsyncIterator, Generator, Optional
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -35,7 +35,7 @@ class SwordfishActor:
         plan: LocalPhysicalPlan,
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: Optional[int] = None,
-    ):
+    ) -> None:
         assert self.current_executor is None
         assert self.current_consumer is None
         executor = NativeExecutor()
@@ -46,23 +46,23 @@ class SwordfishActor:
 
         self.current_result_gen = output_producer
 
-    async def get_results(self):
+    async def get_results(self) -> AsyncGenerator[MicroPartition]:
         assert self.current_result_gen is not None
         async for partition in self.current_result_gen:
             if partition is None:
                 break
             yield MicroPartition._from_pymicropartition(partition)
 
-    async def put_input(self, input_id: int, input: ScanTask):
+    async def put_input(self, input_id: int, input: ScanTask) -> str:
         assert self.current_consumer is not None
         await self.current_consumer.put_input(0, input)
         return self.node_id
 
-    async def mark_inputs_finished(self):
+    async def mark_inputs_finished(self) -> None:
         assert self.current_consumer is not None
         self.current_consumer = None
 
-    async def mark_plan_finished(self):
+    async def mark_plan_finished(self) -> None:
         assert self.current_executor is not None
         self.current_executor = None
 
@@ -72,13 +72,13 @@ class DistributedSwordfishRunner:
         self.actors = {}
         self.refresh_actors()
 
-    def refresh_actors(self):
+    def refresh_actors(self) -> dict[str, SwordfishActor]:
         new_actors = {}
         for node in ray.nodes():
             if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0:
                 node_id = node["NodeID"]
                 if node_id not in self.actors:
-                    actor = SwordfishActor.options(
+                    actor = SwordfishActor.options(  # type: ignore
                         scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                             node_id=node_id,
                             soft=False,
@@ -93,14 +93,18 @@ class DistributedSwordfishRunner:
         builder: LogicalPlanBuilder,
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: Optional[int] = None,
-    ):
+    ) -> Generator[MicroPartition, None, None]:
         distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(builder._builder)
         local_plan = distributed_plan.get_local_physical_plan()
 
         inputs = deque([(i, input) for i, input in enumerate(distributed_plan.get_inputs())])
         original_num_inputs = len(inputs)
 
-        logger.info("Running distributed plan: %s, num inputs: %d", distributed_plan.repr(), len(inputs))
+        logger.info(
+            "Running distributed plan: %s, num inputs: %d",
+            distributed_plan.repr(),
+            len(inputs),
+        )
 
         self.refresh_actors()
 
@@ -139,12 +143,12 @@ class DistributedSwordfishRunner:
                 for node_id in new_actors:
                     # start new plan on new actors
                     ray.get(
-                        new_actors[node_id].run_local_plan.remote(
+                        new_actors[node_id].run_local_plan.remote(  # type: ignore
                             local_plan, daft_execution_config, results_buffer_size
                         )
                     )
                     # get the result generator for the new actor
-                    result_gens[node_id] = new_actors[node_id].get_results.remote()
+                    result_gens[node_id] = new_actors[node_id].get_results.remote()  # type: ignore
                     # put it in the put_input_refs_per_node dict
                     put_input_refs_per_node[node_id] = None
 
@@ -164,7 +168,9 @@ class DistributedSwordfishRunner:
             if num_inputs_dispatched > 0:
                 inputs_dispatched = original_num_inputs - len(inputs)
                 logger.info(
-                    "Dispatched %d inputs to swordfish actors, %d inputs remaining", inputs_dispatched, len(inputs)
+                    "Dispatched %d inputs to swordfish actors, %d inputs remaining",
+                    inputs_dispatched,
+                    len(inputs),
                 )
 
         logger.info("Finished dispatching inputs to swordfish actors")
