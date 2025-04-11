@@ -364,7 +364,7 @@ impl SessionState {
 
     #[cfg(not(feature = "python"))]
     pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
-        panic!("Function not supported")
+        Ok(None)
     }
 }
 
