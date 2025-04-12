@@ -191,6 +191,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             let mut result = sorted_data;
                             for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
                                 result = match window_expr {
+                                    WindowExpr::Agg(agg_expr) => {
+                                        result.window_agg(&[agg_expr.clone()], &[name.clone()], &params.partition_by)?
+                                    }
                                     WindowExpr::RowNumber() => {
                                         result.window_row_number(name.clone(), &params.partition_by)?
                                     }
@@ -200,8 +203,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                     WindowExpr::DenseRank() => {
                                         result.window_rank(name.clone(), &params.partition_by, &params.order_by, true)?
                                     }
-                                    WindowExpr::Agg(agg_expr) => {
-                                        result.window_agg(&[agg_expr.clone()], &[name.clone()], &params.partition_by)?
+                                    WindowExpr::Offset(expr, offset, default) => {
+                                        result.window_offset(name.clone(), expr.clone(), &params.partition_by, *offset, default.clone())?
                                     }
                                 }
                             }

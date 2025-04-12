@@ -229,4 +229,99 @@ impl RecordBatch {
         // Union the original data with the rank column
         self.union(&rank_batch)
     }
+
+    pub fn window_offset(
+        &self,
+        name: String,
+        expr: ExprRef,
+        group_by: &[ExprRef],
+        offset: i64,
+        default: Option<ExprRef>,
+    ) -> DaftResult<Self> {
+        if group_by.is_empty() {
+            return Err(DaftError::ValueError(
+                "Group by cannot be empty for window offset".into(),
+            ));
+        }
+
+        // Short-circuit if offset is 0 - just return the value itself
+        if offset == 0 {
+            // Evaluate the expression
+            let expr_col = self.eval_expression(&expr)?;
+            let renamed_col = expr_col.rename(&name);
+            let result_batch = Self::from_nonempty_columns(vec![renamed_col])?;
+            return self.union(&result_batch);
+        }
+
+        // Evaluate the expression to get the values we'll need to offset
+        let expr_col = self.eval_expression(&expr)?;
+
+        // Evaluate default if provided
+        let default_col = if let Some(default_expr) = default {
+            Some(self.eval_expression(&default_expr)?)
+        } else {
+            None
+        };
+
+        // Table with just the groupby columns
+        let groupby_table = self.eval_expression_list(group_by)?;
+
+        // Get the grouped values (by indices, one array of indices per group)
+        let (_, groupvals_indices) = groupby_table.make_groups()?;
+
+        // For the offset indices, we'll use a combination of:
+        // 1. A vector of u64 values with placeholder values
+        // 2. A validity bitmap to track which entries are null
+        let mut indices_values = Vec::with_capacity(self.len());
+        let mut indices_validity = Vec::with_capacity(self.len());
+
+        // Initialize with placeholder values (0) and all nulls (false validity)
+        for _ in 0..self.len() {
+            indices_values.push(0u64);
+            indices_validity.push(false);
+        }
+
+        // For each group, compute the offset indices
+        for indices in &groupvals_indices {
+            for (i, &row_idx) in indices.iter().enumerate() {
+                let target_idx = i as i64 + offset;
+
+                if target_idx >= 0 && target_idx < indices.len() as i64 {
+                    // Within bounds, use the offset value
+                    let target_row_idx = indices[target_idx as usize];
+                    indices_values[row_idx as usize] = target_row_idx;
+                    indices_validity[row_idx as usize] = true;
+                }
+            }
+        }
+
+        // Create a UInt64Array with the indices values and validity
+        let take_indices = UInt64Array::new(
+            Field::new("indices", DataType::UInt64).into(),
+            Box::new(
+                arrow2::array::PrimitiveArray::from_vec(indices_values).with_validity(Some(
+                    arrow2::bitmap::Bitmap::from_trusted_len_iter(indices_validity.into_iter()),
+                )),
+            ),
+        )?
+        .into_series();
+
+        // Use take() to get the offset values
+        let mut result_col = expr_col.take(&take_indices)?;
+
+        // If default is provided, use it to fill nulls
+        if let Some(default_val) = default_col {
+            // Fill nulls with the default value
+            result_col = result_col.fill_null(&default_val)?;
+        }
+
+        // Rename to the specified name
+        result_col = result_col.rename(&name);
+
+        // Create a new RecordBatch with the offset column
+        let offset_batch = Self::from_nonempty_columns(vec![result_col])?;
+
+        // Union the original data with the offset column
+        self.union(&offset_batch)
+    }
 }
