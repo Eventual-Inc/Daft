@@ -75,7 +75,7 @@ struct WindowPartitionAndOrderByParams {
     aliases: Vec<String>,
     partition_by: Vec<ExprRef>,
     order_by: Vec<ExprRef>,
-    ascending: Vec<bool>,
+    descending: Vec<bool>,
     original_schema: SchemaRef,
 }
 
@@ -98,7 +98,7 @@ impl WindowPartitionAndOrderBySink {
                 aliases: aliases.to_vec(),
                 partition_by: partition_by.to_vec(),
                 order_by: order_by.to_vec(),
-                ascending: ascending.to_vec(),
+                descending: ascending.iter().map(|&asc| !asc).collect(),
                 original_schema: schema.clone(),
             }),
         })
@@ -184,8 +184,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
                             // Sort the data by order_by expressions
-                            let inverse_ascending = params.ascending.iter().map(|&b| !b).collect::<Vec<_>>(); // TODO: fix later
-                            let sorted_data = input_data.sort(&params.order_by, &inverse_ascending, &[true])?;
+                            let sorted_data = input_data.sort(&params.order_by, &params.descending, &[true])?;
 
                             // Process each window expression
                             // TODO: could we do HashMap<WindowExpr, Vec> to batch things?

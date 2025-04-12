@@ -74,13 +74,13 @@ class Window:
         window._spec = self._spec.with_partition_by([expr._expr for expr in expressions])
         return window
 
-    def order_by(self, *cols: ManyColumnsInputType, ascending: bool | list[bool] = True) -> Window:
+    def order_by(self, *cols: ManyColumnsInputType, desc: bool | list[bool] = False) -> Window:
         """Orders rows within each partition by specified columns or expressions.
 
         Args:
             *cols: Columns or expressions to determine ordering within the partition.
                    Can be column names as strings, Expression objects, or iterables of these.
-            ascending: Sort ascending (True) or descending (False).
+            desc: Sort descending (True) or ascending (False).
 
         Returns:
             Window: A window specification with the given ordering.
@@ -89,15 +89,15 @@ class Window:
         for c in cols:
             expressions.extend(column_inputs_to_expressions(c))
 
-        if isinstance(ascending, bool):
-            asc_flags = [ascending] * len(expressions)
+        if isinstance(desc, bool):
+            desc_flags = [desc] * len(expressions)
         else:
-            if len(ascending) != len(expressions):
-                raise ValueError("Length of ascending flags must match number of order by columns")
-            asc_flags = ascending
+            if len(desc) != len(expressions):
+                raise ValueError("Length of descending flags must match number of order by columns")
+            desc_flags = desc
 
         window = self
-        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], asc_flags)
+        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], [not d for d in desc_flags])
         return window
 
     def rows_between(

@@ -14,28 +14,7 @@ def test_row_number_function(make_df):
         {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 100, 300, 250, 150]}
     )
 
-    window_spec = Window().partition_by("category").order_by("sales", ascending=False)
-
-    result = df.select(
-        col("category"), col("sales"), row_number().over(window_spec).alias("row_number_sales")
-    ).collect()
-
-    expected = {
-        "category": ["A", "A", "A", "B", "B", "B", "C", "C"],
-        "sales": [100, 200, 50, 500, 100, 300, 250, 150],
-        "row_number_sales": [2, 1, 3, 1, 3, 2, 1, 2],
-    }
-
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
-def test_row_number_function_desc(make_df):
-    df = make_df(
-        {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 100, 300, 250, 150]}
-    )
-
-    window_spec = Window().partition_by("category").order_by("sales", ascending=True)
+    window_spec = Window().partition_by("category").order_by("sales", desc=True)
 
     result = df.select(
         col("category"), col("sales"), row_number().over(window_spec).alias("row_number_sales")
@@ -45,6 +24,27 @@ def test_row_number_function_desc(make_df):
         "category": ["A", "A", "A", "B", "B", "B", "C", "C"],
         "sales": [100, 200, 50, 500, 100, 300, 250, 150],
         "row_number_sales": [2, 3, 1, 3, 1, 2, 2, 1],
+    }
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_row_number_function_asc(make_df):
+    df = make_df(
+        {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 100, 300, 250, 150]}
+    )
+
+    window_spec = Window().partition_by("category").order_by("sales", desc=False)
+
+    result = df.select(
+        col("category"), col("sales"), row_number().over(window_spec).alias("row_number_sales")
+    ).collect()
+
+    expected = {
+        "category": ["A", "A", "A", "B", "B", "B", "C", "C"],
+        "sales": [100, 200, 50, 500, 100, 300, 250, 150],
+        "row_number_sales": [2, 1, 3, 1, 3, 2, 1, 2],
     }
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
@@ -79,9 +79,9 @@ def test_multiple_window_partitions(make_df):
 
     df = make_df(data)
 
-    letter_window = Window().partition_by("letter").order_by("value")
-    num_window = Window().partition_by("num").order_by("value")
-    combined_window = Window().partition_by(["letter", "num"]).order_by("value")
+    letter_window = Window().partition_by("letter").order_by("value", desc=True)
+    num_window = Window().partition_by("num").order_by("value", desc=True)
+    combined_window = Window().partition_by(["letter", "num"]).order_by("value", desc=True)
 
     result = df.select(
         col("letter"),
@@ -96,30 +96,6 @@ def test_multiple_window_partitions(make_df):
     ).collect()
 
     result_dict = result.to_pydict()
-
-    # print(result_dict)
-
-    # 3 by 3 table
-    tmp = [[[] for _ in range(3)] for _ in range(3)]
-
-    for i in range(len(result_dict["letter"])):
-        ltr = result_dict["letter"][i]
-        num = result_dict["num"][i]
-        val = result_dict["value"][i]
-        ltr_rank = result_dict["letter_row_number"][i]
-        num_rank = result_dict["num_row_number"][i]
-        combined_rank = result_dict["combined_row_number"][i]
-
-        tmp[ord(ltr) - ord("A")][int(num) - 1].append((val, ltr_rank, num_rank, combined_rank))
-
-    for i in range(3):
-        for j in range(3):
-            print(f"Letter {chr(ord('A') + i)}, Number {chr(ord('1') + j)}:")
-            for val, ltr_rank, num_rank, combined_rank in tmp[i][j]:
-                print(
-                    f"  Value: {val}, Letter Rank: {ltr_rank}, Number Rank: {num_rank}, Combined Rank: {combined_rank}"
-                )
-            print()
 
     # Verify sums
     for letter in ["A", "B", "C"]:
@@ -213,8 +189,8 @@ def test_multi_window_agg_functions(make_df):
 
     df = make_df(data)
 
-    multi_partition_window = Window().partition_by(["category", "group"]).order_by("value")
-    single_partition_window = Window().partition_by("category").order_by("value")
+    multi_partition_window = Window().partition_by(["category", "group"]).order_by("value", desc=True)
+    single_partition_window = Window().partition_by("category").order_by("value", desc=True)
 
     result = df.select(
         col("category"),

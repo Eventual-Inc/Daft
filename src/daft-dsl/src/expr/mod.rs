@@ -1067,12 +1067,12 @@ impl Expr {
                 let order_by_ids = window_spec
                     .order_by
                     .iter()
-                    .zip(window_spec.ascending.iter())
-                    .map(|(e, asc)| {
+                    .zip(window_spec.descending.iter())
+                    .map(|(e, desc)| {
                         format!(
                             "{}:{}",
                             e.semantic_id(schema),
-                            if *asc { "asc" } else { "desc" }
+                            if *desc { "desc" } else { "asc" }
                         )
                     })
                     .collect::<Vec<_>>()

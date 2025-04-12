@@ -150,7 +150,7 @@ pub fn physical_plan_to_pipeline(
             input,
             partition_by,
             order_by,
-            ascending,
+            descending,
             schema,
             stats_state,
             functions,
@@ -162,7 +162,7 @@ pub fn physical_plan_to_pipeline(
                 aliases,
                 partition_by,
                 order_by,
-                ascending,
+                descending,
                 schema,
             )
             .with_context(|_| PipelineCreationSnafu {
