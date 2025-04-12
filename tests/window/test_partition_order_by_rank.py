@@ -14,7 +14,7 @@ def test_row_number_function(make_df):
         {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 100, 300, 250, 150]}
     )
 
-    window_spec = Window().partition_by("category").order_by("sales", desc=True)
+    window_spec = Window().partition_by("category").order_by("sales", desc=False)
 
     result = df.select(
         col("category"), col("sales"), row_number().over(window_spec).alias("row_number_sales")
@@ -30,12 +30,12 @@ def test_row_number_function(make_df):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
-def test_row_number_function_asc(make_df):
+def test_row_number_function_desc(make_df):
     df = make_df(
         {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 100, 300, 250, 150]}
     )
 
-    window_spec = Window().partition_by("category").order_by("sales", desc=False)
+    window_spec = Window().partition_by("category").order_by("sales", desc=True)
 
     result = df.select(
         col("category"), col("sales"), row_number().over(window_spec).alias("row_number_sales")
@@ -79,9 +79,9 @@ def test_multiple_window_partitions(make_df):
 
     df = make_df(data)
 
-    letter_window = Window().partition_by("letter").order_by("value", desc=True)
-    num_window = Window().partition_by("num").order_by("value", desc=True)
-    combined_window = Window().partition_by(["letter", "num"]).order_by("value", desc=True)
+    letter_window = Window().partition_by("letter").order_by("value", desc=False)
+    num_window = Window().partition_by("num").order_by("value", desc=False)
+    combined_window = Window().partition_by(["letter", "num"]).order_by("value", desc=False)
 
     result = df.select(
         col("letter"),
@@ -189,8 +189,8 @@ def test_multi_window_agg_functions(make_df):
 
     df = make_df(data)
 
-    multi_partition_window = Window().partition_by(["category", "group"]).order_by("value", desc=True)
-    single_partition_window = Window().partition_by("category").order_by("value", desc=True)
+    multi_partition_window = Window().partition_by(["category", "group"]).order_by("value", desc=False)
+    single_partition_window = Window().partition_by("category").order_by("value", desc=False)
 
     result = df.select(
         col("category"),

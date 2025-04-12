@@ -89,7 +89,7 @@ impl WindowPartitionAndOrderBySink {
         aliases: &[String],
         partition_by: &[ExprRef],
         order_by: &[ExprRef],
-        ascending: &[bool],
+        descending: &[bool],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
         Ok(Self {
@@ -98,7 +98,7 @@ impl WindowPartitionAndOrderBySink {
                 aliases: aliases.to_vec(),
                 partition_by: partition_by.to_vec(),
                 order_by: order_by.to_vec(),
-                descending: ascending.iter().map(|&asc| !asc).collect(),
+                descending: descending.to_vec(),
                 original_schema: schema.clone(),
             }),
         })
