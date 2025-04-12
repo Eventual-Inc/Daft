@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::prelude::{IntoSeries, SchemaRef, UInt64Array};
+use daft_core::prelude::SchemaRef;
 use daft_dsl::{resolved_col, ExprRef, WindowExpr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -188,17 +188,15 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             let sorted_data = input_data.sort(&params.order_by, &inverse_ascending, &[true])?;
 
                             // Process each window expression
+                            // TODO: could we do HashMap<WindowExpr, Vec> to batch things?
                             let mut result = sorted_data;
                             for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
-                                match window_expr {
+                                result = match window_expr {
                                     WindowExpr::RowNumber() => {
-                                        let row_numbers = (1..(result.num_rows() + 1) as u64).collect::<Vec<_>>();
-                                        let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
-                                        let row_number_batch = RecordBatch::from_nonempty_columns(vec![row_number_series])?;
-                                        result = result.union(&row_number_batch)?;
+                                        result.window_row_number(name.clone(), &params.partition_by)?
                                     }
                                     WindowExpr::Agg(agg_expr) => {
-                                        result = result.window_agg(&[agg_expr.clone()], &[name.clone()], &params.partition_by)?;
+                                        result.window_agg(&[agg_expr.clone()], &[name.clone()], &params.partition_by)?
                                     }
                                 }
                             }

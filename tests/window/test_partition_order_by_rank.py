@@ -50,7 +50,6 @@ def test_row_number_function_desc(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
 
 
-@pytest.mark.skip(reason="This test is failing due to some row number implementation issue")
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_multiple_window_partitions(make_df):
     """Test multiple window functions with different partition keys using random numbers.
@@ -190,7 +189,6 @@ def test_multiple_window_partitions(make_df):
                 ), f"Incorrect row number for {letter}{num}, value {value}: got {actual_rank}, expected {expected_rank}"
 
 
-@pytest.mark.skip(reason="This test is failing due to some row number implementation issue")
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_multi_window_agg_functions(make_df):
     """Test multiple window aggregation functions with different partition keys.
