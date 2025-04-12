@@ -231,10 +231,10 @@ pub fn set_runner_ray(
 }
 
 #[cfg(feature = "python")]
-pub fn set_runner_native() -> DaftResult<DaftContext> {
+pub fn set_runner_native(num_threads: Option<usize>) -> DaftResult<DaftContext> {
     let ctx = get_context();
 
-    let runner = Runner::Native(NativeRunner::try_new()?);
+    let runner = Runner::Native(NativeRunner::try_new(num_threads)?);
     let runner = Arc::new(runner);
 
     ctx.set_runner(runner)?;
@@ -243,15 +243,18 @@ pub fn set_runner_native() -> DaftResult<DaftContext> {
 }
 
 #[cfg(not(feature = "python"))]
-pub fn set_runner_native() -> DaftResult<DaftContext> {
+pub fn set_runner_native(num_threads: Option<usize>) -> DaftResult<DaftContext> {
     unimplemented!()
 }
 
 #[cfg(feature = "python")]
-pub fn set_runner_py(use_thread_pool: Option<bool>) -> DaftResult<DaftContext> {
+pub fn set_runner_py(
+    use_thread_pool: Option<bool>,
+    num_threads: Option<usize>,
+) -> DaftResult<DaftContext> {
     let ctx = get_context();
 
-    let runner = Runner::Py(PyRunner::try_new(use_thread_pool)?);
+    let runner = Runner::Py(PyRunner::try_new(use_thread_pool, num_threads)?);
     let runner = Arc::new(runner);
 
     ctx.set_runner(runner)?;
@@ -335,13 +338,14 @@ fn get_runner_config_from_env() -> RunnerConfig {
             use_thread_pool: std::env::var(DAFT_DEVELOPER_USE_THREAD_POOL)
                 .ok()
                 .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1")),
+            num_threads: None,
         },
         _ if !in_ray_worker && (ray_is_initialized || ray_is_in_job) => RunnerConfig::Ray {
             address: None,
             max_task_backlog,
             force_client_mode,
         },
-        _ => RunnerConfig::Native,
+        _ => RunnerConfig::Native { num_threads: None },
     }
 }
 

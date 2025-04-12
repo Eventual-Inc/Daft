@@ -12,7 +12,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, NUM_CPUS};
+use crate::ExecutionTaskSpawner;
 
 #[derive(Default)]
 struct SinglePartitionWindowState {
@@ -105,7 +105,7 @@ impl WindowPartitionAndOrderBySink {
     }
 
     fn num_partitions(&self) -> usize {
-        *NUM_CPUS
+        self.max_concurrency()
     }
 }
 
@@ -269,10 +269,6 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                 .join(", ")
         ));
         display
-    }
-
-    fn max_concurrency(&self) -> usize {
-        *NUM_CPUS
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

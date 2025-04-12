@@ -291,11 +291,10 @@ class PyRunnerIO(runner_io.RunnerIO):
 class PyRunner(Runner[MicroPartition], ActorPoolManager):
     name = "py"
 
-    def __init__(self, use_thread_pool: bool | None) -> None:
+    def __init__(self, use_thread_pool: bool | None, num_threads: int | None) -> None:
         super().__init__()
 
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
-        self._thread_pool = futures.ThreadPoolExecutor()
 
         # Registry of active ActorPools
         self._actor_pools: dict[str, PyActorPool] = {}
@@ -304,11 +303,12 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         self._inflight_futures: dict[tuple[ExecutionID, TaskID], futures.Future] = {}
 
         system_info = SystemInfo()
-        num_cpus = system_info.cpu_count()
+        num_cpus = num_threads if num_threads is not None and num_threads > 0 else system_info.cpu_count()
         if num_cpus is None:
             import multiprocessing
 
             num_cpus = multiprocessing.cpu_count()
+        self._thread_pool = futures.ThreadPoolExecutor(num_cpus)
 
         gpus = cuda_visible_devices()
         memory_bytes = system_info.total_memory()
