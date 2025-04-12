@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import random
+import subprocess
+import sys
 
 import pandas as pd
 import pytest
@@ -556,3 +559,106 @@ def test_multi_window_agg_functions(make_df):
             assert (
                 result_dict["max_single"][idx] == expected_max
             ), f"Incorrect max for {category}: {result_dict['max_single'][idx]} != {expected_max}"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_mystery_segmentation_fault(make_df, tmp_path):
+    """This test runs each window combination in isolation to identify problematic ones."""
+    data = {
+        "product": [],
+        "category": [],
+        "store": [],
+        "revenue": [],
+    }
+
+    for store in [f"Store_{i}" for i in range(1, 3)]:
+        idx = 1
+        for category in ["Electronics", "Clothing", "Books"]:
+            for _ in range(1, 3):
+                data["product"].append(f"Product_{idx}")
+                data["category"].append(category)
+                data["store"].append(store)
+                data["revenue"].append(random.randint(10, 100))
+                idx += 1
+
+    # Write test script that will be run in isolation
+    test_script = tmp_path / "window_test.py"
+    test_script.write_text("""
+import sys
+import daft
+from daft import Window, col
+
+def run_test(columns_to_use):
+    data = {
+        "product": [],
+        "category": [],
+        "store": [],
+        "revenue": [],
+    }
+
+    for store in [f"Store_{i}" for i in range(1, 3)]:
+        idx = 1
+        for category in ["Electronics", "Clothing", "Books"]:
+            for _ in range(1, 3):
+                data["product"].append(f"Product_{idx}")
+                data["category"].append(category)
+                data["store"].append(store)
+                data["revenue"].append(10)  # Fixed value for reproducibility
+                idx += 1
+
+    df = daft.from_pydict(data)
+
+    window_store = Window().partition_by("store")
+    window_product = Window().partition_by("product")
+    window_store_category = Window().partition_by(["store", "category"])
+
+    columns = [
+        col("revenue").sum().over(window_store).alias("store_revenue_sum"),                                             # A
+        (col("revenue") / col("revenue").sum().over(window_store)).alias("store_revenue_share"),                        # B
+        col("revenue").sum().over(window_product).alias("product_revenue_sum"),                                         # C
+        (col("revenue") / col("revenue").sum().over(window_product)).alias("product_revenue_share"),                    # D
+        col("revenue").sum().over(window_store_category).alias("store_category_revenue_sum"),                           # E
+        (col("revenue") - col("revenue").max().over(window_store_category)).alias("store_category_max_revenue_diff"),   # F
+    ]
+
+    subset = [columns[j] for j in columns_to_use]
+    df.select(*subset).collect()
+
+if __name__ == "__main__":
+    indices = [int(i) for i in sys.argv[1].split(",")]
+    run_test(indices)
+""")
+
+    problematic_combinations = []
+    successful_combinations = []
+
+    # Test each combination in isolation
+    for i in range(1, 2**6):
+        idxs = [j for j in range(6) if i & (1 << j)]
+        indices_str = ",".join(map(str, idxs))
+
+        # Run the test in a separate process
+        env = os.environ.copy()
+        env["DAFT_RUNNER"] = "native"
+        result = subprocess.run(
+            [sys.executable, str(test_script), indices_str], env=env, capture_output=True, text=True
+        )
+
+        combination = "".join("ABCDEF"[j] for j in idxs)
+        if result.returncode != 0:
+            problematic_combinations.append(combination)
+            print(f"❌ Combination {combination} failed")
+        else:
+            successful_combinations.append(combination)
+            print(f"✅ Combination {combination} succeeded")
+
+    # Print summary
+    print("\nSummary:")
+    print(f"Total combinations tested: {2**6 - 1}")
+    print(f"Successful combinations: {len(successful_combinations)}")
+    print(f"Problematic combinations: {len(problematic_combinations)}")
+    print("\nProblematic combinations:")
+    for combo in problematic_combinations:
+        print(f"  {combo}")
+
+    assert len(problematic_combinations) == 0, f"Found {len(problematic_combinations)} problematic combinations"
