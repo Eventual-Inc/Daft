@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import random
+
 import pandas as pd
 import pytest
 
 from daft import Window, col
-from daft.functions import row_number
+from daft.functions import dense_rank, rank, row_number
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 
@@ -48,6 +50,54 @@ def test_row_number_function_desc(make_df):
     }
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_rank_function(make_df):
+    """Test rank function with random data."""
+    data = []
+    expected_data = []
+    cur_value = 0
+    cur_rank = 1
+    next_rank = 1
+    for i in range(100):
+        inc = random.choice([0, 5]) // 4
+        cur_value += inc
+        if inc == 1:
+            cur_rank = next_rank
+        next_rank += 1
+        data.append({"value": cur_value})
+        expected_data.append({"value": cur_value, "rank": cur_rank})
+
+    random.shuffle(data)
+
+    df = make_df(data)
+    window_spec = Window().partition_by("value").order_by("value", desc=False)
+    result = df.select(col("value"), rank().over(window_spec).alias("rank")).collect()
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key="value", check_dtype=False)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_dense_rank_function(make_df):
+    """Test dense rank function with random data."""
+    data = []
+    expected_data = []
+    cur_value = 0
+    cur_rank = 1
+    for i in range(100):
+        inc = random.choice([0, 5]) // 4
+        cur_value += inc
+        if inc == 1:
+            cur_rank += 1
+        data.append({"value": cur_value})
+        expected_data.append({"value": cur_value, "rank": cur_rank})
+
+    random.shuffle(data)
+
+    df = make_df(data)
+    window_spec = Window().partition_by("value").order_by("value", desc=False)
+    result = df.select(col("value"), dense_rank().over(window_spec).alias("rank")).collect()
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key="value", check_dtype=False)
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")

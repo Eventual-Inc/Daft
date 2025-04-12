@@ -111,4 +111,46 @@ impl RecordBatch {
         // Union the original data with the row number column
         self.union(&row_number_batch)
     }
+
+    pub fn window_rank(
+        &self,
+        name: String,
+        group_by: &[ExprRef],
+        _order_by: &[ExprRef],
+        _dense: bool,
+    ) -> DaftResult<Self> {
+        if group_by.is_empty() {
+            return Err(DaftError::ValueError(
+                "Group by cannot be empty for window row number".into(),
+            ));
+        }
+
+        // Table with just the groupby columns.
+        let groupby_table = self.eval_expression_list(group_by)?;
+
+        // Get the grouped values (by indices, one array of indices per group).
+        let (_, groupvals_indices) = groupby_table.make_groups()?;
+
+        let mut row_to_group_mapping = vec![0; self.len()];
+        for (group_idx, indices) in groupvals_indices.iter().enumerate() {
+            for &row_idx in indices {
+                row_to_group_mapping[row_idx as usize] = group_idx;
+            }
+        }
+
+        // Create row numbers within each group
+        let mut row_numbers = vec![0u64; self.len()];
+        for indices in &groupvals_indices {
+            for (i, &row_idx) in indices.iter().enumerate() {
+                row_numbers[row_idx as usize] = (i + 1) as u64;
+            }
+        }
+
+        // Create a Series from the row numbers
+        let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
+        let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
+
+        // Union the original data with the row number column
+        self.union(&row_number_batch)
+    }
 }

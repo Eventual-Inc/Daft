@@ -8,3 +8,7 @@ simple_python_wrapper!(
 );
 
 simple_python_wrapper!(row_number, crate::sequence::row_number, []);
+
+simple_python_wrapper!(rank, crate::sequence::rank, []);
+
+simple_python_wrapper!(dense_rank, crate::sequence::dense_rank, []);

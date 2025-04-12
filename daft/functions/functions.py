@@ -202,3 +202,21 @@ def row_number() -> Expression:
         Expression: An expression that returns the row number of the current row.
     """
     return Expression._from_pyexpr(native.row_number())
+
+
+def rank() -> Expression:
+    """Return the rank of the current row (used for window functions).
+
+    Returns:
+        Expression: An expression that returns the rank of the current row.
+    """
+    return Expression._from_pyexpr(native.rank())
+
+
+def dense_rank() -> Expression:
+    """Return the dense rank of the current row (used for window functions).
+
+    Returns:
+        Expression: An expression that returns the dense rank of the current row.
+    """
+    return Expression._from_pyexpr(native.dense_rank())
