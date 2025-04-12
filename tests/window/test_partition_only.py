@@ -346,6 +346,48 @@ def test_window_value_over_sum(make_df):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_factor_window_expression(make_df):
+    """Test factor window expression."""
+    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+
+    window = Window().partition_by("category")
+    result = df.select(
+        col("category"),
+        col("value"),
+        col("value").sum().over(window).alias("sum"),
+        (col("value") / col("value").sum().over(window)).alias("value_over_sum"),
+        col("value").max().over(window).alias("max"),
+        (col("value") - col("value").max().over(window)).alias("value_minus_max"),
+        col("value").min().over(window).alias("min"),
+        (col("value") - col("value").min().over(window)).alias("value_minus_min"),
+        (col("value").max().over(window) - col("value").min().over(window)).alias("max_minus_min"),
+    ).collect()
+
+    expected = {
+        "category": ["A", "A", "A", "B", "B", "B", "C", "C"],
+        "value": [5, 8, 9, 7, 10, 12, 6, 15],
+        "sum": [22, 22, 22, 29, 29, 29, 21, 21],
+        "value_over_sum": [
+            0.22727272727272727,
+            0.36363636363636365,
+            0.4090909090909091,
+            0.2413793103448276,
+            0.3448275862068966,
+            0.41379310344827586,
+            0.2857142857142857,
+            0.7142857142857143,
+        ],
+        "max": [9, 9, 9, 12, 12, 12, 15, 15],
+        "value_minus_max": [-4, -1, 0, -5, -2, 0, -9, 0],
+        "min": [5, 5, 5, 7, 7, 7, 6, 6],
+        "value_minus_min": [0, 3, 4, 0, 3, 5, 0, 9],
+        "max_minus_min": [4, 4, 4, 5, 5, 5, 9, 9],
+    }
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()))
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_partition_by_with_expressions(make_df):
     """Test window functions with expressions in partition_by clause."""
     df = make_df({"num": [1, 2, 3, 4, 5, 6, 7, 8], "value": [10, 20, 30, 40, 50, 60, 70, 80]})
