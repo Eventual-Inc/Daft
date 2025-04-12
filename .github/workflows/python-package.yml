@@ -61,24 +61,17 @@ jobs:
     - name: install llvm tools
       run: rustup component add llvm-tools-preview
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+    - name: Install Python and uv
+      uses: astral-sh/setup-uv@v5
       with:
         python-version: ${{ matrix.python-version }}
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        enable-cache: true
+        cache-dependency-glob: |
+          **/requirements-dev.txt
+          **/pyproject.toml
 
     - name: Install dependencies
       run: |
-        activate
         uv pip install -r requirements-dev.txt
 
     - name: Override pyarrow
@@ -93,7 +86,6 @@ jobs:
     - name: Build library and Test with pytest (Linux)
       if: ${{ (runner.os == 'Linux') }}
       run: |
-        source activate
         maturin develop
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest --cov=daft --ignore tests/integration --durations=50
@@ -109,7 +101,6 @@ jobs:
     - name: Build library and Test with pytest (macOS)
       if: ${{ (runner.os == 'macOS') }}
       run: |
-        source activate
         cargo llvm-cov clean --workspace
         maturin develop
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
