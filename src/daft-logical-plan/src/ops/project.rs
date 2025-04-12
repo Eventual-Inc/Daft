@@ -145,9 +145,15 @@ impl Project {
                     // (otherwise the unaliased child will be double counted)
                     if matches!(expr.as_ref(), Expr::Alias(..)) {
                         expr.children()
-                    // If expr is a window function, skip and continue recursing
-                    // (col("a").sum().over(window1) may differ from col("a").sum().over(window2))
-                    } else if matches!(expr.as_ref(), Expr::Over(..)) {
+                    // If expr is a window function, check if we've seen this window spec before
+                    } else if let Expr::Over(..) = expr.as_ref() {
+                        let expr_id = expr.semantic_id(schema);
+                        // Mark expr as seen
+                        let newly_seen = seen_subexpressions.insert(expr_id.clone());
+                        // If expr has been seen before, and involves computation, cache it
+                        if !newly_seen && optimization::requires_computation(expr) {
+                            subexpressions_to_cache.insert(expr_id, expr.clone());
+                        }
                         vec![]
                     } else {
                         let expr_id = expr.semantic_id(schema);
