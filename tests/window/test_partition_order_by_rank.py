@@ -54,50 +54,172 @@ def test_row_number_function_desc(make_df):
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_rank_function(make_df):
-    """Test rank function with random data."""
-    data = []
+    """Test rank function with ties across multiple categories.
+
+    Creates 3 categories with 100 elements each, with ties within each category.
+    Verifies that rank() assigns ranks with gaps after ties.
+    """
+    all_data = []
     expected_data = []
-    cur_value = 0
-    cur_rank = 1
-    next_rank = 1
-    for i in range(100):
-        inc = random.choice([0, 5]) // 4
-        cur_value += inc
-        if inc == 1:
-            cur_rank = next_rank
-        next_rank += 1
-        data.append({"value": cur_value})
-        expected_data.append({"value": cur_value, "rank": cur_rank})
 
-    random.shuffle(data)
+    for category in ["A", "B", "C"]:
+        data = []
 
-    df = make_df(data)
-    window_spec = Window().partition_by("value").order_by("value", desc=False)
-    result = df.select(col("value"), rank().over(window_spec).alias("rank")).collect()
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key="value", check_dtype=False)
+        cur_value = 0
+        cur_rank = 1
+        next_rank = 1
+
+        for _ in range(10):
+            inc = random.choice([0, 3]) // 2
+            cur_value += inc
+
+            if inc == 1 and len(data) > 0:
+                cur_rank = next_rank
+
+            next_rank += 1
+
+            data.append({"category": category, "value": cur_value})
+            expected_data.append({"category": category, "value": cur_value, "rank": cur_rank})
+
+        all_data.extend(data)
+
+    random.shuffle(all_data)
+
+    df = make_df(all_data)
+
+    window_spec = Window().partition_by("category").order_by("value", desc=False)
+
+    result = df.select(col("category"), col("value"), rank().over(window_spec).alias("rank")).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "value"], check_dtype=False)
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_dense_rank_function(make_df):
-    """Test dense rank function with random data."""
-    data = []
+    """Test dense rank function with ties across multiple categories.
+
+    Creates 3 categories with 100 elements each, with ties within each category.
+    Verifies that dense_rank() assigns ranks without gaps after ties.
+    """
+    all_data = []
     expected_data = []
-    cur_value = 0
-    cur_rank = 1
-    for i in range(100):
-        inc = random.choice([0, 5]) // 4
-        cur_value += inc
-        if inc == 1:
-            cur_rank += 1
-        data.append({"value": cur_value})
-        expected_data.append({"value": cur_value, "rank": cur_rank})
 
-    random.shuffle(data)
+    for category in ["A", "B", "C"]:
+        data = []
 
-    df = make_df(data)
-    window_spec = Window().partition_by("value").order_by("value", desc=False)
-    result = df.select(col("value"), dense_rank().over(window_spec).alias("rank")).collect()
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key="value", check_dtype=False)
+        cur_value = 0
+        cur_rank = 1
+
+        for _ in range(10):
+            inc = random.choice([0, 3]) // 2
+            cur_value += inc
+
+            if inc == 1 and len(data) > 0:
+                cur_rank += 1
+
+            data.append({"category": category, "value": cur_value})
+            expected_data.append({"category": category, "value": cur_value, "rank": cur_rank})
+
+        all_data.extend(data)
+
+    random.shuffle(all_data)
+
+    df = make_df(all_data)
+
+    window_spec = Window().partition_by("category").order_by("value", desc=False)
+
+    result = df.select(col("category"), col("value"), dense_rank().over(window_spec).alias("rank")).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "value"], check_dtype=False)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_rank_function_multi_partition(make_df):
+    """Test rank function with ties across multiple categories.
+
+    Creates 3 categories with 100 elements each, with ties within each category.
+    Verifies that rank() assigns ranks with gaps after ties.
+    """
+    all_data = []
+    expected_data = []
+
+    for category in ["A", "B", "C"]:
+        for group in ["1", "2", "3"]:
+            data = []
+
+            cur_value = 0
+            cur_rank = 1
+            next_rank = 1
+
+            for _ in range(10):
+                inc = random.choice([0, 3]) // 2
+                cur_value += inc
+
+                if inc == 1 and len(data) > 0:
+                    cur_rank = next_rank
+
+                next_rank += 1
+
+                data.append({"category": category, "group": group, "value": cur_value})
+                expected_data.append({"category": category, "group": group, "value": cur_value, "rank": cur_rank})
+
+            all_data.extend(data)
+
+    random.shuffle(all_data)
+
+    df = make_df(all_data)
+
+    window_spec = Window().partition_by(["category", "group"]).order_by("value", desc=False)
+
+    result = df.select(col("category"), col("group"), col("value"), rank().over(window_spec).alias("rank")).collect()
+
+    assert_df_equals(
+        result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "group", "value"], check_dtype=False
+    )
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_dense_rank_function_multi_partition(make_df):
+    """Test dense rank function with ties across multiple categories.
+
+    Creates 3 categories with 100 elements each, with ties within each category.
+    Verifies that dense_rank() assigns ranks without gaps after ties.
+    """
+    all_data = []
+    expected_data = []
+
+    for category in ["A", "B", "C"]:
+        for group in ["1", "2", "3"]:
+            data = []
+
+            cur_value = 0
+            cur_rank = 1
+
+            for _ in range(10):
+                inc = random.choice([0, 3]) // 2
+                cur_value += inc
+
+                if inc == 1 and len(data) > 0:
+                    cur_rank += 1
+
+                data.append({"category": category, "group": group, "value": cur_value})
+                expected_data.append({"category": category, "group": group, "value": cur_value, "rank": cur_rank})
+
+            all_data.extend(data)
+
+    random.shuffle(all_data)
+
+    df = make_df(all_data)
+
+    window_spec = Window().partition_by(["category", "group"]).order_by("value", desc=False)
+
+    result = df.select(
+        col("category"), col("group"), col("value"), dense_rank().over(window_spec).alias("rank")
+    ).collect()
+
+    assert_df_equals(
+        result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "group", "value"], check_dtype=False
+    )
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
@@ -112,15 +234,13 @@ def test_multiple_window_partitions(make_df):
 
     random.seed(42)
 
-    # Generate distinct values for each group to ensure we can verify row_number correctness
     data = []
-    all_numbers = list(range(1, 1001))  # Numbers from 1 to 1000
+    all_numbers = list(range(1, 1001))
     random.shuffle(all_numbers)
     number_idx = 0
 
     for letter in ["A", "B", "C"]:
         for num in ["1", "2", "3"]:
-            # Take next 100 distinct numbers for this group
             group_values = sorted(all_numbers[number_idx : number_idx + 3])
             number_idx += 3
 
@@ -147,7 +267,6 @@ def test_multiple_window_partitions(make_df):
 
     result_dict = result.to_pydict()
 
-    # Verify sums
     for letter in ["A", "B", "C"]:
         letter_indices = [i for i, ltr in enumerate(result_dict["letter"]) if ltr == letter]
         letter_values = [result_dict["value"][i] for i in letter_indices]
@@ -157,7 +276,6 @@ def test_multiple_window_partitions(make_df):
             sum == expected_letter_sum for sum in actual_letter_sums
         ), f"Incorrect sum for letter {letter}: {actual_letter_sums} != {expected_letter_sum}"
 
-        # Verify row numbers for letter partitions
         sorted_letter_values = sorted(letter_values)
         value_to_rank = {val: i + 1 for i, val in enumerate(sorted_letter_values)}
 
@@ -178,7 +296,6 @@ def test_multiple_window_partitions(make_df):
             sum == expected_num_sum for sum in actual_num_sums
         ), f"Incorrect sum for number {num}: {actual_num_sums} != {expected_num_sum}"
 
-        # Verify row numbers for num partitions
         sorted_num_values = sorted(num_values)
         value_to_rank = {val: i + 1 for i, val in enumerate(sorted_num_values)}
         for idx in num_indices:
@@ -203,7 +320,6 @@ def test_multiple_window_partitions(make_df):
                 sum == expected_combined_sum for sum in actual_combined_sums
             ), f"Incorrect sum for combination {letter}{num}: {actual_combined_sums} != {expected_combined_sum}"
 
-            # Verify row numbers for combined partitions
             sorted_combined_values = sorted(combined_values)
             value_to_rank = {val: i + 1 for i, val in enumerate(sorted_combined_values)}
             for idx in combined_indices:
@@ -225,7 +341,6 @@ def test_multi_window_agg_functions(make_df):
 
     Using sum(), mean(), min(), max() aggregations and verifying row_number ordering.
     """
-    # Use distinct values to ensure we can verify row_number correctness
     data = [
         {"category": "A", "group": 1, "value": 15},
         {"category": "A", "group": 1, "value": 25},
@@ -280,7 +395,6 @@ def test_multi_window_agg_functions(make_df):
                     abs(result_dict["avg_multi"][idx] - expected_avg) < 1e-10
                 ), f"Incorrect avg for {category}/{group}: {result_dict['avg_multi'][idx]} != {expected_avg}"
 
-                # Verify row numbers for multi-partition window
                 expected_rank = value_to_rank[value]
                 actual_rank = result_dict["multi_row_number"][idx]
                 assert (
@@ -306,9 +420,73 @@ def test_multi_window_agg_functions(make_df):
                 result_dict["max_single"][idx] == expected_max
             ), f"Incorrect max for {category}: {result_dict['max_single'][idx]} != {expected_max}"
 
-            # Verify row numbers for single-partition window
             expected_rank = value_to_rank[value]
             actual_rank = result_dict["single_row_number"][idx]
             assert (
                 actual_rank == expected_rank
             ), f"Incorrect single-partition row number for {category}, value {value}: got {actual_rank}, expected {expected_rank}"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_rank_function_single_row_per_group(make_df):
+    """Test rank function with single row per group."""
+    data = [
+        {"category": "A", "value": 10},
+        {"category": "B", "value": 20},
+        {"category": "C", "value": 30},
+    ]
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("value", desc=False)
+
+    # Test rank() with single row per group - should all be 1
+    result = df.select(col("category"), col("value"), rank().over(window_spec).alias("rank")).collect()
+
+    expected = {
+        "category": ["A", "B", "C"],
+        "value": [10, 20, 30],
+        "rank": [1, 1, 1],
+    }
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category"], check_dtype=False)
+
+    # Test dense_rank() with single row per group - should also all be 1
+    result = df.select(col("category"), col("value"), dense_rank().over(window_spec).alias("rank")).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category"], check_dtype=False)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+def test_rank_function_same_partition_and_order_by(make_df):
+    """Test rank function when order_by columns are the same as group_by."""
+    data = [
+        {"category": "A", "value": 10},
+        {"category": "A", "value": 20},
+        {"category": "A", "value": 30},
+        {"category": "B", "value": 40},
+        {"category": "B", "value": 50},
+        {"category": "C", "value": 60},
+    ]
+
+    df = make_df(data)
+
+    # Create a window spec where we partition by and order by the same column
+    # This should result in no filtered order by columns
+    window_spec = Window().partition_by("category").order_by("category", desc=False)
+
+    # Test rank() with no filtered order by - all rows should have rank 1
+    result = df.select(col("category"), col("value"), rank().over(window_spec).alias("rank")).collect()
+
+    expected = {
+        "category": ["A", "A", "A", "B", "B", "C"],
+        "value": [10, 20, 30, 40, 50, 60],
+        "rank": [1, 1, 1, 1, 1, 1],
+    }
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category", "value"], check_dtype=False)
+
+    # Test dense_rank() with no filtered order by - all rows should have rank 1
+    result = df.select(col("category"), col("value"), dense_rank().over(window_spec).alias("rank")).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category", "value"], check_dtype=False)
