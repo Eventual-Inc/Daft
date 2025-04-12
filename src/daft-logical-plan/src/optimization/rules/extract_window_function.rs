@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
-use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr, ExprRef};
+use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr, ExprRef, WindowExpr};
 use indexmap::IndexMap;
 
 use crate::{
@@ -94,25 +94,29 @@ impl OptimizerRule for ExtractWindowFunction {
                         (project.input.clone(), Vec::new()),
                         |(current_plan, mut window_col_mappings),
                          (window_spec, window_exprs_for_spec)| {
-                            // Semantic IDs to alias expressions in the Window operation
-                            let window_function_exprs_aliased = window_exprs_for_spec
-                                .iter()
-                                .map(|e| {
-                                    let semantic_id = e.semantic_id(&current_plan.schema());
-                                    e.alias(semantic_id.id)
-                                })
-                                .collect::<Vec<ExprRef>>();
+                            let (window_functions, aliases): (Vec<WindowExpr>, Vec<String>) =
+                                window_exprs_for_spec
+                                    .iter()
+                                    .map(|e| {
+                                        let semantic_id = e.semantic_id(&current_plan.schema());
+                                        let window_expr = match e.as_ref() {
+                                            Expr::Over(window_expr, _) => window_expr,
+                                            _ => panic!("Expected WindowExpr"),
+                                        };
+                                        (window_expr.clone(), semantic_id.id.to_string())
+                                    })
+                                    .unzip();
 
                             let new_plan = Arc::new(LogicalPlan::Window(
                                 Window::try_new(
                                     current_plan,
-                                    window_function_exprs_aliased,
+                                    window_functions,
+                                    aliases,
                                     window_spec,
                                 )
                                 .unwrap(),
                             ));
 
-                            // Semantic IDs to map original window expressions to column names in the final projection
                             let spec_mappings = window_exprs_for_spec
                                 .iter()
                                 .map(|e| {
@@ -206,8 +210,8 @@ mod tests {
 
         let window_op = Window::try_new(
             input_plan.clone().build(),
-            vec![Arc::new(Expr::Over(min_expr.clone(), window_spec.clone()))
-                .alias(auto_generated_name.clone())],
+            vec![min_expr.clone()],
+            vec![auto_generated_name.clone()],
             window_spec,
         )?;
 
@@ -262,8 +266,8 @@ mod tests {
 
         let window_op = Window::try_new(
             input_plan.clone().build(),
-            vec![Arc::new(Expr::Over(sum_expr.clone(), window_spec.clone()))
-                .alias(auto_generated_name.clone())],
+            vec![sum_expr.clone()],
+            vec![auto_generated_name.clone()],
             window_spec,
         )?;
 
@@ -335,8 +339,8 @@ mod tests {
 
         let window_op1 = Window::try_new(
             input_plan.clone().build(),
-            vec![Arc::new(Expr::Over(min_expr.clone(), window_spec1.clone()))
-                .alias(auto_generated_name1.clone())],
+            vec![min_expr.clone()],
+            vec![auto_generated_name1.clone()],
             window_spec1,
         )?;
 
@@ -344,8 +348,8 @@ mod tests {
 
         let window_op2 = Window::try_new(
             intermediate_plan,
-            vec![Arc::new(Expr::Over(sum_expr.clone(), window_spec2.clone()))
-                .alias(auto_generated_name2.clone())],
+            vec![sum_expr.clone()],
+            vec![auto_generated_name2.clone()],
             window_spec2,
         )?;
 
@@ -438,12 +442,8 @@ mod tests {
 
         let multi_window_op = Window::try_new(
             input_plan.clone().build(),
-            vec![
-                Arc::new(Expr::Over(sum_expr.clone(), multi_partition_spec.clone()))
-                    .alias(auto_generated_name1.clone()),
-                Arc::new(Expr::Over(avg_expr.clone(), multi_partition_spec.clone()))
-                    .alias(auto_generated_name2.clone()),
-            ],
+            vec![sum_expr.clone(), avg_expr.clone()],
+            vec![auto_generated_name1.clone(), auto_generated_name2.clone()],
             multi_partition_spec,
         )?;
 
@@ -451,12 +451,8 @@ mod tests {
 
         let single_window_op = Window::try_new(
             intermediate_plan,
-            vec![
-                Arc::new(Expr::Over(min_expr.clone(), single_partition_spec.clone()))
-                    .alias(auto_generated_name3.clone()),
-                Arc::new(Expr::Over(max_expr.clone(), single_partition_spec.clone()))
-                    .alias(auto_generated_name4.clone()),
-            ],
+            vec![min_expr.clone(), max_expr.clone()],
+            vec![auto_generated_name3.clone(), auto_generated_name4.clone()],
             single_partition_spec,
         )?;
 
@@ -533,32 +529,33 @@ mod tests {
 
         let plan = input_plan.clone().select(projection)?.build();
 
-        let letter_sum_expr = Arc::new(Expr::Over(
+        let window_expr1 = Arc::new(Expr::Over(
             letter_sum_expr.clone(),
             letter_window_spec.clone(),
         ));
-        let num_sum_expr = Arc::new(Expr::Over(num_sum_expr.clone(), num_window_spec.clone()));
-        let combined_sum_expr = Arc::new(Expr::Over(
+        let window_expr2 = Arc::new(Expr::Over(num_sum_expr.clone(), num_window_spec.clone()));
+        let window_expr3 = Arc::new(Expr::Over(
             combined_sum_expr.clone(),
             combined_window_spec.clone(),
         ));
 
-        let letter_sum_id = letter_sum_expr
+        let letter_sum_id = window_expr1
             .semantic_id(&input_plan.schema())
             .id
             .to_string();
-        let num_sum_id = num_sum_expr
+        let num_sum_id = window_expr2
             .semantic_id(&input_plan.schema())
             .id
             .to_string();
-        let combined_sum_id = combined_sum_expr
+        let combined_sum_id = window_expr3
             .semantic_id(&input_plan.schema())
             .id
             .to_string();
 
         let letter_window_op = Window::try_new(
             input_plan.clone().build(),
-            vec![letter_sum_expr.alias(letter_sum_id.clone())],
+            vec![letter_sum_expr],
+            vec![letter_sum_id.clone()],
             letter_window_spec,
         )?;
 
@@ -566,7 +563,8 @@ mod tests {
 
         let num_window_op = Window::try_new(
             intermediate_plan1,
-            vec![num_sum_expr.alias(num_sum_id.clone())],
+            vec![num_sum_expr],
+            vec![num_sum_id.clone()],
             num_window_spec,
         )?;
 
@@ -574,7 +572,8 @@ mod tests {
 
         let combined_window_op = Window::try_new(
             intermediate_plan2,
-            vec![combined_sum_expr.alias(combined_sum_id.clone())],
+            vec![combined_sum_expr],
+            vec![combined_sum_id.clone()],
             combined_window_spec,
         )?;
 

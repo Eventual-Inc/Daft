@@ -12,7 +12,7 @@ use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     estimated_selectivity, functions::agg::merge_mean, is_partition_compatible,
     join::normalize_join_keys, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef,
-    SketchType, WindowExpr,
+    SketchType,
 };
 use daft_functions::{
     list::{count_distinct, distinct},
@@ -547,17 +547,6 @@ pub fn adaptively_translate_single_logical_node(
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
     match expr.as_ref() {
         Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
-        Expr::Over(inner_expr, _) => {
-            let expr_ref: ExprRef = inner_expr.into();
-            extract_agg_expr(&expr_ref)
-        }
-        Expr::WindowFunction(inner_expr) => {
-            if let WindowExpr::Agg(agg_expr) = inner_expr {
-                extract_agg_expr(&agg_expr.into())
-            } else {
-                Err(DaftError::InternalError("Expected window function to be an agg".to_string()))
-            }
-        }
         Expr::Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
             // reorder expressions so that alias goes before agg
             match agg_expr {
