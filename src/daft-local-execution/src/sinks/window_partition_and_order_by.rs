@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::{IntoSeries, SchemaRef, UInt64Array};
-use daft_dsl::{resolved_col, Expr, ExprRef, WindowExpr};
+use daft_dsl::{resolved_col, ExprRef, WindowExpr};
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::extract_window_expr;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -72,7 +71,8 @@ impl BlockingSinkState for WindowPartitionAndOrderByState {
 }
 
 struct WindowPartitionAndOrderByParams {
-    window_exprs: Vec<ExprRef>,
+    window_exprs: Vec<WindowExpr>,
+    aliases: Vec<String>,
     partition_by: Vec<ExprRef>,
     order_by: Vec<ExprRef>,
     ascending: Vec<bool>,
@@ -85,28 +85,17 @@ pub struct WindowPartitionAndOrderBySink {
 
 impl WindowPartitionAndOrderBySink {
     pub fn new(
-        functions: &[ExprRef],
+        window_exprs: &[WindowExpr],
+        aliases: &[String],
         partition_by: &[ExprRef],
         order_by: &[ExprRef],
         ascending: &[bool],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
-        let functions = functions
-            .iter()
-            .map(extract_window_expr)
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        let window_exprs = functions
-            .iter()
-            .map(|e| Arc::new(Expr::Window(e.clone())))
-            .collect::<Vec<_>>();
-
-        println!("functions: {:?}", functions);
-        println!("window_exprs: {:?}", window_exprs);
-
         Ok(Self {
             window_partition_and_order_by_params: Arc::new(WindowPartitionAndOrderByParams {
-                window_exprs,
+                window_exprs: window_exprs.to_vec(),
+                aliases: aliases.to_vec(),
                 partition_by: partition_by.to_vec(),
                 order_by: order_by.to_vec(),
                 ascending: ascending.to_vec(),
@@ -200,26 +189,16 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
 
                             // Process each window expression
                             let mut result = sorted_data;
-                            for window_expr in &params.window_exprs {
-                                match extract_window_expr(window_expr)? {
-                                    WindowExpr::RowNumber(name) => {
-                                        assert!(name.is_some());
-                                        let name = name.unwrap();
+                            for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
+                                match window_expr {
+                                    WindowExpr::RowNumber() => {
                                         let row_numbers = (1..(result.num_rows() + 1) as u64).collect::<Vec<_>>();
                                         let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
                                         let row_number_batch = RecordBatch::from_nonempty_columns(vec![row_number_series])?;
                                         result = result.union(&row_number_batch)?;
                                     }
                                     WindowExpr::Agg(agg_expr) => {
-                                        let agg_result = result.window_agg(&[Arc::new(Expr::Agg(agg_expr.clone()))], &params.partition_by)?;
-
-                                        // Get the aggregated column name
-                                        let agg_name = agg_expr.name();
-                                        let agg_col = agg_result.get_column(agg_name)?.clone();
-
-                                        // Create a new batch with just the aggregated column
-                                        let agg_batch = RecordBatch::from_nonempty_columns(vec![agg_col])?;
-                                        result = result.union(&agg_batch)?;
+                                        result = result.window_agg(&[agg_expr.clone()], &[name.clone()], &params.partition_by)?;
                                     }
                                 }
                             }

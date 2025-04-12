@@ -1663,10 +1663,6 @@ class Expression:
         expr = self._expr.over(window._spec)
         return Expression._from_pyexpr(expr)
 
-    def row_number(self) -> Expression:
-        expr = self._expr.row_number()
-        return Expression._from_pyexpr(expr)
-
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
 

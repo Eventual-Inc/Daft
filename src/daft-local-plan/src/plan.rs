@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_core::prelude::*;
-use daft_dsl::{AggExpr, ExprRef};
+use daft_dsl::{AggExpr, ExprRef, WindowExpr};
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
@@ -239,7 +239,8 @@ impl LocalPhysicalPlan {
         partition_by: Vec<ExprRef>,
         schema: SchemaRef,
         stats_state: StatsState,
-        aggregations: Vec<ExprRef>,
+        aggregations: Vec<AggExpr>,
+        aliases: Vec<String>,
     ) -> LocalPhysicalPlanRef {
         Self::WindowPartitionOnly(WindowPartitionOnly {
             input,
@@ -247,10 +248,12 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             aggregations,
+            aliases,
         })
         .arced()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn window_partition_and_order_by(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<ExprRef>,
@@ -258,7 +261,8 @@ impl LocalPhysicalPlan {
         ascending: Vec<bool>,
         schema: SchemaRef,
         stats_state: StatsState,
-        functions: Vec<ExprRef>,
+        functions: Vec<WindowExpr>,
+        aliases: Vec<String>,
     ) -> LocalPhysicalPlanRef {
         Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {
             input,
@@ -268,6 +272,7 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             functions,
+            aliases,
         })
         .arced()
     }
@@ -699,7 +704,8 @@ pub struct WindowPartitionOnly {
     pub partition_by: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub aggregations: Vec<ExprRef>,
+    pub aggregations: Vec<AggExpr>,
+    pub aliases: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -710,5 +716,6 @@ pub struct WindowPartitionAndOrderBy {
     pub ascending: Vec<bool>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub functions: Vec<ExprRef>,
+    pub functions: Vec<WindowExpr>,
+    pub aliases: Vec<String>,
 }

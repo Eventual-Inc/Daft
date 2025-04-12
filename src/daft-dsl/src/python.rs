@@ -536,10 +536,6 @@ impl PyExpr {
             expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
         })
     }
-
-    pub fn row_number(&self) -> PyResult<Self> {
-        Ok(self.expr.clone().row_number().into())
-    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);
