@@ -97,7 +97,7 @@ class Window:
             desc_flags = desc
 
         window = self
-        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], [d for d in desc_flags])
+        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], desc_flags)
         return window
 
     def rows_between(

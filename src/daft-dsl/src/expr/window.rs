@@ -126,7 +126,7 @@ impl WindowSpec {
         );
         let mut new_spec = self.clone();
         new_spec.order_by = exprs.into_iter().map(|e| e.expr).collect();
-        new_spec.descending = descending.into_iter().map(|desc| !desc).collect();
+        new_spec.descending = descending;
         new_spec
     }
 
