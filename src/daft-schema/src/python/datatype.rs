@@ -1,9 +1,14 @@
 use common_arrow_ffi as ffi;
 use common_py_serde::impl_bincode_py_state_serialization;
 use indexmap::IndexMap;
-use pyo3::{class::basic::CompareOp, exceptions::PyValueError, prelude::*};
+use pyo3::{
+    class::basic::CompareOp,
+    exceptions::{PyAttributeError, PyValueError},
+    prelude::*,
+};
 use serde::{Deserialize, Serialize};
 
+use super::field::PyField;
 use crate::{dtype::DataType, field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
 #[pyclass]
@@ -62,6 +67,15 @@ impl PyTimeUnit {
         let mut hasher = DefaultHasher::new();
         self.timeunit.hash(&mut hasher);
         hasher.finish()
+    }
+
+    #[staticmethod]
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(timeunit: &str) -> PyResult<Self> {
+        Ok(timeunit
+            .parse::<TimeUnit>()
+            .map_err(|_| PyValueError::new_err(format!("Invalid time unit: {timeunit}")))?
+            .into())
     }
 }
 
@@ -355,61 +369,234 @@ impl PyDataType {
             _ => ffi::dtype_to_py(py, &self.dtype.to_arrow()?, pyarrow),
         }
     }
-
-    pub fn is_numeric(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_numeric())
-    }
-
-    pub fn is_integer(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_integer())
-    }
-
-    pub fn is_image(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_image())
-    }
-
-    pub fn is_fixed_shape_image(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_fixed_shape_image())
-    }
-
-    pub fn is_tensor(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_tensor())
-    }
-
-    pub fn is_fixed_shape_tensor(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_fixed_shape_tensor())
-    }
-
-    pub fn is_sparse_tensor(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_sparse_tensor())
-    }
-
-    pub fn is_fixed_shape_sparse_tensor(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_fixed_shape_sparse_tensor())
-    }
-
-    pub fn is_map(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_map())
-    }
-
-    pub fn is_list(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_list())
+    pub fn is_null(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_null())
     }
 
     pub fn is_boolean(&self) -> PyResult<bool> {
         Ok(self.dtype.is_boolean())
     }
 
-    pub fn is_string(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_string())
+    pub fn is_int8(&self) -> bool {
+        self.dtype.is_int8()
     }
 
-    pub fn is_logical(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_logical())
+    pub fn is_int16(&self) -> bool {
+        self.dtype.is_int16()
     }
 
-    pub fn is_temporal(&self) -> PyResult<bool> {
-        Ok(self.dtype.is_temporal())
+    pub fn is_int32(&self) -> bool {
+        self.dtype.is_int32()
+    }
+
+    pub fn is_int64(&self) -> bool {
+        self.dtype.is_int64()
+    }
+
+    pub fn is_uint8(&self) -> bool {
+        self.dtype.is_uint8()
+    }
+
+    pub fn is_uint16(&self) -> bool {
+        self.dtype.is_uint16()
+    }
+
+    pub fn is_uint32(&self) -> bool {
+        self.dtype.is_uint32()
+    }
+
+    pub fn is_uint64(&self) -> bool {
+        self.dtype.is_uint64()
+    }
+
+    pub fn is_float32(&self) -> bool {
+        self.dtype.is_float32()
+    }
+
+    pub fn is_float64(&self) -> bool {
+        self.dtype.is_float64()
+    }
+
+    pub fn is_decimal128(&self) -> bool {
+        self.dtype.is_decimal128()
+    }
+
+    pub fn is_timestamp(&self) -> bool {
+        self.dtype.is_timestamp()
+    }
+
+    pub fn is_date(&self) -> bool {
+        self.dtype.is_date()
+    }
+
+    pub fn is_time(&self) -> bool {
+        self.dtype.is_time()
+    }
+
+    pub fn is_duration(&self) -> bool {
+        self.dtype.is_duration()
+    }
+
+    pub fn is_interval(&self) -> bool {
+        self.dtype.is_interval()
+    }
+
+    pub fn is_binary(&self) -> bool {
+        self.dtype.is_binary()
+    }
+
+    pub fn is_fixed_size_binary(&self) -> bool {
+        self.dtype.is_fixed_size_binary()
+    }
+
+    pub fn is_string(&self) -> bool {
+        self.dtype.is_string()
+    }
+
+    pub fn is_fixed_size_list(&self) -> bool {
+        self.dtype.is_fixed_size_list()
+    }
+
+    pub fn is_list(&self) -> bool {
+        self.dtype.is_list()
+    }
+
+    pub fn is_struct(&self) -> bool {
+        self.dtype.is_struct()
+    }
+
+    pub fn is_map(&self) -> bool {
+        self.dtype.is_map()
+    }
+
+    pub fn is_extension(&self) -> bool {
+        self.dtype.is_extension()
+    }
+
+    pub fn is_image(&self) -> bool {
+        self.dtype.is_image()
+    }
+
+    pub fn is_fixed_shape_image(&self) -> bool {
+        self.dtype.is_fixed_shape_image()
+    }
+
+    pub fn is_embedding(&self) -> bool {
+        self.dtype.is_embedding()
+    }
+
+    pub fn is_tensor(&self) -> bool {
+        self.dtype.is_tensor()
+    }
+
+    pub fn is_fixed_shape_tensor(&self) -> bool {
+        self.dtype.is_fixed_shape_tensor()
+    }
+
+    pub fn is_sparse_tensor(&self) -> bool {
+        self.dtype.is_sparse_tensor()
+    }
+
+    pub fn is_fixed_shape_sparse_tensor(&self) -> bool {
+        self.dtype.is_fixed_shape_sparse_tensor()
+    }
+
+    pub fn is_python(&self) -> bool {
+        self.dtype.is_python()
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        self.dtype.is_numeric()
+    }
+
+    pub fn is_integer(&self) -> bool {
+        self.dtype.is_integer()
+    }
+
+    pub fn is_logical(&self) -> bool {
+        self.dtype.is_logical()
+    }
+
+    pub fn is_temporal(&self) -> bool {
+        self.dtype.is_temporal()
+    }
+
+    pub fn fixed_size(&self) -> PyResult<usize> {
+        self.dtype
+            .fixed_size()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn fixed_shape(&self) -> PyResult<Vec<u64>> {
+        self.dtype
+            .fixed_shape()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn time_unit(&self) -> PyResult<PyTimeUnit> {
+        self.dtype
+            .time_unit()
+            .map(|tu| tu.into())
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn time_zone(&self) -> PyResult<Option<String>> {
+        self.dtype
+            .time_zone()
+            .map(|tz| tz.map(|tz| tz.to_string()))
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn image_mode(&self) -> PyResult<Option<ImageMode>> {
+        self.dtype
+            .image_mode()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn dtype(&self) -> PyResult<Self> {
+        self.dtype
+            .dtype()
+            .map(|dtype| dtype.clone().into())
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn fields(&self) -> PyResult<Vec<PyField>> {
+        self.dtype
+            .fields()
+            .map(|fields| fields.iter().map(|field| field.clone().into()).collect())
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn precision(&self) -> PyResult<usize> {
+        self.dtype
+            .precision()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn scale(&self) -> PyResult<usize> {
+        self.dtype
+            .scale()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn use_offset_indices(&self) -> PyResult<bool> {
+        self.dtype
+            .use_offset_indices()
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn key_type(&self) -> PyResult<Self> {
+        self.dtype
+            .key_type()
+            .map(|dtype| dtype.clone().into())
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn value_type(&self) -> PyResult<Self> {
+        self.dtype
+            .value_type()
+            .map(|dtype| dtype.clone().into())
+            .map_err(|e| PyAttributeError::new_err(e.to_string()))
     }
 
     pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {

@@ -2448,6 +2448,96 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         relative_to = Expression._to_expression(relative_to)
         return Expression._from_pyexpr(native.dt_truncate(self._expr, interval, relative_to._expr))
 
+    def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
+        """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
+
+        See :class: `daft.datatype.TimeUnit` for more information on time units and valid values.
+
+        Example:
+            >>> import daft
+            >>> from datetime import date
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "dates": [
+            ...             date(2001, 1, 1),
+            ...             date(2001, 1, 2),
+            ...             date(2001, 1, 3),
+            ...             None,
+            ...         ]
+            ...     }
+            ... )
+            >>> df.with_column("timestamp", daft.col("dates").dt.to_unix_epoch("ns")).show()
+            ╭────────────┬────────────────────╮
+            │ dates      ┆ timestamp          │
+            │ ---        ┆ ---                │
+            │ Date       ┆ Int64              │
+            ╞════════════╪════════════════════╡
+            │ 2001-01-01 ┆ 978307200000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2001-01-02 ┆ 978393600000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2001-01-03 ┆ 978480000000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ None       ┆ None               │
+            ╰────────────┴────────────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        if time_unit is None:
+            time_unit = TimeUnit.s()
+        if isinstance(time_unit, str):
+            time_unit = TimeUnit.from_str(time_unit)
+
+        return Expression._from_pyexpr(native.dt_to_unix_epoch(self._expr, time_unit._timeunit))
+
+    def strftime(self, format: str | None = None) -> Expression:
+        """Converts a datetime/date column to a string column.
+
+        Args:
+            format: The format to use for the conversion. If None, defaults to ISO 8601 format.
+
+        .. NOTE::
+            The format must be a valid datetime format string. (defaults to ISO 8601 format)
+            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+
+        Example:
+            >>> import daft
+            >>> from datetime import datetime, date
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+            ...         "datetimes": [
+            ...             datetime(2023, 1, 1, 12, 1),
+            ...             datetime(2023, 1, 2, 12, 0, 0, 0),
+            ...             datetime(2023, 1, 3, 12, 0, 0, 999_999),
+            ...         ],
+            ...     }
+            ... )
+            >>> df = df.with_column("datetimes_s", daft.col("datetimes").cast(daft.DataType.timestamp("s")))
+            >>> df.select(
+            ...     daft.col("dates").dt.strftime().alias("iso_date"),
+            ...     daft.col("dates").dt.strftime(format="%m/%d/%Y").alias("custom_date"),
+            ...     daft.col("datetimes").dt.strftime().alias("iso_datetime"),
+            ...     daft.col("datetimes_s").dt.strftime().alias("iso_datetime_s"),
+            ...     daft.col("datetimes_s").dt.strftime(format="%Y/%m/%d %H:%M:%S").alias("custom_datetime"),
+            ... ).show()
+            ╭────────────┬─────────────┬────────────────────────────┬─────────────────────┬─────────────────────╮
+            │ iso_date   ┆ custom_date ┆ iso_datetime               ┆ iso_datetime_s      ┆ custom_datetime     │
+            │ ---        ┆ ---         ┆ ---                        ┆ ---                 ┆ ---                 │
+            │ Utf8       ┆ Utf8        ┆ Utf8                       ┆ Utf8                ┆ Utf8                │
+            ╞════════════╪═════════════╪════════════════════════════╪═════════════════════╪═════════════════════╡
+            │ 2023-01-01 ┆ 01/01/2023  ┆ 2023-01-01T12:01:00.000000 ┆ 2023-01-01T12:01:00 ┆ 2023/01/01 12:01:00 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2023-01-02 ┆ 01/02/2023  ┆ 2023-01-02T12:00:00.000000 ┆ 2023-01-02T12:00:00 ┆ 2023/01/02 12:00:00 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2023-01-03 ┆ 01/03/2023  ┆ 2023-01-03T12:00:00.999999 ┆ 2023-01-03T12:00:00 ┆ 2023/01/03 12:00:00 │
+            ╰────────────┴─────────────┴────────────────────────────┴─────────────────────┴─────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        return Expression._from_pyexpr(native.dt_strftime(self._expr, format))
+
 
 class ExpressionStringNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.str` attribute."""

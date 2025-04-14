@@ -21,7 +21,7 @@ Query the Open Images dataset to retrieve the top N "reddest" images. This tutor
 
 ## Image Generation on GPUs
 
-Generate images from text prompts using a deep learning model (Mini DALL-E) and Daft UDFs. Run Daft UDFs on GPUs for more efficient resource allocation.
+Generate images from text prompts using a deep learning model (Stable Diffusion) and Daft UDFs. Run Daft UDFs on GPUs for more efficient resource allocation.
 
 [Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb)
 

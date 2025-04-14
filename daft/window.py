@@ -40,9 +40,9 @@ class Window:
     """
 
     # Class-level constants for frame boundaries
-    unbounded_preceding = _WindowBoundary.UnboundedPreceding()
-    unbounded_following = _WindowBoundary.UnboundedFollowing()
-    current_row = _WindowBoundary.Offset(0)
+    unbounded_preceding = _WindowBoundary.unbounded_preceding()
+    unbounded_following = _WindowBoundary.unbounded_following()
+    current_row = _WindowBoundary.offset(0)
 
     def __init__(self):
         self._spec = _WindowSpec.new()
@@ -63,7 +63,6 @@ class Window:
         if not cols:
             raise ValueError("At least one partition column must be specified")
 
-        # Handle column inputs similar to DataFrame methods
         expressions = []
         for c in cols:
             expressions.extend(column_inputs_to_expressions(c))
@@ -71,7 +70,6 @@ class Window:
         if not expressions:
             raise ValueError("At least one partition column must be specified")
 
-        # Create new Window with updated spec
         window = Window()
         window._spec = self._spec.with_partition_by([expr._expr for expr in expressions])
         return window
@@ -87,12 +85,10 @@ class Window:
         Returns:
             Window: A window specification with the given ordering.
         """
-        # Handle column inputs similar to DataFrame methods
         expressions = []
         for c in cols:
             expressions.extend(column_inputs_to_expressions(c))
 
-        # Handle ascending parameter
         if isinstance(ascending, bool):
             asc_flags = [ascending] * len(expressions)
         else:
@@ -100,7 +96,6 @@ class Window:
                 raise ValueError("Length of ascending flags must match number of order by columns")
             asc_flags = ascending
 
-        # Create new Window with updated spec
         window = Window()
         window._spec = self._spec.with_order_by([expr._expr for expr in expressions], asc_flags)
         return window
@@ -121,7 +116,6 @@ class Window:
         Returns:
             Window: A window specification with the given frame bounds.
         """
-        # Convert integer offsets to WindowBoundary
         if isinstance(start, int):
             start = _WindowBoundary.offset(start)
         if isinstance(end, int):
@@ -133,7 +127,6 @@ class Window:
             end=end,
         )
 
-        # Create new Window with updated spec
         new_window = Window()
         new_window._spec = self._spec.with_frame(frame).with_min_periods(min_periods)
         return new_window

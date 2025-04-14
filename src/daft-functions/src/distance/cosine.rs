@@ -136,7 +136,7 @@ impl ScalarUDF for CosineDistanceFunction {
                 let source_is_numeric = source.dtype.is_fixed_size_numeric();
                 let query_is_numeric = query.dtype.is_fixed_size_numeric();
 
-                if let Some((source_size, query_size)) = source
+                if let Ok((source_size, query_size)) = source
                     .dtype
                     .fixed_size()
                     .and_then(|source| query.dtype.fixed_size().map(|q| (source, q)))

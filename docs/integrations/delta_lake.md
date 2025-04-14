@@ -94,7 +94,6 @@ When reading from a Delta Lake table into Daft:
 
 | Delta Lake                          | Daft                                                                                         |
 | ----------------------------------- | -------------------------------------------------------------------------------------------- |
-| **Primitive Types**                 |
 | `BOOLEAN`                           | [`daft.DataType.bool()`][daft.datatype.DataType.bool]                                        |
 | `BYTE`                              | [`daft.DataType.int8()`][daft.datatype.DataType.int8]                                        |
 | `SHORT`                             | [`daft.DataType.int16()`][daft.datatype.DataType.int16]                                      |
@@ -108,7 +107,6 @@ When reading from a Delta Lake table into Daft:
 | `TIMESTAMP`                         | [`daft.DataType.timestamp(timeunit="us", timezone="UTC")`][daft.datatype.DataType.timestamp] |
 | `STRING`                            | [`daft.DataType.string()`][daft.datatype.DataType.string]                                    |
 | `BINARY`                            | [`daft.DataType.binary()`][daft.datatype.DataType.binary]                                    |
-| **Nested Types**                    |
 | `MAP<key_type, value_type>`         | [`daft.DataType.map(key_type, value_type)`][daft.datatype.DataType.map]                      |
 | `STRUCT<[field_name: field_type,]>` | [`daft.DataType.struct(fields)`][daft.datatype.DataType.struct]                              |
 | `ARRAY<element_type>`               | [`daft.DataType.list(element_type)`][daft.datatype.DataType.list]                            |

@@ -1,7 +1,8 @@
+use daft_core::prelude::TimeUnit;
 use daft_dsl::ExprRef;
 use daft_functions::temporal::{
     dt_date, dt_day, dt_day_of_week, dt_day_of_year, dt_hour, dt_microsecond, dt_millisecond,
-    dt_minute, dt_month, dt_nanosecond, dt_second, dt_time, dt_year,
+    dt_minute, dt_month, dt_nanosecond, dt_second, dt_strftime, dt_time, dt_to_unix_epoch, dt_year,
 };
 use sqlparser::ast::FunctionArg;
 
@@ -37,6 +38,8 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("nanosecond", SQLNanosecond);
         parent.add_fn("year", SQLYear);
         parent.add_fn("time", SQLTime);
+        parent.add_fn("to_unix_epoch", SQLUnixTimestamp);
+        parent.add_fn("strftime", SQLStrftime);
 
         // TODO: Add truncate
         // Our `dt_truncate` function has vastly different semantics than SQL `DATE_TRUNCATE` function.
@@ -92,3 +95,78 @@ temporal!(SQLMicrosecond, dt_microsecond);
 temporal!(SQLNanosecond, dt_nanosecond);
 temporal!(SQLYear, dt_year);
 temporal!(SQLTime, dt_time);
+
+pub struct SQLUnixTimestamp;
+pub struct SQLStrftime;
+
+impl SQLFunction for SQLUnixTimestamp {
+    fn to_expr(
+        &self,
+        inputs: &[FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input] => {
+                let input = planner.plan_function_arg(input)?;
+                let tu = TimeUnit::Seconds;
+                Ok(dt_to_unix_epoch(input, tu)?)
+            }
+            [input, tu] => {
+                let input = planner.plan_function_arg(input)?;
+                let tu = planner.plan_function_arg(tu)?;
+                let Some(tu) = tu.as_literal().and_then(|lit| lit.as_str()) else {
+                    unsupported_sql_err!("Invalid arguments for to_unix_epoch: '{inputs:?}'",)
+                };
+
+                let tu = tu.parse::<TimeUnit>()?;
+
+                Ok(dt_to_unix_epoch(input, tu)?)
+            }
+            _ => unsupported_sql_err!(
+                "Invalid arguments for {}: '{inputs:?}'",
+                stringify!(dt_to_unix_epoch)
+            ),
+        }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds)".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "time_unit"]
+    }
+}
+impl SQLFunction for SQLStrftime {
+    fn to_expr(
+        &self,
+        inputs: &[FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input] => {
+                let input = planner.plan_function_arg(input)?;
+                Ok(dt_strftime(input, None))
+            }
+            [input, format] => {
+                let input = planner.plan_function_arg(input)?;
+                let format = planner.plan_function_arg(format)?;
+                let format = format.as_literal().and_then(|lit| lit.as_str());
+
+                Ok(dt_strftime(input, format))
+            }
+            _ => unsupported_sql_err!(
+                "Invalid arguments for {}: '{inputs:?}'",
+                stringify!(dt_date)
+            ),
+        }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Formats a time/date/datetime expression into a string.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "format"]
+    }
+}

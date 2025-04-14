@@ -401,3 +401,20 @@ def test_multi_column_sort_nulls_first(make_df, cast_to, nulls_first, desc, expe
     select * from df order by id1 {id1_ordering} {id1_nulls}, id2 {id2_ordering} {id2_nulls}
     """).to_pydict()
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    "desc,nulls_first,expected_data",
+    [
+        (True, True, {"b": [None, None, 10, 5, 1]}),
+        (True, False, {"b": [10, 5, 1, None, None]}),
+        (False, True, {"b": [None, None, 1, 5, 10]}),
+        (False, False, {"b": [1, 5, 10, None, None]}),
+    ],
+)
+def test_sort_combinations(desc, nulls_first, expected_data):
+    data = {"b": [1, 10, 5, None, None]}
+    df = daft.from_pydict(data)
+    actual = df.sort(by="b", desc=desc, nulls_first=nulls_first)
+    expected = daft.from_pydict(expected_data)
+    assert actual.to_pydict() == expected.to_pydict()

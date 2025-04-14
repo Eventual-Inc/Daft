@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_runtime::get_compute_runtime;
 use daft_dsl::python::PyExpr;
 use daft_micropartition::python::PyMicroPartition;
 use daft_schema::python::schema::PySchema;
@@ -12,49 +11,60 @@ use pyo3::{
 
 use crate::{
     server::flight_server::{start_flight_server, FlightServerConnectionHandle},
-    shuffle_cache::{InProgressShuffleCache, ShuffleCache},
+    shuffle_cache::{get_or_init_shuffle_cache_runtime, InProgressShuffleCache, ShuffleCache},
 };
 
 #[pyclass(module = "daft.daft", name = "InProgressShuffleCache", frozen)]
 pub struct PyInProgressShuffleCache {
-    cache: InProgressShuffleCache,
+    cache: Arc<InProgressShuffleCache>,
 }
 
 #[pymethods]
 impl PyInProgressShuffleCache {
     #[staticmethod]
-    #[pyo3(signature = (num_partitions, dir, target_filesize, compression=None, partition_by=None))]
+    #[pyo3(signature = (num_partitions, dirs, target_filesize, compression=None, partition_by=None))]
     pub fn try_new(
         num_partitions: usize,
-        dir: &str,
+        dirs: Vec<String>,
         target_filesize: usize,
         compression: Option<&str>,
         partition_by: Option<Vec<PyExpr>>,
     ) -> PyResult<Self> {
         let shuffle_cache = InProgressShuffleCache::try_new(
             num_partitions,
-            dir,
+            dirs.as_slice(),
             target_filesize,
             compression,
             partition_by.map(|partition_by| partition_by.into_iter().map(|p| p.into()).collect()),
         )?;
+        pyo3_async_runtimes::tokio::init_with_runtime(&get_or_init_shuffle_cache_runtime().runtime)
+            .unwrap();
         Ok(Self {
-            cache: shuffle_cache,
+            cache: Arc::new(shuffle_cache),
         })
     }
 
-    pub fn push_partition(&self, py: Python, input_partition: PyMicroPartition) -> PyResult<()> {
-        py.allow_threads(|| {
-            get_compute_runtime()
-                .block_on_current_thread(self.cache.push_partition(input_partition.into()))?;
+    pub fn push_partitions<'a>(
+        &self,
+        py: Python<'a>,
+        input_partitions: Vec<PyMicroPartition>,
+    ) -> PyResult<Bound<'a, pyo3::PyAny>> {
+        let cache = self.cache.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            cache
+                .push_partitions(input_partitions.into_iter().map(|p| p.into()).collect())
+                .await?;
             Ok(())
         })
     }
 
-    pub fn close(&self) -> PyResult<PyShuffleCache> {
-        let shuffle_cache = get_compute_runtime().block_on_current_thread(self.cache.close())?;
-        Ok(PyShuffleCache {
-            cache: Arc::new(shuffle_cache),
+    pub fn close<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
+        let cache = self.cache.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let shuffle_cache = cache.close().await?;
+            Ok(PyShuffleCache {
+                cache: Arc::new(shuffle_cache),
+            })
         })
     }
 }

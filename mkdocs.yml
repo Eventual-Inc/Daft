@@ -20,7 +20,6 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
-  - SQL: sql_overview.md
   - Sessions: sessions.md
   - Catalogs: catalogs.md
   - Spark Connect: spark_connect.md
@@ -69,6 +68,8 @@ nav:
     - SHOW: sql/statements/show.md
     - USE: sql/statements/use.md
   - Data Types: sql/datatypes.md
+  # Disabled until identifier modes are supported.
+  # - Identifiers: sql/identifiers.md
 
 # Configuration
 theme:
