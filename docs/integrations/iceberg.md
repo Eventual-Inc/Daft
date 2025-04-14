@@ -114,8 +114,8 @@ References:
 ## Reference
 
 Daft has high-level [Session](../sessions.md) and [Catalog](../catalogs.md) APIs
-to read and write Iceberg tables; however it is the `daft.read_iceberg` and
-`df.write_iceberg` API which is ultimately the entry-point to Iceberg reads and
+to read and write Iceberg tables; however it is the [`daft.read_iceberg`][daft.read_iceberg] and
+[`df.write_iceberg`][daft.dataframe.write_iceberg] API which is ultimately the entry-point to Iceberg reads and
 writes respectively. This section gives a short reference on those APIs and how
 they relate to both DataFrames and Iceberg.
 
@@ -125,9 +125,9 @@ upwards, via composition with additional operators, to form a tree with sources
 as the leaves. We typically call these leaves *tables* or *sources* and their
 algebraic operator is called a *scan*.
 
-#### `read_iceberg`
+#### [`read_iceberg`][daft.read_iceberg]
 
-Daft's `read_iceberg` method creates a DataFrame from the the given PyIceberg
+Daft's [`daft.read_iceberg`][daft.read_iceberg] method creates a DataFrame from the the given PyIceberg
 table. It produces rows by traversing the table's metadata tree to locate all
 the data files for the given snapshot which is handled by our
 `IcebergScanOperator`.
@@ -140,9 +140,9 @@ metadata. The scan operator's primary method, `to_scan_tasks`, accepts pushdowns
 and the associated pushdowns. Finally, we read each data file's parquet to
 produce a stream of record batches which later operators consume and transform.
 
-#### `write_iceberg`
+#### [`write_iceberg`]
 
-Daft's `write_iceberg` method writes the DataFrame's contents to the given PyIceberg table.
+Daft's [`write_iceberg`][daft.dataframe.write_iceberg] method writes the DataFrame's contents to the given PyIceberg table.
 It works by creating a special *sink* operator which consumes all inputs and writes
 data files to the table's location.
 
@@ -157,7 +157,7 @@ and use a transaction to update the latest metadata pointer.
 
 #### Iceberg Architecture
 
-!!! note ""
+!!! note "Note"
 
     Please see the
     [Iceberg Table Specification](https://iceberg.apache.org/spec/) for full
