@@ -33,7 +33,7 @@ def _range(start: int, end: int, step: int) -> DataFrame: ...
 def _range(start: int, end: int, step: int, partitions: int) -> DataFrame: ...
 
 
-@PublicAPI
+@PublicAPI  # type: ignore
 def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 1) -> DataFrame:
     """Creates a DataFrame with a range of values.
 

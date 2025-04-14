@@ -46,6 +46,7 @@ pub enum LocalPhysicalPlan {
     CatalogWrite(CatalogWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
+    WindowPartitionOnly(WindowPartitionOnly),
 }
 
 impl LocalPhysicalPlan {
@@ -80,7 +81,8 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { stats_state, .. })
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
-            | Self::PhysicalWrite(PhysicalWrite { stats_state, .. }) => stats_state,
+            | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
+            | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
@@ -224,6 +226,23 @@ impl LocalPhysicalPlan {
             group_by,
             schema,
             stats_state,
+        })
+        .arced()
+    }
+
+    pub(crate) fn window_partition_only(
+        input: LocalPhysicalPlanRef,
+        partition_by: Vec<ExprRef>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        aggregations: Vec<ExprRef>,
+    ) -> LocalPhysicalPlanRef {
+        Self::WindowPartitionOnly(WindowPartitionOnly {
+            input,
+            partition_by,
+            schema,
+            stats_state,
+            aggregations,
         })
         .arced()
     }
@@ -458,6 +477,7 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
+            Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
         }
     }
 }
@@ -645,4 +665,13 @@ pub struct LanceWrite {
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+#[derive(Debug)]
+pub struct WindowPartitionOnly {
+    pub input: LocalPhysicalPlanRef,
+    pub partition_by: Vec<ExprRef>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub aggregations: Vec<ExprRef>,
 }

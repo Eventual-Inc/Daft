@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
-use crate::{bindings::Bindings, error::Result, Identifier, Table};
+use crate::{error::Result, Identifier, Table};
 
 /// Catalog implementation reference.
 pub type CatalogRef = Arc<dyn Catalog>;
-
-/// CatalogProvider is a collection of referenceable catalogs.
-pub type CatalogProvider = Bindings<CatalogRef>;
 
 /// A catalog provides object metadata such as namespaces, tables, and functions.
 pub trait Catalog: Sync + Send + std::fmt::Debug {

@@ -29,6 +29,8 @@ nav:
       - SHOW: sql/statements/show.md
       - USE: sql/statements/use.md
     - Data Types: sql/datatypes.md
+    # Disabled until identifier modes are supported.
+    # - Identifiers: sql/identifiers.md
   - Sessions: sessions.md
   - Catalogs: catalogs.md
   - Spark Connect: spark_connect.md

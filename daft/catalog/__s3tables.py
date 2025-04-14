@@ -14,11 +14,17 @@ from daft.io import read_iceberg
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
+    from boto3 import Session
+    from mypy_boto3_s3tables import S3TablesClient
+
     from daft.daft import IOConfig
+    from daft.dependencies import pa
+else:
+    S3TablesClient = object
 
 
 class S3Path(Sequence):
-    _parts: tuple[str]
+    _parts: tuple[str, ...]
 
     def __init__(self, *parts: str):
         self._parts = tuple(parts)
@@ -29,7 +35,7 @@ class S3Path(Sequence):
         if isinstance(ident, Identifier):
             path._parts = tuple(ident)
         elif isinstance(ident, str):
-            path._parts = ident.split(".")
+            path._parts = tuple(ident.split("."))
         else:
             raise ValueError("expected Identifier or str")
         return path
@@ -66,7 +72,7 @@ class S3Path(Sequence):
 
 class S3Catalog(Catalog):
     #
-    _client: object
+    _client: S3TablesClient
     _table_bucket_arn: str
     _io_config: IOConfig
 
@@ -101,7 +107,7 @@ class S3Catalog(Catalog):
         )
 
     @staticmethod
-    def from_client(table_bucket_arn: str, client: object) -> S3Catalog:
+    def from_client(table_bucket_arn: str, client: S3TablesClient) -> S3Catalog:
         """Creates an S3Catalog using the given boto3 client."""
         c = S3Catalog.__new__(S3Catalog)
         c._table_bucket_arn = table_bucket_arn
@@ -109,7 +115,7 @@ class S3Catalog(Catalog):
         return c
 
     @staticmethod
-    def from_session(table_bucket_arn: str, session: object) -> S3Catalog:
+    def from_session(table_bucket_arn: str, session: Session) -> S3Catalog:
         """Creates an S3Catalog using the boto3 session."""
         c = S3Catalog.__new__(S3Catalog)
         c._table_bucket_arn = table_bucket_arn
@@ -327,7 +333,7 @@ class S3Table(Table):
     def namespace(self) -> S3Path:
         return self._path.parent
 
-    def read(self) -> DataFrame:
+    def read(self, **options) -> DataFrame:
         return self._catalog._read_iceberg(self)
 
     def write(self):
@@ -357,7 +363,7 @@ def _to_metadata(schema: Schema) -> dict:
     }
 
 
-def _to_field(field: object) -> dict:
+def _to_field(field: pa.Field) -> dict:
     return {
         "name": field.name,
         "type": str(field.field_type),

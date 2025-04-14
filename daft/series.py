@@ -1024,6 +1024,9 @@ class SeriesDateNamespace(SeriesNamespace):
             time_unit = TimeUnit.from_str(time_unit)
         return Series._from_pyseries(self._series.dt_to_unix_epoch(time_unit._timeunit))
 
+    def strftime(self, fmt: str | None = None) -> Series:
+        return Series._from_pyseries(self._series.dt_strftime(fmt))
+
 
 class SeriesPartitioningNamespace(SeriesNamespace):
     def days(self) -> Series:

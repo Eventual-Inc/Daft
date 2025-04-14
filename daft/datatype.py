@@ -379,7 +379,7 @@ class DataType:
         cls,
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
-        use_offset_indices: bool = False,
+        use_offset_indices: builtins.bool = False,
     ) -> DataType:
         """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided ``shape``.
 
@@ -960,7 +960,7 @@ class DataType:
         return TimeUnit._from_pytimeunit(self._dtype.time_unit())
 
     @property
-    def timezone(self) -> str:
+    def timezone(self) -> str | None:
         """If this is a timestamp type, return the timezone, otherwise an attribute error is raised.
 
         Example:
@@ -1057,7 +1057,7 @@ class DataType:
         return self._dtype.image_mode()
 
     @property
-    def use_offset_indices(self) -> bool:
+    def use_offset_indices(self) -> builtins.bool:
         """If this is a sparse tensor type, return whether the indices are stored as offsets, otherwise an attribute error is raised.
 
         Example:

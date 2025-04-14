@@ -338,14 +338,13 @@ class Catalog(ABC):
             self.create_namespace(identifier)
 
     @abstractmethod
-    def create_table(self, identifier: Identifier | str, source: TableSource) -> Table:
+    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
         """Creates a table in this catalog."""
 
-    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource) -> Table:
+    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource | object) -> Table:
         """Creates a table in this catalog if it does not already exist."""
         try:
-            if table := self.get_table(identifier):
-                return table
+            return self.get_table(identifier)
         except NotFoundError:
             return self.create_table(identifier, source)
 
@@ -430,7 +429,7 @@ class Catalog(ABC):
     def write_table(
         self,
         identifier: Identifier | str,
-        df: DataFrame | object,
+        df: DataFrame,
         mode: Literal["append", "overwrite"] = "append",
         **options,
     ):
@@ -657,25 +656,25 @@ class Table(ABC):
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
-    def _from_obj(name: str, source: object) -> Table:
-        """Returns a Daft Table from a supported object type or raises an error."""
-        if isinstance(source, Table):
-            # we want to rename and create an immutable view from this external table
-            return Table.from_df(name, source.read())
-        elif isinstance(source, DataFrame):
-            return Table.from_df(name, source)
-        elif isinstance(source, dict):
-            return Table.from_df(name, DataFrame._from_pydict(source))
-        else:
-            raise ValueError(f"Unsupported table source {type(source)}")
+    def _from_obj(obj: object) -> Table:
+        for factory in (Table.from_iceberg, Table.from_unity):
+            try:
+                return factory(obj)
+            except ValueError:
+                pass
+            except ImportError:
+                pass
+        raise ValueError(
+            f"Unsupported table type: {type(obj)}; please ensure all required extra dependencies are installed."
+        )
 
     @staticmethod
-    def _validate_options(method: str, input: dict[str, any], valid: set[str]):
+    def _validate_options(method: str, input: dict[str, Any], valid: set[str]):
         """Validates input options against a set of valid options.
 
         Args:
             method (str): The method name to include in the error message
-            input (dict[str, any]): The input options dictionary
+            input (dict[str, Any]): The input options dictionary
             valid (set[str]): Set of valid option keys
 
         Raises:

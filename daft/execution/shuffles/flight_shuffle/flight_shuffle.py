@@ -4,6 +4,7 @@ import os
 import random
 import shutil
 from collections import defaultdict, deque
+from typing import Optional
 
 from daft.daft import InProgressShuffleCache, PyExpr, start_flight_server
 from daft.execution.execution_step import (
@@ -56,7 +57,7 @@ class ShuffleActorManager:
         shuffle_stage_id: int,
         shuffle_dirs: list[str],
         num_output_partitions: int,
-        partition_by: list[PyExpr] | None = None,
+        partition_by: Optional[list[PyExpr]] = None,
     ):
         self.shuffle_stage_id = shuffle_stage_id
         self.shuffle_dirs = shuffle_dirs
@@ -66,7 +67,7 @@ class ShuffleActorManager:
         self.all_actors: dict[str, ShuffleActor] = {}
         self.active_actors: dict[str, ShuffleActor] = {}
 
-        self.clear_partition_futures = []
+        self.clear_partition_futures: list[ray.ObjectRef] = []
 
         # Eagerly create actors for all nodes that are currently available
         for node in ray.nodes():
@@ -75,7 +76,7 @@ class ShuffleActorManager:
     # Get or create an actor for a given node id
     def get_or_create_actor(self, node_id: str):
         if node_id not in self.all_actors:
-            actor = ShuffleActor.options(
+            actor = ShuffleActor.options(  # type: ignore[attr-defined]
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node_id,
                     soft=False,  # TODO: check if this is dangerous, if so, check if we can do true
@@ -98,8 +99,8 @@ class ShuffleActorManager:
     def get_all_node_ids(self):
         return list(self.all_actors.keys())
 
-    def get_all_actor_addresses(self):
-        return ray.get([self.all_actors[node_id].get_address.remote() for node_id in self.all_actors])
+    def get_all_actor_addresses(self) -> list[str]:
+        return ray.get([self.all_actors[node_id].get_address.remote() for node_id in self.all_actors])  # type: ignore[attr-defined]
 
     # Push an object to an actor
     def _push_objects_to_actor(self, node_id: str, objects: list[ray.ObjectRef]) -> ray.ObjectRef:
@@ -137,7 +138,8 @@ class ShuffleActorManager:
     # Clear the given partitions from the shuffle actors
     def clear_partition(self, partition_idx: int):
         self.clear_partition_futures.extend(
-            self.active_actors[node_id].clear_partition.remote(partition_idx) for node_id in self.active_actors
+            self.active_actors[node_id].clear_partition.remote(partition_idx)  # type: ignore[attr-defined]
+            for node_id in self.active_actors
         )
 
     # Shutdown the shuffle actor manager and all the shuffle actors
@@ -168,7 +170,7 @@ class ShuffleActor:
         shuffle_stage_id: int,
         shuffle_dirs: list[str],
         num_output_partitions: int,
-        partition_by: list[PyExpr] | None = None,
+        partition_by: Optional[list[PyExpr]] = None,
     ):
         self.node_id = ray.get_runtime_context().get_node_id()
         self.host = ray.util.get_node_ip_address()
@@ -308,7 +310,7 @@ def reduce_partitions(
                 metadata = PartitionMetadata.from_table(reduced)
 
                 yield reduced
-                clear_partitions_futures.append(shuffle_actor_manager.clear_partition.remote(partition_idx))
+                clear_partitions_futures.append(shuffle_actor_manager.clear_partition.remote(partition_idx))  # type: ignore[attr-defined]
                 yield metadata
 
             except StopAsyncIteration:
@@ -362,7 +364,7 @@ def run_map_phase(
         # If there are any map tasks that are done, push them to the actor manager
         if len(done_ids) > 0:
             done_partitions = [in_flight_map_tasks.pop(id).partition() for id in done_ids]
-            ray.get(shuffle_actor_manager.push_objects.remote(done_partitions))
+            ray.get(shuffle_actor_manager.push_objects.remote(done_partitions))  # type: ignore[attr-defined]
             del done_partitions
         # If there are no map tasks that are done, try to emit more map tasks. Else, yield None to indicate to the scheduler that we need to wait
         else:
@@ -378,7 +380,7 @@ def run_map_phase(
                 yield None
 
     # Wait for all actors to complete the map phase
-    ray.get(shuffle_actor_manager.finish_push_objects.remote())
+    ray.get(shuffle_actor_manager.finish_push_objects.remote())  # type: ignore[attr-defined]
 
 
 def run_reduce_phase(
@@ -388,8 +390,8 @@ def run_reduce_phase(
     # Calculate how many reduce tasks, and which partitions go to which reduce tasks
     actor_addresses, actor_node_ids = ray.get(
         [
-            shuffle_actor_manager.get_active_actor_addresses.remote(),
-            shuffle_actor_manager.get_active_node_ids.remote(),
+            shuffle_actor_manager.get_active_actor_addresses.remote(),  # type: ignore[attr-defined]
+            shuffle_actor_manager.get_active_node_ids.remote(),  # type: ignore[attr-defined]
         ],
     )
     reduce_task_to_partitions, partitions_to_reduce_task = optimize_reduce_partition_assignment(
@@ -421,7 +423,7 @@ def run_reduce_phase(
     ray.get([reduce_gen.completed() for reduce_gen in reduce_generators])
     del reduce_generators
     # Shutdown the actor manager
-    ray.get(shuffle_actor_manager.shutdown.remote())
+    ray.get(shuffle_actor_manager.shutdown.remote())  # type: ignore[attr-defined]
     # Kill the actor manager
     ray.kill(shuffle_actor_manager)
 
@@ -430,13 +432,13 @@ def flight_shuffle(
     fanout_plan: InProgressPhysicalPlan[ray.ObjectRef],
     num_output_partitions: int,
     shuffle_dirs: list[str],
-    partition_by: list[PyExpr] | None = None,
+    partition_by: Optional[list[PyExpr]] = None,
 ):
     map_stage_id = next(stage_id_counter)
     shuffle_stage_id = next(stage_id_counter)
 
     # Try to schedule the manager on the current node, which should be the head node
-    shuffle_actor_manager = ShuffleActorManager.options(
+    shuffle_actor_manager = ShuffleActorManager.options(  # type: ignore[attr-defined]
         scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
             node_id=ray.get_runtime_context().get_node_id(),
             soft=False,

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arrow2::{
+    self,
     array::{Array, PrimitiveArray},
     compute::arithmetics::{
         time::{add_interval, sub_interval},

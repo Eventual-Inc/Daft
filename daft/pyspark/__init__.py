@@ -72,7 +72,7 @@ class Builder:
             return wrapped
         return attr
 
-    __doc__ = property(lambda self: self._spark_session.__doc__)
+    __doc__ = property(lambda self: self._spark_session.__doc__)  # type: ignore
 
 
 class SparkSession:
@@ -92,4 +92,4 @@ class SparkSession:
         self._spark_session.stop()
         self._connection.shutdown()
 
-    __doc__ = property(lambda self: self._spark_session.__doc__)
+    __doc__ = property(lambda self: self._spark_session.__doc__)  # type: ignore
