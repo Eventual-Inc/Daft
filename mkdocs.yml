@@ -163,7 +163,7 @@ extra_css:
 - css/extra.css
 
 extra_javascript:
-- js/copy.js
+- js/docstring.js
 
 # Extensions
 markdown_extensions:
