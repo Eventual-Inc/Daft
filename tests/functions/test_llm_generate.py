@@ -5,6 +5,8 @@ import pytest
 from daft import Expression, Series, lit
 from daft.functions.llm_generate import _vLLMGenerator, llm_generate
 
+vllm = pytest.importorskip("vllm")
+
 
 @patch("vllm.LLM")
 def test_llm_generate_init(mock_llm: MagicMock):
