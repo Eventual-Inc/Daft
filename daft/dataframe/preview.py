@@ -120,7 +120,7 @@ class PreviewFormatter:
         if len(self._schema) == 0:
             return "(No data to display: Dataframe has no columns)"
         res = self._to_text()
-        res += f"\n\n{self._get_user_message()}"
+        res += f"\n{self._get_user_message()}"
         return res
 
     def _to_html(self) -> str:
