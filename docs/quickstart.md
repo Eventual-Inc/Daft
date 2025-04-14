@@ -52,19 +52,19 @@ See also [DataFrame Creation API Docs](api/dataframe_creation.md). Let's create 
 
 ``` {title="Output"}
 
-+-------+---------+---------+------+
-| A     | B       | C       | D    |
-| Int64 | Float64 | Boolean | Null |
-+=======+=========+=========+======+
-| 1     | 1.5     | true    | None |
-+-------+---------+---------+------+
-| 2     | 2.5     | true    | None |
-+-------+---------+---------+------+
-| 3     | 3.5     | false   | None |
-+-------+---------+---------+------+
-| 4     | 4.5     | false   | None |
-+-------+---------+---------+------+
-
+╭───────┬─────────┬─────────┬──────╮
+│ A     ┆ B       ┆ C       ┆ D    │
+│ ---   ┆ ---     ┆ ---     ┆ ---  │
+│ Int64 ┆ Float64 ┆ Boolean ┆ Null │
+╞═══════╪═════════╪═════════╪══════╡
+│ 1     ┆ 1.5     ┆ true    ┆ None │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ 2     ┆ 2.5     ┆ true    ┆ None │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ 3     ┆ 3.5     ┆ false   ┆ None │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ 4     ┆ 4.5     ┆ false   ┆ None │
+╰───────┴─────────┴─────────┴──────╯
 
 (Showing first 4 of 4 rows)
 
@@ -102,10 +102,11 @@ Let’s read in a Parquet file from a public S3 bucket. Note that this Parquet f
 
 ```{title="Output"}
 
-+------------+-----------+-------+------+---------+---------+
-| first_name | last_name | age   | DoB  | country | has_dog |
-| Utf8       | Utf8      | Int64 | Date | Utf8    | Boolean |
-+------------+-----------+-------+------+---------+---------+
+╭────────────┬───────────┬───────┬──────┬─────────┬─────────╮
+│ first_name ┆ last_name ┆ age   ┆ DoB  ┆ country ┆ has_dog │
+│ ---        ┆ ---       ┆ ---   ┆ ---  ┆ ---     ┆ ---     │
+│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date ┆ Utf8    ┆ Boolean │
+╰────────────┴───────────┴───────┴──────┴─────────┴─────────╯
 
 (No data to display: Dataframe not materialized)
 
@@ -129,16 +130,22 @@ The file we have just loaded only has 5 rows. You can materialize the whole Data
 
 ```{title="Output"}
 
-+------------+-----------+-------+------------+----------------+---------+
-| first_name | last_name | age   | DoB        | country        | has_dog |
-| Utf8       | Utf8      | Int64 | Date       | Utf8           | Boolean |
-+------------+-----------+-------+------------+----------------+---------+
-| Ernesto    | Evergreen | 34    | 1990-04-03 | Canada         | true    |
-| James      | Jale      | 62    | 1962-03-24 | Canada         | true    |
-| Wolfgang   | Winter    | 23    | 2001-02-12 | Germany        | None    |
-| Shandra    | Shamas    | 57    | 1967-01-02 | United Kingdom | true    |
-| Zaya       | Zaphora   | 40    | 1984-04-07 | United Kingdom | true    |
-+------------+-----------+-------+------------+----------------+---------+
+╭────────────┬───────────┬───────┬────────────┬────────────────┬─────────╮
+│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country        ┆ has_dog │
+│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---            ┆ ---     │
+│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8           ┆ Boolean │
+╞════════════╪═══════════╪═══════╪════════════╪════════════════╪═════════╡
+│ Shandra    ┆ Shamas    ┆ 57    ┆ 1967-01-02 ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Zaya       ┆ Zaphora   ┆ 40    ┆ 1984-04-07 ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Wolfgang   ┆ Winter    ┆ 23    ┆ 2001-02-12 ┆ Germany        ┆ None    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Ernesto    ┆ Evergreen ┆ 34    ┆ 1990-04-03 ┆ Canada         ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ James      ┆ Jale      ┆ 62    ┆ 1962-03-24 ┆ Canada         ┆ true    │
+╰────────────┴───────────┴───────┴────────────┴────────────────┴─────────╯
+
 (Showing first 5 of 5 rows)
 ```
 
@@ -152,14 +159,18 @@ To view just the first few rows, you can use the [`df.show()`][daft.DataFrame.sh
 
 ```{title="Output"}
 
-+------------+-----------+-------+------------+----------------+---------+
-| first_name | last_name | age   | DoB        | country        | has_dog |
-| Utf8       | Utf8      | Int64 | Date       | Utf8           | Boolean |
-+------------+-----------+-------+------------+----------------+---------+
-| Ernesto    | Evergreen | 34    | 1990-04-03 | Canada         | true    |
-| James      | Jale      | 62    | 1962-03-24 | Canada         | true    |
-| Wolfgang   | Winter    | 23    | 2001-02-12 | Germany        | None    |
-+------------+-----------+-------+------------+----------------+---------+
+╭────────────┬───────────┬───────┬────────────┬────────────────┬─────────╮
+│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country        ┆ has_dog │
+│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---            ┆ ---     │
+│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8           ┆ Boolean │
+╞════════════╪═══════════╪═══════╪════════════╪════════════════╪═════════╡
+│ Shandra    ┆ Shamas    ┆ 57    ┆ 1967-01-02 ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Zaya       ┆ Zaphora   ┆ 40    ┆ 1984-04-07 ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Wolfgang   ┆ Winter    ┆ 23    ┆ 2001-02-12 ┆ Germany        ┆ None    │
+╰────────────┴───────────┴───────┴────────────┴────────────────┴─────────╯
+
 (Showing first 3 of 5 rows)
 
 ```
@@ -180,16 +191,22 @@ You can **select** specific columns from your DataFrame with the [`df.select()`]
 
 ```{title="Output"}
 
-+------------+---------+
-| first_name | has_dog |
-| Utf8       | Boolean |
-+------------+---------+
-| Ernesto    | true    |
-| James      | true    |
-| Wolfgang   | None    |
-| Shandra    | true    |
-| Zaya       | true    |
-+------------+---------+
+╭────────────┬─────────╮
+│ first_name ┆ has_dog │
+│ ---        ┆ ---     │
+│ Utf8       ┆ Boolean │
+╞════════════╪═════════╡
+│ Shandra    ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Zaya       ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Ernesto    ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ James      ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Wolfgang   ┆ None    │
+╰────────────┴─────────╯
+
 (Showing first 5 of 5 rows)
 
 ```
@@ -204,14 +221,18 @@ You can **filter** rows using the [`df.where()`][daft.DataFrame.where] method th
     ```
 
 ```{title="Output"}
-+------------+-----------+-------+------------+----------------+---------+
-| first_name | last_name | age   | DoB        | country        | has_dog |
-| Utf8       | Utf8      | Int64 | Date       | Utf8           | Boolean |
-+------------+-----------+-------+------------+----------------+---------+
-| James      | Jale      | 62    | 1962-03-24 | Canada         | true    |
-| Shandra    | Shamas    | 57    | 1967-01-02 | United Kingdom | true    |
-| Zaya       | Zaphora   | 40    | 1984-04-07 | United Kingdom | true    |
-+------------+-----------+-------+------------+----------------+---------+
+╭────────────┬───────────┬───────┬────────────┬────────────────┬─────────╮
+│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country        ┆ has_dog │
+│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---            ┆ ---     │
+│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8           ┆ Boolean │
+╞════════════╪═══════════╪═══════╪════════════╪════════════════╪═════════╡
+│ Shandra    ┆ Shamas    ┆ 57    ┆ 1967-01-02 ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Zaya       ┆ Zaphora   ┆ 40    ┆ 1984-04-07 ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ James      ┆ Jale      ┆ 62    ┆ 1962-03-24 ┆ Canada         ┆ true    │
+╰────────────┴───────────┴───────┴────────────┴────────────────┴─────────╯
+
 (Showing first 3 of 3 rows)
 ```
 
@@ -232,14 +253,17 @@ You can **limit** the number of rows in a DataFrame by calling the [`df.limit()`
     ```
 
 ```{title="Output"}
+╭────────────┬───────────┬───────┬────────────┬─────────┬─────────╮
+│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country ┆ has_dog │
+│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---     ┆ ---     │
+│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8    ┆ Boolean │
+╞════════════╪═══════════╪═══════╪════════════╪═════════╪═════════╡
+│ Wolfgang   ┆ Winter    ┆ 23    ┆ 2001-02-12 ┆ Germany ┆ None    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Ernesto    ┆ Evergreen ┆ 34    ┆ 1990-04-03 ┆ Canada  ┆ true    │
+╰────────────┴───────────┴───────┴────────────┴─────────┴─────────╯
 
-+------------+-----------+-------+------------+----------------+---------+
-| first_name | last_name | age   | DoB        | country        | has_dog |
-| Utf8       | Utf8      | Int64 | Date       | Utf8           | Boolean |
-+------------+-----------+-------+------------+----------------+---------+
-| Ernesto    | Evergreen | 34    | 1990-04-03 | Canada         | true    |
-+------------+-----------+-------+------------+----------------+---------+
-(Showing first 1 of 1 rows)
+(Showing first 2 of 2 rows)
 ```
 
 To **drop** columns from the DataFrame, use the [`df.exclude()`][daft.DataFrame.exclude] method.
@@ -251,19 +275,23 @@ To **drop** columns from the DataFrame, use the [`df.exclude()`][daft.DataFrame.
     ```
 
 ```{title="Output"}
+╭────────────┬───────────┬───────┬────────────────┬─────────╮
+│ first_name ┆ last_name ┆ age   ┆ country        ┆ has_dog │
+│ ---        ┆ ---       ┆ ---   ┆ ---            ┆ ---     │
+│ Utf8       ┆ Utf8      ┆ Int64 ┆ Utf8           ┆ Boolean │
+╞════════════╪═══════════╪═══════╪════════════════╪═════════╡
+│ Ernesto    ┆ Evergreen ┆ 34    ┆ Canada         ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ James      ┆ Jale      ┆ 62    ┆ Canada         ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Shandra    ┆ Shamas    ┆ 57    ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Zaya       ┆ Zaphora   ┆ 40    ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Wolfgang   ┆ Winter    ┆ 23    ┆ Germany        ┆ None    │
+╰────────────┴───────────┴───────┴────────────────┴─────────╯
 
-+------------+-----------+-------+----------------+---------+
-| first_name | last_name | age   | country        | has_dog |
-| Utf8       | Utf8      | Int64 | Utf8           | Boolean |
-+------------+-----------+-------+----------------+---------+
-| Ernesto    | Evergreen | 34    | Canada         | true    |
-| James      | Jale      | 62    | Canada         | true    |
-| Wolfgang   | Winter    | 23    | Germany        | None    |
-| Shandra    | Shamas    | 57    | United Kingdom | true    |
-| Zaya       | Zaphora   | 40    | United Kingdom | true    |
-+------------+-----------+-------+----------------+---------+
 (Showing first 5 of 5 rows)
-
 ```
 
 ### Transform Columns with Expressions
@@ -278,17 +306,22 @@ To **drop** columns from the DataFrame, use the [`df.exclude()`][daft.DataFrame.
     ```
 
 ```{title="Output"}
+╭───────────────────┬───────┬────────────────┬─────────╮
+│ full_name         ┆ age   ┆ country        ┆ has_dog │
+│ ---               ┆ ---   ┆ ---            ┆ ---     │
+│ Utf8              ┆ Int64 ┆ Utf8           ┆ Boolean │
+╞═══════════════════╪═══════╪════════════════╪═════════╡
+│ Wolfgang Winter   ┆ 23    ┆ Germany        ┆ None    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Shandra Shamas    ┆ 57    ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Zaya Zaphora      ┆ 40    ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Ernesto Evergreen ┆ 34    ┆ Canada         ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ James Jale        ┆ 62    ┆ Canada         ┆ true    │
+╰───────────────────┴───────┴────────────────┴─────────╯
 
-+-------------------+-------+----------------+---------+
-| full_name         | age   | country        | has_dog |
-| Utf8              | Int64 | Utf8           | Boolean |
-+-------------------+-------+----------------+---------+
-| Ernesto Evergreen | 34    | Canada         | true    |
-| James Jale        | 62    | Canada         | true    |
-| Wolfgang Winter   | 23    | Germany        | None    |
-| Shandra Shamas    | 57    | United Kingdom | true    |
-| Zaya Zaphora      | 40    | United Kingdom | true    |
-+-------------------+-------+----------------+---------+
 (Showing first 5 of 5 rows)
 ```
 
@@ -301,17 +334,22 @@ Alternatively, you can also run your column transformation using Expressions dir
     ```
 
 ```{title="Output"}
+╭───────────────────┬───────┬────────────────┬─────────╮
+│ full_name         ┆ age   ┆ country        ┆ has_dog │
+│ ---               ┆ ---   ┆ ---            ┆ ---     │
+│ Utf8              ┆ Int64 ┆ Utf8           ┆ Boolean │
+╞═══════════════════╪═══════╪════════════════╪═════════╡
+│ Shandra Shamas    ┆ 57    ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Zaya Zaphora      ┆ 40    ┆ United Kingdom ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Wolfgang Winter   ┆ 23    ┆ Germany        ┆ None    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Ernesto Evergreen ┆ 34    ┆ Canada         ┆ true    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ James Jale        ┆ 62    ┆ Canada         ┆ true    │
+╰───────────────────┴───────┴────────────────┴─────────╯
 
-+-------------------+-------+----------------+---------+
-| full_name         | age   | country        | has_dog |
-| Utf8              | Int64 | Utf8           | Boolean |
-+-------------------+-------+----------------+---------+
-| Ernesto Evergreen | 34    | Canada         | true    |
-| James Jale        | 62    | Canada         | true    |
-| Wolfgang Winter   | 23    | Germany        | None    |
-| Shandra Shamas    | 57    | United Kingdom | true    |
-| Zaya Zaphora      | 40    | United Kingdom | true    |
-+-------------------+-------+----------------+---------+
 (Showing first 5 of 5 rows)
 ```
 
@@ -326,17 +364,22 @@ You can **sort** a DataFrame with the [`df.sort()`][daft.DataFrame.sort], in thi
     ```
 
 ```{title="Output"}
+╭────────────┬───────────┬───────┬────────────┬────────────────┬─────────┬───────────────────╮
+│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country        ┆ has_dog ┆ full_name         │
+│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---            ┆ ---     ┆ ---               │
+│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8           ┆ Boolean ┆ Utf8              │
+╞════════════╪═══════════╪═══════╪════════════╪════════════════╪═════════╪═══════════════════╡
+│ Wolfgang   ┆ Winter    ┆ 23    ┆ 2001-02-12 ┆ Germany        ┆ None    ┆ Wolfgang Winter   │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Ernesto    ┆ Evergreen ┆ 34    ┆ 1990-04-03 ┆ Canada         ┆ true    ┆ Ernesto Evergreen │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Zaya       ┆ Zaphora   ┆ 40    ┆ 1984-04-07 ┆ United Kingdom ┆ true    ┆ Zaya Zaphora      │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Shandra    ┆ Shamas    ┆ 57    ┆ 1967-01-02 ┆ United Kingdom ┆ true    ┆ Shandra Shamas    │
+├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ James      ┆ Jale      ┆ 62    ┆ 1962-03-24 ┆ Canada         ┆ true    ┆ James Jale        │
+╰────────────┴───────────┴───────┴────────────┴────────────────┴─────────┴───────────────────╯
 
-+------------+-----------+-------+------------+----------------+---------+
-| first_name | last_name | age   | DoB        | country        | has_dog |
-| Utf8       | Utf8      | Int64 | Date       | Utf8           | Boolean |
-+------------+-----------+-------+------------+----------------+---------+
-| Wolfgang   | Winter    | 23    | 2001-02-12 | Germany        | None    |
-| Ernesto    | Evergreen | 34    | 1990-04-03 | Canada         | true    |
-| Zaya       | Zaphora   | 40    | 1984-04-07 | United Kingdom | true    |
-| Shandra    | Shamas    | 57    | 1967-01-02 | United Kingdom | true    |
-| James      | Jale      | 62    | 1962-03-24 | Canada         | true    |
-+------------+-----------+-------+------------+----------------+---------+
 (Showing first 5 of 5 rows)
 ```
 
@@ -357,15 +400,18 @@ You can **group** and **aggregate** your data using the [`df.groupby()`][daft.Da
     ```
 
 ```{title="Output"}
+╭────────────────┬─────────┬─────────╮
+│ country        ┆ avg_age ┆ has_dog │
+│ ---            ┆ ---     ┆ ---     │
+│ Utf8           ┆ Float64 ┆ UInt64  │
+╞════════════════╪═════════╪═════════╡
+│ United Kingdom ┆ 48.5    ┆ 2       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Canada         ┆ 48      ┆ 2       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Germany        ┆ 23      ┆ 0       │
+╰────────────────┴─────────┴─────────╯
 
-+----------------+---------+---------+
-| country        | avg_age | has_dog |
-| Utf8           | Float64 | UInt64  |
-+----------------+---------+---------+
-| Canada         | 48      | 2       |
-| Germany        | 23      | 0       |
-| United Kingdom | 48.5    | 2       |
-+----------------+---------+---------+
 (Showing first 3 of 3 rows)
 ```
 

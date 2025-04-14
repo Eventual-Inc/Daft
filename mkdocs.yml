@@ -20,6 +20,7 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
+  - SQL: sql_overview.md
   - Sessions: sessions.md
   - Catalogs: catalogs.md
   - Spark Connect: spark_connect.md
@@ -161,6 +162,9 @@ extra:
 extra_css:
 - css/extra.css
 
+extra_javascript:
+- js/copy.js
+
 # Extensions
 markdown_extensions:
 - admonition
@@ -180,6 +184,8 @@ markdown_extensions:
 - pymdownx.emoji:
     emoji_index: !!python/name:material.extensions.emoji.twemoji
     emoji_generator: !!python/name:material.extensions.emoji.to_svg
+- pymdownx.highlight:
+    linenums: true
 
 # Plugins
 plugins:

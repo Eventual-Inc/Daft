@@ -91,3 +91,8 @@
 code.doc-symbol-method::after {
   content: "method";
 }
+
+/* don't display >>> */
+.highlight .gp {
+  display: none;
+}

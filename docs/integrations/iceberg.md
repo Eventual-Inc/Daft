@@ -115,7 +115,7 @@ References:
 
 Daft has high-level [Session](../sessions.md) and [Catalog](../catalogs.md) APIs
 to read and write Iceberg tables; however it is the [`daft.read_iceberg`][daft.read_iceberg] and
-[`df.write_iceberg`][daft.dataframe.write_iceberg] API which is ultimately the entry-point to Iceberg reads and
+[`df.write_iceberg`][daft.DataFrame.write_iceberg] API which is ultimately the entry-point to Iceberg reads and
 writes respectively. This section gives a short reference on those APIs and how
 they relate to both DataFrames and Iceberg.
 
@@ -140,9 +140,9 @@ metadata. The scan operator's primary method, `to_scan_tasks`, accepts pushdowns
 and the associated pushdowns. Finally, we read each data file's parquet to
 produce a stream of record batches which later operators consume and transform.
 
-#### [`write_iceberg`]
+#### [`write_iceberg`][daft.DataFrame.write_iceberg]
 
-Daft's [`write_iceberg`][daft.dataframe.write_iceberg] method writes the DataFrame's contents to the given PyIceberg table.
+Daft's [`write_iceberg`][daft.DataFrame.write_iceberg] method writes the DataFrame's contents to the given PyIceberg table.
 It works by creating a special *sink* operator which consumes all inputs and writes
 data files to the table's location.
 

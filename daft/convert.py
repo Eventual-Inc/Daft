@@ -27,14 +27,10 @@ def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
     Returns:
         DataFrame: DataFrame created from list of dictionaries.
 
-    Example:
-        ``` py linenums="1"
-        import daft
-
-        df = daft.from_pylist([{"foo": 1}, {"foo": 2}])
-        df.show()
-        ```
-        ```
+    Examples:
+        >>> import daft
+        >>> df = daft.from_pylist([{"foo": 1}, {"foo": 2}])
+        >>> df.show()
         ╭───────╮
         │ foo   │
         │ ---   │
@@ -44,9 +40,8 @@ def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
         ├╌╌╌╌╌╌╌┤
         │ 2     │
         ╰───────╯
-
+        <BLANKLINE>
         (Showing first 2 of 2 rows)
-        ```
     """
     from daft import DataFrame
 
