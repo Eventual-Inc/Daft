@@ -182,13 +182,13 @@ def test_with_column_folded_rayrunner():
     df = daft.from_pydict(DATA).repartition(2)
 
     # Because of Projection Folding optimizations, the expected resource request is the max of the three .with_column requests
-    expected = dict(num_cpus=1, num_gpus=None, memory=5_000_000)
+    expected = dict(num_cpus=1, num_gpus=None, memory=1_000_000)
     df = df.with_column(
         "no_requests",
         assert_resources(col("id"), **expected),
     )
 
-    assert_resources_1 = assert_resources.override_options(num_cpus=1, memory_bytes=5_000_000, num_gpus=None)
+    assert_resources_1 = assert_resources.override_options(num_cpus=1, memory_bytes=1_000_000, num_gpus=None)
     assert_resources_2 = assert_resources.override_options(num_cpus=1, memory_bytes=None, num_gpus=None)
     df = df.with_column(
         "more_memory_request",
@@ -233,10 +233,10 @@ def test_with_column_folded_rayrunner_class():
         assert_resources(col("id"), num_cpus=1),  # UDFs have 1 CPU by default
     )
 
-    assert_resources_1 = assert_resources.override_options(num_cpus=1, memory_bytes=5_000_000)
+    assert_resources_1 = assert_resources.override_options(num_cpus=1, memory_bytes=1_000_000)
     df = df.with_column(
         "more_memory_request",
-        assert_resources_1(col("id"), num_cpus=1, memory=5_000_000),
+        assert_resources_1(col("id"), num_cpus=1, memory=1_000_000),
     )
     assert_resources_2 = assert_resources.override_options(num_cpus=1, memory_bytes=None)
     df = df.with_column(
