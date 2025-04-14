@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
 import boto3
@@ -18,10 +17,10 @@ if TYPE_CHECKING:
     from mypy_boto3_glue import GlueClient
     from mypy_boto3_glue.type_defs import ColumnOutputTypeDef as GlueColumnInfo
     from mypy_boto3_glue.type_defs import TableTypeDef as GlueTableInfo
+    from pyiceberg.table import Table as PyIcebergTable
 
     from daft.daft import IOConfig
     from daft.dataframe import DataFrame
-    from daft.logical.builder import LogicalPlanBuilder
 else:
     GlueClient = Any
     GlueColumnInfo = Any
@@ -59,7 +58,7 @@ def load_glue(
     """
     c = GlueCatalog.__new__(GlueCatalog)
     c._name = name
-    options = {}
+    options: dict[str, Any] = {}
     if region_name is not None:
         options["region_name"] = region_name
     if api_version is not None:
@@ -82,15 +81,20 @@ def load_glue(
 
 class GlueCatalog(Catalog):
     """The GlueCatalog maps to an AWS Glue Database using a boto3 client."""
-    _client: GlueClient
+
     _name: str
+    _client: GlueClient
 
     # !! PATCH HERE TO PROVIDE CUSTOM GLUE TABLE IMPLEMENTATIONS !!
     _table_impls: list[type[GlueTable]] = []
 
     def __new__(cls, *args, **kwargs):
         if cls is GlueCatalog:
-            cls._table_impls = [GlueGlobTable]
+            cls._table_impls = [
+                GlueCsvTable,
+                GlueParquetTable,
+                GlueIcebergTable,
+            ]
         return super().__new__(cls)
 
     def __init__(self):
@@ -118,7 +122,7 @@ class GlueCatalog(Catalog):
 
     def create_namespace(self, identifier: Identifier | str):
         """Creates a namespace (database) in AWS Glue.
-        
+
         Args:
             identifier (Identifier | str): The name of the database to create.
 
@@ -128,7 +132,7 @@ class GlueCatalog(Catalog):
         try:
             self._client.create_database(
                 DatabaseInput={
-                    'Name': str(identifier),
+                    "Name": str(identifier),
                 }
             )
         except self._client.exceptions.AlreadyExistsException:
@@ -136,7 +140,7 @@ class GlueCatalog(Catalog):
 
     def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
         """Creates a table in AWS Glue.
-        
+
         Args:
             identifier (Identifier | str): The name of the table to create.
             source (TableSource | object): The source data for the table.
@@ -149,7 +153,7 @@ class GlueCatalog(Catalog):
 
     def drop_namespace(self, identifier: Identifier | str):
         """Drops a namespace (database) from AWS Glue.
-        
+
         Args:
             identifier (Identifier | str): The name of the database to drop.
 
@@ -157,53 +161,42 @@ class GlueCatalog(Catalog):
             None
         """
         try:
-            self._client.delete_database(
-                Name=str(identifier)
-            )
+            self._client.delete_database(Name=str(identifier))
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Namespace {identifier} not found")
 
     def drop_table(self, identifier: Identifier | str):
         """Drops a table from AWS Glue.
-        
+
         Args:
             identifier (Identifier | str): The name of the table to drop.
 
-        Returns:    
+        Returns:
             None
         """
-
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
 
         try:
-            self._client.delete_table(
-                DatabaseName=identifier[0],
-                Name=identifier[1]
-            )
+            self._client.delete_table(DatabaseName=identifier[0], Name=identifier[1])
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
 
-
     def get_table(self, identifier: Identifier | str) -> Table:
         """Gets a table by its identifier (<database_name>.<table_name>).
-        
-        Args:
-            identifier (Identifier | str): 
-        """
 
+        Args:
+            identifier (Identifier | str):
+        """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
 
         try:
-            res = self._client.get_table(
-                DatabaseName=identifier[0],
-                Name=identifier[1]
-            )
+            res = self._client.get_table(DatabaseName=identifier[0], Name=identifier[1])
             for impl in self._table_impls:
                 try:
                     return impl.from_table_info(self, res["Table"])
@@ -215,10 +208,10 @@ class GlueCatalog(Catalog):
 
     def has_namespace(self, identifier: Identifier | str) -> bool:
         """Checks if a namespace (database) exists in AWS Glue.
-        
+
         Args:
             identifier (Identifier | str): The name of the database to check.
-            
+
         Returns:
             bool: True if the namespace (database) exists, False otherwise.
         """
@@ -233,18 +226,17 @@ class GlueCatalog(Catalog):
 
         Args:
             pattern (str | None): Pattern is NOT supported by Glue.
-            
+
         Returns:
             list[Identifier]: List of namespace identifiers.
         """
-
         if pattern is not None:
             # Glue may add some kind of pattern to get_databases, then we can use their scheme.
             # Rather than making something up now which could later be broken.
             raise ValueError("GlueCatalog does not support using pattern filters with get_databases.")
 
         try:
-            req = {}
+            req = {}  # type: ignore
             namespaces = []
             while True:
                 res = self._client.get_databases(**req)
@@ -286,7 +278,8 @@ class GlueCatalog(Catalog):
 
 
 class GlueTable(Table, ABC):
-    """"""
+    """GlueTable is the base class for various Glue format."""
+
     _catalog: GlueCatalog
     _table: GlueTableInfo
 
@@ -308,58 +301,178 @@ class GlueTable(Table, ABC):
 
         return json.dumps(self._table, indent=4, default=str)
 
-class GlueGlobTable(GlueTable):
-    """GlueTable implemented by scanning files by glob prefix."""
-    _location: str
-    _format: str
+
+class GlueCsvTable(GlueTable):
+    """GlueTable implemented by s."""
+
+    _path: str
     _schema: Schema
-    _builder: LogicalPlanBuilder
+    _has_headers: bool = True
+    _delimiter: str = ","
+    _io_config: IOConfig | None = None
+    _hive_partitioning: bool = False
+    _hive_partitioning_cols: list[str] = []
 
     def __init__(self):
-        raise ValueError("GlueGlobTable.__init__() not supported!")
+        raise ValueError("GlueCsvTable.__init__() not supported!")
 
     @classmethod
-    def from_table_info(cls, catalog: GlueCatalog, table: GlueTableInfo) -> GlueGlobTable:
+    def from_table_info(cls, catalog: GlueCatalog, table: GlueTableInfo) -> GlueTable:
         # validate parameters information
         parameters: Parameters = table.get("Parameters", {})
-        if table_type := parameters.get("table_type"):
-            raise ValueError(f"GlueTableInfo had table type {table_type}, but should be none for a glob table.")
-        if "classification" not in parameters:
-            raise ValueError("GlueTableInfo is missing the required parameeter 'classification for glob table.")
 
-        t = GlueGlobTable.__new__(GlueGlobTable)
-        t._builder = cls._convert_classification(parameters["classification"])
+        # check 'csv'
+        classification = parameters.get("classification")
+        if classification is None:
+            raise ValueError("GlueTableInfo is missing the required parameter 'classification'.")
+        if classification.lower() != "csv":
+            raise ValueError(f"GlueTableInfo had classification {classification}, but expected 'CSV'")
+
+        t = GlueCsvTable.__new__(GlueCsvTable)
         t._catalog = catalog
         t._table = table
-        t._location = table["StorageDescriptor"]["Location"]
+        t._io_config = None  # todo
+
+        # parse csv format information
         t._schema = _convert_glue_schema(table["StorageDescriptor"]["Columns"])
+        t._path = table["StorageDescriptor"]["Location"]
+        t._has_headers = parameters.get("skip.header.line.count", "0") == "1"
+        t._delimiter = parameters.get("delimiter", ",")
+        t._hive_partitioning = False
+        t._hive_partitioning_cols = []
+
         return t
 
     def read(self, **options) -> DataFrame:
-        return DataFrame(self._builder)
+        from daft.io._csv import read_csv
+
+        return read_csv(
+            path=self._path,
+            infer_schema=False,
+            schema={c.name: c.dtype for c in self._schema},
+            has_headers=self._has_headers,
+            delimiter=self._delimiter,
+            double_quote=True,
+            quote=None,
+            escape_char=None,
+            comment=None,
+            allow_variable_columns=False,
+            io_config=self._io_config,
+            file_path_column=None,
+            hive_partitioning=self._hive_partitioning,
+        )
 
     def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
-        # I think we should be saving parsed format info rather than a builder
-        raise NotImplementedError()
+        df.write_csv(
+            root_dir=self._path,
+            write_mode=mode,
+            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+        )
+
+
+class GlueParquetTable(GlueTable):
+    """GlueTable implemented by s."""
+
+    _path: str
+    _schema: Schema
+    _io_config: IOConfig | None = None
+    _hive_partitioning: bool = False
+    _hive_partitioning_cols: list[str] = []
+
+    def __init__(self):
+        raise ValueError("GlueParquetTable.__init__() not supported!")
 
     @classmethod
-    def _convert_classification(cls, classification: str, table: GlueTableInfo) -> LogicalPlanBuilder:
-        classifications = {
-            "csv": cls._from_csv,
-            "parquet": cls._from_parquet,
-        }
-        if factory := classifications[classification.lower()]:
-            return factory(table)
-        else:
-            raise ValueError(f"Unknown classification {classification}")
+    def from_table_info(cls, catalog: GlueCatalog, table: GlueTableInfo) -> GlueTable:
+        # validate parameters information
+        parameters: Parameters = table.get("Parameters", {})
+
+        # check 'parquet'
+        classification = parameters.get("classification")
+        if classification is None:
+            raise ValueError("GlueTableInfo is missing the required parameter 'classification'.")
+        if classification.lower() != "parquet":
+            raise ValueError(f"GlueTableInfo had classification {classification}, but expected 'parquet'")
+
+        t = GlueParquetTable.__new__(GlueParquetTable)
+        t._catalog = catalog
+        t._table = table
+        t._io_config = None  # todo
+
+        # parse parquet format information
+        t._schema = _convert_glue_schema(table["StorageDescriptor"]["Columns"])
+        t._path = table["StorageDescriptor"]["Location"]
+
+        return t
+
+    def read(self, **options) -> DataFrame:
+        from daft.io._parquet import read_parquet
+
+        return read_parquet(
+            path=self._path,
+            row_groups=None,
+            infer_schema=False,
+            schema={c.name: c.dtype for c in self._schema},
+            io_config=self._io_config,
+            file_path_column=None,
+            hive_partitioning=self._hive_partitioning,
+            coerce_int96_timestamp_unit=None,
+            schema_hints=None,
+        )
+
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+        raise NotImplementedError
+
+
+class GlueIcebergTable(GlueTable):
+    _io_config: IOConfig | None
+    _pyiceberg_table: PyIcebergTable
+
+    def __init__(self):
+        raise ValueError("GlueIcebergTable.__init__() not supported!")
 
     @classmethod
-    def _from_csv(cls, table: GlueTableInfo) -> LogicalPlanBuilder:
-        raise NotImplementedError("_from_csv")
+    def from_table_info(cls, catalog: GlueCatalog, table: GlueTableInfo) -> GlueTable:
+        parameters: Parameters = table.get("Parameters", {})
+
+        # verify we have table_type = "ICEBERG"
+        table_type = parameters.get("table_type")
+        if table_type is None:
+            raise ValueError("GlueIcebegTable is missing the required 'table_type' parameter.")
+        if table_type.lower() != "iceberg":
+            raise ValueError(f"GlueIcebergTable had table_type {table_type}, but expected 'ICEBERG'")
+
+        # create a pyiceberg catalog so we can write
+        t = GlueIcebergTable.__new__(GlueIcebergTable)
+        t._catalog = catalog
+        t._table = table
+        t._io_config = None  # todo
+        t._pyiceberg_table = cls._create_pyiceberg_table(catalog, table)
+
+        return t
 
     @classmethod
-    def _from_parquet(cls, table: GlueTableInfo) -> LogicalPlanBuilder:
-        raise NotImplementedError("_from_parquet")
+    def _create_pyiceberg_table(cls, catalog: GlueCatalog, table: GlueTableInfo) -> PyIcebergTable:
+        from pyiceberg.catalog.glue import GlueCatalog as PyIcebergGlueCatalog
+
+        # cannot create a pyiceberg GlueCatalog with custom client directly
+        gc = PyIcebergGlueCatalog.__new__(PyIcebergGlueCatalog)
+        gc.name = catalog.name
+        gc.properties = {}
+        gc.glue = catalog._client
+
+        # this will save the pyiceberg glue catalog ref
+        return gc._convert_glue_to_iceberg(table)
+
+    def read(self, **options) -> DataFrame:
+        from daft.io._iceberg import read_iceberg
+
+        return read_iceberg(
+            table=self._pyiceberg_table, snapshot_id=options.get("snapshot_id"), io_config=self._io_config
+        )
+
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+        df.write_iceberg(self._pyiceberg_table, mode=mode)
 
 
 def _convert_glue_schema(columns: list[GlueColumnInfo]) -> Schema:
