@@ -1038,15 +1038,12 @@ jobs:
       python-version: '3.9'
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python ${{ env.python-version }}
-      uses: actions/setup-python@v5
+    - name: Install Python and uv
+      uses: astral-sh/setup-uv@v5
       with:
         python-version: ${{ env.python-version }}
-
     - name: Install pre-commit
-      run: |
-        pip install uv
-        uv pip install pre-commit
+      run: uv pip install pre-commit
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
