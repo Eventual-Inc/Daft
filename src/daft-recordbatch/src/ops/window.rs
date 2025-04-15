@@ -3,7 +3,7 @@ use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
     prelude::*,
 };
-use daft_dsl::{AggExpr, ExprRef};
+use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
 
 use crate::RecordBatch;
 
@@ -77,6 +77,110 @@ impl RecordBatch {
 
         // Union the original data with the window result
         self.union(&window_result)
+    }
+
+    pub fn window_agg_dynamic_frame(
+        &self,
+        name: String,
+        agg_expr: &AggExpr,
+        group_by: &[ExprRef],
+        _order_by: &[ExprRef],
+        _descending: &[bool],
+        frame: &WindowFrame,
+    ) -> DaftResult<Self> {
+        // Check that RANGE frames are not supported yet
+        if matches!(frame.frame_type, WindowFrameType::Range) {
+            return Err(DaftError::ValueError(
+                "RANGE frame type is not supported yet for window_agg_dynamic_frame".into(),
+            ));
+        }
+
+        if group_by.is_empty() {
+            return Err(DaftError::ValueError(
+                "Group by cannot be empty for window dynamic frame aggregation".into(),
+            ));
+        }
+
+        // Table with just the groupby columns.
+        let groupby_table = self.eval_expression_list(group_by)?;
+
+        // Get the grouped values (by indices, one array of indices per group).
+        let (_, groupvals_indices) = groupby_table.make_groups()?;
+
+        // Prepare vectors to hold our frame indices for each row
+        let mut result_values = Vec::with_capacity(self.len());
+
+        // For each partition of rows
+        for indices in &groupvals_indices {
+            // For each row in the partition
+            for (i, &row_idx) in indices.iter().enumerate() {
+                // Calculate frame boundaries based on frame specification
+                let start_idx = match &frame.start {
+                    WindowBoundary::UnboundedPreceding() => 0,
+                    WindowBoundary::Offset(offset) => {
+                        let pos = i as i64 + offset;
+                        pos.max(0) as usize
+                    }
+                    WindowBoundary::UnboundedFollowing() => {
+                        return Err(DaftError::ValueError(
+                            "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
+                        ));
+                    }
+                };
+
+                let end_idx = match &frame.end {
+                    WindowBoundary::UnboundedFollowing() => indices.len(),
+                    WindowBoundary::Offset(offset) => {
+                        let pos = i as i64 + offset;
+                        (pos + 1).min(indices.len() as i64) as usize
+                    }
+                    WindowBoundary::UnboundedPreceding() => {
+                        return Err(DaftError::ValueError(
+                            "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
+                        ));
+                    }
+                };
+
+                // Validate frame boundaries
+                if start_idx > end_idx {
+                    return Err(DaftError::ValueError(format!(
+                        "Invalid window frame: start_idx ({}) > end_idx ({})",
+                        start_idx, end_idx
+                    )));
+                }
+
+                // Extract the rows in the frame
+                let frame_indices = indices[start_idx..end_idx].to_vec();
+
+                // Handle empty frame case
+                if frame_indices.is_empty() {
+                    continue;
+                }
+
+                // Create a UInt64Array for the frame indices
+                let frame_idx_array = UInt64Array::from(("indices", frame_indices)).into_series();
+
+                // Take the rows for this frame
+                let frame_data = self.take(&frame_idx_array)?;
+
+                // Apply aggregation to the frame data
+                // We pass None for groups since we're already processing one group at a time
+                let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
+
+                // Store the aggregated result for this row
+                result_values[row_idx as usize] = agg_result;
+            }
+        }
+
+        // Create a single Series from all the aggregation results
+        let final_result_series = Series::concat(&result_values.iter().collect::<Vec<_>>())?;
+        let renamed_result = final_result_series.rename(&name);
+
+        // Create a new RecordBatch with the window column
+        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
+
+        // Union the original data with the window result
+        self.union(&window_batch)
     }
 
     pub fn window_row_number(&self, name: String, group_by: &[ExprRef]) -> DaftResult<Self> {

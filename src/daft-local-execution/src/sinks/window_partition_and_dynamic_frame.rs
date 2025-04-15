@@ -1,0 +1,292 @@
+use std::sync::Arc;
+
+use common_error::DaftResult;
+use daft_core::prelude::SchemaRef;
+use daft_dsl::{resolved_col, AggExpr, ExprRef, WindowFrame};
+use daft_micropartition::MicroPartition;
+use daft_recordbatch::RecordBatch;
+use itertools::Itertools;
+use tracing::{instrument, Span};
+
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSinkStatus,
+};
+use crate::ExecutionTaskSpawner;
+
+#[derive(Default)]
+struct SinglePartitionWindowState {
+    partitions: Vec<RecordBatch>,
+}
+
+enum WindowPartitionAndDynamicFrameState {
+    Accumulating {
+        inner_states: Vec<Option<SinglePartitionWindowState>>,
+    },
+    Done,
+}
+
+impl WindowPartitionAndDynamicFrameState {
+    fn new(num_partitions: usize) -> Self {
+        let inner_states = (0..num_partitions).map(|_| None).collect::<Vec<_>>();
+        Self::Accumulating { inner_states }
+    }
+
+    fn push(&mut self, input: Arc<MicroPartition>, partition_by: &[ExprRef]) -> DaftResult<()> {
+        if let Self::Accumulating {
+            ref mut inner_states,
+        } = self
+        {
+            let partitioned = input.partition_by_hash(partition_by, inner_states.len())?;
+            for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+                let state = state.get_or_insert_with(SinglePartitionWindowState::default);
+                for table in p.get_tables()?.iter() {
+                    state.partitions.push(table.clone());
+                }
+            }
+        } else {
+            panic!("WindowPartitionAndDynamicFrameSink should be in Accumulating state");
+        }
+        Ok(())
+    }
+
+    fn finalize(&mut self) -> Vec<Option<SinglePartitionWindowState>> {
+        let res = if let Self::Accumulating {
+            ref mut inner_states,
+        } = self
+        {
+            std::mem::take(inner_states)
+        } else {
+            panic!("WindowPartitionAndDynamicFrameSink should be in Accumulating state");
+        };
+        *self = Self::Done;
+        res
+    }
+}
+
+impl BlockingSinkState for WindowPartitionAndDynamicFrameState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+struct WindowPartitionAndDynamicFrameParams {
+    aggregations: Vec<AggExpr>,
+    aliases: Vec<String>,
+    partition_by: Vec<ExprRef>,
+    order_by: Vec<ExprRef>,
+    descending: Vec<bool>,
+    frame: WindowFrame,
+    original_schema: SchemaRef,
+}
+
+pub struct WindowPartitionAndDynamicFrameSink {
+    window_partition_and_dynamic_frame_params: Arc<WindowPartitionAndDynamicFrameParams>,
+}
+
+impl WindowPartitionAndDynamicFrameSink {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        aggregations: &[AggExpr],
+        aliases: &[String],
+        partition_by: &[ExprRef],
+        order_by: &[ExprRef],
+        descending: &[bool],
+        frame: &WindowFrame,
+        schema: &SchemaRef,
+    ) -> DaftResult<Self> {
+        Ok(Self {
+            window_partition_and_dynamic_frame_params: Arc::new(
+                WindowPartitionAndDynamicFrameParams {
+                    aggregations: aggregations.to_vec(),
+                    aliases: aliases.to_vec(),
+                    partition_by: partition_by.to_vec(),
+                    order_by: order_by.to_vec(),
+                    descending: descending.to_vec(),
+                    frame: frame.clone(),
+                    original_schema: schema.clone(),
+                },
+            ),
+        })
+    }
+
+    fn num_partitions(&self) -> usize {
+        self.max_concurrency()
+    }
+}
+
+impl BlockingSink for WindowPartitionAndDynamicFrameSink {
+    #[instrument(skip_all, name = "WindowPartitionAndDynamicFrameSink::sink")]
+    fn sink(
+        &self,
+        input: Arc<MicroPartition>,
+        mut state: Box<dyn BlockingSinkState>,
+        spawner: &ExecutionTaskSpawner,
+    ) -> BlockingSinkSinkResult {
+        let params = self.window_partition_and_dynamic_frame_params.clone();
+        spawner
+            .spawn(
+                async move {
+                    let window_state = state
+                        .as_any_mut()
+                        .downcast_mut::<WindowPartitionAndDynamicFrameState>()
+                        .expect("WindowPartitionAndDynamicFrameSink should have WindowPartitionAndDynamicFrameState");
+
+                    window_state.push(input, &params.partition_by)?;
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
+            .into()
+    }
+
+    #[instrument(skip_all, name = "WindowPartitionAndDynamicFrameSink::finalize")]
+    fn finalize(
+        &self,
+        states: Vec<Box<dyn BlockingSinkState>>,
+        spawner: &ExecutionTaskSpawner,
+    ) -> BlockingSinkFinalizeResult {
+        let params = self.window_partition_and_dynamic_frame_params.clone();
+        let num_partitions = self.num_partitions();
+
+        spawner
+            .spawn(
+                async move {
+                    let mut state_iters = states
+                        .into_iter()
+                        .map(|mut state| {
+                            state
+                                .as_any_mut()
+                                .downcast_mut::<WindowPartitionAndDynamicFrameState>()
+                                .expect(
+                                    "WindowPartitionAndDynamicFrameSink should have WindowPartitionAndDynamicFrameState",
+                                )
+                                .finalize()
+                                .into_iter()
+                        })
+                        .collect::<Vec<_>>();
+
+                    let mut per_partition_tasks = tokio::task::JoinSet::new();
+
+                    for _partition_idx in 0..num_partitions {
+                        let per_partition_state = state_iters.iter_mut().map(|state| {
+                            state.next().expect(
+                                "WindowPartitionAndDynamicFrameState should have SinglePartitionWindowState",
+                            )
+                        });
+
+                        let all_partitions: Vec<RecordBatch> = per_partition_state
+                            .flatten()
+                            .flat_map(|state| state.partitions)
+                            .collect();
+
+                        if all_partitions.is_empty() {
+                            continue;
+                        }
+
+                        let params = params.clone();
+                        per_partition_tasks.spawn(async move {
+                            let input_data = RecordBatch::concat(&all_partitions)?;
+
+                            let sorted_data = input_data.sort(&params.order_by, &params.descending, &[true])?;
+
+                            // let result = sorted_data.window_agg_dynamic_frame(
+                            //     &params.aggregations,
+                            //     &params.aliases,
+                            //     &params.partition_by,
+                            //     &params.order_by,
+                            //     &params.descending,
+                            //     &params.frame,
+                            // )?;
+
+                            let mut result = sorted_data;
+                            for (agg, name) in params.aggregations.iter().zip(params.aliases.iter()) {
+                                result = result.window_agg_dynamic_frame(
+                                    name.clone(),
+                                    agg,
+                                    &params.partition_by,
+                                    &params.order_by,
+                                    &params.descending,
+                                    &params.frame,
+                                )?;
+                            }
+
+                            let all_projections = params
+                                .original_schema
+                                .fields
+                                .keys()
+                                .map(|k| resolved_col(k.clone()))
+                                .collect::<Vec<_>>();
+
+                            let final_result = result.eval_expression_list(&all_projections)?;
+                            Ok(final_result)
+                        });
+                    }
+
+                    let results = per_partition_tasks
+                        .join_all()
+                        .await
+                        .into_iter()
+                        .collect::<DaftResult<Vec<_>>>()?;
+
+                    if results.is_empty() {
+                        let empty_result =
+                            MicroPartition::empty(Some(params.original_schema.clone()));
+                        return Ok(Some(Arc::new(empty_result)));
+                    }
+
+                    let final_result = MicroPartition::new_loaded(
+                        params.original_schema.clone(),
+                        results.into(),
+                        None,
+                    );
+                    Ok(Some(Arc::new(final_result)))
+                },
+                Span::current(),
+            )
+            .into()
+    }
+
+    fn name(&self) -> &'static str {
+        "WindowPartitionAndDynamicFrame"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut display = vec![];
+        display.push(format!(
+            "WindowPartitionAndDynamicFrame: {}",
+            self.window_partition_and_dynamic_frame_params
+                .aggregations
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        display.push(format!(
+            "Partition by: {}",
+            self.window_partition_and_dynamic_frame_params
+                .partition_by
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        display.push(format!(
+            "Order by: {}",
+            self.window_partition_and_dynamic_frame_params
+                .order_by
+                .iter()
+                .map(|e| e.to_string())
+                .join(", ")
+        ));
+        display.push(format!(
+            "Frame: {:?}",
+            self.window_partition_and_dynamic_frame_params.frame
+        ));
+        display
+    }
+
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
+        Ok(Box::new(WindowPartitionAndDynamicFrameState::new(
+            self.num_partitions(),
+        )))
+    }
+}
