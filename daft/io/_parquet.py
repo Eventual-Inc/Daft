@@ -47,14 +47,12 @@ def read_parquet(
     Returns:
         DataFrame: parsed DataFrame
 
-    Example:
-        ``` py linenums="1"
-        df = daft.read_parquet("/path/to/file.parquet")
-        df = daft.read_parquet("/path/to/directory")
-        df = daft.read_parquet("/path/to/files-*.parquet")
-        df = daft.read_parquet("s3://path/to/files-*.parquet")
-        df = daft.read_parquet("gs://path/to/files-*.parquet")
-        ```
+    Examples:
+        >>> df = daft.read_parquet("/path/to/file.parquet")
+        >>> df = daft.read_parquet("/path/to/directory")
+        >>> df = daft.read_parquet("/path/to/files-*.parquet")
+        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
+        >>> df = daft.read_parquet("gs://path/to/files-*.parquet")
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

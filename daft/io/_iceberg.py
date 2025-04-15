@@ -67,20 +67,19 @@ def read_iceberg(
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table
 
-    !!! note "This function requires the use of [PyIceberg](https://py.iceberg.apache.org/), which is the Apache Iceberg's official project for Python."
+    Note:
+        This function requires the use of [PyIceberg](https://py.iceberg.apache.org/), which is the Apache Iceberg's official project for Python.
 
-    Example:
-        ``` py linenums="1"
-        import pyiceberg
-
-        table = pyiceberg.Table(...)
-        df = daft.read_iceberg(table)
-
-        # Filters on this dataframe can now be pushed into
-        # the read operation from Iceberg
-        df = df.where(df["foo"] > 5)
-        df.show()
-        ```
+    Examples:
+        >>> import pyiceberg
+        >>>
+        >>> table = pyiceberg.Table(...)
+        >>> df = daft.read_iceberg(table)
+        >>>
+        >>> # Filters on this dataframe can now be pushed into
+        >>> # the read operation from Iceberg
+        >>> df = df.where(df["foo"] > 5)
+        >>> df.show()
     """
     import pyiceberg
 

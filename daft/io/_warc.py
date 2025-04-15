@@ -37,14 +37,12 @@ def read_warc(
             metadata column ("WARC-Identified-Payload-Type"), one column "warc_content" with the raw byte content of the WARC record,
             and one column "warc_headers" with the remaining headers of the WARC record stored as a JSON string.
 
-    Example:
-        ``` py linenums="1"
-        df = daft.read_warc("/path/to/file.warc")
-        df = daft.read_warc("/path/to/directory")
-        df = daft.read_warc("/path/to/files-*.warc")
-        df = daft.read_warc("s3://path/to/files-*.warc")
-        df = daft.read_warc("gs://path/to/files-*.warc")
-        ```
+    Examples:
+        >>> df = daft.read_warc("/path/to/file.warc")
+        >>> df = daft.read_warc("/path/to/directory")
+        >>> df = daft.read_warc("/path/to/files-*.warc")
+        >>> df = daft.read_warc("s3://path/to/files-*.warc")
+        >>> df = daft.read_warc("gs://path/to/files-*.warc")
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

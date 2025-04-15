@@ -53,13 +53,11 @@ def read_csv(
     Returns:
         DataFrame: parsed DataFrame
 
-    Example:
-        ``` py linenums="1"
-        df = daft.read_csv("/path/to/file.csv")
-        df = daft.read_csv("/path/to/directory")
-        df = daft.read_csv("/path/to/files-*.csv")
-        df = daft.read_csv("s3://path/to/files-*.csv")
-        ```
+    Examples:
+        >>> df = daft.read_csv("/path/to/file.csv")
+        >>> df = daft.read_csv("/path/to/directory")
+        >>> df = daft.read_csv("/path/to/files-*.csv")
+        >>> df = daft.read_csv("s3://path/to/files-*.csv")
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")

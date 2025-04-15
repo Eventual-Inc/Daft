@@ -47,49 +47,43 @@ def read_sql(
     Returns:
         DataFrame: Dataframe containing the results of the query
 
-    !!! note
-        1. Supported dialects:
+    Note:
+        1. **Supported dialects**:
             Daft uses [SQLGlot](https://sqlglot.com/sqlglot.html) to build and translate SQL queries between dialects. For a list of supported dialects, see [SQLGlot's dialect documentation](https://sqlglot.com/sqlglot/dialects.html).
 
-        2. Partitioning:
+        2. **Partitioning**:
             When `partition_col` is specified, the function partitions the query based on that column.
             You can define `num_partitions` or leave it to Daft to decide.
             Daft uses the `partition_bound_strategy` parameter to determine the partitioning strategy:
             - `min_max`: Daft calculates the minimum and maximum values of the specified column, then partitions the query using equal ranges between the minimum and maximum values.
             - `percentile`: Daft calculates the specified column's percentiles via a `PERCENTILE_DISC` function to determine partitions (e.g., for `num_partitions=3`, it uses the 33rd and 66th percentiles).
 
-        3. Execution:
+        3. **Execution**:
             Daft executes SQL queries using using [ConnectorX](https://sfu-db.github.io/connector-x/intro.html) or [SQLAlchemy](https://docs.sqlalchemy.org/en/20/orm/quickstart.html#create-an-engine),
             preferring ConnectorX unless a SQLAlchemy connection factory is specified or the database dialect is unsupported by ConnectorX.
 
-        4. Pushdowns:
+        4. **Pushdowns**:
             Daft pushes down operations such as filtering, projections, and limits into the SQL query when possible.
             You can disable pushdowns by setting `disable_pushdowns_to_sql=True`, which will execute the SQL query as is.
 
-    Example:
+    Examples:
         Read data from a SQL query and a database URL:
-        ```
-        df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db")
-        ```
+
+        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db")
 
         Read data from a SQL query and a SQLAlchemy connection factory:
-        ```
-        def create_conn():
-            return sqlalchemy.create_engine("sqlite:///my_database.db").connect()
 
-
-        df = daft.read_sql("SELECT * FROM my_table", create_conn)
-        ```
+        >>> def create_conn():
+        ...     return sqlalchemy.create_engine("sqlite:///my_database.db").connect()
+        >>> df = daft.read_sql("SELECT * FROM my_table", create_conn)
 
         Read data from a SQL query and partition the data by a column:
-        ```
-        df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id")
-        ```
+
+        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id")
 
         Read data from a SQL query and partition the data into 3 partitions:
-        ```
-        df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id", num_partitions=3)
-        ```
+
+        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id", num_partitions=3)
     """
     if num_partitions is not None and partition_col is None:
         raise ValueError("Failed to execute sql: partition_col must be specified when num_partitions is specified")

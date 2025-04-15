@@ -94,9 +94,10 @@ def _utc_now() -> datetime:
 
 
 class DataFrame:
-    # """A Daft DataFrame is a table of data.
-    # It has columns, where each column has a type and the same number of items (rows) as all other columns.
-    # """
+    """A Daft DataFrame is a table of data.
+
+    It has columns, where each column has a type and the same number of items (rows) as all other columns.
+    """
 
     def __init__(self, builder: LogicalPlanBuilder) -> None:
         """Constructs a DataFrame according to a given LogicalPlan.
@@ -299,8 +300,7 @@ class DataFrame:
                 available on the machine).
             column_format: the format of the columns to iterate over. One of "python" or "arrow". Defaults to "python".
 
-        !!! note "A quick note on configuring asynchronous/parallel execution using `results_buffer_size`."
-
+        Note: A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
             The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
             Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
 
@@ -310,19 +310,15 @@ class DataFrame:
 
             The default value is the total number of CPUs available on the current machine.
 
-        Example:
-            ``` py linenums="1"
-            import daft
-
-            df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
-            for row in df.iter_rows():
-                print(row)
-            ```
-            ```
-            {"foo": 1, "bar": "a"}
-            {"foo": 2, "bar": "b"}
-            {"foo": 3, "bar": "c"}
-            ```
+        Examples:
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
+            >>> for row in df.iter_rows():
+            ...     print(row)
+            {'foo': 1, 'bar': 'a'}
+            {'foo': 2, 'bar': 'b'}
+            {'foo': 3, 'bar': 'c'}
 
         !!! tip "See also [`df.iter_partitions()`][daft.DataFrame.iter_partitions]: iterator over entire partitions instead of single rows"
         """
@@ -414,8 +410,7 @@ class DataFrame:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
                 available on the machine).
 
-        !!! note "A quick note on configuring asynchronous/parallel execution using `results_buffer_size`."
-
+        Note: A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
             The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
             Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
 
@@ -425,45 +420,42 @@ class DataFrame:
 
             The default value is the total number of CPUs available on the current machine.
 
-        Args:
-            results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
-                available on the machine).
-
-        >>> import daft
-        >>>
-        >>> daft.context.set_runner_ray()  # doctest: +SKIP
-        >>>
-        >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
-        >>> for part in df.iter_partitions():
-        ...     print(part)  # doctest: +SKIP
-        MicroPartition with 2 rows:
-        TableState: Loaded. 1 tables
-        ╭───────┬──────╮
-        │ foo   ┆ bar  │
-        │ ---   ┆ ---  │
-        │ Int64 ┆ Utf8 │
-        ╞═══════╪══════╡
-        │ 1     ┆ a    │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 2     ┆ b    │
-        ╰───────┴──────╯
-
-
-        Statistics: missing
-
-        MicroPartition with 1 rows:
-        TableState: Loaded. 1 tables
-        ╭───────┬──────╮
-        │ foo   ┆ bar  │
-        │ ---   ┆ ---  │
-        │ Int64 ┆ Utf8 │
-        ╞═══════╪══════╡
-        │ 3     ┆ c    │
-        ╰───────┴──────╯
-
-
-        Statistics: missing
-        ```
+        Examples:
+            >>> import daft
+            >>>
+            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>>
+            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
+            >>> for part in df.iter_partitions():
+            ...     print(part)  # doctest: +SKIP
+            MicroPartition with 2 rows:
+            TableState: Loaded. 1 tables
+            ╭───────┬──────╮
+            │ foo   ┆ bar  │
+            │ ---   ┆ ---  │
+            │ Int64 ┆ Utf8 │
+            ╞═══════╪══════╡
+            │ 1     ┆ a    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ 2     ┆ b    │
+            ╰───────┴──────╯
+            <BLANKLINE>
+            <BLANKLINE>
+            Statistics: missing
+            <BLANKLINE>
+            MicroPartition with 1 rows:
+            TableState: Loaded. 1 tables
+            ╭───────┬──────╮
+            │ foo   ┆ bar  │
+            │ ---   ┆ ---  │
+            │ Int64 ┆ Utf8 │
+            ╞═══════╪══════╡
+            │ 3     ┆ c    │
+            ╰───────┴──────╯
+            <BLANKLINE>
+            <BLANKLINE>
+            Statistics: missing
+            <BLANKLINE>
         """
         if results_buffer_size == "num_cpus":
             results_buffer_size = multiprocessing.cpu_count()
@@ -629,8 +621,6 @@ class DataFrame:
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
 
-        !!! note "This call is **blocking** and will execute the DataFrame when called"
-
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
@@ -640,6 +630,9 @@ class DataFrame:
 
         Returns:
             DataFrame: The filenames that were written out as strings.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
@@ -699,7 +692,7 @@ class DataFrame:
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
 
-        !!! note "This call is **blocking** and will execute the DataFrame when called"
+        Note: "This call is **blocking** and will execute the DataFrame when called"
 
         Args:
             root_dir (str): root file path to write parquet files to.

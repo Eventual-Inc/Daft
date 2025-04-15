@@ -40,13 +40,11 @@ def read_json(
     Returns:
         DataFrame: parsed DataFrame
 
-    Example:
-        ``` py linenums="1"
-        df = daft.read_json("/path/to/file.json")
-        df = daft.read_json("/path/to/directory")
-        df = daft.read_json("/path/to/files-*.json")
-        df = daft.read_json("s3://path/to/files-*.json")
-        ```
+    Examples:
+        >>> df = daft.read_json("/path/to/file.json")
+        >>> df = daft.read_json("/path/to/directory")
+        >>> df = daft.read_json("/path/to/files-*.json")
+        >>> df = daft.read_json("s3://path/to/files-*.json")
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of JSON filepaths")

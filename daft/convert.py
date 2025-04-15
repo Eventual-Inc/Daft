@@ -59,14 +59,10 @@ def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
     Returns:
         DataFrame: DataFrame created from dictionary of columns
 
-    Example:
-        ``` py linenums="1"
-        import daft
-
-        df = daft.from_pydict({"foo": [1, 2]})
-        df.show()
-        ```
-        ```
+    Examples:
+        >>> import daft
+        >>> df = daft.from_pydict({"foo": [1, 2]})
+        >>> df.show()
         ╭───────╮
         │ foo   │
         │ ---   │
@@ -76,9 +72,8 @@ def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
         ├╌╌╌╌╌╌╌┤
         │ 2     │
         ╰───────╯
-
+        <BLANKLINE>
         (Showing first 2 of 2 rows)
-        ```
     """
     from daft import DataFrame
 
@@ -95,16 +90,12 @@ def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) 
     Returns:
         DataFrame: DataFrame created from the provided pyarrow Table.
 
-    Example:
-        ``` py linenums="1"
-        import pyarrow as pa
-        import daft
-
-        t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
-        df = daft.from_arrow(t)
-        df.show()
-        ```
-        ```
+    Examples:
+        >>> import pyarrow as pa
+        >>> import daft
+        >>> t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+        >>> df = daft.from_arrow(t)
+        >>> df.show()
         ╭───────┬──────╮
         │ a     ┆ b    │
         │ ---   ┆ ---  │
@@ -116,9 +107,8 @@ def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) 
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 3     ┆ baz  │
         ╰───────┴──────╯
-
+        <BLANKLINE>
         (Showing first 3 of 3 rows)
-        ```
     """
     from daft import DataFrame
 
@@ -135,16 +125,12 @@ def from_pandas(data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame
     Returns:
         DataFrame: Daft DataFrame created from the provided pandas DataFrame.
 
-    Example:
-        ``` py linenums="1"
-        import pandas as pd
-        import daft
-
-        pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
-        df = daft.from_pandas(pd_df)
-        df.show()
-        ```
-        ```
+    Examples:
+        >>> import pandas as pd
+        >>> import daft
+        >>> pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+        >>> df = daft.from_pandas(pd_df)
+        >>> df.show()
         ╭───────┬──────╮
         │ a     ┆ b    │
         │ ---   ┆ ---  │
@@ -156,9 +142,8 @@ def from_pandas(data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 3     ┆ baz  │
         ╰───────┴──────╯
-
+        <BLANKLINE>
         (Showing first 3 of 3 rows)
-        ```
     """
     from daft import DataFrame
 
@@ -172,7 +157,11 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
     Args:
         ds: The Ray Dataset to create a Daft DataFrame from.
 
-    !!! note "This function can only work if Daft is running using the RayRunner."
+    Returns:
+        DataFrame: Daft DataFrame created from the provided Ray dataset.
+
+    Note:
+        This function can only work if Daft is running using the RayRunner
 
     """
     from daft import DataFrame
@@ -187,7 +176,12 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
     Args:
         ddf: The Dask DataFrame to create a Daft DataFrame from.
 
-    !!! note "The provided Dask DataFrame must have been created using [Dask-on-Ray](https://docs.ray.io/en/latest/ray-more-libs/dask-on-ray.html). This function can only work if Daft is running using the RayRunner."
+    Returns:
+        DataFrame: Daft DataFrame created from the provided Dask DataFrame.
+
+    Note:
+        The provided Dask DataFrame must have been created using [Dask-on-Ray](https://docs.ray.io/en/latest/ray-more-libs/dask-on-ray.html).
+        This function can only work if Daft is running using the RayRunner.
 
     """
     from daft import DataFrame
