@@ -1,11 +1,10 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
+use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef, TableSource, View};
 use daft_dsl::functions::python::WrappedUDFClass;
 use uuid::Uuid;
 
 use crate::{
-    ambiguous_identifier_err,
     error::Result,
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
@@ -311,9 +310,23 @@ impl Session {
         }
     }
 
-    pub fn attach_function(&self, name: String, func: WrappedUDFClass) -> Result<()> {
-        self.state_mut().functions.bind(name, func);
-        Ok(())
+    pub fn attach_function(&self, func: WrappedUDFClass, alias: Option<String>) -> Result<()> {
+        #[cfg(feature = "python")]
+        {
+            let name = match alias {
+                Some(name) => name,
+                None => func.name()?,
+            };
+
+            self.state_mut().functions.bind(name, func);
+            Ok(())
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            Err(daft_catalog::error::Error::unsupported(
+                "attach_function without python",
+            ))
+        }
     }
 
     pub fn detach_function(&self, name: &str) -> Result<()> {
@@ -349,7 +362,7 @@ impl SessionState {
     pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
         let mut items = self
             .functions
-            .lookup(name, LookupMode::Insensitive)
+            .lookup(name, daft_catalog::LookupMode::Insensitive)
             .into_iter();
 
         if items.len() > 1 {
@@ -357,7 +370,7 @@ impl SessionState {
                 .map(|i| i.name())
                 .collect::<pyo3::PyResult<Vec<_>>>()?;
 
-            ambiguous_identifier_err!("Function", names);
+            crate::ambiguous_identifier_err!("Function", names);
         }
         Ok(items.next().cloned())
     }

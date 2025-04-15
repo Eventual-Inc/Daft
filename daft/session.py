@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from daft.catalog import Catalog, Identifier, Table, TableSource
 from daft.context import get_context
@@ -8,9 +8,7 @@ from daft.daft import LogicalPlanBuilder as PyBuilder
 from daft.daft import PySession, sql_exec
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
-
-if TYPE_CHECKING:
-    from daft.udf import UDF
+from daft.udf import UDF
 
 __all__ = [
     "Session",
@@ -97,11 +95,11 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, object: Catalog | Table, alias: str | None = None) -> None:
-        """Attaches a known attachable object like a Catalog or Table.
+    def attach(self, object: Catalog | Table | UDF, alias: str | None = None) -> None:
+        """Attaches a known attachable object like a Catalog, Table or UDF.
 
         Args:
-            object (Catalog|Table): object which is attachable to a session
+            object (Catalog|Table|UDF): object which is attachable to a session
 
         Returns:
             None
@@ -110,6 +108,8 @@ class Session:
             self.attach_catalog(object, alias)
         elif isinstance(object, Table):
             self.attach_table(object, alias)
+        elif isinstance(object, UDF):
+            self.attach_function(object, alias)
         else:
             raise ValueError(f"Cannot attach object with type {type(object)}")
 
@@ -486,9 +486,9 @@ class Session:
     ###
     # functions
     ###
-    def attach_function(self, func: UDF, name: str):
+    def attach_function(self, func: UDF, alias: str | None = None):
         """Attaches a Python function as a UDF in the current session."""
-        self._session.attach_function(func, name)
+        self._session.attach_function(func, alias)
 
     def detach_function(self, name: str):
         """Detaches a Python function as a UDF in the current session."""
@@ -521,7 +521,7 @@ def _session() -> Session:
 ###
 
 
-def attach(object: Catalog | Table, alias: str | None = None) -> None:
+def attach(object: Catalog | Table | UDF, alias: str | None = None) -> None:
     """Attaches a known attachable object like a Catalog or Table."""
     return _session().attach(object, alias)
 
@@ -723,9 +723,9 @@ def set_session(session: Session):
 ###
 
 
-def attach_function(func: UDF, name: str):
+def attach_function(func: UDF, alias: str | None = None):
     """Attaches a Python function as a UDF in the current session."""
-    _session().attach_function(func, name)
+    _session().attach_function(func, alias)
 
 
 def detach_function(name: str):
