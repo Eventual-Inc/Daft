@@ -9,6 +9,7 @@ use std::{
 };
 
 use daft_micropartition::MicroPartition;
+use futures::{pin_mut, Stream};
 use kanal::SendError;
 use tracing::{instrument::Instrumented, Instrument};
 

@@ -8,9 +8,8 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::spawner::ComputeTaskSpawner;
 
 enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -81,21 +80,21 @@ impl BlockingSink for PivotSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        _spawner: &ExecutionTaskSpawner,
+        _spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkSinkResult {
         state
             .as_any_mut()
             .downcast_mut::<PivotState>()
             .expect("PivotSink should have PivotState")
             .push(input);
-        Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
+        Ok(state).into()
     }
 
     #[instrument(skip_all, name = "PivotSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let pivot_params = self.pivot_params.clone();
         spawner

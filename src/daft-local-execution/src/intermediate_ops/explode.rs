@@ -10,7 +10,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::ExecutionTaskSpawner;
+use crate::spawner::ComputeTaskSpawner;
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<ExprRef>>,
@@ -30,7 +30,7 @@ impl IntermediateOperator for ExplodeOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        task_spawner: &ExecutionTaskSpawner,
+        task_spawner: &ComputeTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let to_explode = self.to_explode.clone();
         task_spawner

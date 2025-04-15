@@ -14,7 +14,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{spawner::ComputeTaskSpawner, ExecutionRuntimeContext};
 fn num_parallel_exprs(projection: &[ExprRef]) -> usize {
     max(
         projection.iter().filter(|expr| expr.has_compute()).count(),
@@ -93,7 +93,7 @@ impl IntermediateOperator for ProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        task_spawner: &ExecutionTaskSpawner,
+        task_spawner: &ComputeTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
@@ -141,8 +141,8 @@ impl IntermediateOperator for ProjectOperator {
         res
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.max_concurrency)
+    fn max_concurrency(&self) -> usize {
+        self.max_concurrency
     }
 
     fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {

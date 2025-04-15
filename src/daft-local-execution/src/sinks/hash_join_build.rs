@@ -10,9 +10,8 @@ use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{spawner::ComputeTaskSpawner, state_bridge::BroadcastStateBridgeRef};
 
 enum ProbeTableState {
     Building {
@@ -139,7 +138,7 @@ impl BlockingSink for HashJoinBuildSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkSinkResult {
         spawner
             .spawn(
@@ -149,7 +148,7 @@ impl BlockingSink for HashJoinBuildSink {
                         .downcast_mut::<ProbeTableState>()
                         .expect("HashJoinBuildSink should have ProbeTableState");
                     probe_table_state.add_tables(&input)?;
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 info_span!("HashJoinBuildSink::sink"),
             )
@@ -160,7 +159,7 @@ impl BlockingSink for HashJoinBuildSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        _spawner: &ExecutionTaskSpawner,
+        _spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().unwrap();

@@ -10,7 +10,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{spawner::ComputeTaskSpawner, state_bridge::BroadcastStateBridgeRef};
 
 struct CrossJoinState {
     bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
@@ -72,7 +72,7 @@ impl IntermediateOperator for CrossJoinOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        task_spawner: &ExecutionTaskSpawner,
+        task_spawner: &ComputeTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let output_schema = self.output_schema.clone();
 
@@ -129,7 +129,7 @@ impl IntermediateOperator for CrossJoinOperator {
                             IntermediateOperatorResult::NeedMoreInput(Some(output_morsel))
                         } else {
                             // still looping through tables
-                            IntermediateOperatorResult::HasMoreOutput(output_morsel)
+                            IntermediateOperatorResult::HasMoreOutput(output_morsel, input)
                         };
                     Ok((state, result))
                 },

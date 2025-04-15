@@ -7,7 +7,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::ExecutionTaskSpawner;
+use crate::spawner::ComputeTaskSpawner;
 
 struct SampleParams {
     fraction: f64,
@@ -37,7 +37,7 @@ impl IntermediateOperator for SampleOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        task_spawner: &ExecutionTaskSpawner,
+        task_spawner: &ComputeTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let params = self.params.clone();
         task_spawner

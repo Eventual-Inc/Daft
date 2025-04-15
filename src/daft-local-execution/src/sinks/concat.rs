@@ -8,10 +8,7 @@ use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::spawner::ComputeTaskSpawner;
 
 struct ConcatSinkState {}
 impl StreamingSinkState for ConcatSinkState {
@@ -31,7 +28,7 @@ impl StreamingSink for ConcatSink {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn StreamingSinkState>,
-        _spawner: &ExecutionTaskSpawner,
+        _spawner: &ComputeTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
     }
@@ -47,7 +44,7 @@ impl StreamingSink for ConcatSink {
     fn finalize(
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,
-        _spawner: &ExecutionTaskSpawner,
+        _spawner: &ComputeTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }
@@ -58,21 +55,5 @@ impl StreamingSink for ConcatSink {
 
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
-    }
-
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
-        } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
-        }
     }
 }

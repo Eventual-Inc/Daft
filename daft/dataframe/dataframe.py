@@ -37,10 +37,10 @@ from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
-from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
+from daft.runners.native_runner import NativeExecutor
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
 from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions
 

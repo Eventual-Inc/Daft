@@ -7,10 +7,7 @@ use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::spawner::ComputeTaskSpawner;
 
 struct LimitSinkState {
     remaining: usize,
@@ -48,7 +45,7 @@ impl StreamingSink for LimitSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         let input_num_rows = input.len();
 
@@ -94,7 +91,7 @@ impl StreamingSink for LimitSink {
     fn finalize(
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,
-        _spawner: &ExecutionTaskSpawner,
+        _spawner: &ComputeTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }
@@ -105,15 +102,5 @@ impl StreamingSink for LimitSink {
 
     fn max_concurrency(&self) -> usize {
         1
-    }
-
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-        _maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        // Limits are greedy, so we don't need to buffer any input.
-        // They are also not concurrent, so we don't need to worry about ordering.
-        Arc::new(UnorderedDispatcher::new(None))
     }
 }

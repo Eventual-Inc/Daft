@@ -16,11 +16,7 @@ use super::{
         StreamingSink, StreamingSinkExecuteResult, StreamingSinkOutput, StreamingSinkState,
     },
 };
-use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::{spawner::ComputeTaskSpawner, state_bridge::BroadcastStateBridgeRef};
 
 enum AntiSemiProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
@@ -229,7 +225,7 @@ impl StreamingSink for AntiSemiProbeSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
-        task_spawner: &ExecutionTaskSpawner,
+        task_spawner: &ComputeTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -303,7 +299,7 @@ impl StreamingSink for AntiSemiProbeSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn super::streaming_sink::StreamingSinkState>>,
-        task_spawner: &ExecutionTaskSpawner,
+        task_spawner: &ComputeTaskSpawner,
     ) -> super::streaming_sink::StreamingSinkFinalizeResult {
         if self.build_on_left {
             let is_semi = self.params.is_semi;
@@ -322,21 +318,5 @@ impl StreamingSink for AntiSemiProbeSink {
         Box::new(AntiSemiProbeState::Building(
             self.probe_state_bridge.clone(),
         ))
-    }
-
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
-        } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
-        }
     }
 }

@@ -7,9 +7,8 @@ use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{spawner::ComputeTaskSpawner, state_bridge::BroadcastStateBridgeRef};
 
 struct CrossJoinCollectState(Option<Vec<RecordBatch>>);
 
@@ -38,10 +37,10 @@ impl BlockingSink for CrossJoinCollectSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkSinkResult {
         if input.is_empty() {
-            return Ok(BlockingSinkStatus::NeedMoreInput(state)).into();
+            return Ok(state).into();
         }
 
         spawner
@@ -58,7 +57,7 @@ impl BlockingSink for CrossJoinCollectSink {
                         .expect("Collected tables should not be consumed before sink stage is done")
                         .extend(input.get_tables()?.iter().cloned());
 
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 info_span!("CrossJoinCollectSink::sink"),
             )
@@ -69,7 +68,7 @@ impl BlockingSink for CrossJoinCollectSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        _spawner: &ExecutionTaskSpawner,
+        _spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let mut state = states.into_iter().next().unwrap();
         let cross_join_collect_state = state

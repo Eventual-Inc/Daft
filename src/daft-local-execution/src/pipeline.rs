@@ -9,6 +9,7 @@ use common_display::{
 };
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use common_runtime::get_compute_pool_num_threads;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{join::get_common_join_cols, resolved_col};
 use daft_local_plan::{
@@ -32,7 +33,8 @@ use crate::{
         actor_pool_project::ActorPoolProjectOperator, cross_join::CrossJoinOperator,
         explode::ExplodeOperator, filter::FilterOperator,
         inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
-        project::ProjectOperator, sample::SampleOperator, unpivot::UnpivotOperator,
+        partition::PartitionOperator, project::ProjectOperator, sample::SampleOperator,
+        unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -610,7 +612,21 @@ pub fn physical_plan_to_pipeline(
             stats_state,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = if file_info.partition_cols.is_some() {
+                // if we are partitioning then we need to partition the input first
+                let num_partitions = get_compute_pool_num_threads();
+                let partition_op =
+                    PartitionOperator::new(file_info.partition_cols.clone(), num_partitions);
+                let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+                IntermediateNode::new(
+                    Arc::new(partition_op),
+                    vec![child_node],
+                    stats_state.clone(),
+                )
+                .boxed()
+            } else {
+                physical_plan_to_pipeline(input, psets, cfg)?
+            };
             let writer_factory = make_physical_writer_factory(file_info, cfg);
             let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
                 (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,

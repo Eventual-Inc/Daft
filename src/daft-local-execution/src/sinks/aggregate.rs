@@ -11,9 +11,8 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::spawner::ComputeTaskSpawner;
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -91,7 +90,7 @@ impl BlockingSink for AggregateSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkSinkResult {
         let params = self.agg_sink_params.clone();
         spawner
@@ -103,7 +102,7 @@ impl BlockingSink for AggregateSink {
                         .expect("AggregateSink should have AggregateState");
                     let agged = Arc::new(input.agg(&params.sink_agg_exprs, &[])?);
                     agg_state.push(agged);
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -114,7 +113,7 @@ impl BlockingSink for AggregateSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.agg_sink_params.clone();
         spawner

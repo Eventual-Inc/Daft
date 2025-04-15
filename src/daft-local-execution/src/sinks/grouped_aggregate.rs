@@ -15,9 +15,8 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::spawner::ComputeTaskSpawner;
 
 #[derive(Clone)]
 enum AggStrategy {
@@ -315,7 +314,7 @@ impl BlockingSink for GroupedAggregateSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkSinkResult {
         let params = self.grouped_aggregate_params.clone();
         let strategy_lock = self.global_strategy_lock.clone();
@@ -328,7 +327,7 @@ impl BlockingSink for GroupedAggregateSink {
                         .expect("GroupedAggregateSink should have GroupedAggregateState");
 
                     agg_state.push(input, &params, &strategy_lock)?;
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -339,7 +338,7 @@ impl BlockingSink for GroupedAggregateSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();

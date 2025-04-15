@@ -22,7 +22,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{spawner::ComputeTaskSpawner, ExecutionRuntimeContext};
 
 struct ActorHandle {
     #[cfg(feature = "python")]
@@ -159,7 +159,7 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        task_spawner: &ExecutionTaskSpawner,
+        task_spawner: &ComputeTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let memory_request = self.memory_request;
         let fut = task_spawner.spawn_with_memory_request(
@@ -215,8 +215,8 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         }))
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.concurrency)
+    fn max_concurrency(&self) -> usize {
+        self.concurrency
     }
 
     fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {

@@ -13,12 +13,8 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::spawner::ComputeTaskSpawner;
 
 #[derive(Debug)]
 pub enum WriteFormat {
@@ -86,7 +82,7 @@ impl BlockingSink for WriteSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkSinkResult {
         spawner
             .spawn(
@@ -97,7 +93,7 @@ impl BlockingSink for WriteSink {
                         .expect("WriteSink should have WriteState")
                         .writer
                         .write(input)?;
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -108,7 +104,7 @@ impl BlockingSink for WriteSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
         let file_info = self.file_info.clone();
@@ -209,19 +205,6 @@ impl BlockingSink for WriteSink {
         Ok(Box::new(WriteState::new(writer)) as Box<dyn BlockingSinkState>)
     }
 
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-    ) -> Arc<dyn DispatchSpawner> {
-        if let Some(partition_by) = &self.partition_by {
-            Arc::new(PartitionedDispatcher::new(partition_by.clone()))
-        } else {
-            // Unnecessary to buffer by morsel size because we are writing.
-            // Writers also have their own internal buffering.
-            Arc::new(UnorderedDispatcher::new(None))
-        }
-    }
-
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![];
         lines.push(format!("Write: {:?}", self.write_format));
@@ -237,5 +220,9 @@ impl BlockingSink for WriteSink {
         } else {
             1
         }
+    }
+
+    fn maintain_order(&self) -> bool {
+        true
     }
 }

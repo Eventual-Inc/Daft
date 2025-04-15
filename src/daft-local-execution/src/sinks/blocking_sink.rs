@@ -1,33 +1,25 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
-use tracing::{info_span, instrument};
+use tracing::info_span;
 
 use crate::{
     channel::{create_channel, Receiver},
-    dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::PipelineNode,
     progress_bar::ProgressBarColor,
-    resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, JoinSnafu, OperatorOutput, TaskSet,
+    spawner::{ComputeTaskSpawner, LocalTaskSpawner},
+    ExecutionRuntimeContext, OperatorOutput,
 };
 pub trait BlockingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
-pub enum BlockingSinkStatus {
-    NeedMoreInput(Box<dyn BlockingSinkState>),
-    #[allow(dead_code)]
-    Finished(Box<dyn BlockingSinkState>),
-}
-
-pub(crate) type BlockingSinkSinkResult = OperatorOutput<DaftResult<BlockingSinkStatus>>;
+pub(crate) type BlockingSinkSinkResult = OperatorOutput<DaftResult<Box<dyn BlockingSinkState>>>;
 pub(crate) type BlockingSinkFinalizeResult =
     OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
 pub trait BlockingSink: Send + Sync {
@@ -35,26 +27,67 @@ pub trait BlockingSink: Send + Sync {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn BlockingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkSinkResult;
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkFinalizeResult;
     fn name(&self) -> &'static str;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-    ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::new(Some(
-            runtime_handle.default_morsel_size(),
-        )))
-    }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
+    }
+    fn maintain_order(&self) -> bool {
+        false
+    }
+}
+
+struct BlockingSinkWorker {
+    op: Arc<dyn BlockingSink>,
+    state: Option<Box<dyn BlockingSinkState>>,
+    task_spawner: ComputeTaskSpawner,
+}
+
+impl BlockingSinkWorker {
+    pub fn try_new(
+        op: Arc<dyn BlockingSink>,
+        task_spawner: ComputeTaskSpawner,
+    ) -> DaftResult<Self> {
+        let state = op.make_state()?;
+        Ok(Self {
+            op,
+            state: Some(state),
+            task_spawner,
+        })
+    }
+
+    pub async fn sink(
+        mut worker: BlockingSinkWorker,
+        morsel: Arc<MicroPartition>,
+    ) -> DaftResult<BlockingSinkWorker> {
+        let state = worker.state.take().unwrap();
+        let state = worker
+            .op
+            .sink(morsel, state, &worker.task_spawner)
+            .await??;
+        worker.state = Some(state);
+        Ok(worker)
+    }
+
+    pub async fn finalize(
+        workers: VecDeque<BlockingSinkWorker>,
+        op: Arc<dyn BlockingSink>,
+        task_spawner: ComputeTaskSpawner,
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+        let states = workers
+            .into_iter()
+            .map(|mut w| w.state.take().unwrap())
+            .collect();
+        let result = op.finalize(states, &task_spawner).await??;
+        Ok(result)
     }
 }
 
@@ -83,49 +116,6 @@ impl BlockingSinkNode {
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
-    }
-
-    #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
-    async fn run_worker(
-        op: Arc<dyn BlockingSink>,
-        input_receiver: Receiver<Arc<MicroPartition>>,
-        rt_context: Arc<RuntimeStatsContext>,
-        memory_manager: Arc<MemoryManager>,
-    ) -> DaftResult<Box<dyn BlockingSinkState>> {
-        let span = info_span!("BlockingSink::Sink");
-        let compute_runtime = get_compute_runtime();
-        let spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
-        let mut state = op.make_state()?;
-        while let Some(morsel) = input_receiver.recv().await {
-            let result = op.sink(morsel, state, &spawner).await??;
-            match result {
-                BlockingSinkStatus::NeedMoreInput(new_state) => {
-                    state = new_state;
-                }
-                BlockingSinkStatus::Finished(new_state) => {
-                    return Ok(new_state);
-                }
-            }
-        }
-
-        Ok(state)
-    }
-
-    fn spawn_workers(
-        op: Arc<dyn BlockingSink>,
-        input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn BlockingSinkState>>>,
-        stats: Arc<RuntimeStatsContext>,
-        memory_manager: Arc<MemoryManager>,
-    ) {
-        for input_receiver in input_receivers {
-            task_set.spawn(Self::run_worker(
-                op.clone(),
-                input_receiver,
-                stats.clone(),
-                memory_manager.clone(),
-            ));
-        }
     }
 }
 
@@ -190,49 +180,57 @@ impl PipelineNode for BlockingSinkNode {
         let counting_sender =
             CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
 
-        let op = self.op.clone();
+        let memory_manager = runtime_handle.memory_manager.clone();
         let runtime_stats = self.runtime_stats.clone();
-        let num_workers = op.max_concurrency();
-
-        let dispatch_spawner = op.dispatch_spawner(runtime_handle);
-        let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
-            vec![counting_receiver],
-            num_workers,
-            &mut runtime_handle.handle(),
-        );
-        runtime_handle.spawn(
-            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
-        );
-
-        let memory_manager = runtime_handle.memory_manager();
+        let workers = (0..self.op.max_concurrency())
+            .map(|_| {
+                let task_spawner = ComputeTaskSpawner::new(
+                    get_compute_runtime(),
+                    memory_manager.clone(),
+                    runtime_stats.clone(),
+                    info_span!("BlockingSink::sink"),
+                );
+                BlockingSinkWorker::try_new(self.op.clone(), task_spawner)
+            })
+            .collect::<DaftResult<VecDeque<_>>>();
+        let op = self.op.clone();
+        let maintain_order = self.op.maintain_order();
         runtime_handle.spawn(
             async move {
-                let mut task_set = TaskSet::new();
-                Self::spawn_workers(
-                    op.clone(),
-                    spawned_dispatch_result.worker_receivers,
-                    &mut task_set,
-                    runtime_stats.clone(),
-                    memory_manager.clone(),
-                );
+                let mut workers = workers?;
+                let mut worker_spawner = LocalTaskSpawner::new(maintain_order);
+                loop {
+                    let in_progress_len = worker_spawner.len();
+                    tokio::select! {
+                        // Bias currently executing workers over new input
+                        biased;
+                        // Process new input
+                        Some(morsel) = counting_receiver.recv(), if in_progress_len < op.max_concurrency() => {
+                            let worker = workers.pop_front().unwrap();
+                            worker_spawner.push_back(BlockingSinkWorker::sink(worker, morsel));
+                        },
+                        // Process results from currently executing workers
+                        Some(worker) = worker_spawner.next(), if in_progress_len > 0 => {
+                            let worker = worker.map_err(|e| DaftError::InternalError(format!("Error joining next task: {:?}", e)))??;
+                            workers.push_back(worker);
+                        },
 
-                let mut finished_states = Vec::with_capacity(num_workers);
-                while let Some(result) = task_set.join_next().await {
-                    let state = result.context(JoinSnafu)??;
-                    finished_states.push(state);
+                        // No more input and workers are done processing
+                        else  => {
+                            break;
+                        }
+                    }
                 }
-
-                let compute_runtime = get_compute_runtime();
-                let spawner = ExecutionTaskSpawner::new(
-                    compute_runtime,
+                assert!(worker_spawner.len() == 0, "Worker spawner should be empty: {:?}, op: {:?}", worker_spawner.len(), op.name());
+                let task_spawner = ComputeTaskSpawner::new(
+                    get_compute_runtime(),
                     memory_manager,
-                    runtime_stats.clone(),
-                    info_span!("BlockingSink::Finalize"),
+                    runtime_stats,
+                    info_span!("BlockingSink::finalize"),
                 );
-                let finalized_result = op.finalize(finished_states, &spawner).await??;
-                if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res).await;
+                let result = BlockingSinkWorker::finalize(workers, op.clone(), task_spawner).await?;
+                if let Some(result) = result {
+                    let _ = counting_sender.send(result).await;
                 }
                 Ok(())
             },

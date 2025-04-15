@@ -2,7 +2,6 @@
 
 mod buffer;
 mod channel;
-mod dispatcher;
 mod intermediate_ops;
 mod pipeline;
 mod progress_bar;
@@ -11,6 +10,7 @@ mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
+mod spawner;
 mod state_bridge;
 
 use std::{
@@ -21,13 +21,12 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::{RuntimeRef, RuntimeTask};
+use common_runtime::RuntimeTask;
 use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
-use runtime_stats::{RuntimeStatsContext, TimedFuture};
+use runtime_stats::RuntimeStatsContext;
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
-use tracing::Instrument;
 
 /// The `OperatorOutput` enum represents the output of an operator.
 /// It can be either `Ready` or `Pending`.
@@ -102,18 +101,6 @@ impl<T> Future for SpawnedTask<T> {
     }
 }
 
-struct RuntimeHandle(tokio::runtime::Handle);
-impl RuntimeHandle {
-    fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        let join_handle = self.0.spawn(future);
-        SpawnedTask(join_handle)
-    }
-}
-
 pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
@@ -177,10 +164,6 @@ impl ExecutionRuntimeContext {
         }
     }
 
-    pub(crate) fn handle(&self) -> RuntimeHandle {
-        RuntimeHandle(tokio::runtime::Handle::current())
-    }
-
     #[must_use]
     pub(crate) fn memory_manager(&self) -> Arc<MemoryManager> {
         self.memory_manager.clone()
@@ -192,66 +175,6 @@ impl Drop for ExecutionRuntimeContext {
         if let Some(pbm) = self.progress_bar_manager.take() {
             let _ = pbm.close_all();
         }
-    }
-}
-
-pub(crate) struct ExecutionTaskSpawner {
-    runtime_ref: RuntimeRef,
-    memory_manager: Arc<MemoryManager>,
-    runtime_context: Arc<RuntimeStatsContext>,
-    outer_span: tracing::Span,
-}
-
-impl ExecutionTaskSpawner {
-    pub fn new(
-        runtime_ref: RuntimeRef,
-        memory_manager: Arc<MemoryManager>,
-        runtime_context: Arc<RuntimeStatsContext>,
-        span: tracing::Span,
-    ) -> Self {
-        Self {
-            runtime_ref,
-            memory_manager,
-            runtime_context,
-            outer_span: span,
-        }
-    }
-
-    pub fn spawn_with_memory_request<F, O>(
-        &self,
-        memory_request: u64,
-        future: F,
-        span: tracing::Span,
-    ) -> RuntimeTask<DaftResult<O>>
-    where
-        F: Future<Output = DaftResult<O>> + Send + 'static,
-        O: Send + 'static,
-    {
-        let instrumented = future.instrument(span);
-        let timed_fut = TimedFuture::new(
-            instrumented,
-            self.runtime_context.clone(),
-            self.outer_span.clone(),
-        );
-        let memory_manager = self.memory_manager.clone();
-        self.runtime_ref.spawn(async move {
-            let _permit = memory_manager.request_bytes(memory_request).await?;
-            timed_fut.await
-        })
-    }
-
-    pub fn spawn<F, O>(&self, future: F, inner_span: tracing::Span) -> RuntimeTask<DaftResult<O>>
-    where
-        F: Future<Output = DaftResult<O>> + Send + 'static,
-        O: Send + 'static,
-    {
-        let instrumented = future.instrument(inner_span);
-        let timed_fut = TimedFuture::new(
-            instrumented,
-            self.runtime_context.clone(),
-            self.outer_span.clone(),
-        );
-        self.runtime_ref.spawn(timed_fut)
     }
 }
 

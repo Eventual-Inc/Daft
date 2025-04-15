@@ -11,9 +11,8 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::spawner::ComputeTaskSpawner;
 
 #[derive(Default)]
 struct SinglePartitionWindowState {
@@ -117,7 +116,7 @@ impl BlockingSink for WindowPartitionOnlySink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkSinkResult {
         let params = self.window_partition_only_params.clone();
         spawner
@@ -129,7 +128,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                         .expect("WindowPartitionOnlySink should have WindowPartitionOnlyState");
 
                     window_state.push(input, &params.partition_by)?;
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -140,7 +139,7 @@ impl BlockingSink for WindowPartitionOnlySink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.window_partition_only_params.clone();
         let num_partitions = self.num_partitions();

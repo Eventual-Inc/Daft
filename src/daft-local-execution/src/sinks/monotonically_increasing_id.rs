@@ -8,10 +8,7 @@ use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::spawner::ComputeTaskSpawner;
 
 struct MonotonicallyIncreasingIdState {
     id_offset: u64,
@@ -56,7 +53,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         let params = self.params.clone();
         spawner
@@ -104,7 +101,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     fn finalize(
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,
-        _spawner: &ExecutionTaskSpawner,
+        _spawner: &ComputeTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }
@@ -117,13 +114,5 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     // Furthermore, it is much simpler to implement as a single-threaded operation, since we can just keep track of the current id offset without synchronization.
     fn max_concurrency(&self) -> usize {
         1
-    }
-
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-        _maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::new(None))
     }
 }

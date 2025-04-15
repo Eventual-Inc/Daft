@@ -8,9 +8,8 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::spawner::ComputeTaskSpawner;
 
 enum SortState {
     Building(Vec<Arc<MicroPartition>>),
@@ -70,21 +69,21 @@ impl BlockingSink for SortSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        _spawner: &ExecutionTaskSpawner,
+        _spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkSinkResult {
         state
             .as_any_mut()
             .downcast_mut::<SortState>()
             .expect("SortSink should have sort state")
             .push(input);
-        Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
+        Ok(state).into()
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
         spawner

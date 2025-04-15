@@ -20,11 +20,7 @@ use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::{spawner::ComputeTaskSpawner, state_bridge::BroadcastStateBridgeRef};
 
 pub(crate) struct IndexBitmapBuilder {
     mutable_bitmaps: Vec<MutableBitmap>,
@@ -569,7 +565,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -678,7 +674,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn StreamingSinkState>>,
-        spawner: &ExecutionTaskSpawner,
+        spawner: &ComputeTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         if self.needs_bitmap {
             let params = self.params.clone();
@@ -719,22 +715,6 @@ impl StreamingSink for OuterHashJoinProbeSink {
                 .into()
         } else {
             Ok(None).into()
-        }
-    }
-
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
-        } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
         }
     }
 }

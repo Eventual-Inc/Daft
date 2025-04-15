@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Callable, Iterator
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
-from daft.execution.native_executor import NativeExecutor
 from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
@@ -204,7 +203,8 @@ class PyActorSingleton:
         new_part = partition.eval_expression_list(PyActorSingleton.initialized_projection)
         return [
             LocalMaterializedResult(
-                new_part, PartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata)
+                new_part,
+                PartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata),
             )
         ]
 
@@ -379,30 +379,14 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                     adaptive_planner.update(source_id, cache_entry)
                     del cache_entry
         else:
-            # Finalize the logical plan and get a physical plan scheduler for translating the
-            # physical plan to executable tasks.
-            if daft_execution_config.enable_native_executor:
-                logger.info("Using native executor")
-
-                executor = NativeExecutor()
-                results_gen = executor.run(
-                    builder,
-                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
-                    daft_execution_config,
-                    results_buffer_size,
-                )
+            plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
+            psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
+            # Get executable tasks from planner.
+            tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)
+            del psets
+            with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
+                results_gen = self._physical_plan_to_partitions(execution_id, tasks)
                 yield from results_gen
-            else:
-                logger.info("Using python executor")
-
-                plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
-                psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
-                # Get executable tasks from planner.
-                tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)
-                del psets
-                with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-                    results_gen = self._physical_plan_to_partitions(execution_id, tasks)
-                    yield from results_gen
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
@@ -471,7 +455,8 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                     if next_step is None:
                         # Blocked on already dispatched tasks; await some tasks.
                         logger.debug(
-                            "execution[%s] Skipping to wait on dispatched tasks: plan waiting on work", execution_id
+                            "execution[%s] Skipping to wait on dispatched tasks: plan waiting on work",
+                            execution_id,
                         )
                         break
 
@@ -527,7 +512,11 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
 
                         else:
                             # Submit the task for execution.
-                            logger.debug("execution[%s] Submitting task for execution: %s", execution_id, next_step)
+                            logger.debug(
+                                "execution[%s] Submitting task for execution: %s",
+                                execution_id,
+                                next_step,
+                            )
 
                             # update progress bar
                             pbar.mark_task_start(next_step)
@@ -567,7 +556,10 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                     )
 
                 # Await at least one task in the global futures to finish before proceeding
-                _ = futures.wait(list(self._inflight_futures.values()), return_when=futures.FIRST_COMPLETED)
+                _ = futures.wait(
+                    list(self._inflight_futures.values()),
+                    return_when=futures.FIRST_COMPLETED,
+                )
 
                 # Now await at a task in the local futures to finish, so as to progress the local execution
                 done_set, _ = futures.wait(list(local_futures_to_task), return_when=futures.FIRST_COMPLETED)
