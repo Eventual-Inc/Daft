@@ -100,19 +100,19 @@ impl PyMicroPartition {
     }
 
     #[staticmethod]
-    pub fn from_tables(tables: Vec<PyRecordBatch>) -> PyResult<Self> {
-        match &tables[..] {
+    pub fn from_record_batches(record_batches: Vec<PyRecordBatch>) -> PyResult<Self> {
+        match &record_batches[..] {
             [] => Ok(MicroPartition::empty(None).into()),
             [first, ..] => {
-                let tables = Arc::new(
-                    tables
+                let record_batches = Arc::new(
+                    record_batches
                         .iter()
                         .map(|t| t.record_batch.clone())
                         .collect::<Vec<_>>(),
                 );
                 Ok(MicroPartition::new_loaded(
                     first.record_batch.schema.clone(),
-                    tables,
+                    record_batches,
                     // Don't compute statistics if data is already materialized
                     None,
                 )

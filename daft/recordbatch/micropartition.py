@@ -95,7 +95,7 @@ class MicroPartition:
     @staticmethod
     def from_arrow(arrow_table: pa.Table) -> MicroPartition:
         record_batches = [
-            RecordBatch.from_arrow_record_batches([batch], batch.schema()) for batch in arrow_table.to_batches()
+            RecordBatch.from_arrow_record_batches([batch], batch.schema) for batch in arrow_table.to_batches()
         ]
         return MicroPartition._from_record_batches(record_batches)
 
@@ -144,7 +144,10 @@ class MicroPartition:
         return RecordBatch._from_pyrecordbatch(self._micropartition.to_record_batch())
 
     def to_arrow(self) -> pa.Table:
-        return pa.Table.from_batches(rb.to_arrow_record_batch() for rb in self.get_record_batches())
+        return pa.Table.from_batches(
+            (rb.to_arrow_record_batch() for rb in self.get_record_batches()),
+            self.schema().to_pyarrow_schema(),
+        )
 
     def to_pydict(self) -> dict[str, list]:
         return self.to_record_batch().to_pydict()
