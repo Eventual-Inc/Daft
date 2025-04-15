@@ -142,10 +142,10 @@ class MicroPartition:
         return RecordBatch._from_pyrecordbatch(self._micropartition.to_record_batch())
 
     def to_arrow(self) -> pa.Table:
-        return pa.Table.from_batches(
-            (rb.to_arrow_record_batch() for rb in self.get_record_batches()),
-            self.schema().to_pyarrow_schema(),
-        )
+        if len(self) > 0:
+            return pa.Table.from_batches(rb.to_arrow_record_batch() for rb in self.get_record_batches())
+        else:
+            return self.to_record_batch().to_arrow_table()
 
     def to_pydict(self) -> dict[str, list]:
         return self.to_record_batch().to_pydict()

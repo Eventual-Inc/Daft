@@ -167,9 +167,7 @@ class RecordBatch:
         return tab
 
     def to_arrow_table(self) -> pa.Table:
-        tab = pa.Table.from_pydict(
-            {colname: self.get_column(colname).to_arrow() for colname in self.column_names()}
-        )
+        tab = pa.Table.from_pydict({colname: self.get_column(colname).to_arrow() for colname in self.column_names()})
         return tab
 
     def to_pydict(self) -> dict[str, list]:
