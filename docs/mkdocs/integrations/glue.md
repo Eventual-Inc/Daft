@@ -70,7 +70,7 @@ The Glue Catalog does not have a fixed set of types; rather, the types are depen
 
     This is not considered a stable API, it is just a patch technique!
 
-The Daft `GlueCatalog` class has a field called `_table_impls` which holds a list of `GlueTable` implementation classes. When we resolve a table, we call Glue's `GetTable` API and call `from_table_info` with the [Glue Table object](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-catalog-tables.html#aws-glue-api-catalog-tables-Table). It is expected that the `GlueTable` implementation will throw a `ValueError` if the table metadata does not match.
+The Daft `GlueCatalog` class has a field called `_table_impls` which holds a list of `GlueTable` implementation classes. When we resolve a table, we call Glue's `GetTable` API and call `from_table_info` with the [Glue Table object](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-catalog-tables.html#aws-glue-api-catalog-tables-Table). It is expected that each `GlueTable` implementation will throw a `ValueError` if the table metadata does not match.
 
 To implement a custom table format, you may implement the `GlueTable` abstract class, and append the class to the
 

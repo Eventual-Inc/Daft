@@ -180,9 +180,11 @@ class GlueCatalog(Catalog):
             identifier = Identifier.from_str(identifier)
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
+        database_name: str = str(identifier[0])
+        name: str = str(identifier[1])
 
         try:
-            self._client.delete_table(DatabaseName=identifier[0], Name=identifier[1])
+            self._client.delete_table(DatabaseName=database_name, Name=name)
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
 
@@ -196,9 +198,11 @@ class GlueCatalog(Catalog):
             identifier = Identifier.from_str(identifier)
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
+        database_name: str = str(identifier[0])
+        name: str = str(identifier[1])
 
         try:
-            res = self._client.get_table(DatabaseName=identifier[0], Name=identifier[1])
+            res = self._client.get_table(DatabaseName=database_name, Name=name)
             tbl = res["Table"]
             for impl in self._table_impls:
                 try:
@@ -255,7 +259,7 @@ class GlueCatalog(Catalog):
                     break
             return namespaces
         except ClientError as e:
-            raise ValueError(f"Failed to list namespaces: {e}")
+            raise ValueError("Failed to list namespaces.") from e
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         if pattern is None:
@@ -281,7 +285,7 @@ class GlueCatalog(Catalog):
                     break
             return tables
         except ClientError as e:
-            raise e  # just re-throw for now
+            raise ValueError("Failed to list tables.") from e
 
 
 class GlueTable(Table, ABC):
@@ -428,7 +432,13 @@ class GlueParquetTable(GlueTable):
         )
 
     def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
-        raise NotImplementedError
+        df.write_parquet(
+            root_dir=self._path,
+            compression="snappy",
+            write_mode=mode,
+            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+            io_config=self._io_config,
+        )
 
 
 class GlueIcebergTable(GlueTable):

@@ -6,9 +6,18 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from daft.catalog import Identifier, NotFoundError
-from daft.catalog.__glue import GlueCatalog, GlueTable, load_glue
+from daft.catalog import Catalog, Identifier, NotFoundError
+from daft.catalog.__glue import (
+    GlueCatalog,
+    GlueCsvTable,
+    GlueIcebergTable,
+    GlueParquetTable,
+    GlueTable,
+    _convert_glue_schema,
+    load_glue,
+)
 from daft.dataframe import DataFrame
+from daft.logical.schema import DataType, Schema
 
 if TYPE_CHECKING:
     from mypy_boto3_glue import GlueClient
@@ -20,6 +29,12 @@ else:
     GlueClient = Any
     GlueColumnInfo = Any
     GlueTableInfo = Any
+
+
+@pytest.fixture
+def mock_session():
+    with mock_aws():
+        yield boto3.Session(region_name="us-west-2")
 
 
 @pytest.fixture
@@ -55,11 +70,24 @@ def test_load_glue():
     assert catalog.name == "mock_glue_catalog"
 
 
-def test_catalog_from_session(glue_client):
-    # Test creating a catalog from a session
-    session = boto3.Session(region_name="us-east-1")
-    catalog = GlueCatalog.from_session("mock_glue_catalog", session)
-    assert catalog.name == "mock_glue_catalog"
+def test_catalog_from_client(glue_client):
+    assert Catalog.from_glue("gc", client=glue_client)
+    assert GlueCatalog.from_client("gc", glue_client)
+
+
+def test_catalog_from_session(mock_session):
+    assert Catalog.from_glue("gc", session=mock_session)
+    assert GlueCatalog.from_session("gc", session=mock_session)
+
+
+def test_catalog_no_args():
+    with pytest.raises(ValueError, match="Must provide either a client or session."):
+        Catalog.from_glue("foo")
+
+
+def test_glue_catalog_init():
+    with pytest.raises(ValueError, match="not supported"):
+        GlueCatalog()
 
 
 ###
@@ -156,6 +184,24 @@ def test_get_table(glue_catalog, glue_client):
     with pytest.raises(NotFoundError, match="not found"):
         glue_catalog.get_table("test_database.nonexistent_table")
 
+    # Invalid identifiers
+    with pytest.raises(ValueError, match="Expected identifier with form `<database_name>.<table_name>`"):
+        glue_catalog.drop_table("a.b.c")
+    with pytest.raises(ValueError, match="Expected identifier with form `<database_name>.<table_name>`"):
+        glue_catalog.drop_table("a")
+
+
+def test_get_table_no_impls(glue_catalog, glue_client):
+    create_glue_database(glue_client, "test_database")
+    create_glue_table(glue_client, "test_database", "test_table")
+
+    # no impls!
+    glue_catalog._table_impls = []
+
+    # get_table should fail
+    with pytest.raises(ValueError, match="No supported table implementation"):
+        glue_catalog.get_table("test_database.test_table")
+
 
 def test_drop_table(glue_catalog, glue_client):
     # create a table with the client
@@ -169,6 +215,11 @@ def test_drop_table(glue_catalog, glue_client):
         glue_catalog.get_table("test_database.test_table")
     with pytest.raises(NotFoundError):
         glue_catalog.drop_table("test_database.nonexistent_table")
+
+    with pytest.raises(ValueError, match="Expected identifier with form `<database_name>.<table_name>`"):
+        glue_catalog.drop_table("a.b.c")
+    with pytest.raises(ValueError, match="Expected identifier with form `<database_name>.<table_name>`"):
+        glue_catalog.drop_table("a")
 
 
 ###
@@ -192,12 +243,7 @@ def create_glue_table(client, database_name, table_name, location=None):
         TableInput={
             "Name": table_name,
             "StorageDescriptor": {
-                "Columns": [
-                    {"Name": "col1", "Type": "string"},
-                ],
                 "Location": location,
-                "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
-                "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
             },
             "TableType": "EXTERNAL_TABLE",
             "Parameters": {
@@ -220,5 +266,228 @@ class GlueTestTable(GlueTable):
     def read(self, **options) -> DataFrame:
         raise NotImplementedError
 
-    def write(self, df: DataFrame, mode: Literal["append"] | Literal["overwrite"] = "append", **options) -> None:
+    def write(
+        self,
+        df: DataFrame,
+        mode: Literal["append"] | Literal["overwrite"] = "append",
+        **options,
+    ) -> None:
         raise NotImplementedError
+
+
+###
+# GlueCsvTable Testing
+###
+
+
+def test_glue_csv_table_init_not_supported():
+    with pytest.raises(ValueError, match="not supported"):
+        GlueCsvTable()
+
+
+def test_glue_csv_table_from_table_info_1(glue_catalog):
+    table_info = {
+        "Name": "test_csv_table",
+        "StorageDescriptor": {
+            "Columns": [
+                {"Name": "col1", "Type": "string"},
+                {"Name": "col2", "Type": "integer"},
+                {"Name": "col3", "Type": "double"},
+            ],
+            "Location": "s3://bucket/test_csv_table/",
+        },
+        "Parameters": {
+            "classification": "CSV",
+        },
+    }
+    csv_table = GlueCsvTable.from_table_info(glue_catalog, table_info)
+    assert csv_table._path == "s3://bucket/test_csv_table/"
+    assert len(csv_table._schema) == 3
+    assert csv_table._schema == Schema._from_pydict(
+        {
+            "col1": DataType.string(),
+            "col2": DataType.int32(),
+            "col3": DataType.float64(),
+        }
+    )
+    assert csv_table._has_headers is False
+    assert csv_table._delimiter == ","
+
+
+def test_glue_csv_table_from_table_info_2(glue_catalog):
+    table_info = {
+        "Name": "test_csv_table",
+        "StorageDescriptor": {
+            "Columns": [
+                {"Name": "col1", "Type": "string"},
+            ],
+            "Location": "s3://bucket/test_csv_table/",
+        },
+        "Parameters": {
+            "classification": "CSV",
+            "skip.header.line.count": "0",
+            "delimiter": "\t",
+        },
+    }
+    csv_table = GlueCsvTable.from_table_info(glue_catalog, table_info)
+    assert csv_table._has_headers is False
+    assert csv_table._delimiter == "\t"
+
+
+def test_glue_csv_table_from_table_info_3(glue_catalog):
+    table_info = {
+        "Name": "test_csv_table",
+        "Parameters": {},  # !! ERR !! no classification
+    }
+    with pytest.raises(
+        ValueError,
+        match="GlueTableInfo is missing the required parameter 'classification'",
+    ):
+        GlueCsvTable.from_table_info(glue_catalog, table_info)
+
+
+def test_glue_csv_table_from_table_info_4(glue_catalog):
+    table_info = {
+        "Name": "test_csv_table",
+        "Parameters": {
+            "classification": "parquet",
+        },
+    }
+    with pytest.raises(ValueError, match="GlueTableInfo had classification parquet, but expected 'CSV'"):
+        GlueCsvTable.from_table_info(glue_catalog, table_info)
+
+
+###
+# GlueParquetTable
+###
+
+
+def test_glue_parquet_table_init_not_supported():
+    with pytest.raises(ValueError, match="not supported"):
+        GlueParquetTable()
+
+
+def test_glue_parquet_table_from_table_info_1(glue_catalog):
+    table_info = {
+        "Name": "test_parquet_table",
+        "StorageDescriptor": {
+            "Columns": [
+                {"Name": "col1", "Type": "string"},
+            ],
+            "Location": "s3://bucket/test_parquet_table/",
+        },
+        "Parameters": {
+            "classification": "parquet",
+        },
+    }
+    parquet_table = GlueParquetTable.from_table_info(glue_catalog, table_info)
+    assert parquet_table.name == "test_parquet_table"
+
+
+def test_glue_parquet_table_from_table_info_2(glue_catalog):
+    table_info = {
+        "Name": "test_parquet_table",
+        "Parameters": {},  # !! ERR !! no classification
+    }
+    with pytest.raises(
+        ValueError,
+        match="GlueTableInfo is missing the required parameter 'classification'",
+    ):
+        GlueParquetTable.from_table_info(glue_catalog, table_info)
+
+
+def test_glue_parquet_table_from_table_info_3(glue_catalog):
+    table_info = {
+        "Name": "test_parquet_table",
+        "Parameters": {
+            "classification": "CSV",
+        },
+    }
+    with pytest.raises(ValueError, match="GlueTableInfo had classification CSV, but expected 'parquet'"):
+        GlueParquetTable.from_table_info(glue_catalog, table_info)
+
+
+###
+# GlueIcebergTable
+###
+
+
+def test_glue_iceberg_table_init_not_supported():
+    with pytest.raises(ValueError, match="not supported"):
+        GlueIcebergTable()
+
+
+def test_glue_iceberg_table_from_table_info_1(glue_catalog):
+    table_info = {
+        "DatabaseName": "test_iceberg_database",
+        "Name": "test_iceberg_table",
+        "StorageDescriptor": {},
+        "Parameters": {
+            "table_type": "iceberg",
+            "metadata_location": "s3://bucket/test_iceberg_table/metadata.json",
+        },
+    }
+    with pytest.raises(Exception):
+        # Fails in pyarrow as OSError, which is ok for testing because it means we made it that far.
+        # i.e. the daft logic is correctly picking up the metadata and passing to pyiceberg/pyarrow.
+        GlueIcebergTable.from_table_info(glue_catalog, table_info)
+
+
+def test_glue_iceberg_table_from_table_info_2(glue_catalog):
+    table_info = {
+        "Name": "test_iceberg_table",
+        "Parameters": {},  # !! ERR !! no table_type
+    }
+    with pytest.raises(ValueError, match="missing the required 'table_type' parameter"):
+        GlueIcebergTable.from_table_info(glue_catalog, table_info)
+
+
+def test_glue_iceberg_table_from_table_info_3(glue_catalog):
+    table_info = {
+        "Name": "test_iceberg_table",
+        "Parameters": {
+            "table_type": "delta",
+        },
+    }
+    with pytest.raises(ValueError, match="expected 'ICEBERG'"):
+        GlueIcebergTable.from_table_info(glue_catalog, table_info)
+
+
+###
+# schema tests
+###
+
+
+def test_convert_glue_schema():
+    columns = [
+        {"Name": "bool_col", "Type": "boolean"},
+        {"Name": "byte_col", "Type": "byte"},
+        {"Name": "short_col", "Type": "short"},
+        {"Name": "int_col", "Type": "integer"},
+        {"Name": "long_col", "Type": "long"},
+        {"Name": "bigint_col", "Type": "bigint"},
+        {"Name": "float_col", "Type": "float"},
+        {"Name": "double_col", "Type": "double"},
+        {"Name": "decimal_col", "Type": "decimal"},
+        {"Name": "string_col", "Type": "string"},
+        {"Name": "timestamp_col", "Type": "timestamp"},
+        {"Name": "date_col", "Type": "date"},
+    ]
+
+    # Test schema conversion
+    assert _convert_glue_schema(columns) == Schema._from_pydict(
+        {
+            "bool_col": DataType.bool(),
+            "byte_col": DataType.int8(),
+            "short_col": DataType.int16(),
+            "int_col": DataType.int32(),
+            "long_col": DataType.int64(),
+            "bigint_col": DataType.int64(),
+            "float_col": DataType.float32(),
+            "double_col": DataType.float64(),
+            "decimal_col": DataType.decimal128(precision=38, scale=18),
+            "string_col": DataType.string(),
+            "timestamp_col": DataType.timestamp(timeunit="us", timezone="UTC"),
+            "date_col": DataType.date(),
+        }
+    )
