@@ -94,10 +94,8 @@ class MicroPartition:
 
     @staticmethod
     def from_arrow(arrow_table: pa.Table) -> MicroPartition:
-        record_batches = [
-            RecordBatch.from_arrow_record_batches([batch], batch.schema) for batch in arrow_table.to_batches()
-        ]
-        return MicroPartition._from_record_batches(record_batches)
+        record_batch = RecordBatch.from_arrow_table(arrow_table)
+        return MicroPartition._from_record_batches([record_batch])
 
     @staticmethod
     def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> MicroPartition:
