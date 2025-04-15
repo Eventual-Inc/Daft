@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr, ExprRef, WindowExpr};
 use indexmap::IndexMap;
@@ -90,32 +90,37 @@ impl OptimizerRule for ExtractWindowFunction {
                 }
 
                 let (current_plan, window_col_mappings) =
-                    window_funcs_grouped_by_spec.into_iter().fold(
+                    window_funcs_grouped_by_spec.into_iter().try_fold(
                         (project.input.clone(), Vec::new()),
                         |(current_plan, mut window_col_mappings),
-                         (window_spec, window_exprs_for_spec)| {
-                            let (window_functions, aliases): (Vec<WindowExpr>, Vec<String>) =
-                                window_exprs_for_spec
-                                    .iter()
-                                    .map(|e| {
-                                        let semantic_id = e.semantic_id(&current_plan.schema());
-                                        let window_expr = match e.as_ref() {
-                                            Expr::Over(window_expr, _) => window_expr,
-                                            _ => panic!("Expected WindowExpr"),
-                                        };
-                                        (window_expr.clone(), semantic_id.id.to_string())
-                                    })
-                                    .unzip();
+                         (window_spec, window_exprs_for_spec)|
+                         -> DaftResult<_> {
+                            // Split into separate steps for better error handling
+                            let window_expr_pairs = window_exprs_for_spec
+                                .iter()
+                                .map(|e| {
+                                    let semantic_id = e.semantic_id(&current_plan.schema());
+                                    let window_expr = match e.as_ref() {
+                                        Expr::Over(window_expr, _) => Ok(window_expr),
+                                        _ => Err(DaftError::TypeError(format!(
+                                            "Expected WindowExpr, got {:?}",
+                                            e
+                                        ))),
+                                    }?;
+                                    Ok((window_expr.clone(), semantic_id.id.to_string()))
+                                })
+                                .collect::<DaftResult<Vec<(WindowExpr, String)>>>()?;
 
-                            let new_plan = Arc::new(LogicalPlan::Window(
-                                Window::try_new(
-                                    current_plan,
-                                    window_functions,
-                                    aliases,
-                                    window_spec,
-                                )
-                                .unwrap(),
-                            ));
+                            // Unzip the pairs into separate vectors
+                            let (window_functions, aliases): (Vec<WindowExpr>, Vec<String>) =
+                                window_expr_pairs.into_iter().unzip();
+
+                            let new_plan = Arc::new(LogicalPlan::Window(Window::try_new(
+                                current_plan,
+                                window_functions,
+                                aliases,
+                                window_spec,
+                            )?));
 
                             let spec_mappings = window_exprs_for_spec
                                 .iter()
@@ -126,9 +131,9 @@ impl OptimizerRule for ExtractWindowFunction {
                                 .collect::<Vec<(ExprRef, String)>>();
 
                             window_col_mappings.extend(spec_mappings);
-                            (new_plan, window_col_mappings)
+                            Ok((new_plan, window_col_mappings))
                         },
-                    );
+                    )?;
 
                 let new_projection = project
                     .projection

@@ -96,7 +96,7 @@ impl Window {
 
 impl Window {
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut lines = vec![format!("Window: {} functions", self.window_functions.len())];
+        let mut lines = vec!["Window:".to_string()];
 
         for (expr, name) in self.window_functions.iter().zip(self.aliases.iter()) {
             lines.push(format!("  {} as {}", expr, name));
