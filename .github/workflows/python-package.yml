@@ -17,7 +17,7 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  unit-tests:
+  unit-test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -146,9 +146,9 @@ jobs:
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
-  all-unit-tests:
+  unit-tests:
     runs-on: ubuntu-latest
-    needs: unit-tests
+    needs: unit-test
     if: always()
     steps:
     - name: All tests ok
@@ -829,7 +829,7 @@ jobs:
     name: Publish coverage reports to CodeCov
     runs-on: ubuntu-latest
     needs:
-    - unit-tests
+    - unit-test
     - rust-tests-platform
     steps:
     - uses: actions/checkout@v4
