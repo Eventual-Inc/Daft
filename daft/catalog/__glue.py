@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
     from daft.daft import IOConfig
     from daft.dataframe import DataFrame
+    from daft.unity_catalog import UnityCatalogTable
 else:
     GlueClient = Any
     GlueColumnInfo = Any
@@ -94,6 +95,7 @@ class GlueCatalog(Catalog):
                 GlueCsvTable,
                 GlueParquetTable,
                 GlueIcebergTable,
+                GlueDeltaTable,
             ]
         return super().__new__(cls)
 
@@ -197,12 +199,17 @@ class GlueCatalog(Catalog):
 
         try:
             res = self._client.get_table(DatabaseName=identifier[0], Name=identifier[1])
+            tbl = res["Table"]
             for impl in self._table_impls:
                 try:
-                    return impl.from_table_info(self, res["Table"])
+                    return impl.from_table_info(self, tbl)
                 except ValueError:
                     pass
-            raise ValueError(f"No supported table implementation for Table {res['Table']}.")
+            classification = tbl["Parameters"].get("classification", "unknown")
+            table_type = tbl["Parameters"].get("table_type", "unknown")
+            raise ValueError(
+                f"No supported table implementation for Table with classification='{classification}' and table_type='{table_type}'."
+            )
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
 
@@ -461,7 +468,7 @@ class GlueIcebergTable(GlueTable):
         gc.properties = {}
         gc.glue = catalog._client
 
-        # this will save the pyiceberg glue catalog ref
+        # the pyiceberg table will hold a ref to gc
         return gc._convert_glue_to_iceberg(table)
 
     def read(self, **options) -> DataFrame:
@@ -473,6 +480,64 @@ class GlueIcebergTable(GlueTable):
 
     def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
         df.write_iceberg(self._pyiceberg_table, mode=mode)
+
+
+class GlueDeltaTable(GlueTable):
+    _io_config: IOConfig | None
+    _unity_catalog_table: UnityCatalogTable
+
+    def __init__(self):
+        raise ValueError("GlueIcebergTable.__init__() not supported!")
+
+    @classmethod
+    def from_table_info(cls, catalog: GlueCatalog, table: GlueTableInfo) -> GlueTable:
+        parameters: Parameters = table.get("Parameters", {})
+
+        # verify we have table_type = "delta"
+        table_type = parameters.get("table_type")
+        if table_type is None:
+            raise ValueError("GlueDeltaTable is missing the required 'table_type' parameter.")
+        if table_type.lower() != "delta":
+            raise ValueError(f"GlueDeltaTable had table_type {table_type}, but expected 'delta'")
+
+        t = GlueDeltaTable.__new__(GlueDeltaTable)
+        t._catalog = catalog
+        t._table = table
+        t._io_config = None  # todo
+        t._unity_catalog_table = cls._create_unity_catalog_table(table, None)
+
+        return t
+
+    @classmethod
+    def _create_unity_catalog_table(cls, table: GlueTableInfo, io_config: IOConfig | None) -> UnityCatalogTable:
+        from unitycatalog.types import TableInfo
+
+        from daft.unity_catalog import UnityCatalogTable
+
+        table_info = TableInfo(
+            # catalog_name=
+            # columns=[],
+            comment=None,
+            created_at=int(table["CreateTime"].timestamp() * 1000),
+            data_source_format="DELTA",
+            schema_name=table["DatabaseName"],
+        )
+
+        table_uri = table["StorageDescriptor"]["Location"]
+
+        return UnityCatalogTable(table_info, table_uri, io_config)
+
+    def read(self, **options) -> DataFrame:
+        from daft.io._deltalake import read_deltalake
+
+        return read_deltalake(
+            table=self._unity_catalog_table,
+            version=options.get("version"),
+            io_config=self._io_config,
+        )
+
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+        raise NotImplementedError
 
 
 def _convert_glue_schema(columns: list[GlueColumnInfo]) -> Schema:
