@@ -5,6 +5,7 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::{resolved_col, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
@@ -16,7 +17,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, NUM_CPUS};
+use crate::ExecutionTaskSpawner;
 
 #[derive(Clone)]
 enum AggStrategy {
@@ -304,7 +305,7 @@ impl GroupedAggregateSink {
     }
 
     fn num_partitions(&self) -> usize {
-        *NUM_CPUS
+        self.max_concurrency()
     }
 }
 
@@ -449,7 +450,7 @@ impl BlockingSink for GroupedAggregateSink {
     }
 
     fn max_concurrency(&self) -> usize {
-        *NUM_CPUS
+        get_compute_pool_num_threads()
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

@@ -71,7 +71,7 @@ def _iceberg_partition_field_to_daft_partition_field(
         tfm = PartitionTransform.day()
         # pyiceberg uses date as the result type of a day transform, which is incorrect
         # so we cannot use transform.result_type() here
-        result_type = DataType.int32()
+        result_type = DataType.date()
     elif isinstance(transform, HourTransform):
         tfm = PartitionTransform.hour()
         result_type = DataType.int32()

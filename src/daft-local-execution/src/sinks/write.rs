@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::WriteMode;
+use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::OutputFileInfo;
@@ -16,7 +17,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 #[derive(Debug)]
@@ -232,7 +233,7 @@ impl BlockingSink for WriteSink {
 
     fn max_concurrency(&self) -> usize {
         if self.partition_by.is_some() {
-            *NUM_CPUS
+            get_compute_pool_num_threads()
         } else {
             1
         }

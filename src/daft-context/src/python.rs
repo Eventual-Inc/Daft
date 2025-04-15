@@ -145,16 +145,19 @@ pub fn set_runner_ray(
     }
 }
 
-#[pyfunction]
-pub fn set_runner_native() -> PyResult<PyDaftContext> {
-    super::set_runner_native()
+#[pyfunction(signature = (num_threads = None))]
+pub fn set_runner_native(num_threads: Option<usize>) -> PyResult<PyDaftContext> {
+    super::set_runner_native(num_threads)
         .map(|ctx| ctx.into())
         .map_err(|_| PyRuntimeError::new_err("Cannot set runner more than once"))
 }
 
-#[pyfunction(signature = (use_thread_pool = None))]
-pub fn set_runner_py(use_thread_pool: Option<bool>) -> PyResult<PyDaftContext> {
-    super::set_runner_py(use_thread_pool)
+#[pyfunction(signature = (use_thread_pool = None, num_threads = None))]
+pub fn set_runner_py(
+    use_thread_pool: Option<bool>,
+    num_threads: Option<usize>,
+) -> PyResult<PyDaftContext> {
+    super::set_runner_py(use_thread_pool, num_threads)
         .map(|ctx| ctx.into())
         .map_err(|_| PyRuntimeError::new_err("Cannot set runner more than once"))
 }
