@@ -43,11 +43,11 @@ import warnings
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from daft.daft import PyIdentifier, PyTableSource
+from daft.daft import PyIdentifier
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING, Any, Literal, final
+from typing import TYPE_CHECKING, Any, Literal
 
 from daft.logical.schema import Schema
 
@@ -59,6 +59,7 @@ if TYPE_CHECKING:
 __all__ = [
     "Catalog",
     "Identifier",
+    "Schema",
     "Table",
     # TODO deprecated catalog APIs #3819
     "read_table",
@@ -330,19 +331,51 @@ class Catalog(ABC):
 
     @abstractmethod
     def create_namespace(self, identifier: Identifier | str):
-        """Creates a namespace in this catalog."""
+        """Creates a namespace in this catalog.
+
+        Args:
+            identifier (Identifier | str): namespace identifier
+
+        Returns:
+            None
+        """
+        raise NotImplementedError
 
     def create_namespace_if_not_exists(self, identifier: Identifier | str):
-        """Creates a namespace in this catalog if it does not already exist."""
+        """Creates a namespace in this catalog if it does not already exist.
+
+        Args:
+            identifier (Identifier | str): namespace identifier
+
+        Returns:
+            None
+        """
         if not self.has_namespace(identifier):
             self.create_namespace(identifier)
 
     @abstractmethod
-    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
-        """Creates a table in this catalog."""
+    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+        """Creates a table in this catalog.
 
-    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource | object) -> Table:
-        """Creates a table in this catalog if it does not already exist."""
+        Args:
+            identifier (Identifier | str): table identifier
+            source (Schema | DataFrame): table source object such as a Schema or DataFrame.
+
+        Returns:
+            Table: new table instance.
+        """
+        raise NotImplementedError
+
+    def create_table_if_not_exists(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+        """Creates a table in this catalog if it does not already exist.
+
+        Args:
+            identifier (Identifier | str): table identifier
+            source (Schema | DataFrame): table source object such as a Schema or DataFrame.
+
+        Returns:
+            Table: the existing table (if exists) or the new table instance.
+        """
         try:
             return self.get_table(identifier)
         except NotFoundError:
@@ -353,6 +386,7 @@ class Catalog(ABC):
     ###
 
     def has_namespace(self, identifier: Identifier | str):
+        """Returns True if the namespace exists, otherwise False."""
         raise NotImplementedError(f"Catalog implementation {type(self)} does not support has_namespace")
 
     def has_table(self, identifier: Identifier | str):
@@ -771,63 +805,3 @@ class Table(ABC):
             category=DeprecationWarning,
         )
         return self.read()
-
-
-class TableSource:
-    """A TableSource is used to create a new table; this could be a Schema or DataFrame."""
-
-    _source: PyTableSource
-
-    def __init__(self) -> None:
-        raise ValueError("We do not support creating a TableSource via __init__")
-
-    @staticmethod
-    def from_df(df: DataFrame) -> TableSource:
-        """Creates a TableSource from a DataFrame.
-
-        Args:
-            df (DataFrame): source dataframe
-
-        Returns:
-            TableSource: new table source instance
-        """
-        s = TableSource.__new__(TableSource)
-        s._source = PyTableSource.from_builder(df._builder._builder)
-        return s
-
-    @staticmethod
-    def _from_obj(obj: object = None) -> TableSource:
-        # TODO for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
-        if obj is None:
-            return TableSource._from_none()
-        elif isinstance(obj, DataFrame):
-            return TableSource.from_df(obj)
-        elif isinstance(obj, str):
-            return TableSource._from_path(obj)
-        elif isinstance(obj, Schema):
-            return TableSource._from_schema(obj)
-        else:
-            raise Exception(f"Unknown table source: {obj}")
-
-    @staticmethod
-    def _from_none() -> TableSource:
-        # for creating temp mutable tables, but we don't have those yet
-        # s = TableSource.__new__(TableSource)
-        # s._source = PyTableSource.empty()
-        # return s
-        # todo temp workaround just use an empty schema
-        return TableSource._from_schema(Schema._from_fields([]))
-
-    @staticmethod
-    def _from_schema(schema: Schema) -> TableSource:
-        # we don't have mutable temp tables, so just make an empty view
-        # s = TableSource.__new__(TableSource)
-        # s._source = PyTableSource.from_schema(schema._schema)
-        # return s
-        # todo temp workaround until create_table is wired
-        return TableSource.from_df(DataFrame._from_pylist([]))
-
-    @staticmethod
-    def _from_path(path: str) -> TableSource:
-        # for supporting daft.create_table("t", "/path/to/data") <-> CREATE TABLE t AS '/path/to/my.data'
-        raise NotImplementedError("creating a table source from a path is not yet supported.")
