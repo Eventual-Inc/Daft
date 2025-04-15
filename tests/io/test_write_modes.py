@@ -1,3 +1,6 @@
+import os
+import pathlib
+import shutil
 import uuid
 from typing import List, Optional
 
@@ -19,6 +22,20 @@ def bucket(minio_io_config):
     if not fs.exists(BUCKET):
         fs.mkdir(BUCKET)
     yield BUCKET
+
+
+@pytest.fixture(scope="function")
+def tmp_relative_path():
+    # Create a unique directory in the home directory
+    base_relative_dir = pathlib.Path(f"~/test_dir_{uuid.uuid4()}")
+    full_relative_dir = base_relative_dir.joinpath("relative", "path")
+
+    # Return the ~ version for the test to use
+    yield full_relative_dir
+
+    # Remove the directory
+    full_path = os.path.expanduser(base_relative_dir)
+    shutil.rmtree(full_path)
 
 
 def write(
@@ -112,6 +129,23 @@ def _run_append_overwrite_test(
 def test_append_and_overwrite_local(tmp_path, write_mode, format, num_partitions, partition_cols):
     _run_append_overwrite_test(
         path=str(tmp_path),
+        write_mode=write_mode,
+        format=format,
+        num_partitions=num_partitions,
+        partition_cols=partition_cols,
+        io_config=None,
+    )
+
+
+@pytest.mark.parametrize("write_mode", ["append", "overwrite"])
+@pytest.mark.parametrize("format", ["csv", "parquet"])
+@pytest.mark.parametrize("num_partitions", [1, 2])
+@pytest.mark.parametrize("partition_cols", [None, ["a"]])
+def test_append_and_overwrite_local_relative_path(
+    tmp_relative_path, write_mode, format, num_partitions, partition_cols
+):
+    _run_append_overwrite_test(
+        path=str(tmp_relative_path),
         write_mode=write_mode,
         format=format,
         num_partitions=num_partitions,
@@ -272,6 +306,18 @@ def _run_overwrite_partitions_test(
 def test_overwrite_partitions_local(tmp_path, format, new_data, expected_read_back):
     _run_overwrite_partitions_test(
         path=str(tmp_path),
+        format=format,
+        new_data=new_data,
+        expected_read_back=expected_read_back,
+        io_config=None,
+    )
+
+
+@pytest.mark.parametrize("format", ["csv", "parquet"])
+@pytest.mark.parametrize("new_data, expected_read_back", OVERWRITE_PARTITION_TEST_CASES)
+def test_overwrite_partitions_local_relative_path(tmp_relative_path, format, new_data, expected_read_back):
+    _run_overwrite_partitions_test(
+        path=str(tmp_relative_path),
         format=format,
         new_data=new_data,
         expected_read_back=expected_read_back,
