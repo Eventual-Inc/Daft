@@ -600,8 +600,6 @@ def test_internals(make_df):
 
     result = result.collect()
 
-    assert False
-
     pdf = pd.DataFrame(data)
     store_revenue_sum = pdf.groupby("store")["revenue"].transform("sum")
     store_revenue_share = pdf["revenue"] / store_revenue_sum
