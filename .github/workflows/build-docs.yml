@@ -1,7 +1,7 @@
 # This workflow will build the Daft docs and optionally publishes them to Netlify
 # for easy previews.
 
-name: daft-docs
+name: Build docs
 
 on:
   push:
