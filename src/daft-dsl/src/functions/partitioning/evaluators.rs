@@ -53,12 +53,12 @@ macro_rules! impl_func_evaluator_for_partitioning {
     };
 }
 
-use DataType::Int32;
+use DataType::{Date, Int32};
 
 use crate::functions::FunctionExpr;
 impl_func_evaluator_for_partitioning!(YearsEvaluator, years, partitioning_years, Int32);
 impl_func_evaluator_for_partitioning!(MonthsEvaluator, months, partitioning_months, Int32);
-impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days, Int32);
+impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days, Date);
 impl_func_evaluator_for_partitioning!(HoursEvaluator, hours, partitioning_hours, Int32);
 
 pub(super) struct IcebergBucketEvaluator {}
