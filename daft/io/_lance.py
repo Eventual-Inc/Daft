@@ -20,7 +20,7 @@ def _lancedb_table_factory_function(
     fragment: "lance.LanceFragment", required_columns: Optional[List[str]]
 ) -> Iterator["PyRecordBatch"]:
     return (
-        RecordBatch.from_arrow_record_batches([rb], rb.schema)._table
+        RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
         for rb in fragment.to_batches(columns=required_columns)
     )
 

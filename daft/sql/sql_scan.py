@@ -117,7 +117,7 @@ class SQLScanOperator(ScanOperator):
                 num_rows=None,
                 size_bytes=size_bytes,
                 partition_bounds=(left_clause, right_clause),
-                stats=stats._table,
+                stats=stats._recordbatch,
             )
             scan_tasks.append(scan_task)
 
@@ -210,7 +210,7 @@ class SQLScanOperator(ScanOperator):
                 if pa_table.num_columns != num_scan_tasks + 1:
                     raise RuntimeError(f"Expected {num_scan_tasks + 1} percentiles, but got {pa_table.num_columns}.")
 
-                pydict = RecordBatch.from_arrow(pa_table).to_pydict()
+                pydict = RecordBatch.from_arrow_table(pa_table).to_pydict()
                 assert pydict.keys() == {f"bound_{i}" for i in range(num_scan_tasks + 1)}
                 return [pydict[f"bound_{i}"][0] for i in range(num_scan_tasks + 1)]
 
@@ -232,7 +232,7 @@ class SQLScanOperator(ScanOperator):
         if pa_table.num_columns != 2:
             raise RuntimeError(f"Failed to get partition bounds: expected 2 columns, but got {pa_table.num_columns}.")
 
-        pydict = RecordBatch.from_arrow(pa_table).to_pydict()
+        pydict = RecordBatch.from_arrow_table(pa_table).to_pydict()
         assert pydict.keys() == {"min", "max"}
         min_val = pydict["min"][0]
         max_val = pydict["max"][0]
