@@ -141,8 +141,8 @@ class MicroPartition:
         """Returns the MicroPartition as a RecordBatch."""
         return RecordBatch._from_pyrecordbatch(self._micropartition.to_record_batch())
 
-    def to_arrow(self) -> pa.Table:
-        if len(self) > 0:
+    def to_arrow(self, concat_record_batches: bool = False) -> pa.Table:
+        if len(self) > 0 and not concat_record_batches:
             return pa.Table.from_batches(rb.to_arrow_record_batch() for rb in self.get_record_batches())
         else:
             return self.to_record_batch().to_arrow_table()
