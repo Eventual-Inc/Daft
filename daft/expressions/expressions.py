@@ -4242,6 +4242,8 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
     def days(self) -> Expression:
         """Partitioning Transform that returns the number of days since epoch (1970-01-01).
 
+        Unlike other temporal partitioning expressions, this expression is date type instead of int. This is to conform to the behavior of other implementations of Iceberg partition transforms.
+
         Returns:
             Date Expression
         """
