@@ -96,7 +96,11 @@ impl Window {
 
 impl Window {
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut lines = vec![format!("Window: {}", self.window_functions.len())];
+        let mut lines = vec![format!("Window: {} functions", self.window_functions.len())];
+
+        for (expr, name) in self.window_functions.iter().zip(self.aliases.iter()) {
+            lines.push(format!("  {} as {}", expr, name));
+        }
 
         if !self.window_spec.partition_by.is_empty() {
             let partition_cols = self
@@ -163,6 +167,10 @@ impl Window {
 
         if self.window_spec.min_periods != 1 {
             lines.push(format!("  Min periods: {}", self.window_spec.min_periods));
+        }
+
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            lines.push(format!("Stats = {}", stats));
         }
 
         lines
