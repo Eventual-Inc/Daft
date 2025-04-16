@@ -572,21 +572,13 @@ def test_internals(make_df):
     window_store_category = Window().partition_by(["store", "category"])
 
     result = df.select(
-        col("store"),  # TODO: Eventually be able to remove these columns
-        col("category"),  # TODO: Eventually be able to remove these columns
-        col("product"),  # TODO: Eventually be able to remove these columns
-        col("revenue"),  # TODO: Eventually be able to remove these columns
         col("revenue").sum().over(window_store).alias("store revenue sum"),
         (col("revenue") / col("revenue").sum().over(window_store)).alias("store revenue share"),
         col("revenue").sum().over(window_product).alias("product revenue sum"),
         (col("revenue") / col("revenue").sum().over(window_product)).alias("product revenue share"),
         col("revenue").sum().over(window_store_category).alias("store category revenue sum"),
         (col("revenue") - col("revenue").max().over(window_store_category)).alias("store category max revenue diff"),
-    )
-
-    result.explain(show_all=True)
-
-    result = result.collect()
+    ).collect()
 
     pdf = pd.DataFrame(data)
     store_revenue_sum = pdf.groupby("store")["revenue"].transform("sum")
@@ -598,10 +590,6 @@ def test_internals(make_df):
     store_category_max_revenue_diff = pdf["revenue"] - store_category_max_revenue
     expected = pd.DataFrame(
         {
-            "store": pdf["store"],
-            "category": pdf["category"],
-            "product": pdf["product"],
-            "revenue": pdf["revenue"],
             "store revenue sum": store_revenue_sum,
             "store revenue share": store_revenue_share,
             "product revenue sum": product_revenue_sum,
@@ -611,4 +599,13 @@ def test_internals(make_df):
         }
     )
 
-    assert_df_equals(result.to_pandas(), expected, sort_key=["store", "category", "product"])
+    assert_df_equals(
+        result.to_pandas(),
+        expected,
+        sort_key=[
+            "store revenue sum",
+            "product revenue sum",
+            "store category revenue sum",
+            "store category max revenue diff",
+        ],
+    )

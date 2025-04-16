@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::Transformed;
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     optimization, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
@@ -86,6 +86,25 @@ impl Project {
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,
     ) -> logical_plan::Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
+        // Check if projection contains any window functions, if so, return without factoring.
+        // This is because window functions may implicitly reference columns via the window spec.
+        let mut has_window = false;
+        projection.iter().any(|expr| {
+            expr.apply(|e| {
+                if matches!(e.as_ref(), Expr::Over(..)) {
+                    has_window = true;
+                    Ok(TreeNodeRecursion::Jump)
+                } else {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+            })
+            .is_ok()
+        });
+
+        if has_window {
+            return Ok((input, projection));
+        }
+
         // Given construction parameters for a projection,
         // see if we can factor out common subexpressions.
         // Returns a new set of projection parameters
