@@ -202,7 +202,7 @@ def row_number() -> Expression:
         >>> import daft
         >>> from daft.window import Window
         >>> from daft.functions import row_number
-        >>> df = daft.from_pydict({"category": ["A", "A", "B", "B"], "value": [1, 2, 3, 4]})
+        >>> df = daft.from_pydict({"category": ["A", "A", "A", "A"], "value": [1, 7, 2, 9]})
         >>>
         >>> # Ascending order
         >>> window = Window().partition_by("category").order_by("value")
@@ -213,13 +213,13 @@ def row_number() -> Expression:
         │ ---      ┆ ---   ┆ ---    │
         │ Utf8     ┆ Int64 ┆ UInt64 │
         ╞══════════╪═══════╪════════╡
-        │ B        ┆ 3     ┆ 1      │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ B        ┆ 4     ┆ 2      │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ A        ┆ 1     ┆ 1      │
         ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ A        ┆ 2     ┆ 2      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ A        ┆ 7     ┆ 3      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ A        ┆ 9     ┆ 4      │
         ╰──────────┴───────┴────────╯
         <BLANKLINE>
         (Showing first 4 of 4 rows)
