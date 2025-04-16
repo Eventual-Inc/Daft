@@ -1,5 +1,6 @@
 use std::{cmp::min, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_scan_info::{PartitionField, PhysicalScanInfo, Pushdowns, ScanState, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
@@ -10,18 +11,24 @@ use daft_logical_plan::{
 };
 use daft_schema::schema::SchemaRef;
 
-struct SourceTracker {
+struct SourcePlanProducer {
     scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     source_schema: SchemaRef,
     output_schema: SchemaRef,
     partitioning_keys: Vec<PartitionField>,
     pushdowns: Pushdowns,
     next_source: usize,
-    batch_size: usize,
+    config: Arc<DaftExecutionConfig>,
 }
 
-impl SourceTracker {
-    pub fn new(source: PhysicalScanInfo, output_schema: SchemaRef) -> Self {
+impl SourcePlanProducer {
+    const DEFAULT_MEMORY_COST: usize = 1024 * 1024 * 1024 * 64; // 4GB
+
+    pub fn new(
+        source: PhysicalScanInfo,
+        output_schema: SchemaRef,
+        config: Arc<DaftExecutionConfig>,
+    ) -> Self {
         let scan_tasks = match source.scan_state {
             ScanState::Operator(_) => panic!("Operator scan state not supported"),
             ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
@@ -33,24 +40,34 @@ impl SourceTracker {
             partitioning_keys: source.partitioning_keys,
             pushdowns: source.pushdowns,
             next_source: 0,
-            batch_size: 8,
+            config,
         }
     }
 
-    pub fn next_source_plan(&mut self) -> Option<LogicalPlanRef> {
-        let start = self.next_source;
+    pub fn next_plan(&mut self) -> Option<LogicalPlanRef> {
+        let mut start = self.next_source;
         if start >= self.scan_tasks.len() {
             return None;
         }
-        let end = min(start + self.batch_size, self.scan_tasks.len());
-        let batch = self.scan_tasks[start..end]
-            .iter()
-            .map(|s| s.clone())
-            .collect::<Vec<_>>()
-            .into();
-        self.next_source = end;
+
+        let mut scan_tasks = Vec::new();
+        let mut scan_task_total_memory_cost = 0;
+
+        while scan_task_total_memory_cost < Self::DEFAULT_MEMORY_COST
+            && start < self.scan_tasks.len()
+        {
+            let scan_task = self.scan_tasks[start].clone();
+            scan_task_total_memory_cost += scan_task
+                .estimate_in_memory_size_bytes(Some(&self.config))
+                .unwrap_or(Self::DEFAULT_MEMORY_COST);
+            scan_tasks.push(scan_task);
+            start += 1;
+        }
+
+        self.next_source = start;
+
         let source = PhysicalScanInfo {
-            scan_state: ScanState::Tasks(batch),
+            scan_state: ScanState::Tasks(scan_tasks.into()),
             source_schema: self.source_schema.clone(),
             partitioning_keys: self.partitioning_keys.clone(),
             pushdowns: self.pushdowns.clone(),
@@ -67,11 +84,14 @@ impl SourceTracker {
 
 pub struct DistributedPhysicalPlanner {
     logical_plan: LogicalPlanRef,
-    source_tracker: SourceTracker,
+    source_producer: SourcePlanProducer,
 }
 
 impl DistributedPhysicalPlanner {
-    pub fn from_logical_plan_builder(builder: &LogicalPlanBuilder) -> DaftResult<Self> {
+    pub fn from_logical_plan_builder(
+        builder: &LogicalPlanBuilder,
+        config: &Arc<DaftExecutionConfig>,
+    ) -> DaftResult<Self> {
         let plan = builder.build();
         if !can_translate_logical_plan(&plan) {
             return Err(DaftError::InternalError(
@@ -84,31 +104,31 @@ impl DistributedPhysicalPlanner {
         };
         let replaced = plan.rewrite(&mut replacer)?;
         let plan = replaced.data;
-        let mut inputs = replacer.scan_infos;
+        let inputs = replacer.scan_infos;
         assert_eq!(inputs.len(), 1); // for now we only support map pipelines, so only 1 source
 
         Ok(Self {
             logical_plan: plan,
-            source_tracker: SourceTracker::new(
-                inputs.pop().unwrap(),
-                replacer.output_schemas.pop().unwrap(),
+            source_producer: SourcePlanProducer::new(
+                inputs[0].clone(),
+                replacer.output_schemas[0].clone(),
+                config.clone(),
             ),
         })
     }
 
-    pub fn next_plan(&mut self) -> DaftResult<Option<LocalPhysicalPlanRef>> {
-        match self.source_tracker.next_source_plan() {
-            Some(source) => {
-                let next_logical_plan =
-                    replace_placeholders_with_sources(self.logical_plan.clone(), source)?;
-                let optimizer = OptimizerBuilder::new().enrich_with_stats().build();
-                let optimized_logical_plan =
-                    optimizer.optimize(next_logical_plan, |_, _, _, _, _| {})?;
-                let local_physical_plan = translate(&optimized_logical_plan)?;
-                Ok(Some(local_physical_plan))
-            }
-            None => Ok(None),
+    pub fn to_local_physical_plans(&mut self) -> DaftResult<Vec<LocalPhysicalPlanRef>> {
+        let mut plans = Vec::new();
+        while let Some(source) = self.source_producer.next_plan() {
+            let next_logical_plan =
+                replace_placeholders_with_sources(self.logical_plan.clone(), source)?;
+            let optimizer = OptimizerBuilder::new().enrich_with_stats().build();
+            let optimized_logical_plan =
+                optimizer.optimize(next_logical_plan, |_, _, _, _, _| {})?;
+            let local_physical_plan = translate(&optimized_logical_plan)?;
+            plans.push(local_physical_plan);
         }
+        Ok(plans)
     }
 }
 

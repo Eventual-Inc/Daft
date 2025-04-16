@@ -1,6 +1,6 @@
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, PyLocalPhysicalPlan};
+use common_daft_config::PyDaftExecutionConfig;
+use daft_local_plan::PyLocalPhysicalPlan;
 use daft_logical_plan::PyLogicalPlanBuilder;
-use daft_scan::{python::pylib::PyScanTask, ScanTaskRef};
 use pyo3::prelude::*;
 
 use crate::planner::DistributedPhysicalPlanner;
@@ -13,14 +13,23 @@ struct DistributedPhysicalPlan {
 #[pymethods]
 impl DistributedPhysicalPlan {
     #[staticmethod]
-    pub fn from_logical_plan_builder(builder: &PyLogicalPlanBuilder) -> PyResult<Self> {
-        let planner = DistributedPhysicalPlanner::from_logical_plan_builder(&builder.builder)?;
+    pub fn from_logical_plan_builder(
+        builder: &PyLogicalPlanBuilder,
+        config: &PyDaftExecutionConfig,
+    ) -> PyResult<Self> {
+        let planner = DistributedPhysicalPlanner::from_logical_plan_builder(
+            &builder.builder,
+            &config.config,
+        )?;
         Ok(Self { planner })
     }
 
-    pub fn next_plan(&mut self) -> PyResult<Option<PyLocalPhysicalPlan>> {
-        let next_plan = self.planner.next_plan()?;
-        Ok(next_plan.map(|plan| PyLocalPhysicalPlan { plan }))
+    pub fn to_local_physical_plans(&mut self) -> PyResult<Vec<PyLocalPhysicalPlan>> {
+        let plans = self.planner.to_local_physical_plans()?;
+        Ok(plans
+            .into_iter()
+            .map(|plan| PyLocalPhysicalPlan { plan })
+            .collect())
     }
 }
 

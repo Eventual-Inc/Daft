@@ -24,7 +24,7 @@ from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
-from daft.runners.distributed_swordfish import DistributedSwordfishRunner
+from daft.runners.distributed_swordfish import run_distributed_swordfish
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
@@ -554,7 +554,7 @@ def reduce_and_fanout(
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
-@ray.remote
+@ray.remote(num_cpus=0)
 def get_metas(*partitions: MicroPartition) -> list[PartitionMetadata]:
     return [PartitionMetadata.from_table(partition) for partition in partitions]
 
@@ -1332,8 +1332,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
         elif daft_execution_config.big_buddha_special:
             try:
-                distributed_swordfish_runner = DistributedSwordfishRunner()
-                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(builder._builder)
+                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(builder._builder, daft_execution_config)
             except Exception as e:
                 logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
                 # Fallback to regular execution
@@ -1344,7 +1343,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._stream_plan(result_uuid)
             else:
                 # If plan building succeeds, execute it
-                for obj in distributed_swordfish_runner.run_plan(
+                for obj in run_distributed_swordfish(
                     distributed_plan, daft_execution_config, results_buffer_size
                 ):
                     yield RayMaterializedResult(obj)

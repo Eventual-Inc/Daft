@@ -232,10 +232,6 @@ impl BlockingSink for WriteSink {
     }
 
     fn max_concurrency(&self) -> usize {
-        if self.partition_by.is_some() {
-            get_compute_pool_num_threads()
-        } else {
-            1
-        }
+        get_compute_pool_num_threads()
     }
 }
