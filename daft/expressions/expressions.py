@@ -623,7 +623,7 @@ class Expression:
             (Showing first 2 of 2 rows)
 
         Tip: See Also
-            [list.get][daft.expressions.expressions.ExpressionListNamespace.get] and [struct.get][daft.expressions.expressions.ExpressionStructNamespace.get]
+            [list.get](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.get) and [struct.get](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStructNamespace.get)
 
         """
         key_type = type(key)
@@ -2478,7 +2478,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
 
-        See [daft.datatype.TimeUnit][daft.datatype.DataType.timeunit] for more information on time units and valid values.
+        See [daft.datatype.TimeUnit](https://www.getdaft.io/projects/docs/en/stable/api/datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
 
         Examples:
             >>> import daft
@@ -2832,7 +2832,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
 
         Tip: See Also
-            [extract_all][daft.expressions.expressions.ExpressionStringNamespace.extract_all]
+            [extract_all](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(native.utf8_extract(self._expr, pattern_expr._expr, index))
@@ -2888,7 +2888,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         Tip: See Also
-            [extract][daft.expressions.expressions.ExpressionStringNamespace.extract]
+            [extract](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract)
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(native.utf8_extract_all(self._expr, pattern_expr._expr, index))
@@ -4001,7 +4001,7 @@ class ExpressionListNamespace(ExpressionNamespace):
     def unique(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
 
-        Alias for [Expression.list.distinct][daft.expressions.expressions.ExpressionListNamespace.distinct].
+        Alias for [Expression.list.distinct](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct).
 
         Returns:
             Expression: An expression with lists containing only distinct elements
@@ -4045,7 +4045,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         Tip: See Also
-            [Expression.list.distinct][daft.expressions.expressions.ExpressionListNamespace.distinct]
+            [Expression.list.distinct](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct)
 
         """
         return self.distinct()
