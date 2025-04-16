@@ -9,7 +9,6 @@ daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 log = {workspace = true}
 strum = {version = "0.26", features = ["derive"]}
 serde = {workspace = true}
-tokio = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 
 [features]

@@ -2288,16 +2288,13 @@ name = "daft-distributed-plan"
 version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
- "common-display",
  "common-error",
  "common-scan-info",
  "common-treenode",
  "daft-local-plan",
  "daft-logical-plan",
- "daft-scan",
  "daft-schema",
  "pyo3",
- "serde",
 ]
 
 [[package]]
@@ -2532,7 +2529,6 @@ dependencies = [
  "pyo3",
  "serde",
  "strum 0.26.3",
- "tokio",
 ]
 
 [[package]]

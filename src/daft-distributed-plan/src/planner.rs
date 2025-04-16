@@ -1,4 +1,4 @@
-use std::{cmp::min, sync::Arc};
+use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
@@ -214,7 +214,7 @@ fn replace_placeholders_with_sources(
 ) -> DaftResult<LogicalPlanRef> {
     let new_plan = plan.transform_up(|plan| match plan.as_ref() {
         LogicalPlan::Source(source) => match source.source_info.as_ref() {
-            SourceInfo::PlaceHolder(ph) => Ok(Transformed::yes(new_source_plan.clone())),
+            SourceInfo::PlaceHolder(_ph) => Ok(Transformed::yes(new_source_plan.clone())),
             _ => Ok(Transformed::no(plan)),
         },
         _ => Ok(Transformed::no(plan)),
