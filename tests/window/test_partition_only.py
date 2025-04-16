@@ -547,7 +547,7 @@ def test_multi_window_agg_functions(make_df):
             ), f"Incorrect max for {category}: {result_dict['max_single'][idx]} != {expected_max}"
 
 
-def test_internals(make_df):
+def test_without_source_columns_and_with_duplicate_window_functions(make_df):
     data = {
         "product": [],
         "category": [],
