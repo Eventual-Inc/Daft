@@ -21,7 +21,10 @@ use pyo3::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{expr::Expr, ExprRef, LiteralValue};
+use crate::{
+    expr::{Expr, WindowExpr},
+    ExprRef, LiteralValue,
+};
 
 #[pyfunction]
 pub fn unresolved_col(name: &str) -> PyExpr {
@@ -528,8 +531,9 @@ impl PyExpr {
     }
 
     pub fn over(&self, window_spec: &crate::expr::window::WindowSpec) -> PyResult<Self> {
+        let window_expr = WindowExpr::try_from(self.expr.clone())?;
         Ok(Self {
-            expr: Arc::new(Expr::Window(self.expr.clone(), window_spec.clone())),
+            expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
         })
     }
 }
