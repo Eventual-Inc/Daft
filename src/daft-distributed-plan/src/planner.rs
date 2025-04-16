@@ -22,7 +22,7 @@ struct SourcePlanProducer {
 }
 
 impl SourcePlanProducer {
-    const DEFAULT_MEMORY_COST: usize = 1024 * 1024 * 1024 * 16; // 4GB
+    const DEFAULT_PLAN_SIZE: usize = 1024 * 1024 * 1024 * 16; // 16GB
 
     pub fn new(
         source: PhysicalScanInfo,
@@ -53,20 +53,18 @@ impl SourcePlanProducer {
         let mut scan_tasks = Vec::new();
         let mut scan_task_total_memory_cost = 0;
 
-        while scan_task_total_memory_cost < Self::DEFAULT_MEMORY_COST
-            && start < self.scan_tasks.len()
+        while scan_task_total_memory_cost < Self::DEFAULT_PLAN_SIZE && start < self.scan_tasks.len()
         {
             let scan_task = self.scan_tasks[start].clone();
             scan_task_total_memory_cost += scan_task
                 .estimate_in_memory_size_bytes(Some(&self.config))
-                .unwrap_or(Self::DEFAULT_MEMORY_COST);
+                .unwrap_or(Self::DEFAULT_PLAN_SIZE);
             scan_tasks.push(scan_task);
             start += 1;
         }
 
         self.next_source = start;
 
-        println!("scan_tasks: {:?}", scan_tasks.len());
         let source = PhysicalScanInfo {
             scan_state: ScanState::Tasks(scan_tasks.into()),
             source_schema: self.source_schema.clone(),

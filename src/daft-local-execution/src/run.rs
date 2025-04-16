@@ -136,7 +136,7 @@ impl PyNativeExecutor {
     }
 
     #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
-    pub fn run<'a>(
+    pub fn run_local<'a>(
         &self,
         py: Python<'a>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,

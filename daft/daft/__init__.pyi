@@ -1885,7 +1885,7 @@ class LocalPhysicalPlan:
 
 class NativeExecutor:
     def __init__(self) -> None: ...
-    def run(
+    def run_local(
         self,
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PartitionT]],

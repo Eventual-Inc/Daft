@@ -62,35 +62,6 @@ impl LocalPhysicalPlan {
         self.into()
     }
 
-    pub fn get_children(&self) -> Vec<&LocalPhysicalPlanRef> {
-        match self {
-            Self::InMemoryScan(_) => vec![],
-            Self::PhysicalScan(_) => vec![],
-            Self::EmptyScan(_) => vec![],
-            Self::Project(p) => vec![&p.input],
-            Self::ActorPoolProject(p) => vec![&p.input],
-            Self::Filter(p) => vec![&p.input],
-            Self::Limit(p) => vec![&p.input],
-            Self::Explode(p) => vec![&p.input],
-            Self::Unpivot(p) => vec![&p.input],
-            Self::Sort(p) => vec![&p.input],
-            Self::Sample(p) => vec![&p.input],
-            Self::MonotonicallyIncreasingId(p) => vec![&p.input],
-            Self::UnGroupedAggregate(p) => vec![&p.input],
-            Self::HashAggregate(p) => vec![&p.input],
-            Self::Pivot(p) => vec![&p.input],
-            Self::PhysicalWrite(p) => vec![&p.input],
-            Self::WindowPartitionOnly(p) => vec![&p.input],
-            Self::Concat(p) => vec![&p.input, &p.other],
-            Self::HashJoin(p) => vec![&p.left, &p.right],
-            Self::CrossJoin(p) => vec![&p.left, &p.right],
-            #[cfg(feature = "python")]
-            Self::CatalogWrite(p) => vec![&p.input],
-            #[cfg(feature = "python")]
-            Self::LanceWrite(p) => vec![&p.input],
-        }
-    }
-
     pub fn get_stats_state(&self) -> &StatsState {
         match self {
             Self::InMemoryScan(InMemoryScan { stats_state, .. })
@@ -119,7 +90,7 @@ impl LocalPhysicalPlan {
         }
     }
 
-    pub fn in_memory_scan(
+    pub(crate) fn in_memory_scan(
         in_memory_info: InMemoryInfo,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
@@ -130,7 +101,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn physical_scan(
+    pub(crate) fn physical_scan(
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
@@ -145,7 +116,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
+    pub(crate) fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
         Self::EmptyScan(EmptyScan {
             schema,
             stats_state: StatsState::Materialized(PlanStats::empty().into()),
@@ -153,7 +124,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn filter(
+    pub(crate) fn filter(
         input: LocalPhysicalPlanRef,
         predicate: ExprRef,
         stats_state: StatsState,
@@ -168,7 +139,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn limit(
+    pub(crate) fn limit(
         input: LocalPhysicalPlanRef,
         num_rows: i64,
         stats_state: StatsState,
@@ -183,7 +154,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn explode(
+    pub(crate) fn explode(
         input: LocalPhysicalPlanRef,
         to_explode: Vec<ExprRef>,
         schema: SchemaRef,
@@ -198,7 +169,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn project(
+    pub(crate) fn project(
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
         schema: SchemaRef,
@@ -213,7 +184,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn actor_pool_project(
+    pub(crate) fn actor_pool_project(
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
         schema: SchemaRef,
@@ -228,7 +199,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn ungrouped_aggregate(
+    pub(crate) fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<ExprRef>,
         schema: SchemaRef,
@@ -243,7 +214,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn hash_aggregate(
+    pub(crate) fn hash_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<ExprRef>,
         group_by: Vec<ExprRef>,
@@ -260,7 +231,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn window_partition_only(
+    pub(crate) fn window_partition_only(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<ExprRef>,
         schema: SchemaRef,
@@ -277,7 +248,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn unpivot(
+    pub(crate) fn unpivot(
         input: LocalPhysicalPlanRef,
         ids: Vec<ExprRef>,
         values: Vec<ExprRef>,
@@ -299,7 +270,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn pivot(
+    pub(crate) fn pivot(
         input: LocalPhysicalPlanRef,
         group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
@@ -322,7 +293,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn sort(
+    pub(crate) fn sort(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
@@ -341,7 +312,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn sample(
+    pub(crate) fn sample(
         input: LocalPhysicalPlanRef,
         fraction: f64,
         with_replacement: bool,
@@ -360,7 +331,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn monotonically_increasing_id(
+    pub(crate) fn monotonically_increasing_id(
         input: LocalPhysicalPlanRef,
         column_name: String,
         schema: SchemaRef,
@@ -376,7 +347,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn hash_join(
+    pub(crate) fn hash_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
         left_on: Vec<ExprRef>,
@@ -399,7 +370,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn cross_join(
+    pub(crate) fn cross_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
         schema: SchemaRef,
@@ -414,7 +385,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn concat(
+    pub(crate) fn concat(
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
         stats_state: StatsState,
@@ -429,7 +400,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn physical_write(
+    pub(crate) fn physical_write(
         input: LocalPhysicalPlanRef,
         data_schema: SchemaRef,
         file_schema: SchemaRef,
@@ -447,7 +418,7 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
-    pub fn catalog_write(
+    pub(crate) fn catalog_write(
         input: LocalPhysicalPlanRef,
         catalog_type: daft_logical_plan::CatalogType,
         data_schema: SchemaRef,
@@ -465,7 +436,7 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
-    pub fn lance_write(
+    pub(crate) fn lance_write(
         input: LocalPhysicalPlanRef,
         lance_info: daft_logical_plan::LanceCatalogInfo,
         data_schema: SchemaRef,
