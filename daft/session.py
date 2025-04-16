@@ -486,13 +486,13 @@ class Session:
     ###
     # functions
     ###
-    def attach_function(self, func: UDF, alias: str | None = None):
+    def attach_function(self, function: UDF, alias: str | None = None):
         """Attaches a Python function as a UDF in the current session."""
-        self._session.attach_function(func, alias)
+        self._session.attach_function(function, alias)
 
-    def detach_function(self, name: str):
+    def detach_function(self, alias: str):
         """Detaches a Python function as a UDF in the current session."""
-        self._session.detach_function(name)
+        self._session.detach_function(alias)
 
 
 ###
@@ -723,11 +723,11 @@ def set_session(session: Session):
 ###
 
 
-def attach_function(func: UDF, alias: str | None = None):
+def attach_function(function: UDF, alias: str | None = None):
     """Attaches a Python function as a UDF in the current session."""
-    _session().attach_function(func, alias)
+    _session().attach_function(function, alias)
 
 
-def detach_function(name: str):
+def detach_function(alias: str):
     """Detaches a Python function as a UDF in the current session."""
-    _session().detach_function(name)
+    _session().detach_function(alias)

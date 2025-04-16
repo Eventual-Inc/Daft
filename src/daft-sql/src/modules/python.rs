@@ -88,7 +88,12 @@ impl SQLFunction for WrappedUDFClass {
 
                 for input in inputs {
                     match input {
-                        // all named (kwargs are parsed as python literals instead of exprs)
+                        // all named args (kwargs) are parsed as python literals instead of exprs
+                        // This is because in sql there's no way to properly distinguish between a `lit` value and a literal value.
+                        // In python you can do `daft.lit(1)` and `1` but in sql there is no `lit`.
+                        // So we need some way to distinguish between python literals of `1` and a `lit` of `1`.
+                        // So all named exprs are parsed as literals such as `1` and all positional are parsed as exprs `lit(1)`.
+                        // TODO: consider making udfs take in only exprs so we don't need to handle this in the sql parser.
                         sqlparser::ast::FunctionArg::Named {
                             name,
                             arg,

@@ -323,14 +323,15 @@ impl SQLPlanner<'_> {
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
 
-        let mut fn_match =
-            if let Some(fn_match) = get_func_from_sqlfunctions_registry(fn_name.as_str()) {
-                fn_match
-            } else {
-                get_func_from_session(&self.context.borrow().session, &fn_name)?.ok_or_else(
-                    || PlannerError::unsupported_sql(format!("Function `{}` not found", fn_name)),
-                )?
-            };
+        let mut fn_match = if let Some(fn_match) =
+            get_func_from_session(&self.context.borrow().session, &fn_name)?
+        {
+            fn_match
+        } else {
+            get_func_from_sqlfunctions_registry(fn_name.as_str()).ok_or_else(|| {
+                PlannerError::unsupported_sql(format!("Function `{}` not found", fn_name))
+            })?
+        };
 
         // TODO: Filter the variants for correct arity.
         //

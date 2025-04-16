@@ -13,7 +13,7 @@ use crate::Session;
 pub struct PySession(Session);
 
 impl PySession {
-    pub fn inner(&self) -> &Session {
+    pub fn session(&self) -> &Session {
         &self.0
     }
 }
@@ -103,10 +103,10 @@ impl PySession {
         Ok(self.0.set_namespace(ident.map(|i| i.as_ref()))?)
     }
 
-    #[pyo3(signature = (func, alias = None))]
-    pub fn attach_function(&self, func: PyObject, alias: Option<String>) -> PyResult<()> {
+    #[pyo3(signature = (function, alias = None))]
+    pub fn attach_function(&self, function: PyObject, alias: Option<String>) -> PyResult<()> {
         let wrapped = WrappedUDFClass {
-            inner: Arc::new(func),
+            inner: Arc::new(function),
         };
 
         self.0.attach_function(wrapped, alias)?;
@@ -114,8 +114,8 @@ impl PySession {
         Ok(())
     }
 
-    pub fn detach_function(&self, name: &str) -> PyResult<()> {
-        self.0.detach_function(name)?;
+    pub fn detach_function(&self, alias: &str) -> PyResult<()> {
+        self.0.detach_function(alias)?;
         Ok(())
     }
 }

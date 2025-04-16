@@ -310,15 +310,15 @@ impl Session {
         }
     }
 
-    pub fn attach_function(&self, func: WrappedUDFClass, alias: Option<String>) -> Result<()> {
+    pub fn attach_function(&self, function: WrappedUDFClass, alias: Option<String>) -> Result<()> {
         #[cfg(feature = "python")]
         {
             let name = match alias {
                 Some(name) => name,
-                None => func.name()?,
+                None => function.name()?,
             };
 
-            self.state_mut().functions.bind(name, func);
+            self.state_mut().functions.bind(name, function);
             Ok(())
         }
         #[cfg(not(feature = "python"))]
