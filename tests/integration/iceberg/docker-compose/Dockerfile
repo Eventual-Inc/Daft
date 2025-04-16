@@ -64,6 +64,8 @@ RUN pip3 install -q ipython
 
 RUN pip3 install "pyiceberg[s3fs]==${PYICEBERG_VERSION}"
 
+RUN pip3 install torch torchvision
+
 COPY entrypoint.sh .
 
 # Mount provision.py into the container instead of baking it in
