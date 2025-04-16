@@ -7,8 +7,11 @@ from daft import Window, col
 from daft.functions import row_number
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+)
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+
 def test_row_number_function(make_df):
     df = make_df(
         {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 100, 300, 250, 150]}
@@ -29,7 +32,6 @@ def test_row_number_function(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_row_number_function_desc(make_df):
     df = make_df(
         {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 100, 300, 250, 150]}
@@ -50,7 +52,6 @@ def test_row_number_function_desc(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_multiple_window_partitions(make_df):
     """Test multiple window functions with different partition keys using random numbers.
 
@@ -62,15 +63,13 @@ def test_multiple_window_partitions(make_df):
 
     random.seed(42)
 
-    # Generate distinct values for each group to ensure we can verify row_number correctness
     data = []
-    all_numbers = list(range(1, 1001))  # Numbers from 1 to 1000
+    all_numbers = list(range(1, 1001))
     random.shuffle(all_numbers)
     number_idx = 0
 
     for letter in ["A", "B", "C"]:
         for num in ["1", "2", "3"]:
-            # Take next 100 distinct numbers for this group
             group_values = sorted(all_numbers[number_idx : number_idx + 3])
             number_idx += 3
 
@@ -97,7 +96,6 @@ def test_multiple_window_partitions(make_df):
 
     result_dict = result.to_pydict()
 
-    # Verify sums
     for letter in ["A", "B", "C"]:
         letter_indices = [i for i, ltr in enumerate(result_dict["letter"]) if ltr == letter]
         letter_values = [result_dict["value"][i] for i in letter_indices]
@@ -107,7 +105,6 @@ def test_multiple_window_partitions(make_df):
             sum == expected_letter_sum for sum in actual_letter_sums
         ), f"Incorrect sum for letter {letter}: {actual_letter_sums} != {expected_letter_sum}"
 
-        # Verify row numbers for letter partitions
         sorted_letter_values = sorted(letter_values)
         value_to_rank = {val: i + 1 for i, val in enumerate(sorted_letter_values)}
 
@@ -128,7 +125,6 @@ def test_multiple_window_partitions(make_df):
             sum == expected_num_sum for sum in actual_num_sums
         ), f"Incorrect sum for number {num}: {actual_num_sums} != {expected_num_sum}"
 
-        # Verify row numbers for num partitions
         sorted_num_values = sorted(num_values)
         value_to_rank = {val: i + 1 for i, val in enumerate(sorted_num_values)}
         for idx in num_indices:
@@ -153,7 +149,6 @@ def test_multiple_window_partitions(make_df):
                 sum == expected_combined_sum for sum in actual_combined_sums
             ), f"Incorrect sum for combination {letter}{num}: {actual_combined_sums} != {expected_combined_sum}"
 
-            # Verify row numbers for combined partitions
             sorted_combined_values = sorted(combined_values)
             value_to_rank = {val: i + 1 for i, val in enumerate(sorted_combined_values)}
             for idx in combined_indices:
@@ -165,7 +160,6 @@ def test_multiple_window_partitions(make_df):
                 ), f"Incorrect row number for {letter}{num}, value {value}: got {actual_rank}, expected {expected_rank}"
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_multi_window_agg_functions(make_df):
     """Test multiple window aggregation functions with different partition keys.
 
@@ -175,7 +169,6 @@ def test_multi_window_agg_functions(make_df):
 
     Using sum(), mean(), min(), max() aggregations and verifying row_number ordering.
     """
-    # Use distinct values to ensure we can verify row_number correctness
     data = [
         {"category": "A", "group": 1, "value": 15},
         {"category": "A", "group": 1, "value": 25},
@@ -230,7 +223,6 @@ def test_multi_window_agg_functions(make_df):
                     abs(result_dict["avg_multi"][idx] - expected_avg) < 1e-10
                 ), f"Incorrect avg for {category}/{group}: {result_dict['avg_multi'][idx]} != {expected_avg}"
 
-                # Verify row numbers for multi-partition window
                 expected_rank = value_to_rank[value]
                 actual_rank = result_dict["multi_row_number"][idx]
                 assert (
@@ -256,7 +248,6 @@ def test_multi_window_agg_functions(make_df):
                 result_dict["max_single"][idx] == expected_max
             ), f"Incorrect max for {category}: {result_dict['max_single'][idx]} != {expected_max}"
 
-            # Verify row numbers for single-partition window
             expected_rank = value_to_rank[value]
             actual_rank = result_dict["single_row_number"][idx]
             assert (
