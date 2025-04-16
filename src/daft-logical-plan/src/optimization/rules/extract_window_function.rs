@@ -685,8 +685,19 @@ mod tests {
 
         let window_plan = Arc::new(LogicalPlan::Window(window_op));
 
-        let final_projection = Project::try_new(
+        let intermediate_projection = Project::try_new(
             window_plan,
+            vec![
+                category_col.clone().alias("category"),
+                value_col.clone().alias("value"),
+                resolved_col(auto_generated_name.clone()).alias(auto_generated_name.clone()),
+            ],
+        )?;
+
+        let intermediate_plan = Arc::new(LogicalPlan::Project(intermediate_projection));
+
+        let final_projection = Project::try_new(
+            intermediate_plan,
             vec![
                 category_col,
                 value_col,
