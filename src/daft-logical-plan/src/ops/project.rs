@@ -88,17 +88,19 @@ impl Project {
     ) -> logical_plan::Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
         // Check if projection contains any window functions, if so, return without factoring.
         // This is because window functions may implicitly reference columns via the window spec.
-        let mut has_window = false;
-        projection.iter().any(|expr| {
+        let has_window = projection.iter().any(|expr| {
+            let mut has_window = false;
             expr.apply(|e| {
                 if matches!(e.as_ref(), Expr::Over(..)) {
                     has_window = true;
-                    Ok(TreeNodeRecursion::Jump)
+                    Ok(TreeNodeRecursion::Stop)
                 } else {
                     Ok(TreeNodeRecursion::Continue)
                 }
             })
-            .is_ok()
+            .unwrap();
+
+            has_window
         });
 
         if has_window {
