@@ -47,26 +47,26 @@ def read_sql(
     Returns:
         DataFrame: Dataframe containing the results of the query
 
-    .. NOTE::
-        #. Supported dialects:
-            Daft uses `SQLGlot <https://sqlglot.com/sqlglot.html>`_ to build and translate SQL queries between dialects. For a list of supported dialects, see `SQLGlot's dialect documentation <https://sqlglot.com/sqlglot/dialects.html>`_.
+    Note:
+        1. **Supported dialects**:
+            Daft uses [SQLGlot](https://sqlglot.com/sqlglot.html) to build and translate SQL queries between dialects. For a list of supported dialects, see [SQLGlot's dialect documentation](https://sqlglot.com/sqlglot/dialects.html).
 
-        #. Partitioning:
+        2. **Partitioning**:
             When `partition_col` is specified, the function partitions the query based on that column.
             You can define `num_partitions` or leave it to Daft to decide.
             Daft uses the `partition_bound_strategy` parameter to determine the partitioning strategy:
             - `min_max`: Daft calculates the minimum and maximum values of the specified column, then partitions the query using equal ranges between the minimum and maximum values.
             - `percentile`: Daft calculates the specified column's percentiles via a `PERCENTILE_DISC` function to determine partitions (e.g., for `num_partitions=3`, it uses the 33rd and 66th percentiles).
 
-        #. Execution:
-            Daft executes SQL queries using using `ConnectorX <https://sfu-db.github.io/connector-x/intro.html>`_ or `SQLAlchemy <https://docs.sqlalchemy.org/en/20/orm/quickstart.html#create-an-engine>`_,
+        3. **Execution**:
+            Daft executes SQL queries using using [ConnectorX](https://sfu-db.github.io/connector-x/intro.html) or [SQLAlchemy](https://docs.sqlalchemy.org/en/20/orm/quickstart.html#create-an-engine),
             preferring ConnectorX unless a SQLAlchemy connection factory is specified or the database dialect is unsupported by ConnectorX.
 
-        #. Pushdowns:
+        4. **Pushdowns**:
             Daft pushes down operations such as filtering, projections, and limits into the SQL query when possible.
             You can disable pushdowns by setting `disable_pushdowns_to_sql=True`, which will execute the SQL query as is.
 
-    Example:
+    Examples:
         Read data from a SQL query and a database URL:
 
         >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db")
