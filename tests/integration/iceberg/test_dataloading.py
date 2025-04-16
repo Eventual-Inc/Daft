@@ -47,7 +47,7 @@ def test_dataloading_from_glue_iceberg():
     model = models.resnet18()
     model = torch.nn.Sequential(*list(model.children())[:-1])
     model.eval()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     model.to(device)
 
     torch_dataset = df.to_torch_iter_dataset()

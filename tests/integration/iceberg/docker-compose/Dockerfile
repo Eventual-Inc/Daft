@@ -64,7 +64,7 @@ RUN pip3 install -q ipython
 
 RUN pip3 install "pyiceberg[s3fs]==${PYICEBERG_VERSION}"
 
-RUN pip3 install torch torchvision
+RUN pip3 install pytorch==2.5.1+cpu torchvision==0.20.1+cpu
 
 COPY entrypoint.sh .
 
