@@ -9,8 +9,11 @@ from daft import Window, col
 from daft.functions import dense_rank, rank, row_number
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+)
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+
 def test_row_number_function(make_df):
     df = make_df(
         {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 100, 300, 250, 150]}
@@ -31,7 +34,6 @@ def test_row_number_function(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_row_number_function_desc(make_df):
     df = make_df(
         {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 100, 300, 250, 150]}
@@ -52,7 +54,6 @@ def test_row_number_function_desc(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_rank_function(make_df):
     """Test rank function with ties across multiple categories.
 
@@ -94,7 +95,6 @@ def test_rank_function(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "value"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_dense_rank_function(make_df):
     """Test dense rank function with ties across multiple categories.
 
@@ -133,7 +133,6 @@ def test_dense_rank_function(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "value"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_rank_function_multi_partition(make_df):
     """Test rank function with ties across multiple categories.
 
@@ -178,7 +177,6 @@ def test_rank_function_multi_partition(make_df):
     )
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_dense_rank_function_multi_partition(make_df):
     """Test dense rank function with ties across multiple categories.
 
@@ -222,7 +220,6 @@ def test_dense_rank_function_multi_partition(make_df):
     )
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_multiple_window_partitions(make_df):
     """Test multiple window functions with different partition keys using random numbers.
 
@@ -331,7 +328,6 @@ def test_multiple_window_partitions(make_df):
                 ), f"Incorrect row number for {letter}{num}, value {value}: got {actual_rank}, expected {expected_rank}"
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_multi_window_agg_functions(make_df):
     """Test multiple window aggregation functions with different partition keys.
 
@@ -427,7 +423,6 @@ def test_multi_window_agg_functions(make_df):
             ), f"Incorrect single-partition row number for {category}, value {value}: got {actual_rank}, expected {expected_rank}"
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_rank_function_single_row_per_group(make_df):
     """Test rank function with single row per group."""
     data = [
@@ -455,7 +450,6 @@ def test_rank_function_single_row_per_group(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_rank_function_no_order_by(make_df):
     """Test rank function when order_by columns are the same as group_by."""
     data = [
@@ -486,7 +480,6 @@ def test_rank_function_no_order_by(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category", "value"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_multiple_rank_functions(make_df):
     """Test multiple rank functions over different window specifications.
 

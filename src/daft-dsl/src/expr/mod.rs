@@ -220,7 +220,10 @@ pub enum Expr {
     #[display("{_0} over {_1}")]
     Over(WindowExpr, window::WindowSpec),
 
-    // WindowFunction represents a window function as an expression, this alone cannot be evaluated since it requires a window spec
+    // WindowFunction represents a window function as an expression, this alone cannot be evaluated since
+    // it requires a window spec. This variant only exists for constructing window functions in the
+    // DataFrame API and should not appear in logical or physical plans. It must be converted to an Over
+    // expression with a window spec before evaluation.
     #[display("window({_0})")]
     WindowFunction(WindowExpr),
 
@@ -340,14 +343,14 @@ pub enum WindowExpr {
     #[display("agg({_0})")]
     Agg(AggExpr),
 
-    #[display("row_number()")]
-    RowNumber(),
+    #[display("row_number")]
+    RowNumber,
 
-    #[display("rank()")]
-    Rank(),
+    #[display("rank")]
+    Rank,
 
-    #[display("dense_rank()")]
-    DenseRank(),
+    #[display("dense_rank")]
+    DenseRank,
 
     #[display("offset({_0}, {_1}, {_2:?})")]
     Offset(ExprRef, i64, Option<ExprRef>),
@@ -691,9 +694,9 @@ impl WindowExpr {
     pub fn name(&self) -> &str {
         match self {
             Self::Agg(agg_expr) => agg_expr.name(),
-            Self::RowNumber() => "row_number()",
-            Self::Rank() => "rank()",
-            Self::DenseRank() => "dense_rank()",
+            Self::RowNumber => "row_number",
+            Self::Rank => "rank",
+            Self::DenseRank => "dense_rank",
             Self::Offset(expr, _, _) => expr.name(),
         }
     }
@@ -701,9 +704,9 @@ impl WindowExpr {
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         match self {
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
-            Self::RowNumber() => FieldID::new("row_number()"),
-            Self::Rank() => FieldID::new("rank()"),
-            Self::DenseRank() => FieldID::new("dense_rank()"),
+            Self::RowNumber => FieldID::new("row_number"),
+            Self::Rank => FieldID::new("rank"),
+            Self::DenseRank => FieldID::new("dense_rank"),
             Self::Offset(expr, offset, default) => {
                 let child_id = expr.semantic_id(schema);
                 let default_part = if let Some(default_expr) = default {
@@ -720,9 +723,9 @@ impl WindowExpr {
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
             Self::Agg(agg_expr) => agg_expr.children(),
-            Self::RowNumber() => vec![],
-            Self::Rank() => vec![],
-            Self::DenseRank() => vec![],
+            Self::RowNumber => vec![],
+            Self::Rank => vec![],
+            Self::DenseRank => vec![],
             Self::Offset(expr, _, default) => {
                 let mut children = vec![expr.clone()];
                 if let Some(default_expr) = default {
@@ -736,9 +739,9 @@ impl WindowExpr {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
             Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
-            Self::RowNumber() => Self::RowNumber(),
-            Self::Rank() => Self::Rank(),
-            Self::DenseRank() => Self::DenseRank(),
+            Self::RowNumber => Self::RowNumber,
+            Self::Rank => Self::Rank,
+            Self::DenseRank => Self::DenseRank,
             // Offset can have either one or two children:
             // 1. The first child is always the expression to offset
             // 2. The second child is the optional default value (if provided)
@@ -760,9 +763,9 @@ impl WindowExpr {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
-            Self::RowNumber() => Ok(Field::new("row_number()", DataType::UInt64)),
-            Self::Rank() => Ok(Field::new("rank()", DataType::UInt64)),
-            Self::DenseRank() => Ok(Field::new("dense_rank()", DataType::UInt64)),
+            Self::RowNumber => Ok(Field::new("row_number", DataType::UInt64)),
+            Self::Rank => Ok(Field::new("rank", DataType::UInt64)),
+            Self::DenseRank => Ok(Field::new("dense_rank", DataType::UInt64)),
             Self::Offset(expr, _, _) => expr.to_field(schema),
         }
     }
@@ -925,15 +928,15 @@ impl Expr {
     }
 
     pub fn row_number() -> ExprRef {
-        Self::WindowFunction(WindowExpr::RowNumber()).into()
+        Self::WindowFunction(WindowExpr::RowNumber).into()
     }
 
     pub fn rank() -> ExprRef {
-        Self::WindowFunction(WindowExpr::Rank()).into()
+        Self::WindowFunction(WindowExpr::Rank).into()
     }
 
     pub fn dense_rank() -> ExprRef {
-        Self::WindowFunction(WindowExpr::DenseRank()).into()
+        Self::WindowFunction(WindowExpr::DenseRank).into()
     }
 
     pub fn offset(self: ExprRef, offset: i64, default: Option<ExprRef>) -> ExprRef {

@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_dsl::{expr::window::WindowSpec, resolved_col, Expr, ExprRef, WindowExpr};
-use indexmap::IndexMap;
+use daft_schema::schema::Schema;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::{
     logical_plan::{LogicalPlan, Project},
@@ -25,13 +26,30 @@ impl ExtractWindowFunction {
         Self
     }
 
-    fn extract_window_functions(projection: &[ExprRef]) -> Vec<(ExprRef, WindowSpec)> {
+    fn extract_window_functions(
+        projection: &[ExprRef],
+        schema: &Schema,
+    ) -> (Vec<(ExprRef, WindowSpec)>, IndexMap<String, ExprRef>) {
         let mut result = Vec::new();
+        // Track unique window functions by semantic ID
+        let mut seen_window_exprs = IndexSet::new();
+        let mut window_expr_mappings = IndexMap::new();
 
         for expr in projection {
             expr.apply(|e| {
                 if let Expr::Over(_inner_expr, window_spec) = e.as_ref() {
-                    result.push((e.clone(), window_spec.clone()));
+                    let sem_id = e.semantic_id(schema);
+                    let semantic_id_str = sem_id.id.to_string();
+
+                    // If we've already seen this window expression, don't add it again
+                    if !seen_window_exprs.contains(&sem_id) {
+                        seen_window_exprs.insert(sem_id);
+                        result.push((e.clone(), window_spec.clone()));
+                    }
+
+                    // Track the mapping from semantic ID to window expression
+                    window_expr_mappings.insert(semantic_id_str, e.clone());
+
                     Ok(TreeNodeRecursion::Jump)
                 } else {
                     Ok(TreeNodeRecursion::Continue)
@@ -40,17 +58,31 @@ impl ExtractWindowFunction {
             .unwrap();
         }
 
-        result
+        (result, window_expr_mappings)
     }
 
     fn replace_window_functions(
         expr: &ExprRef,
         window_col_mappings: &[(ExprRef, String)],
+        window_expr_mappings: &IndexMap<String, ExprRef>,
+        schema: &Schema,
     ) -> DaftResult<ExprRef> {
         let transformed = expr.clone().transform(|e| {
-            for (window_expr, col_name) in window_col_mappings {
-                if Arc::ptr_eq(&e, window_expr) {
-                    return Ok(Transformed::yes(resolved_col(col_name.clone())));
+            // Check if this is a window expression
+            if let Expr::Over(_, _) = e.as_ref() {
+                let sem_id = e.semantic_id(schema);
+                let sem_id_str = sem_id.id.to_string();
+
+                // If it's in our window mappings, find the corresponding output column
+                if window_expr_mappings.contains_key(&sem_id_str) {
+                    for (window_expr, col_name) in window_col_mappings {
+                        if let Expr::Over(_, _) = window_expr.as_ref() {
+                            let window_sem_id = window_expr.semantic_id(schema);
+                            if window_sem_id == sem_id {
+                                return Ok(Transformed::yes(resolved_col(col_name.clone())));
+                            }
+                        }
+                    }
                 }
             }
             Ok(Transformed::no(e))
@@ -65,7 +97,7 @@ impl OptimizerRule for ExtractWindowFunction {
     /// and converting them into explicit Window operations.
     ///
     /// Algorithm:
-    /// 1. Find all window functions in a projection
+    /// 1. Find all window functions in a projection and deduplicate by semantic ID
     /// 2. Group them by their window specifications
     /// 3. Create a separate Window operation for each group
     /// 4. Connect these Window operations in a chain
@@ -74,7 +106,9 @@ impl OptimizerRule for ExtractWindowFunction {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         plan.transform_down(|node| match node.as_ref() {
             LogicalPlan::Project(project) => {
-                let window_funcs = Self::extract_window_functions(&project.projection);
+                // Extract unique window functions and track mappings
+                let (window_funcs, window_expr_mappings) =
+                    Self::extract_window_functions(&project.projection, &project.input.schema());
 
                 if window_funcs.is_empty() {
                     return Ok(Transformed::no(node));
@@ -90,32 +124,37 @@ impl OptimizerRule for ExtractWindowFunction {
                 }
 
                 let (current_plan, window_col_mappings) =
-                    window_funcs_grouped_by_spec.into_iter().fold(
+                    window_funcs_grouped_by_spec.into_iter().try_fold(
                         (project.input.clone(), Vec::new()),
                         |(current_plan, mut window_col_mappings),
-                         (window_spec, window_exprs_for_spec)| {
-                            let (window_functions, aliases): (Vec<WindowExpr>, Vec<String>) =
-                                window_exprs_for_spec
-                                    .iter()
-                                    .map(|e| {
-                                        let semantic_id = e.semantic_id(&current_plan.schema());
-                                        let window_expr = match e.as_ref() {
-                                            Expr::Over(window_expr, _) => window_expr,
-                                            _ => panic!("Expected WindowExpr"),
-                                        };
-                                        (window_expr.clone(), semantic_id.id.to_string())
-                                    })
-                                    .unzip();
+                         (window_spec, window_exprs_for_spec)|
+                         -> DaftResult<_> {
+                            // Split into separate steps for better error handling
+                            let window_expr_pairs = window_exprs_for_spec
+                                .iter()
+                                .map(|e| {
+                                    let semantic_id = e.semantic_id(&current_plan.schema());
+                                    let window_expr = match e.as_ref() {
+                                        Expr::Over(window_expr, _) => Ok(window_expr),
+                                        _ => Err(DaftError::TypeError(format!(
+                                            "Expected WindowExpr, got {:?}",
+                                            e
+                                        ))),
+                                    }?;
+                                    Ok((window_expr.clone(), semantic_id.id.to_string()))
+                                })
+                                .collect::<DaftResult<Vec<(WindowExpr, String)>>>()?;
 
-                            let new_plan = Arc::new(LogicalPlan::Window(
-                                Window::try_new(
-                                    current_plan,
-                                    window_functions,
-                                    aliases,
-                                    window_spec,
-                                )
-                                .unwrap(),
-                            ));
+                            // Unzip the pairs into separate vectors
+                            let (window_functions, aliases): (Vec<WindowExpr>, Vec<String>) =
+                                window_expr_pairs.into_iter().unzip();
+
+                            let new_plan = Arc::new(LogicalPlan::Window(Window::try_new(
+                                current_plan,
+                                window_functions,
+                                aliases,
+                                window_spec,
+                            )?));
 
                             let spec_mappings = window_exprs_for_spec
                                 .iter()
@@ -126,14 +165,21 @@ impl OptimizerRule for ExtractWindowFunction {
                                 .collect::<Vec<(ExprRef, String)>>();
 
                             window_col_mappings.extend(spec_mappings);
-                            (new_plan, window_col_mappings)
+                            Ok((new_plan, window_col_mappings))
                         },
-                    );
+                    )?;
 
                 let new_projection = project
                     .projection
                     .iter()
-                    .map(|expr| Self::replace_window_functions(expr, &window_col_mappings))
+                    .map(|expr| {
+                        Self::replace_window_functions(
+                            expr,
+                            &window_col_mappings,
+                            &window_expr_mappings,
+                            &current_plan.schema(),
+                        )
+                    })
                     .collect::<DaftResult<Vec<ExprRef>>>()?;
 
                 let final_plan = Arc::new(LogicalPlan::Project(Project::try_new(
@@ -588,6 +634,75 @@ mod tests {
                 resolved_col(letter_sum_id).alias("letter_sum"),
                 resolved_col(num_sum_id).alias("num_sum"),
                 resolved_col(combined_sum_id).alias("combined_sum"),
+            ],
+        )?;
+
+        let expected_plan = Arc::new(LogicalPlan::Project(final_projection));
+
+        assert_optimized_plan_eq(plan, expected_plan)
+    }
+
+    #[test]
+    fn test_duplicate_window_functions() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("category", DataType::Utf8),
+            Field::new("value", DataType::Int64),
+        ]);
+
+        let input_plan = dummy_scan_node(scan_op.clone());
+
+        let category_col = resolved_col("category");
+        let value_col = resolved_col("value");
+
+        let mut window_spec = WindowSpec::default();
+        window_spec.partition_by = vec![category_col.clone()];
+
+        let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
+
+        let window_func1 =
+            Arc::new(Expr::Over(min_expr.clone(), window_spec.clone())).alias("min_value1");
+        let window_func2 =
+            Arc::new(Expr::Over(min_expr.clone(), window_spec.clone())).alias("min_value2");
+
+        let projection = vec![
+            category_col.clone(),
+            value_col.clone(),
+            window_func1.clone(),
+            window_func2.clone(),
+        ];
+
+        let plan = input_plan.clone().select(projection)?.build();
+
+        let window_expr = Arc::new(Expr::Over(min_expr.clone(), window_spec.clone()));
+        let auto_generated_name = window_expr.semantic_id(&input_plan.schema()).id.to_string();
+
+        let window_op = Window::try_new(
+            input_plan.clone().build(),
+            vec![min_expr.clone()],
+            vec![auto_generated_name.clone()],
+            window_spec,
+        )?;
+
+        let window_plan = Arc::new(LogicalPlan::Window(window_op));
+
+        let intermediate_projection = Project::try_new(
+            window_plan,
+            vec![
+                category_col.clone().alias("category"),
+                value_col.clone().alias("value"),
+                resolved_col(auto_generated_name.clone()).alias(auto_generated_name.clone()),
+            ],
+        )?;
+
+        let intermediate_plan = Arc::new(LogicalPlan::Project(intermediate_projection));
+
+        let final_projection = Project::try_new(
+            intermediate_plan,
+            vec![
+                category_col,
+                value_col,
+                resolved_col(auto_generated_name.clone()).alias("min_value1"),
+                resolved_col(auto_generated_name).alias("min_value2"),
             ],
         )?;
 

@@ -12,7 +12,11 @@ from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 # from daft.expressions import lag, lead
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+)
+
+
 def test_basic_lag_function(make_df):
     """Test basic lag function with default offset."""
     random.seed(42)
@@ -39,7 +43,6 @@ def test_basic_lag_function(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_basic_lead_function(make_df):
     """Test basic lead function with default offset."""
     random.seed(43)
@@ -66,7 +69,6 @@ def test_basic_lead_function(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_lag_lead_with_different_offsets(make_df):
     """Test lag and lead functions with different offset values."""
     random.seed(44)
@@ -113,7 +115,6 @@ def test_lag_lead_with_different_offsets(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_lag_lead_with_multiple_partitions(make_df):
     """Test lag and lead functions with multiple partition columns."""
     random.seed(45)
@@ -160,7 +161,6 @@ def test_lag_lead_with_multiple_partitions(make_df):
     )
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_lag_lead_for_delta_calculation(make_df):
     """Test using lag and lead functions to calculate deltas (differences between values)."""
     random.seed(46)
@@ -205,7 +205,6 @@ def test_lag_lead_for_delta_calculation(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_lag_lead_with_zero_offset(make_df):
     """Test lag and lead functions with zero offset (should return current row)."""
     random.seed(47)
@@ -236,7 +235,6 @@ def test_lag_lead_with_zero_offset(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_lag_lead_with_large_offset(make_df):
     """Test lag and lead functions with offset larger than partition size."""
     random.seed(48)
@@ -281,7 +279,6 @@ def test_lag_lead_with_large_offset(make_df):
     assert_df_equals(result, pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_lag_lead_with_default_values(make_df):
     """Test lag and lead functions with default values for NULL results."""
     random.seed(49)
@@ -331,7 +328,6 @@ def test_lag_lead_with_default_values(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_all_partition_order_by(make_df):
     """Test combining multiple window functions across different partition schemes."""
     random.seed(42)

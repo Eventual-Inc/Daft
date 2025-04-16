@@ -6,5 +6,5 @@ pub struct Rank {}
 
 #[must_use]
 pub fn rank() -> ExprRef {
-    Expr::WindowFunction(WindowExpr::Rank()).into()
+    Expr::WindowFunction(WindowExpr::Rank).into()
 }
