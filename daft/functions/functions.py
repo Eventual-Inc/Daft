@@ -196,57 +196,5 @@ def columns_max(*exprs: Expression | str) -> Expression:
 
 
 def row_number() -> Expression:
-    """Return the row number of the current row (used for window functions).
-
-    Example:
-        >>> import daft
-        >>> from daft.window import Window
-        >>> from daft.functions import row_number
-        >>> from daft.expressions import col
-        >>> df = daft.from_pydict({"category": ["A", "A", "B", "B"], "value": [1, 2, 3, 4]})
-        >>>
-        >>> # Ascending order
-        >>> window = Window().partition_by("category").order_by("value")
-        >>> df = df.with_column("row", row_number().over(window))
-        >>> df.show()
-        ╭──────────┬───────┬───────╮
-        │ category ┆ value ┆ row   │
-        │ ---      ┆ ---   ┆ ---   │
-        │ String   ┆ Int64 ┆ UInt64│
-        ╞══════════╪═══════╪═══════╡
-        │ A        ┆ 1     ┆ 1     │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ A        ┆ 2     ┆ 2     │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ B        ┆ 3     ┆ 1     │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ B        ┆ 4     ┆ 2     │
-        ╰──────────┴───────┴───────╯
-        <BLANKLINE>
-        (Showing first 4 of 4 rows)
-        >>>
-        >>> # Descending order
-        >>> window_desc = Window().partition_by("category").order_by("value", desc=True)
-        >>> df = daft.from_pydict({"category": ["A", "A", "B", "B"], "value": [1, 2, 3, 4]})
-        >>> df = df.with_column("row", row_number().over(window_desc))
-        >>> df.show()
-        ╭──────────┬───────┬───────╮
-        │ category ┆ value ┆ row   │
-        │ ---      ┆ ---   ┆ ---   │
-        │ String   ┆ Int64 ┆ UInt64│
-        ╞══════════╪═══════╪═══════╡
-        │ A        ┆ 2     ┆ 1     │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ A        ┆ 1     ┆ 2     │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ B        ┆ 4     ┆ 1     │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ B        ┆ 3     ┆ 2     │
-        ╰──────────┴───────┴───────╯
-        <BLANKLINE>
-        (Showing first 4 of 4 rows)
-
-    Returns:
-        Expression: An expression that returns the row number of the current row.
-    """
+    """Return the row number of the current row (used for window functions)."""
     return Expression._from_pyexpr(native.row_number())
