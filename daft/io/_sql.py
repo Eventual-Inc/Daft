@@ -47,7 +47,7 @@ def read_sql(
     Returns:
         DataFrame: Dataframe containing the results of the query
 
-    .. NOTE::
+    Note:
         #. Supported dialects:
             Daft uses `SQLGlot <https://sqlglot.com/sqlglot.html>`_ to build and translate SQL queries between dialects. For a list of supported dialects, see `SQLGlot's dialect documentation <https://sqlglot.com/sqlglot/dialects.html>`_.
 
@@ -66,7 +66,7 @@ def read_sql(
             Daft pushes down operations such as filtering, projections, and limits into the SQL query when possible.
             You can disable pushdowns by setting `disable_pushdowns_to_sql=True`, which will execute the SQL query as is.
 
-    Example:
+    Examples:
         Read data from a SQL query and a database URL:
 
         >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db")

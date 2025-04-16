@@ -31,13 +31,6 @@ def read_parquet(
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s).
 
-    Example:
-        >>> df = daft.read_parquet("/path/to/file.parquet")
-        >>> df = daft.read_parquet("/path/to/directory")
-        >>> df = daft.read_parquet("/path/to/files-*.parquet")
-        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
-        >>> df = daft.read_parquet("gs://path/to/files-*.parquet")
-
     Args:
         path (str): Path to Parquet file (allows for wildcards)
         row_groups (List[int] or List[List[int]]): List of row groups to read corresponding to each file.
@@ -51,8 +44,16 @@ def read_parquet(
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame
+
+    Examples:
+        >>> df = daft.read_parquet("/path/to/file.parquet")
+        >>> df = daft.read_parquet("/path/to/directory")
+        >>> df = daft.read_parquet("/path/to/files-*.parquet")
+        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
+        >>> df = daft.read_parquet("gs://path/to/files-*.parquet")
+
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

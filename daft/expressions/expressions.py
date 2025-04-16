@@ -84,7 +84,13 @@ elif os.getenv("DAFT_SPHINX_BUILD") == "1":
 def lit(value: object) -> Expression:
     """Creates an Expression representing a column with every value set to the provided value.
 
-    Example:
+    Args:
+        val: value of column
+
+    Returns:
+        Expression: Expression representing the value provided
+
+    Examples:
         >>> import daft
         >>> df = daft.from_pydict({"x": [1, 2, 3]})
         >>> df = df.with_column("y", daft.lit(1))
@@ -103,11 +109,6 @@ def lit(value: object) -> Expression:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-    Args:
-        val: value of column
-
-    Returns:
-        Expression: Expression representing the value provided
     """
     if isinstance(value, datetime):
         # pyo3 datetime (PyDateTime) is not available when running in abi3 mode, workaround
@@ -146,9 +147,15 @@ def lit(value: object) -> Expression:
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
-    See `Column Wildcards <https://www.getdaft.io/projects/docs/en/stable/core_concepts/#selecting-columns-using-wildcards>`_ for details on wildcards.
+    See [Column Wildcards](https://www.getdaft.io/projects/docs/en/stable/core_concepts/#selecting-columns-using-wildcards) for details on wildcards.
 
-    Example:
+    Args:
+        name: Name of column
+
+    Returns:
+        Expression: Expression representing the selected column
+
+    Examples:
         >>> import daft
         >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
         >>> df = df.select(daft.col("x"))
@@ -167,11 +174,6 @@ def col(name: str) -> Expression:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-    Args:
-        name: Name of column
-
-    Returns:
-        Expression: Expression representing the selected column
     """
     return Expression._from_pyexpr(unresolved_col(name))
 
@@ -184,7 +186,13 @@ def _resolved_col(name: str) -> Expression:
 def list_(*items: Expression | str):
     """Constructs a list from the item expressions.
 
-    Example:
+    Args:
+        *items (Union[Expression, str]): item expressions to construct the list
+
+    Returns:
+        Expression: Expression representing the constructed list
+
+    Examples:
         >>> import daft
         >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
         >>> df = df.select(daft.list_("x", "y").alias("fwd"), daft.list_("y", "x").alias("rev"))
@@ -203,11 +211,6 @@ def list_(*items: Expression | str):
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-    Args:
-        *items (Union[Expression, str]): item expressions to construct the list
-
-    Returns:
-        Expression: Expression representing the constructed list
     """
     assert len(items) > 0, "List constructor requires at least one item"
     return Expression._from_pyexpr(native.list_([col(i)._expr if isinstance(i, str) else i._expr for i in items]))
@@ -216,7 +219,13 @@ def list_(*items: Expression | str):
 def struct(*fields: Expression | str) -> Expression:
     """Constructs a struct from the input field expressions.
 
-    Example:
+    Args:
+        inputs: Expressions to be converted into struct fields.
+
+    Returns:
+        An expression for a struct column with the input columns as its fields.
+
+    Examples:
         >>> import daft
         >>> from daft import col
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
@@ -241,11 +250,6 @@ def struct(*fields: Expression | str) -> Expression:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-    Args:
-        inputs: Expressions to be converted into struct fields.
-
-    Returns:
-        An expression for a struct column with the input columns as its fields.
     """
     pyinputs = []
     for field in fields:
@@ -278,7 +282,13 @@ def interval(
 def coalesce(*args: Expression) -> Expression:
     """Returns the first non-null value in a list of expressions. If all inputs are null, returns null.
 
-    Example:
+    Args:
+        *args: Two or more expressions to coalesce
+
+    Returns:
+        Expression: Expression containing first non-null value encountered when evaluating arguments in order
+
+    Examples:
         >>> import daft
         >>> df = daft.from_pydict({"x": [1, None, 3], "y": [None, 2, None]})
         >>> df = df.with_column("first_valid", daft.coalesce(df["x"], df["y"]))
@@ -297,11 +307,6 @@ def coalesce(*args: Expression) -> Expression:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-    Args:
-        *args: Two or more expressions to coalesce
-
-    Returns:
-        Expression: Expression containing first non-null value encountered when evaluating arguments in order
     """
     return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
 
@@ -600,7 +605,7 @@ class Expression:
     def __getitem__(self, key) -> Expression:
         """Syntactic sugar for `Expression.list.get` and `Expression.struct.get`.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}], "list": [[10, 20], [30, 40]]})
             >>> df = df.select(df["struct"]["x"], df["list"][0].alias("first"))
@@ -617,9 +622,9 @@ class Expression:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
-        See Also:
-            `list.get`
-            `struct.get`
+        Tip: See Also
+            [list.get][daft.expressions.expressions.ExpressionListNamespace.get] and [struct.get][daft.expressions.expressions.ExpressionStructNamespace.get]
+
         """
         key_type = type(key)
 
@@ -635,7 +640,13 @@ class Expression:
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name.
 
-        Example:
+        Args:
+            name: New name for expression
+
+        Returns:
+            Expression: Renamed expression
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
             >>> df = df.select(col("x").alias("y"))
@@ -654,11 +665,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            name: New name for expression
-
-        Returns:
-            Expression: Renamed expression
         """
         assert isinstance(name, str)
         expr = self._expr.alias(name)
@@ -666,11 +672,6 @@ class Expression:
 
     def cast(self, dtype: DataTypeLike) -> Expression:
         """Casts an expression to the given datatype if possible.
-
-        Note:
-            - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
-            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://www.getdaft.io/projects/docs/en/stable/sql/datatypes/) for supported datatypes.
-            - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
 
         The following combinations of datatype casting is valid:
 
@@ -724,8 +725,15 @@ class Expression:
         | Duration           | Y    | N       | Y        | Y      | N          | N      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
         +--------------------+------+---------+----------+--------+------------+--------+--------+-------------------+-------+-------------------+-----------+--------+--------------------+--------+------+-----------------+--------+-----+-----------+------+------+----------+
 
+        Returns:
+            Expression: Expression with the specified new datatype
 
-        Example:
+        Note:
+            - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
+            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://www.getdaft.io/projects/docs/en/stable/sql/datatypes/) for supported datatypes.
+            - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"float": [1.0, 2.5, None]})
             >>> df = df.select(daft.col("float").cast(daft.DataType.int64()))
@@ -744,7 +752,7 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Example with python type and sql types:
+            Example with python type and sql types:
             >>> import daft
             >>> df = daft.from_pydict({"a": [1, 2, 3]})
             >>> df = df.select(
@@ -770,8 +778,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: Expression with the specified new datatype
         """
         if isinstance(dtype, str):
             dtype = DataType._from_pydatatype(sql_datatype(dtype))
@@ -1038,9 +1044,9 @@ class Expression:
     def approx_count_distinct(self) -> Expression:
         """Calculates the approximate number of non-`NULL` distinct values in the expression.
 
-        Approximation is performed using the `HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ algorithm.
+        Approximation is performed using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
-        Example:
+        Examples:
             A global calculation of approximate distinct values in a non-NULL column:
 
             >>> import daft
@@ -1065,15 +1071,22 @@ class Expression:
     def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:
         """Calculates the approximate percentile(s) for a column of numeric values.
 
-        For numeric columns, we use the `sketches_ddsketch crate <https://docs.rs/sketches-ddsketch/latest/sketches_ddsketch/index.html>`_.
-        This is a Rust implementation of the paper `DDSketch: A Fast and Fully-Mergeable Quantile Sketch with Relative-Error Guarantees (Masson et al.) <https://arxiv.org/pdf/1908.10693>`_
+        For numeric columns, we use the [sketches_ddsketch crate](https://docs.rs/sketches-ddsketch/latest/sketches_ddsketch/index.html).
+        This is a Rust implementation of the paper [DDSketch: A Fast and Fully-Mergeable Quantile Sketch with Relative-Error Guarantees (Masson et al.)](https://arxiv.org/pdf/1908.10693)
 
         1. Null values are ignored in the computation of the percentiles
         2. If all values are Null then the result will also be Null
         3. If ``percentiles`` are supplied as a single float, then the resultant column is a ``Float64`` column
         4. If ``percentiles`` is supplied as a list, then the resultant column is a ``FixedSizeList[Float64; N]`` column, where ``N`` is the length of the supplied list.
 
-        Example:
+        Args:
+            percentiles: the percentile(s) at which to find approximate values at. Can be provided as a single
+                float or a list of floats.
+
+        Returns:
+            A new expression representing the approximate percentile(s). If `percentiles` was a single float, this will be a new `Float64` expression. If `percentiles` was a list of floats, this will be a new expression with type: `FixedSizeList[Float64, len(percentiles)]`.
+
+        Examples:
             A global calculation of approximate percentiles:
 
             >>> import daft
@@ -1119,12 +1132,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            percentiles: the percentile(s) at which to find approximate values at. Can be provided as a single
-                float or a list of floats.
-
-        Returns:
-            A new expression representing the approximate percentile(s). If `percentiles` was a single float, this will be a new `Float64` expression. If `percentiles` was a list of floats, this will be a new expression with type: `FixedSizeList[Float64, len(percentiles)]`.
         """
         expr = self._expr.approx_percentiles(percentiles)
         return Expression._from_pyexpr(expr)
@@ -1157,7 +1164,7 @@ class Expression:
         - Returns False if any non-null value is False
         - Returns null if the list is empty or contains only null values
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"values": [[True, True], [True, False], [None, None], []]})
             >>> df.with_column("result", df["values"].list.bool_and()).collect()
@@ -1188,7 +1195,7 @@ class Expression:
         - Returns False if all non-null values are False
         - Returns null if the list is empty or contains only null values
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
             >>> df.with_column("result", df["values"].list.bool_or()).collect()
@@ -1228,7 +1235,10 @@ class Expression:
     def agg_set(self) -> Expression:
         """Aggregates the values in the expression into a set (ignoring nulls).
 
-        Example:
+        Returns:
+            Expression: A List expression containing the distinct values from the input
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"values": [1, 1, None, 2, 2, None]})
             >>> df.agg(df["values"].agg_set().alias("distinct_values")).show()
@@ -1256,8 +1266,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
-        Returns:
-            Expression: A List expression containing the distinct values from the input
         """
         expr = self._expr.agg_set()
         return Expression._from_pyexpr(expr)
@@ -1274,7 +1282,14 @@ class Expression:
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
         """Conditionally choose values between two expressions using the current boolean expression as a condition.
 
-        Example:
+        Args:
+            if_true (Expression): Values to choose if condition is true
+            if_false (Expression): Values to choose if condition is false
+
+        Returns:
+            Expression: New expression where values are chosen from `if_true` and `if_false`.
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"A": [1, 2, 3], "B": [0, 2, 4]})
             >>> df = df.with_column(
@@ -1296,12 +1311,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            if_true (Expression): Values to choose if condition is true
-            if_false (Expression): Values to choose if condition is false
-
-        Returns:
-            Expression: New expression where values are chosen from `if_true` and `if_false`.
         """
         if_true = Expression._to_expression(if_true)
         if_false = Expression._to_expression(if_false)
@@ -1310,12 +1319,19 @@ class Expression:
     def apply(self, func: Callable, return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
 
-        .. NOTE::
+        Args:
+            func: Function to run per value of the expression
+            return_dtype: Return datatype of the function that was ran
+
+        Returns:
+            Expression: New expression after having run the function on the expression
+
+        Note:
             This is just syntactic sugar on top of a UDF and is convenient to use when your function only operates
             on a single column, and does not benefit from executing on batches. For either of those other use-cases,
             use a UDF instead.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["1", "2", "tim"]})
             >>> def f(x_val: str) -> int:
@@ -1338,12 +1354,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            func: Function to run per value of the expression
-            return_dtype: Return datatype of the function that was ran
-
-        Returns:
-            Expression: New expression after having run the function on the expression
         """
         from daft.udf import UDF
 
@@ -1366,7 +1376,10 @@ class Expression:
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data).
 
-        Example:
+        Returns:
+            Expression: Boolean Expression indicating whether values are missing
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
             >>> df = df.select(df["x"].is_null())
@@ -1385,8 +1398,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are missing
         """
         expr = self._expr.is_null()
         return Expression._from_pyexpr(expr)
@@ -1394,7 +1405,10 @@ class Expression:
     def not_null(self) -> Expression:
         """Checks if values in the Expression are not Null (a special value indicating missing data).
 
-        Example:
+        Returns:
+            Expression: Boolean Expression indicating whether values are not missing
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
             >>> df = df.select(df["x"].not_null())
@@ -1413,8 +1427,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are not missing
         """
         expr = self._expr.not_null()
         return Expression._from_pyexpr(expr)
@@ -1422,7 +1434,10 @@ class Expression:
     def fill_null(self, fill_value: Expression) -> Expression:
         """Fills null values in the Expression with the provided fill_value.
 
-        Example:
+        Returns:
+            Expression: Expression with null values filled with the provided fill_value
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"data": [1, None, 3]})
             >>> df = df.select(df["data"].fill_null(2))
@@ -1441,8 +1456,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: Expression with null values filled with the provided fill_value
         """
         fill_value = Expression._to_expression(fill_value)
         expr = self._expr.fill_null(fill_value._expr)
@@ -1451,7 +1464,10 @@ class Expression:
     def is_in(self, other: Any) -> Expression:
         """Checks if values in the Expression are in the provided list.
 
-        Example:
+        Returns:
+            Expression: Boolean Expression indicating whether values are in the provided list
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"data": [1, 2, 3]})
             >>> df = df.select(df["data"].is_in([1, 3]))
@@ -1470,8 +1486,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are in the provided list
         """
         if isinstance(other, Collection):
             other = [Expression._to_expression(item) for item in other]
@@ -1487,7 +1501,10 @@ class Expression:
     def between(self, lower: Any, upper: Any) -> Expression:
         """Checks if values in the Expression are between lower and upper, inclusive.
 
-        Example:
+        Returns:
+            Expression: Boolean Expression indicating whether values are between lower and upper, inclusive.
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"data": [1, 2, 3, 4]})
             >>> df = df.select(df["data"].between(1, 2))
@@ -1508,8 +1525,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 4 of 4 rows)
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are between lower and upper, inclusive.
         """
         lower = Expression._to_expression(lower)
         upper = Expression._to_expression(upper)
@@ -1520,13 +1535,14 @@ class Expression:
     def hash(self, seed: Any | None = None) -> Expression:
         """Hashes the values in the Expression.
 
-        Uses the `XXH3_64bits <https://xxhash.com/>`_ non-cryptographic hash function to hash the values in the expression.
-
-        .. NOTE::
-            Null values will produce a hash value instead of being propagated as null.
+        Uses the [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function to hash the values in the expression.
 
         Args:
             seed (optional): Seed used for generating the hash. Defaults to 0.
+
+        Note:
+            Null values will produce a hash value instead of being propagated as null.
+
         """
         if seed is None:
             expr = native.hash(self._expr)
@@ -1570,12 +1586,18 @@ class Expression:
     def encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
+        Args:
+            codec (str): encoding codec (deflate, gzip, zlib)
+
+        Returns:
+            Expression: A new expression, of type `binary`, with the encoded value.
+
         Note:
             This inputs either a string or binary and returns a binary.
             If the input value is a string and 'utf-8' is the codec, then it's just a cast to binary.
             If the input value is a binary and 'utf-8' is the codec, we verify the bytes are valid utf-8.
 
-        Example:
+        Examples:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict({"text": [b"hello, world!"]})  # binary
@@ -1590,7 +1612,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
-        Example:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict({"text": ["hello, world!"]})  # string
@@ -1605,11 +1626,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
-        Args:
-            codec (str): encoding codec (deflate, gzip, zlib)
-
-        Returns:
-            Expression: A new expression, of type `binary`, with the encoded value.
         """
         expr = native.encode(self._expr, codec)
         return Expression._from_pyexpr(expr)
@@ -1617,11 +1633,17 @@ class Expression:
     def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
+        Args:
+            codec (str): decoding codec (deflate, gzip, zlib)
+
+        Returns:
+            Expression: A new expression with the decoded values.
+
         Note:
             This inputs a binary and returns either a binary or string. For now,
             only decoding with 'utf-8' returns a string.
 
-        Example:
+        Examples:
             >>> import daft
             >>> import zlib
             >>> from daft import col
@@ -1637,11 +1659,6 @@ class Expression:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
-        Args:
-            codec (str): decoding codec (deflate, gzip, zlib)
-
-        Returns:
-            Expression: A new expression with the decoded values.
         """
         expr = native.decode(self._expr, codec)
         return Expression._from_pyexpr(expr)
@@ -1738,14 +1755,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column.
 
-        .. NOTE::
-            If you are observing excessive S3 issues (such as timeouts, DNS errors or slowdown errors) during URL downloads,
-            you may wish to reduce the value of ``max_connections`` (defaults to 32) to reduce the amount of load you are placing
-            on your S3 servers.
-
-            Alternatively, if you are running on machines with lower number of cores but very high network bandwidth, you can increase
-            ``max_connections`` to get higher throughput with additional parallelism
-
         Args:
             max_connections: The maximum number of connections to use per thread to use for downloading URLs. Defaults to 32.
             on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately or "null" to log
@@ -1755,6 +1764,15 @@ class ExpressionUrlNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occurred during download
+
+        Note:
+            If you are observing excessive S3 issues (such as timeouts, DNS errors or slowdown errors) during URL downloads,
+            you may wish to reduce the value of ``max_connections`` (defaults to 32) to reduce the amount of load you are placing
+            on your S3 servers.
+
+            Alternatively, if you are running on machines with lower number of cores but very high network bandwidth, you can increase
+            ``max_connections`` to get higher throughput with additional parallelism
+
         """
         raise_on_error = False
         if on_error == "raise":
@@ -1785,13 +1803,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         Files will be written into the location (folder(s)) with a generated UUID filename, and the result
         will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
 
-        Example:
-            >>> col("data").url.upload("s3://my-bucket/my-folder")  # doctest: +SKIP
-
-            Upload to row-specific URLs
-
-            >>> col("data").url.upload(col("paths"))  # doctest: +SKIP
-
         Args:
             location: a folder location or column of folder locations to upload data into
             max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
@@ -1801,6 +1812,14 @@ class ExpressionUrlNamespace(ExpressionNamespace):
 
         Returns:
             Expression: a String expression containing the written filepath
+
+        Examples:
+            >>> col("data").url.upload("s3://my-bucket/my-folder")  # doctest: +SKIP
+
+            Upload to row-specific URLs
+
+            >>> col("data").url.upload(col("paths"))  # doctest: +SKIP
+
         """
         if not (isinstance(max_connections, int) and max_connections > 0):
             raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
@@ -1836,10 +1855,13 @@ class ExpressionFloatNamespace(ExpressionNamespace):
     def is_nan(self) -> Expression:
         """Checks if values are NaN (a special float value indicating not-a-number).
 
-        .. NOTE::
+        Returns:
+            Expression: Boolean Expression indicating whether values are invalid.
+
+        Note:
             Nulls will be propagated! I.e. this operation will return a null for null values.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"data": [1.0, None, float("nan")]})
             >>> df = df.select(df["data"].float.is_nan())
@@ -1858,18 +1880,19 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are invalid.
         """
         return Expression._from_pyexpr(native.is_nan(self._expr))
 
     def is_inf(self) -> Expression:
         """Checks if values in the Expression are Infinity.
 
-        .. NOTE::
+        Returns:
+            Expression: Boolean Expression indicating whether values are Infinity.
+
+        Note:
             Nulls will be propagated! I.e. this operation will return a null for null values.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"data": [-float("inf"), 0.0, float("inf"), None]})
             >>> df = df.select(df["data"].float.is_inf())
@@ -1890,18 +1913,19 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are Infinity.
         """
         return Expression._from_pyexpr(native.is_inf(self._expr))
 
     def not_nan(self) -> Expression:
         """Checks if values are not NaN (a special float value indicating not-a-number).
 
-        .. NOTE::
+        Returns:
+            Expression: Boolean Expression indicating whether values are not invalid.
+
+        Note:
             Nulls will be propagated! I.e. this operation will return a null for null values.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
             >>> df = df.select(df["x"].float.not_nan())
@@ -1920,15 +1944,16 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are not invalid.
         """
         return Expression._from_pyexpr(native.not_nan(self._expr))
 
     def fill_nan(self, fill_value: Expression) -> Expression:
         """Fills NaN values in the Expression with the provided fill_value.
 
-        Example:
+        Returns:
+            Expression: Expression with Nan values filled with the provided fill_value
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"data": [1.1, float("nan"), 3.3]})
             >>> df = df.with_column("filled", df["data"].float.fill_nan(2.2))
@@ -1947,8 +1972,6 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: Expression with Nan values filled with the provided fill_value
         """
         fill_value = Expression._to_expression(fill_value)
         expr = native.fill_nan(self._expr, fill_value._expr)
@@ -1959,7 +1982,10 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     def date(self) -> Expression:
         """Retrieves the date for a datetime column.
 
-        Example:
+        Returns:
+            Expression: a Date expression
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -1986,15 +2012,16 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a Date expression
         """
         return Expression._from_pyexpr(native.dt_date(self._expr))
 
     def day(self) -> Expression:
         """Retrieves the day for a datetime column.
 
-        Example:
+        Returns:
+            Expression: a UInt32 expression with just the day extracted from a datetime column
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -2021,15 +2048,16 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a UInt32 expression with just the day extracted from a datetime column
         """
         return Expression._from_pyexpr(native.dt_day(self._expr))
 
     def hour(self) -> Expression:
         """Retrieves the day for a datetime column.
 
-        Example:
+        Returns:
+            Expression: a UInt32 expression with just the day extracted from a datetime column
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -2056,15 +2084,16 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a UInt32 expression with just the day extracted from a datetime column
         """
         return Expression._from_pyexpr(native.dt_hour(self._expr))
 
     def minute(self) -> Expression:
         """Retrieves the minute for a datetime column.
 
-        Example:
+        Returns:
+            Expression: a UInt32 expression with just the minute extracted from a datetime column
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -2091,15 +2120,16 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a UInt32 expression with just the minute extracted from a datetime column
         """
         return Expression._from_pyexpr(native.dt_minute(self._expr))
 
     def second(self) -> Expression:
         """Retrieves the second for a datetime column.
 
-        Example:
+        Returns:
+            Expression: a UInt32 expression with just the second extracted from a datetime column
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -2126,15 +2156,13 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a UInt32 expression with just the second extracted from a datetime column
         """
         return Expression._from_pyexpr(native.dt_second(self._expr))
 
     def millisecond(self) -> Expression:
         """Retrieves the millisecond for a datetime column.
 
-        Example:
+        Examples:
             >>> import daft
             >>> from datetime import datetime
             >>> df = daft.from_pydict(
@@ -2167,7 +2195,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     def microsecond(self) -> Expression:
         """Retrieves the microsecond for a datetime column.
 
-        Example:
+        Examples:
             >>> import daft
             >>> from datetime import datetime
             >>> df = daft.from_pydict(
@@ -2200,7 +2228,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     def nanosecond(self) -> Expression:
         """Retrieves the nanosecond for a datetime column.
 
-        Example:
+        Examples:
             >>> import daft
             >>> from datetime import datetime
             >>> df = daft.from_pydict(
@@ -2233,7 +2261,10 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     def time(self) -> Expression:
         """Retrieves the time for a datetime column.
 
-        Example:
+        Returns:
+            Expression: a Time expression
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -2260,15 +2291,16 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a Time expression
         """
         return Expression._from_pyexpr(native.dt_time(self._expr))
 
     def month(self) -> Expression:
         """Retrieves the month for a datetime column.
 
-        Example:
+        Returns:
+            Expression: a UInt32 expression with just the month extracted from a datetime column
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -2294,15 +2326,16 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a UInt32 expression with just the month extracted from a datetime column
         """
         return Expression._from_pyexpr(native.dt_month(self._expr))
 
     def year(self) -> Expression:
         """Retrieves the year for a datetime column.
 
-        Example:
+        Returns:
+            Expression: a UInt32 expression with just the year extracted from a datetime column
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -2329,15 +2362,16 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
 
-        Returns:
-            Expression: a UInt32 expression with just the year extracted from a datetime column
         """
         return Expression._from_pyexpr(native.dt_year(self._expr))
 
     def day_of_week(self) -> Expression:
         """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday.
 
-        Example:
+        Returns:
+            Expression: a UInt32 expression with just the day_of_week extracted from a datetime column
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -2363,15 +2397,13 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a UInt32 expression with just the day_of_week extracted from a datetime column
         """
         return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
 
     def day_of_year(self) -> Expression:
         """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
 
-        Example:
+        Examples:
             >>> import daft
             >>> from datetime import datetime
             >>> df = daft.from_pydict(
@@ -2406,7 +2438,14 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.
 
-        Example:
+        Args:
+            interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
+            relative_to: Optional timestamp to truncate relative to. If not provided, truncates to the start of the Unix epoch: 1970-01-01 00:00:00.
+
+        Returns:
+            Expression: a DateTime expression truncated to the specified interval
+
+        Examples:
             >>> import daft, datetime
             >>> df = daft.from_pydict(
             ...     {
@@ -2432,12 +2471,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
-            relative_to: Optional timestamp to truncate relative to. If not provided, truncates to the start of the Unix epoch: 1970-01-01 00:00:00.
-
-        Returns:
-            Expression: a DateTime expression truncated to the specified interval
         """
         relative_to = Expression._to_expression(relative_to)
         return Expression._from_pyexpr(native.dt_truncate(self._expr, interval, relative_to._expr))
@@ -2445,9 +2478,9 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
 
-        See :class: `daft.datatype.TimeUnit` for more information on time units and valid values.
+        See [daft.datatype.TimeUnit][daft.datatype.DataType.timeunit] for more information on time units and valid values.
 
-        Example:
+        Examples:
             >>> import daft
             >>> from datetime import date
             >>> df = daft.from_pydict(
@@ -2490,12 +2523,12 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Args:
             format: The format to use for the conversion. If None, defaults to ISO 8601 format.
 
-        .. NOTE::
+        Note:
             The format must be a valid datetime format string. (defaults to ISO 8601 format)
             See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
 
-        Example:
+        Examples:
             >>> import daft
             >>> from datetime import datetime, date
             >>> df = daft.from_pydict(
@@ -2537,7 +2570,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def contains(self, substr: str | Expression) -> Expression:
         """Checks whether each string contains the given pattern in a string column.
 
-        Example:
+        Args:
+            pattern: pattern to search for as a literal string, or as a column to pick values from
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value contains the provided pattern
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
             >>> df = df.select(df["x"].str.contains("o"))
@@ -2556,11 +2595,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            pattern: pattern to search for as a literal string, or as a column to pick values from
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value contains the provided pattern
         """
         substr_expr = Expression._to_expression(substr)
         return Expression._from_pyexpr(native.utf8_contains(self._expr, substr_expr._expr))
@@ -2568,7 +2602,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def match(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given regular expression pattern in a string column.
 
-        Example:
+        Args:
+            pattern: Regex pattern to search for as string or as a column to pick values from
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value matches the provided pattern
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
             >>> df.with_column("match", df["x"].str.match("ba.")).collect()
@@ -2586,11 +2626,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            pattern: Regex pattern to search for as string or as a column to pick values from
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value matches the provided pattern
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(native.utf8_match(self._expr, pattern_expr._expr))
@@ -2598,7 +2633,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def endswith(self, suffix: str | Expression) -> Expression:
         """Checks whether each string ends with the given pattern in a string column.
 
-        Example:
+        Args:
+            pattern: pattern to search for as a literal string, or as a column to pick values from
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value ends with the provided pattern
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["geftdaft", "lazy", "daft.io"]})
             >>> df.with_column("match", df["x"].str.endswith("daft")).collect()
@@ -2616,11 +2657,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            pattern: pattern to search for as a literal string, or as a column to pick values from
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value ends with the provided pattern
         """
         suffix_expr = Expression._to_expression(suffix)
         return Expression._from_pyexpr(native.utf8_endswith(self._expr, suffix_expr._expr))
@@ -2628,7 +2664,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def startswith(self, prefix: str | Expression) -> Expression:
         """Checks whether each string starts with the given pattern in a string column.
 
-        Example:
+        Args:
+            pattern: pattern to search for as a literal string, or as a column to pick values from
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value starts with the provided pattern
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["geftdaft", "lazy", "daft.io"]})
             >>> df.with_column("match", df["x"].str.startswith("daft")).collect()
@@ -2646,11 +2688,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            pattern: pattern to search for as a literal string, or as a column to pick values from
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value starts with the provided pattern
         """
         prefix_expr = Expression._to_expression(prefix)
         return Expression._from_pyexpr(native.utf8_startswith(self._expr, prefix_expr._expr))
@@ -2658,7 +2695,14 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
         r"""Splits each string on the given literal or regex pattern, into a list of strings.
 
-        Example:
+        Args:
+            pattern: The pattern on which each string should be split, or a column to pick such patterns from.
+            regex: Whether the pattern is a regular expression. Defaults to False.
+
+        Returns:
+            Expression: A List[Utf8] expression containing the string splits for each string in the column.
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"data": ["daft.distributed.query", "a.b.c", "1.2.3"]})
             >>> df.with_column("split", df["data"].str.split(".")).collect()
@@ -2696,12 +2740,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
 
-        Args:
-            pattern: The pattern on which each string should be split, or a column to pick such patterns from.
-            regex: Whether the pattern is a regular expression. Defaults to False.
-
-        Returns:
-            Expression: A List[Utf8] expression containing the string splits for each string in the column.
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(native.utf8_split(self._expr, pattern_expr._expr, regex))
@@ -2709,11 +2747,17 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def concat(self, other: str | Expression) -> Expression:
         """Concatenates two string expressions together.
 
-        .. NOTE::
+        Args:
+            other (Expression): a string expression to concatenate with
+
+        Returns:
+            Expression: a String expression which is `self` concatenated with `other`
+
+        Note:
             Another (easier!) way to invoke this functionality is using the Python `+` operator which is
             aliased to using `.str.concat`. These are equivalent:
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"], "y": ["a", "b", "c"]})
             >>> df.select(col("x").str.concat(col("y"))).collect()
@@ -2731,11 +2775,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            other (Expression): a string expression to concatenate with
-
-        Returns:
-            Expression: a String expression which is `self` concatenated with `other`
         """
         # Delegate to + operator implementation.
         other_expr = Expression._to_expression(other)
@@ -2744,11 +2783,18 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from the first regex match in each string in a string column.
 
-        Notes:
+        Args:
+            pattern: The regex pattern to extract
+            index: The index of the regex match group to extract
+
+        Returns:
+            Expression: a String expression with the extracted regex match
+
+        Note:
             If index is 0, the entire match is returned.
             If the pattern does not match or the group does not exist, a null value is returned.
 
-        Example:
+        Examples:
             >>> import daft
             >>> regex = r"(\d)(\d*)"
             >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
@@ -2784,15 +2830,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            pattern: The regex pattern to extract
-            index: The index of the regex match group to extract
 
-        Returns:
-            Expression: a String expression with the extracted regex match
-
-        See Also:
-            `extract_all`
+        Tip: See Also
+            [extract_all][daft.expressions.expressions.ExpressionStringNamespace.extract_all]
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(native.utf8_extract(self._expr, pattern_expr._expr, index))
@@ -2800,11 +2840,18 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from all regex matches in each string in a string column.
 
-        Notes:
+        Args:
+            pattern: The regex pattern to extract
+            index: The index of the regex match group to extract
+
+        Returns:
+            Expression: a List[Utf8] expression with the extracted regex matches
+
+        Note:
             This expression always returns a list of strings.
             If index is 0, the entire match is returned. If the pattern does not match or the group does not exist, an empty list is returned.
 
-        Example:
+        Examples:
             >>> import daft
             >>> regex = r"(\d)(\d*)"
             >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
@@ -2840,15 +2887,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            pattern: The regex pattern to extract
-            index: The index of the regex match group to extract
-
-        Returns:
-            Expression: a List[Utf8] expression with the extracted regex matches
-
-        See Also:
-            `extract`
+        Tip: See Also
+            [extract][daft.expressions.expressions.ExpressionStringNamespace.extract]
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(native.utf8_extract_all(self._expr, pattern_expr._expr, index))
@@ -2861,7 +2901,15 @@ class ExpressionStringNamespace(ExpressionNamespace):
     ) -> Expression:
         """Replaces all occurrences of a pattern in a string column with a replacement string. The pattern can be a literal string or a regex pattern.
 
-        Example:
+        Args:
+            pattern: The pattern to replace
+            replacement: The replacement string
+            regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
+
+        Returns:
+            Expression: a String expression with patterns replaced by the replacement string
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"data": ["foo", "bar", "baz"]})
             >>> df.with_column("replace", df["data"].str.replace("ba", "123")).collect()
@@ -2898,13 +2946,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            pattern: The pattern to replace
-            replacement: The replacement string
-            regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
-
-        Returns:
-            Expression: a String expression with patterns replaced by the replacement string
         """
         pattern_expr = Expression._to_expression(pattern)
         replacement_expr = Expression._to_expression(replacement)
@@ -2915,7 +2956,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column.
 
-        Example:
+        Returns:
+            Expression: an UInt64 expression with the length of each string
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
             >>> df = df.select(df["x"].str.length())
@@ -2934,15 +2978,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: an UInt64 expression with the length of each string
         """
         return Expression._from_pyexpr(native.utf8_length(self._expr))
 
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.
 
-        Example:
+        Returns:
+            Expression: an UInt64 expression with the length of each string
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["😉test", "hey̆", "baz"]})
             >>> df = df.select(df["x"].str.length_bytes())
@@ -2961,15 +3006,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: an UInt64 expression with the length of each string
         """
         return Expression._from_pyexpr(native.utf8_length_bytes(self._expr))
 
     def lower(self) -> Expression:
         """Convert UTF-8 string to all lowercase.
 
-        Example:
+        Returns:
+            Expression: a String expression which is `self` lowercased
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["FOO", "BAR", "BAZ"]})
             >>> df = df.select(df["x"].str.lower())
@@ -2988,15 +3034,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is `self` lowercased
         """
         return Expression._from_pyexpr(native.utf8_lower(self._expr))
 
     def upper(self) -> Expression:
         """Convert UTF-8 string to all upper.
 
-        Example:
+        Returns:
+            Expression: a String expression which is `self` uppercased
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
             >>> df = df.select(df["x"].str.upper())
@@ -3015,15 +3062,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is `self` uppercased
         """
         return Expression._from_pyexpr(native.utf8_upper(self._expr))
 
     def lstrip(self) -> Expression:
         """Strip whitespace from the left side of a UTF-8 string.
 
-        Example:
+        Returns:
+            Expression: a String expression which is `self` with leading whitespace stripped
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "  baz"]})
             >>> df = df.select(df["x"].str.lstrip())
@@ -3042,15 +3090,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is `self` with leading whitespace stripped
         """
         return Expression._from_pyexpr(native.utf8_lstrip(self._expr))
 
     def rstrip(self) -> Expression:
         """Strip whitespace from the right side of a UTF-8 string.
 
-        Example:
+        Returns:
+            Expression: a String expression which is `self` with trailing whitespace stripped
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz   "]})
             >>> df = df.select(df["x"].str.rstrip())
@@ -3069,15 +3118,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is `self` with trailing whitespace stripped
         """
         return Expression._from_pyexpr(native.utf8_rstrip(self._expr))
 
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string.
 
-        Example:
+        Returns:
+            Expression: a String expression which is `self` reversed
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
             >>> df = df.select(df["x"].str.reverse())
@@ -3096,15 +3146,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is `self` reversed
         """
         return Expression._from_pyexpr(native.utf8_reverse(self._expr))
 
     def capitalize(self) -> Expression:
         """Capitalize a UTF-8 string.
 
-        Example:
+        Returns:
+            Expression: a String expression which is `self` uppercased with the first character and lowercased the rest
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
             >>> df = df.select(df["x"].str.capitalize())
@@ -3123,15 +3174,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is `self` uppercased with the first character and lowercased the rest
         """
         return Expression._from_pyexpr(native.utf8_capitalize(self._expr))
 
     def left(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) left-most characters of each string.
 
-        Example:
+        Returns:
+            Expression: a String expression which is the `n` left-most characters of `self`
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
             >>> df = df.select(df["x"].str.left(4))
@@ -3150,8 +3202,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is the `n` left-most characters of `self`
         """
         nchars_expr = Expression._to_expression(nchars)
         return Expression._from_pyexpr(native.utf8_left(self._expr, nchars_expr._expr))
@@ -3159,7 +3209,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def right(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) right-most characters of each string.
 
-        Example:
+        Returns:
+            Expression: a String expression which is the `n` right-most characters of `self`
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "distributed", "engine"]})
             >>> df = df.select(df["x"].str.right(4))
@@ -3178,8 +3231,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is the `n` right-most characters of `self`
         """
         nchars_expr = Expression._to_expression(nchars)
         return Expression._from_pyexpr(native.utf8_right(self._expr, nchars_expr._expr))
@@ -3187,11 +3238,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def find(self, substr: str | Expression) -> Expression:
         """Returns the index of the first occurrence of the substring in each string.
 
-        .. NOTE::
-            The returned index is 0-based.
-            If the substring is not found, -1 is returned.
+        Returns:
+            Expression: an Int64 expression with the index of the first occurrence of the substring in each string
 
-        Example:
+        Note:
+            The returned index is 0-based. If the substring is not found, -1 is returned.
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query daft", "df_daft"]})
             >>> df = df.select(df["x"].str.find("daft"))
@@ -3210,8 +3263,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: an Int64 expression with the index of the first occurrence of the substring in each string
         """
         substr_expr = Expression._to_expression(substr)
         return Expression._from_pyexpr(native.utf8_find(self._expr, substr_expr._expr))
@@ -3219,11 +3270,14 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Right-pads each string by truncating or padding with the character.
 
-        .. NOTE::
+        Returns:
+            Expression: a String expression which is `self` truncated or right-padded with the pad character
+
+        Note:
             If the string is longer than the specified length, it will be truncated.
             The pad character must be a single character.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
             >>> df = df.select(df["x"].str.rpad(6, "0"))
@@ -3242,8 +3296,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is `self` truncated or right-padded with the pad character
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
@@ -3252,11 +3304,14 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Left-pads each string by truncating on the right or padding with the character.
 
-        .. NOTE::
+        Returns:
+            Expression: a String expression which is `self` truncated or left-padded with the pad character
+
+        Note:
             If the string is longer than the specified length, it will be truncated on the right.
             The pad character must be a single character.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
             >>> df = df.select(df["x"].str.lpad(6, "0"))
@@ -3275,8 +3330,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is `self` truncated or left-padded with the pad character
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
@@ -3285,7 +3338,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def repeat(self, n: int | Expression) -> Expression:
         """Repeats each string n times.
 
-        Example:
+        Returns:
+            Expression: a String expression which is `self` repeated `n` times
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
             >>> df = df.select(df["x"].str.repeat(5))
@@ -3304,8 +3360,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a String expression which is `self` repeated `n` times
         """
         n_expr = Expression._to_expression(n)
         return Expression._from_pyexpr(native.utf8_repeat(self._expr, n_expr._expr))
@@ -3313,10 +3367,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def like(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case sensitive.
 
-        .. NOTE::
+        Returns:
+            Expression: a Boolean expression indicating whether each value matches the provided pattern
+
+        Note:
             Use % as a multiple-character wildcard or _ as a single-character wildcard.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
             >>> df = df.select(df["x"].str.like("daf%"))
@@ -3335,8 +3392,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a Boolean expression indicating whether each value matches the provided pattern
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(native.utf8_like(self._expr, pattern_expr._expr))
@@ -3344,10 +3399,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def ilike(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case insensitive.
 
-        .. NOTE::
+        Returns:
+            Expression: a Boolean expression indicating whether each value matches the provided pattern
+
+        Note:
             Use % as a multiple-character wildcard or _ as a single-character wildcard.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
             >>> df = df.select(df["x"].str.ilike("%ft%"))
@@ -3366,8 +3424,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a Boolean expression indicating whether each value matches the provided pattern
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(native.utf8_ilike(self._expr, pattern_expr._expr))
@@ -3375,10 +3431,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
         """Extract a substring from a string, starting at a specified index and extending for a given length.
 
-        .. NOTE::
+        Returns:
+            Expression: A String expression representing the extracted substring.
+
+        Note:
             If `length` is not provided, the substring will include all characters from `start` to the end of the string.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
             >>> df = df.select(df["x"].str.substr(2, 4))
@@ -3397,8 +3456,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: A String expression representing the extracted substring.
         """
         start_expr = Expression._to_expression(start)
         length_expr = Expression._to_expression(length)
@@ -3407,11 +3464,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def to_date(self, format: str) -> Expression:
         """Converts a string to a date using the specified format.
 
-        .. NOTE::
-            The format must be a valid date format string.
-            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+        Returns:
+            Expression: a Date expression which is parsed by given format
 
-        Example:
+        Note:
+            The format must be a valid date format string. See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["2021-01-01", "2021-01-02", None]})
             >>> df = df.with_column("date", df["x"].str.to_date("%Y-%m-%d"))
@@ -3430,19 +3489,19 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a Date expression which is parsed by given format
         """
         return Expression._from_pyexpr(native.utf8_to_date(self._expr, format))
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
         """Converts a string to a datetime using the specified format and timezone.
 
-        .. NOTE::
-            The format must be a valid datetime format string.
-            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+        Returns:
+            Expression: a DateTime expression which is parsed by given format and timezone
 
-        Example:
+        Note:
+            The format must be a valid datetime format string. See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123", "2021-01-02 12:30:00.456", None]})
             >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f"))
@@ -3482,8 +3541,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: a DateTime expression which is parsed by given format and timezone
         """
         return Expression._from_pyexpr(native.utf8_to_datetime(self._expr, format, timezone))
 
@@ -3497,10 +3554,19 @@ class ExpressionStringNamespace(ExpressionNamespace):
     ):
         r"""Normalizes a string for more useful deduplication.
 
-        .. NOTE::
+        Args:
+            remove_punct: Whether to remove all punctuation (ASCII).
+            lowercase: Whether to convert the string to lowercase.
+            nfd_unicode: Whether to normalize and decompose Unicode characters according to NFD.
+            white_space: Whether to normalize whitespace, replacing newlines etc with spaces and removing double spaces.
+
+        Returns:
+            Expression: a String expression which is normalized.
+
+        Note:
             All processing options are off by default.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \nWORLD!!!!"]})
             >>> df = df.with_column(
@@ -3522,14 +3588,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            remove_punct: Whether to remove all punctuation (ASCII).
-            lowercase: Whether to convert the string to lowercase.
-            nfd_unicode: Whether to normalize and decompose Unicode characters according to NFD.
-            white_space: Whether to normalize whitespace, replacing newlines etc with spaces and removing double spaces.
-
-        Returns:
-            Expression: a String expression which is normalized.
         """
         return Expression._from_pyexpr(
             native.utf8_normalize(self._expr, remove_punct, lowercase, nfd_unicode, white_space)
@@ -3551,10 +3609,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
         loading tokens from a file in tiktoken format.
 
-        .. NOTE::
-            If using this expression with Llama 3 tokens, note that Llama 3 does some extra preprocessing on
-            strings in certain edge cases. This may result in slightly different encodings in these cases.
-
         Args:
             tokens_path: The name of a built-in tokenizer, or the path to a token file (supports downloading).
             io_config (optional): IOConfig to use when accessing remote storage.
@@ -3564,6 +3618,11 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Returns:
             Expression: An expression with the encodings of the strings as lists of unsigned 32-bit integers.
+
+        Note:
+            If using this expression with Llama 3 tokens, note that Llama 3 does some extra preprocessing on
+            strings in certain edge cases. This may result in slightly different encodings in these cases.
+
         """
         # if special tokens are passed in, enable using special tokens
         if use_special_tokens is None:
@@ -3614,11 +3673,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
     ):
         """Counts the number of times a pattern, or multiple patterns, appear in a string.
 
-        .. NOTE::
-            If a pattern is a substring of another pattern, the longest pattern is matched first.
-            For example, in the string "hello world", with patterns "hello", "world", and "hello world",
-            one match is counted for "hello world".
-
         If whole_words is true, then matches are only counted if they are whole words. This
         also applies to multi-word strings. For example, on the string "abc def", the strings
         "def" and "abc def" would be matched, but "bc de", "abc d", and "abc " (with the space)
@@ -3631,6 +3685,11 @@ class ExpressionStringNamespace(ExpressionNamespace):
             patterns: A pattern or a list of patterns.
             whole_words: Whether to only match whole word(s). Defaults to false.
             case_sensitive: Whether the matching should be case sensitive. Defaults to true.
+
+        Note:
+            If a pattern is a substring of another pattern, the longest pattern is matched first.
+            For example, in the string "hello world", with patterns "hello", "world", and "hello world",
+            one match is counted for "hello world".
         """
         if isinstance(patterns, str):
             patterns = [patterns]
@@ -3666,7 +3725,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             This function does not work for nested types. For example, it will not produce a map
             with lists as keys.
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
             >>> df.with_column("value_counts", df["letters"].list.value_counts()).collect()
@@ -3804,7 +3863,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         - Returns False if any non-null value is False
         - Returns null if the list is empty or contains only null values
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"values": [[True, True], [True, False], [None, None], []]})
             >>> df.with_column("result", df["values"].list.bool_and()).collect()
@@ -3834,7 +3893,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         - Returns False if all non-null values are False
         - Returns null if the list is empty or contains only null values
 
-        Example:
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
             >>> df.with_column("result", df["values"].list.bool_or()).collect()
@@ -3859,7 +3918,13 @@ class ExpressionListNamespace(ExpressionNamespace):
     def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.
 
-        Example:
+        Args:
+            desc: Whether to sort in descending order. Defaults to false. Pass in a boolean column to control for each row.
+
+        Returns:
+            Expression: An expression with the sorted lists
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"a": [[1, 3], [4, 2], [6, 7, 1]]})
             >>> df.select(df["a"].list.sort()).show()
@@ -3877,11 +3942,6 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            desc: Whether to sort in descending order. Defaults to false. Pass in a boolean column to control for each row.
-
-        Returns:
-            Expression: An expression with the sorted lists
         """
         if isinstance(desc, bool):
             desc = Expression._to_expression(desc)
@@ -3894,7 +3954,10 @@ class ExpressionListNamespace(ExpressionNamespace):
     def distinct(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
 
-        Example:
+        Returns:
+            Expression: An expression with lists containing only distinct elements
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1], [None, 1, None, 1]]})
             >>> df.select(df["a"].list.distinct()).show()
@@ -3932,17 +3995,18 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: An expression with lists containing only distinct elements
         """
         return Expression._from_pyexpr(_list_distinct(self._expr))
 
     def unique(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
 
-        Alias for :func:`Expression.list.distinct`.
+        Alias for [Expression.list.distinct][daft.expressions.expressions.ExpressionListNamespace.distinct].
 
-        Example:
+        Returns:
+            Expression: An expression with lists containing only distinct elements
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"a": [[1, 2, 2, 3], [4, 4, 6, 2], [6, 7, 1], [None, 1, None, 1]]})
             >>> df.select(df["a"].list.unique()).show()
@@ -3980,8 +4044,9 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: An expression with lists containing only distinct elements
+        Tip: See Also
+            [Expression.list.distinct][daft.expressions.expressions.ExpressionListNamespace.distinct]
+
         """
         return self.distinct()
 
@@ -4003,7 +4068,13 @@ class ExpressionMapNamespace(ExpressionNamespace):
     def get(self, key: Expression) -> Expression:
         """Retrieves the value for a key in a map column.
 
-        Example:
+        Args:
+            key: the key to retrieve
+
+        Returns:
+            Expression: the value expression
+
+        Examples:
             >>> import pyarrow as pa
             >>> import daft
             >>> pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
@@ -4028,11 +4099,6 @@ class ExpressionMapNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            key: the key to retrieve
-
-        Returns:
-            Expression: the value expression
         """
         key_expr = Expression._to_expression(key)
         return Expression._from_pyexpr(self._expr.map_get(key_expr._expr))
@@ -4289,7 +4355,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
     def iceberg_truncate(self, w: int) -> Expression:
         """Partitioning Transform that truncates the input to a standard width `w` following the Iceberg Specification.
 
-        https://iceberg.apache.org/spec/#truncate-transform-details.
+        See https://iceberg.apache.org/spec/#truncate-transform-details for more details.
 
         Args:
             w (int): width of the truncation
@@ -4306,7 +4372,13 @@ class ExpressionJsonNamespace(ExpressionNamespace):
 
         This expression uses jaq as the underlying executor, see https://github.com/01mf02/jaq for the full list of supported filters.
 
-        Example:
+        Args:
+            jq_query (str): JQ query string
+
+        Returns:
+            Expression: Expression representing the result of the JQ query as a column of JSON-compatible strings
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"col": ['{"a": 1}', '{"a": 2}', '{"a": 3}']})
             >>> df.with_column("res", df["col"].json.query(".a")).collect()
@@ -4324,11 +4396,6 @@ class ExpressionJsonNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            jq_query (str): JQ query string
-
-        Returns:
-            Expression: Expression representing the result of the JQ query as a column of JSON-compatible strings
         """
         return Expression._from_pyexpr(native.json_query(self._expr, jq_query))
 
@@ -4343,7 +4410,10 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
     def length(self) -> Expression:
         """Retrieves the length for a binary string column.
 
-        Example:
+        Returns:
+            Expression: an UInt64 expression with the length of each binary string in bytes
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [b"foo", b"bar", b"baz"]})
             >>> df = df.select(df["x"].binary.length())
@@ -4362,15 +4432,19 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Returns:
-            Expression: an UInt64 expression with the length of each binary string in bytes
         """
         return Expression._from_pyexpr(native.binary_length(self._expr))
 
     def concat(self, other: Expression) -> Expression:
         r"""Concatenates two binary strings.
 
-        Example:
+        Args:
+            other: The binary string to concatenate with, can be either an Expression or a bytes literal
+
+        Returns:
+            Expression: A binary expression containing the concatenated strings
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict(
             ...     {"a": [b"Hello", b"\\xff\\xfe", b"", b"World"], "b": [b" World", b"\\x00", b"empty", b"!"]}
@@ -4393,11 +4467,6 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
 
-        Args:
-            other: The binary string to concatenate with, can be either an Expression or a bytes literal
-
-        Returns:
-            Expression: A binary expression containing the concatenated strings
         """
         other_expr = Expression._to_expression(other)
         return Expression._from_pyexpr(native.binary_concat(self._expr, other_expr._expr))
@@ -4405,7 +4474,14 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
     def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
         r"""Returns a slice of each binary string.
 
-        Example:
+        Args:
+            start: The starting position (0-based) of the slice.
+            length: The length of the slice. If None, returns all characters from start to the end.
+
+        Returns:
+            A new expression representing the slice.
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
             >>> df = df.select(df["x"].binary.slice(1, 3))
@@ -4424,12 +4500,6 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-        Args:
-            start: The starting position (0-based) of the slice.
-            length: The length of the slice. If None, returns all characters from start to the end.
-
-        Returns:
-            A new expression representing the slice.
         """
         start_expr = Expression._to_expression(start)
         length_expr = Expression._to_expression(length)
