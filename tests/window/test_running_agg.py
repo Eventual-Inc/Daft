@@ -8,8 +8,11 @@ import pytest
 from daft import Window, col
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+)
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
+
 def test_running_sum(make_df):
     """Test running sum over partitioned ordered windows.
 
@@ -49,7 +52,6 @@ def test_running_sum(make_df):
 
 
 @pytest.mark.skip("TODO")
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_running_sum_with_nulls(make_df):
     """Test running sum with null values in the data.
 
@@ -88,7 +90,6 @@ def test_running_sum_with_nulls(make_df):
 
 
 @pytest.mark.skip("TODO")
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_running_sum_with_multi_partition(make_df):
     """Test running sum with multiple partition columns.
 
@@ -136,7 +137,6 @@ def test_running_sum_with_multi_partition(make_df):
 
 
 @pytest.mark.skip("TODO")
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner")
 def test_running_sum_desc_order(make_df):
     """Test running sum with descending order.
 

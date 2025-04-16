@@ -6,5 +6,5 @@ pub struct RowNumber {}
 
 #[must_use]
 pub fn row_number() -> ExprRef {
-    Expr::WindowFunction(WindowExpr::RowNumber()).into()
+    Expr::WindowFunction(WindowExpr::RowNumber).into()
 }

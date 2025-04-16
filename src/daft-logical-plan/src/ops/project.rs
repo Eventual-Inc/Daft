@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::Transformed;
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     optimization, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
@@ -86,6 +86,27 @@ impl Project {
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,
     ) -> logical_plan::Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
+        // Check if projection contains any window functions, if so, return without factoring.
+        // This is because window functions may implicitly reference columns via the window spec.
+        let has_window = projection.iter().any(|expr| {
+            let mut has_window = false;
+            expr.apply(|e| {
+                if matches!(e.as_ref(), Expr::Over(..)) {
+                    has_window = true;
+                    Ok(TreeNodeRecursion::Stop)
+                } else {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+            })
+            .unwrap();
+
+            has_window
+        });
+
+        if has_window {
+            return Ok((input, projection));
+        }
+
         // Given construction parameters for a projection,
         // see if we can factor out common subexpressions.
         // Returns a new set of projection parameters
@@ -145,16 +166,6 @@ impl Project {
                     // (otherwise the unaliased child will be double counted)
                     if matches!(expr.as_ref(), Expr::Alias(..)) {
                         expr.children()
-                    // If expr is a window function, check if we've seen this window spec before
-                    } else if let Expr::Over(..) = expr.as_ref() {
-                        let expr_id = expr.semantic_id(schema);
-                        // Mark expr as seen
-                        let newly_seen = seen_subexpressions.insert(expr_id.clone());
-                        // If expr has been seen before, and involves computation, cache it
-                        if !newly_seen && optimization::requires_computation(expr) {
-                            subexpressions_to_cache.insert(expr_id, expr.clone());
-                        }
-                        vec![]
                     } else {
                         let expr_id = expr.semantic_id(schema);
                         if let Expr::Column(Column::Resolved(..)) = expr.as_ref() {
@@ -259,16 +270,7 @@ fn replace_column_with_semantic_id(
                     |_| e.clone(),
                 )
             }
-            Expr::WindowFunction(inner_expr) => {
-                let expr_ref: ExprRef = ExprRef::from(inner_expr);
-
-                replace_column_with_semantic_id(expr_ref, subexprs_to_replace, schema).map_yes_no(
-                    |transformed_child| {
-                        Expr::WindowFunction(transformed_child.try_into().unwrap()).into()
-                    },
-                    |_| e.clone(),
-                )
-            }
+            Expr::WindowFunction(_) => Transformed::no(e),
             Expr::Alias(child, name) => {
                 replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                     .map_yes_no(

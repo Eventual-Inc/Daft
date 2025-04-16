@@ -194,13 +194,13 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                     WindowExpr::Agg(agg_expr) => {
                                         result.window_agg(&[agg_expr.clone()], &[name.clone()], &params.partition_by)?
                                     }
-                                    WindowExpr::RowNumber() => {
+                                    WindowExpr::RowNumber => {
                                         result.window_row_number(name.clone(), &params.partition_by)?
                                     }
-                                    WindowExpr::Rank() => {
+                                    WindowExpr::Rank => {
                                         result.window_rank(name.clone(), &params.partition_by, &params.order_by, false)?
                                     }
-                                    WindowExpr::DenseRank() => {
+                                    WindowExpr::DenseRank => {
                                         result.window_rank(name.clone(), &params.partition_by, &params.order_by, true)?
                                     }
                                     WindowExpr::Offset(expr, offset, default) => {
