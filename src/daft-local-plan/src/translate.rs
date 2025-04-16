@@ -114,12 +114,15 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     .iter()
                     .map(|w| {
                         if let WindowExpr::Agg(agg_expr) = w {
-                            agg_expr.clone()
+                            Ok(agg_expr.clone())
                         } else {
-                            panic!("Expected AggExpr")
+                            Err(DaftError::TypeError(format!(
+                                "Window function {:?} not implemented in partition-only windows, only aggregation functions are supported",
+                                w
+                            )))
                         }
                     })
-                    .collect::<Vec<AggExpr>>();
+                    .collect::<DaftResult<Vec<AggExpr>>>()?;
 
                 Ok(LocalPhysicalPlan::window_partition_only(
                     input,
