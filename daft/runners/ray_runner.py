@@ -19,7 +19,7 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import DistributedPhysicalPlan
+from daft.daft import DistributedPhysicalPlanner
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
@@ -1332,7 +1332,9 @@ class RayRunner(Runner[ray.ObjectRef]):
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
         elif daft_execution_config.big_buddha_special:
             try:
-                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(builder._builder, daft_execution_config)
+                distributed_planner = DistributedPhysicalPlanner.from_logical_plan_builder(
+                    builder._builder, daft_execution_config
+                )
             except Exception as e:
                 logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
                 # Fallback to regular execution
@@ -1343,9 +1345,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._stream_plan(result_uuid)
             else:
                 # If plan building succeeds, execute it
-                for obj in run_distributed_swordfish(
-                    distributed_plan, daft_execution_config, results_buffer_size
-                ):
+                for obj in run_distributed_swordfish(distributed_planner, daft_execution_config, results_buffer_size):
                     yield RayMaterializedResult(obj)
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the

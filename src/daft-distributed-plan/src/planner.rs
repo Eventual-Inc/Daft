@@ -22,7 +22,7 @@ struct SourcePlanProducer {
 }
 
 impl SourcePlanProducer {
-    const DEFAULT_MEMORY_COST: usize = 1024 * 1024 * 1024 * 64; // 4GB
+    const DEFAULT_MEMORY_COST: usize = 1024 * 1024 * 1024 * 16; // 4GB
 
     pub fn new(
         source: PhysicalScanInfo,
@@ -66,6 +66,7 @@ impl SourcePlanProducer {
 
         self.next_source = start;
 
+        println!("scan_tasks: {:?}", scan_tasks.len());
         let source = PhysicalScanInfo {
             scan_state: ScanState::Tasks(scan_tasks.into()),
             source_schema: self.source_schema.clone(),
@@ -79,6 +80,10 @@ impl SourcePlanProducer {
             ))
             .into(),
         )
+    }
+
+    pub fn has_remaining_plans(&self) -> bool {
+        self.next_source < self.scan_tasks.len()
     }
 }
 
@@ -117,18 +122,22 @@ impl DistributedPhysicalPlanner {
         })
     }
 
-    pub fn to_local_physical_plans(&mut self) -> DaftResult<Vec<LocalPhysicalPlanRef>> {
-        let mut plans = Vec::new();
-        while let Some(source) = self.source_producer.next_plan() {
+    pub fn next_plan(&mut self) -> DaftResult<Option<LocalPhysicalPlanRef>> {
+        if let Some(source) = self.source_producer.next_plan() {
             let next_logical_plan =
                 replace_placeholders_with_sources(self.logical_plan.clone(), source)?;
             let optimizer = OptimizerBuilder::new().enrich_with_stats().build();
             let optimized_logical_plan =
                 optimizer.optimize(next_logical_plan, |_, _, _, _, _| {})?;
             let local_physical_plan = translate(&optimized_logical_plan)?;
-            plans.push(local_physical_plan);
+            Ok(Some(local_physical_plan))
+        } else {
+            Ok(None)
         }
-        Ok(plans)
+    }
+
+    pub fn has_remaining_plans(&self) -> bool {
+        self.source_producer.has_remaining_plans()
     }
 }
 

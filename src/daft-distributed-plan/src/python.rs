@@ -5,13 +5,13 @@ use pyo3::prelude::*;
 
 use crate::planner::DistributedPhysicalPlanner;
 
-#[pyclass(module = "daft.daft")]
-struct DistributedPhysicalPlan {
+#[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanner")]
+struct PyDistributedPhysicalPlanner {
     planner: DistributedPhysicalPlanner,
 }
 
 #[pymethods]
-impl DistributedPhysicalPlan {
+impl PyDistributedPhysicalPlanner {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         builder: &PyLogicalPlanBuilder,
@@ -24,16 +24,17 @@ impl DistributedPhysicalPlan {
         Ok(Self { planner })
     }
 
-    pub fn to_local_physical_plans(&mut self) -> PyResult<Vec<PyLocalPhysicalPlan>> {
-        let plans = self.planner.to_local_physical_plans()?;
-        Ok(plans
-            .into_iter()
-            .map(|plan| PyLocalPhysicalPlan { plan })
-            .collect())
+    pub fn next_plan(&mut self) -> PyResult<Option<PyLocalPhysicalPlan>> {
+        let plan = self.planner.next_plan()?;
+        Ok(plan.map(|plan| PyLocalPhysicalPlan { plan }))
+    }
+
+    pub fn has_remaining_plans(&self) -> bool {
+        self.planner.has_remaining_plans()
     }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<DistributedPhysicalPlan>()?;
+    parent.add_class::<PyDistributedPhysicalPlanner>()?;
     Ok(())
 }
