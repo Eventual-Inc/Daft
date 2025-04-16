@@ -51,6 +51,7 @@ jobs:
       # make html SPHINXOPTS="-W --keep-going -n"
       run: |
         source activate
+        maturin develop
         make docs
       # run: |
       #   source activate
