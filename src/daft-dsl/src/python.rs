@@ -14,7 +14,10 @@ use daft_core::{
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
 use pyo3::{
-    exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::{PyBool, PyBytes, PyFloat, PyInt, PyString}
+    exceptions::PyValueError,
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
 };
 use serde::{Deserialize, Serialize};
 
@@ -383,12 +386,7 @@ impl PyExpr {
     }
 
     pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(
-            Operator::FloorDivide,
-            self.into(),
-            other.expr.clone(),
-        )
-        .into())
+        Ok(crate::binary_op(Operator::FloorDivide, self.into(), other.expr.clone()).into())
     }
 
     pub fn __truediv__(&self, other: &Self) -> PyResult<Self> {

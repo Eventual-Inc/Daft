@@ -7,8 +7,10 @@ from typing import TYPE_CHECKING
 from daft.daft import (
     PartitionField,
     PartitionTransform,
-    Pushdowns as PyPushdowns,
     ScanTask,
+)
+from daft.daft import (
+    Pushdowns as PyPushdowns,
 )
 from daft.io.pushdowns import Pushdowns, Term
 
@@ -85,6 +87,7 @@ class ScanPushdowns(Pushdowns):
         partition_predicate (Sexp | None): Optional filter predicate to apply to partitions.
         limit (int | None): Optional limit on the number of rows to return.
     """
+
     columns: list[str] | None = None
     predicate: Term | None = None
     partition_predicate: Term | None = None

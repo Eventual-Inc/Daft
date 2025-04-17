@@ -1,34 +1,35 @@
 from __future__ import annotations
 
-from abc import ABC
-
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import singledispatchmethod
-from typing import Generic, TypeVar, Sequence, Union
+from typing import Generic, Sequence, TypeVar, Union
 
-Value = Union[str,int,float,bool]
+Value = Union[str, int, float, bool]
 R = TypeVar("R")
 C = TypeVar("C")
+
 
 @dataclass(frozen=True)
 class Pushdowns(ABC):
     """Base class for pushdown information."""
+
     pass
 
 
 @dataclass(frozen=True)
 class Term(ABC):
     """Term is the base class for representing expressions in pushdowns."""
-    pass
+
+    def __str__(self) -> str:
+        return LispyVisitor().visit(self, None)
 
 
 @dataclass(frozen=True)
 class Reference(Term):
     """Reference to a field in some schema, this is not bound to any schema."""
-    name: str
 
-    def __str__(self) -> str:
-        return LispyVisitor().visit(self, None)
+    name: str
 
 
 @dataclass(frozen=True)
@@ -46,31 +47,30 @@ class Literal(Term):
     >>> v3 = Literal(2.0)
     >>> v4 = Literal(False)
     """
-    value: Value | None
 
-    def __str__(self) -> str:
-        return LispyVisitor().visit(self, None)
+    value: Value | None
 
 
 @dataclass(frozen=True)
 class Expr(Term):
     """Expr is a generic expression form which has the procedure symbol and its args.
-    
+
     This representation was chosen because it's the simplest while avoiding the complexity
-    of a more 'pure' concatentation style or introducing additional Term variants.
-    This is a trade-off where lower representation complexity equires slightly more creativity
+    of a more 'pure' concatenation style or introducing additional Term variants.
+    This is a trade-off where lower representation complexity requires slightly more creativity
     in representing the various expression forms, but named arguments ease consumption.
 
     Exprs follow the common rule that positional come before named.
     This is enforced on instantiation since we use python args and kwargs.
 
     Example:
-    >>> Expr("f", 42)               # (f 42)
-    >>> Expr("f", "hello")          # (f "hello")
-    >>> Expr("f", 1, 2.5, "test")   # (f 1 2.50 "test")
-    >>> Expr("f", value=True)       # (f value::true)
-    >>> Expr("f", x=10, y=20.5)     # (f x::10 y::20.50)
+    >>> Expr("f", 42)  # (f 42)
+    >>> Expr("f", "hello")  # (f "hello")
+    >>> Expr("f", 1, 2.5, "test")  # (f 1 2.50 "test")
+    >>> Expr("f", value=True)  # (f value::true)
+    >>> Expr("f", x=10, y=20.5)  # (f x::10 y::20.50)
     """
+
     proc: str
     args: list[Arg]
 
@@ -83,8 +83,8 @@ class Expr(Term):
         for label, arg in kwargs.items():
             term = arg if isinstance(arg, Term) else Literal(arg)
             self_args.append(Arg(term, label))
-        object.__setattr__(self, 'proc', self_proc)
-        object.__setattr__(self, 'args', self_args)
+        object.__setattr__(self, "proc", self_proc)
+        object.__setattr__(self, "args", self_args)
 
     def __str__(self) -> str:
         return LispyVisitor().visit(self, None)
@@ -107,6 +107,7 @@ class Expr(Term):
 @dataclass(frozen=True)
 class Arg:
     """Arg is just an s-expression with optional label, notably does not inherit from Term."""
+
     term: Term
     label: str | None = None
 
@@ -114,9 +115,9 @@ class Arg:
         return LispyVisitor()._arg(self, None)
 
 
-class TermVisitor(Generic[C, R], ABC):
+class TermVisitor(ABC, Generic[C, R]):
     """TermrVisitor uses the @singledispatchmethod for a class-based visitor.
-    
+
     Note that we are not using the typical "accept" method on an term variant
     for dispatching because the @singledispatchmethod handles this for us.
     There is no need to add accept methods to each variant which simplifies
@@ -127,14 +128,36 @@ class TermVisitor(Generic[C, R], ABC):
     performing a visitor traversal (fold). For non-scoped state, you can just
     add normal instance properties.
     """
+
     @singledispatchmethod
     def visit(self, term: Term, context: C) -> R:
         raise NotImplementedError(f"No visit method for type {type(term)}")
 
+    @visit.register
+    def _(self, term: Reference, context: C) -> R:
+        return self.visit_reference(term, context)
+
+    @visit.register
+    def _(self, term: Literal, context: C) -> R:
+        return self.visit_literal(term, context)
+
+    @visit.register
+    def _(self, term: Expr, context: C) -> R:
+        return self.visit_expr(term, context)
+
+    @abstractmethod
+    def visit_reference(self, term: Reference, context: C) -> R: ...
+
+    @abstractmethod
+    def visit_literal(self, term: Literal, context: C) -> R: ...
+
+    @abstractmethod
+    def visit_expr(self, term: Expr, context: C) -> R: ...
+
 
 class LispyVisitor(TermVisitor[None, str]):
     """LispyVisitor is an example visitor implementation for printing s-expressions.
-    
+
     This can be implemented *much* more concisely directly in the __str__ .. but
     this is an exercise and tutorial to show off visitor usage and atterns. We
     use a 'str' return type and there is currently no scoped context. An example
@@ -149,26 +172,23 @@ class LispyVisitor(TermVisitor[None, str]):
     """
 
     ###
-    # visitor variant
+    # visitor variants
     ###
 
-    @TermVisitor.visit.register
-    def _(self, term: Reference, context: None) -> str:
+    def visit_reference(self, term: Reference, context: None) -> str:
         """References use their unquoted name."""
         return term.name
 
-    @TermVisitor.visit.register
-    def _(self, term: Literal, context: None) -> str:
+    def visit_literal(self, term: Literal, context: None) -> str:
         """Literals uses the underlying value's lisp representation."""
         return self._value(term.value)
 
-    @TermVisitor.visit.register
-    def _(self, term: Expr, context: None) -> str:
+    def visit_expr(self, term: Expr, context: None) -> str:
         """Expr is represented as procs, so (proc args...)."""
         proc = term.proc
         args = ""
         for arg in term.args:
-            args += " " # no join, since we may add indentation
+            args += " "  # no join, since we may add indentation
             args += self._arg(arg, context)
         return f"({proc}{args})" if args else f"({proc})"
 
@@ -178,12 +198,12 @@ class LispyVisitor(TermVisitor[None, str]):
 
     @singledispatchmethod
     def _value(self, value: Value | None) -> str:
-        """lisp value representation variants."""
+        """Lisp value representation variants."""
         raise NotImplementedError
 
     @_value.register
     def _nil(self, _: None) -> str:
-        """lisp uses nil, but sicp scheme prefers () :shrug: .. using null."""
+        """Lisp uses nil, but sicp scheme prefers () :shrug: .. using null."""
         return "null"
 
     @_value.register
@@ -192,7 +212,7 @@ class LispyVisitor(TermVisitor[None, str]):
 
     @_value.register
     def _float(self, value: float) -> str:
-        """use two decimal places since precision doesn't actually matter here."""
+        """Use two decimal places since precision doesn't actually matter here."""
         return f"{value:.2f}"
 
     @_value.register
@@ -201,10 +221,10 @@ class LispyVisitor(TermVisitor[None, str]):
 
     @_value.register
     def _str(self, value: str) -> str:
-        """lisp uses double-quotes for string literals."""
+        """Lisp uses double-quotes for string literals."""
         return f'"{value}"'
 
     def _arg(self, arg: Arg, context: None) -> str:
-        """use annotation style labels e.g. label::term"""
-        term = self.visit(arg.term, context)
+        """Use annotation style labels e.g. label::term."""
+        term: str = self.visit(arg.term, context)
         return f"{arg.label}::{term}" if arg.label else term

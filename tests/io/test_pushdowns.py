@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import pytest
-
 from typing import TYPE_CHECKING
 
-from daft.io.pushdowns import Expr, Literal, Reference, Term
 from daft.daft import Pushdowns as PyPushdowns
 from daft.expressions import col, lit
+from daft.io.pushdowns import Expr, Literal, Reference, Term
 
 if TYPE_CHECKING:
     from daft.expressions import Expression
@@ -68,7 +66,7 @@ def test_expr_getitem():
     assert expr[0] == Literal(1)
     assert expr[1] == Literal(2)
     assert expr[2] == Literal(3)
-    
+
     # named arguments
     expr = Expr("g", x=10, y=20)
     assert expr["x"] == Literal(10)
@@ -79,7 +77,7 @@ def test_expr_getitem():
     assert expr[0] == Literal(100)
     assert expr[1] == Literal(200)
     assert expr["name"] == Literal("test")
-    
+
     # nested expressions
     expr = Expr("nested", Expr("inner", 5))
     assert expr[0] == Expr("inner", 5)
@@ -109,8 +107,8 @@ def test_pyexpr_lit():
     assert _term(lit(-1.0)) == Literal(-1.0)
 
     # string
-    assert _term(lit(("hello"))) == Literal("hello")
-    assert _term(lit(("🤠🤠"))) == Literal("🤠🤠")
+    assert _term(lit("hello")) == Literal("hello")
+    assert _term(lit("🤠🤠")) == Literal("🤠🤠")
 
 
 def test_pyexpr_col():
@@ -119,7 +117,7 @@ def test_pyexpr_col():
 
 def test_pyexpr_alias():
     assert _term(col("a").alias("xyz")) == Expr("alias", "xyz", Reference("a"))
-    assert _term(lit(42).alias("ans")) == Expr("alias", "ans", 42)
+    assert _term(lit(42).alias("answer")) == Expr("alias", "answer", 42)
 
 
 def test_pyexpr_not():
@@ -135,7 +133,7 @@ def test_pyexpr_binary_ops():
     assert _term(lit(1) > lit(2)) == Expr(">", 1, 2)
     assert _term(lit(1) >= lit(2)) == Expr(">=", 1, 2)
     assert _term(lit(1).eq_null_safe(lit(2))) == Expr("eq_null_safe", 1, 2)
-    
+
     # arithmetic operators
     assert _term(lit(1) + lit(2)) == Expr("+", 1, 2)
     assert _term(lit(1) - lit(2)) == Expr("-", 1, 2)
@@ -143,7 +141,7 @@ def test_pyexpr_binary_ops():
     assert _term(lit(1) / lit(2)) == Expr("/", 1, 2)
     assert _term(lit(1) // lit(2)) == Expr("quotient", 1, 2)
     assert _term(lit(1) % lit(2)) == Expr("mod", 1, 2)
-    
+
     # logical operators
     assert _term(lit(True) & lit(False)) == Expr("and", True, False)
     assert _term(lit(True) | lit(False)) == Expr("or", True, False)
