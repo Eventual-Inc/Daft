@@ -165,9 +165,9 @@ pub enum ResolvedColumn {
     OuterRef(Field, PlanRef),
 }
 
-impl Display for Column {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
+impl Column {
+    pub fn name(&self) -> String {
+        match self {
             Self::Unresolved(UnresolvedColumn {
                 name,
                 plan_ref: PlanRef::Alias(plan_alias),
@@ -181,9 +181,13 @@ impl Display for Column {
                 PlanRef::Alias(plan_alias),
             )) => format!("{plan_alias}.{name}"),
             Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.to_string(),
-        };
+        }
+    }
+}
 
-        write!(f, "col({name})")
+impl Display for Column {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "col({})", self.name())
     }
 }
 
@@ -1397,6 +1401,7 @@ impl Expr {
         }
     }
 
+    /// Returns the expression as SQL using PostgreSQL's dialect.
     pub fn to_sql(&self) -> Option<String> {
         fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {

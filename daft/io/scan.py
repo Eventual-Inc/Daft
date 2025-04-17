@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import abc
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from daft.daft import PartitionField, PartitionTransform, Pushdowns, ScanTask
+from daft.daft import (
+    PartitionField,
+    PartitionTransform,
+    Pushdowns as PyPushdowns,
+    ScanTask,
+)
+from daft.io.pushdowns import Pushdowns
+from daft.io.sexp import Sexp
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from daft.daft import PyExpr
     from daft.logical.schema import Field, Schema
 
 
@@ -51,5 +60,46 @@ class ScanOperator(abc.ABC):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         raise NotImplementedError()
+
+
+@dataclass(frozen=True)
+class ScanPushdowns(Pushdowns):
+    """ScanPushdowns is a python-friendly representation of daft's rust Pushdown type.
+
+    The existing Pushdowns class comes from pyo3 which holds references to wrapper
+    classes for daft's expression enum. This is not ammenable for python consumption.
+
+    In Daft 0.5.0 we will change the pushdown parameter from daft.daft.Pushdowns to
+    daft.io.Pushdowns. For now, please use `ScanPushdowns._from_pypushdowns(py_pushdowns)`
+    to convert the rust expressions to this python pushdowns class.
+
+    As part of a migration plan to python-friendly pushdowns, we've introduced
+    a python "ScanPushdowns" object which uses the long-term "Pushdowns" ABC.
+    Additionally, we have renamed Pushdowns to PyPushdowns for consistency with
+    daft's other pyo3 wrapper classes.
+
+    Attributes:
+        columns (list[str] | None): Optional list of column names to project.
+        predicate (Sexp | None): Optional filter predicate to apply to rows.
+        partition_predicate (Sexp | None): Optional filter predicate to apply to partitions.
+        limit (int | None): Optional limit on the number of rows to return.
+    """
+    columns: list[str] | None = None
+    predicate: Sexp | None = None
+    partition_predicate: Sexp | None = None
+    limit: int | None = None
+
+    @classmethod
+    def _from_pypushdowns(cls, pushdowns: PyPushdowns) -> ScanPushdowns:
+        return ScanPushdowns(
+            columns=pushdowns.columns,
+            predicate=cls._convert_sexp(pushdowns.filters),
+            partition_predicate=cls._convert_sexp(pushdowns.partition_filters),
+            limit=pushdowns.limit,
+        )
+
+    @classmethod
+    def _convert_sexp(cls, pyexpr: PyExpr | None) -> Sexp | None:
+        return pyexpr.to_sexp() if pyexpr else None

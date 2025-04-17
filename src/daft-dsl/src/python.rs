@@ -14,14 +14,11 @@ use daft_core::{
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
 use pyo3::{
-    exceptions::PyValueError,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
+    exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyNone, PyString, PyTuple}
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{expr::Expr, ExprRef, LiteralValue};
+use crate::{expr::Expr, Column, ExprRef, LiteralValue};
 
 #[pyfunction]
 pub fn unresolved_col(name: &str) -> PyExpr {
@@ -473,6 +470,14 @@ impl PyExpr {
         Ok(self.expr.to_sql())
     }
 
+    pub fn to_sexp(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let module = PyModule::import(py, "daft.io.sexp")?;
+        let expr = self.expr.as_ref();
+        let atom_cls = module.getattr("Atom")?;
+        let expr_cls = module.getattr("Expr")?;
+        Ok(make_sexp(expr, &expr_cls, &atom_cls)?.unbind())
+    }
+
     pub fn to_field(&self, schema: &PySchema) -> PyResult<PyField> {
         Ok(self.expr.to_field(&schema.schema)?.into())
     }
@@ -559,5 +564,64 @@ impl From<PyExpr> for crate::ExprRef {
 impl From<&PyExpr> for crate::ExprRef {
     fn from(item: &PyExpr) -> Self {
         item.expr.clone()
+    }
+}
+
+/// Recursively build an sexp based on expr.
+fn make_sexp<'py>(expr: &Expr, expr_cls: &Bound<'py, PyAny>, atom_cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    match &expr {
+        Expr::Column(col) => make_expr(expr_cls, "col", (col.name(),), None),
+        // Expr::Alias(expr, _) => todo!(),
+        // Expr::Agg(agg_expr) => todo!(),
+        // Expr::BinaryOp { op, left, right } => todo!(),
+        // Expr::Cast(expr, data_type) => todo!(),
+        // Expr::Function { func, inputs } => todo!(),
+        // Expr::Window(expr, window_spec) => todo!(),
+        // Expr::Not(expr) => todo!(),
+        // Expr::IsNull(expr) => todo!(),
+        // Expr::NotNull(expr) => todo!(),
+        // Expr::FillNull(expr, expr1) => todo!(),
+        // Expr::IsIn(expr, exprs) => todo!(),
+        // Expr::Between(expr, expr1, expr2) => todo!(),
+        // Expr::List(exprs) => todo!(),
+        Expr::Literal(value) => make_atom(atom_cls, value),
+        // Expr::IfElse { if_true, if_false, predicate } => todo!(),
+        // Expr::ScalarFunction(scalar_function) => todo!(),
+        // Expr::Subquery(subquery) => todo!(),
+        // Expr::InSubquery(expr, subquery) => todo!(),
+        // Expr::Exists(subquery) => todo!(),
+        // unsupported
+        _ => Err(PyValueError::new_err("Unsupported expression."))
+    }
+}
+
+/// Calls Expr(symbol, args..) given the positional and name arguments.
+fn make_expr<'py>(
+    cls: &Bound<'py, PyAny>, 
+    symbol: &str, 
+    args: impl IntoPyObject<'py, Target = PyTuple>, 
+    kwargs: Option<&Bound<'py, PyDict>>
+) -> PyResult<Bound<'py, PyAny>> {
+    // TODO add symbol to args!!    
+    cls.call(args, kwargs)
+}
+
+/// Calls Atom(value) using the pyo3 IntoPy impls for rust primitives.
+fn make_atom<'py>(cls: &Bound<'py, PyAny>, value: &LiteralValue) -> PyResult<Bound<'py, PyAny>> {
+    match value {
+        LiteralValue::Null => cls.call1((None::<bool>,)),
+        LiteralValue::Boolean(b) => cls.call1((b,)),
+        LiteralValue::Utf8(s) => cls.call1((s,)),
+        LiteralValue::Int8(i) => cls.call1((i,)),
+        LiteralValue::UInt8(i) => cls.call1((i,)),
+        LiteralValue::Int16(i) => cls.call1((i,)),
+        LiteralValue::UInt16(i) => cls.call1((i,)),
+        LiteralValue::Int32(i) => cls.call1((i,)),
+        LiteralValue::UInt32(i) => cls.call1((i,)),
+        LiteralValue::Int64(i) => cls.call1((i,)),
+        LiteralValue::UInt64(i) => cls.call1((i,)),
+        LiteralValue::Float64(f) => cls.call1((f,)),
+        // unsupported
+        _ => Err(PyValueError::new_err("Unsupported literal value."))
     }
 }

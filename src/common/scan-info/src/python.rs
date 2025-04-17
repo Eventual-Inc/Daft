@@ -95,11 +95,13 @@ pub mod pylib {
     #[pyclass(module = "daft.daft", name = "Pushdowns", frozen)]
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PyPushdowns(pub Arc<Pushdowns>);
+
     #[pymethods]
     impl PyPushdowns {
         pub fn __repr__(&self) -> PyResult<String> {
             Ok(format!("{:#?}", self.0))
         }
+
         #[getter]
         #[must_use]
         pub fn limit(&self) -> Option<usize> {
