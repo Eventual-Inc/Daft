@@ -200,15 +200,18 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 *partition = partition.sort(&params.order_by, &params.descending, &params.descending)?;
 
                                 for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
-                                    match window_expr {
-                                        WindowExpr::RowNumber => {
-                                            *partition = partition.window_row_number_partition(name.clone())?;
-                                        }
+                                    *partition = match window_expr {
                                         WindowExpr::Agg(agg_expr) => {
-                                            *partition = partition.window_agg_sorted_partition(agg_expr, name.clone(), &params.partition_by)?;
+                                            partition.window_agg_sorted_partition(agg_expr, name.clone(), &params.partition_by)?
                                         }
-                                        _ => {
-                                            panic!("Unsupported window expression: {:?}", window_expr);
+                                        WindowExpr::RowNumber => {
+                                            partition.window_row_number_partition(name.clone())?
+                                        }
+                                        WindowExpr::Rank => {
+                                            partition.window_rank(name.clone(), &params.partition_by, &params.order_by, false)?
+                                        }
+                                        WindowExpr::DenseRank => {
+                                            partition.window_rank(name.clone(), &params.partition_by, &params.order_by, true)?
                                         }
                                     }
                                 }
