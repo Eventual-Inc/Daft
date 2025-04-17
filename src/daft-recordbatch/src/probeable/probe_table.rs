@@ -67,8 +67,7 @@ impl ProbeTable {
         assert_eq!(self.schema.len(), input.schema.len());
         assert!(self
             .schema
-            .fields()
-            .iter()
+            .into_iter()
             .zip(input.schema.fields())
             .all(|(l, r)| l.dtype == r.dtype));
 

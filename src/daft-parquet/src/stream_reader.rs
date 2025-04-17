@@ -274,7 +274,7 @@ pub fn local_parquet_read_into_column_iters(
             path: uri.to_string(),
         })?;
     let schema = prune_fields_from_schema(schema, columns)?;
-    let daft_schema = (&schema).into();
+    let daft_schema = Schema::from(&schema);
 
     let row_ranges = build_row_ranges(
         num_rows,
@@ -367,7 +367,7 @@ pub fn local_parquet_read_into_arrow(
             path: uri.to_string(),
         })?;
     let schema = prune_fields_from_schema(schema, columns)?;
-    let daft_schema = (&schema).into();
+    let daft_schema = Schema::from(&schema);
     let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 

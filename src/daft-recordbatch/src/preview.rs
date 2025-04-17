@@ -185,8 +185,7 @@ impl Preview {
         let row: Vec<Cell> = self
             .batch
             .schema
-            .fields()
-            .iter()
+            .into_iter()
             .enumerate()
             .map(|(idx, field)| {
                 // Use schema for default header.

@@ -26,8 +26,7 @@ pub fn row_group_metadata_to_table_stats(
 
     // Iterate through the schema and construct ColumnRangeStatistics per field
     let columns = schema
-        .fields()
-        .iter()
+        .into_iter()
         .map(|field| {
             if ColumnRangeStatistics::supports_dtype(&field.dtype) {
                 let stats: ColumnRangeStatistics = parquet_column_metadata

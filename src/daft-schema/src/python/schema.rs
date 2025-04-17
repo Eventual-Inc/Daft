@@ -23,8 +23,7 @@ impl PySchema {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         let pyarrow_fields = self
             .schema
-            .fields()
-            .iter()
+            .into_iter()
             .map(|f| {
                 // NOTE: Use PyDataType::to_arrow because we need to dip into Python to get
                 // the registered Arrow extension types

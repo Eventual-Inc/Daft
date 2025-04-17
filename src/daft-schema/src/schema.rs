@@ -376,3 +376,12 @@ impl From<&arrow2::datatypes::Schema> for Schema {
         Self::new(daft_fields)
     }
 }
+
+impl<'a> IntoIterator for &'a Schema {
+    type Item = &'a Field;
+    type IntoIter = std::slice::Iter<'a, Field>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.fields().iter()
+    }
+}

@@ -279,7 +279,7 @@ impl ParquetReaderBuilder {
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
 
-        let daft_schema = (&arrow_schema).into();
+        let daft_schema = Schema::from(&arrow_schema);
         let row_ranges = build_row_ranges(
             self.limit,
             self.row_start_offset,

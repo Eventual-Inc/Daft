@@ -75,7 +75,7 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     if schema.len() != columns.len() {
         return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.len(), columns.len())));
     }
-    for (field, series) in schema.fields().iter().zip(columns.iter()) {
+    for (field, series) in schema.into_iter().zip(columns.iter()) {
         if field != series.field() {
             return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
         }
