@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{resolved_col, ExprRef, WindowExpr};
 use daft_micropartition::MicroPartition;
@@ -180,6 +180,12 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
 
                         let params = params.clone();
 
+                        if params.partition_by.is_empty() {
+                            return Err(DaftError::ValueError(
+                                "Partition by cannot be empty for window aggregation".into(),
+                            ));
+                        }
+
                         per_partition_tasks.spawn(async move {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
@@ -202,16 +208,16 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
                                     *partition = match window_expr {
                                         WindowExpr::Agg(agg_expr) => {
-                                            partition.window_agg_sorted_partition(agg_expr, name.clone(), &params.partition_by)?
+                                            partition.window_agg(agg_expr, name.clone())?
                                         }
                                         WindowExpr::RowNumber => {
-                                            partition.window_row_number_partition(name.clone())?
+                                            partition.window_row_number(name.clone())?
                                         }
                                         WindowExpr::Rank => {
-                                            partition.window_rank(name.clone(), &params.partition_by, &params.order_by, false)?
+                                            partition.window_rank(name.clone(), &params.order_by, false)?
                                         }
                                         WindowExpr::DenseRank => {
-                                            partition.window_rank(name.clone(), &params.partition_by, &params.order_by, true)?
+                                            partition.window_rank(name.clone(), &params.order_by, true)?
                                         }
                                     }
                                 }

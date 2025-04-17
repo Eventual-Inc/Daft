@@ -80,7 +80,8 @@ class Window:
         Args:
             *cols: Columns or expressions to determine ordering within the partition.
                    Can be column names as strings, Expression objects, or iterables of these.
-            desc: Sort descending (True) or ascending (False).
+            desc: Sort descending (True) or ascending (False). Can be a single boolean value applied to all columns,
+                 or a list of boolean values corresponding to each column. Default is False (ascending).
 
         Returns:
             Window: A window specification with the given ordering.

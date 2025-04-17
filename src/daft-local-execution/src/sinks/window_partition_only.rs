@@ -176,7 +176,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                         per_partition_tasks.spawn(async move {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
-                            let result = input_data.window_agg(
+                            let result = input_data.window_grouped_agg(
                                 &params.agg_exprs,
                                 &params.aliases,
                                 &params.partition_by,
