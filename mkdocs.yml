@@ -30,8 +30,9 @@ nav:
     - Partitioning: advanced/partitioning.md
   - Integrations:
     - Catalogs & Tables:
-      - Apache Iceberg: integrations/iceberg.md
       - Apache Hudi: integrations/hudi.md
+      - Apache Iceberg: integrations/iceberg.md
+      - AWS Glue: integrations/glue.md
       - Delta Lake: integrations/delta_lake.md
       - S3 Tables: integrations/s3tables.md
       - Unity Catalog: integrations/unity_catalog.md
