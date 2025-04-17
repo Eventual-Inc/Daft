@@ -97,6 +97,7 @@ code.doc-symbol-method::after {
   display: none;
 }
 
+/* display width */
 .md-grid {
   max-width: 70rem;
 }
