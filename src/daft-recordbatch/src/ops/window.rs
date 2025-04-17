@@ -5,7 +5,7 @@ use daft_dsl::{AggExpr, ExprRef};
 use crate::RecordBatch;
 
 impl RecordBatch {
-    pub fn window_agg(
+    pub fn window_grouped_agg(
         &self,
         to_agg: &[AggExpr],
         aliases: &[String],
@@ -76,19 +76,7 @@ impl RecordBatch {
         self.union(&window_result)
     }
 
-    /// Simplified version of window_agg_sorted that works with pre-sorted single partitions
-    pub fn window_agg_sorted_partition(
-        &self,
-        to_agg: &AggExpr,
-        name: String,
-        group_by: &[ExprRef],
-    ) -> DaftResult<Self> {
-        if group_by.is_empty() {
-            return Err(DaftError::ValueError(
-                "Group by cannot be empty for window aggregation".into(),
-            ));
-        }
-
+    pub fn window_agg(&self, to_agg: &AggExpr, name: String) -> DaftResult<Self> {
         if matches!(to_agg, AggExpr::MapGroups { .. }) {
             return Err(DaftError::ValueError(
                 "MapGroups not supported in window functions".into(),
@@ -99,13 +87,8 @@ impl RecordBatch {
         let agg_result = self.eval_agg_expression(to_agg, None)?;
         let window_col = agg_result.rename(&name);
 
-        // The aggregation result might be just a single value, so we need to broadcast it
-        // to match the length of the partition
-        let broadcast_result = if window_col.len() != self.len() {
-            window_col.broadcast(self.len())?
-        } else {
-            window_col
-        };
+        // Broadcast the aggregation result to match the length of the partition
+        let broadcast_result = window_col.broadcast(self.len())?;
 
         // Create a new RecordBatch with just the window column
         let window_result = Self::from_nonempty_columns(vec![broadcast_result])?;
@@ -114,7 +97,7 @@ impl RecordBatch {
         self.union(&window_result)
     }
 
-    pub fn window_row_number_partition(&self, name: String) -> DaftResult<Self> {
+    pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
         // Create a sequence of row numbers (1-based)
         let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
 
