@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use daft_core::prelude::SchemaRef;
+use common_error::{DaftError, DaftResult};
+use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{resolved_col, ExprRef, WindowExpr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -179,37 +179,54 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                         }
 
                         let params = params.clone();
+
+                        if params.partition_by.is_empty() {
+                            return Err(DaftError::ValueError(
+                                "Partition by cannot be empty for window functions".into(),
+                            ));
+                        }
+
                         per_partition_tasks.spawn(async move {
-                            // First concatenate all partitions
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
-                            // Sort the data by order_by expressions
-                            let sorted_data = input_data.sort(&params.order_by, &params.descending, &[true])?;
+                            if input_data.is_empty() {
+                                return RecordBatch::empty(Some(params.original_schema.clone()));
+                            }
 
-                            // Process each window expression
-                            // TODO: could we do HashMap<WindowExpr, Vec> to batch things?
-                            let mut result = sorted_data;
-                            for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
-                                result = match window_expr {
-                                    WindowExpr::Agg(agg_expr) => {
-                                        result.window_agg(&[agg_expr.clone()], &[name.clone()], &params.partition_by)?
-                                    }
-                                    WindowExpr::RowNumber => {
-                                        result.window_row_number(name.clone(), &params.partition_by)?
-                                    }
-                                    WindowExpr::Rank => {
-                                        result.window_rank(name.clone(), &params.partition_by, &params.order_by, false)?
-                                    }
-                                    WindowExpr::DenseRank => {
-                                        result.window_rank(name.clone(), &params.partition_by, &params.order_by, true)?
-                                    }
-                                    WindowExpr::Offset(expr, offset, default) => {
-                                        result.window_offset(name.clone(), expr.clone(), &params.partition_by, *offset, default.clone())?
+                            let groupby_table = input_data.eval_expression_list(&params.partition_by)?;
+                            let (_, groupvals_indices) = groupby_table.make_groups()?;
+
+                            let mut partitions = groupvals_indices.iter().map(|indices| {
+                                let indices_series = UInt64Array::from(("indices", indices.clone())).into_series();
+                                input_data.take(&indices_series).unwrap()
+                            }).collect::<Vec<_>>();
+
+                            for partition in &mut partitions {
+                                // Sort the partition by the order_by columns (default for nulls_first is to be same as descending)
+                                *partition = partition.sort(&params.order_by, &params.descending, &params.descending)?;
+
+                                for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
+
+                                    *partition = match window_expr {
+                                        WindowExpr::Agg(agg_expr) => {
+                                            partition.window_agg_sorted_partition(agg_expr, name.clone())?
+                                        }
+                                        WindowExpr::RowNumber => {
+                                            partition.window_row_number_partition(name.clone())?
+                                        }
+                                        WindowExpr::Rank => {
+                                            partition.window_rank(name.clone(), &params.order_by, false)?
+                                        }
+                                        WindowExpr::DenseRank => {
+                                            partition.window_rank(name.clone(), &params.order_by, true)?
+                                        }
+                                        WindowExpr::Offset(expr, offset, default) => {
+                                            partition.window_offset(name.clone(), expr.clone(), *offset, default.clone())?
+                                        }
                                     }
                                 }
                             }
 
-                            // Project back to original schema plus window function results
                             let all_projections = params
                                 .original_schema
                                 .fields
@@ -217,7 +234,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 .map(|k| resolved_col(k.clone()))
                                 .collect::<Vec<_>>();
 
-                            let final_result = result.eval_expression_list(&all_projections)?;
+                            let final_result = RecordBatch::concat(&partitions)?;
+                            let final_result = final_result.eval_expression_list(&all_projections)?;
                             Ok(final_result)
                         });
                     }

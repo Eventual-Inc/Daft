@@ -54,172 +54,6 @@ def test_row_number_function_desc(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
 
 
-def test_rank_function(make_df):
-    """Test rank function with ties across multiple categories.
-
-    Creates 3 categories with 100 elements each, with ties within each category.
-    Verifies that rank() assigns ranks with gaps after ties.
-    """
-    all_data = []
-    expected_data = []
-
-    for category in ["A", "B", "C"]:
-        data = []
-
-        cur_value = 0
-        cur_rank = 1
-        next_rank = 1
-
-        for _ in range(10):
-            inc = random.choice([0, 3]) // 2
-            cur_value += inc
-
-            if inc == 1 and len(data) > 0:
-                cur_rank = next_rank
-
-            next_rank += 1
-
-            data.append({"category": category, "value": cur_value})
-            expected_data.append({"category": category, "value": cur_value, "rank": cur_rank})
-
-        all_data.extend(data)
-
-    random.shuffle(all_data)
-
-    df = make_df(all_data)
-
-    window_spec = Window().partition_by("category").order_by("value", desc=False)
-
-    result = df.select(col("category"), col("value"), rank().over(window_spec).alias("rank")).collect()
-
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "value"], check_dtype=False)
-
-
-def test_dense_rank_function(make_df):
-    """Test dense rank function with ties across multiple categories.
-
-    Creates 3 categories with 100 elements each, with ties within each category.
-    Verifies that dense_rank() assigns ranks without gaps after ties.
-    """
-    all_data = []
-    expected_data = []
-
-    for category in ["A", "B", "C"]:
-        data = []
-
-        cur_value = 0
-        cur_rank = 1
-
-        for _ in range(10):
-            inc = random.choice([0, 3]) // 2
-            cur_value += inc
-
-            if inc == 1 and len(data) > 0:
-                cur_rank += 1
-
-            data.append({"category": category, "value": cur_value})
-            expected_data.append({"category": category, "value": cur_value, "rank": cur_rank})
-
-        all_data.extend(data)
-
-    random.shuffle(all_data)
-
-    df = make_df(all_data)
-
-    window_spec = Window().partition_by("category").order_by("value", desc=False)
-
-    result = df.select(col("category"), col("value"), dense_rank().over(window_spec).alias("rank")).collect()
-
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "value"], check_dtype=False)
-
-
-def test_rank_function_multi_partition(make_df):
-    """Test rank function with ties across multiple categories.
-
-    Creates 3 categories with 100 elements each, with ties within each category.
-    Verifies that rank() assigns ranks with gaps after ties.
-    """
-    all_data = []
-    expected_data = []
-
-    for category in ["A", "B", "C"]:
-        for group in ["1", "2", "3"]:
-            data = []
-
-            cur_value = 0
-            cur_rank = 1
-            next_rank = 1
-
-            for _ in range(10):
-                inc = random.choice([0, 3]) // 2
-                cur_value += inc
-
-                if inc == 1 and len(data) > 0:
-                    cur_rank = next_rank
-
-                next_rank += 1
-
-                data.append({"category": category, "group": group, "value": cur_value})
-                expected_data.append({"category": category, "group": group, "value": cur_value, "rank": cur_rank})
-
-            all_data.extend(data)
-
-    random.shuffle(all_data)
-
-    df = make_df(all_data)
-
-    window_spec = Window().partition_by(["category", "group"]).order_by("value", desc=False)
-
-    result = df.select(col("category"), col("group"), col("value"), rank().over(window_spec).alias("rank")).collect()
-
-    assert_df_equals(
-        result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "group", "value"], check_dtype=False
-    )
-
-
-def test_dense_rank_function_multi_partition(make_df):
-    """Test dense rank function with ties across multiple categories.
-
-    Creates 3 categories with 100 elements each, with ties within each category.
-    Verifies that dense_rank() assigns ranks without gaps after ties.
-    """
-    all_data = []
-    expected_data = []
-
-    for category in ["A", "B", "C"]:
-        for group in ["1", "2", "3"]:
-            data = []
-
-            cur_value = 0
-            cur_rank = 1
-
-            for _ in range(10):
-                inc = random.choice([0, 3]) // 2
-                cur_value += inc
-
-                if inc == 1 and len(data) > 0:
-                    cur_rank += 1
-
-                data.append({"category": category, "group": group, "value": cur_value})
-                expected_data.append({"category": category, "group": group, "value": cur_value, "rank": cur_rank})
-
-            all_data.extend(data)
-
-    random.shuffle(all_data)
-
-    df = make_df(all_data)
-
-    window_spec = Window().partition_by(["category", "group"]).order_by("value", desc=False)
-
-    result = df.select(
-        col("category"), col("group"), col("value"), dense_rank().over(window_spec).alias("rank")
-    ).collect()
-
-    assert_df_equals(
-        result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "group", "value"], check_dtype=False
-    )
-
-
 def test_multiple_window_partitions(make_df):
     """Test multiple window functions with different partition keys using random numbers.
 
@@ -596,3 +430,83 @@ def test_multiple_rank_functions(make_df):
         validate_rank_function(result_df, partition, f"row_number_{col_prefix}", "row_number")
         validate_rank_function(result_df, partition, f"rank_{col_prefix}", "rank")
         validate_rank_function(result_df, partition, f"dense_rank_{col_prefix}", "dense_rank")
+
+
+def test_multi_ordering_combinations(make_df):
+    """Test row numbering with all possible ordering combinations."""
+    random.seed(42)
+
+    all_point_coordinates = []
+    for x in range(10):
+        for y in range(10):
+            all_point_coordinates.append((x, y))
+
+    test_data = []
+    for group in ["A", "B", "C"]:
+        selected_points = random.sample(all_point_coordinates, 10)
+        for x, y in selected_points:
+            test_data.append({"group": group, "x": x, "y": y})
+
+    df = make_df(test_data)
+
+    window_spec1 = Window().partition_by("group").order_by(["x", "y"], desc=[False, False])  # x asc, y asc
+    window_spec2 = Window().partition_by("group").order_by(["x", "y"], desc=[False, True])  # x asc, y desc
+    window_spec3 = Window().partition_by("group").order_by(["x", "y"], desc=[True, False])  # x desc, y asc
+    window_spec4 = Window().partition_by("group").order_by(["x", "y"], desc=[True, True])  # x desc, y desc
+    window_spec5 = Window().partition_by("group").order_by(["y", "x"], desc=[False, False])  # y asc, x asc
+    window_spec6 = Window().partition_by("group").order_by(["y", "x"], desc=[False, True])  # y asc, x desc
+    window_spec7 = Window().partition_by("group").order_by(["y", "x"], desc=[True, False])  # y desc, x asc
+    window_spec8 = Window().partition_by("group").order_by(["y", "x"], desc=[True, True])  # y desc, x desc
+
+    result = df.select(
+        col("group"),
+        col("x"),
+        col("y"),
+        row_number().over(window_spec1).alias("row_number_1"),
+        row_number().over(window_spec2).alias("row_number_2"),
+        row_number().over(window_spec3).alias("row_number_3"),
+        row_number().over(window_spec4).alias("row_number_4"),
+        row_number().over(window_spec5).alias("row_number_5"),
+        row_number().over(window_spec6).alias("row_number_6"),
+        row_number().over(window_spec7).alias("row_number_7"),
+        row_number().over(window_spec8).alias("row_number_8"),
+    ).collect()
+
+    result_dict = result.to_pydict()
+
+    row_number_mapping = {
+        (0, 1, 1): 1,  # x asc, y asc
+        (0, 1, -1): 2,  # x asc, y desc
+        (0, -1, 1): 3,  # x desc, y asc
+        (0, -1, -1): 4,  # x desc, y desc
+        (1, 1, 1): 5,  # y asc, x asc
+        (1, 1, -1): 6,  # y asc, x desc
+        (1, -1, 1): 7,  # y desc, x asc
+        (1, -1, -1): 8,  # y desc, x desc
+    }
+
+    for group in ["A", "B", "C"]:
+        for primary_key in [0, 1]:  # 0 = x, 1 = y
+            for primary_desc in [1, -1]:  # 1 = asc, -1 = desc
+                for secondary_desc in [1, -1]:  # 1 = asc, -1 = desc
+                    row_number_index = row_number_mapping[(primary_key, primary_desc, secondary_desc)]
+
+                    points_with_row_numbers = [
+                        (result_dict["x"][i], result_dict["y"][i], result_dict[f"row_number_{row_number_index}"][i])
+                        for i, grp in enumerate(result_dict["group"])
+                        if grp == group
+                    ]
+
+                    sorted_points = sorted(
+                        points_with_row_numbers,
+                        key=lambda p: (p[primary_key] * primary_desc, p[not primary_key] * secondary_desc),
+                    )
+
+                    for i, (x, y, actual_row_num) in enumerate(sorted_points):
+                        expected_row_num = i + 1
+                        assert expected_row_num == actual_row_num, (
+                            f"Incorrect row number for group {group}, "
+                            f"primary key {['x', 'y'][primary_key]} {('asc' if primary_desc == 1 else 'desc')}, "
+                            f"secondary key {['x', 'y'][not primary_key]} {('asc' if secondary_desc == 1 else 'desc')}: "
+                            f"expected {expected_row_num}, got {actual_row_num}"
+                        )

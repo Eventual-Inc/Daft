@@ -1150,7 +1150,7 @@ impl Expr {
             }
             Self::WindowFunction(window_expr) => {
                 let child_id = window_expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.window()"))
+                FieldID::new(format!("{child_id}.window_function()"))
             }
         }
     }

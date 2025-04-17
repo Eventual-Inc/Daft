@@ -1,4 +1,4 @@
-name: publish-dev-s3
+name: Build dev package and publish to S3
 
 on:
   workflow_dispatch:

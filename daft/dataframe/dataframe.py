@@ -1819,9 +1819,34 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 4 of 4 rows)
 
+
+            You can also specify null positioning (first/last) for each column
+
+            >>> df = daft.from_pydict({"x": [1, 2, 1, 2, None], "y": [9, 8, None, 6, None]})
+            >>> sorted_df = df.sort(["x", "y"], [True, False], nulls_first=[True, True])
+            >>> sorted_df.show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ None  ┆ None  │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 6     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ None  │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 9     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+
         Args:
             column (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
             desc (Union[bool, List[bool]), optional): Sort by descending order. Defaults to False.
+            nulls_first (Union[bool, List[bool]), optional): Sort by nulls first. Defaults to nulls being treated as the greatest value.
 
         Returns:
             DataFrame: Sorted DataFrame.
