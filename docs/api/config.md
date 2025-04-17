@@ -43,6 +43,8 @@ These configurations are most often used as inputs to Daft DataFrame reading I/O
 ::: daft.daft.IOConfig
     options:
         filters: ["!^_"]
+        summary:
+            attributes: true
 
 ::: daft.io.S3Config
     options:

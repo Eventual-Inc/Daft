@@ -157,6 +157,7 @@ extra:
     link: https://www.youtube.com/@daftdf
   - icon: simple/substack
     link: https://blog.getdaft.io/
+  generator: false
 
 # Additional Style
 extra_css:
@@ -220,7 +221,7 @@ plugins:
           signature_crossrefs: true
           unwrap_annotated: true
           summary:
-            attributes: false
+            attributes: true
             functions: true
           extra:
             trim_doctest_flags: true
