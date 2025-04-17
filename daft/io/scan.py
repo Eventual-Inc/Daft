@@ -10,8 +10,7 @@ from daft.daft import (
     Pushdowns as PyPushdowns,
     ScanTask,
 )
-from daft.io.pushdowns import Pushdowns
-from daft.io.sexp import Sexp
+from daft.io.pushdowns import Pushdowns, Term
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -87,19 +86,19 @@ class ScanPushdowns(Pushdowns):
         limit (int | None): Optional limit on the number of rows to return.
     """
     columns: list[str] | None = None
-    predicate: Sexp | None = None
-    partition_predicate: Sexp | None = None
+    predicate: Term | None = None
+    partition_predicate: Term | None = None
     limit: int | None = None
 
     @classmethod
     def _from_pypushdowns(cls, pushdowns: PyPushdowns) -> ScanPushdowns:
         return ScanPushdowns(
             columns=pushdowns.columns,
-            predicate=cls._convert_sexp(pushdowns.filters),
-            partition_predicate=cls._convert_sexp(pushdowns.partition_filters),
+            predicate=cls._to_term(pushdowns.filters),
+            partition_predicate=cls._to_term(pushdowns.partition_filters),
             limit=pushdowns.limit,
         )
 
     @classmethod
-    def _convert_sexp(cls, pyexpr: PyExpr | None) -> Sexp | None:
-        return pyexpr.to_sexp() if pyexpr else None
+    def _to_term(cls, pyexpr: PyExpr | None) -> Term | None:
+        return PyPushdowns._to_term(pyexpr) if pyexpr else None

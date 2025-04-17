@@ -1,4 +1,12 @@
-use pyo3::prelude::*;
+use daft_dsl::{
+    functions::{partitioning::PartitioningExpr, FunctionExpr},
+    Column, Expr, LiteralValue, Operator,
+};
+use pyo3::{
+    exceptions::PyValueError,
+    prelude::*,
+    types::{PyList, PyTuple},
+};
 
 pub mod pylib {
     use std::sync::Arc;
@@ -8,6 +16,7 @@ pub mod pylib {
     use pyo3::{prelude::*, pyclass};
     use serde::{Deserialize, Serialize};
 
+    use super::TermBuilder;
     use crate::{PartitionField, PartitionTransform, Pushdowns};
 
     #[pyclass(module = "daft.daft", name = "PartitionField", frozen)]
@@ -135,6 +144,13 @@ pub mod pylib {
                 .as_ref()
                 .map(daft_dsl::optimization::get_required_columns)
         }
+
+        #[staticmethod]
+        pub fn _to_term(py: Python<'_>, expr: PyExpr) -> PyResult<PyObject> {
+            let tb = TermBuilder::new(py)?;
+            let term = tb.to_term(expr.expr.as_ref())?;
+            Ok(term.unbind())
+        }
     }
 }
 
@@ -143,4 +159,183 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<pylib::PyPartitionTransform>()?;
     parent.add_class::<pylib::PyPushdowns>()?;
     Ok(())
+}
+
+//-------------------------------
+// Produce python pushdown terms.
+//-------------------------------
+
+/// Terms during building are bound, then we unbind once done.
+type Term<'py> = Bound<'py, PyAny>;
+
+/// Holds the py GIL and module to make bound term building easy.
+struct TermBuilder<'py> {
+    py: Python<'py>,
+    module: Bound<'py, PyModule>,
+}
+
+impl<'py> TermBuilder<'py> {
+    fn new(py: Python<'py>) -> PyResult<Self> {
+        Ok(Self {
+            py,
+            module: PyModule::import(py, "daft.io.pushdowns")?,
+        })
+    }
+
+    fn to_term(&self, expr: &Expr) -> PyResult<Term> {
+        if let Expr::Column(col) = expr {
+            return self.to_reference(col);
+        }
+        if let Expr::Literal(lit) = expr {
+            return self.to_literal(lit);
+        }
+        let proc: &str;
+        let args = PyList::empty(self.py);
+        match &expr {
+            Expr::Alias(expr, alias) => {
+                // (alias <alias> <expr>)
+                proc = "alias";
+                args.append(alias.to_string())?;
+                args.append(self.to_term(expr)?)?;
+            }
+            Expr::Not(expr) => {
+                // (not <expr>)
+                proc = "not";
+                args.append(self.to_term(expr)?)?;
+            }
+            Expr::BinaryOp { op, left, right } => {
+                // (operator <lhs> <rhs>)
+                proc = Self::proc_of_predicate(op);
+                args.append(self.to_term(left)?)?;
+                args.append(self.to_term(right)?)?;
+            }
+            Expr::IsNull(expr) => {
+                // (is_null <expr>)
+                proc = "is_null";
+                args.append(self.to_term(expr)?)?;
+            }
+            Expr::NotNull(expr) => {
+                // (not_null <expr>)
+                proc = "not_null";
+                args.append(self.to_term(expr)?)?;
+            }
+            Expr::Between(expr, expr1, expr2) => {
+                // (between <expr> <lower> <upper>)
+                proc = "between";
+                args.append(self.to_term(expr)?)?;
+                args.append(self.to_term(expr1)?)?;
+                args.append(self.to_term(expr2)?)?;
+            }
+            Expr::Function { func, inputs } => {
+                // (<proc> <args>...)
+                proc = Self::proc_of_function(func)?;
+                for arg in inputs {
+                    args.append(self.to_term(arg.as_ref())?)?;
+                }
+            }
+            Expr::ScalarFunction(scalar_function) => {
+                // (<proc> <args>...)
+                proc = scalar_function.name();
+                for arg in scalar_function.inputs.iter().as_ref() {
+                    args.append(self.to_term(arg.as_ref())?)?;
+                }
+            }
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "Unsupported pushdown expression: {}",
+                    expr
+                )))
+            }
+        };
+        self.to_expr(proc, args)
+    }
+
+    /// Reference(<name>)
+    fn to_reference(&self, column: &Column) -> PyResult<Term> {
+        self.module.getattr("Reference")?.call1((column.name(),))
+    }
+
+    /// Literal(<value>)
+    fn to_literal(&self, literal: &LiteralValue) -> PyResult<Term> {
+        let cls = self.module.getattr("Literal")?;
+        match literal {
+            // null
+            LiteralValue::Null => cls.call1((None::<bool>,)),
+            // bool
+            LiteralValue::Boolean(b) => cls.call1((b,)),
+            // int
+            LiteralValue::Int8(i) => cls.call1((i,)),
+            LiteralValue::UInt8(i) => cls.call1((i,)),
+            LiteralValue::Int16(i) => cls.call1((i,)),
+            LiteralValue::UInt16(i) => cls.call1((i,)),
+            LiteralValue::Int32(i) => cls.call1((i,)),
+            LiteralValue::UInt32(i) => cls.call1((i,)),
+            LiteralValue::Int64(i) => cls.call1((i,)),
+            LiteralValue::UInt64(i) => cls.call1((i,)),
+            // float
+            LiteralValue::Float64(f) => cls.call1((f,)),
+            // str
+            LiteralValue::Utf8(s) => cls.call1((s,)),
+            // unsupported literals
+            _ => Err(PyValueError::new_err(format!(
+                "Unsupported pushdown literal: {}",
+                literal
+            ))),
+        }
+    }
+
+    /// Expr(proc=proc, *args, **kwargs)
+    fn to_expr(&self, proc: &str, args: Bound<'py, PyList>) -> PyResult<Term> {
+        args.insert(0, proc.to_string())?;
+        let args = PyTuple::new(self.py, args)?;
+        self.module.getattr("Expr")?.call1(args)
+    }
+
+    /// Term procedure names for binary operator predicates inpushdowns.
+    fn proc_of_predicate(operator: &Operator) -> &'static str {
+        match operator {
+            // only works for logical connectives!
+            Operator::And => "and",
+            Operator::Or => "or",
+            Operator::Xor => "xor",
+            // use scheme-like comparison operators (please don't use display).
+            Operator::Eq => "=",
+            Operator::NotEq => "!=",
+            Operator::Lt => "<",
+            Operator::LtEq => "<=",
+            Operator::Gt => ">",
+            Operator::GtEq => ">=",
+            // use schema-like arithmetic operators.
+            Operator::Plus => "+",
+            Operator::Minus => "-",
+            Operator::Multiply => "*",
+            Operator::TrueDivide => "/",
+            // use scheme-like names (please don't use display).
+            Operator::FloorDivide => "quotient",
+            Operator::EqNullSafe => "eq_null_safe",
+            Operator::Modulus => "mod",
+            // ash is too arcane and more complicated
+            Operator::ShiftLeft => "lshift",
+            Operator::ShiftRight => "rshift",
+        }
+    }
+
+    /// Term procedure names for functions
+    fn proc_of_function(function: &FunctionExpr) -> PyResult<&str> {
+        match function {
+            FunctionExpr::Python(udf) => Ok(&*udf.name),
+            FunctionExpr::Partitioning(pexpr) => match pexpr {
+                PartitioningExpr::Years => Ok("years"),
+                PartitioningExpr::Months => Ok("months"),
+                PartitioningExpr::Days => Ok("days"),
+                PartitioningExpr::Hours => Ok("hours"),
+                PartitioningExpr::IcebergBucket(_) => Ok("iceberg_bucket"),
+                PartitioningExpr::IcebergTruncate(_) => Ok("iceberg_truncate"),
+            },
+            _ => Err(PyValueError::new_err(format!(
+                "Unsupported pushdown function: {}",
+                function
+            ))),
+        }
+    }
 }

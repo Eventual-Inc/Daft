@@ -14,11 +14,11 @@ use daft_core::{
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
 use pyo3::{
-    exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyNone, PyString, PyTuple}
+    exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::{PyBool, PyBytes, PyFloat, PyInt, PyString}
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{expr::Expr, Column, ExprRef, LiteralValue};
+use crate::{expr::Expr, ExprRef, LiteralValue, Operator};
 
 #[pyfunction]
 pub fn unresolved_col(name: &str) -> PyExpr {
@@ -371,17 +371,20 @@ impl PyExpr {
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Plus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Plus, self.into(), other.expr.clone()).into())
     }
+
     pub fn __sub__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Minus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Minus, self.into(), other.expr.clone()).into())
     }
+
     pub fn __mul__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Multiply, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Multiply, self.into(), other.expr.clone()).into())
     }
+
     pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
         Ok(crate::binary_op(
-            crate::Operator::FloorDivide,
+            Operator::FloorDivide,
             self.into(),
             other.expr.clone(),
         )
@@ -389,31 +392,31 @@ impl PyExpr {
     }
 
     pub fn __truediv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::TrueDivide, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::TrueDivide, self.into(), other.expr.clone()).into())
     }
 
     pub fn __mod__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Modulus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Modulus, self.into(), other.expr.clone()).into())
     }
 
     pub fn __and__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::And, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::And, self.into(), other.expr.clone()).into())
     }
 
     pub fn __or__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Or, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Or, self.into(), other.expr.clone()).into())
     }
 
     pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Xor, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Xor, self.into(), other.expr.clone()).into())
     }
 
     pub fn __lshift__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::ShiftLeft, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::ShiftLeft, self.into(), other.expr.clone()).into())
     }
 
     pub fn __rshift__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::ShiftRight, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::ShiftRight, self.into(), other.expr.clone()).into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
@@ -445,7 +448,7 @@ impl PyExpr {
     }
 
     pub fn eq_null_safe(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::EqNullSafe, self.into(), other.into()).into())
+        Ok(crate::binary_op(Operator::EqNullSafe, self.into(), other.into()).into())
     }
 
     pub fn is_in(&self, other: Vec<Self>) -> PyResult<Self> {
@@ -468,14 +471,6 @@ impl PyExpr {
 
     pub fn to_sql(&self) -> PyResult<Option<String>> {
         Ok(self.expr.to_sql())
-    }
-
-    pub fn to_sexp(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let module = PyModule::import(py, "daft.io.sexp")?;
-        let expr = self.expr.as_ref();
-        let atom_cls = module.getattr("Atom")?;
-        let expr_cls = module.getattr("Expr")?;
-        Ok(make_sexp(expr, &expr_cls, &atom_cls)?.unbind())
     }
 
     pub fn to_field(&self, schema: &PySchema) -> PyResult<PyField> {
@@ -564,64 +559,5 @@ impl From<PyExpr> for crate::ExprRef {
 impl From<&PyExpr> for crate::ExprRef {
     fn from(item: &PyExpr) -> Self {
         item.expr.clone()
-    }
-}
-
-/// Recursively build an sexp based on expr.
-fn make_sexp<'py>(expr: &Expr, expr_cls: &Bound<'py, PyAny>, atom_cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    match &expr {
-        Expr::Column(col) => make_expr(expr_cls, "col", (col.name(),), None),
-        // Expr::Alias(expr, _) => todo!(),
-        // Expr::Agg(agg_expr) => todo!(),
-        // Expr::BinaryOp { op, left, right } => todo!(),
-        // Expr::Cast(expr, data_type) => todo!(),
-        // Expr::Function { func, inputs } => todo!(),
-        // Expr::Window(expr, window_spec) => todo!(),
-        // Expr::Not(expr) => todo!(),
-        // Expr::IsNull(expr) => todo!(),
-        // Expr::NotNull(expr) => todo!(),
-        // Expr::FillNull(expr, expr1) => todo!(),
-        // Expr::IsIn(expr, exprs) => todo!(),
-        // Expr::Between(expr, expr1, expr2) => todo!(),
-        // Expr::List(exprs) => todo!(),
-        Expr::Literal(value) => make_atom(atom_cls, value),
-        // Expr::IfElse { if_true, if_false, predicate } => todo!(),
-        // Expr::ScalarFunction(scalar_function) => todo!(),
-        // Expr::Subquery(subquery) => todo!(),
-        // Expr::InSubquery(expr, subquery) => todo!(),
-        // Expr::Exists(subquery) => todo!(),
-        // unsupported
-        _ => Err(PyValueError::new_err("Unsupported expression."))
-    }
-}
-
-/// Calls Expr(symbol, args..) given the positional and name arguments.
-fn make_expr<'py>(
-    cls: &Bound<'py, PyAny>, 
-    symbol: &str, 
-    args: impl IntoPyObject<'py, Target = PyTuple>, 
-    kwargs: Option<&Bound<'py, PyDict>>
-) -> PyResult<Bound<'py, PyAny>> {
-    // TODO add symbol to args!!    
-    cls.call(args, kwargs)
-}
-
-/// Calls Atom(value) using the pyo3 IntoPy impls for rust primitives.
-fn make_atom<'py>(cls: &Bound<'py, PyAny>, value: &LiteralValue) -> PyResult<Bound<'py, PyAny>> {
-    match value {
-        LiteralValue::Null => cls.call1((None::<bool>,)),
-        LiteralValue::Boolean(b) => cls.call1((b,)),
-        LiteralValue::Utf8(s) => cls.call1((s,)),
-        LiteralValue::Int8(i) => cls.call1((i,)),
-        LiteralValue::UInt8(i) => cls.call1((i,)),
-        LiteralValue::Int16(i) => cls.call1((i,)),
-        LiteralValue::UInt16(i) => cls.call1((i,)),
-        LiteralValue::Int32(i) => cls.call1((i,)),
-        LiteralValue::UInt32(i) => cls.call1((i,)),
-        LiteralValue::Int64(i) => cls.call1((i,)),
-        LiteralValue::UInt64(i) => cls.call1((i,)),
-        LiteralValue::Float64(f) => cls.call1((f,)),
-        // unsupported
-        _ => Err(PyValueError::new_err("Unsupported literal value."))
     }
 }
