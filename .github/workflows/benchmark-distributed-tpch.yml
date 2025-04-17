@@ -1,4 +1,4 @@
-name: benchmark-distributed-tpch
+name: Benchmark Distributed TPC-H
 
 on:
   workflow_dispatch:
