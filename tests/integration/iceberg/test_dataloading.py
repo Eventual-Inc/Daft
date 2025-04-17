@@ -1,28 +1,27 @@
 import pytest
 import torch
 import torchvision.models as models
-from pyiceberg.catalog import load_catalog
 from torch.utils.data import DataLoader
 
 import daft
+from daft.catalog.__glue import load_glue
 
 
 @pytest.mark.integration()
 def test_dataloading_from_glue_iceberg():
-    catalog = load_catalog(
-        "glue_catalog",
-        warehouse="s3://daft-public-data/test_fixtures/glue_iceberg_test/glue_iceberg_test_bucket/",
-        type="glue",
+    catalog = load_glue(
+        name="glue_catalog",
+        region_name="us-west-2",
     )
 
-    images_table = catalog.load_table("glue_iceberg_test.coco_images")
-    images_df = daft.read_iceberg(images_table)  # noqa: F841
+    images_table = catalog.get_table("glue_iceberg_test.coco_images")
+    images_df = images_table.read()  # noqa: F841
 
-    categories_table = catalog.load_table("glue_iceberg_test.coco_categories")
-    categories_df = daft.read_iceberg(categories_table).with_column_renamed("id", "category_id")  # noqa: F841
+    categories_table = catalog.get_table("glue_iceberg_test.coco_categories")
+    categories_df = categories_table.read().with_column_renamed("id", "category_id")  # noqa: F841
 
-    annotations_table = catalog.load_table("glue_iceberg_test.coco_annotations")
-    annotations_df = daft.read_iceberg(annotations_table).with_column_renamed("id", "annotation_id")  # noqa: F841
+    annotations_table = catalog.get_table("glue_iceberg_test.coco_annotations")
+    annotations_df = annotations_table.read().with_column_renamed("id", "annotation_id")  # noqa: F841
 
     df = daft.sql("""
         SELECT
