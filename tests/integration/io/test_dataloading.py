@@ -8,10 +8,14 @@ from daft.catalog.__glue import load_glue
 
 
 @pytest.mark.integration()
-def test_dataloading_from_glue_iceberg():
+def test_dataloading_from_glue_iceberg(aws_public_s3_config):
     catalog = load_glue(
         name="glue_catalog",
         region_name="us-west-2",
+        endpoint_url=aws_public_s3_config.s3.endpoint_url,
+        aws_access_key_id=aws_public_s3_config.s3.key_id,
+        aws_secret_access_key=aws_public_s3_config.s3.access_key,
+        aws_session_token=aws_public_s3_config.s3.session_token,
     )
 
     images_table = catalog.get_table("glue_iceberg_test.coco_images")
