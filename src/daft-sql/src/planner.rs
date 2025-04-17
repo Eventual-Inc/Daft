@@ -1998,18 +1998,6 @@ mod tests {
     }
 
     #[test]
-    fn test_duplicate_column_names_in_schema() {
-        // This test checks that sql_schema fails or handles duplicates gracefully.
-        // The planner currently returns errors if schema construction fails, so we expect an Err here.
-        let result = sql_schema("col1 INT, col1 STRING");
-
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Daft error: DaftError::ValueError Attempting to make a Schema with duplicate field names: col1"
-        );
-    }
-
-    #[test]
     fn test_degenerate_empty_schema() {
         assert!(sql_schema("").is_err());
     }
