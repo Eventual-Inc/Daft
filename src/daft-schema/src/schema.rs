@@ -78,7 +78,7 @@ impl Schema {
         let fields = self
             .fields
             .iter()
-            .filter(|field| names.contains(field.name.as_str()))
+            .filter(|field| !names.contains(field.name.as_str()))
             .cloned()
             .collect::<Vec<_>>();
 
