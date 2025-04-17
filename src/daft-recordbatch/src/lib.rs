@@ -103,7 +103,7 @@ impl RecordBatch {
         validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Validate Series lengths against provided num_rows
-        for (field, series) in schema.fields().iter().zip(columns.iter()) {
+        for (field, series) in schema.into_iter().zip(columns.iter()) {
             if (series.len() != 1) && (series.len() != num_rows) {
                 return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
             }
@@ -148,7 +148,7 @@ impl RecordBatch {
         validate_schema(schema.as_ref(), columns.as_slice())?;
 
         // Validate Series lengths against provided num_rows
-        for (field, series) in schema.fields().iter().zip(columns.iter()) {
+        for (field, series) in schema.into_iter().zip(columns.iter()) {
             if series.len() != num_rows {
                 return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_size, we found that the Series lengths did not match. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
             }
@@ -178,7 +178,7 @@ impl RecordBatch {
     pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
         let schema = schema.unwrap_or_else(|| Schema::empty().into());
         let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
-        for field in schema.fields() {
+        for field in schema.as_ref() {
             let series = Series::empty(&field.name, &field.dtype);
             columns.push(series);
         }
@@ -202,7 +202,7 @@ impl RecordBatch {
 
         // Infer the num_rows, assume no broadcasting
         let mut num_rows = 1;
-        for (field, series) in schema.fields().iter().zip(columns.iter()) {
+        for (field, series) in schema.into_iter().zip(columns.iter()) {
             if num_rows == 1 {
                 num_rows = series.len();
             }
@@ -228,14 +228,13 @@ impl RecordBatch {
         }
         // validate that we have a field for each array
         let schema: SchemaRef = schema.into();
-        let fields = schema.fields();
-        if fields.len() != arrays.len() {
-            value_err!("While building a RecordBatch with RecordBatch::from_arrow(), we found that the number of fields in the schema `{}` did not match the number of arrays `{}`", fields.len(), arrays.len());
+        if schema.len() != arrays.len() {
+            value_err!("While building a RecordBatch with RecordBatch::from_arrow(), we found that the number of fields in the schema `{}` did not match the number of arrays `{}`", schema.len(), arrays.len());
         }
         // convert arrays to series and validate lengths
         let mut columns = vec![];
         let mut num_rows = 1;
-        for (field, array) in schema.fields().iter().zip(arrays.into_iter()) {
+        for (field, array) in schema.into_iter().zip(arrays.into_iter()) {
             if num_rows == 1 {
                 num_rows = array.len();
             }
@@ -845,8 +844,7 @@ impl RecordBatch {
         let current_col_names = HashSet::<_>::from_iter(self.column_names());
         let null_lit = null_lit();
         let exprs: Vec<_> = schema
-            .fields()
-            .iter()
+            .into_iter()
             .map(|field| {
                 if current_col_names.contains(&field.name) {
                     // For any fields already in the table, perform a cast
@@ -875,7 +873,7 @@ impl RecordBatch {
         // Begin the header.
         res.push_str("<thead><tr>");
 
-        for field in self.schema.fields() {
+        for field in self.schema.as_ref() {
             res.push_str(
                 "<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
             );
@@ -951,8 +949,7 @@ impl RecordBatch {
 
         make_comfy_table(
             self.schema
-                .fields()
-                .iter()
+                .into_iter()
                 .map(|field| format!("{}\n---\n{}", field.name, field.dtype))
                 .collect::<Vec<_>>()
                 .as_slice(),

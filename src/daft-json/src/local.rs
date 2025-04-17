@@ -166,7 +166,7 @@ impl<'a> JsonReader<'a> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
 
-        let daft_fields = self.schema.fields().iter().cloned().map(Arc::new);
+        let daft_fields = self.schema.into_iter().cloned().map(Arc::new);
 
         let arrow_schema = self.schema.to_arrow()?;
 

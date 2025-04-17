@@ -176,7 +176,7 @@ impl TableStatistics {
         fill_map: Option<&HashMap<&str, ExprRef>>,
     ) -> crate::Result<Self> {
         let mut columns = IndexMap::new();
-        for field in schema.fields() {
+        for field in schema.as_ref() {
             let crs = match self.columns.get(&field.name) {
                 Some(column_stat) => column_stat
                     .cast(&field.dtype)

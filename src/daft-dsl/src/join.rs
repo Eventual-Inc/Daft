@@ -45,8 +45,7 @@ pub fn infer_join_schema(
             })
             .chain(
                 left_schema
-                    .fields()
-                    .iter()
+                    .into_iter()
                     .chain(right_schema.fields())
                     .filter_map(|field| {
                         if common_cols.contains(field.name.as_str()) {

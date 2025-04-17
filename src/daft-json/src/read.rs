@@ -507,8 +507,7 @@ fn parse_into_column_array_chunk_stream(
     let daft_schema: SchemaRef = Arc::new(schema.as_ref().into());
     let daft_fields = Arc::new(
         daft_schema
-            .fields()
-            .iter()
+            .into_iter()
             .cloned()
             .map(Arc::new)
             .collect::<Vec<_>>(),

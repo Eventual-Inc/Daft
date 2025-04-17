@@ -245,8 +245,7 @@ pub async fn stream_csv_local(
     let read_schema = Arc::new(Schema::new(fields_subset));
     let read_daft_fields = Arc::new(
         read_schema
-            .fields()
-            .iter()
+            .into_iter()
             .cloned()
             .map(Arc::new)
             .collect::<Vec<_>>(),

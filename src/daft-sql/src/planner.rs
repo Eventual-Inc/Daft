@@ -540,8 +540,7 @@ impl<'a> SQLPlanner<'a> {
             for next in plans {
                 let next_schema = next.schema();
                 let nulled_cols = first_schema
-                    .fields()
-                    .iter()
+                    .into_iter()
                     .map(|f| {
                         if next_schema.has_field(&f.name) {
                             unresolved_col(f.name.clone())

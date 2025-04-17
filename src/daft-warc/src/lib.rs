@@ -394,7 +394,7 @@ fn create_record_batch(
     num_records: usize,
 ) -> DaftResult<RecordBatch> {
     let mut series_vec = Vec::with_capacity(schema.len());
-    for (field, array) in schema.fields().iter().zip(arrays.into_iter()) {
+    for (field, array) in schema.into_iter().zip(arrays.into_iter()) {
         let series = Series::from_arrow(Arc::new(field.clone()), array)?;
         series_vec.push(series);
     }

@@ -733,8 +733,7 @@ impl SparkAnalyzer<'_> {
         let result = self.relation_to_daft_schema(input).await?;
 
         let fields: ConnectResult<Vec<StructField>> = result
-            .fields()
-            .iter()
+            .into_iter()
             .map(|field| {
                 let field_type = to_spark_datatype(&field.dtype);
                 Ok(StructField {

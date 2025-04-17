@@ -38,7 +38,7 @@ pub fn build_dyn_multi_array_compare(
     nans_equal: &[bool],
 ) -> DaftResult<MultiDynArrayComparator> {
     let mut fn_list = Vec::with_capacity(schema.len());
-    for (idx, field) in schema.fields().iter().enumerate() {
+    for (idx, field) in schema.into_iter().enumerate() {
         fn_list.push(build_dyn_compare(
             &field.dtype,
             &field.dtype,

@@ -630,7 +630,7 @@ impl MicroPartition {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let schema_with_id_index_map = std::iter::once(Field::new(column_name, DataType::UInt64))
-            .chain(self.schema.fields().iter().cloned());
+            .chain(self.schema.into_iter().cloned());
 
         let schema_with_id = Schema::new(schema_with_id_index_map);
 
@@ -661,9 +661,7 @@ fn prune_fields_from_schema(
             }
         }
         let filtered_columns = schema
-            .as_ref()
-            .fields()
-            .iter()
+            .into_iter()
             .filter(|field| names_to_keep.contains(field.name.as_str()))
             .cloned()
             .collect::<Vec<_>>();

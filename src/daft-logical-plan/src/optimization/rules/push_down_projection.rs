@@ -148,8 +148,7 @@ impl PushDownProjection {
                     SourceInfo::Physical(external_info) => {
                         if required_columns.len() < upstream_schema.names().len() {
                             let pruned_upstream_schema = upstream_schema
-                                .fields()
-                                .iter()
+                                .into_iter()
                                 .filter(|field| required_columns.contains(&field.name))
                                 .cloned()
                                 .collect::<Vec<_>>();

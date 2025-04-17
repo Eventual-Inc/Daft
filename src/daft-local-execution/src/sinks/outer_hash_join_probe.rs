@@ -174,8 +174,7 @@ impl OuterHashJoinProbeSink {
             .collect::<DaftResult<Vec<_>>>()?;
         let outer_common_col_schema = Arc::new(Schema::new(outer_common_col_fields));
         let left_non_join_fields = left_schema
-            .fields()
-            .iter()
+            .into_iter()
             .filter(|f| !common_join_cols.contains(&f.name))
             .cloned();
         let left_non_join_schema = Arc::new(Schema::new(left_non_join_fields));

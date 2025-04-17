@@ -199,8 +199,7 @@ impl LogicalPlanBuilder {
             && columns.len() < schema_with_generated_fields.len()
         {
             let pruned_upstream_schema = schema_with_generated_fields
-                .fields()
-                .iter()
+                .into_iter()
                 .filter(|field| columns.contains(&field.name))
                 .cloned()
                 .collect::<Vec<_>>();

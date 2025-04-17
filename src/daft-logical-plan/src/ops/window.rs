@@ -56,8 +56,7 @@ impl Window {
         let input_schema = input.schema();
 
         let fields = input_schema
-            .fields()
-            .iter()
+            .into_iter()
             .cloned()
             .map(Ok)
             .chain(

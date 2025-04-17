@@ -35,13 +35,12 @@ impl Explode {
 
             let explode_schema = exprs_to_schema(&explode_exprs, input.schema())?;
 
-            let fields = input
-                .schema()
-                .fields()
-                .iter()
+            let input_schema = input.schema();
+            let fields = input_schema
+                .into_iter()
                 .map(|field| explode_schema.get_field(&field.name).unwrap_or(field))
-                .cloned()
-                .collect::<Vec<_>>();
+                .cloned();
+
             Schema::new(fields).into()
         };
 
