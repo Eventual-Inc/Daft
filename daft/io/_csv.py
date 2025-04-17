@@ -58,6 +58,7 @@ def read_csv(
         >>> df = daft.read_csv("/path/to/directory")
         >>> df = daft.read_csv("/path/to/files-*.csv")
         >>> df = daft.read_csv("s3://path/to/files-*.csv")
+
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")

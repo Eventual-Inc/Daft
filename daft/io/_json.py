@@ -45,6 +45,7 @@ def read_json(
         >>> df = daft.read_json("/path/to/directory")
         >>> df = daft.read_json("/path/to/files-*.json")
         >>> df = daft.read_json("s3://path/to/files-*.json")
+
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of JSON filepaths")

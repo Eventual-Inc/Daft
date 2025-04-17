@@ -173,15 +173,13 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
 def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
     """Creates a Daft DataFrame from a Dask DataFrame.
 
+    The provided Dask DataFrame must have been created using [Dask-on-Ray](https://docs.ray.io/en/latest/ray-more-libs/dask-on-ray.html).
+
     Args:
         ddf: The Dask DataFrame to create a Daft DataFrame from.
 
-    Returns:
-        DataFrame: Daft DataFrame created from the provided Dask DataFrame.
-
     Note:
-        The provided Dask DataFrame must have been created using [Dask-on-Ray](https://docs.ray.io/en/latest/ray-more-libs/dask-on-ray.html).
-        This function can only work if Daft is running using the RayRunner.
+        This function can only work if Daft is running using the RayRunner
 
     """
     from daft import DataFrame
