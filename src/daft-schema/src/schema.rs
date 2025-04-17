@@ -91,7 +91,7 @@ impl Schema {
             if let [idx] = indices.as_slice() {
                 Ok(&self.fields[*idx])
             } else {
-                Err(DaftError::FieldNotFound(format!(
+                Err(DaftError::AmbiguousReference(format!(
                     "Column name \"{}\" is ambiguous in schema: {:?}",
                     name, self.fields
                 )))
@@ -115,7 +115,7 @@ impl Schema {
             if let [idx] = indices.as_slice() {
                 Ok(*idx)
             } else {
-                Err(DaftError::FieldNotFound(format!(
+                Err(DaftError::AmbiguousReference(format!(
                     "Column name \"{}\" is ambiguous in schema: {:?}",
                     name, self.fields
                 )))
@@ -193,7 +193,7 @@ impl Schema {
                     if let [idx] = indices.as_slice() {
                         Ok(hints.fields[*idx].clone())
                     } else {
-                        Err(DaftError::SchemaMismatch(format!(
+                        Err(DaftError::AmbiguousReference(format!(
                             "Attempted to apply hint schema with ambiguous column name \"{}\": {}",
                             f.name, hints
                         )))
@@ -331,13 +331,13 @@ impl Schema {
                     if let [idx] = indices.as_slice() {
                         Ok(self.fields[*idx].clone())
                     } else {
-                        Err(DaftError::SchemaMismatch(format!(
+                        Err(DaftError::AmbiguousReference(format!(
                             "Column name {} is ambiguous in schema: {:?}",
                             key, self.fields
                         )))
                     }
                 } else {
-                    Err(DaftError::SchemaMismatch(format!(
+                    Err(DaftError::FieldNotFound(format!(
                         "Column {} not found in schema: {:?}",
                         key, self.fields
                     )))
