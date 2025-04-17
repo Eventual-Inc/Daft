@@ -40,8 +40,7 @@ def read_deltalake(
         DataFrame: A DataFrame with the schema converted from the specified Delta Lake table.
 
     Note:
-        This function requires the use of [deltalake](https://delta-io.github.io/delta-rs/), a Python library for
-        interacting with Delta Lake.
+        This function requires the use of [deltalake](https://delta-io.github.io/delta-rs/), a Python library for interacting with Delta Lake.
 
     Examples:
         >>> df = daft.read_deltalake("some-table-uri")
@@ -50,7 +49,6 @@ def read_deltalake(
         >>> # the read operation from Delta Lake.
         >>> df = df.where(df["foo"] > 5)
         >>> df.show()
-
     """
     from daft.delta_lake.delta_lake_scan import DeltaLakeScanOperator
 

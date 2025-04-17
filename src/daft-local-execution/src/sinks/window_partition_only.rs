@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::{resolved_col, Expr, ExprRef};
+use daft_dsl::{resolved_col, AggExpr, ExprRef};
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::extract_agg_expr;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -72,7 +71,8 @@ impl BlockingSinkState for WindowPartitionOnlyState {
 }
 
 struct WindowPartitionOnlyParams {
-    agg_exprs: Vec<ExprRef>,
+    agg_exprs: Vec<AggExpr>,
+    aliases: Vec<String>,
     partition_by: Vec<ExprRef>,
     original_schema: SchemaRef,
 }
@@ -83,23 +83,15 @@ pub struct WindowPartitionOnlySink {
 
 impl WindowPartitionOnlySink {
     pub fn new(
-        aggregations: &[ExprRef],
+        agg_exprs: &[AggExpr],
+        aliases: &[String],
         partition_by: &[ExprRef],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
-        let aggregations = aggregations
-            .iter()
-            .map(extract_agg_expr)
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        let agg_exprs = aggregations
-            .iter()
-            .map(|e| Arc::new(Expr::Agg(e.clone())))
-            .collect::<Vec<_>>();
-
         Ok(Self {
             window_partition_only_params: Arc::new(WindowPartitionOnlyParams {
-                agg_exprs,
+                agg_exprs: agg_exprs.to_vec(),
+                aliases: aliases.to_vec(),
                 partition_by: partition_by.to_vec(),
                 original_schema: schema.clone(),
             }),
@@ -184,8 +176,11 @@ impl BlockingSink for WindowPartitionOnlySink {
                         per_partition_tasks.spawn(async move {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
-                            let result =
-                                input_data.window_agg(&params.agg_exprs, &params.partition_by)?;
+                            let result = input_data.window_agg(
+                                &params.agg_exprs,
+                                &params.aliases,
+                                &params.partition_by,
+                            )?;
                             let all_projections = params
                                 .original_schema
                                 .fields
@@ -216,6 +211,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                         results.into(),
                         None,
                     );
+
                     Ok(Some(Arc::new(final_result)))
                 },
                 Span::current(),

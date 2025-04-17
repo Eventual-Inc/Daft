@@ -27,7 +27,6 @@ def read_hudi(
         >>> df = daft.read_hudi("some-table-uri")
         >>> df = df.where(df["foo"] > 5)
         >>> df.show()
-
     """
     from daft.hudi.hudi_scan import HudiScanOperator
 

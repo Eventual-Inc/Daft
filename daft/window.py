@@ -70,7 +70,7 @@ class Window:
         if not expressions:
             raise ValueError("At least one partition column must be specified")
 
-        window = Window()
+        window = self
         window._spec = self._spec.with_partition_by([expr._expr for expr in expressions])
         return window
 
@@ -96,7 +96,7 @@ class Window:
                 raise ValueError("Length of ascending flags must match number of order by columns")
             asc_flags = ascending
 
-        window = Window()
+        window = self
         window._spec = self._spec.with_order_by([expr._expr for expr in expressions], asc_flags)
         return window
 
@@ -127,7 +127,7 @@ class Window:
             end=end,
         )
 
-        new_window = Window()
+        new_window = self
         new_window._spec = self._spec.with_frame(frame).with_min_periods(min_periods)
         return new_window
 

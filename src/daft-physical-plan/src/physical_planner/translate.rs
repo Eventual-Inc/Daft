@@ -547,7 +547,6 @@ pub fn adaptively_translate_single_logical_node(
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
     match expr.as_ref() {
         Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
-        Expr::Window(inner_expr, _) => extract_agg_expr(inner_expr),
         Expr::Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
             // reorder expressions so that alias goes before agg
             match agg_expr {
@@ -597,7 +596,12 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 },
             }
         }),
-        _ => Err(DaftError::InternalError("Expected non-agg expressions in aggregation to be factored out before plan translation.".to_string())),
+        _ => Err(DaftError::InternalError(
+            format!(
+                "Expected non-agg expressions in aggregation to be factored out before plan translation. Got: {:?}",
+                expr
+            )
+        )),
     }
 }
 

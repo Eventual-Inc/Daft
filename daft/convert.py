@@ -42,7 +42,6 @@ def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
         ╰───────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
-
     """
     from daft import DataFrame
 
@@ -75,7 +74,6 @@ def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
         ╰───────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
-
     """
     from daft import DataFrame
 
@@ -111,7 +109,6 @@ def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) 
         ╰───────┴──────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-
     """
     from daft import DataFrame
 
@@ -147,7 +144,6 @@ def from_pandas(data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame
         ╰───────┴──────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-
     """
     from daft import DataFrame
 
@@ -161,8 +157,11 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
     Args:
         ds: The Ray Dataset to create a Daft DataFrame from.
 
+    Returns:
+        DataFrame: Daft DataFrame created from the provided Ray dataset.
+
     Note:
-        This function can only work if Daft is running using the RayRunner.
+        This function can only work if Daft is running using the RayRunner
 
     """
     from daft import DataFrame

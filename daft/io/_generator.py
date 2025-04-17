@@ -60,7 +60,6 @@ def read_generator(
         ...     .repartition(100, "ints")
         ...     .collect()
         ... )
-
     """
     generator_scan_operator = GeneratorScanOperator(
         generators=generators,
