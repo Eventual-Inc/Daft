@@ -168,6 +168,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     window.window_spec.order_by.clone(),
                     window.window_spec.descending.clone(),
                     window.window_spec.frame.clone().unwrap(),
+                    window.window_spec.min_periods,
                     window.schema.clone(),
                     window.stats_state.clone(),
                     aggregations,

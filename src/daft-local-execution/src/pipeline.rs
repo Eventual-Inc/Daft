@@ -182,6 +182,7 @@ pub fn physical_plan_to_pipeline(
             order_by,
             descending,
             frame,
+            min_periods,
             schema,
             stats_state,
             aggregations,
@@ -190,6 +191,7 @@ pub fn physical_plan_to_pipeline(
             let input_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let window_partition_and_dynamic_frame_sink = WindowPartitionAndDynamicFrameSink::new(
                 aggregations,
+                *min_periods,
                 aliases,
                 partition_by,
                 order_by,

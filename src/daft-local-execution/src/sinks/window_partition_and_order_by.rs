@@ -193,10 +193,10 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 return RecordBatch::empty(Some(params.original_schema.clone()));
                             }
 
-                            let groupby_table = input_data.eval_expression_list(&params.partition_by)?;
-                            let (_, groupvals_indices) = groupby_table.make_groups()?;
+                            let partitionby_table = input_data.eval_expression_list(&params.partition_by)?;
+                            let (_, partitionvals_indices) = partitionby_table.make_groups()?;
 
-                            let mut partitions = groupvals_indices.iter().map(|indices| {
+                            let mut partitions = partitionvals_indices.iter().map(|indices| {
                                 let indices_series = UInt64Array::from(("indices", indices.clone())).into_series();
                                 input_data.take(&indices_series).unwrap()
                             }).collect::<Vec<_>>();

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use daft_core::prelude::SchemaRef;
+use common_error::{DaftError, DaftResult};
+use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{resolved_col, AggExpr, ExprRef, WindowFrame};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -72,6 +72,7 @@ impl BlockingSinkState for WindowPartitionAndDynamicFrameState {
 
 struct WindowPartitionAndDynamicFrameParams {
     aggregations: Vec<AggExpr>,
+    min_periods: i64,
     aliases: Vec<String>,
     partition_by: Vec<ExprRef>,
     order_by: Vec<ExprRef>,
@@ -88,6 +89,7 @@ impl WindowPartitionAndDynamicFrameSink {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         aggregations: &[AggExpr],
+        min_periods: i64,
         aliases: &[String],
         partition_by: &[ExprRef],
         order_by: &[ExprRef],
@@ -99,6 +101,7 @@ impl WindowPartitionAndDynamicFrameSink {
             window_partition_and_dynamic_frame_params: Arc::new(
                 WindowPartitionAndDynamicFrameParams {
                     aggregations: aggregations.to_vec(),
+                    min_periods,
                     aliases: aliases.to_vec(),
                     partition_by: partition_by.to_vec(),
                     order_by: order_by.to_vec(),
@@ -185,30 +188,36 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                         }
 
                         let params = params.clone();
+
+                        if params.partition_by.is_empty() {
+                            return Err(DaftError::ValueError(
+                                "Partition by cannot be empty for window functions".into(),
+                            ));
+                        }
+
                         per_partition_tasks.spawn(async move {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
-                            let sorted_data = input_data.sort(&params.order_by, &params.descending, &[true])?;
+                            if input_data.is_empty() {
+                                return RecordBatch::empty(Some(params.original_schema.clone()));
+                            }
 
-                            // let result = sorted_data.window_agg_dynamic_frame(
-                            //     &params.aggregations,
-                            //     &params.aliases,
-                            //     &params.partition_by,
-                            //     &params.order_by,
-                            //     &params.descending,
-                            //     &params.frame,
-                            // )?;
+                            let partitionby_table = input_data.eval_expression_list(&params.partition_by)?;
+                            let (_, partitionvals_indices) = partitionby_table.make_groups()?;
 
-                            let mut result = sorted_data;
-                            for (agg, name) in params.aggregations.iter().zip(params.aliases.iter()) {
-                                result = result.window_agg_dynamic_frame(
-                                    name.clone(),
-                                    agg,
-                                    &params.partition_by,
-                                    &params.order_by,
-                                    &params.descending,
-                                    &params.frame,
-                                )?;
+                            let mut partitions = partitionvals_indices.iter().map(|indices| {
+                                let indices_series = UInt64Array::from(("indices", indices.clone())).into_series();
+                                input_data.take(&indices_series).unwrap()
+                            }).collect::<Vec<_>>();
+
+                            for partition in &mut partitions {
+                                // Sort the partition by the order_by columns (default for nulls_first is to be same as descending)
+                                *partition = partition.sort(&params.order_by, &params.descending, &params.descending)?;
+
+                                for (agg_expr, name) in params.aggregations.iter().zip(params.aliases.iter()) {
+                                    let dtype = agg_expr.to_field(&params.original_schema)?.dtype;
+                                    *partition = partition.window_agg_dynamic_frame(name.clone(), agg_expr, params.min_periods, &dtype, &params.order_by, &params.descending, &params.frame)?;
+                                }
                             }
 
                             let all_projections = params
@@ -218,7 +227,8 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                                 .map(|k| resolved_col(k.clone()))
                                 .collect::<Vec<_>>();
 
-                            let final_result = result.eval_expression_list(&all_projections)?;
+                            let final_result = RecordBatch::concat(&partitions)?;
+                            let final_result = final_result.eval_expression_list(&all_projections)?;
                             Ok(final_result)
                         });
                     }
