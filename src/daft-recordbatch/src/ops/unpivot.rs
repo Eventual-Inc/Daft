@@ -53,7 +53,7 @@ impl RecordBatch {
         let unpivot_schema = ids_schema.union(&Schema::new(vec![
             variable_series.field().clone(),
             value_series.field().clone(),
-        ])?)?;
+        ]))?;
 
         let unpivot_series = [
             Arc::unwrap_or_clone(ids_series),

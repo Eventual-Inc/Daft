@@ -42,7 +42,7 @@ impl MicroPartition {
                     ])
                     .collect::<DaftResult<Vec<_>>>()?;
 
-                Ok(Self::empty(Some(Arc::new(Schema::new(fields)?))))
+                Ok(Self::empty(Some(Arc::new(Schema::new(fields)))))
             }
             [t] => {
                 let unpivoted = t.unpivot(ids, values, variable_name, value_name)?;

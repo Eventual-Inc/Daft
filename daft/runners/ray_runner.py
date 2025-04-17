@@ -563,9 +563,9 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
     Used as a generator as it provides a guard against calling ray.cluster_resources()
     more than once per `ttl_seconds`.
 
-    Example:
-    >>> p = _ray_num_cpus_provider()
-    >>> next(p)
+    Examples:
+        >>> p = _ray_num_cpus_provider()
+        >>> next(p)
     """
     last_checked_time = time.time()
     last_num_cpus_queried = int(ray.cluster_resources().get("CPU", 0))

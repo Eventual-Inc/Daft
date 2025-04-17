@@ -183,9 +183,8 @@ impl BlockingSink for WindowPartitionOnlySink {
                             )?;
                             let all_projections = params
                                 .original_schema
-                                .fields
-                                .keys()
-                                .map(|k| resolved_col(k.clone()))
+                                .field_names()
+                                .map(resolved_col)
                                 .collect::<Vec<_>>();
 
                             let final_result = result.eval_expression_list(&all_projections)?;

@@ -53,7 +53,7 @@ impl Sink {
                 }
             }
         };
-        let schema = Schema::new(fields)?.into();
+        let schema = Schema::new(fields).into();
         Ok(Self {
             plan_id: None,
             input,

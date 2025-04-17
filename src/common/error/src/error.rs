@@ -5,6 +5,8 @@ pub type GenericError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug, Error)]
 pub enum DaftError {
+    #[error("DaftError::AmbiguousReference {0}")]
+    AmbiguousReference(String),
     #[error("DaftError::FieldNotFound {0}")]
     FieldNotFound(String),
     #[error("DaftError::SchemaMismatch {0}")]

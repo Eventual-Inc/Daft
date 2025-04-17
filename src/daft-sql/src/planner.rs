@@ -79,11 +79,11 @@ struct OrderByExprs {
 /// TODO consolidate SQLPlanner state to the single context.
 /// TODO move bound_ctes into per-planner scope since these are a scoped concept.
 #[derive(Default)]
-struct PlannerContext {
+pub(crate) struct PlannerContext {
     /// Session provides access to metadata and the path for name resolution.
     /// TODO move into SQLPlanner once state is flipped.
     /// TODO consider decoupling session from planner via a resolver trait.
-    session: Rc<Session>,
+    pub(crate) session: Rc<Session>,
     /// Bindings for common table expressions (cte).
     bound_ctes: Bindings<LogicalPlanBuilder>,
 }
@@ -111,7 +111,7 @@ impl PlannerContext {
 #[derive(Default)]
 pub struct SQLPlanner<'a> {
     /// Shared context for all planners
-    context: Rc<RefCell<PlannerContext>>,
+    pub(crate) context: Rc<RefCell<PlannerContext>>,
     /// Planner for the outer scope
     parent: Option<&'a SQLPlanner<'a>>,
     /// In-scope bindings introduced by the current relation's schema
@@ -540,13 +540,12 @@ impl<'a> SQLPlanner<'a> {
             for next in plans {
                 let next_schema = next.schema();
                 let nulled_cols = first_schema
-                    .fields
-                    .iter()
+                    .into_iter()
                     .map(|f| {
-                        if next_schema.has_field(f.0) {
-                            unresolved_col(f.0.clone())
+                        if next_schema.has_field(&f.name) {
+                            unresolved_col(f.name.clone())
                         } else {
-                            null_lit().alias(f.0.clone()).cast(&f.1.dtype)
+                            null_lit().alias(f.name.clone()).cast(&f.dtype)
                         }
                     })
                     .collect::<Vec<_>>();
@@ -704,11 +703,10 @@ impl<'a> SQLPlanner<'a> {
             // but our join returns [common columns, remaining left columns, remaining right columns]
             if matches!(&constraint, JoinConstraint::Using(..)) {
                 let new_schema = left_planner.current_plan_ref().schema();
-                let output_schema = left_schema.non_distinct_union(&new_schema);
+                let output_schema = left_schema.non_distinct_union(&new_schema)?;
                 let output_cols = output_schema
-                    .fields
-                    .keys()
-                    .cloned()
+                    .field_names()
+                    .map(ToString::to_string)
                     .map(resolved_col)
                     .collect();
 
@@ -989,10 +987,7 @@ impl<'a> SQLPlanner<'a> {
     }
 
     fn select_item_to_expr(&mut self, item: &SelectItem) -> SQLPlannerResult<Vec<ExprRef>> {
-        fn wildcard_exclude(
-            schema: SchemaRef,
-            exclusion: &ExcludeSelectItem,
-        ) -> DaftResult<Schema> {
+        fn wildcard_exclude(schema: SchemaRef, exclusion: &ExcludeSelectItem) -> Schema {
             match exclusion {
                 ExcludeSelectItem::Single(column) => schema.exclude(&[&column.to_string()]),
                 ExcludeSelectItem::Multiple(columns) => {
@@ -1020,15 +1015,11 @@ impl<'a> SQLPlanner<'a> {
 
                 if let Some(exclude) = &wildcard_opts.opt_exclude {
                     let schema = self.current_plan_ref().schema();
-                    wildcard_exclude(schema, exclude)
-                        .map(|excluded| {
-                            excluded
-                                .names()
-                                .iter()
-                                .map(|n| unresolved_col(n.as_ref()))
-                                .collect::<Vec<_>>()
-                        })
-                        .map_err(std::convert::Into::into)
+                    Ok(wildcard_exclude(schema, exclude)
+                        .names()
+                        .iter()
+                        .map(|n| unresolved_col(n.as_ref()))
+                        .collect::<Vec<_>>())
                 } else if let Some(current_plan) = &self.current_plan {
                     Ok(current_plan
                         .schema()
@@ -1057,7 +1048,7 @@ impl<'a> SQLPlanner<'a> {
                 };
 
                 let columns = if let Some(exclude) = &wildcard_opts.opt_exclude {
-                    Arc::new(wildcard_exclude(subquery_schema.clone(), exclude)?)
+                    Arc::new(wildcard_exclude(subquery_schema.clone(), exclude))
                 } else {
                     // I believe clippy is wrong here. It does not compile without this clone - kevin
                     #[allow(clippy::redundant_clone)]
@@ -1854,7 +1845,7 @@ pub fn sql_schema<S: AsRef<str>>(s: S) -> SQLPlannerResult<SchemaRef> {
 
     let fields = fields?;
 
-    let schema = Schema::new(fields)?;
+    let schema = Schema::new(fields);
     Ok(Arc::new(schema))
 }
 
@@ -2000,22 +1991,9 @@ mod tests {
             Field::new("County", DataType::Utf8),
             Field::new("Sex", DataType::Utf8),
             Field::new("Count", DataType::Int32),
-        ])
-        .unwrap();
+        ]);
 
         assert_eq!(&*result, &expected);
-    }
-
-    #[test]
-    fn test_duplicate_column_names_in_schema() {
-        // This test checks that sql_schema fails or handles duplicates gracefully.
-        // The planner currently returns errors if schema construction fails, so we expect an Err here.
-        let result = sql_schema("col1 INT, col1 STRING");
-
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Daft error: DaftError::ValueError Attempting to make a Schema with duplicate field names: col1"
-        );
     }
 
     #[test]
@@ -2026,7 +2004,7 @@ mod tests {
     #[test]
     fn test_single_field_schema() {
         let result = sql_schema("col1 INT").unwrap();
-        let expected = Schema::new(vec![Field::new("col1", DataType::Int32)]).unwrap();
+        let expected = Schema::new(vec![Field::new("col1", DataType::Int32)]);
         assert_eq!(&*result, &expected);
     }
 

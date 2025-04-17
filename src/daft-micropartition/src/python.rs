@@ -800,7 +800,7 @@ impl PyMicroPartition {
             ),
             Field::new("warc_content", daft_core::prelude::DataType::Binary),
             Field::new("warc_headers", daft_core::prelude::DataType::Utf8),
-        ])?);
+        ]));
         let mp = py.allow_threads(|| {
             crate::micropartition::read_warc_into_micropartition(
                 &[uri],

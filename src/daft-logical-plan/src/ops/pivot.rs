@@ -43,21 +43,15 @@ impl Pivot {
 
         let output_schema = {
             let value_col_dtype = value_column.to_field(&input.schema())?.dtype;
-            let pivot_value_fields = names
-                .iter()
-                .map(|f| Field::new(f, value_col_dtype.clone()))
-                .collect::<Vec<_>>();
+            let pivot_value_fields = names.iter().map(|f| Field::new(f, value_col_dtype.clone()));
 
             let group_by_fields = group_by
                 .iter()
                 .map(|expr| expr.to_field(&input.schema()))
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            let fields = group_by_fields
-                .into_iter()
-                .chain(pivot_value_fields)
-                .collect::<Vec<_>>();
-            Schema::new(fields)?.into()
+            let fields = group_by_fields.into_iter().chain(pivot_value_fields);
+            Schema::new(fields).into()
         };
 
         Ok(Self {
