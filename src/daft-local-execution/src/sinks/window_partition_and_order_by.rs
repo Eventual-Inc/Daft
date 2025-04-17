@@ -180,21 +180,11 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
 
                         let params = params.clone();
 
-                        let window_fields = params.window_exprs.iter().zip(params.aliases.iter())
-                            .map(|(expr, name)| Field::new(name, expr.to_field(&params.original_schema).unwrap().dtype))
-                            .collect::<Vec<_>>();
-
-                        let window_schema = Arc::new(Schema::new(window_fields)?);
-                        let empty_window_batch = RecordBatch::empty(Some(window_schema))?;
-
                         per_partition_tasks.spawn(async move {
-                            // First concatenate all partitions
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
-                            // Handle empty data case
                             if input_data.is_empty() {
-                                // Union empty input with empty window columns
-                                return input_data.union(&empty_window_batch);
+                                return RecordBatch::empty(Some(params.original_schema.clone()));
                             }
 
                             let groupby_table = input_data.eval_expression_list(&params.partition_by)?;
@@ -205,30 +195,22 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 input_data.take(&indices_series).unwrap()
                             }).collect::<Vec<_>>();
 
-                            // Modify each partition in place
                             for partition in &mut partitions {
                                 // Sort the partition by the order_by columns (default for nulls_first is to be same as descending)
                                 *partition = partition.sort(&params.order_by, &params.descending, &params.descending)?;
 
-                                // print the whole partition row by row
-
-                                println!("Partition: {:?}", partition);
-
                                 for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
                                     match window_expr {
                                         WindowExpr::RowNumber => {
-                                            // Use the simplified row_number function for pre-sorted partitions
                                             *partition = partition.window_row_number_partition(name.clone())?;
                                         }
                                         WindowExpr::Agg(agg_expr) => {
-                                            // Use the simplified window_agg function for pre-sorted partitions
                                             *partition = partition.window_agg_sorted_partition(agg_expr, name.clone(), &params.partition_by)?;
                                         }
                                     }
                                 }
                             }
 
-                            // Project back to original schema plus window function results
                             let all_projections = params
                                 .original_schema
                                 .fields
