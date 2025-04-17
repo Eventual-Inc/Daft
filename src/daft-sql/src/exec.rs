@@ -62,7 +62,7 @@ fn execute_show_tables(
         Field::new("catalog", DataType::Utf8),
         Field::new("namespace", DataType::Utf8),
         Field::new("table", DataType::Utf8),
-    ])?;
+    ]);
 
     // build the result set
     use arrow2::array::{MutableArray, MutableUtf8Array};

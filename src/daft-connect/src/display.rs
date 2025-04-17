@@ -16,9 +16,9 @@ impl SparkDisplay for Schema {
         writeln!(&mut output, "root").unwrap();
 
         // Print each top-level field with indentation level 1
-        for (name, field) in &self.fields {
+        for field in self.fields() {
             // We'll rely on a helper function that knows how to print a field with given indentation
-            write_field(&mut output, name, &field.dtype, 1).unwrap();
+            write_field(&mut output, &field.name, &field.dtype, 1).unwrap();
         }
         output
     }
@@ -143,7 +143,7 @@ mod tests {
     fn test_single_field_schema() -> ConnectResult<()> {
         let mut fields = Vec::new();
         fields.push(Field::new("step", DataType::Int32));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
         let output = schema.repr_spark_string();
         let expected = "root\n |-- step: integer (nullable = true)\n";
         assert_eq!(output, expected);
@@ -156,7 +156,7 @@ mod tests {
         fields.push(Field::new("step", DataType::Int32));
         fields.push(Field::new("type", DataType::Utf8));
         fields.push(Field::new("amount", DataType::Float64));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
         let output = schema.repr_spark_string();
         let expected = "\
 root
@@ -180,7 +180,7 @@ root
         let mut fields = Vec::new();
         fields.push(Field::new("parent", struct_dtype));
         fields.push(Field::new("count", DataType::Int64));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
 
         let output = schema.repr_spark_string();
         let expected = "\
@@ -207,7 +207,7 @@ root
 
         let mut fields = Vec::new();
         fields.push(Field::new("top", mid_struct));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
 
         let output = schema.repr_spark_string();
         let expected = "\
@@ -230,7 +230,7 @@ root
         let mut fields = Vec::new();
         fields.push(Field::new("ints", list_of_int));
         fields.push(Field::new("floats", fixed_list_of_floats));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
 
         let output = schema.repr_spark_string();
         let expected = "\
@@ -253,7 +253,7 @@ root
 
         let mut fields = Vec::new();
         fields.push(Field::new("m", map_type));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
 
         let output = schema.repr_spark_string();
         // Spark-like print doesn't show the internal "entries" struct by name, but we do show it as "struct":
@@ -276,7 +276,7 @@ root
 
         let mut fields = Vec::new();
         fields.push(Field::new("ext_field", extension_type));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
 
         let output = schema.repr_spark_string();
         let expected = "\
@@ -309,7 +309,7 @@ root
 
         let mut fields = Vec::new();
         fields.push(Field::new("record", DataType::Struct(main_fields)));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
 
         let output = schema.repr_spark_string();
         let expected = "\
@@ -334,7 +334,7 @@ root
         // Field with spaces and special characters
         let mut fields = Vec::new();
         fields.push(Field::new("weird field@!#", DataType::Utf8));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
         let output = schema.repr_spark_string();
         let expected = "\
 root
@@ -350,7 +350,7 @@ root
         let zero_sized_list = DataType::FixedSizeList(Box::new(DataType::Int8), 0);
         let mut fields = Vec::new();
         fields.push(Field::new("empty_list", zero_sized_list));
-        let schema = Schema::new(fields)?;
+        let schema = Schema::new(fields);
 
         let output = schema.repr_spark_string();
         let expected = "\

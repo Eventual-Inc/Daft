@@ -106,7 +106,7 @@ mod test {
     #[test]
     #[cfg(feature = "python")]
     fn test_from_arrow_sanity() {
-        let schema = Schema::new(vec![Field::new("col1", DataType::Int64)]).unwrap();
+        let schema = Schema::new(vec![Field::new("col1", DataType::Int64)]);
         let schema = Arc::new(schema);
         let array = Int64Array::from_vec(vec![1, 2, 3, 4]);
         let arrays = vec![Box::new(array) as Box<dyn arrow2::array::Array>];

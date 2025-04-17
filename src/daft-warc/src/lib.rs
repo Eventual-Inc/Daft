@@ -393,8 +393,8 @@ fn create_record_batch(
     arrays: Vec<Box<dyn arrow2::array::Array>>,
     num_records: usize,
 ) -> DaftResult<RecordBatch> {
-    let mut series_vec = Vec::with_capacity(schema.fields.len());
-    for ((_, field), array) in schema.fields.iter().zip(arrays.into_iter()) {
+    let mut series_vec = Vec::with_capacity(schema.len());
+    for (field, array) in schema.into_iter().zip(arrays.into_iter()) {
         let series = Series::from_arrow(Arc::new(field.clone()), array)?;
         series_vec.push(series);
     }
@@ -643,7 +643,7 @@ mod tests {
             ),
             Field::new("warc_content", daft_core::prelude::DataType::Binary),
             Field::new("warc_headers", daft_core::prelude::DataType::Utf8),
-        ])?);
+        ]));
         let io_config = Arc::new(IOConfig::default());
         let io_client = daft_io::get_io_client(true, io_config)?;
         let io_stats = IOStatsContext::new("test_warc_read");
