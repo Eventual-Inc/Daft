@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pandas as pd
 import pytest
 
@@ -253,3 +255,83 @@ def test_multi_window_agg_functions(make_df):
             assert (
                 actual_rank == expected_rank
             ), f"Incorrect single-partition row number for {category}, value {value}: got {actual_rank}, expected {expected_rank}"
+
+
+def test_multi_ordering_combinations(make_df):
+    """Test row numbering with all possible ordering combinations."""
+    random.seed(42)
+
+    all_point_coordinates = []
+    for x in range(10):
+        for y in range(10):
+            all_point_coordinates.append((x, y))
+
+    test_data = []
+    for group in ["A", "B", "C"]:
+        selected_points = random.sample(all_point_coordinates, 10)
+        for x, y in selected_points:
+            test_data.append({"group": group, "x": x, "y": y})
+
+    df = make_df(test_data)
+
+    window_spec1 = Window().partition_by("group").order_by(["x", "y"], desc=[False, False])  # x asc, y asc
+    window_spec2 = Window().partition_by("group").order_by(["x", "y"], desc=[False, True])  # x asc, y desc
+    window_spec3 = Window().partition_by("group").order_by(["x", "y"], desc=[True, False])  # x desc, y asc
+    window_spec4 = Window().partition_by("group").order_by(["x", "y"], desc=[True, True])  # x desc, y desc
+    window_spec5 = Window().partition_by("group").order_by(["y", "x"], desc=[False, False])  # y asc, x asc
+    window_spec6 = Window().partition_by("group").order_by(["y", "x"], desc=[False, True])  # y asc, x desc
+    window_spec7 = Window().partition_by("group").order_by(["y", "x"], desc=[True, False])  # y desc, x asc
+    window_spec8 = Window().partition_by("group").order_by(["y", "x"], desc=[True, True])  # y desc, x desc
+
+    result = df.select(
+        col("group"),
+        col("x"),
+        col("y"),
+        row_number().over(window_spec1).alias("row_number_1"),
+        row_number().over(window_spec2).alias("row_number_2"),
+        row_number().over(window_spec3).alias("row_number_3"),
+        row_number().over(window_spec4).alias("row_number_4"),
+        row_number().over(window_spec5).alias("row_number_5"),
+        row_number().over(window_spec6).alias("row_number_6"),
+        row_number().over(window_spec7).alias("row_number_7"),
+        row_number().over(window_spec8).alias("row_number_8"),
+    ).collect()
+
+    result_dict = result.to_pydict()
+
+    row_number_mapping = {
+        (0, 1, 1): 1,  # x asc, y asc
+        (0, 1, -1): 2,  # x asc, y desc
+        (0, -1, 1): 3,  # x desc, y asc
+        (0, -1, -1): 4,  # x desc, y desc
+        (1, 1, 1): 5,  # y asc, x asc
+        (1, 1, -1): 6,  # y asc, x desc
+        (1, -1, 1): 7,  # y desc, x asc
+        (1, -1, -1): 8,  # y desc, x desc
+    }
+
+    for group in ["A", "B", "C"]:
+        for primary_key in [0, 1]:  # 0 = x, 1 = y
+            for primary_desc in [1, -1]:  # 1 = asc, -1 = desc
+                for secondary_desc in [1, -1]:  # 1 = asc, -1 = desc
+                    row_number_index = row_number_mapping[(primary_key, primary_desc, secondary_desc)]
+
+                    points_with_row_numbers = [
+                        (result_dict["x"][i], result_dict["y"][i], result_dict[f"row_number_{row_number_index}"][i])
+                        for i, grp in enumerate(result_dict["group"])
+                        if grp == group
+                    ]
+
+                    sorted_points = sorted(
+                        points_with_row_numbers,
+                        key=lambda p: (p[primary_key] * primary_desc, p[not primary_key] * secondary_desc),
+                    )
+
+                    for i, (x, y, actual_row_num) in enumerate(sorted_points):
+                        expected_row_num = i + 1
+                        assert expected_row_num == actual_row_num, (
+                            f"Incorrect row number for group {group}, "
+                            f"primary key {['x', 'y'][primary_key]} {('asc' if primary_desc == 1 else 'desc')}, "
+                            f"secondary key {['x', 'y'][not primary_key]} {('asc' if secondary_desc == 1 else 'desc')}: "
+                            f"expected {expected_row_num}, got {actual_row_num}"
+                        )
