@@ -46,7 +46,7 @@ use crate::{
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Default)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct S3Config {
     pub config: crate::S3Config,
 }
@@ -69,7 +69,7 @@ pub struct S3Config {
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct S3Credentials {
     pub credentials: crate::S3Credentials,
 }
@@ -96,7 +96,7 @@ pub struct S3Credentials {
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
 ///     >>> daft.read_parquet("az://some-path", io_config=io_config)
 #[derive(Clone, Default)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct AzureConfig {
     pub config: crate::AzureConfig,
 }
@@ -120,7 +120,7 @@ pub struct AzureConfig {
 ///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
 ///     >>> daft.read_parquet("gs://some-path", io_config=io_config)
 #[derive(Clone, Default)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct GCSConfig {
     pub config: crate::GCSConfig,
 }

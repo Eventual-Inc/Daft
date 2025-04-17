@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
-use daft_dsl::{join::normalize_join_keys, ExprRef};
+use daft_dsl::{join::normalize_join_keys, AggExpr, ExprRef, WindowExpr};
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -109,12 +109,28 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 && window.window_spec.order_by.is_empty()
                 && window.window_spec.frame.is_none()
             {
+                let aggregations = window
+                    .window_functions
+                    .iter()
+                    .map(|w| {
+                        if let WindowExpr::Agg(agg_expr) = w {
+                            Ok(agg_expr.clone())
+                        } else {
+                            Err(DaftError::TypeError(format!(
+                                "Window function {:?} not implemented in partition-only windows, only aggregation functions are supported",
+                                w
+                            )))
+                        }
+                    })
+                    .collect::<DaftResult<Vec<AggExpr>>>()?;
+
                 Ok(LocalPhysicalPlan::window_partition_only(
                     input,
                     window.window_spec.partition_by.clone(),
                     window.schema.clone(),
                     window.stats_state.clone(),
-                    window.window_functions.clone(),
+                    aggregations,
+                    window.aliases.clone(),
                 ))
             } else {
                 Err(DaftError::not_implemented(

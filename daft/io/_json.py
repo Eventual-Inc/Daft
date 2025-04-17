@@ -29,12 +29,6 @@ def read_json(
 ) -> DataFrame:
     """Creates a DataFrame from line-delimited JSON file(s).
 
-    Example:
-        >>> df = daft.read_json("/path/to/file.json")
-        >>> df = daft.read_json("/path/to/directory")
-        >>> df = daft.read_json("/path/to/files-*.json")
-        >>> df = daft.read_json("s3://path/to/files-*.json")
-
     Args:
         path (str): Path to JSON files (allows for wildcards)
         infer_schema (bool): Whether to infer the schema of the JSON, defaults to True.
@@ -43,8 +37,14 @@ def read_json(
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame
+
+    Examples:
+        >>> df = daft.read_json("/path/to/file.json")
+        >>> df = daft.read_json("/path/to/directory")
+        >>> df = daft.read_json("/path/to/files-*.json")
+        >>> df = daft.read_json("s3://path/to/files-*.json")
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of JSON filepaths")
